@@ -78,7 +78,10 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   /// </summary>
   public bool SupportsHeldRuns => true;
 
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -90,11 +93,17 @@ public sealed class ReiserFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
       long length, bool releaseOldSpace) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);

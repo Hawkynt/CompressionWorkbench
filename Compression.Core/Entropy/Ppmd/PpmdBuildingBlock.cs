@@ -14,18 +14,33 @@ namespace Compression.Core.Entropy.Ppmd;
 /// </summary>
 public sealed class PpmdBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Ppmd";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Ppmd";
   /// <inheritdoc/>
-  public string DisplayName => "PPMd";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "PPMd";
   /// <inheritdoc/>
-  public string Description => "PPMd variant H context-tree modeling with range coding (the model family 7-Zip calls PPMd)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "PPMd variant H context-tree modeling with range coding (the model family 7-Zip calls PPMd)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   private const int Order = PpmdConstants.DefaultOrder;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Header: 1-byte order, 4-byte LE original size.
@@ -47,7 +62,10 @@ public sealed class PpmdBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var order = data[0];
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data[1..]);
 

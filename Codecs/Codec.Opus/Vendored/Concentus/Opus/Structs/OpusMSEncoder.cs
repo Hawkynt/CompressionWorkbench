@@ -72,7 +72,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public void ResetState()
+                /// <summary>
+        /// Performs the reset state operation.
+        /// </summary>
+public void ResetState()
         {
             int s;
             subframe_mem[0] = subframe_mem[1] = subframe_mem[2] = 0;
@@ -842,7 +845,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+                /// <summary>
+        /// Encodes the supplied input.
+        /// </summary>
+[Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             short[] pcm,
             int pcm_offset,
@@ -855,7 +861,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int EncodeMultistream(
+                /// <summary>
+        /// Encodes the supplied input.
+        /// </summary>
+public int EncodeMultistream(
             ReadOnlySpan<short> pcm,
             int frame_size,
             Span<byte> outputBuffer,
@@ -876,7 +885,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+                /// <summary>
+        /// Encodes the supplied input.
+        /// </summary>
+[Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             float[] pcm,
             int pcm_offset,
@@ -889,7 +901,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int EncodeMultistream(
+                /// <summary>
+        /// Encodes the supplied input.
+        /// </summary>
+public int EncodeMultistream(
             ReadOnlySpan<float> pcm,
             int frame_size,
             Span<byte> outputBuffer,
@@ -914,7 +929,10 @@ namespace Concentus.Structs
         #region Getters and Setters
 
         /// <inheritdoc />
-        public int Bitrate
+                /// <summary>
+        /// Gets or sets the bitrate.
+        /// </summary>
+public int Bitrate
         {
             get
             {
@@ -939,7 +957,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public OpusApplication Application
+                /// <summary>
+        /// Gets or sets the application.
+        /// </summary>
+public OpusApplication Application
         {
             get
             {
@@ -955,7 +976,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int ForceChannels
+                /// <summary>
+        /// Gets or sets the force channels.
+        /// </summary>
+public int ForceChannels
         {
             get
             {
@@ -971,7 +995,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int NumChannels
+                /// <summary>
+        /// Gets the num channels.
+        /// </summary>
+public int NumChannels
         {
             get
             {
@@ -980,7 +1007,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public OpusBandwidth MaxBandwidth
+                /// <summary>
+        /// Gets or sets the max bandwidth.
+        /// </summary>
+public OpusBandwidth MaxBandwidth
         {
             get
             {
@@ -996,7 +1026,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public OpusBandwidth Bandwidth
+                /// <summary>
+        /// Gets or sets the bandwidth.
+        /// </summary>
+public OpusBandwidth Bandwidth
         {
             get
             {
@@ -1012,7 +1045,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public bool UseDTX
+                /// <summary>
+        /// Gets a value indicating whether use dtx.
+        /// </summary>
+public bool UseDTX
         {
             get
             {
@@ -1028,7 +1064,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int Complexity
+                /// <summary>
+        /// Gets or sets the complexity.
+        /// </summary>
+public int Complexity
         {
             get
             {
@@ -1044,7 +1083,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public OpusMode ForceMode
+                /// <summary>
+        /// Gets or sets the force mode.
+        /// </summary>
+public OpusMode ForceMode
         {
             get
             {
@@ -1060,7 +1102,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public bool UseInbandFEC
+                /// <summary>
+        /// Gets a value indicating whether use inband fec.
+        /// </summary>
+public bool UseInbandFEC
         {
             get
             {
@@ -1076,7 +1121,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int PacketLossPercent
+                /// <summary>
+        /// Gets or sets the packet loss percent.
+        /// </summary>
+public int PacketLossPercent
         {
             get
             {
@@ -1092,7 +1140,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public bool UseVBR
+                /// <summary>
+        /// Gets a value indicating whether use vbr.
+        /// </summary>
+public bool UseVBR
         {
             get
             {
@@ -1108,7 +1159,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public bool UseConstrainedVBR
+                /// <summary>
+        /// Gets a value indicating whether use constrained vbr.
+        /// </summary>
+public bool UseConstrainedVBR
         {
             get
             {
@@ -1139,7 +1193,10 @@ namespace Concentus.Structs
         //}
 
         /// <inheritdoc />
-        public OpusSignal SignalType
+                /// <summary>
+        /// Gets or sets the signal type.
+        /// </summary>
+public OpusSignal SignalType
         {
             get
             {
@@ -1155,7 +1212,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int Lookahead
+                /// <summary>
+        /// Gets the lookahead.
+        /// </summary>
+public int Lookahead
         {
             get
             {
@@ -1164,7 +1224,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int SampleRate
+                /// <summary>
+        /// Gets the sample rate.
+        /// </summary>
+public int SampleRate
         {
             get
             {
@@ -1173,7 +1236,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public uint FinalRange
+                /// <summary>
+        /// Gets the final range.
+        /// </summary>
+public uint FinalRange
         {
             get
             {
@@ -1189,7 +1255,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public int LSBDepth
+                /// <summary>
+        /// Gets or sets the lsb depth.
+        /// </summary>
+public int LSBDepth
         {
             get
             {
@@ -1205,7 +1274,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public bool PredictionDisabled
+                /// <summary>
+        /// Gets a value indicating whether prediction disabled.
+        /// </summary>
+public bool PredictionDisabled
         {
             get
             {
@@ -1221,7 +1293,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public OpusFramesize ExpertFrameDuration
+                /// <summary>
+        /// Gets or sets the expert frame duration.
+        /// </summary>
+public OpusFramesize ExpertFrameDuration
         {
             get
             {
@@ -1246,12 +1321,18 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        public string GetVersionString()
+                /// <summary>
+        /// Gets the version string.
+        /// </summary>
+public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
 
-        public void Dispose() { }
+                /// <summary>
+        /// Releases resources held by this instance.
+        /// </summary>
+public void Dispose() { }
 
         #endregion
     }

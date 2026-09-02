@@ -17,30 +17,72 @@ namespace FileFormat.JpegArchive;
 /// </para>
 /// </summary>
 public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable {
-  public string Id => "JpegArchive";
-  public string DisplayName => "JPEG (archive view)";
-  public FormatCategory Category => FormatCategory.Image;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "JpegArchive";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "JPEG (archive view)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Image;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsOptimize;
-  public string DefaultExtension => ".jpg";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".jpg";
   // Empty — extension collides with the primary JPEG reader; only addressable by explicit --format.
-  public IReadOnlyList<string> Extensions => [];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "JPEG sub-image extraction: full image + EXIF thumbnail + XMP/IPTC metadata.";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "JPEG sub-image extraction: full image + EXIF thumbnail + XMP/IPTC metadata.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
       Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -48,7 +90,10 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);
@@ -127,15 +172,24 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
   // ── IArchiveLayoutMap ───────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => JpegLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => JpegLayoutMap.Enumerate(archive);
 
   // ── IArchiveDefragmentable ────────────────────────────────────
 
   /// <inheritdoc />
-  public void Defragment(Stream archive) => JpegOptimizer.Optimize(archive);
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive) => JpegOptimizer.Optimize(archive);
 
   /// <inheritdoc />
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     // JPEG optimization is a single fixed strategy: move EXIF to front.
     // All defrag modes converge to the same operation, unless a metadata
     // placement profile overrides the default.

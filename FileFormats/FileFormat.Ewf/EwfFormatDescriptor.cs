@@ -22,33 +22,75 @@ namespace FileFormat.Ewf;
 /// </list>
 /// </summary>
 public sealed class EwfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
-  public string Id => "Ewf";
-  public string DisplayName => "EnCase EWF (E01)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ewf";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "EnCase EWF (E01)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".e01";
-  public IReadOnlyList<string> Extensions => [".e01", ".ewf", ".l01"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".e01";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".e01", ".ewf", ".l01"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95), // "EVF\t\r\n\xFF\x00"
     new([0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00], Offset: 0, Confidence: 0.95), // "LVF\t\r\n\xFF\x00"
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "EnCase Expert Witness Format forensic image; surfaces section descriptors " +
     "(header, volume, sectors, table, hash, digest, done/next) as entries.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null
     )).ToList();
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);

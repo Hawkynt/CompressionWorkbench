@@ -37,7 +37,10 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new CompactProReader(archive);
     foreach (var e in r.Entries) {
@@ -48,32 +51,74 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
     }
   }
 
-  public string Id => "CompactPro";
-  public string DisplayName => "Compact Pro";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "CompactPro";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Compact Pro";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".cpt";
-  public IReadOnlyList<string> Extensions => [".cpt"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x01], Confidence: 0.20)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("compactpro", "Compact Pro")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Macintosh Compact Pro archive";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".cpt";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".cpt"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x01], Confidence: 0.20)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("compactpro", "Compact Pro")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Macintosh Compact Pro archive";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CompactProReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.DataForkSize,
       e.DataForkCompressedSize, $"Method {e.DataForkMethod}", e.IsDirectory, false, e.ModifiedDate)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new CompactProReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -113,7 +158,10 @@ public sealed class CompactProFormatDescriptor : IFormatDescriptor, IArchiveForm
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new CompactProWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);

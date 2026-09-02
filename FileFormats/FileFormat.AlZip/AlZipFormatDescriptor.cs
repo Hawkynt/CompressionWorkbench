@@ -37,7 +37,10 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new AlZipReader(archive);
     foreach (var e in r.Entries) {
@@ -46,10 +49,22 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     }
   }
 
-  public string Id => "AlZip";
-  public string DisplayName => "ALZip";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "AlZip";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ALZip";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -71,22 +86,52 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     foreach (var name in entryNames)
       AlZipModifier.RemoveFile(archive, name, wipeData: true);
   }
-  public string DefaultExtension => ".alz";
-  public IReadOnlyList<string> Extensions => [".alz"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'A', (byte)'L', (byte)'Z', 0x01], Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("alzip", "ALZip")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Korean ALZip archive format";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".alz";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".alz"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'A', (byte)'L', (byte)'Z', 0x01], Confidence: 0.95)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("alzip", "ALZip")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Korean ALZip archive format";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new AlZipReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.OriginalSize, e.CompressedSize,
       e.MethodName, e.IsDirectory, false, e.LastModified)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new AlZipReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -125,7 +170,10 @@ public sealed class AlZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // leaveOpen: true — caller owns the stream (e.g. AtomicFileWriter flushes
     // it to disk after we return; closing it here would break that contract).
     using var w = new AlZipWriter(output, leaveOpen: true);

@@ -43,19 +43,40 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => AppleDosExtentMap.Enumerate(image);
 
-  public long? MaxTotalArchiveSize => AppleDosReader.StandardSize;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => AppleDosReader.StandardSize;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "Apple DOS 3.3 disk (35 tracks x 16 sectors x 256 bytes = 143 360 bytes).";
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   /// <summary>The Apple DOS 3.3 format has exactly one canonical image size.</summary>
   public IReadOnlyList<long> CanonicalSizes => [AppleDosReader.StandardSize];
 
-  public string Id => "AppleDos";
-  public string DisplayName => "Apple DOS 3.3";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "AppleDos";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Apple DOS 3.3";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
 
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
@@ -87,27 +108,57 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
 
-  public string DefaultExtension => ".dsk";
-  public IReadOnlyList<string> Extensions => [".dsk", ".do"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".dsk";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".dsk", ".do"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // DOS 3.3 has no magic bytes — detection is extension + VTOC sanity (handled
   // by attempting a parse). We keep the magic list empty and let FormatDetector
   // fall back to extension matching.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple II DOS 3.3 floppy disk image";
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Apple II DOS 3.3 floppy disk image";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new AppleDosReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", false, false, null
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new AppleDosReader(stream);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -181,7 +232,10 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var total = 0L;
     foreach (var i in inputs) if (!i.IsDirectory) total += i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
     if (this.MaxTotalArchiveSize is long cap && total > cap)
@@ -199,14 +253,23 @@ public sealed class AppleDosFormatDescriptor : IFormatDescriptor, IArchiveFormat
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new AppleDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new AppleDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

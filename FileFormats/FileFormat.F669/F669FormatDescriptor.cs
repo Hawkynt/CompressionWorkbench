@@ -21,31 +21,76 @@ namespace FileFormat.F669;
 /// </remarks>
 public sealed class F669FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
 
-  public string Id => "F669";
-  public string DisplayName => "Composer 669";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "F669";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Composer 669";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".669";
-  public IReadOnlyList<string> Extensions => [".669"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".669";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".669"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x69, 0x66], Offset: 0, Confidence: 0.5), // "if"
     new("JN"u8.ToArray(), Offset: 0, Confidence: 0.5),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "Composer 669 tracker module; full file + patterns + playable 8-bit sample WAVs.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Classic;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Composer 669 tracker module; full file + patterns + playable 8-bit sample WAVs.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {

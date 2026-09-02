@@ -16,7 +16,10 @@ namespace FileFormat.Mhk;
 public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new MhkReader(archive);
     foreach (var e in r.Entries) {
@@ -25,30 +28,72 @@ public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public string Id => "Mhk";
-  public string DisplayName => "Cyan Mohawk";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Mhk";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Cyan Mohawk";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mhk";
-  public IReadOnlyList<string> Extensions => [".mhk"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".mhk";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".mhk"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("MHWK"u8.ToArray(), Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("mhk", "Mohawk")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Cyan Mohawk archive (Myst / Riven / Cosmic Osmo / Living Books)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("mhk", "Mohawk")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Cyan Mohawk archive (Myst / Riven / Cosmic Osmo / Living Books)";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MhkReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.DisplayName, e.Size, e.Size, "Stored", false, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MhkReader(stream);
     foreach (var e in r.Entries) {
       // Surface entries as flat files named by display key + .bin so multi-tag archives don't collide.
@@ -89,7 +134,10 @@ public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new MhkWriter(output, leaveOpen: true);
     var autoId = (ushort)1000;
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs)) {
@@ -98,10 +146,16 @@ public sealed class MhkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     // Capture (type, id, name) tuples up-front so the rebuild preserves the full
     // resource identity. Pass through DefragRebuilder using DisplayName as the
     // sortable key and stash the side-channel info in a parallel dictionary.

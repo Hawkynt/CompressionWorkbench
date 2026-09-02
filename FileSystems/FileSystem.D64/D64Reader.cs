@@ -4,11 +4,17 @@ using System.Text;
 
 namespace FileSystem.D64;
 
+/// <summary>
+/// Reads d 64 data.
+/// </summary>
 public sealed class D64Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<D64Entry> _entries = [];
 
-  public IReadOnlyList<D64Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<D64Entry> Entries => _entries;
 
   // Standard D64 sizes
   private const int StandardSize = 174848;
@@ -29,7 +35,10 @@ public sealed class D64Reader : IDisposable {
     17, 17, 17, 17, 17 // 31-35
   ];
 
-  public D64Reader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="D64Reader"/>.
+  /// </summary>
+public D64Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -132,7 +141,10 @@ public sealed class D64Reader : IDisposable {
     return sectorCount * 254;
   }
 
-  public byte[] Extract(D64Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(D64Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
 
@@ -163,5 +175,8 @@ public sealed class D64Reader : IDisposable {
     return ms.ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

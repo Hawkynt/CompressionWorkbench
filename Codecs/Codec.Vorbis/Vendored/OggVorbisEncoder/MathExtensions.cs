@@ -1,9 +1,15 @@
 using System;
 
 namespace OggVorbisEncoder;
+/// <summary>
+/// Represents a math extensions.
+/// </summary>
 public static class MathExtensions
 {
-    public static int SafeAbs(int value)
+        /// <summary>
+    /// Performs the safe abs operation.
+    /// </summary>
+public static int SafeAbs(int value)
     {
         // The absolute value of MinValue of int cannot be represented as int
         // So we return a value that's one less than that. This is technically 

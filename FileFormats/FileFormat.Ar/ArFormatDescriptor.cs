@@ -38,7 +38,10 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
   }
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     // 8-byte global header "!<arch>\n"
     yield return new DefragBlockInfo(0, ArConstants.GlobalHeaderSize, DefragBlockKind.MetadataReserved, FileName: "AR Global Header");
@@ -57,22 +60,61 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     }
   }
 
-  public string Id => "Ar";
-  public string DisplayName => "AR";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ar";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "AR";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".a";
-  public IReadOnlyList<string> Extensions => [".a", ".ar", ".deb"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'!', (byte)'<', (byte)'a', (byte)'r', (byte)'c', (byte)'h', (byte)'>', (byte)'\n'], Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ar", "AR")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unix ar archive, used for static libraries (.a files)";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".a";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".a", ".ar", ".deb"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([(byte)'!', (byte)'<', (byte)'a', (byte)'r', (byte)'c', (byte)'h', (byte)'>', (byte)'\n'], Confidence: 0.95)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("ar", "AR")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Unix ar archive, used for static libraries (.a files)";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ArReader(stream);
     // DataSize, not Data.Length: an entry too large to materialise reports its true
     // size while Data stays empty.
@@ -80,7 +122,10 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
       "ar", false, false, e.ModifiedTime.DateTime)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ArReader(stream);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -117,7 +162,10 @@ public sealed class ArFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     return ms.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var entries = FormatHelpers.FilesOnly(inputs)
       .Select(f => new ArEntry { Name = f.Name, Data = f.Data })
       .ToList();

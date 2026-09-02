@@ -25,7 +25,19 @@ namespace Codec.Opl;
 public sealed class OplCodec {
 
   /// <summary>The OPL variant being emulated.</summary>
-  public enum Chip { Opl, Opl2, Opl3, Y8950 }
+  public enum Chip {   /// <summary>
+  /// Specifies the opl option.
+  /// </summary>
+Opl,   /// <summary>
+  /// Specifies the opl 2 option.
+  /// </summary>
+Opl2,   /// <summary>
+  /// Specifies the opl 3 option.
+  /// </summary>
+Opl3,   /// <summary>
+  /// Specifies the y 8950 option.
+  /// </summary>
+Y8950 }
 
   /// <summary>FM sample-rate divisor: the OPL family emits one frame per clock/72 tick.</summary>
   public const int Prescale = 72;
@@ -57,7 +69,10 @@ public sealed class OplCodec {
 
   /// <param name="chip">Which OPL variant to emulate.</param>
   /// <param name="clock">Chip clock in Hz (3.58 MHz typical for OPL/OPL2/Y8950, 14.32 MHz OPL3).</param>
-  public OplCodec(Chip chip = Chip.Opl2, double clock = 3579545.0) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="OplCodec"/>.
+  /// </summary>
+public OplCodec(Chip chip = Chip.Opl2, double clock = 3579545.0) {
     this._chip = chip;
     this._nativeRate = clock / Prescale;
     // OPL3 implicitly has the extended waveforms available once OPL3 mode is enabled; OPL2 gates

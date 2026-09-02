@@ -15,19 +15,43 @@ namespace FileFormat.UnrealPak;
 /// method/index generation and are deliberately rejected here rather than guessed at.
 /// </summary>
 public sealed class UnrealPakReader {
-  public const uint Magic = 0x5A6F12E1;
-  public const uint CompressionNone = 0;
-  public const uint CompressionZlib = 1;
-  public const byte FlagEncrypted = 0x01;
-  public const byte FlagDeleted = 0x02;
+    /// <summary>
+  /// Defines the magic constant value.
+  /// </summary>
+public const uint Magic = 0x5A6F12E1;
+    /// <summary>
+  /// Defines the compression none constant value.
+  /// </summary>
+public const uint CompressionNone = 0;
+    /// <summary>
+  /// Defines the compression zlib constant value.
+  /// </summary>
+public const uint CompressionZlib = 1;
+    /// <summary>
+  /// Defines the flag encrypted constant value.
+  /// </summary>
+public const byte FlagEncrypted = 0x01;
+    /// <summary>
+  /// Defines the flag deleted constant value.
+  /// </summary>
+public const byte FlagDeleted = 0x02;
 
-  public sealed record CompressionBlock(long CompressedStart, long CompressedEnd) {
-    public long CompressedSize => checked(this.CompressedEnd - this.CompressedStart);
+    /// <summary>
+  /// Represents a compression block.
+  /// </summary>
+public sealed record CompressionBlock(long CompressedStart, long CompressedEnd) {
+        /// <summary>
+    /// Gets the compressed size.
+    /// </summary>
+public long CompressedSize => checked(this.CompressedEnd - this.CompressedStart);
   }
 
   // Keep the original public constructor/deconstruction shape source-compatible. Richer wire
   // metadata is additive through init properties instead of changing the positional record API.
-  public sealed record UnrealPakEntry(
+    /// <summary>
+  /// Represents an unreal pak entry.
+  /// </summary>
+public sealed record UnrealPakEntry(
     string Path,
     long Offset,
     long Size,
@@ -35,11 +59,26 @@ public sealed class UnrealPakReader {
     uint CompressionMethod,
     bool IsEncrypted,
     string? UnsupportedReason) {
-    public byte[] Hash { get; init; } = [];
-    public IReadOnlyList<CompressionBlock> CompressionBlocks { get; init; } = [];
-    public byte Flags { get; init; }
-    public uint CompressionBlockSize { get; init; }
-    public bool IsDeleted => (this.Flags & FlagDeleted) != 0;
+        /// <summary>
+    /// Gets or sets the hash.
+    /// </summary>
+public byte[] Hash { get; init; } = [];
+        /// <summary>
+    /// Gets or sets the compression blocks.
+    /// </summary>
+public IReadOnlyList<CompressionBlock> CompressionBlocks { get; init; } = [];
+        /// <summary>
+    /// Gets or sets the flags.
+    /// </summary>
+public byte Flags { get; init; }
+        /// <summary>
+    /// Gets or sets the compression block size.
+    /// </summary>
+public uint CompressionBlockSize { get; init; }
+        /// <summary>
+    /// Gets a value indicating whether is deleted.
+    /// </summary>
+public bool IsDeleted => (this.Flags & FlagDeleted) != 0;
   }
 
   private const int Sha1Length = 20;
@@ -52,17 +91,47 @@ public sealed class UnrealPakReader {
   private readonly List<string> _compressionMethods = ["None", "Zlib"];
   private readonly long _indexOffset;
 
-  public uint PakVersion { get; }
-  public string MountPoint { get; }
-  public IReadOnlyList<string> CompressionMethods => this._compressionMethods;
-  public bool IsIndexEncrypted { get; }
-  public long IndexOffset => this._indexOffset;
-  public long IndexSize { get; }
-  public byte[] IndexHash { get; }
-  public bool IndexHashVerified { get; }
-  public IReadOnlyList<UnrealPakEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the pak version.
+  /// </summary>
+public uint PakVersion { get; }
+    /// <summary>
+  /// Gets the mount point.
+  /// </summary>
+public string MountPoint { get; }
+    /// <summary>
+  /// Gets the compression methods.
+  /// </summary>
+public IReadOnlyList<string> CompressionMethods => this._compressionMethods;
+    /// <summary>
+  /// Gets a value indicating whether is index encrypted.
+  /// </summary>
+public bool IsIndexEncrypted { get; }
+    /// <summary>
+  /// Gets the index offset.
+  /// </summary>
+public long IndexOffset => this._indexOffset;
+    /// <summary>
+  /// Gets the index size.
+  /// </summary>
+public long IndexSize { get; }
+    /// <summary>
+  /// Gets the index hash.
+  /// </summary>
+public byte[] IndexHash { get; }
+    /// <summary>
+  /// Gets a value indicating whether index hash verified.
+  /// </summary>
+public bool IndexHashVerified { get; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<UnrealPakEntry> Entries => this._entries;
 
-  public UnrealPakReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="UnrealPakReader"/>.
+  /// </summary>
+public UnrealPakReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek || !stream.CanRead)
       throw new ArgumentException("Unreal Pak reading requires a readable, seekable stream.", nameof(stream));
@@ -140,12 +209,18 @@ public sealed class UnrealPakReader {
     }
   }
 
-  public void VerifyEntry(UnrealPakEntry entry) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public void VerifyEntry(UnrealPakEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     _ = this.ReadAndValidateLocalHeader(entry, verifyHash: true);
   }
 
-  public byte[] Extract(UnrealPakEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(UnrealPakEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDeleted)
       throw new InvalidOperationException($"Cannot extract deleted Pak record '{entry.Path}'.");

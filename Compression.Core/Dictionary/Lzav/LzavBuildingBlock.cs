@@ -72,13 +72,25 @@ namespace Compression.Core.Dictionary.Lzav;
 /// </remarks>
 public sealed class LzavBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzav";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzav";
   /// <inheritdoc/>
-  public string DisplayName => "LZAV";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZAV";
   /// <inheritdoc/>
-  public string Description => "Vaneev's byte-oriented LZ77 using LZAV's real data-format-3 block layout (tiered offset bytes, base-128 length continuation)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Vaneev's byte-oriented LZ77 using LZAV's real data-format-3 block layout (tiered offset bytes, base-128 length continuation)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int FormatId = 3;
   private const int MRef = 6; // Minimum reference (match) length; the format allows 5 or 6.
@@ -92,7 +104,10 @@ public sealed class LzavBuildingBlock : IBuildingBlock {
   private const int MaxChainSteps = 64;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -141,7 +156,10 @@ public sealed class LzavBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

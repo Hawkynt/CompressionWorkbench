@@ -35,7 +35,10 @@ public sealed class Ay8910Chip {
 
   /// <summary>Common PSG input clocks.</summary>
   public const double ZxSpectrumClock = 1_773_400.0; // ZX Spectrum 128 AY clock
-  public const double MsxClock = 1_789_772.5;         // MSX PSG clock
+    /// <summary>
+  /// Defines the msx clock constant value.
+  /// </summary>
+public const double MsxClock = 1_789_772.5;         // MSX PSG clock
 
   /// <summary>Stereo panning layouts.</summary>
   public enum StereoMode {
@@ -99,7 +102,10 @@ public sealed class Ay8910Chip {
   // Shape decode (R13).
   private bool _envContinue, _envAttack, _envAlternate, _envHold;
 
-  public Ay8910Chip(double clock = ZxSpectrumClock, StereoMode stereo = StereoMode.Abc) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ay8910Chip"/>.
+  /// </summary>
+public Ay8910Chip(double clock = ZxSpectrumClock, StereoMode stereo = StereoMode.Abc) {
     this._clock = clock;
     this._stereo = stereo;
     // Generators run at the clock/16 prescaler rate.

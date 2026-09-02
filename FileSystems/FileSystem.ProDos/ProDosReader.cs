@@ -16,10 +16,22 @@ namespace FileSystem.ProDos;
 /// </remarks>
 public sealed class ProDosReader : IDisposable {
 
-  public const int BlockSize = 512;
-  public const int VolumeDirStartBlock = 2;
-  public const int EntriesPerBlock = 13;
-  public const int EntrySize = 39;
+    /// <summary>
+  /// Defines the block size constant value.
+  /// </summary>
+public const int BlockSize = 512;
+    /// <summary>
+  /// Defines the volume dir start block constant value.
+  /// </summary>
+public const int VolumeDirStartBlock = 2;
+    /// <summary>
+  /// Defines the entries per block constant value.
+  /// </summary>
+public const int EntriesPerBlock = 13;
+    /// <summary>
+  /// Defines the entry size constant value.
+  /// </summary>
+public const int EntrySize = 39;
 
   /// <summary>
   /// Size in bytes of the Volume Directory Header (storage type 0xF) and the
@@ -65,10 +77,19 @@ public sealed class ProDosReader : IDisposable {
   private readonly int _imageStart;  // Offset into _image where block 0 starts (0 for .po, 64 for .2mg).
   private readonly List<ProDosEntry> _entries = [];
 
-  public IReadOnlyList<ProDosEntry> Entries => _entries;
-  public string VolumeName { get; private set; } = "";
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<ProDosEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the volume name.
+  /// </summary>
+public string VolumeName { get; private set; } = "";
 
-  public ProDosReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="ProDosReader"/>.
+  /// </summary>
+public ProDosReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -77,7 +98,10 @@ public sealed class ProDosReader : IDisposable {
     Parse();
   }
 
-  public ProDosReader(byte[] data) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="ProDosReader"/>.
+  /// </summary>
+public ProDosReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     _image = data;
     _imageStart = DetectImageStart(_image);
@@ -177,7 +201,10 @@ public sealed class ProDosReader : IDisposable {
     }
   }
 
-  public byte[] Extract(ProDosEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(ProDosEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0) return [];
@@ -241,5 +268,8 @@ public sealed class ProDosReader : IDisposable {
     src.Slice(0, count).CopyTo(dst.AsSpan(dstOffset, count));
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

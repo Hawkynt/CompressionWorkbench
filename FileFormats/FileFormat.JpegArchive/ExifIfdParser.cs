@@ -10,7 +10,10 @@ namespace FileFormat.JpegArchive;
 /// "MM" = big-endian); subsequent reads use that endianness.
 /// </summary>
 public static class ExifIfdParser {
-  public sealed record Ifd1Thumbnail(int Offset, int Length);
+    /// <summary>
+  /// Represents an ifd 1 thumbnail.
+  /// </summary>
+public sealed record Ifd1Thumbnail(int Offset, int Length);
 
   /// <summary>
   /// Parses an EXIF APP1 segment payload (excluding the leading "Exif\0\0" 6-byte

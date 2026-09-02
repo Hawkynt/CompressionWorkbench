@@ -26,12 +26,18 @@ namespace FileFormat.Hps;
 /// </summary>
 public sealed class HpsReader {
 
-  public sealed record Header(
+    /// <summary>
+  /// Represents a header.
+  /// </summary>
+public sealed record Header(
     int SampleRate,
     int NumChannels,
     int SampleCount);
 
-  public sealed record ParsedHps(
+    /// <summary>
+  /// Represents a parsed hps.
+  /// </summary>
+public sealed record ParsedHps(
     Header Info,
     short[][] Coefs,
     short[][] Pcm);
@@ -40,7 +46,10 @@ public sealed class HpsReader {
 
   private const int ChannelHeaderSize = 0x38;
 
-  public ParsedHps Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedHps Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x10)
       throw new InvalidDataException("HPS too short for header.");
     for (var i = 0; i < 8; ++i)

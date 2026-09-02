@@ -2,9 +2,15 @@ using System.Linq;
 
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents a floor.
+/// </summary>
 public class Floor
 {
-    public Floor(
+        /// <summary>
+    /// Initializes a new instance of <see cref="Floor"/>.
+    /// </summary>
+public Floor(
         int[] partitionClass,
         int[] classDimensions,
         int[] classSubs,
@@ -70,14 +76,35 @@ public class Floor
     public int[] PostList { get; }
 
     /* encode side analysis parameters */
-    public float MaxOver { get; }
-    public float MaxUnder { get; }
-    public float MaxError { get; }
-    public float TwoFitWeight { get; }
-    public float TwoFitAtten { get; }
-    public int N { get; set; }
+        /// <summary>
+    /// Gets the max over.
+    /// </summary>
+public float MaxOver { get; }
+        /// <summary>
+    /// Gets the max under.
+    /// </summary>
+public float MaxUnder { get; }
+        /// <summary>
+    /// Gets the max error.
+    /// </summary>
+public float MaxError { get; }
+        /// <summary>
+    /// Gets the two fit weight.
+    /// </summary>
+public float TwoFitWeight { get; }
+        /// <summary>
+    /// Gets the two fit atten.
+    /// </summary>
+public float TwoFitAtten { get; }
+        /// <summary>
+    /// Gets or sets the n.
+    /// </summary>
+public int N { get; set; }
 
-    public Floor Clone() =>
+        /// <summary>
+    /// Performs the clone operation.
+    /// </summary>
+public Floor Clone() =>
         new Floor(
             PartitionClass.ToArray(),
             ClassDimensions.ToArray(),

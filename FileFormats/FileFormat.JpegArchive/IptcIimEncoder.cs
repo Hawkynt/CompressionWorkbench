@@ -13,27 +13,87 @@ namespace FileFormat.JpegArchive;
 /// Field reference: https://www.iptc.org/std/photometadata/documentation/mapping-guidelines/
 /// </summary>
 public sealed record IptcFields {
-  public string? ObjectName { get; init; }          // 2:5  — equivalent to XMP Title
-  public string? Instructions { get; init; }        // 2:40 — photoshop:Instructions
-  public IReadOnlyList<string>? Keywords { get; init; }  // 2:25 — repeatable
-  public string? DateCreatedYyyyMmDd { get; init; } // 2:55 — CCYYMMDD
-  public string? TimeCreatedHhMmSsZz { get; init; } // 2:60 — HHMMSS±HHMM
-  public string? ByLine { get; init; }              // 2:80 — dc:creator
-  public string? City { get; init; }                // 2:90
-  public string? SubLocation { get; init; }         // 2:92
-  public string? ProvinceState { get; init; }       // 2:95
-  public string? CountryCode { get; init; }         // 2:100
-  public string? CountryName { get; init; }         // 2:101
-  public string? Headline { get; init; }            // 2:105 — photoshop:Headline
-  public string? Credit { get; init; }              // 2:110 — photoshop:Credit
-  public string? Source { get; init; }              // 2:115 — photoshop:Source
-  public string? Caption { get; init; }             // 2:120
-  public string? CopyrightNotice { get; init; }     // 2:116
-  public string? DescriptionWriter { get; init; }   // 2:122
-  public string? TransmissionReference { get; init; } // 2:103 — photoshop:TransmissionReference
-  public string? CreatorJobTitle { get; init; }     // 2:85 — Iptc4xmpCore:CiJobtitle — dc:rights
+    /// <summary>
+  /// Gets or sets the object name.
+  /// </summary>
+public string? ObjectName { get; init; }          // 2:5  — equivalent to XMP Title
+    /// <summary>
+  /// Gets or sets the instructions.
+  /// </summary>
+public string? Instructions { get; init; }        // 2:40 — photoshop:Instructions
+    /// <summary>
+  /// Gets or sets the keywords.
+  /// </summary>
+public IReadOnlyList<string>? Keywords { get; init; }  // 2:25 — repeatable
+    /// <summary>
+  /// Gets or sets the date created yyyy mm dd.
+  /// </summary>
+public string? DateCreatedYyyyMmDd { get; init; } // 2:55 — CCYYMMDD
+    /// <summary>
+  /// Gets or sets the time created hh mm ss zz.
+  /// </summary>
+public string? TimeCreatedHhMmSsZz { get; init; } // 2:60 — HHMMSS±HHMM
+    /// <summary>
+  /// Gets or sets the by line.
+  /// </summary>
+public string? ByLine { get; init; }              // 2:80 — dc:creator
+    /// <summary>
+  /// Gets or sets the city.
+  /// </summary>
+public string? City { get; init; }                // 2:90
+    /// <summary>
+  /// Gets or sets the sub location.
+  /// </summary>
+public string? SubLocation { get; init; }         // 2:92
+    /// <summary>
+  /// Gets or sets the province state.
+  /// </summary>
+public string? ProvinceState { get; init; }       // 2:95
+    /// <summary>
+  /// Gets or sets the country code.
+  /// </summary>
+public string? CountryCode { get; init; }         // 2:100
+    /// <summary>
+  /// Gets or sets the country name.
+  /// </summary>
+public string? CountryName { get; init; }         // 2:101
+    /// <summary>
+  /// Gets or sets the headline.
+  /// </summary>
+public string? Headline { get; init; }            // 2:105 — photoshop:Headline
+    /// <summary>
+  /// Gets or sets the credit.
+  /// </summary>
+public string? Credit { get; init; }              // 2:110 — photoshop:Credit
+    /// <summary>
+  /// Gets or sets the source.
+  /// </summary>
+public string? Source { get; init; }              // 2:115 — photoshop:Source
+    /// <summary>
+  /// Gets or sets the caption.
+  /// </summary>
+public string? Caption { get; init; }             // 2:120
+    /// <summary>
+  /// Gets or sets the copyright notice.
+  /// </summary>
+public string? CopyrightNotice { get; init; }     // 2:116
+    /// <summary>
+  /// Gets or sets the description writer.
+  /// </summary>
+public string? DescriptionWriter { get; init; }   // 2:122
+    /// <summary>
+  /// Gets or sets the transmission reference.
+  /// </summary>
+public string? TransmissionReference { get; init; } // 2:103 — photoshop:TransmissionReference
+    /// <summary>
+  /// Gets or sets the creator job title.
+  /// </summary>
+public string? CreatorJobTitle { get; init; }     // 2:85 — Iptc4xmpCore:CiJobtitle — dc:rights
 
-  public bool IsEmpty =>
+    /// <summary>
+  /// Gets a value indicating whether is empty.
+  /// </summary>
+public bool IsEmpty =>
     string.IsNullOrWhiteSpace(this.ObjectName)
     && (this.Keywords is null || this.Keywords.Count == 0)
     && string.IsNullOrWhiteSpace(this.City)
@@ -70,26 +130,86 @@ public static class IptcIimEncoder {
   private const byte RecordEnvelope = 1;
   private const byte RecordApplication = 2;
 
-  public const byte DsCodedCharacterSet = 90;  // record 1
-  public const byte DsObjectName = 5;
-  public const byte DsTransmissionReference = 103;
-  public const byte DsDescriptionWriter = 122;
-  public const byte DsCreatorJobTitle = 85;
-  public const byte DsInstructions = 40;
-  public const byte DsDateCreated = 55;
-  public const byte DsTimeCreated = 60;
-  public const byte DsKeywords = 25;
-  public const byte DsByLine = 80;
-  public const byte DsCity = 90;
-  public const byte DsSubLocation = 92;
-  public const byte DsProvinceState = 95;
-  public const byte DsCountryCode = 100;
-  public const byte DsCountryName = 101;
-  public const byte DsHeadline = 105;
-  public const byte DsCredit = 110;
-  public const byte DsSource = 115;
-  public const byte DsCopyrightNotice = 116;
-  public const byte DsCaption = 120;
+    /// <summary>
+  /// Defines the ds coded character set constant value.
+  /// </summary>
+public const byte DsCodedCharacterSet = 90;  // record 1
+    /// <summary>
+  /// Defines the ds object name constant value.
+  /// </summary>
+public const byte DsObjectName = 5;
+    /// <summary>
+  /// Defines the ds transmission reference constant value.
+  /// </summary>
+public const byte DsTransmissionReference = 103;
+    /// <summary>
+  /// Defines the ds description writer constant value.
+  /// </summary>
+public const byte DsDescriptionWriter = 122;
+    /// <summary>
+  /// Defines the ds creator job title constant value.
+  /// </summary>
+public const byte DsCreatorJobTitle = 85;
+    /// <summary>
+  /// Defines the ds instructions constant value.
+  /// </summary>
+public const byte DsInstructions = 40;
+    /// <summary>
+  /// Defines the ds date created constant value.
+  /// </summary>
+public const byte DsDateCreated = 55;
+    /// <summary>
+  /// Defines the ds time created constant value.
+  /// </summary>
+public const byte DsTimeCreated = 60;
+    /// <summary>
+  /// Defines the ds keywords constant value.
+  /// </summary>
+public const byte DsKeywords = 25;
+    /// <summary>
+  /// Defines the ds by line constant value.
+  /// </summary>
+public const byte DsByLine = 80;
+    /// <summary>
+  /// Defines the ds city constant value.
+  /// </summary>
+public const byte DsCity = 90;
+    /// <summary>
+  /// Defines the ds sub location constant value.
+  /// </summary>
+public const byte DsSubLocation = 92;
+    /// <summary>
+  /// Defines the ds province state constant value.
+  /// </summary>
+public const byte DsProvinceState = 95;
+    /// <summary>
+  /// Defines the ds country code constant value.
+  /// </summary>
+public const byte DsCountryCode = 100;
+    /// <summary>
+  /// Defines the ds country name constant value.
+  /// </summary>
+public const byte DsCountryName = 101;
+    /// <summary>
+  /// Defines the ds headline constant value.
+  /// </summary>
+public const byte DsHeadline = 105;
+    /// <summary>
+  /// Defines the ds credit constant value.
+  /// </summary>
+public const byte DsCredit = 110;
+    /// <summary>
+  /// Defines the ds source constant value.
+  /// </summary>
+public const byte DsSource = 115;
+    /// <summary>
+  /// Defines the ds copyright notice constant value.
+  /// </summary>
+public const byte DsCopyrightNotice = 116;
+    /// <summary>
+  /// Defines the ds caption constant value.
+  /// </summary>
+public const byte DsCaption = 120;
 
   /// <summary>Writes the given fields to a byte buffer in IPTC-IIM form (no 8BIM wrapper).</summary>
   public static byte[] Encode(IptcFields fields) {

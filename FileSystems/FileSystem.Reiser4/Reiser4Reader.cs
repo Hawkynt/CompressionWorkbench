@@ -46,7 +46,10 @@ public sealed class Reiser4Reader : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._image.Length;
 
-  public Reiser4Reader(Stream stream, bool leaveOpen = true) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Reiser4Reader"/>.
+  /// </summary>
+public Reiser4Reader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata is a handful of blocks however
@@ -181,5 +184,8 @@ public sealed class Reiser4Reader : IDisposable {
     return n == 0 ? "" : Encoding.UTF8.GetString(span[..n]);
   }
 
-  public void Dispose() => this._image.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._image.Dispose();
 }

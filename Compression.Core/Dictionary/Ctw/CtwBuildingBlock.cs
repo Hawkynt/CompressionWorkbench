@@ -21,18 +21,33 @@ namespace Compression.Core.Dictionary.Ctw;
 /// </remarks>
 public sealed class CtwBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_CTW";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_CTW";
   /// <inheritdoc/>
-  public string DisplayName => "Context Predictor (order-2/1/0)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Context Predictor (order-2/1/0)";
   /// <inheritdoc/>
-  public string Description => "Most-frequent-symbol predictor over an order-2/1/0 byte context hierarchy with a hit/miss bitmap; not the Context Tree Weighting (CTW) method despite the legacy block name";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Most-frequent-symbol predictor over an order-2/1/0 byte context hierarchy with a hit/miss bitmap; not the Context Tree Weighting (CTW) method despite the legacy block name";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   private const int MaxDepth = 2;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write header: 4-byte LE original size, 1-byte max depth.
@@ -51,7 +66,10 @@ public sealed class CtwBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);

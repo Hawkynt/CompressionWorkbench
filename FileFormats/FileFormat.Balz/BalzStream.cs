@@ -21,7 +21,10 @@ public static class BalzStream {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  public static void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -40,7 +43,10 @@ public static class BalzStream {
     enc.Flush();
   }
 
-  public static void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public static void Decompress(Stream input, Stream output) {
     // Read 4-byte big-endian uncompressed size
     int b0 = input.ReadByte(), b1 = input.ReadByte(), b2 = input.ReadByte(), b3 = input.ReadByte();
     if (b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0) throw new InvalidDataException("Truncated BALZ header.");

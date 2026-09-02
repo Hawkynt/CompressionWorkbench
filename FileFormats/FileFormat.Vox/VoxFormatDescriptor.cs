@@ -27,37 +27,85 @@ public sealed class VoxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Assumed sample rate for headerless Dialogic VOX (the Dialogic default).</summary>
   public const int AssumedSampleRate = 8000;
 
-  public string Id => "Vox";
-  public string DisplayName => "Dialogic VOX (OKI ADPCM)";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Vox";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Dialogic VOX (OKI ADPCM)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".vox";
-  public IReadOnlyList<string> Extensions => [".vox"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".vox";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".vox"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // Headerless: no byte signature exists for raw VOX ADPCM. Dispatch is by extension only
   // (precedent: FlacArchiveDescriptor's empty magic for its archive view).
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Dialogic VOX (OKI 4-bit ADPCM); decoded to a mono WAV at the assumed 8000 Hz.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Dialogic VOX (OKI 4-bit ADPCM); decoded to a mono WAV at the assumed 8000 Hz.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: assemble a .vox from a mono WAV (or pass through FULL.vox) ──
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     // Passthrough a provided FULL.vox verbatim (archive-view semantics).
@@ -84,11 +132,20 @@ public sealed class VoxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
-  public long? MaxTotalArchiveSize => null;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "VOX archive accepts: FULL.vox, MONO.wav (single-channel), metadata.ini";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.vox" or "metadata.ini" || name.EndsWith(".wav")) {
       reason = null; return true;

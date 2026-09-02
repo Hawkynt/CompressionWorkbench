@@ -14,17 +14,35 @@ namespace Compression.Core.Entropy.ContextMixing.Bcm;
 /// </remarks>
 public sealed class BcmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Bcm";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Bcm";
   /// <inheritdoc/>
-  public string DisplayName => "BCM (reduced)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BCM (reduced)";
   /// <inheritdoc/>
-  public string Description => "Burrows-Wheeler Transform with a compact order-0..2 context-mixing back end, BCM-style";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Burrows-Wheeler Transform with a compact order-0..2 context-mixing back end, BCM-style";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => BcmCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => BcmCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => BcmCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => BcmCompressor.Decompress(data);
 }

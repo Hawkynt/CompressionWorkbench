@@ -5,21 +5,60 @@ using Compression.Registry;
 
 namespace FileFormat.Xz;
 
+/// <summary>
+/// Describes xz format.
+/// </summary>
 public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
-  public string Id => "Xz";
-  public string DisplayName => "XZ";
-  public FormatCategory Category => FormatCategory.Stream;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Xz";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "XZ";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Stream;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
-  public string DefaultExtension => ".xz";
-  public IReadOnlyList<string> Extensions => [".xz"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], Confidence: 0.98)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
-  public string Description => "LZMA2 container with CRC-64 integrity checks";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".xz";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".xz"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00], Confidence: 0.98)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZMA2 container with CRC-64 integrity checks";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
   // The XZ block header stores the LZMA2 dictionary-size byte, so every
@@ -84,28 +123,46 @@ public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperati
       : DefaultDictionarySize;
   }
 
-  public void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Decompress(Stream input, Stream output) {
     using var ds = new XzStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
-  public void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output) {
     using var cs = new XzStream(output, CompressionStreamMode.Compress, leaveOpen: true);
     input.CopyTo(cs);
   }
-  public void Compress(Stream input, Stream output, FormatCreateOptions options) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output, FormatCreateOptions options) {
     using var cs = new XzStream(output, CompressionStreamMode.Compress,
       ParseDictionarySize(options), XzConstants.CheckCrc64, preFilters: null,
       ParseLevel(options), leaveOpen: true);
     input.CopyTo(cs);
   }
-  public void CompressOptimal(Stream input, Stream output) {
+    /// <summary>
+  /// Performs the compress optimal operation.
+  /// </summary>
+public void CompressOptimal(Stream input, Stream output) {
     using var cs = new XzStream(output, CompressionStreamMode.Compress,
       DefaultDictionarySize, XzConstants.CheckCrc64, preFilters: null,
       LzmaCompressionLevel.Best, leaveOpen: true);
     input.CopyTo(cs);
   }
-  public Stream? WrapDecompress(Stream input) =>
+    /// <summary>
+  /// Performs the wrap decompress operation.
+  /// </summary>
+public Stream? WrapDecompress(Stream input) =>
     new XzStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
-  public Stream? WrapCompress(Stream output) =>
+    /// <summary>
+  /// Performs the wrap compress operation.
+  /// </summary>
+public Stream? WrapCompress(Stream output) =>
     new XzStream(output, CompressionStreamMode.Compress, leaveOpen: true);
 }

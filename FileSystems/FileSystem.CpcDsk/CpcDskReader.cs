@@ -25,16 +25,31 @@ public sealed class CpcDskReader {
   private readonly List<CpcDskEntry> _entries = [];
   private Geometry? _geometry;
 
-  public IReadOnlyList<CpcDskEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<CpcDskEntry> Entries => this._entries;
 
-  public bool IsExtended { get; private set; }
-  public int Tracks { get; private set; }
-  public int Sides { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether is extended.
+  /// </summary>
+public bool IsExtended { get; private set; }
+    /// <summary>
+  /// Gets or sets the tracks.
+  /// </summary>
+public int Tracks { get; private set; }
+    /// <summary>
+  /// Gets or sets the sides.
+  /// </summary>
+public int Sides { get; private set; }
 
   /// <summary>The disk's layout, once the header has been read.</summary>
   internal Geometry? Layout => this._geometry;
 
-  public CpcDskReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="CpcDskReader"/>.
+  /// </summary>
+public CpcDskReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     stream.Position = 0;
     using var buffer = new MemoryStream();

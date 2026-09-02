@@ -77,7 +77,10 @@ public class ProcessingState
             PreExtrapolate();
     }
 
-    public void WriteEndOfStream()
+        /// <summary>
+    /// Writes the end of stream to the supplied output.
+    /// </summary>
+public void WriteEndOfStream()
     {
         var ci = _vorbisInfo.CodecSetup;
 
@@ -241,7 +244,10 @@ public class ProcessingState
         }
     }
 
-    public void EnsureBufferSize(int needed)
+        /// <summary>
+    /// Performs the ensure buffer size operation.
+    /// </summary>
+public void EnsureBufferSize(int needed)
     {
         var pcmStorage = _pcm[0].Length;
         if (_pcmCurrent + needed < pcmStorage)
@@ -257,7 +263,10 @@ public class ProcessingState
         }
     }
 
-    public bool PacketOut(out OggPacket packet)
+        /// <summary>
+    /// Performs the packet out operation.
+    /// </summary>
+public bool PacketOut(out OggPacket packet)
     {
         packet = null;
 
@@ -405,7 +414,10 @@ public class ProcessingState
         return ve.Mark(beginW, endW);
     }
 
-    public static ProcessingState Create(VorbisInfo info)
+        /// <summary>
+    /// Performs the create operation.
+    /// </summary>
+public static ProcessingState Create(VorbisInfo info)
     {
         if (info == null)
             throw new ArgumentNullException(nameof(info));

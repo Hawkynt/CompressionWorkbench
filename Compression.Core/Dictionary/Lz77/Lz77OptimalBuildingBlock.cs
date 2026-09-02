@@ -17,22 +17,40 @@ public sealed class Lz77OptimalBuildingBlock : IBuildingBlock {
   private const int MinMatch = 3;
 
   /// <inheritdoc/>
-  public string Id => "BB_Lz77Optimal";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lz77Optimal";
   /// <inheritdoc/>
-  public string DisplayName => "LZ77-Optimal";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZ77-Optimal";
   /// <inheritdoc/>
-  public string Description => "LZ77 with cost-based optimal (shortest-path) parsing";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 with cost-based optimal (shortest-path) parsing";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var tokens = Parse(data);
     return SerializeTokens(tokens);
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var tokens = DeserializeTokens(data);
     return Lz77Decompressor.Decompress(tokens);
   }

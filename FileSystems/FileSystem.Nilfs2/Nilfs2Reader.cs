@@ -38,21 +38,60 @@ public sealed class Nilfs2Reader : IDisposable {
   private readonly long _len;
   private readonly List<Nilfs2Entry> _entries = [];
 
-  public IReadOnlyList<Nilfs2Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Nilfs2Entry> Entries => _entries;
 
   // Parsed superblock fields surfaced for diagnostics / tests
-  public uint RevLevel { get; private set; }
-  public ushort Magic { get; private set; }
-  public uint LogBlockSize { get; private set; }
-  public ulong NumSegments { get; private set; }
-  public ulong DevSize { get; private set; }
-  public uint BlocksPerSegment { get; private set; }
-  public ulong LastCheckpoint { get; private set; }
-  public ushort SBytes { get; private set; }
-  public uint CrcSeed { get; private set; }
-  public uint StoredSum { get; private set; }
-  public string Uuid { get; private set; } = "";
-  public string VolumeLabel { get; private set; } = "";
+    /// <summary>
+  /// Gets or sets the rev level.
+  /// </summary>
+public uint RevLevel { get; private set; }
+    /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
+public ushort Magic { get; private set; }
+    /// <summary>
+  /// Gets or sets the log block size.
+  /// </summary>
+public uint LogBlockSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the num segments.
+  /// </summary>
+public ulong NumSegments { get; private set; }
+    /// <summary>
+  /// Gets or sets the dev size.
+  /// </summary>
+public ulong DevSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the blocks per segment.
+  /// </summary>
+public uint BlocksPerSegment { get; private set; }
+    /// <summary>
+  /// Gets or sets the last checkpoint.
+  /// </summary>
+public ulong LastCheckpoint { get; private set; }
+    /// <summary>
+  /// Gets or sets the s bytes.
+  /// </summary>
+public ushort SBytes { get; private set; }
+    /// <summary>
+  /// Gets or sets the crc seed.
+  /// </summary>
+public uint CrcSeed { get; private set; }
+    /// <summary>
+  /// Gets or sets the stored sum.
+  /// </summary>
+public uint StoredSum { get; private set; }
+    /// <summary>
+  /// Gets or sets the uuid.
+  /// </summary>
+public string Uuid { get; private set; } = "";
+    /// <summary>
+  /// Gets or sets the volume label.
+  /// </summary>
+public string VolumeLabel { get; private set; } = "";
 
   /// <summary>
   /// True when the parsed superblock's stored <c>s_sum</c> matches a freshly
@@ -65,13 +104,22 @@ public sealed class Nilfs2Reader : IDisposable {
   /// <summary>Which superblock copy was chosen as authoritative.</summary>
   public string SuperblockSource { get; private set; } = "";
 
-  public bool ValidSuperblock { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid superblock.
+  /// </summary>
+public bool ValidSuperblock { get; private set; }
 
-  public const ushort SuperMagic = 0x3434;
+    /// <summary>
+  /// Defines the super magic constant value.
+  /// </summary>
+public const ushort SuperMagic = 0x3434;
   private const int SuperblockOffset = 1024;
   private const int SuperblockSize = 1024;
 
-  public Nilfs2Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Nilfs2Reader"/>.
+  /// </summary>
+public Nilfs2Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Metadata is a handful of blocks however many gigabytes of payload follow
@@ -491,7 +539,10 @@ public sealed class Nilfs2Reader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(Nilfs2Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Nilfs2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
     if (entry.Size > Array.MaxLength)
@@ -514,5 +565,8 @@ public sealed class Nilfs2Reader : IDisposable {
     return take;
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

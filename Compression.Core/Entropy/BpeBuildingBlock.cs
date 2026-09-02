@@ -39,13 +39,25 @@ public enum BpeConstructionStrategy {
 /// </remarks>
 public sealed class BpeBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_BPE";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_BPE";
   /// <inheritdoc/>
-  public string DisplayName => "Byte Pair Encoding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Byte Pair Encoding";
   /// <inheritdoc/>
-  public string Description => "Philip Gage byte-pair compression using unused byte symbols";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Philip Gage byte-pair compression using unused byte symbols";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <summary>The grammar-construction strategy used by <see cref="Compress"/>.</summary>
   public BpeConstructionStrategy ConstructionStrategy { get; }
@@ -68,7 +80,10 @@ public sealed class BpeBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     Span<byte> integer = stackalloc byte[sizeof(int)];
     BinaryPrimitives.WriteInt32LittleEndian(integer, data.Length);
@@ -88,7 +103,10 @@ public sealed class BpeBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < sizeof(int))
       throw new InvalidDataException("BPE stream is missing its original-length header.");
 

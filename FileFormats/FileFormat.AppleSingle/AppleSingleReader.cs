@@ -13,17 +13,32 @@ namespace FileFormat.AppleSingle;
 /// </summary>
 public sealed class AppleSingleReader {
 
-  public const uint MagicSingle = 0x00051600;
-  public const uint MagicDouble = 0x00051607;
+    /// <summary>
+  /// Defines the magic single constant value.
+  /// </summary>
+public const uint MagicSingle = 0x00051600;
+    /// <summary>
+  /// Defines the magic double constant value.
+  /// </summary>
+public const uint MagicDouble = 0x00051607;
 
-  public sealed record Entry(uint EntryId, string Name, byte[] Data);
+    /// <summary>
+  /// Represents an entry.
+  /// </summary>
+public sealed record Entry(uint EntryId, string Name, byte[] Data);
 
-  public sealed record Container(
+    /// <summary>
+  /// Represents a container.
+  /// </summary>
+public sealed record Container(
     bool IsDouble,
     uint Version,
     IReadOnlyList<Entry> Entries);
 
-  public static Container Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static Container Read(ReadOnlySpan<byte> data) {
     if (data.Length < 26) throw new InvalidDataException("AppleSingle: file shorter than 26-byte header.");
 
     var magic = BinaryPrimitives.ReadUInt32BigEndian(data);

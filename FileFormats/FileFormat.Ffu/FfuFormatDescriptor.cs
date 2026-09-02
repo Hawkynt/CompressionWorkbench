@@ -32,22 +32,58 @@ namespace FileFormat.Ffu;
 /// </list>
 /// </summary>
 public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  public string Id => "Ffu";
-  public string DisplayName => "Windows Full Flash Update (FFU)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ffu";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Windows Full Flash Update (FFU)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".ffu";
-  public IReadOnlyList<string> Extensions => [".ffu"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ffu";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ffu"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("SignedImage\0"u8.ToArray(), Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Windows Full Flash Update (FFU): Security Header (SignedImage) + catalog/hash + Image Header " +
     "(ImageFlash) + manifest + Store Header(s) + chunked payload. Surfaces FULL.ffu, metadata.ini " +
     "and a structural payload.bin; per-chunk store reconstruction is deferred. Read-only.";
@@ -68,7 +104,10 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     long PayloadLength,
     string? ManifestText);
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     var model = Parse(data);
     var entries = new List<ArchiveEntryInfo> {
@@ -81,7 +120,10 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (Wants(files, "FULL.ffu"))
       WriteFile(outputDir, "FULL.ffu", data);

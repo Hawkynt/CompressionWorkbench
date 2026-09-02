@@ -32,21 +32,48 @@ namespace FileSystem.Cromemco;
 /// </para>
 /// </summary>
 public sealed class CromemcoReader : IDisposable {
-  public const int SectorSize = 128;
-  public const int DirectoryOffset = 0x100;
-  public const int EntrySize = 32;
-  public const int MaxEntries = 64;
+    /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
+public const int SectorSize = 128;
+    /// <summary>
+  /// Defines the directory offset constant value.
+  /// </summary>
+public const int DirectoryOffset = 0x100;
+    /// <summary>
+  /// Defines the entry size constant value.
+  /// </summary>
+public const int EntrySize = 32;
+    /// <summary>
+  /// Defines the max entries constant value.
+  /// </summary>
+public const int MaxEntries = 64;
 
   private readonly byte[] _data;
   private readonly List<CromemcoEntry> _entries = [];
 
-  public IReadOnlyList<CromemcoEntry> Entries => _entries;
-  public bool ValidVolume { get; private set; }
-  public int SignatureOffset { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<CromemcoEntry> Entries => _entries;
+    /// <summary>
+  /// Gets a value indicating whether valid volume.
+  /// </summary>
+public bool ValidVolume { get; private set; }
+    /// <summary>
+  /// Gets or sets the signature offset.
+  /// </summary>
+public int SignatureOffset { get; private set; }
 
-  public static readonly byte[] Signature = "CROMEMCO"u8.ToArray();
+    /// <summary>
+  /// Provides the signature value.
+  /// </summary>
+public static readonly byte[] Signature = "CROMEMCO"u8.ToArray();
 
-  public CromemcoReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="CromemcoReader"/>.
+  /// </summary>
+public CromemcoReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -119,7 +146,10 @@ public sealed class CromemcoReader : IDisposable {
     return new string(chars[..len]);
   }
 
-  public byte[] Extract(CromemcoEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(CromemcoEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var offset = entry.StartBlock * SectorSize;
@@ -128,7 +158,10 @@ public sealed class CromemcoReader : IDisposable {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
-  public byte[] BuildSurfaceMetadata() {
+    /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
+public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
     b.Append("format=Cromemco RDOS\n");
@@ -137,5 +170,8 @@ public sealed class CromemcoReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

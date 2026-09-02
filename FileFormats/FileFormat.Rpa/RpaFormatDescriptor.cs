@@ -18,7 +18,10 @@ namespace FileFormat.Rpa;
 public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IWipeEmpty {
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     RpaReader r;
     try {
       archive.Position = 0;
@@ -40,30 +43,69 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public string Id => "Rpa";
-  public string DisplayName => "Ren'Py Archive";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Rpa";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Ren'Py Archive";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".rpa";
-  public IReadOnlyList<string> Extensions => [".rpa"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".rpa";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".rpa"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RPA-2.0 "u8.ToArray(), Confidence: 0.95),
     new("RPA-3.0 "u8.ToArray(), Confidence: 0.95),
     new("RPA-3.2 "u8.ToArray(), Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("rpa", "Ren'Py RPA")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Ren'Py visual-novel resource archive (pickle-indexed, zlib header)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("rpa", "Ren'Py RPA")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Ren'Py visual-novel resource archive (pickle-indexed, zlib header)";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new RpaReader(stream);
     var list = new List<ArchiveEntryInfo>();
     int idx = 0;
@@ -128,7 +170,10 @@ public sealed class RpaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new RpaReader(stream);
 
     // FULL passthrough

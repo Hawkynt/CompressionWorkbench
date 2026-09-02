@@ -9,16 +9,31 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class UnaryBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Unary";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Unary";
   /// <inheritdoc/>
-  public string DisplayName => "Unary Coding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Unary Coding";
   /// <inheritdoc/>
-  public string Description => "Simplest universal code, encodes N as N ones followed by a zero";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Simplest universal code, encodes N as N ones followed by a zero";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -43,7 +58,10 @@ public sealed class UnaryBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

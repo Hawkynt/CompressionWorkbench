@@ -16,7 +16,10 @@ public sealed class T64BlockMover : IFilesystemBlockMover {
   private const int EntrySize = 32;
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
     var buffer = ArrayPool<byte>.Shared.Rent((int)Math.Min(length, 64 * 1024));
     try {
@@ -51,7 +54,10 @@ public sealed class T64BlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     image.Position = 34;
     Span<byte> hdrBuf = stackalloc byte[2];
     image.ReadExactly(hdrBuf);

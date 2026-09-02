@@ -12,7 +12,10 @@ namespace FileFormat.LhF;
 /// shortcut.
 /// </summary>
 public sealed class LhFWriter {
-  public const int TrackSize = 11 * 512;
+    /// <summary>
+  /// Defines the track size constant value.
+  /// </summary>
+public const int TrackSize = 11 * 512;
   private static readonly byte[] Magic = "LhF\0"u8.ToArray();
 
   private readonly List<(int trackNum, byte[] data)> _tracks = [];
@@ -29,7 +32,10 @@ public sealed class LhFWriter {
     _tracks.Add((trackNumber, buf));
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     if (_tracks.Count > ushort.MaxValue)
       throw new InvalidOperationException($"LhF supports at most {ushort.MaxValue} tracks.");
 

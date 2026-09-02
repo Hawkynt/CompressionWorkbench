@@ -25,7 +25,10 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
   private const int V3InodeSize = 64;
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -48,7 +51,10 @@ public sealed class MinixFsBlockMover : IFilesystemBlockMover {
   /// Crash mid-3: file reachable via new pointers, old zones still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     // Parse superblock from disk (only 32 bytes needed).
     Span<byte> sb = stackalloc byte[32];
     image.Position = SuperblockOffset;

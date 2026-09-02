@@ -9,16 +9,31 @@ namespace Compression.Core.Dictionary.Ace;
 /// </summary>
 public sealed class AceBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Ace";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Ace";
   /// <inheritdoc/>
-  public string DisplayName => "ACE";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ACE";
   /// <inheritdoc/>
-  public string Description => "LZ77+Huffman compression from the ACE archive format";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77+Huffman compression from the ACE archive format";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var encoder = new AceEncoder();
     var compressed = encoder.Encode(data);
     var result = new byte[4 + compressed.Length];
@@ -28,7 +43,10 @@ public sealed class AceBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     var decoder = new AceDecoder();
     return decoder.Decode(data[4..].ToArray(), originalSize);

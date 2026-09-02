@@ -33,31 +33,76 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static readonly byte[] MagicNbMc = "#!AMR_MC1.0\n"u8.ToArray();
   private static readonly byte[] MagicWbMc = "#!AMR-WB_MC1.0\n"u8.ToArray();
 
-  public string Id => "Amr";
-  public string DisplayName => "3GPP AMR";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Amr";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "3GPP AMR";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".amr";
-  public IReadOnlyList<string> Extensions => [".amr", ".awb", ".3ga"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".amr";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".amr", ".awb", ".3ga"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // The single "#!AMR" prefix is shared by all four variants (NB / WB / MC); the descriptor
   // resolves the exact variant from the full header during parsing.
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("#!AMR"u8.ToArray(), Offset: 0, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("amr", "3GPP AMR")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "3GPP AMR narrowband/wideband speech container; full file + decoded PCM WAV(s).";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("amr", "3GPP AMR")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "3GPP AMR narrowband/wideband speech container; full file + decoded PCM WAV(s).";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   private enum Variant { Nb, Wb, NbMc, WbMc, Unknown }

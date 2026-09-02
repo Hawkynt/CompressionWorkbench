@@ -17,14 +17,20 @@ public sealed class DiskDoublerWriter {
   private string _name = "file";
   private byte[] _data = [];
 
-  public void SetFile(string name, byte[] data) {
+    /// <summary>
+  /// Sets the file.
+  /// </summary>
+public void SetFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _name = name;
     _data = data;
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     var hdr = new byte[HeaderSize];

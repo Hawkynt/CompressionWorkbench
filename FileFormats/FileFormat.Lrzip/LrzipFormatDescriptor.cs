@@ -35,28 +35,67 @@ public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
         return ms.ToArray();
       });
   }
-  public string Id => "Lrzip";
-  public string DisplayName => "Long Range Zip";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Lrzip";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Long Range Zip";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".lrz";
-  public IReadOnlyList<string> Extensions => [".lrz"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".lrz";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".lrz"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("LRZI"u8.ToArray(), Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lrzip-lzma", "LRZIP LZMA")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Long Range Zip (LZMA subtype only)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("lrzip-lzma", "LRZIP LZMA")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Long Range Zip (LZMA subtype only)";
 
   // The synthetic single entry name we expose; lrzip is a single-stream compressor,
   // not a true archive, so we surface the payload as one entry called "data".
   private const string EntryName = "data";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LrzipReader(stream, leaveOpen: true);
     var method = r.Method switch {
       LrzipConstants.MethodNone  => "Stored",
@@ -73,14 +112,20 @@ public sealed class LrzipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     return [new ArchiveEntryInfo(0, EntryName, (long)r.ExpandedSize, compressed, method, false, false, null)];
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new LrzipReader(stream, leaveOpen: true);
     if (files != null && !MatchesFilter(EntryName, files))
       return;
     WriteFile(outputDir, EntryName, r.Extract());
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // lrzip is a single-stream compressor, so we collapse all non-directory inputs into the
     // first one we see. Concatenation across multiple inputs is intentionally not done —
     // callers wanting that should tar first.

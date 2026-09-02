@@ -30,40 +30,88 @@ namespace FileFormat.Aud;
 public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IFormatValidator {
 
-  public string Id => "Aud";
-  public string DisplayName => "Westwood AUD (Command & Conquer)";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Aud";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Westwood AUD (Command & Conquer)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".aud";
-  public IReadOnlyList<string> Extensions => [".aud"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".aud";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".aud"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // No reliable magic: detection is extension-only, with deep header validation below.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ws-adpcm", "WS-ADPCM"), new("ima-adpcm", "IMA-ADPCM")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Westwood AUD (Command & Conquer); WS-ADPCM / IMA-ADPCM, full file + decoded WAV channels.";
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("ws-adpcm", "WS-ADPCM"), new("ima-adpcm", "IMA-ADPCM")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Westwood AUD (Command & Conquer); WS-ADPCM / IMA-ADPCM, full file + decoded WAV channels.";
 
   private const int HeaderSize = 12;
   private const uint ChunkMagic = 0x0000DEAF;
   private const byte CodecWsAdpcm = 1;
   private const byte CodecImaAdpcm = 99;
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IFormatValidator: header-field validation in lieu of magic ──────────────
 
-  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < HeaderSize)
       return Fail(issues, "AUD_SHORT", "File shorter than the 12-byte AUD header.");
@@ -81,7 +129,10 @@ public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     };
   }
 
-  public ValidationResult ValidateStructure(Stream stream) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateStructure(Stream stream) {
     try {
       var entries = BuildEntries(stream);
       return new ValidationResult {
@@ -98,7 +149,10 @@ public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public ValidationResult ValidateIntegrity(Stream stream) => ValidateStructure(stream);
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateIntegrity(Stream stream) => ValidateStructure(stream);
 
   private static ValidationResult Fail(List<ValidationIssue> issues, string code, string description) {
     issues.Add(new(ValidationLevel.Header, IssueSeverity.Error, code, description));
@@ -110,7 +164,10 @@ public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveCreatable: WAV → IMA-encoded AUD (codec 99) ─────────────────────
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     var full = fileList.FirstOrDefault(f =>
@@ -158,11 +215,20 @@ public sealed class AudFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
-  public long? MaxTotalArchiveSize => null;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "AUD archive accepts: FULL.aud or a mono/stereo 16-bit WAV (encoded to IMA-ADPCM)";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.aud" or "metadata.ini" || name.EndsWith(".wav")) {
       reason = null;

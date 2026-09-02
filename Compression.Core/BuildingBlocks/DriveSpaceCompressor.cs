@@ -22,23 +22,41 @@ public sealed class DriveSpaceCompressor : IBuildingBlock {
   internal const int DefaultMaxDistance = 8192;
 
   /// <inheritdoc/>
-  public string Id => "BB_DriveSpace";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_DriveSpace";
 
   /// <inheritdoc/>
-  public string DisplayName => "DriveSpace LZ";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "DriveSpace LZ";
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Microsoft DriveSpace (DVRS) LZ77 — DoubleSpace grammar with 8 KiB window";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => DoubleSpaceCompressor.CompressCore(data, DefaultMaxDistance);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => DoubleSpaceCompressor.DecompressCore(data);
 }

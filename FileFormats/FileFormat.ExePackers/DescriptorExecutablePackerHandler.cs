@@ -16,21 +16,36 @@ public sealed class DescriptorExecutablePackerHandler : IExecutablePackerHandler
   private readonly IFormatDescriptor descriptor;
   private readonly IArchiveFormatOperations archiveOps;
 
-  public DescriptorExecutablePackerHandler(IFormatDescriptor descriptor) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="DescriptorExecutablePackerHandler"/>.
+  /// </summary>
+public DescriptorExecutablePackerHandler(IFormatDescriptor descriptor) {
     this.descriptor = descriptor;
     this.archiveOps = (IArchiveFormatOperations)descriptor;
   }
 
-  public string Id => this.descriptor.Id.ToLowerInvariant();
-  public string DisplayName => this.descriptor.DisplayName;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => this.descriptor.Id.ToLowerInvariant();
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => this.descriptor.DisplayName;
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
 
@@ -48,7 +63,10 @@ public sealed class DescriptorExecutablePackerHandler : IExecutablePackerHandler
     return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, $"{this.DisplayName} signature not matched.", true)]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -64,7 +82,10 @@ public sealed class DescriptorExecutablePackerHandler : IExecutablePackerHandler
       });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", BuildMetadataJson(packed), "stored"),
       new("original_packed.bin", packed.OriginalImage, "stored"),

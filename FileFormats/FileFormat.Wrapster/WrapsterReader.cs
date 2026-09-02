@@ -15,10 +15,19 @@ public sealed class WrapsterReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<WrapsterEntry> _entries = [];
 
-  public IReadOnlyList<WrapsterEntry> Entries => _entries;
-  public int Version { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<WrapsterEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
+public int Version { get; private set; }
 
-  public WrapsterReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="WrapsterReader"/>.
+  /// </summary>
+public WrapsterReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -176,12 +185,18 @@ public sealed class WrapsterReader : IDisposable {
     }
   }
 
-  public byte[] Extract(WrapsterEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(WrapsterEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.DataLength > _data.Length)
       throw new InvalidDataException("Wrapster: data extends beyond file.");
     return _data.AsSpan(entry.Offset, entry.DataLength).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

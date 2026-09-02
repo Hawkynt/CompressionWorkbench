@@ -25,7 +25,10 @@ namespace FileFormat.Wav;
 /// leaves them addressable via <see cref="ParsedWav.MetadataChunks"/>.</para>
 /// </summary>
 public sealed class WavReader {
-  public sealed record ParsedWav(
+    /// <summary>
+  /// Represents a parsed wav.
+  /// </summary>
+public sealed record ParsedWav(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -34,7 +37,10 @@ public sealed class WavReader {
     IReadOnlyList<(string Id, byte[] Data)> MetadataChunks,
     uint? ChannelMask = null);
 
-  public ParsedWav Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedWav Read(ReadOnlySpan<byte> data) {
     if (data.Length < 44)
       throw new InvalidDataException("WAV too short for RIFF header + fmt/data chunks.");
     if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')

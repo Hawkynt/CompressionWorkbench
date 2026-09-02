@@ -35,17 +35,41 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       description: "Erase-block size recorded in the superblock. LittleFS allows powers of two from 128 B to 64 KB."),
   ];
 
-  public string Id => "LittleFs";
-  public string DisplayName => "LittleFS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "LittleFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LittleFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".littlefs";
-  public IReadOnlyList<string> Extensions => [".littlefs", ".lfs"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".littlefs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".littlefs", ".lfs"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Single canonical-offset registration. The reader's IndexOf scan inside
     // TryParse handles non-canonical placements (revision-byte width varies);
     // we only need ONE magic registration to surface the descriptor for
@@ -59,12 +83,27 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     new([0x6C, 0x69, 0x74, 0x74, 0x6C, 0x65, 0x66, 0x73], Offset: 8, Confidence: 0.6),
     new([0x6C, 0x69, 0x74, 0x74, 0x6C, 0x65, 0x66, 0x73], Offset: 16, Confidence: 0.6),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "LittleFS embedded-flash FS — metadata-pair walk + CTZ/inline file extraction.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LittleFS embedded-flash FS — metadata-pair walk + CTZ/inline file extraction.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
 
     // Preferred path: walk the metadata-pair commit log and list the real files.
@@ -106,7 +145,10 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // Preferred path: extract the real files via the commit-walking reader,
     // which streams both the walk and each file's blocks.
     try {
@@ -359,7 +401,10 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
     try {
@@ -392,7 +437,10 @@ public sealed class LittleFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
+public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;

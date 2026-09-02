@@ -26,24 +26,60 @@ namespace FileFormat.Roq;
 public sealed class RoqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
-  public string Id => "Roq";
-  public string DisplayName => "id Software RoQ";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Roq";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "id Software RoQ";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".roq";
-  public IReadOnlyList<string> Extensions => [".roq"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".roq";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".roq"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // RoQ file signature: 0x1084 0xFFFFFFFF (id 0x1084, size 0xFFFFFFFF).
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x84, 0x10, 0xFF, 0xFF, 0xFF, 0xFF], Confidence: 0.9),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("roq-dpcm", "RoQ DPCM")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "id Software RoQ; square-table DPCM audio, full file + decoded WAV channels.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("roq-dpcm", "RoQ DPCM")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "id Software RoQ; square-table DPCM audio, full file + decoded WAV channels.";
 
   private const ushort ChunkSoundMono = 0x1020;
   private const ushort ChunkSoundStereo = 0x1021;
@@ -51,18 +87,30 @@ public sealed class RoqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private const ushort ChunkCodebook = 0x1002;
   private const ushort ChunkVqFrame = 0x1011;
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password)
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable: WAV → RoQ sound chunk ────────────────────────────────
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
 
     var full = fileList.FirstOrDefault(f =>
@@ -104,11 +152,20 @@ public sealed class RoqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
-  public long? MaxTotalArchiveSize => null;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "RoQ archive accepts: FULL.roq or a mono/stereo 16-bit WAV (encoded to RoQ DPCM)";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name is "full.roq" or "metadata.ini" || name.EndsWith(".wav")) {
       reason = null;

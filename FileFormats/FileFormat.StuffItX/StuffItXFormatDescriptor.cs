@@ -17,15 +17,24 @@ namespace FileFormat.StuffItX;
 /// </summary>
 public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "StuffIt X writer only embeds a single opaque payload; rebuilding from extracted entries " +
       "would not match the original on-disk structure.");
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new StuffItXReader(archive);
     foreach (var e in r.Entries) {
@@ -34,22 +43,58 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
-  public string Id => "StuffItX";
-  public string DisplayName => "StuffIt X";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "StuffItX";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "StuffIt X";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".sitx";
-  public IReadOnlyList<string> Extensions => [".sitx"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".sitx";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".sitx"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("StuffIt"u8.ToArray(), Confidence: 0.90)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("sitx", "StuffIt X")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("sitx", "StuffIt X")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "StuffIt X archive (Aladdin/Smith Micro). Read-only modify by writer scope: " +
     "our StuffItXWriter emits the documented `StuffIt!` magic + header pointer + " +
     "a single embedded opaque payload at the catalog offset; the proprietary " +
@@ -59,13 +104,19 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     "of every later element. This descriptor advertises CanCreate (single-payload " +
     "embed only) but does not implement IArchiveModifiable.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new StuffItXReader(stream, leaveOpen: true);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.OriginalSize,
       e.CompressedSize, e.Method, e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new StuffItXReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -104,7 +155,10 @@ public sealed class StuffItXFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return ms.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     byte[]? embedded = null;
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;

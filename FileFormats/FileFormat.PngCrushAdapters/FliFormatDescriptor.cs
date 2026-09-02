@@ -16,26 +16,68 @@ namespace FileFormat.PngCrushAdapters;
 /// </list>
 /// </summary>
 public sealed class FliFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  public string Id => "Fli";
-  public string DisplayName => "FLI/FLC (Autodesk animation)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Fli";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "FLI/FLC (Autodesk animation)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".fli";
-  public IReadOnlyList<string> Extensions => [".fli", ".flc"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".fli";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".fli", ".flc"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // FLI/FLC magic lives at offset 4 (frame size at offset 0 first); extension routing covers detection.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Autodesk Animator FLI/FLC; each frame is one image.";
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Autodesk Animator FLI/FLC; each frame is one image.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     MultiImageArchiveHelper.List(stream, "frame", ReadAll);
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     MultiImageArchiveHelper.Extract(stream, outputDir, files, "frame", ReadAll);
 
   private static IReadOnlyList<RawImage> ReadAll(Stream s) =>

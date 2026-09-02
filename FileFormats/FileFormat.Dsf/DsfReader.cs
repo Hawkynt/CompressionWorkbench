@@ -23,7 +23,10 @@ namespace FileFormat.Dsf;
 /// </summary>
 public sealed class DsfReader {
 
-  public sealed record ParsedDsf(
+    /// <summary>
+  /// Represents a parsed dsf.
+  /// </summary>
+public sealed record ParsedDsf(
     int ChannelType,
     int ChannelNum,
     int SampleRate,
@@ -33,7 +36,10 @@ public sealed class DsfReader {
     byte[][] ChannelDsd,
     byte[]? Id3);
 
-  public ParsedDsf Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedDsf Read(ReadOnlySpan<byte> data) {
     if (data.Length < 28 || !data[..4].SequenceEqual("DSD "u8))
       throw new InvalidDataException("Missing 'DSD ' magic.");
 

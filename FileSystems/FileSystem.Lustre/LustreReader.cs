@@ -53,10 +53,22 @@ public sealed class LustreReader : IDisposable {
   /// </summary>
   private MemoryStream? _extStream;
 
-  public IReadOnlyList<LustreEntry> Entries => _entries;
-  public string Tag { get; private set; } = "";
-  public uint TrailingWord { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<LustreEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the tag.
+  /// </summary>
+public string Tag { get; private set; } = "";
+    /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
+public uint TrailingWord { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
   /// <summary>True if the input was identified as an ldiskfs (ext4) image and delegated to <see cref="ExtReader"/>.</summary>
   public bool IsLdiskfs { get; private set; }
@@ -64,7 +76,10 @@ public sealed class LustreReader : IDisposable {
   /// <summary>Volume label parsed from the ldiskfs superblock (offset 1024+120, 16 bytes), or empty if not ldiskfs / unset.</summary>
   public string LdiskfsVolumeLabel { get; private set; } = "";
 
-  public LustreReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="LustreReader"/>.
+  /// </summary>
+public LustreReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -185,12 +200,18 @@ public sealed class LustreReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(LustreEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(LustreEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     _extReader?.Dispose();
     _extStream?.Dispose();
     _extStream = null;

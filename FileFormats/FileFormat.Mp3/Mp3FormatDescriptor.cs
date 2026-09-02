@@ -22,38 +22,92 @@ namespace FileFormat.Mp3;
 /// </summary>
 public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable, IArchiveDefragmentable, IFileInternalLayoutMap, IFileInternalChunkMover {
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "MP3 is a single-blob audio file (ID3 tags + MPEG frames) — defragmentation isn't meaningful; use Mp3Optimizer instead.");
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
-  public string Id => "Mp3";
-  public string DisplayName => "MP3 (MPEG audio)";
-  public FormatCategory Category => FormatCategory.Audio;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Mp3";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MP3 (MPEG audio)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Audio;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mp3";
-  public IReadOnlyList<string> Extensions => [".mp3", ".mp2"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".mp3";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".mp3", ".mp2"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("ID3"u8.ToArray(), Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "MP3 audio; ID3v1/v2 surfaced as metadata.ini + cover.*";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "MP3 audio; ID3v1/v2 surfaced as metadata.ini + cover.*";
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => Mp3LayoutMap.Enumerate(file);
+    /// <summary>
+  /// Enumerates the chunks.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) => Mp3LayoutMap.Enumerate(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => Mp3Optimizer.Optimize(file);
+    /// <summary>
+  /// Performs the optimize operation.
+  /// </summary>
+public void Optimize(Stream file) => Mp3Optimizer.Optimize(file);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
+    /// <summary>
+  /// Performs the optimize operation.
+  /// </summary>
+public void Optimize(Stream file, MetadataPlacementProfile? profile) => Mp3Optimizer.Optimize(file, profile);
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
@@ -62,7 +116,10 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -70,7 +127,10 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);
@@ -317,7 +377,10 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveCreatable: assemble MP3 from dropped metadata.ini / cover.* / FULL.mp3 ─────
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     byte[]? fullAudioPayload = null;
     byte[]? coverBytes = null;
     var textFrames = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -387,11 +450,20 @@ public sealed class Mp3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────
 
-  public long? MaxTotalArchiveSize => null;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "MP3 archive accepts: metadata.ini, cover.jpg/png/gif/webp, lyrics.txt, FULL.mp3";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = System.IO.Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     var dir = System.IO.Path.GetDirectoryName(input.ArchiveName)?.Replace('\\', '/').ToLowerInvariant() ?? "";
 

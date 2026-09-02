@@ -15,8 +15,14 @@ public sealed class PackDiskReader : IDisposable {
   private readonly List<PackDiskEntry> _entries = [];
   private string _format;
 
-  public IReadOnlyList<PackDiskEntry> Entries => _entries;
-  public string Format => _format;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<PackDiskEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the format.
+  /// </summary>
+public string Format => _format;
 
   // Known magics
   private static readonly Dictionary<string, string> KnownMagics = new() {
@@ -30,7 +36,10 @@ public sealed class PackDiskReader : IDisposable {
 
   private const int TrackSize = 11 * 512; // Amiga DD
 
-  public PackDiskReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="PackDiskReader"/>.
+  /// </summary>
+public PackDiskReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -86,7 +95,10 @@ public sealed class PackDiskReader : IDisposable {
     }
   }
 
-  public byte[] Extract(PackDiskEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(PackDiskEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
       throw new InvalidDataException("PackDisk: data extends beyond file.");
@@ -96,5 +108,8 @@ public sealed class PackDiskReader : IDisposable {
     return _data.AsSpan(entry.Offset, (int)entry.CompressedSize).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

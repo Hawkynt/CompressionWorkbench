@@ -150,12 +150,10 @@ public static class Nmea0183ChecksumSizeExtensions {
 /// Provides supported checksum-output size metadata for <see cref="Crc"/>.
 /// </summary>
 public static class CrcChecksumSizeExtensions {
-  extension(Crc) {
-    /// <summary>
-    /// Gets the supported checksum-output sizes, in bits.
-    /// </summary>
-    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64;
-  }
+  /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64;
 }
 /// <summary>
 /// Provides supported checksum-output size metadata for <see cref="Crc128"/>.

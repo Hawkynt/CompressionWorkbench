@@ -49,8 +49,14 @@ public static class XaAdpcmCodec {
 
   /// <summary>Per-channel predictor state carried across sound units.</summary>
   public struct History {
-    public int H1;
-    public int H2;
+        /// <summary>
+    /// Provides the h 1 value.
+    /// </summary>
+public int H1;
+        /// <summary>
+    /// Provides the h 2 value.
+    /// </summary>
+public int H2;
   }
 
   /// <summary>

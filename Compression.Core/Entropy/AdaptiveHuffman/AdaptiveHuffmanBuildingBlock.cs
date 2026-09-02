@@ -13,16 +13,31 @@ namespace Compression.Core.Entropy.AdaptiveHuffman;
 /// </summary>
 public sealed class AdaptiveHuffmanBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_AdaptiveHuffman";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_AdaptiveHuffman";
   /// <inheritdoc/>
-  public string DisplayName => "Adaptive Huffman (FGK)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Adaptive Huffman (FGK)";
   /// <inheritdoc/>
-  public string Description => "Faller-Gallager-Knuth dynamic Huffman coding — the code tree adapts per symbol, no table is transmitted";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Faller-Gallager-Knuth dynamic Huffman coding — the code tree adapts per symbol, no table is transmitted";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     Span<byte> header = stackalloc byte[4];
@@ -42,7 +57,10 @@ public sealed class AdaptiveHuffmanBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

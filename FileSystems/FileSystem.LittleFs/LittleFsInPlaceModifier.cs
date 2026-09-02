@@ -35,7 +35,10 @@ namespace FileSystem.LittleFs;
 /// </summary>
 public static class LittleFsInPlaceModifier {
 
-  public static void Add(Stream image, IReadOnlyList<Compression.Registry.ArchiveInputInfo> inputs) {
+    /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
+public static void Add(Stream image, IReadOnlyList<Compression.Registry.ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(inputs);
     EnsureRwSeek(image);
@@ -56,7 +59,10 @@ public static class LittleFsInPlaceModifier {
     WriteBack(image, img, blockSize, files);
   }
 
-  public static void Replace(Stream image, string name, byte[] newData) {
+    /// <summary>
+  /// Performs the replace operation.
+  /// </summary>
+public static void Replace(Stream image, string name, byte[] newData) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(newData);
@@ -71,7 +77,10 @@ public static class LittleFsInPlaceModifier {
     WriteBack(image, img, blockSize, files);
   }
 
-  public static void Remove(Stream image, string[] entryNames) {
+    /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
+public static void Remove(Stream image, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(entryNames);
     EnsureRwSeek(image);

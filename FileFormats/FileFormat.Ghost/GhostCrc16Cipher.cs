@@ -33,7 +33,10 @@ public sealed class GhostCrc16Cipher {
   private static ushort Update(ushort crc, byte b)
     => (ushort)((crc >> 8) ^ Table[(crc ^ b) & 0xFF]);
 
-  public GhostCrc16Cipher(string password) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="GhostCrc16Cipher"/>.
+  /// </summary>
+public GhostCrc16Cipher(string password) {
     if (string.IsNullOrEmpty(password))
       throw new ArgumentException("Ghost: encrypted images require a non-empty password.", nameof(password));
     this._state = 0xFFFF;

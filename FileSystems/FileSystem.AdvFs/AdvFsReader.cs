@@ -55,9 +55,18 @@ public sealed class AdvFsReader {
     0x00, 0x00, 0x00, 0x00,
   ];
 
-  public bool Valid { get; private set; }
-  public string ParseStatus { get; private set; } = "unparsed";
-  public byte[] HeaderRaw { get; private set; } = [];
+    /// <summary>
+  /// Gets a value indicating whether valid.
+  /// </summary>
+public bool Valid { get; private set; }
+    /// <summary>
+  /// Gets or sets the parse status.
+  /// </summary>
+public string ParseStatus { get; private set; } = "unparsed";
+    /// <summary>
+  /// Gets or sets the header raw.
+  /// </summary>
+public byte[] HeaderRaw { get; private set; } = [];
 
   /// <summary>
   /// Raw image bytes — kept so the descriptor can resolve <see cref="AdvFsEntry.Offset"/>
@@ -84,7 +93,10 @@ public sealed class AdvFsReader {
   /// <summary>Optional textual volume tag captured from the RBMT page.</summary>
   public string VolumeTag { get; private set; } = "";
 
-  public List<AdvFsEntry> Entries { get; } = new();
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public List<AdvFsEntry> Entries { get; } = new();
 
   /// <summary>
   /// Random-access view over the source, kept when it is seekable. The buffered
@@ -92,7 +104,10 @@ public sealed class AdvFsReader {
   /// </summary>
   private readonly ImageAccessor? _source;
 
-  public AdvFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AdvFsReader"/>.
+  /// </summary>
+public AdvFsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) {
       stream.Position = 0;

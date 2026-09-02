@@ -4,6 +4,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private Decoder_State m_DecoderState = new Decoder_State();

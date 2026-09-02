@@ -21,14 +21,20 @@ namespace FileFormat.Pvf;
 /// </summary>
 public sealed class PvfReader {
 
-  public sealed record ParsedPvf(
+    /// <summary>
+  /// Represents a parsed pvf.
+  /// </summary>
+public sealed record ParsedPvf(
     bool Ascii,
     int NumChannels,
     int SampleRate,
     int Bits,
     int[] Samples);
 
-  public ParsedPvf Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedPvf Read(ReadOnlySpan<byte> data) {
     if (data.Length < 5 || data[0] != 'P' || data[1] != 'V' || data[2] != 'F')
       throw new InvalidDataException("Missing PVF magic.");
 

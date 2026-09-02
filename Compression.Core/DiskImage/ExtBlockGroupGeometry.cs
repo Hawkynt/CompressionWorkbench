@@ -97,7 +97,10 @@ public static class ExtBlockGroupGeometry {
     _ => 65536,
   };
 
-  public static int ChooseInodeCount(int needed) {
+    /// <summary>
+  /// Performs the choose inode count operation.
+  /// </summary>
+public static int ChooseInodeCount(int needed) {
     var withHeadroom = Math.Max(128, needed + needed / 10 + 16);
     return withHeadroom + 7 & ~7;
   }

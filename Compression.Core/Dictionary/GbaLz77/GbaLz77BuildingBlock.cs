@@ -54,17 +54,29 @@ namespace Compression.Core.Dictionary.GbaLz77;
 public sealed class GbaLz77BuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  public string Id => "BB_GbaLz77";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_GbaLz77";
 
   /// <inheritdoc/>
-  public string DisplayName => "Nintendo GBA/NDS LZ77 (type 0x10)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Nintendo GBA/NDS LZ77 (type 0x10)";
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "GBA/NDS BIOS LZSS (SWI 0x11) — flag-byte literals plus 4-bit length / 12-bit distance back-references";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <summary>Header type identifier for the LZ77 variant decoded by SWI 0x11.</summary>
   private const byte TypeId = 0x10;
@@ -85,7 +97,10 @@ public sealed class GbaLz77BuildingBlock : IBuildingBlock {
   private const int HashBits = 16;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     if (data.Length == 0) return [];
     if (data.Length > MaxDecompressedSize)
       throw new ArgumentOutOfRangeException(
@@ -131,7 +146,10 @@ public sealed class GbaLz77BuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length == 0) return [];
     if (data.Length < 4)
       throw new InvalidDataException("GBA LZ77: input is shorter than the 4-byte header.");

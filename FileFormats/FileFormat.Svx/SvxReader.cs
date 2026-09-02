@@ -22,14 +22,32 @@ namespace FileFormat.Svx;
 /// </summary>
 public sealed class SvxReader {
 
-  public const int CompressionNone = 0;
-  public const int CompressionFibonacci = 1;
+    /// <summary>
+  /// Defines the compression none constant value.
+  /// </summary>
+public const int CompressionNone = 0;
+    /// <summary>
+  /// Defines the compression fibonacci constant value.
+  /// </summary>
+public const int CompressionFibonacci = 1;
 
-  public const int ChannelLeft = 2;
-  public const int ChannelRight = 4;
-  public const int ChannelStereo = 6;
+    /// <summary>
+  /// Defines the channel left constant value.
+  /// </summary>
+public const int ChannelLeft = 2;
+    /// <summary>
+  /// Defines the channel right constant value.
+  /// </summary>
+public const int ChannelRight = 4;
+    /// <summary>
+  /// Defines the channel stereo constant value.
+  /// </summary>
+public const int ChannelStereo = 6;
 
-  public sealed record ParsedSvx(
+    /// <summary>
+  /// Represents a parsed svx.
+  /// </summary>
+public sealed record ParsedSvx(
     uint OneShotHiSamples,
     uint RepeatHiSamples,
     uint SamplesPerHiCycle,
@@ -40,7 +58,10 @@ public sealed class SvxReader {
     byte[] Body,
     IReadOnlyList<(string Id, string Text)> Tags);
 
-  public ParsedSvx Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedSvx Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("8SVX too short for FORM header.");
     if (data[0] != 'F' || data[1] != 'O' || data[2] != 'R' || data[3] != 'M')

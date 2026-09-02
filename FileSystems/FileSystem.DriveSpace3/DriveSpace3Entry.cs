@@ -7,9 +7,18 @@ namespace FileSystem.DriveSpace3;
 /// chain.
 /// </summary>
 public sealed class DriveSpace3Entry {
-  public string Name { get; init; } = "";
-  public long Size { get; init; }
-  public bool IsDirectory { get; init; }
+    /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
+public string Name { get; init; } = "";
+    /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
+public long Size { get; init; }
+    /// <summary>
+  /// Gets a value indicating whether is directory.
+  /// </summary>
+public bool IsDirectory { get; init; }
   internal int StartCluster { get; init; }
   internal int SectorCount { get; init; }
 }

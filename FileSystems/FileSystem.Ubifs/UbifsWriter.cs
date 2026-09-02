@@ -102,7 +102,10 @@ public sealed class UbifsWriter {
   private readonly int _lebSize;
   private ulong _sqnum;
 
-  public UbifsWriter(int lebSize = DefaultLebSize) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="UbifsWriter"/>.
+  /// </summary>
+public UbifsWriter(int lebSize = DefaultLebSize) {
     if (lebSize < BlockSize || (lebSize & (lebSize - 1)) != 0)
       throw new ArgumentException("LEB size must be a power of two >= 4096.", nameof(lebSize));
     this._lebSize = lebSize;

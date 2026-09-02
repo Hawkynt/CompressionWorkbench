@@ -26,7 +26,10 @@ namespace CompressionWorkbench.FileFormat.Ani;
 /// </remarks>
 public sealed class AniReader {
 
-  public sealed record AnimationHeader(
+    /// <summary>
+  /// Represents an animation header.
+  /// </summary>
+public sealed record AnimationHeader(
     uint CbSize,
     uint NumFrames,
     uint NumSteps,
@@ -38,7 +41,10 @@ public sealed class AniReader {
     uint Flags
   );
 
-  public sealed record AniFile(
+    /// <summary>
+  /// Represents an ani file.
+  /// </summary>
+public sealed record AniFile(
     AnimationHeader Header,
     IReadOnlyList<byte[]> Frames,       // each element is the raw bytes of an ICO/CUR sub-file
     IReadOnlyList<uint> Rates,          // per-step duration overrides (jiffies); empty when the chunk is absent
@@ -47,7 +53,10 @@ public sealed class AniReader {
     string? Artist
   );
 
-  public static AniFile Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static AniFile Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12) throw new InvalidDataException("ANI: file shorter than RIFF header.");
     if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')
       throw new InvalidDataException("ANI: missing RIFF header.");

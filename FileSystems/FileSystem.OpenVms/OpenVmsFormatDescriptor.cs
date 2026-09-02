@@ -52,17 +52,41 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FilesystemSchemaPresets.VolumeLabel(maxChars: 12),
   ];
 
-  public string Id => "OpenVms";
-  public string DisplayName => "OpenVMS Files-11";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "OpenVms";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "OpenVMS Files-11";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".ods2";
-  public IReadOnlyList<string> Extensions => [".ods2", ".ods5", ".vmsdisk"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ods2";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ods2", ".ods5", ".vmsdisk"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "DECFILE11A " ASCII at offset 0x1E8 (488) inside the home block which itself
     // sits at logical block 1 (offset 512) → absolute file offset 1000 (0x3E8).
     // Confidence raised from 0.7 → 0.85 so the FilesystemCarver's MinConfidence
@@ -73,17 +97,32 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("DECFILE11A "u8.ToArray(), Offset: 1000, Confidence: 0.85),
     new("DECFILE11B "u8.ToArray(), Offset: 1000, Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "DEC/VMS Files-11 (ODS-2) — clean-room writer + reader + in-place Add/Remove/Replace " +
     "modifier sharing the workbench-layout geometry (BITMAP.SYS, INDEXF.SYS, 000000.DIR at fixed " +
     "LBNs). Honest scope: emitted volumes are not OpenVMS-mountable — home-block " +
     "HM2$W_CHECKSUM1/CHECKSUM2, FH FILECHAR/RECATTR bundles, and ODS-2 variable-length " +
     "directory records remain deferred.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     OpenVmsVolume? volume = null;
     try {
@@ -124,7 +163,10 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     OpenVmsVolume? volume = null;
     try {
       volume = new OpenVmsVolume(stream);
@@ -377,7 +419,10 @@ public sealed class OpenVmsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
   /// <inheritdoc />
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

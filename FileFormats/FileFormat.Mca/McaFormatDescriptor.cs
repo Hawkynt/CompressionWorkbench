@@ -15,24 +15,63 @@ namespace FileFormat.Mca;
 /// </list>
 /// </summary>
 public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  public string Id => "Mca";
-  public string DisplayName => "MCA (Minecraft region)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Mca";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MCA (Minecraft region)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mca";
-  public IReadOnlyList<string> Extensions => [".mca", ".mcr"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".mca";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".mca", ".mcr"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // No stable byte-magic — the file starts with a raw location table that could be
   // almost anything. Resolved by extension only.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate/Gzip")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Minecraft region: per-chunk NBT payloads addressable by (X,Z) coordinate.";
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate/Gzip")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Minecraft region: per-chunk NBT payloads addressable by (X,Z) coordinate.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = OpenReader(stream);
     var entries = new List<ArchiveEntryInfo>(reader.Chunks.Count);
     for (var i = 0; i < reader.Chunks.Count; ++i) {
@@ -50,7 +89,10 @@ public sealed class McaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var reader = OpenReader(stream);
     foreach (var c in reader.Chunks) {
       var name = $"chunk_{c.RegionX}_{c.RegionZ}.nbt";

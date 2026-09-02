@@ -16,20 +16,59 @@ namespace FileFormat.ExePackers;
 /// clear, so reading it back off the stub reverses the encryption exactly.
 /// </remarks>
 public enum YodaByteOpKind {
-  AddImmediate,
-  SubtractImmediate,
-  XorImmediate,
-  AddCounter,
-  SubtractCounter,
-  XorCounter,
-  RotateLeft,
-  RotateRight,
-  Increment,
-  Decrement,
-  Not,
-  Negate,
+    /// <summary>
+  /// Specifies the add immediate option.
+  /// </summary>
+AddImmediate,
+    /// <summary>
+  /// Specifies the subtract immediate option.
+  /// </summary>
+SubtractImmediate,
+    /// <summary>
+  /// Specifies the xor immediate option.
+  /// </summary>
+XorImmediate,
+    /// <summary>
+  /// Specifies the add counter option.
+  /// </summary>
+AddCounter,
+    /// <summary>
+  /// Specifies the subtract counter option.
+  /// </summary>
+SubtractCounter,
+    /// <summary>
+  /// Specifies the xor counter option.
+  /// </summary>
+XorCounter,
+    /// <summary>
+  /// Specifies the rotate left option.
+  /// </summary>
+RotateLeft,
+    /// <summary>
+  /// Specifies the rotate right option.
+  /// </summary>
+RotateRight,
+    /// <summary>
+  /// Specifies the increment option.
+  /// </summary>
+Increment,
+    /// <summary>
+  /// Specifies the decrement option.
+  /// </summary>
+Decrement,
+    /// <summary>
+  /// Specifies the not option.
+  /// </summary>
+Not,
+    /// <summary>
+  /// Specifies the negate option.
+  /// </summary>
+Negate,
 }
 
+/// <summary>
+/// Represents a yoda byte op.
+/// </summary>
 public readonly record struct YodaByteOp(YodaByteOpKind Kind, byte Operand);
 
 /// <summary>What <see cref="YodaCrypterStub"/> recovered from a packed image.</summary>
@@ -73,7 +112,10 @@ public static class YodaCrypterStub {
   /// <summary>Longest junk gap a polymorphic short jump is allowed to skip over.</summary>
   private const int _MAX_JUNK_JUMP = 0x20;
 
-  public static bool TryUnpack(ReadOnlySpan<byte> image, out YodaCrypterStubInfo? info) {
+    /// <summary>
+  /// Performs the try unpack operation.
+  /// </summary>
+public static bool TryUnpack(ReadOnlySpan<byte> image, out YodaCrypterStubInfo? info) {
     info = null;
     try {
       info = Unpack(image);

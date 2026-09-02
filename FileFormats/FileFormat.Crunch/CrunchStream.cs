@@ -41,7 +41,10 @@ public sealed class CrunchStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the decompress block operation.
+  /// </summary>
+protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (_finished) return 0;
 
     if (!_headerRead) {
@@ -62,12 +65,18 @@ public sealed class CrunchStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override void CompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the compress block operation.
+  /// </summary>
+protected override void CompressBlock(byte[] buffer, int offset, int count) {
     _compressBuffer!.Write(buffer, offset, count);
   }
 
   /// <inheritdoc />
-  protected override void FinishCompression() {
+    /// <summary>
+  /// Performs the finish compression operation.
+  /// </summary>
+protected override void FinishCompression() {
     var data = _compressBuffer!.ToArray();
 
     // Write magic

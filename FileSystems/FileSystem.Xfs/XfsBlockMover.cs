@@ -75,7 +75,10 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
 
   private long _firstDataByte;
 
-  public void Init(Stream image) {
+    /// <summary>
+  /// Performs the init operation.
+  /// </summary>
+public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < 512)
       throw new InvalidDataException("XFS image too small to contain a superblock.");
@@ -123,7 +126,10 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -141,7 +147,10 @@ public sealed class XfsBlockMover : IFilesystemBlockMover {
   /// BMBT_REC, and recomputes the inode's CRC-32C — total disk write is one
   /// inode-sized region (256 bytes on V5).
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_blockSize == 0)
       Init(image);
 

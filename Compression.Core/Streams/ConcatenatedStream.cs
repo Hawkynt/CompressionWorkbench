@@ -37,19 +37,34 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  public override bool CanRead => true;
+    /// <summary>
+  /// Gets a value indicating whether can read.
+  /// </summary>
+public override bool CanRead => true;
 
   /// <inheritdoc />
-  public override bool CanSeek => true;
+    /// <summary>
+  /// Gets a value indicating whether can seek.
+  /// </summary>
+public override bool CanSeek => true;
 
   /// <inheritdoc />
-  public override bool CanWrite => false;
+    /// <summary>
+  /// Gets a value indicating whether can write.
+  /// </summary>
+public override bool CanWrite => false;
 
   /// <inheritdoc />
-  public override long Length => this._totalLength;
+    /// <summary>
+  /// Gets the length.
+  /// </summary>
+public override long Length => this._totalLength;
 
   /// <inheritdoc />
-  public override long Position {
+    /// <summary>
+  /// Gets or sets the position.
+  /// </summary>
+public override long Position {
     get => this._position;
     set {
       if (value < 0 || value > this._totalLength)
@@ -60,7 +75,10 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  public override int Read(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     var totalRead = 0;
 
@@ -90,7 +108,10 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  public override long Seek(long offset, SeekOrigin origin) {
+    /// <summary>
+  /// Performs the seek operation.
+  /// </summary>
+public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => this._position + offset,
@@ -103,17 +124,29 @@ public sealed class ConcatenatedStream : Stream {
   }
 
   /// <inheritdoc />
-  public override void SetLength(long value) => throw new NotSupportedException();
+    /// <summary>
+  /// Sets the length.
+  /// </summary>
+public override void SetLength(long value) => throw new NotSupportedException();
 
   /// <inheritdoc />
-  public override void Write(byte[] buffer, int offset, int count) =>
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public override void Write(byte[] buffer, int offset, int count) =>
     throw new NotSupportedException();
 
   /// <inheritdoc />
-  public override void Flush() { }
+    /// <summary>
+  /// Performs the flush operation.
+  /// </summary>
+public override void Flush() { }
 
   /// <inheritdoc />
-  protected override void Dispose(bool disposing) {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+protected override void Dispose(bool disposing) {
     if (!this._disposed && disposing && !this._leaveOpen) {
       foreach (var seg in this._segments)
         seg.Dispose();

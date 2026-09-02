@@ -31,33 +31,78 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   ];
 
   // R/W write constraints — ReiserFS has no inherent ceiling; real mkfs.reiserfs minimum ≈ 128 MB.
-  public long? MaxTotalArchiveSize => null;
-  public long? MinTotalArchiveSize => 128L * 1024 * 1024;
-  public string AcceptedInputsDescription => "ReiserFS v3.6 filesystem image; full multi-leaf S+tree with nested directories and INDIRECT-item file bodies.";
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
+public long? MinTotalArchiveSize => 128L * 1024 * 1024;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription => "ReiserFS v3.6 filesystem image; full multi-leaf S+tree with nested directories and INDIRECT-item file bodies.";
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
-  public string Id => "ReiserFs";
-  public string DisplayName => "ReiserFS";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "ReiserFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ReiserFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
   // implementation re-packs the volume, so existing data may move — acceptable for
   // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
-  public string DefaultExtension => ".reiserfs";
-  public IReadOnlyList<string> Extensions => [".reiserfs"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".reiserfs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".reiserfs"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("ReIsErFs"u8.ToArray(), Offset: 65536 + 52, Confidence: 0.95),
     new("ReIsEr2Fs"u8.ToArray(), Offset: 65536 + 52, Confidence: 0.95),
     new("ReIsEr3Fs"u8.ToArray(), Offset: 65536 + 52, Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// ReiserFS v3.6 filesystem image — R/W. The writer emits a real
   /// spec-compliant multi-leaf S+tree image (superblock at +65536, R5-hashed
@@ -76,14 +121,20 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public string Description => "ReiserFS v3 filesystem image (R/W, full S+tree mutation via rebuild)";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ReiserFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new ReiserFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -131,7 +182,10 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ReiserFsWriter();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
     if (!string.IsNullOrEmpty(label))
@@ -177,7 +231,10 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     w.BuildToStreaming(output);
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -335,7 +392,10 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
     try {
@@ -429,7 +489,10 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
+public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     var extents = this.EnumerateExtents(image).ToList();
     if (extents.Count == 0) return 0;

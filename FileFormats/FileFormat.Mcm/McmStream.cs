@@ -2,6 +2,9 @@
 
 namespace FileFormat.Mcm;
 
+/// <summary>
+/// Represents a mcm stream.
+/// </summary>
 public static class McmStream {
   private static readonly byte[] Magic = "MCMARCHIVE"u8.ToArray();
 
@@ -29,7 +32,10 @@ public static class McmStream {
     return result;
   }
 
-  public static void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static void Compress(Stream input, Stream output) {
     // Read all input
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -60,7 +66,10 @@ public static class McmStream {
     output.Write(compressed);
   }
 
-  public static void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public static void Decompress(Stream input, Stream output) {
     // Read and verify magic
     byte[] magic = new byte[10];
     input.ReadExactly(magic);

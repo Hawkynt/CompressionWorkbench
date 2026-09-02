@@ -24,25 +24,64 @@ public sealed class RarcFormatDescriptor :
   IArchiveDefragmentable,
   IArchiveLayoutMap {
 
-  public string Id => "Rarc";
-  public string DisplayName => "Nintendo RARC";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Rarc";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Nintendo RARC";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".arc";
-  public IReadOnlyList<string> Extensions => [".arc", ".rarc"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".arc";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".arc", ".rarc"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("RARC"u8.ToArray(), Confidence: 0.99),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Nintendo Resource Archive (RARC) with directory nodes and 32-byte-aligned file data";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Nintendo Resource Archive (RARC) with directory nodes and 32-byte-aligned file data";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (stream.CanSeek)
       stream.Position = 0;
     var reader = new RarcReader(stream);
@@ -57,7 +96,10 @@ public sealed class RarcFormatDescriptor :
       LastModified: null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (stream.CanSeek)
       stream.Position = 0;
     var reader = new RarcReader(stream);
@@ -70,7 +112,10 @@ public sealed class RarcFormatDescriptor :
     }
   }
 
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
+public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     if (archive.CanSeek)
@@ -81,7 +126,10 @@ public sealed class RarcFormatDescriptor :
     return entry is null ? [] : reader.Extract(entry);
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     using var writer = new RarcWriter(output, leaveOpen: true);
@@ -92,7 +140,10 @@ public sealed class RarcFormatDescriptor :
     }
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.CanSeek)
       archive.Position = 0;
     var reader = new RarcReader(archive);

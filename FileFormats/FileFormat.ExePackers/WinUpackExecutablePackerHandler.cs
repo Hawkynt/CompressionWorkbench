@@ -6,18 +6,33 @@ using Compression.Core.ExecutableUnpacking;
 
 namespace FileFormat.ExePackers;
 
+/// <summary>
+/// Represents a win upack executable packer handler.
+/// </summary>
 public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
-  public string Id => "winupack";
-  public string DisplayName => "WinUpack / Upack packed PE";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "winupack";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "WinUpack / Upack packed PE";
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "WinUpack: not a valid PE.", true)]);
 
@@ -32,7 +47,10 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
     ]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -48,7 +66,10 @@ public sealed class WinUpackExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),

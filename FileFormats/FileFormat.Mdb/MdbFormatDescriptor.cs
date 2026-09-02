@@ -25,25 +25,64 @@ public sealed class MdbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // The version byte is at 0x14 and the pointer at 0x2C — 64 bytes is plenty.
   private const int HeadPeekSize = 64;
 
-  public string Id => "Mdb";
-  public string DisplayName => "Microsoft Access (Jet Red / ACCDB)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Mdb";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Microsoft Access (Jet Red / ACCDB)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mdb";
-  public IReadOnlyList<string> Extensions => [".mdb", ".accdb"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".mdb";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".mdb", ".accdb"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(JetSignature, Offset: 4, Confidence: 0.95),
     new(AceSignature, Offset: 4, Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft Access database (Jet Red 3/4, ACCDB) page-level surfacing";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Microsoft Access database (Jet Red 3/4, ACCDB) page-level surfacing";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var streamLen = stream.Length;
     var head = ReadHead(stream);
     var variant = FormatVariant(head);
@@ -71,7 +110,10 @@ public sealed class MdbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var streamLen = stream.Length;
     var head = ReadHead(stream);
     var variant = FormatVariant(head);

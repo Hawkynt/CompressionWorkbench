@@ -12,7 +12,10 @@ namespace FileSystem.Cpm;
 /// </summary>
 public sealed class CpmWriter {
 
-  public static byte[] Build(IReadOnlyList<(string Name, byte[] Data, byte UserCode)> files) {
+    /// <summary>
+  /// Performs the build operation.
+  /// </summary>
+public static byte[] Build(IReadOnlyList<(string Name, byte[] Data, byte UserCode)> files) {
     // Adapt the in-memory file list to the shared layout core: the streaming
     // size is the byte length and the data is copied directly (no sink).
     var adapted = files

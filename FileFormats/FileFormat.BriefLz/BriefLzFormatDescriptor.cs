@@ -3,21 +3,66 @@ using Compression.Registry;
 
 namespace FileFormat.BriefLz;
 
+/// <summary>
+/// Describes brief lz format.
+/// </summary>
 public sealed class BriefLzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
-  public string Id => "BriefLz";
-  public string DisplayName => "BriefLZ";
-  public FormatCategory Category => FormatCategory.Stream;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BriefLz";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BriefLZ";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Stream;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".blz";
-  public IReadOnlyList<string> Extensions => [".blz"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x62, 0x6C, 0x7A, 0x1A], Confidence: 0.90)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("brieflz", "BriefLZ")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
-  public string Description => "Compact LZ77 with optimal parsing option";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".blz";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".blz"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x62, 0x6C, 0x7A, 0x1A], Confidence: 0.90)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("brieflz", "BriefLZ")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Compact LZ77 with optimal parsing option";
 
-  public void Decompress(Stream input, Stream output) => BriefLzStream.Decompress(input, output);
-  public void Compress(Stream input, Stream output) => BriefLzStream.Compress(input, output);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Decompress(Stream input, Stream output) => BriefLzStream.Decompress(input, output);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output) => BriefLzStream.Compress(input, output);
 }

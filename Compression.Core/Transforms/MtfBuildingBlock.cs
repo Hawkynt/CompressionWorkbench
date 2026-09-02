@@ -7,19 +7,37 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class MtfBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Mtf";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Mtf";
   /// <inheritdoc/>
-  public string DisplayName => "MTF";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MTF";
   /// <inheritdoc/>
-  public string Description => "Move-to-Front Transform, converts repeated patterns to small values";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Move-to-Front Transform, converts repeated patterns to small values";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => MoveToFrontTransform.Encode(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => MoveToFrontTransform.Decode(data);
 }

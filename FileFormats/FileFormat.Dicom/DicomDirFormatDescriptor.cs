@@ -58,7 +58,10 @@ public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormat
     "DICOMDIR (DICOM Media Storage Directory). Surfaces referenced sibling files + hierarchy metadata.";
 
   /// <inheritdoc />
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var basePath = (stream as FileStream)?.Name;
     return this.BuildEntries(stream, basePath).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -68,7 +71,10 @@ public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var basePath = (stream as FileStream)?.Name;
     foreach (var e in this.BuildEntries(stream, basePath)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
@@ -78,7 +84,10 @@ public sealed class DicomDirFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var basePath = (input as FileStream)?.Name;
     foreach (var e in this.BuildEntries(input, basePath)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

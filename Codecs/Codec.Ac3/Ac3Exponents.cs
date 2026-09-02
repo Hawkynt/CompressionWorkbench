@@ -11,7 +11,19 @@ namespace Codec.Ac3;
 public static class Ac3Exponents {
 
   /// <summary>Exponent strategy codes (A/52 §5.4.2.4).</summary>
-  public enum Strategy { Reuse = 0, D15 = 1, D25 = 2, D45 = 3 }
+  public enum Strategy {   /// <summary>
+  /// Specifies the reuse option.
+  /// </summary>
+Reuse = 0,   /// <summary>
+  /// Specifies the d 15 option.
+  /// </summary>
+D15 = 1,   /// <summary>
+  /// Specifies the d 25 option.
+  /// </summary>
+D25 = 2,   /// <summary>
+  /// Specifies the d 45 option.
+  /// </summary>
+D45 = 3 }
 
   /// <summary>Mantissas-per-exponent group step for a strategy: D15→1, D25→2, D45→4.</summary>
   public static int GroupSize(Strategy s) => s switch {

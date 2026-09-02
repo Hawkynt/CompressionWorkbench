@@ -10,16 +10,31 @@ namespace Compression.Core.Entropy.Huffman;
 /// </summary>
 public sealed class HuffmanBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Huffman";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Huffman";
   /// <inheritdoc/>
-  public string DisplayName => "Huffman";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Huffman";
   /// <inheritdoc/>
-  public string Description => "Optimal prefix-free entropy coding using symbol frequencies";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Optimal prefix-free entropy coding using symbol frequencies";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     // Build frequency table
     var freqs = new long[256];
     foreach (var b in data)
@@ -59,7 +74,10 @@ public sealed class HuffmanBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     var codeLengths = new int[256];
     for (var i = 0; i < 256; i++)

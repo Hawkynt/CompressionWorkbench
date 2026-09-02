@@ -33,30 +33,69 @@ public sealed class EfsFormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
-  public string Id => "Efs";
-  public string DisplayName => "EFS (SGI Extent File System)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Efs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "EFS (SGI Extent File System)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".efs";
-  public IReadOnlyList<string> Extensions => [".efs", ".efsimg"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".efs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".efs", ".efsimg"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // fs_magic sits at 0x1C of the superblock, and the superblock is at block
     // 1 — block 0 is the SGI volume header. Both positions are listed because
     // this project wrote the older, wrong one for a while.
     new([0x00, 0x07, 0x29, 0x59], Offset: 0x21C, Confidence: 0.85),
     new([0x00, 0x07, 0x29, 0x59], Offset: 0x18, Confidence: 0.60),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "SGI EFS (pre-XFS IRIX filesystem) — WORM writer + hierarchical reader.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "SGI EFS (pre-XFS IRIX filesystem) — WORM writer + hierarchical reader.";
 
   // ── Options schema ──────────────────────────────────────────────────────
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512", AllowedValues: ["512"],
       Description: "EFS basic-block size in bytes (always 512 per IRIX spec)."),
     new("CylinderGroupSize", "Cylinder group size (BB)", FormatOptionKind.Integer, "32",
@@ -64,7 +103,10 @@ public sealed class EfsFormatDescriptor :
     FilesystemSchemaPresets.VolumeLabel(6),
   ];
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new EfsReader(stream);
       return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -80,7 +122,10 @@ public sealed class EfsFormatDescriptor :
     }
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var r = new EfsReader(stream);
       foreach (var e in r.Entries) {
@@ -98,7 +143,10 @@ public sealed class EfsFormatDescriptor :
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new EfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
     foreach (var i in inputs) {
@@ -162,12 +210,21 @@ public sealed class EfsFormatDescriptor :
     return w.Build();
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => EfsExtentMap.Enumerate(image);
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => EfsExtentMap.Enumerate(image);
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
 
@@ -227,7 +284,10 @@ public sealed class EfsFormatDescriptor :
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
 
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
+public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     var size = image.Length;

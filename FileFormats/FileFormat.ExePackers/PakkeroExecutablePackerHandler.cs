@@ -44,15 +44,27 @@ public sealed class PakkeroExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>Shannon entropy, in bits per byte, above which the block is treated as random.</summary>
   private const double MinimumTrailingEntropy = 7.9;
 
-  public string Id => "pakkero";
-  public string DisplayName => "Pakkero ELF obfuscator (Go launcher, runtime-derived key)";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "pakkero";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Pakkero ELF obfuscator (Go launcher, runtime-derived key)";
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryDescribe(image, out _))
       return new(true, this.Id, 1.0, []);
     return new(false, this.Id, 0,
@@ -60,7 +72,10 @@ public sealed class PakkeroExecutablePackerHandler : IExecutablePackerHandler {
         "No Pakkero launcher shape (stripped or blank-named ELF64 with a large random trailing block) was found.", true)]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(this.Id, bytes, detection, info, this.Capabilities, new Dictionary<string, string> {
@@ -70,7 +85,10 @@ public sealed class PakkeroExecutablePackerHandler : IExecutablePackerHandler {
     });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [],

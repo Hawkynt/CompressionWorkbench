@@ -97,7 +97,10 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// </summary>
   public bool SupportsHeldRuns => true;
 
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -127,7 +130,10 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   ///   partially freed. fsck cleans up the orphan.</item>
   /// </list></para>
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var clusterCount = (int)((length + _clusterSize - 1) / _clusterSize);
     var oldFirstCluster = OffsetToCluster(oldOffset);
     var newFirstCluster = OffsetToCluster(newOffset);
@@ -179,7 +185,10 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
   /// <inheritdoc />
-  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+    /// <summary>
+  /// Performs the update metadata after move operation.
+  /// </summary>
+public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
     ArgumentNullException.ThrowIfNull(image);
@@ -480,7 +489,10 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   public int AllocationBlockSize => _clusterSize;
 
   /// <inheritdoc />
-  public bool SupportsScatteredRelink => true;
+    /// <summary>
+  /// Gets a value indicating whether supports scattered relink.
+  /// </summary>
+public bool SupportsScatteredRelink => true;
 
   /// <summary>
   /// The interface's shape of the relink below: the shared executor speaks in
@@ -508,7 +520,10 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
     this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, live);
   }
 
-  public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)
+    /// <summary>
+  /// Performs the update allocation scattered operation.
+  /// </summary>
+public void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<int> oldClusters, IReadOnlyList<int> newClusters)
     => this.UpdateAllocationScattered(image, fileName, oldClusters, newClusters, clustersLiveElsewhere: null);
 
   /// <summary>

@@ -11,12 +11,33 @@ public sealed class BsaReader {
   private readonly List<BsaEntry> _entries = [];
   private readonly BsaFormat _format;
 
-  public IReadOnlyList<BsaEntry> Entries => _entries;
-  public BsaFormat Format => _format;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<BsaEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the format.
+  /// </summary>
+public BsaFormat Format => _format;
 
-  public enum BsaFormat { Tes3, Tes4, Ba2 }
+    /// <summary>
+  /// Specifies bsa format values.
+  /// </summary>
+public enum BsaFormat { /// <summary>
+/// Specifies the tes 3 option.
+/// </summary>
+Tes3, /// <summary>
+/// Specifies the tes 4 option.
+/// </summary>
+Tes4, /// <summary>
+/// Specifies the ba 2 option.
+/// </summary>
+Ba2 }
 
-  public BsaReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="BsaReader"/>.
+  /// </summary>
+public BsaReader(Stream stream) {
     _stream = stream;
     using var br = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
     var magic = br.ReadUInt32();

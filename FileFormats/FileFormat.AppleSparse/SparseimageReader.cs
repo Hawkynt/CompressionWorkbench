@@ -172,7 +172,10 @@ public sealed class SparseimageReader : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._leaveOpen)
       this._stream.Dispose();
   }

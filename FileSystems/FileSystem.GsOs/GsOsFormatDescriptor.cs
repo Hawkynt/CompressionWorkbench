@@ -31,32 +31,71 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // lossy result. ProDOS-ordered payloads round-trip via the inner ProDOS walk;
   // HFS / DOS-3.3 payloads fail the rebuild verification and leave the image
   // untouched (defrag throws cleanly, shrink copies through unchanged).
-  public string Id => "GsOs";
-  public string DisplayName => "Apple IIgs GS/OS (2IMG)";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "GsOs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Apple IIgs GS/OS (2IMG)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   // R/W: Add/Remove edit the inner ProDOS volume in place via ProDosModifier
   // (2IMG header + untouched blocks preserved; image length unchanged), with a
   // verified rebuild only as a structural-edge-case fallback. See FormatCapabilities.cs.
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // .2mg is owned by FileSystem.ProDos; we register the GS/OS-specific
   // .gsdos extension only to avoid extension routing conflicts.
-  public string DefaultExtension => ".gsdos";
-  public IReadOnlyList<string> Extensions => [".gsdos"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".gsdos";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".gsdos"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // Magic intentionally omitted: ProDos already advertises "2IMG"@0, and
   // we don't want detector first-match to fight over the same bytes.
   // Routing to GS/OS is by extension; the reader still parses the 2IMG header.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Apple IIgs GS/OS 2IMG — 64-byte 2IMG header + ProDOS-ordered payload (HFS/DOS-3.3 payloads listed read-only).";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new GsOsReader(stream);
     // Walk the inner ProDOS volume so callers see the real per-file
     // entries instead of one opaque blob.
@@ -67,7 +106,10 @@ public sealed class GsOsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (TryExtractInnerProDos(stream, outputDir, files))
       return;
     using var r = new GsOsReader(stream);

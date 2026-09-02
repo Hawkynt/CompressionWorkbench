@@ -40,7 +40,10 @@ namespace FileFormat.Esd;
 public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     if (archive.Length < WimConstants.HeaderSize)
       yield break;
     yield return new DefragBlockInfo(0, WimConstants.HeaderSize, DefragBlockKind.MetadataReserved, FileName: "ESD/WIM Header");
@@ -60,51 +63,90 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  public string Id => "Esd";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Esd";
 
   /// <inheritdoc/>
-  public string DisplayName => "ESD";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ESD";
 
   /// <inheritdoc/>
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
   /// <inheritdoc/>
-  public string DefaultExtension => ".esd";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".esd";
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> Extensions => [".esd"];
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".esd"];
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
   /// <remarks>
   /// Empty: ESD shares the WIM <c>"MSWIM\0\0\0"</c> magic. Detection is by
   /// extension to avoid first-match conflicts with the WIM descriptor.
   /// </remarks>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM/ESD")];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("wim", "WIM/ESD")];
 
   /// <inheritdoc/>
-  public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Microsoft Electronic Software Download — encrypted-LZMS WIM variant used by " +
     "Windows Update for OS install images.";
 
   /// <inheritdoc/>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = this.BuildEntries(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(
       Index: i,
@@ -146,7 +188,10 @@ public sealed class EsdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in this.BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
         continue;

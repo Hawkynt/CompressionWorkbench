@@ -134,7 +134,10 @@ public sealed class XfsWriter {
   // BuildToStreaming's second pass post-fills it in <=64 KB chunks. XFS file
   // data carries no CRC, so streaming it does not invalidate any checksum.
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((NormalizeName(name), data, null, null));
@@ -255,7 +258,10 @@ public sealed class XfsWriter {
   private long _totalBytes;
   private readonly DeferredPayloads _filePayloads = new();
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
     var prefix = this.BuildImage();
     var basePosition = output.CanSeek ? output.Position : 0;

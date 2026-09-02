@@ -16,7 +16,10 @@ namespace FileFormat.Sphere;
 /// <c>pcm,embedded-shorten-…</c>).</para>
 /// </summary>
 public sealed class SphereReader {
-  public sealed record ParsedSphere(
+    /// <summary>
+  /// Represents a parsed sphere.
+  /// </summary>
+public sealed record ParsedSphere(
     int ChannelCount,
     int SampleRate,
     int SampleNBytes,
@@ -25,7 +28,10 @@ public sealed class SphereReader {
     byte[] SampleData,
     IReadOnlyList<(string Name, string Value)> Fields);
 
-  public ParsedSphere Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedSphere Read(ReadOnlySpan<byte> data) {
     if (data.Length < 16 || !data[..7].SequenceEqual("NIST_1A"u8))
       throw new InvalidDataException("Missing NIST_1A SPHERE magic.");
 

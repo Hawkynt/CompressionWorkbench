@@ -62,16 +62,28 @@ public sealed class Qnx6Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Qnx6Entry> _entries = [];
 
-  public IReadOnlyList<Qnx6Entry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Qnx6Entry> Entries => this._entries;
 
-  public uint Magic { get; private set; }
-  public int BlockSize { get; private set; } = 1024;
+    /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
+public uint Magic { get; private set; }
+    /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
+public int BlockSize { get; private set; } = 1024;
 
   internal const uint MagicQnx6 = 0x68191122;
   internal const int SuperblockOffset = 0x2000;
   internal const int InodeSize = 128;
 
-  public Qnx6Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Qnx6Reader"/>.
+  /// </summary>
+public Qnx6Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     this._data = new ImageAccessor(stream, leaveOpen: true);
@@ -199,7 +211,10 @@ public sealed class Qnx6Reader : IDisposable {
     return pointer;
   }
 
-  public byte[] Extract(Qnx6Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Qnx6Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var sb = this._data.Read(SuperblockOffset, 512).AsSpan();
@@ -216,5 +231,8 @@ public sealed class Qnx6Reader : IDisposable {
     return this._data.Read(blockOff, take).AsSpan().ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

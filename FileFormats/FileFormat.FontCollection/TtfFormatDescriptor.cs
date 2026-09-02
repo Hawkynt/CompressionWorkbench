@@ -18,25 +18,64 @@ namespace FileFormat.FontCollection;
 /// </list>
 /// </summary>
 public sealed class TtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  public string Id => "Ttf";
-  public string DisplayName => "TTF (TrueType font — glyphs)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ttf";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "TTF (TrueType font — glyphs)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".ttf";
-  public IReadOnlyList<string> Extensions => [".ttf"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ttf";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ttf"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x01, 0x00, 0x00], Confidence: 0.50),
     new("true"u8.ToArray(), Confidence: 0.60),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "TrueType font; FULL + metadata + per-glyph SVG.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "TrueType font; FULL + metadata + per-glyph SVG.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(Read(stream), defaultExt: ".ttf");
     return entries.Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.EntryName,
@@ -45,7 +84,10 @@ public sealed class TtfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       LastModified: null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var entry in BuildEntries(Read(stream), defaultExt: ".ttf")) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(entry.EntryName, files))
         continue;

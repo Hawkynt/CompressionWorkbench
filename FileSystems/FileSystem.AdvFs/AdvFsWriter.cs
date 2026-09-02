@@ -59,7 +59,10 @@ public sealed class AdvFsWriter : IDisposable {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
   private string _volumeTag = "";
 
-  public AdvFsWriter(Stream output, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AdvFsWriter"/>.
+  /// </summary>
+public AdvFsWriter(Stream output, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(output);
     this._output = output;
     this._leaveOpen = leaveOpen;
@@ -248,7 +251,10 @@ public sealed class AdvFsWriter : IDisposable {
     return uuid;
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._leaveOpen) this._output.Dispose();
   }
 }

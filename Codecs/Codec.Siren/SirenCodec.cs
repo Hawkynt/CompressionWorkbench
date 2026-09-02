@@ -65,7 +65,10 @@ public static class SirenCodec {
     // libavcodec/siren.c: the four 16-bit get_dw registers, all initialised to 1.
     internal uint Dw1 = 1, Dw2 = 1, Dw3 = 1, Dw4 = 1;
 
-    public Decoder() {
+        /// <summary>
+    /// Initializes a new instance of <see cref="Decoder"/>.
+    /// </summary>
+public Decoder() {
       // siren_init: standard_deviation[i] = sqrt(10^((i-24)*0.3010299957)).
       for (var i = 0; i < 64; ++i) {
         var regionPower = Math.Pow(10, (i - 24) * 0.3010299957);

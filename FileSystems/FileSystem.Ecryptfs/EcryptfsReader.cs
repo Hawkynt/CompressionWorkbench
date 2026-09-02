@@ -29,18 +29,42 @@ public sealed class EcryptfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<EcryptfsEntry> _entries = [];
 
-  public IReadOnlyList<EcryptfsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<EcryptfsEntry> Entries => _entries;
 
-  public uint Marker { get; private set; }
-  public ulong DecryptedSize { get; private set; }
-  public uint Flags { get; private set; }
-  public uint ExtentSize { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets or sets the marker.
+  /// </summary>
+public uint Marker { get; private set; }
+    /// <summary>
+  /// Gets or sets the decrypted size.
+  /// </summary>
+public ulong DecryptedSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the flags.
+  /// </summary>
+public uint Flags { get; private set; }
+    /// <summary>
+  /// Gets or sets the extent size.
+  /// </summary>
+public uint ExtentSize { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
-  public const uint EcryptfsMarker = 0x3C81B7F5u;
+    /// <summary>
+  /// Defines the ecryptfs marker constant value.
+  /// </summary>
+public const uint EcryptfsMarker = 0x3C81B7F5u;
   private const int HeaderMinSize = 24;
 
-  public EcryptfsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="EcryptfsReader"/>.
+  /// </summary>
+public EcryptfsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -88,10 +112,16 @@ public sealed class EcryptfsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(EcryptfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(EcryptfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

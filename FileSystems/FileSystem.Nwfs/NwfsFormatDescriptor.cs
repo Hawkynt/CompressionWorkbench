@@ -37,15 +37,39 @@ namespace FileSystem.Nwfs;
 /// </list>
 /// </summary>
 public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  public string Id => "Nwfs";
-  public string DisplayName => "NWFS (Novell NetWare 386 Traditional Filesystem)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Nwfs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "NWFS (Novell NetWare 386 Traditional Filesystem)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".nwfs";
-  public IReadOnlyList<string> Extensions => [".nwfs", ".nwvol", ".netware"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".nwfs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".nwfs", ".nwvol", ".netware"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "HOTFIX00" at byte offset 0x4000 (sector 32 with 512 B sectors). 8 bytes
     // of ASCII at a fixed offset is high-confidence; we rate this 0.85 (not
     // 0.9+) because the layout is derived from public reverse engineering
@@ -55,13 +79,28 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // alone: a partition starting at sector 32 puts it 0x4000 further on.
     new(NwfsHeaders.HotfixMagic, Offset: 0x8000, Confidence: 0.80),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "NWFS (Novell NetWare 386 Traditional Filesystem) — best-effort detection from public RE; contents cannot be validated.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -97,7 +136,10 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAllBounded(stream);

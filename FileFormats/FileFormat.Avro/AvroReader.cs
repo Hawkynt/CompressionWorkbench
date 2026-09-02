@@ -10,16 +10,34 @@ namespace FileFormat.Avro;
 /// </summary>
 public sealed class AvroReader {
 
-  public string Schema { get; }
-  public string Codec { get; }
-  public byte[] SyncMarker { get; }
-  public int BlockCount { get; }
-  public long RecordCount { get; }
+    /// <summary>
+  /// Gets the schema.
+  /// </summary>
+public string Schema { get; }
+    /// <summary>
+  /// Gets the codec.
+  /// </summary>
+public string Codec { get; }
+    /// <summary>
+  /// Gets the sync marker.
+  /// </summary>
+public byte[] SyncMarker { get; }
+    /// <summary>
+  /// Gets the block count.
+  /// </summary>
+public int BlockCount { get; }
+    /// <summary>
+  /// Gets the record count.
+  /// </summary>
+public long RecordCount { get; }
 
   /// <summary>"partial" if the file structure was walked successfully; "corrupt" if a block sync marker mismatched or a structural error was encountered partway through.</summary>
   public string ParseStatus { get; }
 
-  public AvroReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AvroReader"/>.
+  /// </summary>
+public AvroReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

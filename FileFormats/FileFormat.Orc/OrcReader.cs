@@ -40,7 +40,10 @@ public sealed class OrcReader {
   /// <summary>"full" if PostScript and (when uncompressed) Footer were both walked end-to-end; "partial" otherwise.</summary>
   public string ParseStatus { get; }
 
-  public OrcReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="OrcReader"/>.
+  /// </summary>
+public OrcReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

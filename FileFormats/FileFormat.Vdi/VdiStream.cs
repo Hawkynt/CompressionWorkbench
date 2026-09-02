@@ -39,12 +39,27 @@ public sealed class VdiStream : Stream {
     _leaveOpen = leaveOpen;
   }
 
-  public override bool CanRead => true;
-  public override bool CanSeek => true;
-  public override bool CanWrite => _backing.CanWrite;
-  public override long Length => _virtualSize;
+    /// <summary>
+  /// Gets a value indicating whether can read.
+  /// </summary>
+public override bool CanRead => true;
+    /// <summary>
+  /// Gets a value indicating whether can seek.
+  /// </summary>
+public override bool CanSeek => true;
+    /// <summary>
+  /// Gets a value indicating whether can write.
+  /// </summary>
+public override bool CanWrite => _backing.CanWrite;
+    /// <summary>
+  /// Gets the length.
+  /// </summary>
+public override long Length => _virtualSize;
 
-  public override long Position {
+    /// <summary>
+  /// Gets or sets the position.
+  /// </summary>
+public override long Position {
     get => _position;
     set {
       if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
@@ -52,7 +67,10 @@ public sealed class VdiStream : Stream {
     }
   }
 
-  public override int Read(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public override int Read(byte[] buffer, int offset, int count) {
     if (_position >= _virtualSize) return 0;
     var remaining = (int)Math.Min(count, _virtualSize - _position);
     var totalRead = 0;
@@ -81,7 +99,10 @@ public sealed class VdiStream : Stream {
     return totalRead;
   }
 
-  public override void Write(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public override void Write(byte[] buffer, int offset, int count) {
     if (!CanWrite) throw new NotSupportedException("Backing stream is not writable.");
     if (_position + count > _virtualSize)
       throw new InvalidOperationException(
@@ -136,7 +157,10 @@ public sealed class VdiStream : Stream {
     }
   }
 
-  public override long Seek(long offset, SeekOrigin origin) {
+    /// <summary>
+  /// Performs the seek operation.
+  /// </summary>
+public override long Seek(long offset, SeekOrigin origin) {
     var newPos = origin switch {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => _position + offset,
@@ -148,16 +172,25 @@ public sealed class VdiStream : Stream {
     return _position;
   }
 
-  public override void SetLength(long value) {
+    /// <summary>
+  /// Sets the length.
+  /// </summary>
+public override void SetLength(long value) {
     if (value != _virtualSize)
       throw new NotSupportedException(
         $"Cannot change the length of a VDI virtual disk stream " +
         $"(current={_virtualSize}, requested={value}).");
   }
 
-  public override void Flush() => _backing.Flush();
+    /// <summary>
+  /// Performs the flush operation.
+  /// </summary>
+public override void Flush() => _backing.Flush();
 
-  protected override void Dispose(bool disposing) {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+protected override void Dispose(bool disposing) {
     if (disposing && !_leaveOpen)
       _backing.Dispose();
     base.Dispose(disposing);

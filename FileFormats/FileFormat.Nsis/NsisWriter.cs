@@ -17,14 +17,20 @@ namespace FileFormat.Nsis;
 public sealed class NsisWriter {
   private readonly List<byte[]> _blocks = [];
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     // NSIS data blocks have no embedded file names (the reader names them
     // "block_N"); we simply treat each input as one opaque block.
     _blocks.Add(data);
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     // ── NSIS first-header (28 bytes) ──
     Span<byte> hdr = stackalloc byte[NsisConstants.FirstHeaderSize];
     BinaryPrimitives.WriteInt32LittleEndian(hdr[..4], NsisConstants.CompNone); // flags: stored, non-solid

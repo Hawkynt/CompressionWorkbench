@@ -78,7 +78,10 @@ public sealed class ExtWriter {
     return key;
   }
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
   /// <summary>
   /// Reads a file once and says which of its blocks hold nothing but zeros.
@@ -160,7 +163,16 @@ public sealed class ExtWriter {
   /// HAS_JOURNAL/EXTENTS/64BIT clear; ext3 adds HAS_JOURNAL + a journal inode;
   /// ext4 adds EXTENTS + 64BIT on top.
   /// </summary>
-  public enum ExtVersion { Ext2, Ext3, Ext4 }
+  public enum ExtVersion {   /// <summary>
+  /// Specifies the ext 2 option.
+  /// </summary>
+Ext2,   /// <summary>
+  /// Specifies the ext 3 option.
+  /// </summary>
+Ext3,   /// <summary>
+  /// Specifies the ext 4 option.
+  /// </summary>
+Ext4 }
 
   /// <summary>
   /// Builds the image with the block size chosen by

@@ -12,22 +12,40 @@ namespace Compression.Core.Dictionary.Nintendo;
 /// </remarks>
 public sealed class Yay0BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Yay0";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Yay0";
 
   /// <inheritdoc/>
-  public string DisplayName => "Yay0";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Yay0";
 
   /// <inheritdoc/>
-  public string Description => "Nintendo Yay0 split-table LZ compression";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Nintendo Yay0 split-table LZ compression";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => NintendoLzCodecs.CompressYay0(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => NintendoLzCodecs.DecompressYay0(data);
 }

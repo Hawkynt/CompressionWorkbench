@@ -38,7 +38,10 @@ public sealed class Ym2608Codec {
   private bool _adpcmBRequested;
 
   /// <param name="clock">Chip input clock in Hz (7987200 on the PC-88/98).</param>
-  public Ym2608Codec(double clock = 7987200.0) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ym2608Codec"/>.
+  /// </summary>
+public Ym2608Codec(double clock = 7987200.0) {
     this._fm = new Ym2612Codec(clock);          // OPNA FM rate == OPN2 FM rate == clock / 144
     this._fmRate = clock / FmPrescale;
     // SSG runs at clock/32 on OPNA (vs clock/16 on OPN); halve the clock so Ay8910's /16 matches.

@@ -32,49 +32,88 @@ namespace FileFormat.Gem;
 /// </remarks>
 public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <inheritdoc/>
-  public string Id => "Gem";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Gem";
 
   /// <inheritdoc/>
-  public string DisplayName => "Ruby Gem";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Ruby Gem";
 
   /// <inheritdoc/>
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
   /// <inheritdoc/>
-  public string DefaultExtension => ".gem";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".gem";
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> Extensions => [".gem"];
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".gem"];
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is TAR; detection is by extension to avoid
   /// shadowing the TAR descriptor.</remarks>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("gzip", "Gzip")];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("gzip", "Gzip")];
 
   /// <inheritdoc/>
-  public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Ruby gem package — TAR with metadata.gz, data.tar.gz and checksums.yaml.gz.";
 
   /// <inheritdoc/>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = BuildEntries(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(
       Index: i,
@@ -88,7 +127,10 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))
         continue;
@@ -97,7 +139,10 @@ public sealed class GemFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
     => GemCreator.Create(output, inputs);
 
   /// <summary>

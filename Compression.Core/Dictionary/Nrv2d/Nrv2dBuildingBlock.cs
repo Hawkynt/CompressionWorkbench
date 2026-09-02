@@ -36,20 +36,35 @@ namespace Compression.Core.Dictionary.Nrv2d;
 public sealed class Nrv2dBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  public string Id => "BB_Nrv2d";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Nrv2d";
   /// <inheritdoc/>
-  public string DisplayName => "NRV2D";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "NRV2D";
   /// <inheritdoc/>
-  public string Description => "UCL NRV2D LE32 — LZ77 + interleaved variable-length integer bit stream (UPX core, method 3)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "UCL NRV2D LE32 — LZ77 + interleaved variable-length integer bit stream (UPX core, method 3)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinEmittedLen = 3;
   private const int MaxOffset = 0xFFFFFF;
   private const int OffsetLargeThreshold = 0x500;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -133,7 +148,10 @@ public sealed class Nrv2dBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("NRV2D: input smaller than 4-byte header.");
     var targetSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (targetSize < 0) throw new InvalidDataException("NRV2D: negative decompressed size.");

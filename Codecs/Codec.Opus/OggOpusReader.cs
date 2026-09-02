@@ -17,6 +17,9 @@ public sealed record OpusHeadPacket(
   byte CoupledStreamCount,
   byte[] ChannelMapping);
 
+/// <summary>
+/// Represents an opus tags packet.
+/// </summary>
 public sealed record OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments);
 
 /// <summary>
@@ -36,9 +39,15 @@ public sealed class OggOpusReader {
   private OpusHeadPacket? _head;
   private bool _readHead;
 
-  public OggOpusReader(Stream stream) => this._stream = stream;
+    /// <summary>
+  /// Initializes a new instance of <see cref="OggOpusReader"/>.
+  /// </summary>
+public OggOpusReader(Stream stream) => this._stream = stream;
 
-  public OpusHeadPacket ReadHead() {
+    /// <summary>
+  /// Reads the head from the supplied input.
+  /// </summary>
+public OpusHeadPacket ReadHead() {
     if (this._readHead) return this._head!;
     this._readHead = true;
 
@@ -80,7 +89,10 @@ public sealed class OggOpusReader {
     return this._head;
   }
 
-  public OpusTagsPacket? TryReadTags() {
+    /// <summary>
+  /// Attempts to read the tags from the supplied input.
+  /// </summary>
+public OpusTagsPacket? TryReadTags() {
     if (!this._readHead) this.ReadHead();
     if (!this.TryReadPacket(out var pkt)) return null;
 
@@ -117,7 +129,10 @@ public sealed class OggOpusReader {
     return new OpusTagsPacket(vendor, comments);
   }
 
-  public bool TryReadPacket(out byte[] packet) {
+    /// <summary>
+  /// Attempts to read the packet from the supplied input.
+  /// </summary>
+public bool TryReadPacket(out byte[] packet) {
     while (this._pendingPackets.Count == 0 && !this._eof)
       this.FillFromNextPage();
 

@@ -13,7 +13,10 @@ public sealed class MinixFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<MinixFsEntry> _entries = [];
 
-  public IReadOnlyList<MinixFsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<MinixFsEntry> Entries => _entries;
 
   // Superblock fields
   private uint _ninodes;
@@ -43,7 +46,10 @@ public sealed class MinixFsReader : IDisposable {
   // V1 inode size (bytes)
   private const int V1InodeSize = 32;
 
-  public MinixFsReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MinixFsReader"/>.
+  /// </summary>
+public MinixFsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -367,7 +373,10 @@ public sealed class MinixFsReader : IDisposable {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-  public byte[] Extract(MinixFsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(MinixFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
 
@@ -387,5 +396,8 @@ public sealed class MinixFsReader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

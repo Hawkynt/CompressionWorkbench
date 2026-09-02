@@ -11,9 +11,15 @@ namespace FileFormat.Ogg;
 /// <see cref="StreamPackets(ReadOnlySpan{byte}, uint)"/>.
 /// </summary>
 public sealed class OggPageParser {
-  public readonly record struct Page(uint Serial, byte Flags, byte[][] Segments);
+    /// <summary>
+  /// Represents a page.
+  /// </summary>
+public readonly record struct Page(uint Serial, byte Flags, byte[][] Segments);
 
-  public List<Page> Pages(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Performs the pages operation.
+  /// </summary>
+public List<Page> Pages(ReadOnlySpan<byte> data) {
     var pages = new List<Page>();
     var pos = 0;
     while (pos + 27 <= data.Length) {

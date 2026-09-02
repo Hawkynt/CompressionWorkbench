@@ -115,7 +115,10 @@ public sealed class MinixV2Writer : IDisposable {
   /// <summary>Zones a 16-bit zone number can address.</summary>
   private const long MaxZones = (1L << 16) - 1;
 
-  public byte[] Build() {
+    /// <summary>
+  /// Performs the build operation.
+  /// </summary>
+public byte[] Build() {
     var root = new TreeNode { IsDirectory = true };
     var allDirs = new List<TreeNode> { root };
     var allFiles = new List<TreeNode>();
@@ -453,7 +456,10 @@ public sealed class MinixV2Writer : IDisposable {
     data[bitmapOffset + bitIndex / 8] |= (byte)(1 << (bitIndex % 8));
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!_leaveOpen) _output.Dispose();
   }
 }

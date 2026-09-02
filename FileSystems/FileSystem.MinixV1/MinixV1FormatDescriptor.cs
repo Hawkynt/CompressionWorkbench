@@ -34,32 +34,74 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       Description: "Directory-entry name width: 14 bytes (magic 0x137F) or 30 bytes (magic 0x138F)."),
   ];
 
-  public string Id => "MinixV1";
-  public string DisplayName => "Minix V1 FS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "MinixV1";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Minix V1 FS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".minix1";
-  public IReadOnlyList<string> Extensions => [".minix1"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".minix1";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".minix1"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // V1 magic at superblock+16 == file offset 1040
     new([0x7F, 0x13], Offset: 1040, Confidence: 0.85),  // 0x137F: 14-char names
     new([0x8F, 0x13], Offset: 1040, Confidence: 0.85),  // 0x138F: 30-char names
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Minix v1 filesystem image (1987) — read-only.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Minix v1 filesystem image (1987) — read-only.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new MinixV1Reader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MinixV1Reader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -157,7 +199,10 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return ms.ToArray();
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -237,7 +282,10 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    /// <summary>
+  /// Performs the rebuild streaming operation.
+  /// </summary>
+public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);
@@ -263,7 +311,10 @@ public sealed class MinixV1FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => MinixV1ExtentMap.Enumerate(image);
 
   /// <summary>

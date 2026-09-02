@@ -13,19 +13,37 @@ namespace Compression.Core.Dictionary.Lzfse;
 /// </remarks>
 public sealed class LzfseBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzfse";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzfse";
   /// <inheritdoc/>
-  public string DisplayName => "LZFSE";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZFSE";
   /// <inheritdoc/>
-  public string Description => "LZ77 parse with FSE (tANS) entropy coding of literals, match lengths, literal lengths and distances";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 parse with FSE (tANS) entropy coding of literals, match lengths, literal lengths and distances";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) =>
     LzfseCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) =>
     LzfseDecompressor.Decompress(data);
 }

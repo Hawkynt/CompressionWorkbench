@@ -1,5 +1,8 @@
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Defines the contract for i static code book.
+/// </summary>
 public interface IStaticCodeBook
 {
     // int Entries { get; } // == LengthList.Length

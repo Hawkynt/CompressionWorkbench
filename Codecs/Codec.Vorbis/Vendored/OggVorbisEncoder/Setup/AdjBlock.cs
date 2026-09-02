@@ -1,11 +1,20 @@
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents an adj block.
+/// </summary>
 public class AdjBlock
 {
-    public AdjBlock(int[] block)
+        /// <summary>
+    /// Initializes a new instance of <see cref="AdjBlock"/>.
+    /// </summary>
+public AdjBlock(int[] block)
     {
         Block = block;
     }
 
-    public int[] Block { get; }
+        /// <summary>
+    /// Gets the block.
+    /// </summary>
+public int[] Block { get; }
 }

@@ -4,24 +4,69 @@ using System.Buffers.Binary;
 
 namespace Codec.Flac;
 
+/// <summary>
+/// Specifies flac subframe mode values.
+/// </summary>
 public enum FlacSubframeMode {
-  Auto,
-  Verbatim,
-  Fixed0,
-  Fixed1,
-  Fixed2,
-  Fixed3,
-  Fixed4,
+    /// <summary>
+  /// Selects the value automatically.
+  /// </summary>
+Auto,
+    /// <summary>
+  /// Specifies the verbatim option.
+  /// </summary>
+Verbatim,
+    /// <summary>
+  /// Specifies the fixed 0 option.
+  /// </summary>
+Fixed0,
+    /// <summary>
+  /// Specifies the fixed 1 option.
+  /// </summary>
+Fixed1,
+    /// <summary>
+  /// Specifies the fixed 2 option.
+  /// </summary>
+Fixed2,
+    /// <summary>
+  /// Specifies the fixed 3 option.
+  /// </summary>
+Fixed3,
+    /// <summary>
+  /// Specifies the fixed 4 option.
+  /// </summary>
+Fixed4,
 }
 
+/// <summary>
+/// Specifies flac stereo mode values.
+/// </summary>
 public enum FlacStereoMode {
-  Auto,
-  Independent,
-  LeftSide,
-  RightSide,
-  MidSide,
+    /// <summary>
+  /// Selects the value automatically.
+  /// </summary>
+Auto,
+    /// <summary>
+  /// Specifies the independent option.
+  /// </summary>
+Independent,
+    /// <summary>
+  /// Specifies the left side option.
+  /// </summary>
+LeftSide,
+    /// <summary>
+  /// Specifies the right side option.
+  /// </summary>
+RightSide,
+    /// <summary>
+  /// Specifies the mid side option.
+  /// </summary>
+MidSide,
 }
 
+/// <summary>
+/// Specifies options for flac encoder.
+/// </summary>
 public sealed record FlacEncoderOptions(
   int SampleRate,
   int Channels,
@@ -31,6 +76,9 @@ public sealed record FlacEncoderOptions(
   FlacStereoMode StereoMode = FlacStereoMode.Auto
 );
 
+/// <summary>
+/// Represents a flac codec.
+/// </summary>
 public static partial class FlacCodec {
 
   /// <summary>
@@ -56,7 +104,10 @@ public static partial class FlacCodec {
     return output.ToArray();
   }
 
-  public static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels,
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels,
     int blockSize = 4096, FlacSubframeMode compression = FlacSubframeMode.Auto,
     FlacStereoMode stereoMode = FlacStereoMode.Auto) {
     var pcm = new int[interleaved.Length];

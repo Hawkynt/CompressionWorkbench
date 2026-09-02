@@ -29,17 +29,35 @@ public sealed class DragonFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<DragonFsEntry> _entries = [];
 
-  public IReadOnlyList<DragonFsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<DragonFsEntry> Entries => _entries;
 
-  public bool ValidRoot { get; private set; }
-  public int RootOffset { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid root.
+  /// </summary>
+public bool ValidRoot { get; private set; }
+    /// <summary>
+  /// Gets or sets the root offset.
+  /// </summary>
+public int RootOffset { get; private set; }
 
-  public const int DefaultRootOffset = 256;
+    /// <summary>
+  /// Defines the default root offset constant value.
+  /// </summary>
+public const int DefaultRootOffset = 256;
   // Newer Libdragon images can prepend an 8-byte "DragonFS" ASCII tag
   // before the root entry table for robust auto-detect; we accept either.
-  public static readonly byte[] OptionalTag = "DragonFS"u8.ToArray();
+    /// <summary>
+  /// Provides the optional tag value.
+  /// </summary>
+public static readonly byte[] OptionalTag = "DragonFS"u8.ToArray();
 
-  public DragonFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="DragonFsReader"/>.
+  /// </summary>
+public DragonFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -121,7 +139,10 @@ public sealed class DragonFsReader : IDisposable {
     return Encoding.ASCII.GetString(span.Slice(0, end));
   }
 
-  public byte[] Extract(DragonFsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(DragonFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size <= 0) return [];
@@ -129,7 +150,10 @@ public sealed class DragonFsReader : IDisposable {
     return _data.AsSpan(entry.DataOffset, (int)entry.Size).ToArray();
   }
 
-  public byte[] BuildSurfaceMetadata() {
+    /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
+public byte[] BuildSurfaceMetadata() {
     var bldr = new StringBuilder();
     bldr.Append("parse_status=ok\n");
     bldr.Append("format=DragonFS (Libdragon)\n");
@@ -138,5 +162,8 @@ public sealed class DragonFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

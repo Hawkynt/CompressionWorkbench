@@ -93,7 +93,10 @@ public sealed class Ym2413Codec {
   private uint _noise = 1;
 
   /// <param name="clock">OPLL clock in Hz (3579545 for SMS / Mark III FM, MSX-MUSIC).</param>
-  public Ym2413Codec(double clock = 3579545.0) : this(clock, null) { }
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ym2413Codec"/>.
+  /// </summary>
+public Ym2413Codec(double clock = 3579545.0) : this(clock, null) { }
 
   /// <summary>
   /// Constructs the OPLL core with an optional substitute instrument patch ROM. The Konami

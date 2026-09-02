@@ -57,16 +57,28 @@ namespace Compression.Core.Dictionary.Zx0;
 public sealed class Zx0BuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  public string Id => "BB_Zx0";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Zx0";
 
   /// <inheritdoc/>
-  public string DisplayName => "ZX0";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ZX0";
 
   /// <inheritdoc/>
-  public string Description => "Einar Saukas's ZX0 — LZ77 with Elias-gamma coded offsets, used in modern ZX Spectrum + demoscene productions";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Einar Saukas's ZX0 — LZ77 with Elias-gamma coded offsets, used in modern ZX Spectrum + demoscene productions";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // ZX0 v2 forward, non-inverted. Salvador uses invert=true; see SalvadorBuildingBlock.
   private const bool InvertMode = false;

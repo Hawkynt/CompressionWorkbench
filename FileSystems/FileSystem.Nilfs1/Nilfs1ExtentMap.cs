@@ -30,7 +30,10 @@ namespace FileSystem.Nilfs1;
 /// </summary>
 public static class Nilfs1ExtentMap {
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < 2048) yield break;
 

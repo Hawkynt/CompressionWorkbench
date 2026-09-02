@@ -18,16 +18,31 @@ namespace FileFormat.Rzip;
 /// </remarks>
 public sealed class RzipBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Rzip";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Rzip";
   /// <inheritdoc/>
-  public string DisplayName => "rzip";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "rzip";
   /// <inheritdoc/>
-  public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Long-range rolling-hash match elimination over the whole input, with order-0 coded literals";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var output = new MemoryStream();
     RzipStream.Compress(input, output);
@@ -35,7 +50,10 @@ public sealed class RzipBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var output = new MemoryStream();
     RzipStream.Decompress(input, output);

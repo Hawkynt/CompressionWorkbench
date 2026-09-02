@@ -27,7 +27,10 @@ public sealed class Ext1Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Ext1Entry> _entries = [];
 
-  public IReadOnlyList<Ext1Entry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Ext1Entry> Entries => this._entries;
 
   // Superblock fields
   private uint _inodesCount;
@@ -47,7 +50,10 @@ public sealed class Ext1Reader : IDisposable {
   private const ushort InodeModeDir = 0x4000;
   private const uint RootInode = 2;
 
-  public Ext1Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ext1Reader"/>.
+  /// </summary>
+public Ext1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._data = new ImageAccessor(stream, leaveOpen: true);
     this.Parse();
@@ -278,7 +284,10 @@ public sealed class Ext1Reader : IDisposable {
     this.WriteInodeBlocks(inodeData, destination);
   }
 
-  public byte[] Extract(Ext1Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Ext1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Inode == 0) return [];
@@ -292,16 +301,34 @@ public sealed class Ext1Reader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }
 
 /// <summary>
 /// Single entry returned by <see cref="Ext1Reader"/>.
 /// </summary>
 public sealed class Ext1Entry {
-  public required string Name { get; init; }
-  public long Size { get; init; }
-  public bool IsDirectory { get; init; }
-  public DateTime? LastModified { get; init; }
-  public uint Inode { get; init; }
+    /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
+public required string Name { get; init; }
+    /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
+public long Size { get; init; }
+    /// <summary>
+  /// Gets a value indicating whether is directory.
+  /// </summary>
+public bool IsDirectory { get; init; }
+    /// <summary>
+  /// Gets or sets the last modified.
+  /// </summary>
+public DateTime? LastModified { get; init; }
+    /// <summary>
+  /// Gets or sets the inode.
+  /// </summary>
+public uint Inode { get; init; }
 }

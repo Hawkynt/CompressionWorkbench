@@ -22,10 +22,22 @@ public sealed class BinaryIIFormatDescriptor :
   IArchiveDefragmentable,
   IArchiveLayoutMap {
 
-  public string Id => "BinaryII";
-  public string DisplayName => "Apple II Binary II";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BinaryII";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Apple II Binary II";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList |
     FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate |
@@ -33,22 +45,49 @@ public sealed class BinaryIIFormatDescriptor :
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".bny";
-  public IReadOnlyList<string> Extensions => [".bny", ".bqy"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".bny";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".bny", ".bqy"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x0A, 0x47, 0x4C], Confidence: 0.99)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("squeeze", "Squeeze"),
     new("auto", "Auto", true),
   ];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Apple II Binary II / BLU record archive with stored or Squeeze-compressed members and direct 128-byte-record mutation";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var reader = new BinaryIIReader(stream);
     return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
@@ -64,7 +103,10 @@ public sealed class BinaryIIFormatDescriptor :
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
     var reader = new BinaryIIReader(stream);
@@ -79,7 +121,10 @@ public sealed class BinaryIIFormatDescriptor :
     }
   }
 
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
+public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     var reader = new BinaryIIReader(archive);
@@ -91,7 +136,10 @@ public sealed class BinaryIIFormatDescriptor :
     return reader.Extract(entry);
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
@@ -130,13 +178,22 @@ public sealed class BinaryIIFormatDescriptor :
   public void Remove(Stream archive, string[] entryNames)
     => BinaryIIInPlaceModifier.Remove(archive, entryNames);
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => BinaryIIInPlaceModifier.Defragment(archive);
 
-  public void Defragment(Stream archive, DefragOptions options)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options)
     => BinaryIIInPlaceModifier.Defragment(archive);
 
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     var reader = new BinaryIIReader(archive);
     foreach (var entry in reader.PhysicalRecords) {

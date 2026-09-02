@@ -5,9 +5,18 @@ namespace FileSystem.ZxScl;
 /// Directory entry in a ZX Spectrum SCL (Sinclair Compact Language) archive.
 /// </summary>
 public sealed class ZxSclEntry {
-  public string Name { get; init; } = "";
-  public long Size { get; init; }
-  public bool IsDirectory => false;
+    /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
+public string Name { get; init; } = "";
+    /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
+public long Size { get; init; }
+    /// <summary>
+  /// Gets a value indicating whether is directory.
+  /// </summary>
+public bool IsDirectory => false;
   /// <summary>TR-DOS type character: 'B' = BASIC, 'C' = code, 'D' = data, '#' = print-out stream.</summary>
   public char FileType { get; init; }
   /// <summary>TR-DOS start address / BASIC auto-start line (param1).</summary>

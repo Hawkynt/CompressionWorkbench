@@ -33,9 +33,18 @@ public sealed class XenixReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<XenixEntry> _entries = [];
 
-  public IReadOnlyList<XenixEntry> Entries => this._entries;
-  public uint Magic { get; private set; }
-  public int BlockSize { get; private set; } = 1024;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<XenixEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
+public uint Magic { get; private set; }
+    /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
+public int BlockSize { get; private set; } = 1024;
 
   internal const int SuperblockOffset = 1024;
   private const int InodeSize = 64;
@@ -47,7 +56,10 @@ public sealed class XenixReader : IDisposable {
   internal const int TypeOffset = 0x3FC;
   private const int RootInode = 2;
 
-  public XenixReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="XenixReader"/>.
+  /// </summary>
+public XenixReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -369,7 +381,10 @@ public sealed class XenixReader : IDisposable {
     }
   }
 
-  public byte[] Extract(XenixEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(XenixEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -380,5 +395,8 @@ public sealed class XenixReader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

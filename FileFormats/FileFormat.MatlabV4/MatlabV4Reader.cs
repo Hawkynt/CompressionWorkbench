@@ -25,7 +25,10 @@ public sealed class MatlabV4Reader {
   /// <summary>"full" if every record parsed cleanly to EOF; "partial" if a truncated or implausible record was encountered.</summary>
   public string ParseStatus { get; }
 
-  public MatlabV4Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MatlabV4Reader"/>.
+  /// </summary>
+public MatlabV4Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
     if (stream.Length < MatlabV4Constants.RecordHeaderSize)

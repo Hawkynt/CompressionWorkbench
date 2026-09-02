@@ -18,29 +18,71 @@ namespace FileFormat.AppleSingle;
 /// </summary>
 public sealed class AppleDoubleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "AppleDouble";
-  public string DisplayName => "AppleDouble";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "AppleDouble";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "AppleDouble";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".appledouble";
-  public IReadOnlyList<string> Extensions => [".appledouble"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".appledouble";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".appledouble"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x05, 0x16, 0x07], Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "AppleDouble (RFC 1740) sidecar — Finder metadata + resource fork " +
     "for files copied from HFS to non-HFS filesystems.";
 
   // Both descriptors delegate to the shared reader.
   private readonly AppleSingleFormatDescriptor _shared = new();
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) => this._shared.List(stream, password);
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) => this._shared.List(stream, password);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     this._shared.Extract(stream, outputDir, password, files);
 }

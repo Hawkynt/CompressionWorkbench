@@ -17,30 +17,69 @@ namespace FileFormat.Mbox;
 /// </list>
 /// </summary>
 public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
-  public string Id => "Mbox";
-  public string DisplayName => "mbox (Unix mailbox)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Mbox";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "mbox (Unix mailbox)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".mbox";
-  public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".mbox";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".mbox", ".mbx"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // "From " at offset 0 is a weak marker — plain text files can legitimately
   // start that way — so keep confidence low and rely on extension as the firm hit.
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("From "u8.ToArray(), Confidence: 0.70)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Unix mbox mailbox: flat stream of RFC 822 messages separated by \"From \" lines. " +
     "True in-place R/W: Add appends a new \"From \" separator + message at EOF (every " +
     "pre-existing byte byte-identical); Remove tombstones a record with an X-Status: D " +
     "marker + zero-wiped body, preserving record length so byte offsets of every other " +
     "message stay stable.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var messages = Load(stream);
     var result = new List<ArchiveEntryInfo>(messages.Count);
     for (var i = 0; i < messages.Count; i++) {
@@ -68,7 +107,10 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return headers.Contains("X-Cwb-Tombstone: 1", StringComparison.Ordinal);
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var messages = Load(stream);
     for (var i = 0; i < messages.Count; i++) {
       var m = messages[i];
@@ -110,7 +152,10 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var messages = Load(input);
     for (var i = 0; i < messages.Count; i++) {
       var name = EntryName(messages[i], i);

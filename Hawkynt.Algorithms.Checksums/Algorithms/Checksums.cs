@@ -332,6 +332,11 @@ public readonly record struct CrcParameters(
 /// <summary>Bit-accurate generic CRC implementation using normal-form polynomials.</summary>
 public static class Crc {
   /// <summary>
+  /// Gets the supported checksum-output sizes, in bits.
+  /// </summary>
+  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits8To64;
+
+  /// <summary>
   /// Computes the CRC checksum of the supplied data.
   /// </summary>
   public static ulong Compute(ReadOnlySpan<byte> data, CrcParameters parameters) {

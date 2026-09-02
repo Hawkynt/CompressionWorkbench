@@ -11,20 +11,35 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class TunstallBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Tunstall";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Tunstall";
   /// <inheritdoc/>
-  public string DisplayName => "Tunstall Coding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Tunstall Coding";
   /// <inheritdoc/>
-  public string Description => "Variable-to-fixed code, dual of Huffman, dictionary of input phrases";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Variable-to-fixed code, dual of Huffman, dictionary of input phrases";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   // Fixed-width codeword size: 12 bits → max 4096 dictionary entries.
   private const int CodeBits = 12;
   private const int MaxEntries = 1 << CodeBits;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -100,7 +115,10 @@ public sealed class TunstallBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

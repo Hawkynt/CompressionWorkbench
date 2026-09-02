@@ -34,16 +34,28 @@ namespace Compression.Core.Dictionary.Salvador;
 public sealed class SalvadorBuildingBlock : IBuildingBlock {
 
   /// <inheritdoc/>
-  public string Id => "BB_Salvador";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Salvador";
 
   /// <inheritdoc/>
-  public string DisplayName => "Salvador";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Salvador";
 
   /// <inheritdoc/>
-  public string Description => "Emmanuel Marty's Salvador — ZX0-compatible LZ77 with inverted Elias-gamma offsets, for Amiga 4K/64K productions";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Emmanuel Marty's Salvador — ZX0-compatible LZ77 with inverted Elias-gamma offsets, for Amiga 4K/64K productions";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // Salvador's "FLG_IS_INVERTED" (default forward mode) inverts the offset-MSB Elias-gamma bits.
   private const bool InvertMode = true;

@@ -15,9 +15,15 @@ public sealed class MinixV2Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<MinixV2Entry> _entries = [];
 
-  public IReadOnlyList<MinixV2Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<MinixV2Entry> Entries => _entries;
 
-  public ushort Magic { get; private set; }
+    /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
+public ushort Magic { get; private set; }
 
   /// <summary>Blocks the inode bitmap occupies, from the superblock.</summary>
   public ushort InodeBitmapBlocks => this._imapBlocks;
@@ -40,7 +46,10 @@ public sealed class MinixV2Reader : IDisposable {
       return (end + BlockSize - 1) / BlockSize * BlockSize;
     }
   }
-  public int NameLength { get; private set; }
+    /// <summary>
+  /// Gets or sets the name length.
+  /// </summary>
+public int NameLength { get; private set; }
 
   private ushort _imapBlocks;
   private ushort _zmapBlocks;
@@ -51,7 +60,10 @@ public sealed class MinixV2Reader : IDisposable {
   private const ushort MagicV2_14 = 0x2468;
   private const ushort MagicV2_30 = 0x2478;
 
-  public MinixV2Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MinixV2Reader"/>.
+  /// </summary>
+public MinixV2Reader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -346,7 +358,10 @@ public sealed class MinixV2Reader : IDisposable {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-  public byte[] Extract(MinixV2Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(MinixV2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
 
@@ -360,5 +375,8 @@ public sealed class MinixV2Reader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

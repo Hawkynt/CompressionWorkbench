@@ -11,17 +11,35 @@ namespace Compression.Core.Dictionary.Sequitur;
 /// </summary>
 public sealed class SequiturBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Sequitur";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Sequitur";
   /// <inheritdoc/>
-  public string DisplayName => "Sequitur";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Sequitur";
   /// <inheritdoc/>
-  public string Description => "Online grammar inference (Nevill-Manning & Witten): enforces digram uniqueness and rule utility as symbols are appended, collapsing repeated phrases into a straight-line grammar";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Online grammar inference (Nevill-Manning & Witten): enforces digram uniqueness and rule utility as symbols are appended, collapsing repeated phrases into a straight-line grammar";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => SequiturCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => SequiturCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => SequiturCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => SequiturCompressor.Decompress(data);
 }

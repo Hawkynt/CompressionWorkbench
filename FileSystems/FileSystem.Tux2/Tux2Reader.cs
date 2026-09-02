@@ -37,15 +37,33 @@ public sealed class Tux2Reader : IDisposable {
   private readonly long _len;
   private readonly List<Tux2Entry> _entries = [];
 
-  public IReadOnlyList<Tux2Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Tux2Entry> Entries => _entries;
 
-  public uint Version { get; private set; }
-  public uint FileCount { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
+public uint Version { get; private set; }
+    /// <summary>
+  /// Gets or sets the file count.
+  /// </summary>
+public uint FileCount { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
-  public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
+    /// <summary>
+  /// Provides the magic value.
+  /// </summary>
+public static readonly byte[] Magic = "TUX2FS\0\0"u8.ToArray();
 
-  public Tux2Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Tux2Reader"/>.
+  /// </summary>
+public Tux2Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Records are located on demand: copying the image in, and then every file's
@@ -109,7 +127,10 @@ public sealed class Tux2Reader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(Tux2Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Tux2Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
     if (entry.Size > Array.MaxLength)
@@ -132,5 +153,8 @@ public sealed class Tux2Reader : IDisposable {
     return take;
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

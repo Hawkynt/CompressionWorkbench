@@ -35,9 +35,15 @@
 
 namespace Concentus.Enums
 {
-    public enum OpusSignal
+        /// <summary>
+    /// Specifies opus signal values.
+    /// </summary>
+public enum OpusSignal
     {
-        OPUS_SIGNAL_AUTO = -1000,
+                /// <summary>
+        /// Specifies the opus signal auto option.
+        /// </summary>
+OPUS_SIGNAL_AUTO = -1000,
 
         /// <summary>
         /// Signal being encoded is voice

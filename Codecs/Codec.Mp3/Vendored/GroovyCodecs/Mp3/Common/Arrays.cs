@@ -2,20 +2,32 @@ using System.Linq;
 
 namespace GroovyCodecs.Mp3.Common
 {
-    public static class Arrays
+        /// <summary>
+    /// Represents an arrays.
+    /// </summary>
+public static class Arrays
     {
-        public static void Fill<T>(T[] array, int start, int end, T value)
+                /// <summary>
+        /// Performs the fill operation.
+        /// </summary>
+public static void Fill<T>(T[] array, int start, int end, T value)
         {
             for (var i = start; i < end; i++)
                 array[i] = value;
         }
 
-        public static void Fill<T>(T[] array, T value)
+                /// <summary>
+        /// Performs the fill operation.
+        /// </summary>
+public static void Fill<T>(T[] array, T value)
         {
             Fill(array, 0, array.Length, value);
         }
 
-        public static void Sort<T>(T[] array, int start, int end)
+                /// <summary>
+        /// Performs the sort operation.
+        /// </summary>
+public static void Sort<T>(T[] array, int start, int end)
         {
             var sortedPart = array.Skip(start).Take(array.Length - end).OrderBy(x => x).ToList();
             for (var i = start; i < end; i++)

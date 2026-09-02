@@ -37,7 +37,10 @@ public sealed class UfsReader : IDisposable {
   private int _fsbtodb;        // log2(fs_fsize/DEV_BSIZE)
   private int _inodesPerBlock; // fs_inopb
 
-  public IReadOnlyList<UfsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<UfsEntry> Entries => _entries;
 
   /// <summary>The superblock <c>fs_volname</c> volume label (struct fs offset 680,
   /// NUL-terminated ASCII), or empty when unset.</summary>
@@ -51,7 +54,10 @@ public sealed class UfsReader : IDisposable {
     }
   }
 
-  public UfsReader(Stream stream, bool leaveOpen = true) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="UfsReader"/>.
+  /// </summary>
+public UfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: the metadata is a small fraction of a volume
@@ -250,7 +256,10 @@ public sealed class UfsReader : IDisposable {
     return Encoding.ASCII.GetString(data, 0, n);
   }
 
-  public byte[] Extract(UfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(UfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > Array.MaxLength)
       throw new IOException(
@@ -277,5 +286,8 @@ public sealed class UfsReader : IDisposable {
     return this.WriteInodeData(InodeOffset(entry.Inode), destination);
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

@@ -15,17 +15,35 @@ namespace Compression.Core.Entropy.ContextMixing.Bsc;
 /// </remarks>
 public sealed class BscBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Bsc";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Bsc";
   /// <inheritdoc/>
-  public string DisplayName => "BSC (reduced)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BSC (reduced)";
   /// <inheritdoc/>
-  public string Description => "Burrows-Wheeler Transform, Move-to-Front, and a two-context adaptive bit-tree coder, libbsc-style";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Burrows-Wheeler Transform, Move-to-Front, and a two-context adaptive bit-tree coder, libbsc-style";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => BscCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => BscCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => BscCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => BscCompressor.Decompress(data);
 }

@@ -38,7 +38,10 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     using var r = new CpioReader(archive, leaveOpen: true);
     var entries = r.ReadAll();
@@ -61,10 +64,22 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
-  public string Id => "Cpio";
-  public string DisplayName => "CPIO";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Cpio";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "CPIO";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -83,19 +98,46 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       CpioModifier.RemoveFile(archive, name, wipeData: true);
   }
 
-  public string DefaultExtension => ".cpio";
-  public IReadOnlyList<string> Extensions => [".cpio"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".cpio";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".cpio"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0xC7, 0x71], Confidence: 0.90),
     new([(byte)'0', (byte)'7', (byte)'0', (byte)'7', (byte)'0', (byte)'7'], Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("cpio", "CPIO")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unix copy-in/copy-out archive format";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("cpio", "CPIO")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Unix copy-in/copy-out archive format";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     // Header-only walk: ReadAll materialises every entry, so listing an archive
     // with a multi-gigabyte member would fail for no reason.
     var r = new CpioReader(stream);
@@ -110,7 +152,10 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return result;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // Stream each entry straight to disk: ReadAll materialises every entry, which
     // an entry larger than an array cannot survive. Skipped entries still have
     // their data consumed so the reader stays aligned on the next header.
@@ -156,7 +201,10 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return ms.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new CpioWriter(output);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);

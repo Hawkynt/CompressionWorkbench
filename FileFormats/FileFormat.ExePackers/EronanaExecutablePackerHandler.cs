@@ -70,14 +70,23 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class EronanaExecutablePackerHandler : IExecutablePackerHandler {
-  public string Id => "eronanapacker";
-  public string DisplayName => "Eronana Packer";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "eronanapacker";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Eronana Packer";
 
   private const string PackerSectionName = ".packer";
   private const int PeInfoSize = 44; // 10 DWORDs (40) + padded empty trailing struct (4)
   private const int MinRepeatLength = 3;
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -86,7 +95,10 @@ public sealed class EronanaExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Eronana: not a valid PE.", true)]);
 
@@ -115,7 +127,10 @@ public sealed class EronanaExecutablePackerHandler : IExecutablePackerHandler {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Eronana: \".packer\" section present but PEInfo does not look structurally plausible.", true)]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -131,7 +146,10 @@ public sealed class EronanaExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var diagnostics = new List<ExecutableDiagnostic>();
     var artifacts = new List<UnpackArtifact> { new("original_packed.bin", image, "stored") };

@@ -38,10 +38,28 @@ public static class SbcCodec {
   private static readonly int[] FrequencyHz = [16000, 32000, 44100, 48000];
 
   /// <summary>SBC channel mode (libavcodec/sbc.h).</summary>
-  public enum ChannelMode { Mono = 0, DualChannel = 1, Stereo = 2, JointStereo = 3 }
+  public enum ChannelMode {   /// <summary>
+  /// Specifies the mono option.
+  /// </summary>
+Mono = 0,   /// <summary>
+  /// Specifies the dual channel option.
+  /// </summary>
+DualChannel = 1,   /// <summary>
+  /// Specifies the stereo option.
+  /// </summary>
+Stereo = 2,   /// <summary>
+  /// Specifies the joint stereo option.
+  /// </summary>
+JointStereo = 3 }
 
   /// <summary>Bit-allocation method (libavcodec/sbc.h).</summary>
-  public enum Allocation { Loudness = 0, Snr = 1 }
+  public enum Allocation {   /// <summary>
+  /// Specifies the loudness option.
+  /// </summary>
+Loudness = 0,   /// <summary>
+  /// Specifies the snr option.
+  /// </summary>
+Snr = 1 }
 
   /// <summary>Parsed parameters of a single SBC frame plus its byte length on the wire.</summary>
   public readonly record struct FrameHeader(

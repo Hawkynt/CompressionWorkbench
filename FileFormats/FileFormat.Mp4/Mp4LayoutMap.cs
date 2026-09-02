@@ -12,7 +12,10 @@ namespace FileFormat.Mp4;
 public sealed class Mp4LayoutMap : IFileInternalLayoutMap {
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) {
+    /// <summary>
+  /// Enumerates the chunks.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     file.Position = 0;
     var length = file.Length;

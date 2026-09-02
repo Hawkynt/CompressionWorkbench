@@ -30,7 +30,10 @@ public sealed class CpcDskWriter : IDisposable {
   private readonly List<(string Name, byte[] Data)> _files = [];
   private bool _finished;
 
-  public CpcDskWriter(Stream stream, bool leaveOpen = false,
+    /// <summary>
+  /// Initializes a new instance of <see cref="CpcDskWriter"/>.
+  /// </summary>
+public CpcDskWriter(Stream stream, bool leaveOpen = false,
       int tracks = 40, int sides = 1,
       int sectorsPerTrack = SectorsPerTrack, int sectorSize = SectorSize) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -46,7 +49,10 @@ public sealed class CpcDskWriter : IDisposable {
   internal Geometry Layout => Geometry.Standard(this._tracks, this._sides,
     this._sectorsPerTrack, this._sectorSize);
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     if (this._finished)
@@ -146,7 +152,10 @@ public sealed class CpcDskWriter : IDisposable {
     return code;
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._finished) this.Finish();
     if (!this._leaveOpen) this._stream.Dispose();
   }

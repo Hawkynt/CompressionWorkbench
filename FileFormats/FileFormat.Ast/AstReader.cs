@@ -23,7 +23,10 @@ namespace FileFormat.Ast;
 /// </summary>
 public sealed class AstReader {
 
-  public sealed record Header(
+    /// <summary>
+  /// Represents a header.
+  /// </summary>
+public sealed record Header(
     int Codec,
     int BitDepth,
     int NumChannels,
@@ -33,11 +36,17 @@ public sealed class AstReader {
     int LoopStart,
     int LoopEnd);
 
-  public sealed record ParsedAst(
+    /// <summary>
+  /// Represents a parsed ast.
+  /// </summary>
+public sealed record ParsedAst(
     Header Info,
     short[][] Pcm);          // [channel][sampleCount]; empty for undecoded codecs.
 
-  public ParsedAst Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedAst Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x40)
       throw new InvalidDataException("AST too short for STRM header.");
     if (data[0] != 'S' || data[1] != 'T' || data[2] != 'R' || data[3] != 'M')

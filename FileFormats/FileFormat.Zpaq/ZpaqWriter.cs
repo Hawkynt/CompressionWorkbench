@@ -121,7 +121,10 @@ public sealed class ZpaqWriter : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (_disposed)
       return;
 

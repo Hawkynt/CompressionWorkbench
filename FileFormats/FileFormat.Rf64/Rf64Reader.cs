@@ -12,7 +12,10 @@ namespace FileFormat.Rf64;
 /// 64-bit size lives in the <c>ds64</c> chunk".
 /// </summary>
 public sealed class Rf64Reader {
-  public sealed record ParsedRf64(
+    /// <summary>
+  /// Represents a parsed rf 64.
+  /// </summary>
+public sealed record ParsedRf64(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -23,7 +26,10 @@ public sealed class Rf64Reader {
 
   private const uint SizeSentinel = 0xFFFFFFFF;
 
-  public ParsedRf64 Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedRf64 Read(ReadOnlySpan<byte> data) {
     if (data.Length < 16)
       throw new InvalidDataException("RF64 too short for header.");
     if (data[0] != 'R' || data[1] != 'F' || data[2] != '6' || data[3] != '4')

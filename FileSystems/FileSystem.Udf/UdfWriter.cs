@@ -58,7 +58,10 @@ public sealed class UdfWriter {
   /// </summary>
   public string VolumeIdentifier { get; set; } = "UDF Volume";
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _files.Add((name, data));
@@ -117,7 +120,10 @@ public sealed class UdfWriter {
     public int DataLength;     // exact byte length of the (directory or file) data
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     var root = BuildTree();
 
     // LBN 0 is the FSD; the root File Entry lives at LBN 1. Everything else

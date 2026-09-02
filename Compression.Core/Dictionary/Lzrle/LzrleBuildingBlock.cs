@@ -10,19 +10,37 @@ namespace Compression.Core.Dictionary.Lzrle;
 /// </remarks>
 public sealed class LzrleBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzrle";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzrle";
   /// <inheritdoc/>
-  public string DisplayName => "LZRLE";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZRLE";
   /// <inheritdoc/>
-  public string Description => "LZ77 dictionary compression augmented with a dedicated run-length token for repeated bytes";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 dictionary compression augmented with a dedicated run-length token for repeated bytes";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) =>
     LzrleCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) =>
     LzrleDecompressor.Decompress(data);
 }

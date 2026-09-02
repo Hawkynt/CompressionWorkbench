@@ -85,7 +85,10 @@ public sealed class XzStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the decompress block operation.
+  /// </summary>
+protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (this._finished)
       return 0;
 
@@ -119,7 +122,10 @@ public sealed class XzStream : CompressionStream {
   private const long StreamFlushThreshold = 64L * 1024 * 1024;
 
   /// <inheritdoc />
-  protected override void CompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the compress block operation.
+  /// </summary>
+protected override void CompressBlock(byte[] buffer, int offset, int count) {
     this._compressBuffer!.Write(buffer, offset, count);
 
     // .xz files may hold concatenated streams, so closing the current one and
@@ -131,7 +137,10 @@ public sealed class XzStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override void FinishCompression() {
+    /// <summary>
+  /// Performs the finish compression operation.
+  /// </summary>
+protected override void FinishCompression() {
     var data = this._compressBuffer!.ToArray();
 
     // Write stream header

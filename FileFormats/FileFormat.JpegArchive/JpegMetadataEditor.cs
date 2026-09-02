@@ -170,11 +170,26 @@ public static class JpegMetadataEditor {
 /// fields are left unchanged; setting a field overwrites whatever was there.
 /// </summary>
 public sealed class ExifPatch {
-  public GpsPoint? Gps { get; init; }
-  public GpsPoint? TargetGps { get; init; }
-  public double? ImageDirectionDegrees { get; init; }
-  public bool ImageDirectionIsMagnetic { get; init; }
-  public string? ImageDescription { get; init; }
+    /// <summary>
+  /// Gets or sets the gps.
+  /// </summary>
+public GpsPoint? Gps { get; init; }
+    /// <summary>
+  /// Gets or sets the target gps.
+  /// </summary>
+public GpsPoint? TargetGps { get; init; }
+    /// <summary>
+  /// Gets or sets the image direction degrees.
+  /// </summary>
+public double? ImageDirectionDegrees { get; init; }
+    /// <summary>
+  /// Gets a value indicating whether image direction is magnetic.
+  /// </summary>
+public bool ImageDirectionIsMagnetic { get; init; }
+    /// <summary>
+  /// Gets or sets the image description.
+  /// </summary>
+public string? ImageDescription { get; init; }
   /// <summary>EXIF SubIFD <c>DateTimeOriginal</c> (0x9003) — when the shutter closed.</summary>
   public DateTime? DateTimeOriginal { get; init; }
   /// <summary>EXIF SubIFD <c>DateTimeDigitized</c> (0x9004) — when the file was created.</summary>

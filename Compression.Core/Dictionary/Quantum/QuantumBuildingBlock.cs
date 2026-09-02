@@ -24,19 +24,34 @@ public sealed class QuantumBuildingBlock : IBuildingBlock {
   private const int WindowBits = 15;
 
   /// <inheritdoc/>
-  public string Id => "BB_Quantum";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Quantum";
 
   /// <inheritdoc/>
-  public string DisplayName => "Quantum";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Quantum";
 
   /// <inheritdoc/>
-  public string Description => "LZ77 with an adaptive arithmetic coder, as Microsoft CAB archives carry it";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 with an adaptive arithmetic coder, as Microsoft CAB archives carry it";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     if (data.Length == 0)
       return [];
 
@@ -53,7 +68,10 @@ public sealed class QuantumBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var buffer = new MemoryStream();
     var offset = 0;
     while (offset + 8 <= data.Length) {

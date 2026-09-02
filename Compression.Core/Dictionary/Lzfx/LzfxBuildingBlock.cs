@@ -10,16 +10,31 @@ namespace Compression.Core.Dictionary.Lzfx;
 /// </summary>
 public sealed class LzfxBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzfx";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzfx";
   /// <inheritdoc/>
-  public string DisplayName => "LZFX";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZFX";
   /// <inheritdoc/>
-  public string Description => "LZF-derived codec with a 3-byte minimum match and a wider 64K-entry hash table";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZF-derived codec with a 3-byte minimum match and a wider 64K-entry hash table";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = LzfxCompressor.Compress(data);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -28,7 +43,10 @@ public sealed class LzfxBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return originalSize == 0 ? [] : LzfxDecompressor.Decompress(data[4..], originalSize);
   }

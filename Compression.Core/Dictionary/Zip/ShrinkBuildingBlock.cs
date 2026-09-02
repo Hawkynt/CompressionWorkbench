@@ -12,16 +12,31 @@ namespace Compression.Core.Dictionary.Zip;
 /// </summary>
 public sealed class ShrinkBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Shrink";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Shrink";
   /// <inheritdoc/>
-  public string DisplayName => "Shrink";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Shrink";
   /// <inheritdoc/>
-  public string Description => "PKWARE ZIP Shrink (method 1) - LZW with 9-13 bit codes and partial dictionary clear";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "PKWARE ZIP Shrink (method 1) - LZW with 9-13 bit codes and partial dictionary clear";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var body = data.Length == 0 ? [] : ShrinkEncoder.Encode(data);
     var output = new byte[4 + body.Length];
     BinaryPrimitives.WriteInt32LittleEndian(output, data.Length);
@@ -30,7 +45,10 @@ public sealed class ShrinkBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 4) throw new InvalidDataException("Shrink: input smaller than 4-byte header.");
     var size = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (size < 0) throw new InvalidDataException("Shrink: negative decompressed size.");

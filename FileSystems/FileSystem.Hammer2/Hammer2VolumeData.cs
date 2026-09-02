@@ -69,21 +69,66 @@ public sealed class Hammer2VolumeData {
   /// <summary>True iff the magic matched the alternate (byte-swapped) form.</summary>
   public bool ByteSwapped { get; private init; }
 
-  public long BootBeg { get; private init; }
-  public long BootEnd { get; private init; }
-  public long AuxBeg { get; private init; }
-  public long AuxEnd { get; private init; }
-  public long VoluSize { get; private init; }
-  public uint Version { get; private init; }
-  public uint Flags { get; private init; }
-  public byte CopyId { get; private init; }
-  public byte FreemapVersion { get; private init; }
-  public byte PeerType { get; private init; }
-  public byte VoluId { get; private init; }
-  public byte NVolumes { get; private init; }
-  public string FsidHex { get; private init; } = "";
-  public string FsTypeHex { get; private init; } = "";
-  public byte[] HeaderRaw { get; private init; } = [];
+    /// <summary>
+  /// Gets or sets the boot beg.
+  /// </summary>
+public long BootBeg { get; private init; }
+    /// <summary>
+  /// Gets or sets the boot end.
+  /// </summary>
+public long BootEnd { get; private init; }
+    /// <summary>
+  /// Gets or sets the aux beg.
+  /// </summary>
+public long AuxBeg { get; private init; }
+    /// <summary>
+  /// Gets or sets the aux end.
+  /// </summary>
+public long AuxEnd { get; private init; }
+    /// <summary>
+  /// Gets or sets the volu size.
+  /// </summary>
+public long VoluSize { get; private init; }
+    /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
+public uint Version { get; private init; }
+    /// <summary>
+  /// Gets or sets the flags.
+  /// </summary>
+public uint Flags { get; private init; }
+    /// <summary>
+  /// Gets or sets the copy id.
+  /// </summary>
+public byte CopyId { get; private init; }
+    /// <summary>
+  /// Gets or sets the freemap version.
+  /// </summary>
+public byte FreemapVersion { get; private init; }
+    /// <summary>
+  /// Gets or sets the peer type.
+  /// </summary>
+public byte PeerType { get; private init; }
+    /// <summary>
+  /// Gets or sets the volu id.
+  /// </summary>
+public byte VoluId { get; private init; }
+    /// <summary>
+  /// Gets or sets the n volumes.
+  /// </summary>
+public byte NVolumes { get; private init; }
+    /// <summary>
+  /// Gets or sets the fsid hex.
+  /// </summary>
+public string FsidHex { get; private init; } = "";
+    /// <summary>
+  /// Gets or sets the fs type hex.
+  /// </summary>
+public string FsTypeHex { get; private init; } = "";
+    /// <summary>
+  /// Gets or sets the header raw.
+  /// </summary>
+public byte[] HeaderRaw { get; private init; } = [];
 
   /// <summary>Best-effort parse. Never throws.</summary>
   public static Hammer2VolumeData TryParse(ReadOnlySpan<byte> image) {

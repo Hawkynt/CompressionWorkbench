@@ -28,16 +28,40 @@ namespace FileSystem.Lustre;
 /// </summary>
 public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "Lustre";
-  public string DisplayName => "Lustre";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Lustre";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Lustre";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".lustre";
-  public IReadOnlyList<string> Extensions => [".lustre", ".ost", ".mdt"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".lustre";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".lustre", ".ost", ".mdt"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "LUSTRE" (6 bytes) at offset 0 — legacy OST object-header dump.
     new("LUSTRE"u8.ToArray(), Offset: 0, Confidence: 0.90),
     // Bytes 0x4C 0x55 0x73 0x74 (= 0x4C557374 BE) at offset 0 — short variant.
@@ -46,10 +70,22 @@ public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // here — it would steal detection from generic ext4 images. ldiskfs MDT/OST
     // images surface through Lustre only via the .lustre/.ost/.mdt extension.
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Lustre R/O via ldiskfs (ext4) reader delegation. Surfaces the ldiskfs view of one " +
     "MDT or OST backing store (file walk over the ext4-compatible block layout); Lustre " +
     "xattrs (LMA, LOV EA striping, FID) are preserved in the raw image but not interpreted. " +
@@ -57,13 +93,19 @@ public sealed class LustreFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "multiple OSTs) requires live cluster metadata and is out of scope. Legacy 'LUSTRE'/'LUst' " +
     "object-header dumps still surface as raw bytes + metadata.ini.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new LustreReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new LustreReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

@@ -52,15 +52,39 @@ namespace FileFormat.EaseUs;
 /// </summary>
 public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "EaseUsPbd";
-  public string DisplayName => "EaseUS Todo Backup (.pbd)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "EaseUsPbd";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "EaseUS Todo Backup (.pbd)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".pbd";
-  public IReadOnlyList<string> Extensions => [".pbd"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".pbd";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".pbd"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "IMGF" (49 4D 47 46) — universal Todo Backup container marker at offset 0
     // (~85% of real-world .pbd files per R-Studio + tenforums RE).
     new("IMGF"u8.ToArray(), Offset: 0, Confidence: 0.90),
@@ -68,10 +92,22 @@ public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // (older / OEM builds; documented on xyplorer).
     new("FIMG"u8.ToArray(), Offset: 0, Confidence: 0.80),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "EaseUS Todo Backup (.pbd) — R/O metadata via IMGF-header parse + R/O chunk-stream via per-zlib " +
     "trial inflate + binary-reverse-engineered container shape (0x4E8-byte header block + 0xC0-byte " +
     "trailer block pinned by binary RE of TBImageExplorer.exe — CImgFile::CheckHeader at file_off " +
@@ -96,13 +132,19 @@ public sealed class EaseUsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "writer implemented; pending vendor-restore validation (a human runs the EaseUS app's restore " +
     "against the produced container to confirm the engine reconstructs the original file tree).";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new EaseUsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new EaseUsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

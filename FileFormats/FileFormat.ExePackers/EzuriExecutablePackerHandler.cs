@@ -29,10 +29,19 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
   private const int KeyLength = 32;
   private const int IvLength = 16;
 
-  public string Id => "ezuri";
-  public string DisplayName => "Ezuri ELF crypter (AES-256-CFB)";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "ezuri";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Ezuri ELF crypter (AES-256-CFB)";
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -40,7 +49,10 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsElf |
     ExecutableUnpackCapabilities.SupportsX64;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (TryLocate(image.ToArray(), out _, out _, out _))
       return new(true, this.Id, 1.0, []);
     return new(false, this.Id, 0,
@@ -48,7 +60,10 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
         "No Ezuri loader with an appended AES-256-CFB key/IV/ciphertext trailer was found.", true)]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var bytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(this.Id, bytes, detection, info, this.Capabilities, new Dictionary<string, string> {
@@ -59,7 +74,10 @@ public sealed class EzuriExecutablePackerHandler : IExecutablePackerHandler {
     });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     if (image.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [],

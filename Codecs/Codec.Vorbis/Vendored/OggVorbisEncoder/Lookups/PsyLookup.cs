@@ -6,6 +6,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a psy lookup.
+/// </summary>
 public class PsyLookup
 {
     private readonly float[] _ath;
@@ -23,7 +26,10 @@ public class PsyLookup
     private readonly float[][][] _toneCurves;
     private readonly int _totalOctaveLines;
 
-    public PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)
+        /// <summary>
+    /// Initializes a new instance of <see cref="PsyLookup"/>.
+    /// </summary>
+public PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)
     {
         _psyInfo = psyInfo;
         _n = n;
@@ -364,7 +370,10 @@ public class PsyLookup
         return newToneCurves;
     }
 
-    public void ToneMask(
+        /// <summary>
+    /// Performs the tone mask operation.
+    /// </summary>
+public void ToneMask(
         float[] pcm,
         float[] logmask,
         float globalSpecMax,
@@ -397,7 +406,10 @@ public class PsyLookup
             ArrayPool<float>.Shared.Return(seedArr);
     }
 
-    public void OffsetAndMix(
+        /// <summary>
+    /// Performs the offset and mix operation.
+    /// </summary>
+public void OffsetAndMix(
         float[] noise,
         float[] tone,
         int offsetIndex,
@@ -461,7 +473,10 @@ public class PsyLookup
         }
     }
 
-    public void NoiseMask(in Span<float> logmdct, float[] logmask)
+        /// <summary>
+    /// Performs the noise mask operation.
+    /// </summary>
+public void NoiseMask(in Span<float> logmdct, float[] logmask)
     {
         var workArr = ArrayPool<float>.Shared.Rent(_n);
         Span<float> work = new Span<float>(workArr, 0, _n);
@@ -661,7 +676,10 @@ public class PsyLookup
         ArrayPool<float>.Shared.Return(arr);
     }
 
-    public void CoupleQuantizeNormalize(
+        /// <summary>
+    /// Performs the couple quantize normalize operation.
+    /// </summary>
+public void CoupleQuantizeNormalize(
         int blobno,
         PsyGlobal psyGlobal,
         Mapping mapping,

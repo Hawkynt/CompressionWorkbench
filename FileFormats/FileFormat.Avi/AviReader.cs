@@ -15,7 +15,10 @@ public sealed class AviReader {
   /// <summary>One movi chunk belonging to a track (a single video frame or audio packet).</summary>
   public sealed record ChunkEntry(string ChunkId, byte[] Data);
 
-  public sealed record Track(
+    /// <summary>
+  /// Represents a track.
+  /// </summary>
+public sealed record Track(
     int Index,
     string StreamType,         // "vids" or "auds" (or raw FourCC)
     uint Handler,              // codec FourCC for video, format tag for audio
@@ -30,14 +33,20 @@ public sealed class AviReader {
     byte[] Data,
     IReadOnlyList<ChunkEntry> Chunks);
 
-  public sealed record ParsedAvi(
+    /// <summary>
+  /// Represents a parsed avi.
+  /// </summary>
+public sealed record ParsedAvi(
     int Width,
     int Height,
     uint MicroSecPerFrame,
     uint TotalFrames,
     IReadOnlyList<Track> Tracks);
 
-  public ParsedAvi Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedAvi Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("AVI too short for RIFF header.");
     if (data[0] != 'R' || data[1] != 'I' || data[2] != 'F' || data[3] != 'F')

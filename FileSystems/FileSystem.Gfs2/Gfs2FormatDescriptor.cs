@@ -70,27 +70,66 @@ public sealed class Gfs2FormatDescriptor
       Description: "Cluster lock-table name stamped into sb_locktable (empty for a standalone volume)."),
   ];
 
-  public string Id => "Gfs2";
-  public string DisplayName => "GFS2 (Global File System 2)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Gfs2";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "GFS2 (Global File System 2)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".gfs2";
-  public IReadOnlyList<string> Extensions => [".gfs2"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".gfs2";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".gfs2"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0x01161970 BE at offset 65536 — start of gfs2_meta_header.mh_magic for the SB.
     new([0x01, 0x16, 0x19, 0x70], Offset: (int)Gfs2Reader.SbByteOffset, Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "GFS2 (Red Hat cluster filesystem) — read superblock + single-leaf root directory + inline-data files; create a fresh empty lock_nolock volume that fsck.gfs2 accepts.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     Gfs2Reader? r;
     try {
@@ -122,7 +161,10 @@ public sealed class Gfs2FormatDescriptor
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     Gfs2Reader r;
     try {
       r = new Gfs2Reader(stream);
@@ -239,7 +281,10 @@ public sealed class Gfs2FormatDescriptor
   //     (the CRUD cycle writes 9000-byte payloads) is impossible, so claiming
   //     R/W would be dishonest.
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -394,7 +439,10 @@ public sealed class Gfs2FormatDescriptor
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Gfs2ExtentMap.Enumerate(image);
 
   /// <summary>

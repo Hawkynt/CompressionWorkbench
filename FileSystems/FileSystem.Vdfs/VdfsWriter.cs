@@ -5,10 +5,16 @@ using Compression.Core.DiskImage;
 
 namespace FileSystem.Vdfs;
 
+/// <summary>
+/// Writes vdfs data.
+/// </summary>
 public sealed class VdfsWriter {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) => _files.Add((name, FilePayload.FromBytes(data)));
 
   /// <summary>
   /// Adds a file whose bytes are produced on demand. <paramref name="size" /> must

@@ -18,39 +18,93 @@ namespace CompressionWorkbench.FileFormat.Ico;
 public sealed class IcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveWriteConstraints {
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "ICO is a Windows icon bundle (image bitmaps + DIB/PNG payloads) — defragmentation isn't meaningful.");
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
-  public string Id => "Ico";
-  public string DisplayName => "Windows ICO/CUR";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ico";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Windows ICO/CUR";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".ico";
-  public IReadOnlyList<string> Extensions => [".ico"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ico";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ico"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x00, 0x00, 0x01, 0x00], Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Windows ICO/CUR icon bundle — pseudo-archive of one or more PNG/DIB images. " +
     "Reader reconstructs BITMAPFILEHEADER for DIB entries; writer accepts PNG and BMP inputs; " +
     "in-place R/W mutates the ICONDIR + ICONDIRENTRY table directly (existing payload bytes " +
     "are preserved, only their offsets shift).";
 
-  public long? MaxTotalArchiveSize => null;
-  public long? MinTotalArchiveSize => null;
-  public string AcceptedInputsDescription => "Accepts PNG and BMP image files; max 65535 images.";
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
+public long? MinTotalArchiveSize => null;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription => "Accepts PNG and BMP image files; max 65535 images.";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = "Directories not supported in ICO bundles."; return false; }
     var ext = Path.GetExtension(input.ArchiveName).ToLowerInvariant();
     if (ext is not (".png" or ".bmp" or ".dib")) {
@@ -61,7 +115,10 @@ public sealed class IcoFormatDescriptor :
     return true;
   }
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var bundle = ReadBundle(stream);
     return bundle.Entries.Select(e => new ArchiveEntryInfo(
       Index: e.Index, Name: e.Name,
@@ -70,7 +127,10 @@ public sealed class IcoFormatDescriptor :
       IsDirectory: false, IsEncrypted: false, LastModified: null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var bundle = ReadBundle(stream);
     foreach (var e in bundle.Entries) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
@@ -78,7 +138,10 @@ public sealed class IcoFormatDescriptor :
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var images = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => new IcoWriter.Image(i.ReadContent()))

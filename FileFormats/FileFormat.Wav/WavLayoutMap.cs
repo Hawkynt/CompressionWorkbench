@@ -13,7 +13,10 @@ namespace FileFormat.Wav;
 /// </summary>
 public static class WavLayoutMap {
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (file.Length < 12)
       yield break;

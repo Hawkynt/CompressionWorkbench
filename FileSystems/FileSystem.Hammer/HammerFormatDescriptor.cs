@@ -40,22 +40,58 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Description: "Volume label (newfs_hammer -L); max 63 ASCII chars."),
   ];
 
-  public string Id => "Hammer";
-  public string DisplayName => "HAMMER (DragonFly BSD)";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Hammer";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "HAMMER (DragonFly BSD)";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate;
-  public string DefaultExtension => ".hammer";
-  public IReadOnlyList<string> Extensions => [".hammer"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".hammer";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".hammer"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(HammerVolumeOndisk.MagicBytesLE, Offset: 0, Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "HAMMER (DragonFly BSD original) filesystem image — volume header surface only. " +
     "WORM emit deferred: HAMMER1 requires a real cluster B-tree (zone blockmap → " +
     "cluster → inode → records with hammer_crc_t CRCs across every node), a per-volume " +
@@ -63,7 +99,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "valid undo-fifo head/tail — none of which we can validate without a running " +
     "DragonFly BSD instance. Multi-week effort, deferred to a future phase.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
@@ -150,7 +189,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     writer.WriteTo(output);
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
       image = ReadAllBounded(stream);
@@ -233,7 +275,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -310,7 +355,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ── IFilesystemExtentMap / IWipeEmpty ──────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => HammerExtentMap.Enumerate(image);
 
   /// <summary>

@@ -81,7 +81,10 @@ public sealed class Pc98Writer {
   /// <summary>Data clusters a FAT12 allocation table can address.</summary>
   private const int MaxFat12Clusters = 4084;
 
-  public byte[] Build() {
+    /// <summary>
+  /// Performs the build operation.
+  /// </summary>
+public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(
         $"PC-98: more files ({this._files.Count}) than root entries ({this._rootEntries}).");

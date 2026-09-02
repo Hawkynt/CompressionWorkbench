@@ -14,17 +14,35 @@ namespace Compression.Core.Entropy.ContextMixing.Mcm;
 /// </remarks>
 public sealed class McmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Mcm";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Mcm";
   /// <inheritdoc/>
-  public string DisplayName => "MCM (reduced)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MCM (reduced)";
   /// <inheritdoc/>
-  public string Description => "Two-level context-mixing network: three grouped mixers combined by a top-level mixer, MCM-style";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Two-level context-mixing network: three grouped mixers combined by a top-level mixer, MCM-style";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => McmCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => McmCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => McmCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => McmCompressor.Decompress(data);
 }

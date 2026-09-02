@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileFormat.Rarc;
 
+/// <summary>
+/// Reads rarc data.
+/// </summary>
 public sealed class RarcReader {
   private readonly Stream _stream;
   private readonly long _baseOffset;
@@ -15,7 +18,10 @@ public sealed class RarcReader {
   private readonly List<FileRecord> _fileRecords;
   private readonly List<RarcEntry> _entries = [];
 
-  public RarcReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="RarcReader"/>.
+  /// </summary>
+public RarcReader(Stream stream) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanRead)
       throw new ArgumentException("Stream must be readable.", nameof(stream));
@@ -112,9 +118,15 @@ public sealed class RarcReader {
     VisitDirectory(0, string.Empty, stack);
   }
 
-  public IReadOnlyList<RarcEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<RarcEntry> Entries => this._entries;
 
-  public byte[] Extract(RarcEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(RarcEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       throw new InvalidOperationException("Directory entries do not have payload bytes.");
@@ -127,7 +139,10 @@ public sealed class RarcReader {
     return result;
   }
 
-  public static ushort CalculateNameHash(string name) {
+    /// <summary>
+  /// Computes the name hash for the supplied data.
+  /// </summary>
+public static ushort CalculateNameHash(string name) {
     ArgumentNullException.ThrowIfNull(name);
     ushort hash = 0;
     foreach (var ch in name) {

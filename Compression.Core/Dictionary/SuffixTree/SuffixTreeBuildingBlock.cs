@@ -31,19 +31,34 @@ namespace Compression.Core.Dictionary.SuffixTree;
 /// </summary>
 public sealed class SuffixTreeBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_SuffixTree";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_SuffixTree";
   /// <inheritdoc/>
-  public string DisplayName => "Suffix Tree Compression";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Suffix Tree Compression";
   /// <inheritdoc/>
-  public string Description => "LZ factorization driven by a suffix-array dictionary index";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ factorization driven by a suffix-array dictionary index";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinMatchLength = 3;
   private const int MaxMatchLength = 255; // Fits a single control byte.
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     Span<byte> header = stackalloc byte[4];
@@ -131,7 +146,10 @@ public sealed class SuffixTreeBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalLength = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalLength == 0)
       return [];

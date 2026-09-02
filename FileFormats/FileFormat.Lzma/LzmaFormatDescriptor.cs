@@ -4,21 +4,60 @@ using Compression.Registry;
 
 namespace FileFormat.Lzma;
 
+/// <summary>
+/// Describes lzma format.
+/// </summary>
 public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
-  public string Id => "Lzma";
-  public string DisplayName => "LZMA";
-  public FormatCategory Category => FormatCategory.Stream;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Lzma";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZMA";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Stream;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize;
-  public string DefaultExtension => ".lzma";
-  public IReadOnlyList<string> Extensions => [".lzma"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
-  public string Description => "LZMA range-coded LZ77 with large dictionaries, high compression";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".lzma";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".lzma"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("lzma", "LZMA", SupportsOptimize: true)];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZMA range-coded LZ77 with large dictionaries, high compression";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
   // The LZMA-alone header stores the dictionary size and the lc/lp/pb
@@ -112,17 +151,29 @@ public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>Parses the position bits (pb), clamped to the valid 0..4 range.</summary>
   internal static int ParsePb(FormatCreateOptions options) => ParseClampedInt(options, "Pb", 0, 4, 2);
 
-  public void Decompress(Stream input, Stream output) => LzmaStream.Decompress(input, output);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Decompress(Stream input, Stream output) => LzmaStream.Decompress(input, output);
 
-  public void Compress(Stream input, Stream output) => LzmaStream.Compress(input, output);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output) => LzmaStream.Compress(input, output);
 
-  public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
     LzmaStream.Compress(
       input, output,
       ParseDictionarySize(options),
       ParseLc(options), ParseLp(options), ParsePb(options),
       ParseLevel(options));
 
-  public void CompressOptimal(Stream input, Stream output) =>
+    /// <summary>
+  /// Performs the compress optimal operation.
+  /// </summary>
+public void CompressOptimal(Stream input, Stream output) =>
     LzmaStream.Compress(input, output, dictionarySize: 1 << 24, lc: 3, lp: 0, pb: 2, level: LzmaCompressionLevel.Best);
 }

@@ -9,16 +9,31 @@ namespace Compression.Core.Dictionary.Xpress;
 /// </summary>
 public sealed class XpressBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Xpress";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Xpress";
   /// <inheritdoc/>
-  public string DisplayName => "XPRESS Huffman";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "XPRESS Huffman";
   /// <inheritdoc/>
-  public string Description => "LZ77+Huffman compression used in Windows (NTFS, WIM, Hyper-V)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77+Huffman compression used in Windows (NTFS, WIM, Hyper-V)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressor = new XpressHuffmanCompressor();
     var compressed = compressor.Compress(data);
     var result = new byte[4 + compressed.Length];
@@ -28,7 +43,10 @@ public sealed class XpressBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return XpressHuffmanDecompressor.Decompress(data[4..], originalSize);
   }

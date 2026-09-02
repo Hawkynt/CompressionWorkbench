@@ -2,6 +2,9 @@ using System.Buffers.Binary;
 
 namespace Codec.MsAdpcm;
 
+/// <summary>
+/// Represents a ms adpcm codec.
+/// </summary>
 public static partial class MsAdpcmCodec {
 
   private const int HeaderBytesPerChannel = 7;

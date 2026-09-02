@@ -902,7 +902,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public uint FinalRange
+                /// <summary>
+        /// Gets the final range.
+        /// </summary>
+public uint FinalRange
         {
             get
             {
@@ -992,12 +995,18 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        public string GetVersionString()
+                /// <summary>
+        /// Gets the version string.
+        /// </summary>
+public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
 
         /// <inheritdoc />
-        public void Dispose() { }
+                /// <summary>
+        /// Releases resources held by this instance.
+        /// </summary>
+public void Dispose() { }
     }
 }

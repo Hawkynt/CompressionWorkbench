@@ -12,34 +12,76 @@ namespace FileFormat.Dng;
 /// leans on extension + the DNGVersion tag.
 /// </summary>
 public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
-  public string Id => "Dng";
-  public string DisplayName => "Adobe DNG / Camera RAW";
-  public FormatCategory Category => FormatCategory.Image;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Dng";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Adobe DNG / Camera RAW";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Image;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".dng";
-  public IReadOnlyList<string> Extensions => [".dng", ".nef", ".cr2", ".raf", ".arw", ".rw2", ".orf", ".pef", ".srw"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".dng";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".dng", ".nef", ".cr2", ".raf", ".arw", ".rw2", ".orf", ".pef", ".srw"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // Same byte-order marks as TIFF — use lower confidence than TiffFormatDescriptor (0.85)
   // so plain .tif still dispatches to TIFF. DNG identity is confirmed by extension / DNGVersion tag.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x49, 0x49, 0x2A, 0x00], Confidence: 0.40), // little-endian TIFF
     new([0x4D, 0x4D, 0x00, 0x2A], Confidence: 0.40), // big-endian TIFF
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Embedded JPEG + raw strips")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Adobe DNG (TIFF container) for camera RAW; surfaces thumbnail + previews + raw IFDs.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Embedded JPEG + raw strips")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Adobe DNG (TIFF container) for camera RAW; surfaces thumbnail + previews + raw IFDs.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
       OriginalSize: e.Data.Length, CompressedSize: e.Data.Length,
       Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
       Kind: e.Kind)).ToList();
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
         continue;
@@ -47,7 +89,10 @@ public sealed class DngFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {
         output.Write(e.Data);

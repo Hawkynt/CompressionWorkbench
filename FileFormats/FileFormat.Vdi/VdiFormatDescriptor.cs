@@ -14,27 +14,66 @@ namespace FileFormat.Vdi;
 /// </list>
 /// </summary>
 public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
-  public string Id => "Vdi";
-  public string DisplayName => "VDI";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Vdi";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "VDI";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".vdi";
-  public IReadOnlyList<string> Extensions => [".vdi"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".vdi";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".vdi"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x7F, 0x10, 0xDA, 0xBE], Offset: 64, Confidence: 0.95)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("vdi", "VDI")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "VirtualBox disk image";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("vdi", "VDI")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "VirtualBox disk image";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VdiStream.TryOpen(stream) is { } vdiStream) {
       using (vdiStream) {
         vdiStream.Position = 0;
@@ -58,7 +97,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return [new ArchiveEntryInfo(0, "disk.img", r.VirtualSize, stream.Length, "VDI", false, false, null)];
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VdiStream.TryOpen(stream) is { } vdiStream) {
       using (vdiStream) {
         vdiStream.Position = 0;
@@ -83,7 +125,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     WriteFile(outputDir, "disk.img", r.ExtractDisk());
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     using var w = new VdiWriter(output, leaveOpen: true, virtualSize: fatImage.Length);
     w.Write(fatImage);
@@ -92,12 +137,18 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VdiLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VdiLayoutMap.Enumerate(archive);
 
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (VdiStream.TryOpen(image) is { } vdiStream) {
       using (vdiStream) {
         var inner = InnerFsDetector.Detect(vdiStream);
@@ -114,7 +165,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
+public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (VdiStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -145,7 +199,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  public void Remove(Stream archive, string[] entryNames) {
+    /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
+public void Remove(Stream archive, string[] entryNames) {
     if (VdiStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -178,11 +235,17 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     if (VdiStream.TryOpen(archive) is { } vdiStream) {
       using (vdiStream) {
         var inner = InnerFsDetector.Detect(vdiStream);
@@ -246,7 +309,10 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// to the backing stream; edits in sparse holes allocate new blocks via
   /// <see cref="VdiStream"/>.
   /// </remarks>
-  public Stream OpenGuestDiskStream(Stream image) {
+    /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
+public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)
       throw new NotSupportedException("Partition editing requires a writable VDI stream.");

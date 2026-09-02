@@ -1,5 +1,8 @@
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Defines the contract for i setup template.
+/// </summary>
 public interface ISetupTemplate
 {
     int Mappings { get; }

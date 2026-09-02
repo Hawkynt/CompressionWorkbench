@@ -25,15 +25,39 @@ namespace FileSystem.JuiceFs;
 /// </summary>
 public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "JuiceFs";
-  public string DisplayName => "JuiceFS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "JuiceFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "JuiceFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".juicefs";
-  public IReadOnlyList<string> Extensions => [".juicefs"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".juicefs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".juicefs"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Wrapper-convention tag: ASCII "JuiceFS" (7 bytes) at offset 0.
     // Note: real JuiceFS artefacts have NO offset-0 magic. The binary
     // backup (juicefs dump --binary, JuiceFS 1.3+) stores its BakMagic
@@ -45,10 +69,22 @@ public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // marker for surfacing detection — not a real JuiceFS signature.
     new("JuiceFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "JuiceFS — detection-only — distributed POSIX FS with NO standalone on-disk image " +
     "format: a volume = external metadata DB (Redis/MySQL/TiKV/SQLite/PostgreSQL/etcd/" +
     "FoundationDB/BadgerDB) + chunks in S3-compatible object storage. R/O is structurally " +
@@ -59,13 +95,19 @@ public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "the SQLite backend uses the standard SQLite header. The offset-0 'JuiceFS' tag is a " +
     "wrapper convention for surfacing detection only.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new JuiceFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new JuiceFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

@@ -11,17 +11,35 @@ namespace Compression.Core.Entropy.ContextMixing.Ctw;
 /// </summary>
 public sealed class ContextTreeWeightingBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_ContextTreeWeighting";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_ContextTreeWeighting";
   /// <inheritdoc/>
-  public string DisplayName => "Context Tree Weighting";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Context Tree Weighting";
   /// <inheritdoc/>
-  public string Description => $"Context Tree Weighting (Willems/Shtarkov/Tjalkens): depth-{ContextTreeWeightingCompressor.ContextDepthBits} binary context tree with a Krichevsky-Trofimov estimator per node, recursively weighted and arithmetic-coded";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => $"Context Tree Weighting (Willems/Shtarkov/Tjalkens): depth-{ContextTreeWeightingCompressor.ContextDepthBits} binary context tree with a Krichevsky-Trofimov estimator per node, recursively weighted and arithmetic-coded";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => ContextTreeWeightingCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => ContextTreeWeightingCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => ContextTreeWeightingCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => ContextTreeWeightingCompressor.Decompress(data);
 }

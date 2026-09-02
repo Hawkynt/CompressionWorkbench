@@ -123,7 +123,10 @@ public sealed class ReiserFsWriter {
   /// </summary>
   public string Label { get; set; } = "worm";
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     // Preserve the FULL relative path. Path components may carry '/' or '\'

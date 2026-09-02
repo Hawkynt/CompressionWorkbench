@@ -13,33 +13,75 @@ namespace FileSystem.CramFs;
 /// </list>
 /// </summary>
 public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
-  public string Id => "CramFs";
-  public string DisplayName => "CramFS";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "CramFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "CramFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   // WORM (Write-Once-Read-Many), NOT R/W: CramFS is a compressed, read-only ROM
   // filesystem. Add/Remove are implemented via the verified extract -> re-create
   // rebuild (ModifyRebuilder), which is a full rewrite — so the verb works, but the
   // image is not modified in place. Advertising CanModify would falsely claim genuine
   // in-place R/W. See Compression.Registry/FormatCapabilities.cs for the WORM vs R/W rule.
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  public string DefaultExtension => ".cramfs";
-  public IReadOnlyList<string> Extensions => [".cramfs"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x45, 0x3D, 0xCD, 0x28], Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("cramfs", "CramFS")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Linux Compressed ROM filesystem";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".cramfs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".cramfs"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x45, 0x3D, 0xCD, 0x28], Confidence: 0.95)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("cramfs", "CramFS")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Linux Compressed ROM filesystem";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CramFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size, -1,
       "cramfs", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new CramFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -80,7 +122,10 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new CramFsWriter(output, leaveOpen: true);
     foreach (var input in inputs) {
       if (input.IsDirectory) {
@@ -92,7 +137,10 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
+public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
     => ModifyRebuilder.Add(archive, inputs,
       readEntries: stream => {
         var r = new CramFsReader(stream);
@@ -105,7 +153,10 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         return ms.ToArray();
       });
 
-  public void Remove(Stream archive, string[] entryNames)
+    /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
+public void Remove(Stream archive, string[] entryNames)
     => ModifyRebuilder.Remove(archive, entryNames,
       readEntries: stream => {
         var r = new CramFsReader(stream);
@@ -118,7 +169,10 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
         return ms.ToArray();
       });
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

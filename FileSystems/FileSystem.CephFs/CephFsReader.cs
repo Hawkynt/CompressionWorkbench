@@ -48,12 +48,27 @@ public sealed class CephFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<CephFsEntry> _entries = [];
 
-  public IReadOnlyList<CephFsEntry> Entries => _entries;
-  public uint MagicWord { get; private set; }
-  public uint TrailingWord { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<CephFsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the magic word.
+  /// </summary>
+public uint MagicWord { get; private set; }
+    /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
+public uint TrailingWord { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
-  public CephFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="CephFsReader"/>.
+  /// </summary>
+public CephFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -94,10 +109,16 @@ public sealed class CephFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(CephFsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(CephFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

@@ -86,10 +86,22 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => ExtExtentMap.Enumerate(image);
 
-  public string Id => "Ext";
-  public string DisplayName => "ext2/3/4";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ext";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ext2/3/4";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -97,7 +109,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new ExtBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -107,7 +122,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new ExtBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -153,7 +171,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ((IArchiveShrinkable)this).ShrinkDefault(input, output);
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -253,17 +274,44 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
   }
-  public string DefaultExtension => ".ext2";
-  public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ext2";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ext2", ".ext3", ".ext4", ".img"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x53, 0xEF], 1080, 0.80f)]; // magic at superblock offset 1024 + field offset 56
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "ext2/ext3/ext4 Linux filesystem image";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "ext2/ext3/ext4 Linux filesystem image";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ExtReader(stream);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified,
@@ -304,7 +352,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new ExtWriter();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
@@ -387,7 +438,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(w.BuildAutoSized(blockSize, version, journal, volumeLabel, inodeSize));
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ExtReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -453,7 +507,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // block-size change is a structural rebuild, not an in-place patch.
 
   /// <inheritdoc />
-  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    /// <summary>
+  /// Performs the analyze layout operation.
+  /// </summary>
+public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
 
@@ -490,7 +547,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  public void PatchInPlace(Stream image, LayoutPatch patch) {
+    /// <summary>
+  /// Performs the patch in place operation.
+  /// </summary>
+public void PatchInPlace(Stream image, LayoutPatch patch) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(patch);
     if (patch.VolumeLabel is { } label) {
@@ -511,7 +571,10 @@ public sealed class ExtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public LayoutReclaim ReclaimSupport => LayoutReclaim.Sparse | LayoutReclaim.HardLinks;
 
   /// <inheritdoc />
-  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    /// <summary>
+  /// Performs the rebuild streaming operation.
+  /// </summary>
+public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
     ArgumentNullException.ThrowIfNull(source);
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(options);

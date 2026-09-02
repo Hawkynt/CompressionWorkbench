@@ -2,9 +2,15 @@ using System;
 
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents a code book.
+/// </summary>
 public class CodeBook
 {
-    public CodeBook(
+        /// <summary>
+    /// Initializes a new instance of <see cref="CodeBook"/>.
+    /// </summary>
+public CodeBook(
         int dimensions,
         int entries,
         int usedEntries,
@@ -51,7 +57,10 @@ public class CodeBook
     /// </summary>
     public int UsedEntries { get; }
 
-    public IStaticCodeBook StaticBook { get; }
+        /// <summary>
+    /// Gets the static book.
+    /// </summary>
+public IStaticCodeBook StaticBook { get; }
 
     /* for encode, the below are entry-ordered, fully populated */
     /* for decode, the below are ordered by bitreversed codeword and only
@@ -72,21 +81,45 @@ public class CodeBook
     /// </summary>
     public int[] DecIndex { get; }
 
-    public byte[] DecCodeLengths { get; }
+        /// <summary>
+    /// Gets the dec code lengths.
+    /// </summary>
+public byte[] DecCodeLengths { get; }
 
 
-    public uint[] DecFirstTable { get; }
+        /// <summary>
+    /// Gets the dec first table.
+    /// </summary>
+public uint[] DecFirstTable { get; }
 
-    public int DecFirstTableN { get; }
+        /// <summary>
+    /// Gets the dec first table n.
+    /// </summary>
+public int DecFirstTableN { get; }
 
-    public int DecMaxLength { get; }
+        /// <summary>
+    /// Gets the dec max length.
+    /// </summary>
+public int DecMaxLength { get; }
 
     /* The current encoder uses only centered, integer-only lattice books. */
-    public int QuantValues { get; }
-    public int MinVal { get; }
-    public int Delta { get; }
+        /// <summary>
+    /// Gets the quant values.
+    /// </summary>
+public int QuantValues { get; }
+        /// <summary>
+    /// Gets the min val.
+    /// </summary>
+public int MinVal { get; }
+        /// <summary>
+    /// Gets the delta.
+    /// </summary>
+public int Delta { get; }
 
-    public static CodeBook InitEncode(IStaticCodeBook source)
+        /// <summary>
+    /// Performs the init encode operation.
+    /// </summary>
+public static CodeBook InitEncode(IStaticCodeBook source)
     {
         return new CodeBook(
             source.Dimensions,

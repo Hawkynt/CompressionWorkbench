@@ -11,14 +11,23 @@ namespace FileFormat.Ampk;
 /// and LZH compressed data.
 /// </summary>
 public sealed class AmpkReader : IDisposable {
-  public static readonly byte[] AmpkMagic = "AMPK"u8.ToArray();
+    /// <summary>
+  /// Provides the ampk magic value.
+  /// </summary>
+public static readonly byte[] AmpkMagic = "AMPK"u8.ToArray();
 
   private readonly byte[] _data;
   private readonly List<AmpkEntry> _entries = [];
 
-  public IReadOnlyList<AmpkEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<AmpkEntry> Entries => _entries;
 
-  public AmpkReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AmpkReader"/>.
+  /// </summary>
+public AmpkReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -66,7 +75,10 @@ public sealed class AmpkReader : IDisposable {
     }
   }
 
-  public byte[] Extract(AmpkEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(AmpkEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.CompressedSize > _data.Length)
       throw new InvalidDataException("AMPK: data extends beyond file.");
@@ -83,5 +95,8 @@ public sealed class AmpkReader : IDisposable {
     }
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

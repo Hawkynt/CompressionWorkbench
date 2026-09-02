@@ -1,5 +1,8 @@
 namespace Compression.Core.Dictionary.Lzh;
 
+/// <summary>
+/// Encodes lzh data.
+/// </summary>
 public sealed partial class LzhEncoder {
   private readonly record struct LzhToken {
     public bool IsLiteral { get; private init; }

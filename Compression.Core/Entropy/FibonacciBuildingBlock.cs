@@ -8,13 +8,25 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class FibonacciBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Fibonacci";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Fibonacci";
   /// <inheritdoc/>
-  public string DisplayName => "Fibonacci Coding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Fibonacci Coding";
   /// <inheritdoc/>
-  public string Description => "Universal code using Zeckendorf representation with '11' terminators";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Universal code using Zeckendorf representation with '11' terminators";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   // Pre-compute Fibonacci numbers. F(2)=1, F(3)=2, F(4)=3, F(5)=5, ...
   private static readonly int[] Fibs;
@@ -53,7 +65,10 @@ public sealed class FibonacciBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write uncompressed size (4 bytes, LE).
@@ -79,7 +94,10 @@ public sealed class FibonacciBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     // Read uncompressed size.

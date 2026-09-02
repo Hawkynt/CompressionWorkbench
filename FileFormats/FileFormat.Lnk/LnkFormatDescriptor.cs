@@ -20,15 +20,36 @@ namespace FileFormat.Lnk;
 /// </list>
 /// </summary>
 public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
-  public string Id => "Lnk";
-  public string DisplayName => "Windows Shell Link";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Lnk";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Windows Shell Link";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".lnk";
-  public IReadOnlyList<string> Extensions => [".lnk"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".lnk";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".lnk"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // Full 20-byte magic: HeaderSize (0x0000004C LE) + LinkCLSID.
   private static readonly byte[] Magic20 = [
@@ -36,13 +57,28 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
     0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
   ];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Magic20, Offset: 0, Confidence: 0.99),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Windows Shell Link (.lnk) shortcut. Surfaces header, ID list, LinkInfo, " +
     "UTF-16/ANSI string blocks, and any extra data blocks. " +
     "WORM-only by design: a shell link describes exactly one target, and every " +
@@ -64,7 +100,10 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     IsUnicode           = 1 << 7,
   }
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     List<(string Name, byte[] Data)> entries;
     try {
       entries = BuildEntries(stream);
@@ -78,7 +117,10 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     List<(string Name, byte[] Data)> entries;
     try {
       entries = BuildEntries(stream);

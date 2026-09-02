@@ -37,13 +37,25 @@ namespace Compression.Core.Dictionary.Balz;
 /// </remarks>
 public sealed class BalzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Balz";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Balz";
   /// <inheritdoc/>
-  public string DisplayName => "BALZ";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BALZ";
   /// <inheritdoc/>
-  public string Description => "Muravyov's ROLZ compressor: per-context match tables entropy-coded with a binary adaptive arithmetic coder";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Muravyov's ROLZ compressor: per-context match tables entropy-coded with a binary adaptive arithmetic coder";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int ContextCount = 256;
   private const int TableSize = 64;          // entries per context, must be a power of two
@@ -57,7 +69,10 @@ public sealed class BalzBuildingBlock : IBuildingBlock {
   private const int AdaptShift = 5;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -124,7 +139,10 @@ public sealed class BalzBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

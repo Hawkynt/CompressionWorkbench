@@ -37,7 +37,10 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new PackItReader(archive);
     foreach (var e in r.Entries) {
@@ -47,10 +50,22 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
-  public string Id => "PackIt";
-  public string DisplayName => "PackIt";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "PackIt";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "PackIt";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
@@ -73,19 +88,46 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       PackItModifier.RemoveFile(archive, Path.GetFileName(name), wipeData: true);
   }
 
-  public string DefaultExtension => ".pit";
-  public IReadOnlyList<string> Extensions => [".pit"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".pit";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".pit"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'M', (byte)'a', (byte)'g'], Confidence: 0.85),
     new([(byte)'P', (byte)'M', (byte)'a', (byte)'4'], Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("packit", "PackIt")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "PackIt classic Macintosh archive (.pit), Harry Chesley, 1984";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("packit", "PackIt")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "PackIt classic Macintosh archive (.pit), Harry Chesley, 1984";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new PackItReader(stream, leaveOpen: true);
     return r.Entries
       .Select((e, i) => new ArchiveEntryInfo(
@@ -100,7 +142,10 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       .ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new PackItReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -139,7 +184,10 @@ public sealed class PackItFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new PackItWriter(output, leaveOpen: true);
     foreach (var (name, data) in FormatHelpers.FlatFiles(inputs))
       w.AddFile(name, data);

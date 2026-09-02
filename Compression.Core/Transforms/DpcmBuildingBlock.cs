@@ -11,16 +11,31 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class DpcmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Dpcm";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Dpcm";
   /// <inheritdoc/>
-  public string DisplayName => "DPCM";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "DPCM";
   /// <inheritdoc/>
-  public string Description => "Differential Pulse-Code Modulation, stores sample-to-sample differences";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Differential Pulse-Code Modulation, stores sample-to-sample differences";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     if (data.Length == 0)
       return [];
 
@@ -37,7 +52,10 @@ public sealed class DpcmBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length == 0)
       return [];
 

@@ -22,27 +22,66 @@ namespace FileFormat.Vhdx;
 /// </list>
 /// </summary>
 public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
-  public string Id => "Vhdx";
-  public string DisplayName => "VHDX";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Vhdx";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "VHDX";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".vhdx";
-  public IReadOnlyList<string> Extensions => [".vhdx"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".vhdx";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".vhdx"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("vhdxfile"u8.ToArray(), Offset: 0, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft Hyper-V VHDX virtual hard disk (MS-VHDX v1)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Microsoft Hyper-V VHDX virtual hard disk (MS-VHDX v1)";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
         vhdxStream.Position = 0;
@@ -67,7 +106,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
       using (vhdxStream) {
         vhdxStream.Position = 0;
@@ -106,7 +148,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     // Simple: emit the entire file as metadata + payload
     yield return new DefragBlockInfo(0, Math.Min(0x100000, archive.Length),
       DefragBlockKind.MetadataReserved, FileName: "VHDX Headers + Region Tables");
@@ -118,7 +163,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (VhdxStream.TryOpen(image) is { } vhdxStream) {
       using (vhdxStream) {
         var inner = InnerFsDetector.Detect(vhdxStream);
@@ -135,7 +183,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
+public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (VhdxStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -166,7 +217,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <inheritdoc />
-  public void Remove(Stream archive, string[] entryNames) {
+    /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
+public void Remove(Stream archive, string[] entryNames) {
     if (VhdxStream.TryOpen(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -199,11 +253,17 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     if (VhdxStream.TryOpen(archive) is { } vhdxStream) {
       using (vhdxStream) {
         var inner = InnerFsDetector.Detect(vhdxStream);
@@ -320,7 +380,10 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// first write, so callers should ensure the host stream has enough room
   /// for any new partitions before adding them.
   /// </remarks>
-  public Stream OpenGuestDiskStream(Stream image) {
+    /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
+public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)
       throw new NotSupportedException("Partition editing requires a writable VHDX stream.");

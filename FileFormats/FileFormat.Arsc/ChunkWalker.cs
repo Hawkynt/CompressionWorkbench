@@ -7,6 +7,9 @@ namespace FileFormat.Arsc;
 /// </summary>
 public readonly record struct ChunkHeader(ushort Type, ushort HeaderSize, uint Size);
 
+/// <summary>
+/// Represents a chunk walker.
+/// </summary>
 public static class ChunkWalker {
 
   /// <summary>

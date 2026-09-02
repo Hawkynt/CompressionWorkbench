@@ -10,9 +10,15 @@ namespace FileFormat.Wrapster;
 public sealed class WrapsterWriter {
   private readonly List<(string Name, byte[] Data)> _files = [];
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, data));
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) => _files.Add((name, data));
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     using var bw = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
 
     // Write fake MP3 frame header (MPEG1 Layer3 128kbps stereo 44100Hz)

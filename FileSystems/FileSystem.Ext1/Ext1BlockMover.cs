@@ -54,13 +54,22 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
     _inodeTableOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(bgd.Slice(8)) * _blockSize;
   }
 
-  public long FirstDataByte => (long)_firstDataBlock * _blockSize;
-  public int BlockSize => _blockSize;
+    /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
+public long FirstDataByte => (long)_firstDataBlock * _blockSize;
+    /// <summary>
+  /// Gets the block size.
+  /// </summary>
+public int BlockSize => _blockSize;
 
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -82,7 +91,10 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
   /// Crash mid-3: file reachable via new pointers, old blocks still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);
     var oldFirstBlock = OffsetToBlock(oldOffset);
     var newFirstBlock = OffsetToBlock(newOffset);
@@ -336,10 +348,16 @@ public sealed class Ext1BlockMover : IFilesystemBlockMover {
   // ── Scattered relink ──────────────────────────────────────────────────
 
   /// <inheritdoc />
-  public int AllocationBlockSize => _blockSize;
+    /// <summary>
+  /// Gets the allocation block size.
+  /// </summary>
+public int AllocationBlockSize => _blockSize;
 
   /// <inheritdoc />
-  public bool SupportsScatteredRelink => true;
+    /// <summary>
+  /// Gets a value indicating whether supports scattered relink.
+  /// </summary>
+public bool SupportsScatteredRelink => true;
 
   /// <summary>
   /// Rewrites one file's whole allocation once every byte has moved.

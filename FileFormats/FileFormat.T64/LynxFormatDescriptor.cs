@@ -19,15 +19,36 @@ public sealed class LynxFormatDescriptor :
     IArchiveLayoutMap,
     IFormatOptionsSchema {
 
-  public string Id => "Lynx";
-  public string DisplayName => "Commodore Lynx archive";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Lynx";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Commodore Lynx archive";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".lnx";
-  public IReadOnlyList<string> Extensions => [".lnx"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".lnx";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".lnx"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <summary>
   /// Canonical Lynx BASIC preambles contain the text "USE LYNX..." with LYNX at offset 0x3C.
@@ -38,22 +59,40 @@ public sealed class LynxFormatDescriptor :
     new("LYNX"u8.ToArray(), Offset: 0x3C, Confidence: 0.92),
   ];
 
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Will Corley/Ultimate Lynx Commodore archive: 254-byte sector payload blocks, PRG/SEQ/USR/DEL " +
     "creation, REL read/remove support, and genuine in-place add/replace/remove by shifting only " +
     "the affected directory/data block ranges. No compression or checksum exists in the format.";
 
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("FileType", "Default Commodore file type", FormatOptionKind.Enum, "P",
       ["P", "S", "U", "D"], "File type used for fresh generic inputs: PRG, SEQ, USR or DEL."),
     new("Signature", "24-byte Lynx signature", FormatOptionKind.String, LynxWriter.DefaultSignature,
       Description: "Exactly 24 printable ASCII characters containing LYNX."),
   ];
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = Open(stream);
     return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
       index,
@@ -66,7 +105,10 @@ public sealed class LynxFormatDescriptor :
       null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var reader = Open(stream);
     foreach (var entry in reader.Entries) {
       if (files is not null && files.Length > 0 && !MatchesFilter(entry.Name, files))
@@ -75,7 +117,10 @@ public sealed class LynxFormatDescriptor :
     }
   }
 
-  public Stream OpenEntry(Stream archive, string entryName, string? password) {
+    /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
+public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
     var reader = Open(archive);
@@ -85,14 +130,20 @@ public sealed class LynxFormatDescriptor :
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
-  public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
+    /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
+public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var entry = this.OpenEntry(archive, entryName, password);
     using var memory = new MemoryStream();
     entry.CopyTo(memory);
     return memory.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
@@ -148,14 +199,20 @@ public sealed class LynxFormatDescriptor :
     archive.Position = 0;
   }
 
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.Mode != DefragMode.ConsolidateAtStart)
       throw new NotSupportedException("Lynx has an implicit sequential layout; only ConsolidateAtStart is meaningful.");
     this.Defragment(archive);
   }
 
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var reader = Open(archive);
     yield return new DefragBlockInfo(0, reader.DataStart, DefragBlockKind.MetadataReserved, "Lynx directory");
     foreach (var entry in reader.Entries) {

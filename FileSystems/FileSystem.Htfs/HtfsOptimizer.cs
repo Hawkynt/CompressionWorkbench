@@ -18,7 +18,10 @@ public static class HtfsOptimizer {
   private const double MaxSlackRatio = 0.05;
   private const double MaxBloatFactor = 2.0;
 
-  public static HtfsOptimalParameters Find(IReadOnlyList<long> fileSizes) {
+    /// <summary>
+  /// Performs the find operation.
+  /// </summary>
+public static HtfsOptimalParameters Find(IReadOnlyList<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
     if (fileSizes.Count == 0)
       return new HtfsOptimalParameters(512, InodeCount: 16, EstimatedImageBytes: 4 * 512);

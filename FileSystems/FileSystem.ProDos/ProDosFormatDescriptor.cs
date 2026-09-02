@@ -22,7 +22,10 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ProDOS uses fixed 512-byte blocks (no cluster-size knob), so the tunable
   // parameters are the volume size (only 140 KB or 800 KB are supported by the
   // writer) and the volume name.
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "ImageSize",
       DisplayName: "Image size",
@@ -49,10 +52,19 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     => ProDosExtentMap.Enumerate(image);
 
   // We cap at the 800 KB Mac-format floppy — the largest canonical size we emit.
-  public long? MaxTotalArchiveSize => ProDosWriter.Disk800KTotalBlocks * 512L;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => ProDosWriter.Disk800KTotalBlocks * 512L;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "Apple ProDOS block-ordered disk image (.po) or 2mg-wrapped ProDOS image.";
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   /// <summary>Canonical ProDOS image sizes (5.25" floppy = 143 360, 800 KB floppy = 819 200).</summary>
   public IReadOnlyList<long> CanonicalSizes => [
@@ -60,11 +72,23 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     ProDosWriter.Disk800KTotalBlocks * 512L,
   ];
 
-  public string Id => "ProDos";
-  public string DisplayName => "ProDOS";
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "ProDos";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ProDOS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
 
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
@@ -92,9 +116,18 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   }
 
 
-  public string DefaultExtension => ".po";
-  public IReadOnlyList<string> Extensions => [".po", ".2mg"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".po";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".po", ".2mg"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // .2mg files begin with "2IMG" at offset 0. A raw .po image has no header of
   // its own, but its volume directory does: block 2 opens with a zero
@@ -102,24 +135,45 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // 0xF — the volume directory header. Without that, a ProDOS image shared the
   // .po extension with gettext catalogues and whichever descriptor came first
   // in the registry got the file.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("2IMG"u8.ToArray(), Offset: 0, Confidence: 0.95),
     new([0x00, 0x00, 0x03, 0x00, 0xF0], Offset: 0x400, Confidence: 0.85,
       Mask: [0xFF, 0xFF, 0xFF, 0xFF, 0xF0]),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Apple II / Apple IIgs ProDOS filesystem image";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Apple II / Apple IIgs ProDOS filesystem image";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new ProDosReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.FullPath, e.Size, e.Size, "Stored", e.IsDirectory, false, null
     )).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new ProDosReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -160,7 +214,10 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return memoryStream.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var total = 0L;
     foreach (var i in inputs) if (!i.IsDirectory) total += i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
     if (this.MaxTotalArchiveSize is long cap && total > cap)
@@ -228,14 +285,23 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new ProDosBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new ProDosBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

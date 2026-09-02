@@ -5,7 +5,16 @@ namespace FileFormat.SplitFile;
 /// Represents the single logical file assembled from split parts.
 /// </summary>
 public sealed class SplitFileEntry {
-  public string Name { get; init; } = "";
-  public long Size { get; init; }
-  public int PartCount { get; init; }
+    /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
+public string Name { get; init; } = "";
+    /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
+public long Size { get; init; }
+    /// <summary>
+  /// Gets or sets the part count.
+  /// </summary>
+public int PartCount { get; init; }
 }

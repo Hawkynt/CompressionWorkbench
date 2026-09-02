@@ -17,16 +17,31 @@ public sealed class LzmsBuildingBlock : IBuildingBlock {
   private const int ChunkSize = 128 * 1024;
 
   /// <inheritdoc/>
-  public string Id => "BB_Lzms";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzms";
   /// <inheritdoc/>
-  public string DisplayName => "LZMS";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZMS";
   /// <inheritdoc/>
-  public string Description => "LZ+Markov+Shannon compression with delta matching, used in Windows WIM";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ+Markov+Shannon compression with delta matching, used in Windows WIM";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     Span<byte> header = stackalloc byte[8];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -51,7 +66,10 @@ public sealed class LzmsBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var total = BinaryPrimitives.ReadInt32LittleEndian(data);
     var chunkSize = BinaryPrimitives.ReadInt32LittleEndian(data[4..]);
     var result = new byte[total];

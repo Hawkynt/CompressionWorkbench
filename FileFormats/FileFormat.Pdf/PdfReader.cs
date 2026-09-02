@@ -21,7 +21,10 @@ public sealed partial class PdfReader : IDisposable {
   private readonly Dictionary<int, ImageInfo> _images = [];
   private readonly Dictionary<int, AttachInfo> _attachments = [];
 
-  public IReadOnlyList<PdfEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<PdfEntry> Entries => _entries;
 
   /// <summary>
   /// Per-page slice entries (one self-contained single-page PDF per leaf page).
@@ -30,7 +33,10 @@ public sealed partial class PdfReader : IDisposable {
   /// </summary>
   public IReadOnlyList<PdfEntry> PageEntries => _pages;
 
-  public PdfReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="PdfReader"/>.
+  /// </summary>
+public PdfReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -276,7 +282,10 @@ public sealed partial class PdfReader : IDisposable {
     return idx;
   }
 
-  public byte[] Extract(PdfEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(PdfEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
     // Page-slice entries carry their bytes directly.
@@ -360,7 +369,10 @@ public sealed partial class PdfReader : IDisposable {
     }
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 
   [GeneratedRegex(@"(\d+)\s+\d+\s+obj\s*(.*?)endobj", RegexOptions.Singleline)]
   private static partial Regex ObjPattern();

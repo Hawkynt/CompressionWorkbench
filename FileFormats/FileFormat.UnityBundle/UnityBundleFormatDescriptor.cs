@@ -24,38 +24,77 @@ public sealed class UnityBundleFormatDescriptor :
     IArchiveDefragmentable,
     IFormatOptionsSchema {
 
-  public string Id => "UnityBundle";
-  public string DisplayName => "Unity Asset Bundle";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "UnityBundle";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Unity Asset Bundle";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsOptimize;
-  public string DefaultExtension => ".bundle";
-  public IReadOnlyList<string> Extensions => [".bundle", ".unity3d", ".assetbundle"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".bundle";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".bundle", ".unity3d", ".assetbundle"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("UnityFS\0"u8.ToArray(), Confidence: 0.95),
     new("UnityWeb\0"u8.ToArray(), Confidence: 0.90),
     new("UnityRaw\0"u8.ToArray(), Confidence: 0.90),
     new("UnityArchive\0"u8.ToArray(), Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [
     new("auto", "Auto (Store/LZ4HC)", SupportsOptimize: true),
     new("stored", "Stored"),
     new("lzma", "LZMA", SupportsOptimize: true),
     new("lz4", "LZ4"),
     new("lz4hc", "LZ4HC", SupportsOptimize: true),
   ];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Unity Engine asset bundle. UnityFS v6-v8 supports fresh Stored/LZMA/LZ4/LZ4HC creation; " +
     "legacy UnityWeb/UnityRaw/UnityArchive signatures remain read-only because their container " +
     "layout is distinct. Add/remove/purge/defrag are verified rebuild-backed WORM verbs for " +
     "UnityFS only, so CanModify is intentionally not advertised.";
 
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("FormatVersion", "UnityFS format version", FormatOptionKind.Enum, "7",
       ["6", "7", "8"], "UnityFS container format version. Version 7+ aligns the header to 16 bytes."),
     new("UnityVersion", "Unity generation version", FormatOptionKind.String, "5.x.x",
@@ -72,7 +111,10 @@ public sealed class UnityBundleFormatDescriptor :
       Description: "Store the compressed block/directory table after storage blocks (UnityFS flag 0x80)."),
   ];
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = Open(stream);
     var entries = new List<ArchiveEntryInfo>(reader.Nodes.Count);
     for (var i = 0; i < reader.Nodes.Count; ++i) {
@@ -90,7 +132,10 @@ public sealed class UnityBundleFormatDescriptor :
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var reader = Open(stream);
     if (reader.Nodes.Count == 0 || !reader.CanExtract)
       return;

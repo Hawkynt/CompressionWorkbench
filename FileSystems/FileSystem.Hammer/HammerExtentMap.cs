@@ -26,7 +26,10 @@ public static class HammerExtentMap {
   private const long BlockmapUnavail = unchecked((long)0xFFFFFFFFFFFFFFFFUL);
   private const byte ZoneFree = 0;
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var result = new List<DefragBlockInfo>();
     try {

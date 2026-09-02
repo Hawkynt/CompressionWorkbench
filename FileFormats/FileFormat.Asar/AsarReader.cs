@@ -28,7 +28,10 @@ public sealed class AsarReader : IDisposable {
   /// <summary>All files and directories declared in the header, in tree order.</summary>
   public IReadOnlyList<AsarEntry> Entries { get; }
 
-  public AsarReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AsarReader"/>.
+  /// </summary>
+public AsarReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
     this._leaveOpen = leaveOpen;
@@ -112,7 +115,10 @@ public sealed class AsarReader : IDisposable {
     }
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._leaveOpen) this._stream.Dispose();
   }
 }

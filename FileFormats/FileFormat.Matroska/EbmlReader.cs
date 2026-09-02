@@ -7,10 +7,16 @@ namespace FileFormat.Matroska;
 /// opaque bytes or a nested sequence of EBML elements depending on the schema.
 /// </summary>
 public sealed class EbmlReader {
-  public readonly record struct Element(ulong Id, long BodyOffset, long BodyLength);
+    /// <summary>
+  /// Represents an element.
+  /// </summary>
+public readonly record struct Element(ulong Id, long BodyOffset, long BodyLength);
 
   private readonly byte[] _data;
-  public EbmlReader(byte[] data) { _data = data; }
+    /// <summary>
+  /// Initializes a new instance of <see cref="EbmlReader"/>.
+  /// </summary>
+public EbmlReader(byte[] data) { _data = data; }
 
   /// <summary>Reads one element at <paramref name="pos"/>, advancing it past the element.</summary>
   public Element? Read(ref long pos) {
@@ -46,16 +52,25 @@ public sealed class EbmlReader {
     }
   }
 
-  public ReadOnlySpan<byte> Body(Element el) => _data.AsSpan((int)el.BodyOffset, (int)el.BodyLength);
+    /// <summary>
+  /// Performs the body operation.
+  /// </summary>
+public ReadOnlySpan<byte> Body(Element el) => _data.AsSpan((int)el.BodyOffset, (int)el.BodyLength);
 
-  public ulong ReadUnsigned(Element el) {
+    /// <summary>
+  /// Reads the unsigned from the supplied input.
+  /// </summary>
+public ulong ReadUnsigned(Element el) {
     ulong v = 0;
     var body = Body(el);
     foreach (var b in body) v = (v << 8) | b;
     return v;
   }
 
-  public long ReadSigned(Element el) {
+    /// <summary>
+  /// Reads the signed from the supplied input.
+  /// </summary>
+public long ReadSigned(Element el) {
     var body = Body(el);
     if (body.Length == 0) return 0;
     long v = (sbyte)body[0];
@@ -63,9 +78,15 @@ public sealed class EbmlReader {
     return v;
   }
 
-  public string ReadString(Element el) => System.Text.Encoding.UTF8.GetString(Body(el)).TrimEnd('\0');
+    /// <summary>
+  /// Reads the string from the supplied input.
+  /// </summary>
+public string ReadString(Element el) => System.Text.Encoding.UTF8.GetString(Body(el)).TrimEnd('\0');
 
-  public byte[] ReadBinary(Element el) => Body(el).ToArray();
+    /// <summary>
+  /// Reads the binary from the supplied input.
+  /// </summary>
+public byte[] ReadBinary(Element el) => Body(el).ToArray();
 
   private static int VintLength(byte first) {
     for (var i = 0; i < 8; ++i)

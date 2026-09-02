@@ -12,19 +12,34 @@ namespace Compression.Core.Dictionary.Lzwl;
 /// </summary>
 public sealed class LzwlBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzwl";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzwl";
   /// <inheritdoc/>
-  public string DisplayName => "LZWL";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZWL";
   /// <inheritdoc/>
-  public string Description => "LZW with variable-length initial alphabet from digram analysis";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZW with variable-length initial alphabet from digram analysis";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MaxBits = 16;
   private const int MaxDictSize = 1 << MaxBits;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -145,7 +160,10 @@ public sealed class LzwlBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

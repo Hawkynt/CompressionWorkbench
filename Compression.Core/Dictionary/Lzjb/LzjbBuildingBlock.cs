@@ -10,16 +10,31 @@ namespace Compression.Core.Dictionary.Lzjb;
 /// </summary>
 public sealed class LzjbBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzjb";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzjb";
   /// <inheritdoc/>
-  public string DisplayName => "LZJB";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZJB";
   /// <inheritdoc/>
-  public string Description => "ZFS-era LZ77 variant with a 1KB window and an 8-flag copymap byte";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "ZFS-era LZ77 variant with a 1KB window and an 8-flag copymap byte";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = LzjbCompressor.Compress(data);
     var result = new byte[4 + compressed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);
@@ -28,7 +43,10 @@ public sealed class LzjbBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     return originalSize == 0 ? [] : LzjbDecompressor.Decompress(data[4..], originalSize);
   }

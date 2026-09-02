@@ -26,11 +26,23 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
-  public override string Id => "aspack";
-  public override string DisplayName => "ASPack (Win32 PE)";
-  protected override string PackerLabel => "ASPack";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public override string Id => "aspack";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public override string DisplayName => "ASPack (Win32 PE)";
+    /// <summary>
+  /// Gets the packer label.
+  /// </summary>
+protected override string PackerLabel => "ASPack";
 
-  protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect pe operation.
+  /// </summary>
+protected override (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image) {
     var sections = PackerScanner.GetPeSections(image);
     var hasSection = sections.Any(s =>
       s.Name.Equals(".aspack", StringComparison.OrdinalIgnoreCase) ||
@@ -41,7 +53,10 @@ public sealed class AsPackExecutablePackerHandler : AplibSectionPackerHandler {
     return (false, 0, "ASPack: neither .aspack/.adata section nor 'ASPack' literal found.");
   }
 
-  public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return base.Unpack(packed, options);
     if (!AsPackImage.TryRead(packed.OriginalImage, packed.ImageInfo, out var layout)

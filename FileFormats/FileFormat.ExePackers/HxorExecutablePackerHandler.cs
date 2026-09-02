@@ -45,10 +45,19 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
-  public string Id => "hxor";
-  public string DisplayName => "hXOR-Packer";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "hxor";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "hXOR-Packer";
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -62,7 +71,10 @@ public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
 
   private static ReadOnlySpan<byte> FifaSignature => "FIFA"u8;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!TryGetInsertOffset(image, out var offset))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "hXOR: not a valid MZ image, or e_res2 holds no plausible insert offset.", true)]);
 
@@ -75,7 +87,10 @@ public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
     return new(true, this.Id, 1.0, []);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     var metadata = new Dictionary<string, string> {
@@ -88,7 +103,10 @@ public sealed class HxorExecutablePackerHandler : IExecutablePackerHandler {
     return new(this.Id, imageBytes, detection, info, this.Capabilities, metadata);
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var image = packed.OriginalImage;
     var diagnostics = new List<ExecutableDiagnostic>();
     var artifacts = new List<UnpackArtifact> { new("original_packed.bin", image, "stored") };

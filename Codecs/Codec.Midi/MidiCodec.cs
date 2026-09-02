@@ -16,13 +16,25 @@ namespace Codec.Midi;
 /// </para>
 /// </summary>
 public sealed class MidiCodec {
-  public sealed record FileHeader(int Format, int NumTracks, int Division);
+    /// <summary>
+  /// Represents a file header.
+  /// </summary>
+public sealed record FileHeader(int Format, int NumTracks, int Division);
 
-  public sealed record TrackChunk(int Index, int FileOffset, int ByteLength);
+    /// <summary>
+  /// Represents a track chunk.
+  /// </summary>
+public sealed record TrackChunk(int Index, int FileOffset, int ByteLength);
 
-  public sealed record MetaEvent(int TrackIndex, byte Type, byte[] Data);
+    /// <summary>
+  /// Represents a meta event.
+  /// </summary>
+public sealed record MetaEvent(int TrackIndex, byte Type, byte[] Data);
 
-  public FileHeader ReadHeader(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the header from the supplied input.
+  /// </summary>
+public FileHeader ReadHeader(ReadOnlySpan<byte> data) {
     if (data.Length < 14 ||
         data[0] != 'M' || data[1] != 'T' || data[2] != 'h' || data[3] != 'd')
       throw new InvalidDataException("Not a MIDI file: missing 'MThd' magic.");
@@ -35,7 +47,10 @@ public sealed class MidiCodec {
     return new FileHeader(format, ntrks, division);
   }
 
-  public IReadOnlyList<TrackChunk> FindTracks(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Performs the find tracks operation.
+  /// </summary>
+public IReadOnlyList<TrackChunk> FindTracks(ReadOnlySpan<byte> data) {
     var tracks = new List<TrackChunk>();
     var pos = 8 + BinaryPrimitives.ReadInt32BigEndian(data[4..]);
     while (pos + 8 <= data.Length) {

@@ -11,16 +11,31 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class LevenshteinBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Levenshtein";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Levenshtein";
   /// <inheritdoc/>
-  public string DisplayName => "Levenshtein Coding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Levenshtein Coding";
   /// <inheritdoc/>
-  public string Description => "Self-delimiting universal code with recursive length prefixing";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Self-delimiting universal code with recursive length prefixing";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -40,7 +55,10 @@ public sealed class LevenshteinBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

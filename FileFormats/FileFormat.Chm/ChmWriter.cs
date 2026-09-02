@@ -30,13 +30,19 @@ public sealed class ChmWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _files.Add((name, data));
   }
 
-  public void WriteTo(Stream output, bool useLzx = false) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output, bool useLzx = false) {
     ArgumentNullException.ThrowIfNull(output);
     if (useLzx) WriteLzx(output); else WriteStored(output);
   }

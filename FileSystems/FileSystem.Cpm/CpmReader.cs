@@ -11,7 +11,10 @@ namespace FileSystem.Cpm;
 /// </summary>
 public sealed class CpmReader {
 
-  public sealed record CpmFile(
+    /// <summary>
+  /// Represents a cpm file.
+  /// </summary>
+public sealed record CpmFile(
     byte UserCode,
     string Name,
     string Extension,
@@ -21,13 +24,22 @@ public sealed class CpmReader {
     int RecordCount,
     byte[] Data
   ) {
-    public string FullName =>
+        /// <summary>
+    /// Gets the full name.
+    /// </summary>
+public string FullName =>
       string.IsNullOrEmpty(this.Extension) ? this.Name : $"{this.Name}.{this.Extension}";
   }
 
-  public sealed record Volume(IReadOnlyList<CpmFile> Files, byte[] Image);
+    /// <summary>
+  /// Represents a volume.
+  /// </summary>
+public sealed record Volume(IReadOnlyList<CpmFile> Files, byte[] Image);
 
-  public static Volume Read(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static Volume Read(ReadOnlySpan<byte> image) {
     if (image.Length < CpmLayout.TotalBytes)
       throw new InvalidDataException($"CP/M: image too small ({image.Length} bytes, expected at least {CpmLayout.TotalBytes}).");
 

@@ -22,7 +22,10 @@ public static class MkvLayoutMap {
   private const ulong Id_Chapters = 0x1043A770;
   private const ulong Id_Tags = 0x1254C367;
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (file.Length < 4)
       yield break;

@@ -18,7 +18,10 @@ public static class ZlingStream {
   // Token encoding: values 0..255 = literals, 256..511 = match (len-3 encoded in low 8 bits),
   // distances are encoded separately as 16-bit values following the match token.
 
-  public static void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -50,7 +53,10 @@ public static class ZlingStream {
     }
   }
 
-  public static void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public static void Decompress(Stream input, Stream output) {
     while (true) {
       var flag = input.ReadByte();
       if (flag < 0) break;

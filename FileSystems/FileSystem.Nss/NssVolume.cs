@@ -27,15 +27,33 @@ public sealed class NssVolume {
 
   private readonly byte[] _image;
 
-  public bool Valid { get; }
-  public string Status { get; } = "unparsed";
-  public int BlockSize => NssLayout.BlockSize;
-  public long ImageLength => this._image.LongLength;
+    /// <summary>
+  /// Gets a value indicating whether valid.
+  /// </summary>
+public bool Valid { get; }
+    /// <summary>
+  /// Gets the status.
+  /// </summary>
+public string Status { get; } = "unparsed";
+    /// <summary>
+  /// Gets the block size.
+  /// </summary>
+public int BlockSize => NssLayout.BlockSize;
+    /// <summary>
+  /// Gets the image length.
+  /// </summary>
+public long ImageLength => this._image.LongLength;
 
-  public IReadOnlyList<VolumeFile> Files => this._files;
+    /// <summary>
+  /// Gets the files.
+  /// </summary>
+public IReadOnlyList<VolumeFile> Files => this._files;
   private readonly List<VolumeFile> _files = [];
 
-  public NssVolume(Stream image) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="NssVolume"/>.
+  /// </summary>
+public NssVolume(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
     using var ms = new MemoryStream();

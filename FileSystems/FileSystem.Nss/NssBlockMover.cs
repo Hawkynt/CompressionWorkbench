@@ -21,7 +21,10 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
 
   private NssVolume? _volume;
 
-  public void Init(Stream image) {
+    /// <summary>
+  /// Performs the init operation.
+  /// </summary>
+public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
     this._volume = new NssVolume(image);
@@ -33,7 +36,10 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
       this._offsetField[file.Offset] = file.OffsetField;
   }
 
-  public int BlockSize => NssLayout.BlockSize;
+    /// <summary>
+  /// Gets the block size.
+  /// </summary>
+public int BlockSize => NssLayout.BlockSize;
 
   /// <summary>First byte a file may occupy: past the anchors and the directory.</summary>
   public long FirstDataByte => NssLayout.FirstDataBlock * NssLayout.BlockSize;
@@ -48,7 +54,10 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
   public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -60,7 +69,10 @@ public sealed class NssBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);
     if (this._volume == null) this.Init(image);

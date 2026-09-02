@@ -7,19 +7,37 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class PackBitsBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_PackBits";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_PackBits";
   /// <inheritdoc/>
-  public string DisplayName => "PackBits";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "PackBits";
   /// <inheritdoc/>
-  public string Description => "Apple PackBits run-length encoding used by TIFF and PostScript";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Apple PackBits run-length encoding used by TIFF and PostScript";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => PackBitsEncoding.Encode(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => PackBitsEncoding.Decode(data);
 }

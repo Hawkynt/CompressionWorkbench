@@ -38,26 +38,50 @@ namespace FileSystem.DriveSpace3;
 /// </summary>
 public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
   /// <inheritdoc />
-  public string Id => "DriveSpace3";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "DriveSpace3";
   /// <inheritdoc />
-  public string DisplayName => "DriveSpace 3 CVF";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "DriveSpace 3 CVF";
   /// <inheritdoc />
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   /// <inheritdoc />
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <inheritdoc />
-  public string DefaultExtension => ".cvf";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".cvf";
   /// <inheritdoc />
   // Extension-shared with DoubleSpace; detection routes by MS_DSP3 magic.
-  public IReadOnlyList<string> Extensions => [];
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [];
   /// <inheritdoc />
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   /// <inheritdoc />
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("MS_DSP3"u8.ToArray(), Offset: 3, Confidence: 0.95),
   ];
   /// <inheritdoc />
@@ -65,16 +89,25 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // base / + / ++ are routed through MsLzhCompressor.Compress(data, effort),
   // with the per-cluster shrink-or-store fallback inside DsCompression
   // applying at every tier.
-  public IReadOnlyList<FormatMethodInfo> Methods => [
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored",   "Stored (no compression)"),
     new("ms-lzh",   "MS LZH"),
     new("ms-lzh+",  "MS LZH (lazy matching, slower better ratio)"),
     new("ms-lzh++", "MS LZH (iterated parsing, best ratio)"),
   ];
   /// <inheritdoc />
-  public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
   /// <inheritdoc />
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Microsoft DriveSpace 3 CVF (Win95 Plus! Pack 1995). Shares the
   /// DoubleSpace MDBPB+MDFAT+BitFAT infrastructure (extent map, block mover,
@@ -91,7 +124,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
 
   // ── IFormatOptionsSchema ──────────────────────────────────────────────────
   /// <inheritdoc />
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "Compatibility",
       DisplayName: "On-disk layout",
@@ -155,7 +191,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     if (IsGenuineDvr3(data)) {
       using var g = new GenuineDvr3Reader(new MemoryStream(data));
@@ -168,7 +207,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   }
 
   /// <inheritdoc />
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (IsGenuineDvr3(data)) {
       using var g = new GenuineDvr3Reader(new MemoryStream(data));
@@ -192,7 +234,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
@@ -310,7 +355,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);
 
   // =========================================================================
@@ -346,7 +394,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -356,7 +407,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new DoubleSpaceBlockMover();
     image.Position = 0;
     using var ms = new MemoryStream();
@@ -370,7 +424,10 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
   // =========================================================================
 
   /// <inheritdoc />
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

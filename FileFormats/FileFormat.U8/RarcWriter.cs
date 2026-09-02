@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileFormat.Rarc;
 
+/// <summary>
+/// Writes rarc data.
+/// </summary>
 public sealed class RarcWriter : IDisposable {
   private const RarcEntryAttributes LoadMask =
     RarcEntryAttributes.PreloadToMram | RarcEntryAttributes.PreloadToAram | RarcEntryAttributes.LoadFromDvd;
@@ -17,7 +20,10 @@ public sealed class RarcWriter : IDisposable {
   private bool _finished;
   private bool _disposed;
 
-  public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
+    /// <summary>
+  /// Initializes a new instance of <see cref="RarcWriter"/>.
+  /// </summary>
+public RarcWriter(Stream stream, bool leaveOpen = false, string rootName = "root") {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanWrite)
       throw new ArgumentException("Stream must be writable.", nameof(stream));
@@ -28,7 +34,10 @@ public sealed class RarcWriter : IDisposable {
     this._leaveOpen = leaveOpen;
   }
 
-  public void AddEntry(
+    /// <summary>
+  /// Performs the add entry operation.
+  /// </summary>
+public void AddEntry(
       string path,
       byte[] data,
       RarcEntryAttributes attributes = RarcEntryAttributes.File | RarcEntryAttributes.PreloadToMram) {
@@ -63,7 +72,10 @@ public sealed class RarcWriter : IDisposable {
     this._files.Add(new InputFile(normalized, data, attributes));
   }
 
-  public void Finish() {
+    /// <summary>
+  /// Performs the finish operation.
+  /// </summary>
+public void Finish() {
     if (this._finished)
       return;
     this._finished = true;
@@ -209,7 +221,10 @@ public sealed class RarcWriter : IDisposable {
     this._stream.Position = fileSize;
   }
 
-  public static string NormalizePath(string path) {
+    /// <summary>
+  /// Performs the normalize path operation.
+  /// </summary>
+public static string NormalizePath(string path) {
     ArgumentNullException.ThrowIfNull(path);
     var normalized = path.Replace('\\', '/').TrimStart('/');
     if (normalized.Length == 0 || normalized.EndsWith('/'))
@@ -304,7 +319,10 @@ public sealed class RarcWriter : IDisposable {
       destination[i] = (byte)char.ToUpperInvariant(directory.Name[i]);
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

@@ -61,7 +61,10 @@ public sealed class SquashFsWriter : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (_disposed) return;
     _disposed = true;
     Flush();

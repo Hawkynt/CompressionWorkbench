@@ -14,10 +14,16 @@ namespace FileFormat.Mp4;
 public sealed class Mp4FastStart : IFileInternalChunkMover {
 
   /// <inheritdoc />
-  public void Optimize(Stream file) => Optimize(file, null);
+    /// <summary>
+  /// Performs the optimize operation.
+  /// </summary>
+public void Optimize(Stream file) => Optimize(file, null);
 
   /// <inheritdoc />
-  public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
+    /// <summary>
+  /// Performs the optimize operation.
+  /// </summary>
+public void Optimize(Stream file, Compression.Registry.MetadataPlacementProfile? profile) {
     ArgumentNullException.ThrowIfNull(file);
     if (!file.CanRead || !file.CanWrite || !file.CanSeek)
       throw new ArgumentException("Stream must be readable, writable, and seekable.", nameof(file));
@@ -192,5 +198,8 @@ public sealed class Mp4FastStart : IFileInternalChunkMover {
     }
   }
 
-  public sealed record AtomInfo(string Type, long Offset, long Size, int HeaderSize);
+    /// <summary>
+  /// Represents an atom info.
+  /// </summary>
+public sealed record AtomInfo(string Type, long Offset, long Size, int HeaderSize);
 }

@@ -44,7 +44,10 @@ public sealed class CompressStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override int DecompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the decompress block operation.
+  /// </summary>
+protected override int DecompressBlock(byte[] buffer, int offset, int count) {
     if (this._finished)
       return 0;
 
@@ -66,11 +69,15 @@ public sealed class CompressStream : CompressionStream {
   }
 
   /// <inheritdoc />
-  protected override void CompressBlock(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Performs the compress block operation.
+  /// </summary>
+protected override void CompressBlock(byte[] buffer, int offset, int count) {
     this._compressBuffer!.Write(buffer, offset, count);
   }
 
   /// <inheritdoc />
+  /// <summary>Writes the compress header and the LZW-coded payload for the buffered input.</summary>
   protected override void FinishCompression() {
     var compressed = LzcCodec.Compress(this._compressBuffer!.ToArray(), this._maxBits, this._blockMode);
     InnerStream.Write(compressed);

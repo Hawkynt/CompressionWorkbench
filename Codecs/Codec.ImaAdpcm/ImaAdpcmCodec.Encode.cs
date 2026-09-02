@@ -2,6 +2,9 @@ using System.Buffers.Binary;
 
 namespace Codec.ImaAdpcm;
 
+/// <summary>
+/// Represents an ima adpcm codec.
+/// </summary>
 public static partial class ImaAdpcmCodec {
 
   private const int WaveHeaderBytesPerChannel = 4;

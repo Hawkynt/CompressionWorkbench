@@ -17,12 +17,18 @@ namespace Codec.Spc700;
 /// </summary>
 public sealed class Apu {
 
-  public const int RamSize = 0x10000;
+    /// <summary>
+  /// Defines the ram size constant value.
+  /// </summary>
+public const int RamSize = 0x10000;
 
   /// <summary>The 64&#160;KB audio RAM; also the DSP's sample memory.</summary>
   public readonly byte[] Ram = new byte[RamSize];
 
-  public readonly SDsp Dsp;
+    /// <summary>
+  /// Provides the dsp value.
+  /// </summary>
+public readonly SDsp Dsp;
 
   // CPU I/O ports $F4-$F7 loopback latches.
   private readonly byte[] _ports = new byte[4];
@@ -41,11 +47,17 @@ public sealed class Apu {
   private byte _control;       // $F1
   private bool _iplRomEnabled; // tracks CONTROL bit 7; the IPL ROM is mapped only while it is set
 
-  public Apu() => this.Dsp = new SDsp(this.Ram);
+    /// <summary>
+  /// Initializes a new instance of <see cref="Apu"/>.
+  /// </summary>
+public Apu() => this.Dsp = new SDsp(this.Ram);
 
   // ── memory access ─────────────────────────────────────────────────────────────
 
-  public byte Read(ushort address) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public byte Read(ushort address) {
     switch (address) {
       case 0xF0: return 0;                 // TEST: write-only on hardware; reads as 0 here.
       case 0xF1: return this._control;     // CONTROL
@@ -70,7 +82,10 @@ public sealed class Apu {
     }
   }
 
-  public void Write(ushort address, byte value) {
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public void Write(ushort address, byte value) {
     switch (address) {
       case 0xF0: return;                    // TEST: ignored.
       case 0xF1: this.WriteControl(value); return;

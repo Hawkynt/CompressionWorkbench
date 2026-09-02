@@ -67,37 +67,79 @@ namespace FileSystem.OneFs;
 /// </summary>
 public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "OneFs";
-  public string DisplayName => "Dell EMC Isilon OneFS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "OneFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Dell EMC Isilon OneFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".onefs";
-  public IReadOnlyList<string> Extensions => [".onefs"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".onefs";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".onefs"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "OneFS" (5 bytes) at offset 0 — long tag form.
     new("OneFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
     // ASCII "ONEF" (0x4F4E4546 BE) at offset 0 — short tag form.
     new("ONEF"u8.ToArray(), Offset: 0, Confidence: 0.85),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Dell EMC Isilon OneFS — Stage 0, detection-only — proprietary distributed/clustered FS, " +
     "no single-image content surface (file data is FEC-striped across nodes). " +
     "FreeBSD-derived kernel but filesystem layer is NOT UFS-compatible (no UFS1 superblock at 8192). " +
     "No public on-disk spec; R/O promotion blocked. " +
     "Magic 'OneFS' / 'ONEF' at offset 0 of LIN-tree root.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new OneFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new OneFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

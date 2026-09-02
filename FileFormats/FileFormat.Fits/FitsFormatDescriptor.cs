@@ -20,15 +20,24 @@ namespace FileFormat.Fits;
 /// </summary>
 public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "FITS is an astronomical data container of HDUs (headers + data) — defragmentation isn't meaningful " +
       "and would risk corrupting the precise FITS card / 2880-byte alignment expected by astronomy tooling.");
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     List<FitsHdu> hdus;
     try {
       hdus = FitsParser.ParseAll(archive);
@@ -65,25 +74,64 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private const int CopyBufferSize = 64 * 1024;
 
-  public string Id => "Fits";
-  public string DisplayName => "FITS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Fits";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "FITS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".fits";
-  public IReadOnlyList<string> Extensions => [".fits", ".fit", ".fts"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".fits";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".fits", ".fit", ".fts"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(SimpleMagic, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Flexible Image Transport System (astronomy)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Flexible Image Transport System (astronomy)";
 
   private sealed record HduInfo(string Prefix, FitsHdu Hdu);
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.fits", stream.Length, stream.Length, "stored", false, false, null, "Source"),
     };
@@ -133,7 +181,10 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // Stream FULL.fits directly — never buffer the whole file.
     if (files == null || files.Length == 0 || MatchesFilter("FULL.fits", files)) {
       stream.Seek(0, SeekOrigin.Begin);
@@ -235,7 +286,10 @@ public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return Encoding.ASCII.GetBytes(sb.ToString());
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var entries = FormatHelpers.FilesOnly(inputs).ToList();
     FitsWriter.Write(output, entries);
   }

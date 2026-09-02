@@ -1,8 +1,14 @@
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents a residue entry.
+/// </summary>
 public class ResidueEntry
 {
-    public ResidueEntry(
+        /// <summary>
+    /// Initializes a new instance of <see cref="ResidueEntry"/>.
+    /// </summary>
+public ResidueEntry(
         int begin,
         int end,
         int grouping,
@@ -28,20 +34,56 @@ public class ResidueEntry
         ResidueType = residueType;
     }
 
-    public int Begin { get; }
-    public int End { get; set; }
-    public int Partitions { get; }
-    public int PartitionValues { get; }
-    public int GroupBook { get; set; }
-    public int[] SecondStages { get; }
-    public int[] BookList { get; }
-    public int[] ClassMetric1 { get; }
-    public int[] ClassMetric2 { get; }
+        /// <summary>
+    /// Gets the begin.
+    /// </summary>
+public int Begin { get; }
+        /// <summary>
+    /// Gets or sets the end.
+    /// </summary>
+public int End { get; set; }
+        /// <summary>
+    /// Gets the partitions.
+    /// </summary>
+public int Partitions { get; }
+        /// <summary>
+    /// Gets the partition values.
+    /// </summary>
+public int PartitionValues { get; }
+        /// <summary>
+    /// Gets or sets the group book.
+    /// </summary>
+public int GroupBook { get; set; }
+        /// <summary>
+    /// Gets the second stages.
+    /// </summary>
+public int[] SecondStages { get; }
+        /// <summary>
+    /// Gets the book list.
+    /// </summary>
+public int[] BookList { get; }
+        /// <summary>
+    /// Gets the class metric 1.
+    /// </summary>
+public int[] ClassMetric1 { get; }
+        /// <summary>
+    /// Gets the class metric 2.
+    /// </summary>
+public int[] ClassMetric2 { get; }
 
-    public ResidueType ResidueType { get; }
-    public int Grouping { get; }
+        /// <summary>
+    /// Gets the residue type.
+    /// </summary>
+public ResidueType ResidueType { get; }
+        /// <summary>
+    /// Gets the grouping.
+    /// </summary>
+public int Grouping { get; }
 
-    public ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)
+        /// <summary>
+    /// Performs the clone operation.
+    /// </summary>
+public ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)
         => new ResidueEntry(
             Begin,
             End,

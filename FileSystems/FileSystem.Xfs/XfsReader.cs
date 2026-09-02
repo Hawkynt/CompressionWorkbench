@@ -5,6 +5,9 @@ using System.Text;
 
 namespace FileSystem.Xfs;
 
+/// <summary>
+/// Reads xfs data.
+/// </summary>
 public sealed class XfsReader : IDisposable {
   private const uint XfsMagic = 0x58465342; // "XFSB"
   private const ushort InodeMagic = 0x494E; // "IN"
@@ -26,9 +29,15 @@ public sealed class XfsReader : IDisposable {
   private const uint XfsFeatIncompatFtype = 0x1;
   private bool HasFtype => (this._featuresIncompat & XfsFeatIncompatFtype) != 0;
 
-  public IReadOnlyList<XfsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<XfsEntry> Entries => _entries;
 
-  public XfsReader(Stream stream, bool leaveOpen = true) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="XfsReader"/>.
+  /// </summary>
+public XfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: an XFS volume's metadata is a small prefix
@@ -300,7 +309,10 @@ public sealed class XfsReader : IDisposable {
     }
   }
 
-  public byte[] Extract(XfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(XfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var size = entry.Size;
     if (size > Array.MaxLength)
@@ -370,5 +382,8 @@ public sealed class XfsReader : IDisposable {
     return written;
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

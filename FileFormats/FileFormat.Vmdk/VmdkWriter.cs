@@ -4,10 +4,16 @@ using System.Text;
 
 namespace FileFormat.Vmdk;
 
+/// <summary>
+/// Writes vmdk data.
+/// </summary>
 public sealed class VmdkWriter {
   private byte[]? _diskData;
 
-  public void SetDiskData(byte[] data) => _diskData = data;
+    /// <summary>
+  /// Sets the disk data.
+  /// </summary>
+public void SetDiskData(byte[] data) => _diskData = data;
 
   // SparseExtentHeader is a byte-packed structure (no natural alignment).
   // Field byte offsets within the 512-byte header sector:

@@ -11,8 +11,14 @@ namespace FileSystem.LittleFs;
 /// information needed to read its bytes (an inline payload or a CTZ skip-list head).
 /// </summary>
 public sealed class LittleFsFileEntry {
-  public required string Path { get; init; }
-  public long Size { get; init; }
+    /// <summary>
+  /// Gets or sets the path.
+  /// </summary>
+public required string Path { get; init; }
+    /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
+public long Size { get; init; }
   internal byte[]? Inline { get; init; }
   internal uint CtzHead { get; init; }
   internal bool IsCtz { get; init; }
@@ -37,8 +43,14 @@ public sealed class LittleFsReader : IDisposable {
   private readonly uint _blockSize;
   private readonly List<LittleFsFileEntry> _files = new();
 
-  public IReadOnlyList<LittleFsFileEntry> Files => this._files;
-  public uint BlockSize => this._blockSize;
+    /// <summary>
+  /// Gets the files.
+  /// </summary>
+public IReadOnlyList<LittleFsFileEntry> Files => this._files;
+    /// <summary>
+  /// Gets the block size.
+  /// </summary>
+public uint BlockSize => this._blockSize;
 
   private readonly HashSet<uint> _metadataBlocks = [];
 
@@ -62,9 +74,15 @@ public sealed class LittleFsReader : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._length;
 
-  public LittleFsReader(byte[] image) : this(ImageAccessor.FromBytes(image ?? throw new ArgumentNullException(nameof(image)))) { }
+    /// <summary>
+  /// Initializes a new instance of <see cref="LittleFsReader"/>.
+  /// </summary>
+public LittleFsReader(byte[] image) : this(ImageAccessor.FromBytes(image ?? throw new ArgumentNullException(nameof(image)))) { }
 
-  public LittleFsReader(Stream stream, bool leaveOpen = true)
+    /// <summary>
+  /// Initializes a new instance of <see cref="LittleFsReader"/>.
+  /// </summary>
+public LittleFsReader(Stream stream, bool leaveOpen = true)
     : this(Wrap(stream, leaveOpen)) { }
 
   private static ImageAccessor Wrap(Stream stream, bool leaveOpen) {
@@ -115,7 +133,10 @@ public sealed class LittleFsReader : IDisposable {
     return this.CopyCtz(entry.CtzHead, (uint)entry.Size, destination);
   }
 
-  public void Dispose() => this._image.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._image.Dispose();
 
   private void WalkDirectory(uint blockA, uint blockB, string parentPath, HashSet<ulong> visited) {
     var key = ((ulong)blockA << 32) | blockB;

@@ -41,10 +41,16 @@ public sealed class DefaultLzCostModel : ILzCostModel {
   public static DefaultLzCostModel Instance { get; } = new();
 
   /// <inheritdoc/>
-  public double LiteralCost(byte value) => this._literalCost;
+    /// <summary>
+  /// Performs the literal cost operation.
+  /// </summary>
+public double LiteralCost(byte value) => this._literalCost;
 
   /// <inheritdoc/>
-  public double MatchCost(int length, int distance) {
+    /// <summary>
+  /// Performs the match cost operation.
+  /// </summary>
+public double MatchCost(int length, int distance) {
     // Bits to express the length magnitude (cheap base + extra bits for larger lengths).
     var lengthBits = BitsFor(length);
 

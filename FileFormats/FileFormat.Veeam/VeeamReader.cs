@@ -75,11 +75,26 @@ public sealed class VeeamReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<VeeamEntry> _entries = [];
 
-  public IReadOnlyList<VeeamEntry> Entries => _entries;
-  public int MagicOffset { get; private set; } = -1;
-  public bool ValidHeader { get; private set; }
-  public VeeamFileType FileType { get; private set; } = VeeamFileType.Unknown;
-  public uint TrailingWord { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<VeeamEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the magic offset.
+  /// </summary>
+public int MagicOffset { get; private set; } = -1;
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets or sets the file type.
+  /// </summary>
+public VeeamFileType FileType { get; private set; } = VeeamFileType.Unknown;
+    /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
+public uint TrailingWord { get; private set; }
 
   /// <summary>
   /// Parsed trailing <c>&lt;OibSummary&gt;</c> XML metadata island, when
@@ -89,7 +104,10 @@ public sealed class VeeamReader : IDisposable {
   /// </summary>
   public OibSummary? OibSummary { get; private set; }
 
-  public VeeamReader(Stream stream, VeeamFileType fileTypeHint = VeeamFileType.Unknown) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="VeeamReader"/>.
+  /// </summary>
+public VeeamReader(Stream stream, VeeamFileType fileTypeHint = VeeamFileType.Unknown) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -303,12 +321,18 @@ public sealed class VeeamReader : IDisposable {
     _ => "Unknown",
   };
 
-  public byte[] Extract(VeeamEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(VeeamEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 
   private static int IndexOf(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle) {
     if (needle.Length == 0 || haystack.Length < needle.Length)

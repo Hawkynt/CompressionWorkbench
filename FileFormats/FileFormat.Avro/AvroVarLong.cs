@@ -7,7 +7,10 @@ namespace FileFormat.Avro;
 /// </summary>
 public static class AvroVarLong {
 
-  public static long ReadLong(Stream stream) {
+    /// <summary>
+  /// Reads the long from the supplied input.
+  /// </summary>
+public static long ReadLong(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     ulong result = 0;
     var shift = 0;
@@ -22,7 +25,10 @@ public static class AvroVarLong {
     return (long)(result >> 1) ^ -(long)(result & 1);
   }
 
-  public static void WriteLong(Stream stream, long value) {
+    /// <summary>
+  /// Writes the long to the supplied output.
+  /// </summary>
+public static void WriteLong(Stream stream, long value) {
     ArgumentNullException.ThrowIfNull(stream);
     var encoded = (ulong)((value << 1) ^ (value >> 63));
     while ((encoded & ~0x7FUL) != 0) {

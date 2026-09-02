@@ -9,13 +9,22 @@ namespace FileFormat.Umx;
 /// (S3M, IT, XM, MOD) from the Unreal Package container.
 /// </summary>
 public sealed class UmxReader : IDisposable {
-  public const uint UmxMagic = 0x9E2A83C1;
+    /// <summary>
+  /// Defines the umx magic constant value.
+  /// </summary>
+public const uint UmxMagic = 0x9E2A83C1;
   private readonly byte[] _data;
   private readonly List<UmxEntry> _entries = [];
 
-  public IReadOnlyList<UmxEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<UmxEntry> Entries => _entries;
 
-  public UmxReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="UmxReader"/>.
+  /// </summary>
+public UmxReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -124,12 +133,18 @@ public sealed class UmxReader : IDisposable {
     return negative ? -value : value;
   }
 
-  public byte[] Extract(UmxEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(UmxEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.Size > _data.Length)
       throw new InvalidDataException("UMX: data extends beyond file.");
     return _data.AsSpan(entry.Offset, (int)entry.Size).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

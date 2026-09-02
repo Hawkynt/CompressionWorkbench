@@ -13,13 +13,19 @@ namespace FileFormat.Pdf;
 public sealed class PdfWriter {
   private readonly List<(string name, byte[] data)> _files = [];
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _files.Add((name, data));
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     // Object numbering:

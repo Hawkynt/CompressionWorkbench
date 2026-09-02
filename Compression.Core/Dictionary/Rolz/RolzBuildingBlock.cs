@@ -12,13 +12,25 @@ namespace Compression.Core.Dictionary.Rolz;
 /// </summary>
 public sealed class RolzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_ROLZ";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_ROLZ";
   /// <inheritdoc/>
-  public string DisplayName => "ROLZ";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ROLZ";
   /// <inheritdoc/>
-  public string Description => "Reduced-Offset LZ with context-based match tables";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Reduced-Offset LZ with context-based match tables";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int WindowSize = 32768;
   private const int MinMatch = 3;
@@ -27,7 +39,10 @@ public sealed class RolzBuildingBlock : IBuildingBlock {
   private const int TableSize = 256;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write uncompressed size (4 bytes, LE).
@@ -99,7 +114,10 @@ public sealed class RolzBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     var uncompressedSize = BinaryPrimitives.ReadInt32LittleEndian(data);

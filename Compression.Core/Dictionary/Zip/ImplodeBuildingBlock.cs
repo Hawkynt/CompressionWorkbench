@@ -17,16 +17,31 @@ public sealed class ImplodeBuildingBlock : IBuildingBlock {
   private const bool Use8KDictionary = true;
 
   /// <inheritdoc/>
-  public string Id => "BB_Implode";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Implode";
   /// <inheritdoc/>
-  public string DisplayName => "Implode";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Implode";
   /// <inheritdoc/>
-  public string Description => "PKWARE ZIP Implode (method 6) - LZ77 with 4K/8K dictionary and Shannon-Fano coded literals, lengths and distances";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "PKWARE ZIP Implode (method 6) - LZ77 with 4K/8K dictionary and Shannon-Fano coded literals, lengths and distances";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var body = data.Length == 0 ? [] : ImplodeEncoder.Encode(data, UseLiteralTree, Use8KDictionary);
     var output = new byte[5 + body.Length];
     BinaryPrimitives.WriteInt32LittleEndian(output, data.Length);
@@ -36,7 +51,10 @@ public sealed class ImplodeBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     if (data.Length < 5) throw new InvalidDataException("Implode: input smaller than 5-byte header.");
     var size = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (size < 0) throw new InvalidDataException("Implode: negative decompressed size.");

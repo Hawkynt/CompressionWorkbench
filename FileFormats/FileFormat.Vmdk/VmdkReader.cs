@@ -29,9 +29,15 @@ public sealed class VmdkReader : IDisposable {
   // Non-sparse fields (flat/descriptor)
   private long _flatDataOffset;
 
-  public IReadOnlyList<VmdkEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<VmdkEntry> Entries => _entries;
 
-  public VmdkReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="VmdkReader"/>.
+  /// </summary>
+public VmdkReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _streamLength = stream.Length;
     _cache = new SectorCache(stream);
@@ -129,7 +135,10 @@ public sealed class VmdkReader : IDisposable {
     });
   }
 
-  public byte[] Extract(VmdkEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(VmdkEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
     if (!_isSparse) {
@@ -188,5 +197,8 @@ public sealed class VmdkReader : IDisposable {
     return result;
   }
 
-  public void Dispose() => _cache.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => _cache.Dispose();
 }

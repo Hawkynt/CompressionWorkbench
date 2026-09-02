@@ -106,7 +106,10 @@ public sealed class MooseFsReader : IDisposable {
   /// </summary>
   public string ParseStatus { get; private set; } = "unsupported-header";
 
-  public MooseFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MooseFsReader"/>.
+  /// </summary>
+public MooseFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -295,7 +298,10 @@ public sealed class MooseFsReader : IDisposable {
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 
   /// <summary>One walked section from the master metadata stream.</summary>
   /// <param name="Tag">The 8-byte ASCII tag (e.g. <c>"NODE 1.0"</c>), trimmed.</param>

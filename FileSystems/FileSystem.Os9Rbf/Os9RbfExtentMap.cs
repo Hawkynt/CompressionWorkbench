@@ -17,7 +17,10 @@ namespace FileSystem.Os9Rbf;
 /// </summary>
 public static class Os9RbfExtentMap {
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     using var ms = new MemoryStream();

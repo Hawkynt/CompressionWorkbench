@@ -16,14 +16,38 @@ public static class MbrWrapper {
   /// <summary>MBR partition-type bytes for common filesystems.</summary>
   public static class PartitionType {
 #pragma warning disable CS1591
-    public const byte Fat12 = 0x01;
-    public const byte Fat16Small = 0x04;
-    public const byte Fat16 = 0x06;
-    public const byte NtfsExfat = 0x07;
-    public const byte Fat32Chs = 0x0B;
-    public const byte Fat32Lba = 0x0C;
-    public const byte Fat16Lba = 0x0E;
-    public const byte Linux = 0x83;
+        /// <summary>
+    /// Defines the fat 12 constant value.
+    /// </summary>
+public const byte Fat12 = 0x01;
+        /// <summary>
+    /// Defines the fat 16 small constant value.
+    /// </summary>
+public const byte Fat16Small = 0x04;
+        /// <summary>
+    /// Defines the fat 16 constant value.
+    /// </summary>
+public const byte Fat16 = 0x06;
+        /// <summary>
+    /// Defines the ntfs exfat constant value.
+    /// </summary>
+public const byte NtfsExfat = 0x07;
+        /// <summary>
+    /// Defines the fat 32 chs constant value.
+    /// </summary>
+public const byte Fat32Chs = 0x0B;
+        /// <summary>
+    /// Defines the fat 32 lba constant value.
+    /// </summary>
+public const byte Fat32Lba = 0x0C;
+        /// <summary>
+    /// Defines the fat 16 lba constant value.
+    /// </summary>
+public const byte Fat16Lba = 0x0E;
+        /// <summary>
+    /// Defines the linux constant value.
+    /// </summary>
+public const byte Linux = 0x83;
 #pragma warning restore CS1591
   }
 

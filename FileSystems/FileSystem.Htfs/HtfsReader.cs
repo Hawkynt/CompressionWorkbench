@@ -21,7 +21,10 @@ public sealed class HtfsReader {
   private readonly int _inodesPerBlock;
   private readonly List<HtfsEntry> _entries = [];
 
-  public HtfsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="HtfsReader"/>.
+  /// </summary>
+public HtfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);

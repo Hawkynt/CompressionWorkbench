@@ -29,22 +29,40 @@ public enum GolombProfile {
 /// </summary>
 public sealed class GolombBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Golomb";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Golomb";
   /// <inheritdoc/>
-  public string DisplayName => "Golomb/Rice";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Golomb/Rice";
   /// <inheritdoc/>
-  public string Description => "Optimal coding for geometric distributions, Rice when M is power-of-2";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Optimal coding for geometric distributions, Rice when M is power-of-2";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <summary>The parameter pinned by <see cref="GolombProfile.FixedParameter"/> callers that do not supply one.</summary>
   internal const int DefaultFixedParameter = 2;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => Compress(data, GolombProfile.MeanAdaptive);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => Compress(data, GolombProfile.MeanAdaptive);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => Decompress(data, GolombProfile.MeanAdaptive);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => Decompress(data, GolombProfile.MeanAdaptive);
 
   /// <summary>
   /// Encodes <paramref name="data"/> under the given <paramref name="profile"/>.

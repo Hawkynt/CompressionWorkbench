@@ -20,18 +20,39 @@ namespace FileSystem.Mfs1;
 /// </summary>
 public sealed class Mfs1Reader : IDisposable {
 
-  public const int SectorSize = 256;
-  public const int SectorsPerTrack = 10;
-  public const int MaxEntries = 31;
+    /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
+public const int SectorSize = 256;
+    /// <summary>
+  /// Defines the sectors per track constant value.
+  /// </summary>
+public const int SectorsPerTrack = 10;
+    /// <summary>
+  /// Defines the max entries constant value.
+  /// </summary>
+public const int MaxEntries = 31;
 
   private readonly byte[] _data;
   private readonly List<Mfs1Entry> _entries = [];
 
-  public IReadOnlyList<Mfs1Entry> Entries => this._entries;
-  public string DiskTitle { get; private set; } = "";
-  public bool CatalogParsed { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Mfs1Entry> Entries => this._entries;
+    /// <summary>
+  /// Gets or sets the disk title.
+  /// </summary>
+public string DiskTitle { get; private set; } = "";
+    /// <summary>
+  /// Gets a value indicating whether catalog parsed.
+  /// </summary>
+public bool CatalogParsed { get; private set; }
 
-  public Mfs1Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Mfs1Reader"/>.
+  /// </summary>
+public Mfs1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -39,7 +60,10 @@ public sealed class Mfs1Reader : IDisposable {
     this.Parse();
   }
 
-  public Mfs1Reader(byte[] image) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Mfs1Reader"/>.
+  /// </summary>
+public Mfs1Reader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this._data = image;
     this.Parse();
@@ -126,7 +150,10 @@ public sealed class Mfs1Reader : IDisposable {
     this.CatalogParsed = anyValid;
   }
 
-  public byte[] Extract(Mfs1Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Mfs1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
     var len = (int)entry.Size;
@@ -138,5 +165,8 @@ public sealed class Mfs1Reader : IDisposable {
     return buf;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

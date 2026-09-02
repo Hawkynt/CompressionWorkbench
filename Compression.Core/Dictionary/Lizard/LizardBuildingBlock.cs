@@ -39,13 +39,25 @@ namespace Compression.Core.Dictionary.Lizard;
 /// </remarks>
 public sealed class LizardBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lizard";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lizard";
   /// <inheritdoc/>
-  public string DisplayName => "Lizard";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Lizard";
   /// <inheritdoc/>
-  public string Description => "Skibiński's LZ4-derived compressor (formerly LZ5); this block implements its baseline LZ4-compatible fast parser";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Skibiński's LZ4-derived compressor (formerly LZ5); this block implements its baseline LZ4-compatible fast parser";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinMatch = 4;
   private const int LastLiteralsMinLength = 5; // LZ4-style: final sequence must leave room for a match-less tail
@@ -54,7 +66,10 @@ public sealed class LizardBuildingBlock : IBuildingBlock {
   private const int MaxWindow = 65536;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -95,7 +110,10 @@ public sealed class LizardBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

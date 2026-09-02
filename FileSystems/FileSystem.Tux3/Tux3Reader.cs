@@ -48,21 +48,60 @@ public sealed class Tux3Reader : IDisposable {
   private readonly long _len;
   private readonly List<Tux3Entry> _entries = [];
 
-  public IReadOnlyList<Tux3Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Tux3Entry> Entries => _entries;
 
-  public ulong Birthday { get; private set; }
-  public ulong Flags { get; private set; }
-  public ulong IRoot { get; private set; }
-  public ulong ORoot { get; private set; }
-  public ulong ARoot { get; private set; }
-  public ulong BlockBits { get; private set; }
-  public ulong VolBlocks { get; private set; }
-  public ulong FreeBlocks { get; private set; }
-  public bool ValidSuperblock { get; private set; }
-  public bool HasWormTable { get; private set; }
-  public uint WormFileCount { get; private set; }
+    /// <summary>
+  /// Gets or sets the birthday.
+  /// </summary>
+public ulong Birthday { get; private set; }
+    /// <summary>
+  /// Gets or sets the flags.
+  /// </summary>
+public ulong Flags { get; private set; }
+    /// <summary>
+  /// Gets or sets the i root.
+  /// </summary>
+public ulong IRoot { get; private set; }
+    /// <summary>
+  /// Gets or sets the o root.
+  /// </summary>
+public ulong ORoot { get; private set; }
+    /// <summary>
+  /// Gets or sets the a root.
+  /// </summary>
+public ulong ARoot { get; private set; }
+    /// <summary>
+  /// Gets or sets the block bits.
+  /// </summary>
+public ulong BlockBits { get; private set; }
+    /// <summary>
+  /// Gets or sets the vol blocks.
+  /// </summary>
+public ulong VolBlocks { get; private set; }
+    /// <summary>
+  /// Gets or sets the free blocks.
+  /// </summary>
+public ulong FreeBlocks { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid superblock.
+  /// </summary>
+public bool ValidSuperblock { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether has worm table.
+  /// </summary>
+public bool HasWormTable { get; private set; }
+    /// <summary>
+  /// Gets or sets the worm file count.
+  /// </summary>
+public uint WormFileCount { get; private set; }
 
-  public static readonly byte[] Magic = "TUX3SUPR"u8.ToArray();
+    /// <summary>
+  /// Provides the magic value.
+  /// </summary>
+public static readonly byte[] Magic = "TUX3SUPR"u8.ToArray();
 
   /// <summary>
   /// Sentinel marker for the optional WORM file table appended after the
@@ -70,10 +109,19 @@ public sealed class Tux3Reader : IDisposable {
   /// </summary>
   public static readonly byte[] WormTableMagic = "TUX3WORM"u8.ToArray();
 
-  public const int SuperblockOffset = 4096;
-  public const int WormTableOffset = 8192;
+    /// <summary>
+  /// Defines the superblock offset constant value.
+  /// </summary>
+public const int SuperblockOffset = 4096;
+    /// <summary>
+  /// Defines the worm table offset constant value.
+  /// </summary>
+public const int WormTableOffset = 8192;
 
-  public Tux3Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Tux3Reader"/>.
+  /// </summary>
+public Tux3Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Records are located on demand: copying the image in, and then every file's
@@ -181,7 +229,10 @@ public sealed class Tux3Reader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(Tux3Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Tux3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
     if (entry.Size > Array.MaxLength)
@@ -204,5 +255,8 @@ public sealed class Tux3Reader : IDisposable {
     return take;
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

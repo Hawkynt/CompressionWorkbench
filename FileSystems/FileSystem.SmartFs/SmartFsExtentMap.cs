@@ -24,7 +24,10 @@ public static class SmartFsExtentMap {
   internal readonly record struct SectorInfo(
     int Sector, ushort Logical, ushort Next, byte ChainType, string Owner, bool Pinned);
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var volume = Read(image);
     if (volume == null) yield break;

@@ -12,19 +12,37 @@ namespace Compression.Core.Deflate;
 /// </summary>
 public sealed class ZopfliBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Zopfli";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Zopfli";
   /// <inheritdoc/>
-  public string DisplayName => "Zopfli";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Zopfli";
   /// <inheritdoc/>
-  public string Description => "Exhaustive iterative-optimal DEFLATE encoder producing smaller, fully RFC 1951-compatible output";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Exhaustive iterative-optimal DEFLATE encoder producing smaller, fully RFC 1951-compatible output";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => DeflateCompressor.Compress(data, DeflateCompressionLevel.Maximum);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => DeflateDecompressor.Decompress(data);
 }

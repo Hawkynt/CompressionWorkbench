@@ -13,17 +13,35 @@ namespace Compression.Core.Entropy.Neural;
 /// </remarks>
 public sealed class NnBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Neural";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Neural";
   /// <inheritdoc/>
-  public string DisplayName => "Neural";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Neural";
   /// <inheritdoc/>
-  public string Description => "Online-trained two-layer neural predictor (backprop) driving a binary arithmetic coder (NNCP-style)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Online-trained two-layer neural predictor (backprop) driving a binary arithmetic coder (NNCP-style)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => NnCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => NnCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => NnCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => NnCompressor.Decompress(data);
 }

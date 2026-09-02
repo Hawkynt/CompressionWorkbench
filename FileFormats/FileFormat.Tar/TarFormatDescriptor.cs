@@ -18,7 +18,10 @@ namespace FileFormat.Tar;
 public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("BlockingFactor", "Blocking factor", FormatOptionKind.Integer, "20",
       AllowedValues: ["1", "10", "20"],
       Description: "Output is padded to N × 512-byte blocks. 20 = classic 10 KiB record."),
@@ -58,7 +61,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => TarLayoutMap.Enumerate(archive);
 
   /// <summary>
   /// Zeros every dead byte in the TAR archive: intra-block padding after each
@@ -144,10 +150,22 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public string Id => "Tar";
-  public string DisplayName => "TAR";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Tar";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "TAR";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -174,16 +192,43 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       TarModifier.RemoveFile(archive, name, wipeData: true);
   }
 
-  public string DefaultExtension => ".tar";
-  public IReadOnlyList<string> Extensions => [".tar"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Unix tape archive, no compression, container only";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".tar";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".tar"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x75, 0x73, 0x74, 0x61, 0x72], Offset: 257, Confidence: 0.95)];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("tar", "TAR")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Unix tape archive, no compression, container only";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TarReader(stream);
     var entries = new List<ArchiveEntryInfo>();
     var i = 0;
@@ -194,7 +239,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new TarReader(stream);
     while (r.GetNextEntry() is { } e) {
       if (files != null && !MatchesFilter(e.Name, files)) { r.Skip(); continue; }
@@ -244,7 +292,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return ms.ToArray();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var blockingFactor = options.GetOptionInt("BlockingFactor", 20);
     var formatName = options.GetOption("Format", "ustar").ToLowerInvariant();
     var headerFormat = formatName switch {
@@ -299,7 +350,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < TarConstants.BlockSize) {
       issues.Add(new(ValidationLevel.Header, IssueSeverity.Error, "TAR_TOO_SHORT",
@@ -350,7 +404,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-  public ValidationResult ValidateStructure(Stream stream) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);
@@ -371,7 +428,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
-  public ValidationResult ValidateIntegrity(Stream stream) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       stream.Seek(0, SeekOrigin.Begin);

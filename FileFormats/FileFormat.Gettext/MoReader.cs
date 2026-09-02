@@ -11,7 +11,10 @@ namespace FileFormat.Gettext;
 /// Handles msgctxt (separator U+0004) and plural forms (separator U+0000).
 /// </summary>
 public sealed class MoReader {
-  public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public List<CatalogEntry> Read(ReadOnlySpan<byte> data) {
     if (data.Length < 28)
       throw new InvalidDataException("MO file too short for header.");
 

@@ -15,7 +15,10 @@ public static class CfbLayoutMap {
   private const uint EndOfChain = 0xFFFFFFFE;
   private const uint FreeSect = 0xFFFFFFFF;
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     if (archive.Length < 512)
       yield break;

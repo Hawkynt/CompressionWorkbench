@@ -11,7 +11,10 @@ namespace FileSystem.Ti99;
 /// </summary>
 public static class Ti99Optimizer {
 
-  public sealed record Ti99Geometry(int Tracks, int SectorsPerTrack, int Sides, int TotalSectors);
+    /// <summary>
+  /// Represents a ti 99 geometry.
+  /// </summary>
+public sealed record Ti99Geometry(int Tracks, int SectorsPerTrack, int Sides, int TotalSectors);
 
   // (tracks, sectorsPerTrack, sides) — standard floppy geometries.
   private static readonly (int T, int S, int H)[] StdGeometries = [

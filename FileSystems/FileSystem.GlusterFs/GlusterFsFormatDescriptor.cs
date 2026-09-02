@@ -35,24 +35,60 @@ namespace FileSystem.GlusterFs;
 /// </summary>
 public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "GlusterFs";
-  public string DisplayName => "GlusterFS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "GlusterFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "GlusterFS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".gluster";
-  public IReadOnlyList<string> Extensions => [".gluster"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".gluster";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".gluster"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // 0xCAFE5BAB — workbench-internal convention for hand-dumped brick
     // object probes, NOT a real on-disk GlusterFS marker. GlusterFS
     // itself has no on-disk header. See type-level doc.
     new([0xCA, 0xFE, 0x5B, 0xAB], Offset: 0, Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "GlusterFS — Stage 0 (detection-only, permanent). A GlusterFS brick is a normal " +
     "directory on a local POSIX filesystem (XFS/ext4); files live at their POSIX paths " +
     "and metadata lives in xattrs (trusted.gfid, trusted.glusterfs.*). There is no " +
@@ -60,13 +96,19 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
     "The 0xCAFE5BAB magic is a workbench-internal probe convention, not a real " +
     "GlusterFS marker.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new GlusterFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new GlusterFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

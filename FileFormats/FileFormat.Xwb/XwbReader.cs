@@ -17,7 +17,10 @@ namespace FileFormat.Xwb;
 /// </summary>
 public sealed class XwbReader {
 
-  public sealed record BankInfo(
+    /// <summary>
+  /// Represents a bank info.
+  /// </summary>
+public sealed record BankInfo(
     uint Flags,
     int EntryCount,
     string BankName,
@@ -25,7 +28,10 @@ public sealed class XwbReader {
     int EntryNameElementSize,
     uint Alignment);
 
-  public sealed record EntryInfo(
+    /// <summary>
+  /// Represents an entry info.
+  /// </summary>
+public sealed record EntryInfo(
     int Index,
     string Name,
     int FormatTag,        // 0 PCM, 1 XMA, 2 ADPCM, 3 WMA
@@ -38,7 +44,10 @@ public sealed class XwbReader {
     bool Decodable,
     short[]? Pcm);        // decoded PCM16 (interleaved); null when not decodable
 
-  public sealed record ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryInfo> Entries);
+    /// <summary>
+  /// Represents a parsed xwb.
+  /// </summary>
+public sealed record ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryInfo> Entries);
 
   private const int SegmentCount = 5;
   private const int SegBankData = 0;
@@ -46,7 +55,10 @@ public sealed class XwbReader {
   private const int SegEntryNames = 3;
   private const int SegEntryWaveData = 4;
 
-  public ParsedXwb Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedXwb Read(ReadOnlySpan<byte> data) {
     if (data.Length < 8)
       throw new InvalidDataException("XWB too short for header.");
     if (data[0] != 'W' || data[1] != 'B' || data[2] != 'N' || data[3] != 'D')

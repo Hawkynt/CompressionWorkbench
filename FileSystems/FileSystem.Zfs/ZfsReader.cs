@@ -16,10 +16,19 @@ public sealed class ZfsReader : IDisposable {
   private readonly Dictionary<ulong, Dnode.Builder> _datasetDnodesById = new();
   private string? _poolName;
 
-  public IReadOnlyList<ZfsEntry> Entries => this._entries;
-  public string? PoolName => this._poolName;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<ZfsEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the pool name.
+  /// </summary>
+public string? PoolName => this._poolName;
 
-  public ZfsReader(Stream stream, bool leaveOpen = true) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="ZfsReader"/>.
+  /// </summary>
+public ZfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     // Blocks are pulled on demand: a pool's metadata is a small fraction of the
@@ -277,7 +286,10 @@ public sealed class ZfsReader : IDisposable {
     return body;
   }
 
-  public byte[] Extract(ZfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(ZfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size > Array.MaxLength)
       throw new IOException(
@@ -311,5 +323,8 @@ public sealed class ZfsReader : IDisposable {
     return written;
   }
 
-  public void Dispose() => this._data.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._data.Dispose();
 }

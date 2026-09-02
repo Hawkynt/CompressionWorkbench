@@ -3,21 +3,66 @@ using Compression.Registry;
 
 namespace FileFormat.IcePacker;
 
+/// <summary>
+/// Describes ice packer format.
+/// </summary>
 public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
-  public string Id => "IcePacker";
-  public string DisplayName => "ICE Packer";
-  public FormatCategory Category => FormatCategory.Stream;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "IcePacker";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ICE Packer";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Stream;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".ice";
-  public IReadOnlyList<string> Extensions => [".ice"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ice", "ICE")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Classic;
-  public string Description => "Atari ST/Amiga Ice Packer, demoscene LZ77";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ice";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ice"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("ice", "ICE")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Classic;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Atari ST/Amiga Ice Packer, demoscene LZ77";
 
-  public void Decompress(Stream input, Stream output) => IcePackerStream.Decompress(input, output);
-  public void Compress(Stream input, Stream output) => IcePackerStream.Compress(input, output);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Decompress(Stream input, Stream output) => IcePackerStream.Decompress(input, output);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output) => IcePackerStream.Compress(input, output);
 }

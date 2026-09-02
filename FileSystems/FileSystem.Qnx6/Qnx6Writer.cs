@@ -61,7 +61,10 @@ public sealed class Qnx6Writer {
   /// free: they cost two of the entries a directory block holds.
   /// </summary>
   private const int DotEntries = 2;
-  public const int MaxFiles = MaxDirents - DotEntries;
+    /// <summary>
+  /// Defines the max files constant value.
+  /// </summary>
+public const int MaxFiles = MaxDirents - DotEntries;
 
   /// <summary>Pointers an inode holds before it has to point at a block of them.</summary>
   private const int DirectPointers = 16;

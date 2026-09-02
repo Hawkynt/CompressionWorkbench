@@ -14,23 +14,41 @@ namespace Compression.Core.Dictionary.MsLzh;
 /// </summary>
 public sealed class MsLzhBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_MsLzh";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_MsLzh";
 
   /// <inheritdoc/>
-  public string DisplayName => "MS LZH";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MS LZH";
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Microsoft DriveSpace 3 codec — LZ77 (4 KiB window) + canonical Huffman, fixed-table effort-0 variant";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => new MsLzhCompressor().Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => new MsLzhDecompressor().Decompress(data);
 }

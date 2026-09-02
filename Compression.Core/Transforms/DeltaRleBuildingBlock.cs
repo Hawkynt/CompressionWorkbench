@@ -10,19 +10,37 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class DeltaRleBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_DeltaRle";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_DeltaRle";
   /// <inheritdoc/>
-  public string DisplayName => "Delta + RLE";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Delta + RLE";
   /// <inheritdoc/>
-  public string Description => "Delta filter followed by run-length encoding of the delta stream; unlike the pure Delta filter (BB_Delta), this compresses repetitive data.";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Delta filter followed by run-length encoding of the delta stream; unlike the pure Delta filter (BB_Delta), this compresses repetitive data.";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => DeltaRleEncoding.Encode(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => DeltaRleEncoding.Decode(data);
 }

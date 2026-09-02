@@ -8,16 +8,31 @@ namespace Compression.Core.Dictionary.Lzw;
 /// </summary>
 public sealed class LzwBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzw";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzw";
   /// <inheritdoc/>
-  public string DisplayName => "LZW";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZW";
   /// <inheritdoc/>
-  public string Description => "Lempel-Ziv-Welch dictionary coding, used in GIF and Unix compress";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Lempel-Ziv-Welch dictionary coding, used in GIF and Unix compress";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     var encoder = new LzwEncoder(output, minBits: 9, maxBits: 16,
       useClearCode: true, useStopCode: true, bitOrder: BitOrder.LsbFirst);
@@ -26,7 +41,10 @@ public sealed class LzwBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     var decoder = new LzwDecoder(input, minBits: 9, maxBits: 16,
       useClearCode: true, useStopCode: true, bitOrder: BitOrder.LsbFirst);

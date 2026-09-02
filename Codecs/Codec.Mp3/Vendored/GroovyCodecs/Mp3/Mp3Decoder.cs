@@ -10,7 +10,10 @@ using GroovyCodecs.Types;
 namespace GroovyCodecs.Mp3
 {
 
-    public class Mp3Decoder : IMp3Decoder
+        /// <summary>
+    /// Decodes mp 3 data.
+    /// </summary>
+public class Mp3Decoder : IMp3Decoder
     {
 
         private readonly BitStream bs;
@@ -52,7 +55,10 @@ namespace GroovyCodecs.Mp3
 
         private int wavsize;
 
-        public Mp3Decoder(string mp3File)
+                /// <summary>
+        /// Initializes a new instance of <see cref="Mp3Decoder"/>.
+        /// </summary>
+public Mp3Decoder(string mp3File)
         {
             // encoder modules
             lame = new Lame();
@@ -152,7 +158,10 @@ namespace GroovyCodecs.Mp3
             Debug.Assert(gfp.num_channels >= 1 && gfp.num_channels <= 2);
         }
 
-        public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
+                /// <summary>
+        /// Performs the decode operation.
+        /// </summary>
+public virtual void decode(MemoryStream sampleBuffer, bool playOriginal)
         {
             var iread = gaud.get_audio16(gfp, buffer);
             if (iread >= 0)
@@ -179,7 +188,10 @@ namespace GroovyCodecs.Mp3
 
         }
 
-        public virtual void close()
+                /// <summary>
+        /// Performs the close operation.
+        /// </summary>
+public virtual void close()
         {
             lame.lame_close(gfp);
         }

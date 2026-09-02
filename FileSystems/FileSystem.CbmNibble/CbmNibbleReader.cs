@@ -31,16 +31,43 @@ namespace FileSystem.CbmNibble;
 /// </remarks>
 public sealed class CbmNibbleReader {
 
-  public static readonly byte[] G64Signature = "GCR-1541"u8.ToArray();
-  public const int NibTrackCount = 84;          // standard nibtools: 84 half-tracks
-  public const int NibTrackSize = 0x2000;       // 8192 bytes per half-track
-  public const int NibExpectedFileSize = NibTrackCount * NibTrackSize; // 688128
+    /// <summary>
+  /// Provides the g 64 signature value.
+  /// </summary>
+public static readonly byte[] G64Signature = "GCR-1541"u8.ToArray();
+    /// <summary>
+  /// Defines the nib track count constant value.
+  /// </summary>
+public const int NibTrackCount = 84;          // standard nibtools: 84 half-tracks
+    /// <summary>
+  /// Defines the nib track size constant value.
+  /// </summary>
+public const int NibTrackSize = 0x2000;       // 8192 bytes per half-track
+    /// <summary>
+  /// Defines the nib expected file size constant value.
+  /// </summary>
+public const int NibExpectedFileSize = NibTrackCount * NibTrackSize; // 688128
 
-  public enum ImageKind { Nib, G64 }
+    /// <summary>
+  /// Specifies image kind values.
+  /// </summary>
+public enum ImageKind { /// <summary>
+/// Specifies the nib option.
+/// </summary>
+Nib, /// <summary>
+/// Specifies the g 64 option.
+/// </summary>
+G64 }
 
-  public sealed record Track(int Index, byte[] Data, uint SpeedZone);
+    /// <summary>
+  /// Represents a track.
+  /// </summary>
+public sealed record Track(int Index, byte[] Data, uint SpeedZone);
 
-  public sealed record NibbleImage(
+    /// <summary>
+  /// Represents a nibble image.
+  /// </summary>
+public sealed record NibbleImage(
     ImageKind Kind,
     byte Version,
     int TrackCount,
@@ -48,7 +75,10 @@ public sealed class CbmNibbleReader {
     List<Track> Tracks,
     long TotalFileSize);
 
-  public static NibbleImage Read(ReadOnlySpan<byte> data, string? fileName = null) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static NibbleImage Read(ReadOnlySpan<byte> data, string? fileName = null) {
     if (data.Length >= G64Signature.Length && data[..G64Signature.Length].SequenceEqual(G64Signature))
       return ReadG64(data);
 
@@ -126,7 +156,10 @@ public sealed class CbmNibbleReader {
       TotalFileSize: data.Length);
   }
 
-  public static byte[] BuildMetadata(NibbleImage img) {
+    /// <summary>
+  /// Performs the build metadata operation.
+  /// </summary>
+public static byte[] BuildMetadata(NibbleImage img) {
     var sb = new StringBuilder();
     sb.AppendLine("[cbm_nibble]");
     sb.AppendLine($"kind = {img.Kind}");

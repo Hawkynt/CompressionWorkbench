@@ -21,7 +21,10 @@ public static class CscStream {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  public static void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -40,7 +43,10 @@ public static class CscStream {
     enc.Flush();
   }
 
-  public static void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public static void Decompress(Stream input, Stream output) {
     // 10-byte header + 4-byte actual size
     Span<byte> hdr = stackalloc byte[14];
     input.ReadExactly(hdr);

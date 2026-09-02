@@ -13,17 +13,35 @@ namespace Compression.Core.Entropy.ContextMixing;
 /// </remarks>
 public sealed class CmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_ContextMixing";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_ContextMixing";
   /// <inheritdoc/>
-  public string DisplayName => "Context Mixing";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Context Mixing";
   /// <inheritdoc/>
-  public string Description => "Logistic-domain context mixing with SSE and a binary arithmetic coder (PAQ/lpaq-style)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Logistic-domain context mixing with SSE and a binary arithmetic coder (PAQ/lpaq-style)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => CmCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => CmCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => CmCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => CmCompressor.Decompress(data);
 }

@@ -25,11 +25,23 @@ public sealed class RgssReader {
   private readonly Stream _stream;
   private readonly List<RgssEntry> _entries = [];
 
-  public IReadOnlyList<RgssEntry> Entries => _entries;
-  public int Version { get; }
-  public uint MasterKeyV3 { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<RgssEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the version.
+  /// </summary>
+public int Version { get; }
+    /// <summary>
+  /// Gets or sets the master key v 3.
+  /// </summary>
+public uint MasterKeyV3 { get; private set; }
 
-  public RgssReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="RgssReader"/>.
+  /// </summary>
+public RgssReader(Stream stream) {
     this._stream = stream;
     stream.Position = 0;
 
@@ -156,7 +168,10 @@ public sealed class RgssReader {
     }
   }
 
-  public byte[] Extract(RgssEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(RgssEntry entry) {
     this._stream.Position = entry.Offset;
     var buf = new byte[entry.Size];
     var read = this._stream.Read(buf, 0, (int)entry.Size);

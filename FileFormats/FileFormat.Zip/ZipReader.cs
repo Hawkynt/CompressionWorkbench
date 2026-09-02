@@ -82,7 +82,10 @@ public sealed class ZipReader : IDisposable {
     return true;
   }
 
-  public byte[] ExtractEntry(ZipEntry entry) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public byte[] ExtractEntry(ZipEntry entry) {
     this._stream.Position = entry.LocalHeaderOffset;
     var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);
 
@@ -214,7 +217,10 @@ public sealed class ZipReader : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;
       if (!this._leaveOpen)

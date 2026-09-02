@@ -20,11 +20,23 @@ public sealed class TrDosReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<TrDosEntry> _entries = [];
 
-  public IReadOnlyList<TrDosEntry> Entries => _entries;
-  public byte DiskType { get; }
-  public string DiskLabel { get; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<TrDosEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the disk type.
+  /// </summary>
+public byte DiskType { get; }
+    /// <summary>
+  /// Gets the disk label.
+  /// </summary>
+public string DiskLabel { get; }
 
-  public TrDosReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="TrDosReader"/>.
+  /// </summary>
+public TrDosReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -75,7 +87,10 @@ public sealed class TrDosReader : IDisposable {
     }
   }
 
-  public byte[] Extract(TrDosEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(TrDosEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var offset = entry.StartTrack * TrackSize + entry.StartSector * SectorSize;
     var length = entry.LengthSectors * SectorSize;
@@ -84,5 +99,8 @@ public sealed class TrDosReader : IDisposable {
     return _data.AsSpan(offset, length).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

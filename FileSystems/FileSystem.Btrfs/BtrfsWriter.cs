@@ -234,7 +234,10 @@ public sealed class BtrfsWriter {
     return string.Join('/', parts);
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     // ── Phase 1: build and pack the FS tree ─────────────────────────────

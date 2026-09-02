@@ -110,7 +110,10 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public int AllocationBlockSize => BucketBytes;
+    /// <summary>
+  /// Gets the allocation block size.
+  /// </summary>
+public int AllocationBlockSize => BucketBytes;
 
   /// <summary>
   /// The unit a layout may place a run at: a whole bucket.
@@ -136,13 +139,22 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   public long FirstDataByte => MetadataEndBytes;
 
   /// <inheritdoc />
-  public bool RepointsRunsIndependently => true;
+    /// <summary>
+  /// Gets a value indicating whether repoints runs independently.
+  /// </summary>
+public bool RepointsRunsIndependently => true;
 
   /// <inheritdoc />
-  public bool SupportsHeldRuns => true;
+    /// <summary>
+  /// Gets a value indicating whether supports held runs.
+  /// </summary>
+public bool SupportsHeldRuns => true;
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length,
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long sourceOffset, long destinationOffset, long length,
       bool zeroSource = false) {
     ArgumentNullException.ThrowIfNull(image);
     if (sourceOffset == destinationOffset || length <= 0) return;
@@ -171,7 +183,10 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName,
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName,
       long sourceOffset, long destinationOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     _ = fileName;   // a pointer is found by where it points, not by whose bytes they are

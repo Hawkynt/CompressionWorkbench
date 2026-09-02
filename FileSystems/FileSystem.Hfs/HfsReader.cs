@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.Hfs;
 
+/// <summary>
+/// Reads hfs data.
+/// </summary>
 public sealed class HfsReader : IDisposable {
   private const ushort HfsMagic = 0x4244;
   private const int MdbOffset = 1024;
@@ -22,9 +25,15 @@ public sealed class HfsReader : IDisposable {
   private int _catalogStartBlock;
   private int _catalogBlockCount;
 
-  public IReadOnlyList<HfsEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<HfsEntry> Entries => this._entries;
 
-  public HfsReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="HfsReader"/>.
+  /// </summary>
+public HfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     this._data = ms.ToArray();
@@ -190,7 +199,10 @@ public sealed class HfsReader : IDisposable {
     return string.Join('/', parts);
   }
 
-  public byte[] Extract(HfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(HfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.BlockCount == 0) return [];
     var offset = this.BlockToOffset(entry.StartBlock);
@@ -200,5 +212,8 @@ public sealed class HfsReader : IDisposable {
     return this._data.AsSpan(offset, len).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

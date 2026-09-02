@@ -26,23 +26,62 @@ namespace FileFormat.Pack200;
 /// </remarks>
 public sealed class Pack200FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "Pack200";
-  public string DisplayName => "Pack200";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Pack200";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Pack200";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".pack";
-  public IReadOnlyList<string> Extensions => [".pack"];
-  public IReadOnlyList<string> CompoundExtensions => [".pack.gz"];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".pack";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".pack"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [".pack.gz"];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(Pack200Reader.Magic, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("pack200", "Pack200")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Pack200 Java class archive (JSR-200)";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("pack200", "Pack200")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Pack200 Java class archive (JSR-200)";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     Pack200Segment seg;
     try {
       seg = new Pack200Reader().Read(stream);
@@ -64,7 +103,10 @@ public sealed class Pack200FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return result;
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var seg = new Pack200Reader().Read(stream);
 
     // Header summary — honest report of what was and was not decoded.

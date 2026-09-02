@@ -1,10 +1,19 @@
 namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter8;
 
+/// <summary>
+/// Represents a page 9 1.
+/// </summary>
 public class Page9_1 : IStaticCodeBook
 {
-    public int Dimensions { get; } = 2;
+        /// <summary>
+    /// Gets the dimensions.
+    /// </summary>
+public int Dimensions { get; } = 2;
 
-    public byte[] LengthList { get; } = {
+        /// <summary>
+    /// Gets the length list.
+    /// </summary>
+public byte[] LengthList { get; } = {
          1, 4, 4, 7, 6, 7, 7, 7, 7, 8, 8, 9, 9,10,10,10,
         10,11,11, 6, 6, 6, 8, 8, 9, 8, 8, 7,10, 8,11,10,
         12,11,12,12,13,13, 5, 5, 6, 8, 8, 9, 9, 8, 8,10,
@@ -30,13 +39,31 @@ public class Page9_1 : IStaticCodeBook
         14,13,13,14,14,15,14,15,14,
     };
 
-    public CodeBookMapType MapType { get; } = (CodeBookMapType)1;
-    public int QuantMin { get; } = -518287360;
-    public int QuantDelta { get; } = 1622704128;
-    public int Quant { get; } = 5;
-    public int QuantSequenceP { get; } = 0;
+        /// <summary>
+    /// Gets the map type.
+    /// </summary>
+public CodeBookMapType MapType { get; } = (CodeBookMapType)1;
+        /// <summary>
+    /// Gets the quant min.
+    /// </summary>
+public int QuantMin { get; } = -518287360;
+        /// <summary>
+    /// Gets the quant delta.
+    /// </summary>
+public int QuantDelta { get; } = 1622704128;
+        /// <summary>
+    /// Gets the quant.
+    /// </summary>
+public int Quant { get; } = 5;
+        /// <summary>
+    /// Gets the quant sequence p.
+    /// </summary>
+public int QuantSequenceP { get; } = 0;
 
-    public int[] QuantList { get; } = {
+        /// <summary>
+    /// Gets the quant list.
+    /// </summary>
+public int[] QuantList { get; } = {
         9,
         8,
         10,

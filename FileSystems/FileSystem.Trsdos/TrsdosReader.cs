@@ -31,20 +31,47 @@ namespace FileSystem.Trsdos;
 /// </para>
 /// </summary>
 public sealed class TrsdosReader : IDisposable {
-  public const int SectorSize = 256;
-  public const int DirectoryTrack = 17;
-  public const int SectorsPerTrackDefault = 18;
-  public const int DirectoryEntrySize = 32;
+    /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
+public const int SectorSize = 256;
+    /// <summary>
+  /// Defines the directory track constant value.
+  /// </summary>
+public const int DirectoryTrack = 17;
+    /// <summary>
+  /// Defines the sectors per track default constant value.
+  /// </summary>
+public const int SectorsPerTrackDefault = 18;
+    /// <summary>
+  /// Defines the directory entry size constant value.
+  /// </summary>
+public const int DirectoryEntrySize = 32;
 
   private readonly byte[] _data;
   private readonly List<TrsdosEntry> _entries = [];
 
-  public IReadOnlyList<TrsdosEntry> Entries => _entries;
-  public bool ValidVolume { get; private set; }
-  public int DirectoryTrackOffset { get; private set; }
-  public int SectorsPerTrack { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<TrsdosEntry> Entries => _entries;
+    /// <summary>
+  /// Gets a value indicating whether valid volume.
+  /// </summary>
+public bool ValidVolume { get; private set; }
+    /// <summary>
+  /// Gets or sets the directory track offset.
+  /// </summary>
+public int DirectoryTrackOffset { get; private set; }
+    /// <summary>
+  /// Gets or sets the sectors per track.
+  /// </summary>
+public int SectorsPerTrack { get; private set; }
 
-  public TrsdosReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="TrsdosReader"/>.
+  /// </summary>
+public TrsdosReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -119,7 +146,10 @@ public sealed class TrsdosReader : IDisposable {
     return new string(chars[..len]);
   }
 
-  public byte[] Extract(TrsdosEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(TrsdosEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var offset = entry.FirstSector * SectorSize;
@@ -128,7 +158,10 @@ public sealed class TrsdosReader : IDisposable {
     return size <= 0 ? [] : _data.AsSpan(offset, size).ToArray();
   }
 
-  public byte[] BuildSurfaceMetadata() {
+    /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
+public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
     b.Append("format=TRSDOS / LDOS\n");
@@ -138,5 +171,8 @@ public sealed class TrsdosReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

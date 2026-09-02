@@ -8,13 +8,25 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class ArithmeticBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Arithmetic";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Arithmetic";
   /// <inheritdoc/>
-  public string DisplayName => "Arithmetic Coding";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Arithmetic Coding";
   /// <inheritdoc/>
-  public string Description => "Order-0 arithmetic coding with frequency table";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Order-0 arithmetic coding with frequency table";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   private const uint Half = 0x80000000u;
   private const uint Quarter = 0x40000000u;
@@ -23,7 +35,10 @@ public sealed class ArithmeticBuildingBlock : IBuildingBlock {
   private const int EofSymbol = 256;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write header: 4-byte LE original size.
@@ -79,7 +94,10 @@ public sealed class ArithmeticBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     // Read 4-byte LE original size.

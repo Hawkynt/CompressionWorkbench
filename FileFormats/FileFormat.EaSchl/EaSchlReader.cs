@@ -25,8 +25,14 @@ public sealed class EaSchlReader {
 
   /// <summary>EA-XA / EA-ADPCM compression types as encoded by the PT <c>0xA0</c> field.</summary>
   public const int CompressionEaXa = 0x07;
-  public const int CompressionEaXaAlt = 0x00;
-  public const int CompressionPcm16 = 0x14;
+    /// <summary>
+  /// Defines the compression ea xa alt constant value.
+  /// </summary>
+public const int CompressionEaXaAlt = 0x00;
+    /// <summary>
+  /// Defines the compression pcm 16 constant value.
+  /// </summary>
+public const int CompressionPcm16 = 0x14;
 
   // PT TLV sub-codes.
   private const byte PtMarker = 0xFD;
@@ -36,15 +42,30 @@ public sealed class EaSchlReader {
   private const byte PtCompression = 0xA0;
   private const byte PtEnd = 0x8A;
 
-  public int Channels { get; private set; } = 1;
-  public int SampleRate { get; private set; } = 22050;
-  public int Compression { get; private set; } = CompressionEaXa;
-  public long TotalSamples { get; private set; }
+    /// <summary>
+  /// Gets or sets the channels.
+  /// </summary>
+public int Channels { get; private set; } = 1;
+    /// <summary>
+  /// Gets or sets the sample rate.
+  /// </summary>
+public int SampleRate { get; private set; } = 22050;
+    /// <summary>
+  /// Gets or sets the compression.
+  /// </summary>
+public int Compression { get; private set; } = CompressionEaXa;
+    /// <summary>
+  /// Gets or sets the total samples.
+  /// </summary>
+public long TotalSamples { get; private set; }
 
   /// <summary>Concatenated coded audio bytes from every SCDl block (header stripped).</summary>
   public byte[] CodedData { get; private set; } = [];
 
-  public EaSchlReader(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="EaSchlReader"/>.
+  /// </summary>
+public EaSchlReader(ReadOnlySpan<byte> data) {
     if (data.Length < 8 || data[0] != 'S' || data[1] != 'C' || data[2] != 'H' || data[3] != 'l')
       throw new InvalidDataException("Missing SCHl magic.");
 

@@ -19,7 +19,10 @@ public sealed class Ba2Writer : IDisposable {
   /// <param name="stream">Output stream. Must be seekable — header offsets are back-patched after data is written.</param>
   /// <param name="leaveOpen">Leave <paramref name="stream"/> open on Dispose.</param>
   /// <param name="compress">When true, attempt zlib compression per file and only keep it if it shrinks the payload.</param>
-  public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ba2Writer"/>.
+  /// </summary>
+public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)
       throw new ArgumentException("BA2 writer requires a seekable stream.", nameof(stream));
@@ -163,7 +166,10 @@ public sealed class Ba2Writer : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

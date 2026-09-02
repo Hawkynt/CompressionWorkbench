@@ -2,7 +2,10 @@ using GroovyCodecs.Types;
 
 namespace GroovyCodecs.Mp3
 {
-    public interface IMp3Encoder
+        /// <summary>
+    /// Encodes i mp 3 data.
+    /// </summary>
+public interface IMp3Encoder
     {
         int EffectiveBitRate { get; }
 

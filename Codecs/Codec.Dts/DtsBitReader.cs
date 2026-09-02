@@ -16,7 +16,10 @@ public sealed class DtsBitReader {
   private int _bytePos;
   private int _bitPos;
 
-  public DtsBitReader(byte[] data, int offset, int length) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="DtsBitReader"/>.
+  /// </summary>
+public DtsBitReader(byte[] data, int offset, int length) {
     ArgumentNullException.ThrowIfNull(data);
     if (offset < 0 || length < 0 || offset + length > data.Length)
       throw new ArgumentOutOfRangeException(nameof(offset));

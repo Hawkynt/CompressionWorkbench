@@ -21,5 +21,8 @@ public sealed class PakWriter : IDisposable {
   public void Finish() => this._inner.Finish();
 
   /// <inheritdoc />
-  public void Dispose() => this._inner.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._inner.Dispose();
 }

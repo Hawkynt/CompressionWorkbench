@@ -1,6 +1,9 @@
 #pragma warning disable CS1591
 namespace FileFormat.Wbn;
 
+/// <summary>
+/// Represents a wbn constants.
+/// </summary>
 public static class WbnConstants {
 
   /// <summary>
@@ -14,20 +17,47 @@ public static class WbnConstants {
     0xF0, 0x9F, 0x93, 0xA6,
   ];
 
-  public const int MagicLength = 10;
+    /// <summary>
+  /// Defines the magic length constant value.
+  /// </summary>
+public const int MagicLength = 10;
 
   /// <summary>Length of the version field that immediately follows the magic byte string. Encoded as a CBOR length-4 byte string (0x44 + 4 bytes).</summary>
   public const int VersionFieldLength = 4;
 
   // CBOR major type constants (high 3 bits of the leading byte, shifted down).
-  public const byte MajorTypeUnsignedInt = 0;
-  public const byte MajorTypeNegativeInt = 1;
-  public const byte MajorTypeByteString = 2;
-  public const byte MajorTypeTextString = 3;
-  public const byte MajorTypeArray = 4;
-  public const byte MajorTypeMap = 5;
-  public const byte MajorTypeTag = 6;
-  public const byte MajorTypeSimpleOrFloat = 7;
+    /// <summary>
+  /// Defines the major type unsigned int constant value.
+  /// </summary>
+public const byte MajorTypeUnsignedInt = 0;
+    /// <summary>
+  /// Defines the major type negative int constant value.
+  /// </summary>
+public const byte MajorTypeNegativeInt = 1;
+    /// <summary>
+  /// Defines the major type byte string constant value.
+  /// </summary>
+public const byte MajorTypeByteString = 2;
+    /// <summary>
+  /// Defines the major type text string constant value.
+  /// </summary>
+public const byte MajorTypeTextString = 3;
+    /// <summary>
+  /// Defines the major type array constant value.
+  /// </summary>
+public const byte MajorTypeArray = 4;
+    /// <summary>
+  /// Defines the major type map constant value.
+  /// </summary>
+public const byte MajorTypeMap = 5;
+    /// <summary>
+  /// Defines the major type tag constant value.
+  /// </summary>
+public const byte MajorTypeTag = 6;
+    /// <summary>
+  /// Defines the major type simple or float constant value.
+  /// </summary>
+public const byte MajorTypeSimpleOrFloat = 7;
 
   /// <summary>CBOR break stop-code, used inside indefinite-length items.</summary>
   public const byte BreakStopCode = 0xFF;

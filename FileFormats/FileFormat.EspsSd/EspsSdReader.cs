@@ -22,18 +22,30 @@ namespace FileFormat.EspsSd;
 /// </summary>
 public sealed class EspsSdReader {
 
-  public const int CheckOffset = 16;
-  public const uint CheckCode = 0x00006A1A;
+    /// <summary>
+  /// Defines the check offset constant value.
+  /// </summary>
+public const int CheckOffset = 16;
+    /// <summary>
+  /// Defines the check code constant value.
+  /// </summary>
+public const uint CheckCode = 0x00006A1A;
   private const int DefaultRate = 16000;
 
-  public sealed record ParsedEsps(
+    /// <summary>
+  /// Represents a parsed esps.
+  /// </summary>
+public sealed record ParsedEsps(
     bool BigEndian,
     int DataOffset,
     int SampleRate,
     bool RateFromHeader,
     byte[] SampleData);
 
-  public ParsedEsps Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedEsps Read(ReadOnlySpan<byte> data) {
     if (data.Length < CheckOffset + 4)
       throw new InvalidDataException("ESPS .sd too short for a preamble.");
 

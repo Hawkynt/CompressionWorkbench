@@ -36,35 +36,77 @@ namespace FileSystem.Wafl;
 /// </summary>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "Wafl";
-  public string DisplayName => "NetApp WAFL";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Wafl";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "NetApp WAFL";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".wafl";
-  public IReadOnlyList<string> Extensions => [".wafl"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".wafl";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".wafl"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "wafd" (0x77 0x61 0x66 0x64) — WAFL FSinfo block tag at offset 0.
     new("wafd"u8.ToArray(), Offset: 0, Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "NetApp WAFL — detection-only (Stage-0 confirmed) — proprietary ONTAP filesystem; " +
     "on-disk tree-of-blocks is partially reverse-engineered from Hitz 1994 + NetApp patents " +
     "but FBN/VBN/PVBN translation, FlexVol container mapping, RAID-DP block placement, and " +
     "NVRAM consistency-point gap make a safe single-image R/O reader infeasible from public spec. " +
     "Magic 'wafd' at offset 0 of FSinfo block.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new WaflReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new WaflReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

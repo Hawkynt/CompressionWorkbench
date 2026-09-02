@@ -338,7 +338,10 @@ public sealed class HfsPlusReader : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!_disposed) {
       _disposed = true;
       if (!_leaveOpen)

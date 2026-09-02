@@ -41,11 +41,23 @@ public sealed class WaflReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<WaflEntry> _entries = [];
 
-  public IReadOnlyList<WaflEntry> Entries => _entries;
-  public uint Version { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<WaflEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
+public uint Version { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
-  public WaflReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="WaflReader"/>.
+  /// </summary>
+public WaflReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -87,10 +99,16 @@ public sealed class WaflReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(WaflEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(WaflEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

@@ -1,10 +1,19 @@
 namespace OggVorbisEncoder.Setup.Templates.FloorBooks;
 
+/// <summary>
+/// Represents a line 128 x 7 class 1.
+/// </summary>
 public class Line128X7Class1 : IStaticCodeBook
 {
-    public int Dimensions { get; } = 1;
+        /// <summary>
+    /// Gets the dimensions.
+    /// </summary>
+public int Dimensions { get; } = 1;
 
-    public byte[] LengthList { get; } = {
+        /// <summary>
+    /// Gets the length list.
+    /// </summary>
+public byte[] LengthList { get; } = {
         8, 13, 17, 17, 8, 11, 17, 17, 11, 13, 17, 17, 17, 17, 17, 17,
         6, 10, 16, 17, 6, 10, 15, 17, 8, 10, 16, 17, 17, 17, 17, 17,
         9, 13, 15, 17, 8, 11, 17, 17, 10, 12, 17, 17, 17, 17, 17, 17,
@@ -23,10 +32,28 @@ public class Line128X7Class1 : IStaticCodeBook
         12, 15, 17, 17, 11, 14, 17, 17, 11, 10, 15, 17, 17, 16, 17, 17
     };
 
-    public CodeBookMapType MapType { get; } = CodeBookMapType.None;
-    public int QuantMin { get; } = 0;
-    public int QuantDelta { get; } = 0;
-    public int Quant { get; } = 0;
-    public int QuantSequenceP { get; } = 0;
-    public int[] QuantList { get; } = null;
+        /// <summary>
+    /// Gets the map type.
+    /// </summary>
+public CodeBookMapType MapType { get; } = CodeBookMapType.None;
+        /// <summary>
+    /// Gets the quant min.
+    /// </summary>
+public int QuantMin { get; } = 0;
+        /// <summary>
+    /// Gets the quant delta.
+    /// </summary>
+public int QuantDelta { get; } = 0;
+        /// <summary>
+    /// Gets the quant.
+    /// </summary>
+public int Quant { get; } = 0;
+        /// <summary>
+    /// Gets the quant sequence p.
+    /// </summary>
+public int QuantSequenceP { get; } = 0;
+        /// <summary>
+    /// Gets the quant list.
+    /// </summary>
+public int[] QuantList { get; } = null;
 }

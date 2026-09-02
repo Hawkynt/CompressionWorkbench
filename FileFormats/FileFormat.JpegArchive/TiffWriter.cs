@@ -19,7 +19,10 @@ namespace FileFormat.JpegArchive;
 public static class TiffWriter {
   private const int TiffHeaderSize = 8;
 
-  public static byte[] Serialize(TiffImage image) {
+    /// <summary>
+  /// Performs the serialize operation.
+  /// </summary>
+public static byte[] Serialize(TiffImage image) {
     var ctx = new WriterContext(image.LittleEndian);
 
     // Reserve the TIFF header; filled at the end.

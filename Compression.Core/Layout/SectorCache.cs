@@ -40,7 +40,10 @@ public sealed class SectorCache : IDisposable {
   /// fetching a single read. Default 64 KB.</param>
   /// <param name="maxChunks">Maximum number of chunks kept resident. Memory
   /// cap = chunkSize × maxChunks. Default 4096 → 256 MB.</param>
-  public SectorCache(Stream stream, int chunkSize = DefaultChunkSize, int maxChunks = DefaultMaxChunks) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="SectorCache"/>.
+  /// </summary>
+public SectorCache(Stream stream, int chunkSize = DefaultChunkSize, int maxChunks = DefaultMaxChunks) {
     ArgumentNullException.ThrowIfNull(stream);
     if (chunkSize <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSize));
     if (maxChunks <= 0) throw new ArgumentOutOfRangeException(nameof(maxChunks));
@@ -141,7 +144,10 @@ public sealed class SectorCache : IDisposable {
     return data;
   }
 
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     _chunks.Clear();
     _lru.Clear();
   }

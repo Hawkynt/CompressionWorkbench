@@ -15,7 +15,10 @@ public static class PngOptimizer {
     "tIME", "iTXt", "zTXt",
   };
 
-  public static void Optimize(Stream stream, MetadataPlacementProfile? profile = null) {
+    /// <summary>
+  /// Performs the optimize operation.
+  /// </summary>
+public static void Optimize(Stream stream, MetadataPlacementProfile? profile = null) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead || !stream.CanWrite || !stream.CanSeek)
       throw new ArgumentException("Stream must be readable, writable, and seekable.", nameof(stream));

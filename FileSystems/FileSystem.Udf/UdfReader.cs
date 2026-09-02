@@ -5,6 +5,9 @@ using System.Text;
 
 namespace FileSystem.Udf;
 
+/// <summary>
+/// Reads udf data.
+/// </summary>
 public sealed class UdfReader : IDisposable {
   private const int SectorSize = 2048;
   // Structures are read on demand: copying a multi-gigabyte volume in capped the
@@ -16,12 +19,18 @@ public sealed class UdfReader : IDisposable {
   private long _partitionStart; // in sectors
   private int _blockSize = SectorSize;
 
-  public IReadOnlyList<UdfEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<UdfEntry> Entries => _entries;
 
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._len;
 
-  public UdfReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="UdfReader"/>.
+  /// </summary>
+public UdfReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _img = new ImageAccessor(stream, leaveOpen: true);
@@ -289,7 +298,10 @@ public sealed class UdfReader : IDisposable {
     return ms.ToArray();
   }
 
-  public byte[] Extract(UdfEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(UdfEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.DataOffset + entry.Size > _len) return [];
@@ -310,5 +322,8 @@ public sealed class UdfReader : IDisposable {
     return take;
   }
 
-  public void Dispose() => this._img.Dispose();
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() => this._img.Dispose();
 }

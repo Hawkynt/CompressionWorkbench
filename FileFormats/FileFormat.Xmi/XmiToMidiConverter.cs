@@ -17,10 +17,19 @@ namespace FileFormat.Xmi;
 /// </summary>
 public static class XmiToMidiConverter {
 
-  public const int Division = 60;
-  public const int TempoMicrosPerQuarter = 500000;
+    /// <summary>
+  /// Defines the division constant value.
+  /// </summary>
+public const int Division = 60;
+    /// <summary>
+  /// Defines the tempo micros per quarter constant value.
+  /// </summary>
+public const int TempoMicrosPerQuarter = 500000;
 
-  public sealed record Song(byte[] Midi, IReadOnlyList<byte> Timbres);
+    /// <summary>
+  /// Represents a song.
+  /// </summary>
+public sealed record Song(byte[] Midi, IReadOnlyList<byte> Timbres);
 
   /// <summary>
   /// Parses the IFF wrapper and returns one converted SMF per XMID song.

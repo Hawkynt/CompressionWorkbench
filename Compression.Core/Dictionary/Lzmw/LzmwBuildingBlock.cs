@@ -9,21 +9,36 @@ namespace Compression.Core.Dictionary.Lzmw;
 /// </summary>
 public sealed class LzmwBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzmw";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzmw";
   /// <inheritdoc/>
-  public string DisplayName => "LZMW";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZMW";
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Miller-Wegman LZW variant: adds the concatenation of the previous AND entire current match "
     + "to the dictionary, instead of LZW's previous match plus one character";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinBits = 9;
   private const int MaxBits = 16;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     Span<byte> header = stackalloc byte[4];
@@ -39,7 +54,10 @@ public sealed class LzmwBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

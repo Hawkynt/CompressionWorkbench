@@ -33,7 +33,10 @@ public sealed class Ym2203Codec {
   private int _ssgLatch;
 
   /// <param name="clock">Chip input clock in Hz (3993600 on the X1, 3579545 on many arcades).</param>
-  public Ym2203Codec(double clock = 3993600.0) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Ym2203Codec"/>.
+  /// </summary>
+public Ym2203Codec(double clock = 3993600.0) {
     // The OPN FM core is the OPN2 FM core; build a YM2612 clocked so its clock/144 native rate
     // equals the YM2203 clock/72 FM rate (i.e. feed it twice the clock).
     this._fm = new Ym2612Codec(clock * Ym2612Codec.Prescale / FmPrescale);

@@ -23,9 +23,15 @@ namespace FileFormat.Avr;
 /// </summary>
 public sealed class AvrReader {
 
-  public const int HeaderSize = 128;
+    /// <summary>
+  /// Defines the header size constant value.
+  /// </summary>
+public const int HeaderSize = 128;
 
-  public sealed record ParsedAvr(
+    /// <summary>
+  /// Represents a parsed avr.
+  /// </summary>
+public sealed record ParsedAvr(
     string Name,
     int NumChannels,
     int BitsPerSample,
@@ -37,7 +43,10 @@ public sealed class AvrReader {
     string User,
     byte[] SampleData);
 
-  public ParsedAvr Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedAvr Read(ReadOnlySpan<byte> data) {
     if (data.Length < HeaderSize)
       throw new InvalidDataException("AVR too short for 128-byte header.");
     if (data[0] != '2' || data[1] != 'B' || data[2] != 'I' || data[3] != 'T')

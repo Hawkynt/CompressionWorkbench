@@ -1,11 +1,20 @@
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents a compand block.
+/// </summary>
 public class CompandBlock
 {
-    public CompandBlock(int[] data)
+        /// <summary>
+    /// Initializes a new instance of <see cref="CompandBlock"/>.
+    /// </summary>
+public CompandBlock(int[] data)
     {
         Data = data;
     }
 
-    public int[] Data { get; }
+        /// <summary>
+    /// Gets the data.
+    /// </summary>
+public int[] Data { get; }
 }

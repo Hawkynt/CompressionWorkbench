@@ -22,12 +22,18 @@ public sealed class CoherentReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<CoherentEntry> _entries = [];
 
-  public IReadOnlyList<CoherentEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<CoherentEntry> Entries => this._entries;
   /// <summary>True once a valid coh_super_block (s_fname/s_fpack volume strings) was found.</summary>
   public bool Valid { get; private set; }
   /// <summary>Volume name from the superblock s_fname field (e.g. "noname").</summary>
   public string VolumeName { get; private set; } = "";
-  public int BlockSize { get; private set; } = 512;
+    /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
+public int BlockSize { get; private set; } = 512;
 
   // The coh_super_block sits at file offset 0 (the copy the Linux sysv driver
   // reads fields from); a second identical copy lives at offset 512 (the one
@@ -39,7 +45,10 @@ public sealed class CoherentReader : IDisposable {
   internal const int CohFpackOffset = 0x1EA;
   private const int RootInode = 2;
 
-  public CoherentReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="CoherentReader"/>.
+  /// </summary>
+public CoherentReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -216,7 +225,10 @@ public sealed class CoherentReader : IDisposable {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
-  public byte[] Extract(CoherentEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(CoherentEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -227,5 +239,8 @@ public sealed class CoherentReader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

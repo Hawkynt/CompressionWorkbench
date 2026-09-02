@@ -139,7 +139,10 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   // ── IFilesystemBlockMover ──────────────────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -169,7 +172,10 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   ///   frees the orphan bits.</item>
   /// </list></para>
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     using var cache = new SectorCache(image);
 
     var oldLcn = oldOffset / _clusterSize;
@@ -217,7 +223,10 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
     };
 
   /// <inheritdoc />
-  public IReadOnlySet<string> RelocatableMetadata { get; } =
+    /// <summary>
+  /// Gets the relocatable metadata.
+  /// </summary>
+public IReadOnlySet<string> RelocatableMetadata { get; } =
     SystemFileRecords.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
   /// <summary>

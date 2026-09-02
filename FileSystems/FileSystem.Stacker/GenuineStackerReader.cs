@@ -33,13 +33,22 @@ public sealed class GenuineStackerReader : IDisposable {
   private int _maxCluster;
   private bool _fat16;
 
-  public IReadOnlyList<StackerEntry> Entries => this._entries;
-  public int Version { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<StackerEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
+public int Version { get; private set; }
 
   /// <summary>The inner volume label (0x08 root entry), or "" when none was written.</summary>
   public string VolumeLabel { get; private set; } = "";
 
-  public GenuineStackerReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="GenuineStackerReader"/>.
+  /// </summary>
+public GenuineStackerReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -148,7 +157,10 @@ public sealed class GenuineStackerReader : IDisposable {
     return (cluster & 1) == 0 ? pair & 0xFFF : (pair >> 4) & 0xFFF;
   }
 
-  public byte[] Extract(StackerEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(StackerEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0) return [];
 
@@ -184,5 +196,8 @@ public sealed class GenuineStackerReader : IDisposable {
     return output;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

@@ -27,7 +27,10 @@ public sealed class ParquetReader {
   /// <summary>"full" if the Thrift footer was walked end-to-end without error; "partial" otherwise.</summary>
   public string ParseStatus { get; }
 
-  public ParquetReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="ParquetReader"/>.
+  /// </summary>
+public ParquetReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

@@ -3,26 +3,71 @@ using Compression.Registry;
 
 namespace FileFormat.MacBinary;
 
+/// <summary>
+/// Describes mac binary format.
+/// </summary>
 public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
-  public string Id => "MacBinary";
-  public string DisplayName => "MacBinary";
-  public FormatCategory Category => FormatCategory.Wrapper;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "MacBinary";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MacBinary";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Wrapper;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".bin";
-  public IReadOnlyList<string> Extensions => [".bin", ".macbin"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Encoding;
-  public string Description => "Macintosh resource+data fork container encoding";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".bin";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".bin", ".macbin"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Encoding;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Macintosh resource+data fork container encoding";
 
-  public void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Decompress(Stream input, Stream output) {
     var data = MacBinaryReader.ReadDataFork(input);
     output.Write(data);
   }
-  public void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     MacBinaryWriter.Write(output, "data", ms.ToArray());

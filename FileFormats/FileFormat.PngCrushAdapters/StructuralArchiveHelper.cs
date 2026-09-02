@@ -31,11 +31,26 @@ public static class StructuralArchiveHelper {
 
   /// <summary>Canonical <see cref="ArchiveEntryInfo.Kind"/> strings used here.</summary>
   public static class EntryKinds {
-    public const string Track = "Track";
-    public const string Tag = "Tag";
-    public const string Chunk = "Chunk";
-    public const string Frame = "Frame";
-    public const string Sample = "Sample";
+        /// <summary>
+    /// Defines the track constant value.
+    /// </summary>
+public const string Track = "Track";
+        /// <summary>
+    /// Defines the tag constant value.
+    /// </summary>
+public const string Tag = "Tag";
+        /// <summary>
+    /// Defines the chunk constant value.
+    /// </summary>
+public const string Chunk = "Chunk";
+        /// <summary>
+    /// Defines the frame constant value.
+    /// </summary>
+public const string Frame = "Frame";
+        /// <summary>
+    /// Defines the sample constant value.
+    /// </summary>
+public const string Sample = "Sample";
   }
 
   /// <summary>One decomposed entry: a name, its bytes and its archive kind.</summary>

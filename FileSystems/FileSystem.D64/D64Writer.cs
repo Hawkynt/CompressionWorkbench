@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.D64;
 
+/// <summary>
+/// Writes d 64 data.
+/// </summary>
 public sealed class D64Writer {
   private const int StandardSize = 174848;
   private const int SectorSize = 256;
@@ -21,9 +24,15 @@ public sealed class D64Writer {
 
   private readonly List<(string Name, byte FileType, byte[] Data)> _files = [];
 
-  public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
 
-  public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
   /// <summary>
   /// Builds the complete D64 image.

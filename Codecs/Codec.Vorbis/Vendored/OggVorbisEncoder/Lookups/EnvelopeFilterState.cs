@@ -2,6 +2,9 @@ using System;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents an envelope filter state.
+/// </summary>
 public class EnvelopeFilterState
 {
     private const int EnvelopePre = 16;
@@ -15,7 +18,10 @@ public class EnvelopeFilterState
 
     private int _nearPointer;
 
-    public float SpreadNearDc(float input)
+        /// <summary>
+    /// Performs the spread near dc operation.
+    /// </summary>
+public float SpreadNearDc(float input)
     {
         // the accumulation is regularly refreshed from scratch to avoid floating point creep 
         if (_nearPointer == 0)
@@ -42,7 +48,10 @@ public class EnvelopeFilterState
         return (float)(decay.ToDecibel() * .5 - 15f);
     }
 
-    public Delta ConvertAmplitudeToDelta(float amplitude, int stretch)
+        /// <summary>
+    /// Performs the convert amplitude to delta operation.
+    /// </summary>
+public Delta ConvertAmplitudeToDelta(float amplitude, int stretch)
     {
         float preMax = -99999f, preMin = 99999f;
 

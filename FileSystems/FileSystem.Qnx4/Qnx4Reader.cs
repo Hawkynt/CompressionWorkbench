@@ -46,9 +46,15 @@ public sealed class Qnx4Reader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<Qnx4Entry> _entries = [];
 
-  public IReadOnlyList<Qnx4Entry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Qnx4Entry> Entries => this._entries;
 
-  public const int BlockSize = 512;
+    /// <summary>
+  /// Defines the block size constant value.
+  /// </summary>
+public const int BlockSize = 512;
   internal const int InodeSize = 64;
   // Status byte values from qnx4 spec (linux/fs/qnx4/qnx4.h).
   // Linux qnx4 driver treats an entry as live when di_status & (USED|LINK) != 0;
@@ -62,7 +68,10 @@ public sealed class Qnx4Reader : IDisposable {
   // File type bits in di_mode are standard UNIX (S_IFDIR = 0x4000).
   private const ushort SIfdir = 0x4000;
 
-  public Qnx4Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Qnx4Reader"/>.
+  /// </summary>
+public Qnx4Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     this._data = new ImageAccessor(stream, leaveOpen: true);
@@ -170,7 +179,10 @@ public sealed class Qnx4Reader : IDisposable {
     this._data.CopyTo(offset, destination, Math.Min(entry.Size, this._data.Length - offset));
   }
 
-  public byte[] Extract(Qnx4Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Qnx4Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var offset = Qnx4Layout.ByteOffsetOf(entry.FirstExtentBlock);
@@ -179,5 +191,8 @@ public sealed class Qnx4Reader : IDisposable {
     return this._data.Read(offset, take);
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

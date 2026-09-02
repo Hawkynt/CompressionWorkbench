@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.Mfs;
 
+/// <summary>
+/// Reads mfs data.
+/// </summary>
 public sealed class MfsReader : IDisposable {
   private const ushort MfsMagic = 0xD2D7;
   private const int MdbOffset = 1024;
@@ -13,9 +16,15 @@ public sealed class MfsReader : IDisposable {
   private uint _blockSize;
   private int _firstBlockOffset;
 
-  public IReadOnlyList<MfsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<MfsEntry> Entries => _entries;
 
-  public MfsReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MfsReader"/>.
+  /// </summary>
+public MfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -83,7 +92,10 @@ public sealed class MfsReader : IDisposable {
     }
   }
 
-  public byte[] Extract(MfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(MfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
     var offset = _firstBlockOffset + (int)(entry.FirstBlock * _blockSize);
@@ -92,5 +104,8 @@ public sealed class MfsReader : IDisposable {
     return _data.AsSpan(offset, len).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

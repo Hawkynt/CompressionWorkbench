@@ -32,25 +32,43 @@ public abstract class CompressionStream : Stream {
   public CompressionStreamMode Mode { get; }
 
   /// <inheritdoc />
-  public override bool CanRead => this.Mode == CompressionStreamMode.Decompress;
+    /// <summary>
+  /// Gets a value indicating whether can read.
+  /// </summary>
+public override bool CanRead => this.Mode == CompressionStreamMode.Decompress;
 
   /// <inheritdoc />
-  public override bool CanWrite => this.Mode == CompressionStreamMode.Compress;
+    /// <summary>
+  /// Gets a value indicating whether can write.
+  /// </summary>
+public override bool CanWrite => this.Mode == CompressionStreamMode.Compress;
 
   /// <inheritdoc />
-  public override bool CanSeek => false;
+    /// <summary>
+  /// Gets a value indicating whether can seek.
+  /// </summary>
+public override bool CanSeek => false;
 
   /// <inheritdoc />
-  public override long Length => throw new NotSupportedException();
+    /// <summary>
+  /// Gets the length.
+  /// </summary>
+public override long Length => throw new NotSupportedException();
 
   /// <inheritdoc />
-  public override long Position {
+    /// <summary>
+  /// Gets or sets the position.
+  /// </summary>
+public override long Position {
     get => throw new NotSupportedException();
     set => throw new NotSupportedException();
   }
 
   /// <inheritdoc />
-  public override int Read(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public override int Read(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
     return this.Mode != CompressionStreamMode.Decompress 
@@ -61,7 +79,10 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  public override void Write(byte[] buffer, int offset, int count) {
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public override void Write(byte[] buffer, int offset, int count) {
     ObjectDisposedException.ThrowIf(this._disposed, this);
 
     if (this.Mode != CompressionStreamMode.Compress)
@@ -71,16 +92,25 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  public override void Flush() {
+    /// <summary>
+  /// Performs the flush operation.
+  /// </summary>
+public override void Flush() {
     ObjectDisposedException.ThrowIf(this._disposed, this);
     this.InnerStream.Flush();
   }
 
   /// <inheritdoc />
-  public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    /// <summary>
+  /// Performs the seek operation.
+  /// </summary>
+public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
 
   /// <inheritdoc />
-  public override void SetLength(long value) => throw new NotSupportedException();
+    /// <summary>
+  /// Sets the length.
+  /// </summary>
+public override void SetLength(long value) => throw new NotSupportedException();
 
   /// <summary>
   /// Decompresses data from the inner stream into the provided buffer.
@@ -107,7 +137,10 @@ public abstract class CompressionStream : Stream {
   }
 
   /// <inheritdoc />
-  protected override void Dispose(bool disposing) {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+protected override void Dispose(bool disposing) {
     if (!this._disposed) {
       if (disposing) {
         if (this.Mode == CompressionStreamMode.Compress)

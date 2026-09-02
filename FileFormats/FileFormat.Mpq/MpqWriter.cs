@@ -21,7 +21,10 @@ public sealed class MpqWriter {
 
   private readonly List<(string name, byte[] data)> _files = [];
 
-  public void AddFile(string name, byte[] data) {
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     if (string.IsNullOrEmpty(name))
@@ -31,7 +34,10 @@ public sealed class MpqWriter {
     _files.Add((name, data));
   }
 
-  public void WriteTo(Stream output) {
+    /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
+public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 
     // Build the listfile. MPQ convention is for the listfile to include its own

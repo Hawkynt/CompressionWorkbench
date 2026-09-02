@@ -4,13 +4,28 @@ namespace Codec.TrackerXmIt;
 /// <summary>A decoded XM pattern: a rows × channels grid of <see cref="XmCell"/>.</summary>
 public sealed class XmPattern {
 
-  public int Rows;
-  public int Channels;
-  public XmCell[] Cells = []; // row-major: cells[row * Channels + channel]
+    /// <summary>
+  /// Provides the rows value.
+  /// </summary>
+public int Rows;
+    /// <summary>
+  /// Provides the channels value.
+  /// </summary>
+public int Channels;
+    /// <summary>
+  /// Provides the cells value.
+  /// </summary>
+public XmCell[] Cells = []; // row-major: cells[row * Channels + channel]
 
-  public XmCell Cell(int row, int channel) => this.Cells[row * this.Channels + channel];
+    /// <summary>
+  /// Performs the cell operation.
+  /// </summary>
+public XmCell Cell(int row, int channel) => this.Cells[row * this.Channels + channel];
 
-  public static XmPattern Empty(int channels) {
+    /// <summary>
+  /// Performs the empty operation.
+  /// </summary>
+public static XmPattern Empty(int channels) {
     var p = new XmPattern { Rows = 64, Channels = channels, Cells = new XmCell[64 * channels] };
     return p;
   }
@@ -50,9 +65,24 @@ public sealed class XmPattern {
 
 /// <summary>One XM pattern cell. Note 97 = key-off; 0 = none.</summary>
 public struct XmCell {
-  public byte Note;        // 1..96 = note, 97 = key off, 0 = none
-  public byte Instrument;  // 1-based, 0 = none
-  public byte Volume;      // volume column byte
-  public byte Effect;      // effect type
-  public byte Param;       // effect parameter
+    /// <summary>
+  /// Provides the note value.
+  /// </summary>
+public byte Note;        // 1..96 = note, 97 = key off, 0 = none
+    /// <summary>
+  /// Provides the instrument value.
+  /// </summary>
+public byte Instrument;  // 1-based, 0 = none
+    /// <summary>
+  /// Provides the volume value.
+  /// </summary>
+public byte Volume;      // volume column byte
+    /// <summary>
+  /// Provides the effect value.
+  /// </summary>
+public byte Effect;      // effect type
+    /// <summary>
+  /// Provides the param value.
+  /// </summary>
+public byte Param;       // effect parameter
 }

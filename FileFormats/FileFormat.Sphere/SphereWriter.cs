@@ -14,7 +14,10 @@ namespace FileFormat.Sphere;
 public sealed class SphereWriter {
   private const int HeaderSize = 1024;
 
-  public byte[] Write(byte[] interleavedLe, int channels, int sampleRate, int bitsPerSample) {
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public byte[] Write(byte[] interleavedLe, int channels, int sampleRate, int bitsPerSample) {
     var bytesPerSample = bitsPerSample / 8;
     var frameBytes = bytesPerSample * channels;
     var sampleCount = frameBytes > 0 ? interleavedLe.Length / frameBytes : 0;

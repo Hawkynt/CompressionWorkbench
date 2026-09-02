@@ -12,11 +12,20 @@ using C9 = OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapte
 
 namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled;
 
+/// <summary>
+/// Represents a blocks.
+/// </summary>
 public class Blocks
 {
-    public class BlockNeg1 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block neg 1.
+    /// </summary>
+public class BlockNeg1 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new CN1.Page1_0()},
             new IStaticCodeBook[] {null, null, new CN1.Page2_0()},
@@ -28,9 +37,15 @@ public class Blocks
         };
     }
 
-    public class Block0 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 0.
+    /// </summary>
+public class Block0 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C0.Page1_0()},
             new IStaticCodeBook[] {null, null, new C0.Page2_0()},
@@ -42,9 +57,15 @@ public class Blocks
         };
     }
 
-    public class Block1 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 1.
+    /// </summary>
+public class Block1 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C1.Page1_0()},
             new IStaticCodeBook[] {null, null, new C1.Page2_0()},
@@ -56,9 +77,15 @@ public class Blocks
         };
     }
 
-    public class Block2 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 2.
+    /// </summary>
+public class Block2 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C2.Page1_0()},
             new IStaticCodeBook[] {null, null, new C2.Page2_0()},
@@ -70,9 +97,15 @@ public class Blocks
         };
     }
 
-    public class Block3 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 3.
+    /// </summary>
+public class Block3 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C3.Page1_0()},
             new IStaticCodeBook[] {null, null, new C3.Page2_0()},
@@ -84,9 +117,15 @@ public class Blocks
         };
     }
 
-    public class Block4 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 4.
+    /// </summary>
+public class Block4 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C4.Page1_0()},
             new IStaticCodeBook[] {null, null, new C4.Page2_0()},
@@ -98,9 +137,15 @@ public class Blocks
         };
     }
 
-    public class Block5 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 5.
+    /// </summary>
+public class Block5 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C5.Page1_0()},
             new IStaticCodeBook[] {null, null, new C5.Page2_0()},
@@ -114,9 +159,15 @@ public class Blocks
         };
     }
 
-    public class Block6 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 6.
+    /// </summary>
+public class Block6 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C6.Page1_0()},
             new IStaticCodeBook[] {null, null, new C6.Page2_0()},
@@ -130,9 +181,15 @@ public class Blocks
         };
     }
 
-    public class Block7 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 7.
+    /// </summary>
+public class Block7 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C7.Page1_0()},
             new IStaticCodeBook[] {null, null, new C7.Page2_0()},
@@ -146,9 +203,15 @@ public class Blocks
         };
     }
 
-    public class Block8 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 8.
+    /// </summary>
+public class Block8 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C8.Page1_0()},
             new IStaticCodeBook[] {null, null, new C8.Page2_0()},
@@ -162,9 +225,15 @@ public class Blocks
         };
     }
 
-    public class Block9 : IStaticBookBlock
+        /// <summary>
+    /// Represents a block 9.
+    /// </summary>
+public class Block9 : IStaticBookBlock
     {
-        public IStaticCodeBook[][] Books { get; } = {
+                /// <summary>
+        /// Gets the books.
+        /// </summary>
+public IStaticCodeBook[][] Books { get; } = {
             new IStaticCodeBook[] {null},
             new IStaticCodeBook[] {null, null, new C9.Page1_0()},
             new IStaticCodeBook[] {null, null, new C9.Page2_0()},

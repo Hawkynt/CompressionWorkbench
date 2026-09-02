@@ -37,7 +37,10 @@ public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormat
 
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new TfRecordReader(archive);
     foreach (var e in r.Entries) {
@@ -46,26 +49,65 @@ public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
-  public string Id => "TfRecord";
-  public string DisplayName => "TensorFlow TFRecord";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "TfRecord";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "TensorFlow TFRecord";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".tfrecord";
-  public IReadOnlyList<string> Extensions => [".tfrecord", ".tfrecords"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".tfrecord";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".tfrecord", ".tfrecords"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   // TFRecord has no header or magic bytes — detection is by extension only.
   // The reader validates the first record's length-CRC to reject false positives.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("tfrecord", "TFRecord")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "TensorFlow TFRecord — sequence of CRC-32C-protected length-prefixed records";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("tfrecord", "TFRecord")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "TensorFlow TFRecord — sequence of CRC-32C-protected length-prefixed records";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new TfRecordReader(stream);
     return r.Entries
       .Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.Size, "Stored", false, false, null,
@@ -73,7 +115,10 @@ public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormat
       .ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new TfRecordReader(stream);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;
@@ -83,7 +128,10 @@ public sealed class TfRecordFormatDescriptor : IFormatDescriptor, IArchiveFormat
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     using var w = new TfRecordWriter(output, leaveOpen: true);
     foreach (var (_, data) in FormatHelpers.FlatFiles(inputs))
       w.AddRecord(data);

@@ -8,19 +8,37 @@ namespace Compression.Core.Dictionary.Snappy;
 /// </summary>
 public sealed class SnappyBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Snappy";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Snappy";
   /// <inheritdoc/>
-  public string DisplayName => "Snappy";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Snappy";
   /// <inheritdoc/>
-  public string Description => "Fast LZ77-family compression designed by Google for speed over ratio";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Fast LZ77-family compression designed by Google for speed over ratio";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) =>
     SnappyCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) =>
     SnappyDecompressor.Decompress(data);
 }

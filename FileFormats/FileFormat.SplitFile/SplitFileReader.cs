@@ -16,7 +16,10 @@ public sealed partial class SplitFileReader {
   private readonly string _baseName;
   private readonly long _totalSize;
 
-  public SplitFileEntry Entry { get; }
+    /// <summary>
+  /// Gets the entry.
+  /// </summary>
+public SplitFileEntry Entry { get; }
 
   /// <summary>
   /// Opens a split file set from any one of the parts (typically .001).

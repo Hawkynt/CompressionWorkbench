@@ -19,7 +19,10 @@ public static class Gfs1Optimizer {
   private const double MaxSlackRatio = 0.05;
   private const double MaxBloatFactor = 2.0;
 
-  public static Gfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
+    /// <summary>
+  /// Performs the find operation.
+  /// </summary>
+public static Gfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
     if (fileSizes.Count == 0)
       return new Gfs1OptimalParameters(BlockSize, JournalCount: 1, EstimatedImageBytes: 17 * BlockSize);

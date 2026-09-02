@@ -15,16 +15,31 @@ namespace FileFormat.Zstd;
 /// </remarks>
 public sealed class ZstdBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Zstd";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Zstd";
   /// <inheritdoc/>
-  public string DisplayName => "Zstandard";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Zstandard";
   /// <inheritdoc/>
-  public string Description => "LZ77 matching with FSE and Huffman entropy stages, designed by Facebook (RFC 8878)";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 matching with FSE and Huffman entropy stages, designed by Facebook (RFC 8878)";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     using (var zstd = new ZstdStream(output, CompressionStreamMode.Compress, ZstdCompressionLevel.Default, leaveOpen: true))
       zstd.Write(data);
@@ -33,7 +48,10 @@ public sealed class ZstdBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var zstd = new ZstdStream(input, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();

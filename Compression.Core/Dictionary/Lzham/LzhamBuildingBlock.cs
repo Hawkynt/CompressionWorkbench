@@ -9,16 +9,31 @@ namespace Compression.Core.Dictionary.Lzham;
 /// </summary>
 public sealed class LzhamBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_LZHAM";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_LZHAM";
   /// <inheritdoc/>
-  public string DisplayName => "LZHAM";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZHAM";
   /// <inheritdoc/>
-  public string Description => "LZ77 + Huffman, inspired by Valve's LZHAM codec";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "LZ77 + Huffman, inspired by Valve's LZHAM codec";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Header: 4-byte LE original size.
@@ -36,7 +51,10 @@ public sealed class LzhamBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0) return [];
 

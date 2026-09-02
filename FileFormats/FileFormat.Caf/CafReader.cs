@@ -30,7 +30,10 @@ namespace FileFormat.Caf;
 /// <see cref="ParsedCaf.OtherChunks"/>.
 /// </summary>
 public sealed class CafReader {
-  public sealed record ParsedCaf(
+    /// <summary>
+  /// Represents a parsed caf.
+  /// </summary>
+public sealed record ParsedCaf(
     int NumChannels,
     int SampleRate,
     int BitsPerSample,
@@ -44,7 +47,10 @@ public sealed class CafReader {
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsLittleEndian = 0x2;
 
-  public ParsedCaf Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedCaf Read(ReadOnlySpan<byte> data) {
     if (data.Length < 8)
       throw new InvalidDataException("CAF too short for file header.");
     if (data[0] != 'c' || data[1] != 'a' || data[2] != 'f' || data[3] != 'f')

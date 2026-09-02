@@ -10,23 +10,41 @@ namespace Compression.Core.Dictionary.DsLz77;
 /// </summary>
 public sealed class BB_DsLz77 : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_DsLz77";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_DsLz77";
 
   /// <inheritdoc/>
-  public string DisplayName => "DS LZ77";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "DS LZ77";
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Microsoft DoubleSpace/DriveSpace LZ77 (variable-bit length/distance, 4 KiB window)";
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => DsLz77Compressor.Compress(data, effort: 0);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => DsLz77Decompressor.Decompress(data);
 }

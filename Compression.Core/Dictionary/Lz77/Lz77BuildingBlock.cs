@@ -10,16 +10,31 @@ namespace Compression.Core.Dictionary.Lz77;
 /// </summary>
 public sealed class Lz77BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lz77";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lz77";
   /// <inheritdoc/>
-  public string DisplayName => "LZ77";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZ77";
   /// <inheritdoc/>
-  public string Description => "Sliding-window dictionary compression with distance/length tokens";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Sliding-window dictionary compression with distance/length tokens";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var matchFinder = new HashChainMatchFinder(32768, 64);
     var compressor = new Lz77Compressor(matchFinder, 32768, 258, 3);
     var tokens = compressor.Compress(data);
@@ -27,7 +42,10 @@ public sealed class Lz77BuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var tokens = DeserializeTokens(data);
     return Lz77Decompressor.Decompress(tokens);
   }

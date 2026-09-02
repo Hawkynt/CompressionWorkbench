@@ -10,7 +10,10 @@ namespace FileFormat.Tnef;
 /// </summary>
 public sealed class TnefReader : IDisposable {
   // TNEF signature: 0x223E9F78 (LE)
-  public const uint TnefSignature = 0x223E9F78;
+    /// <summary>
+  /// Defines the tnef signature constant value.
+  /// </summary>
+public const uint TnefSignature = 0x223E9F78;
 
   // Attribute levels
   private const byte LvlMessage    = 0x01;
@@ -24,10 +27,19 @@ public sealed class TnefReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<TnefEntry> _entries = [];
 
-  public IReadOnlyList<TnefEntry> Entries => _entries;
-  public ushort Key { get; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<TnefEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the key.
+  /// </summary>
+public ushort Key { get; }
 
-  public TnefReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="TnefReader"/>.
+  /// </summary>
+public TnefReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -100,10 +112,16 @@ public sealed class TnefReader : IDisposable {
     }
   }
 
-  public byte[] Extract(TnefEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(TnefEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data ?? [];
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

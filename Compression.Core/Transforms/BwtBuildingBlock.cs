@@ -9,16 +9,31 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class BwtBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Bwt";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Bwt";
   /// <inheritdoc/>
-  public string DisplayName => "BWT";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BWT";
   /// <inheritdoc/>
-  public string Description => "Burrows-Wheeler Transform, reorders bytes for better compression";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Burrows-Wheeler Transform, reorders bytes for better compression";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var (transformed, originalIndex) = BurrowsWheelerTransform.Forward(data);
     var result = new byte[4 + transformed.Length];
     BinaryPrimitives.WriteInt32LittleEndian(result, originalIndex);
@@ -27,7 +42,10 @@ public sealed class BwtBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalIndex = BinaryPrimitives.ReadInt32LittleEndian(data);
     return BurrowsWheelerTransform.Inverse(data[4..], originalIndex);
   }

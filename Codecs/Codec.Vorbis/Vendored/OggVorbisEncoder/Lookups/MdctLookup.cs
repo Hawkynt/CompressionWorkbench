@@ -3,6 +3,9 @@ using System.Buffers;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a mdct lookup.
+/// </summary>
 public class MdctLookup
 {
     private const float Pi3Eighths = .38268343236508977175f;
@@ -15,7 +18,10 @@ public class MdctLookup
     private readonly float _scale;
     private readonly float[] _trig;
 
-    public MdctLookup(int n)
+        /// <summary>
+    /// Initializes a new instance of <see cref="MdctLookup"/>.
+    /// </summary>
+public MdctLookup(int n)
     {
         _n = n;
         var n2 = n >> 1;
@@ -55,7 +61,10 @@ public class MdctLookup
         _scale = 4f / n;
     }
 
-    public void Forward(in Span<float> input, in Span<float> output)
+        /// <summary>
+    /// Performs the forward operation.
+    /// </summary>
+public void Forward(in Span<float> input, in Span<float> output)
     {
         var n = _n;
         var n2 = n >> 1;

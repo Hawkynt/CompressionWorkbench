@@ -9,16 +9,31 @@ namespace Compression.Core.Entropy.ExpGolomb;
 /// </summary>
 public sealed class ExpGolombBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_ExpGolomb";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_ExpGolomb";
   /// <inheritdoc/>
-  public string DisplayName => "Exp-Golomb";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Exp-Golomb";
   /// <inheritdoc/>
-  public string Description => "Exponential Golomb coding, used in H.264/H.265";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Exponential Golomb coding, used in H.264/H.265";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Header: 4-byte LE original size.
@@ -37,7 +52,10 @@ public sealed class ExpGolombBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0) return [];
 

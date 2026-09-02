@@ -86,8 +86,14 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
       : (_blocksCount - _firstDataBlock + _blocksPerGroup - 1) / _blocksPerGroup;
   }
 
-  public long FirstDataByte => (long)_firstDataBlock * _blockSize;
-  public int BlockSize => _blockSize;
+    /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
+public long FirstDataByte => (long)_firstDataBlock * _blockSize;
+    /// <summary>
+  /// Gets the block size.
+  /// </summary>
+public int BlockSize => _blockSize;
 
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
 
@@ -120,7 +126,10 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   private static string InodeTableName(uint group) => $"ext inode table (group {group})";
 
   /// <inheritdoc />
-  public void UpdateMetadataAfterMove(Stream image, string metadataName,
+    /// <summary>
+  /// Performs the update metadata after move operation.
+  /// </summary>
+public void UpdateMetadataAfterMove(Stream image, string metadataName,
       long oldOffset, long newOffset, long length,
       IReadOnlyList<(long Offset, long Length)>? liveRanges = null) {
     ArgumentNullException.ThrowIfNull(image);
@@ -251,7 +260,10 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   // understood a fragmented owner goes through the rebuild, as it always did.
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
     // Overlap-safe: a run shifted forward by less than its own length
@@ -273,11 +285,17 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// Crash mid-3: file reachable via new pointers, old blocks still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset,
       long length, bool releaseOldSpace) {
     var blockCount = (int)((length + _blockSize - 1) / _blockSize);
     var oldFirstBlock = OffsetToBlock(oldOffset);

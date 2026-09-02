@@ -99,6 +99,9 @@ public sealed record AcronisRecord(
   AcronisFileMetaBody? MetaBody = null
 );
 
+/// <summary>
+/// Represents an acronis config attribute.
+/// </summary>
 public sealed record AcronisConfigAttribute(string Key, string Value);
 
 /// <summary>
@@ -169,7 +172,10 @@ public static class AcronisRecordReader {
     return records;
   }
 
-  public static AcronisRecord ReadOne(Stream stream, long endExclusive) {
+    /// <summary>
+  /// Reads the one from the supplied input.
+  /// </summary>
+public static AcronisRecord ReadOne(Stream stream, long endExclusive) {
     var start = stream.Position;
     var typeByte = stream.ReadByte();
     if (typeByte < 0) throw new EndOfStreamException("Acronis: unexpected EOF reading record type.");

@@ -1,12 +1,27 @@
 #pragma warning disable CS1591
 namespace FileFormat.OneNote;
 
+/// <summary>
+/// Specifies one note variant values.
+/// </summary>
 public enum OneNoteVariant {
-  Unknown,
-  OneNote2007,
-  OneNote2010Plus,
+    /// <summary>
+  /// Specifies an unknown or unrecognized value.
+  /// </summary>
+Unknown,
+    /// <summary>
+  /// Specifies the one note 2007 option.
+  /// </summary>
+OneNote2007,
+    /// <summary>
+  /// Specifies the one note 2010 plus option.
+  /// </summary>
+OneNote2010Plus,
 }
 
+/// <summary>
+/// Represents an one note detector.
+/// </summary>
 public static class OneNoteDetector {
 
   // {7B5C52E4-D88C-4DA7-AEB1-5378D02996D3} — OneNote 2010+ section file GUID.
@@ -26,7 +41,10 @@ public static class OneNoteDetector {
     0xA5, 0xD0, 0x17, 0x91, 0xED, 0xC8, 0xAE, 0xD8,
   ];
 
-  public static OneNoteVariant Detect(Stream stream) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public static OneNoteVariant Detect(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

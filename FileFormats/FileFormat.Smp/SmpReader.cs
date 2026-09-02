@@ -18,17 +18,44 @@ namespace FileFormat.Smp;
 /// </summary>
 public sealed class SmpReader {
 
-  public const string Magic = "SOUND SAMPLE DATA ";
-  public const int MagicLength = 18;
-  public const int HeaderSize = 18 + 4 + 60 + 30; // 112: magic + version + comment + name
-  public const int LoopRecordSize = 4 + 4 + 1 + 2;  // 11
-  public const int MarkerRecordSize = 10 + 4;       // 14
-  public const int LoopCount = 8;
-  public const int MarkerCount = 8;
+    /// <summary>
+  /// Defines the magic constant value.
+  /// </summary>
+public const string Magic = "SOUND SAMPLE DATA ";
+    /// <summary>
+  /// Defines the magic length constant value.
+  /// </summary>
+public const int MagicLength = 18;
+    /// <summary>
+  /// Defines the header size constant value.
+  /// </summary>
+public const int HeaderSize = 18 + 4 + 60 + 30; // 112: magic + version + comment + name
+    /// <summary>
+  /// Defines the loop record size constant value.
+  /// </summary>
+public const int LoopRecordSize = 4 + 4 + 1 + 2;  // 11
+    /// <summary>
+  /// Defines the marker record size constant value.
+  /// </summary>
+public const int MarkerRecordSize = 10 + 4;       // 14
+    /// <summary>
+  /// Defines the loop count constant value.
+  /// </summary>
+public const int LoopCount = 8;
+    /// <summary>
+  /// Defines the marker count constant value.
+  /// </summary>
+public const int MarkerCount = 8;
   // trailer after the samples: loops + markers + MIDI unity byte + uint32 rate.
-  public const int TrailerSize = LoopCount * LoopRecordSize + MarkerCount * MarkerRecordSize + 1 + 4;
+    /// <summary>
+  /// Defines the trailer size constant value.
+  /// </summary>
+public const int TrailerSize = LoopCount * LoopRecordSize + MarkerCount * MarkerRecordSize + 1 + 4;
 
-  public sealed record ParsedSmp(
+    /// <summary>
+  /// Represents a parsed smp.
+  /// </summary>
+public sealed record ParsedSmp(
     string Version,
     string Comment,
     string Name,
@@ -37,7 +64,10 @@ public sealed class SmpReader {
     int MidiUnity,
     byte[] SamplesLe);
 
-  public ParsedSmp Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public ParsedSmp Read(ReadOnlySpan<byte> data) {
     if (data.Length < HeaderSize + 4)
       throw new InvalidDataException("SMP too short for header + sample count.");
     if (!data[..MagicLength].SequenceEqual(Encoding.ASCII.GetBytes(Magic)))

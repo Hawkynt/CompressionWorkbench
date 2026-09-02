@@ -13,7 +13,10 @@ public sealed class TtcReader {
   /// <summary>One sliced member font.</summary>
   public sealed record Member(int Index, string Extension, byte[] Data);
 
-  public List<Member> Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public List<Member> Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("TTC too short for header.");
 

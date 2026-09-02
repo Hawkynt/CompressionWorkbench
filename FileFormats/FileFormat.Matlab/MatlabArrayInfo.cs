@@ -6,11 +6,23 @@ namespace FileFormat.Matlab;
 /// </summary>
 public sealed class MatlabArrayInfo {
 
-  public string Name { get; }
-  public string ClassName { get; }
-  public int[] Dimensions { get; }
+    /// <summary>
+  /// Gets the name.
+  /// </summary>
+public string Name { get; }
+    /// <summary>
+  /// Gets the class name.
+  /// </summary>
+public string ClassName { get; }
+    /// <summary>
+  /// Gets the dimensions.
+  /// </summary>
+public int[] Dimensions { get; }
 
-  public MatlabArrayInfo(string name, string className, int[] dimensions) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="MatlabArrayInfo"/>.
+  /// </summary>
+public MatlabArrayInfo(string name, string className, int[] dimensions) {
     this.Name = name;
     this.ClassName = className;
     this.Dimensions = dimensions;

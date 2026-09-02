@@ -111,47 +111,92 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new IsoBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new IsoBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
   /// <inheritdoc/>
-  public string Id => "Iso";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Iso";
   /// <inheritdoc/>
-  public string DisplayName => "ISO 9660";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ISO 9660";
   /// <inheritdoc/>
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
   /// <inheritdoc/>
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <inheritdoc/>
-  public string DefaultExtension => ".iso";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".iso";
   /// <inheritdoc/>
-  public IReadOnlyList<string> Extensions => [".iso"];
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".iso"];
   /// <inheritdoc/>
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   /// <inheritdoc/>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("CD001"u8.ToArray(), Offset: 0x8001, Confidence: 0.95),
     new("CD001"u8.ToArray(), Offset: 0x8801, Confidence: 0.90),
     new("CD001"u8.ToArray(), Offset: 0x9001, Confidence: 0.85),
   ];
   /// <inheritdoc/>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   /// <inheritdoc/>
-  public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <inheritdoc/>
-  public string Description => "ISO 9660 optical disc image";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "ISO 9660 optical disc image";
 
   /// <inheritdoc/>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new IsoReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, e.LastModified
@@ -159,7 +204,10 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new IsoWriter {
       VolumeIdentifier      = options?.GetOption("VolumeLabel", "CDROM") ?? "CDROM",
       SystemIdentifier      = options?.GetOption("SystemId", "") ?? "",
@@ -224,7 +272,10 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc/>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new IsoReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;
@@ -279,7 +330,10 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       IsoModifier.AddFile(archive, name, data);
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>Plans the moves the layout needs and commits them in place.</summary>

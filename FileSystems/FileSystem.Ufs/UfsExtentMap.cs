@@ -28,7 +28,10 @@ public static class UfsExtentMap {
   private const int RootInode = 2;
   private const int MaxDirectBlocks = 12;
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < SuperblockOffset + SuperblockSize) yield break;
 

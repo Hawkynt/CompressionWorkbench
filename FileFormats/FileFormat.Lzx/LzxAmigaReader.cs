@@ -53,7 +53,10 @@ public sealed class LzxAmigaReader : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (this._disposed)
       return;
     this._disposed = true;

@@ -3,6 +3,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents an encode buffer.
+/// </summary>
 public class EncodeBuffer
 {
     private const int BufferIncrement = 256;
@@ -22,19 +25,28 @@ public class EncodeBuffer
     private int _endBit;
     private int _endByte;
 
-    public EncodeBuffer()
+        /// <summary>
+    /// Initializes a new instance of <see cref="EncodeBuffer"/>.
+    /// </summary>
+public EncodeBuffer()
         : this(BufferIncrement)
     {
     }
 
-    public EncodeBuffer(int initialBufferSize)
+        /// <summary>
+    /// Initializes a new instance of <see cref="EncodeBuffer"/>.
+    /// </summary>
+public EncodeBuffer(int initialBufferSize)
     {
         _buffer = new byte[initialBufferSize];
     }
 
     private int Bytes => _endByte + (_endBit + 7) / 8;
 
-    public void WriteBook(CodeBook book, int a)
+        /// <summary>
+    /// Writes the book to the supplied output.
+    /// </summary>
+public void WriteBook(CodeBook book, int a)
     {
         if ((a < 0) || (a >= book.Entries))
             return;
@@ -42,13 +54,19 @@ public class EncodeBuffer
         Write(book.CodeList[a], book.StaticBook.LengthList[a]);
     }
 
-    public void WriteString(string str)
+        /// <summary>
+    /// Writes the string to the supplied output.
+    /// </summary>
+public void WriteString(string str)
     {
         foreach (var c in str)
             Write(c, 8);
     }
 
-    public void Write(uint value, int bits)
+        /// <summary>
+    /// Writes the value to the supplied output.
+    /// </summary>
+public void Write(uint value, int bits)
     {
         if ((bits < 0) || (bits > 32))
             throw new ArgumentException($"{nameof(bits)} must be between 0 and 32");
@@ -88,7 +106,10 @@ public class EncodeBuffer
         _endBit = bits & 7;
     }
 
-    public byte[] GetBytes()
+        /// <summary>
+    /// Gets the bytes.
+    /// </summary>
+public byte[] GetBytes()
     {
         Array.Resize(ref _buffer, Bytes);
         return _buffer;

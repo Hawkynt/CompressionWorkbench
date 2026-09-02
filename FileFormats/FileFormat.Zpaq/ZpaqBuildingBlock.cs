@@ -123,16 +123,31 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
   ];
 
   /// <inheritdoc/>
-  public string Id => "BB_Zpaq";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Zpaq";
   /// <inheritdoc/>
-  public string DisplayName => "ZPAQ";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ZPAQ";
   /// <inheritdoc/>
-  public string Description => "ZPAQ context-mixing model over hashed orders 1-4, contexts built by the ZPAQL virtual machine, coded bit by bit by a carry-propagating binary range coder";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "ZPAQ context-mixing model over hashed orders 1-4, contexts built by the ZPAQL virtual machine, coded bit by bit by a carry-propagating binary range coder";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var output = new MemoryStream();
     Span<byte> header = stackalloc byte[SizeHeaderBytes];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -164,7 +179,10 @@ public sealed class ZpaqBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

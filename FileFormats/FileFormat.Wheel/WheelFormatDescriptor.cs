@@ -36,53 +36,95 @@ namespace FileFormat.Wheel;
 public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
 
   /// <inheritdoc/>
-  public string Id => "Wheel";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Wheel";
 
   /// <inheritdoc/>
-  public string DisplayName => "Python Wheel";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Python Wheel";
 
   /// <inheritdoc/>
-  public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
 
   /// <inheritdoc/>
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
 
   /// <inheritdoc/>
-  public string DefaultExtension => ".whl";
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".whl";
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> Extensions => [".whl"];
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".whl"];
 
   /// <inheritdoc/>
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
 
   /// <inheritdoc/>
   /// <remarks>Empty: outer container is ZIP; detection is by extension to avoid
   /// shadowing the ZIP descriptor.</remarks>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate")];
 
   /// <inheritdoc/>
-  public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
 
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
   /// <inheritdoc/>
-  public string Description =>
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Python wheel package (PEP 427) — ZIP with mandatory dist-info/METADATA, " +
     "WHEEL and RECORD files at the root.";
 
   /// <inheritdoc/>
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var zip = new ZipReader(stream, leaveOpen: true, password: password);
     var distInfo = LocateDistInfo(zip);
     var metadata = TryReadEntry(zip, distInfo + "/METADATA");
@@ -102,7 +144,10 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <inheritdoc/>
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var zip = new ZipReader(stream, leaveOpen: true, password: password);
     var distInfo = LocateDistInfo(zip);
     var metadata = TryReadEntry(zip, distInfo + "/METADATA");
@@ -165,7 +210,10 @@ public sealed class WheelFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   }
 
   /// <inheritdoc/>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
     => WheelCreator.Create(output, inputs);
 
   /// <summary>

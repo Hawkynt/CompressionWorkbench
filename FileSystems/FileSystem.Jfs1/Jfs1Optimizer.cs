@@ -18,7 +18,10 @@ public static class Jfs1Optimizer {
   private const double MaxSlackRatio = 0.05;
   private const double MaxBloatFactor = 2.0;
 
-  public static Jfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
+    /// <summary>
+  /// Performs the find operation.
+  /// </summary>
+public static Jfs1OptimalParameters Find(IReadOnlyList<long> fileSizes) {
     ArgumentNullException.ThrowIfNull(fileSizes);
     if (fileSizes.Count == 0)
       return new Jfs1OptimalParameters(1024, AggregateBlockSize: 1024, EstimatedImageBytes: 3 * 1024);

@@ -18,7 +18,10 @@ namespace FileFormat.Zip;
 public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
 
   /// <inheritdoc />
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    /// <summary>
+  /// Gets the options schema.
+  /// </summary>
+public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Method", "Compression method", FormatOptionKind.Enum, "deflate",
       AllowedValues: ["deflate", "store", "deflate64", "bzip2", "lzma", "zstd"]),
     new("Level", "Compression level", FormatOptionKind.Integer, "5",
@@ -31,7 +34,10 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => ZipLayoutMap.Enumerate(archive);
 
   /// <summary>
   /// A ZIP has no fixed media geometry; the single canonical size is the
@@ -99,10 +105,22 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
-  public string Id => "Zip";
-  public string DisplayName => "ZIP";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Zip";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ZIP";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
@@ -130,29 +148,59 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ZipModifier.RemoveFile(archive, name, wipeData: true);
   }
 
-  public string DefaultExtension => ".zip";
-  public IReadOnlyList<string> Extensions => [".zip", ".zipx"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".zip";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".zip", ".zipx"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'K', 0x03, 0x04], Confidence: 0.95),
     new([(byte)'P', (byte)'K', 0x05, 0x06], Confidence: 0.90)
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [
     new("deflate", "Deflate", SupportsOptimize: true),
     new("store", "Store"), new("deflate64", "Deflate64"),
     new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd")
   ];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Universal archive with multiple compression methods";
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Universal archive with multiple compression methods";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.UncompressedSize, e.CompressedSize,
       e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ZipReader(stream, password: password);
     foreach (var e in r.Entries) {
       if (files != null && !MatchesFilter(e.FileName, files)) continue;
@@ -363,7 +411,10 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
-  public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < 30) {
       issues.Add(new(ValidationLevel.Header, IssueSeverity.Error, "ZIP_TOO_SHORT",
@@ -409,7 +460,10 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Level = ValidationLevel.Header, Issues = issues };
   }
 
-  public ValidationResult ValidateStructure(Stream stream) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     int entryCount;
     try {
@@ -477,7 +531,10 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
-  public ValidationResult ValidateIntegrity(Stream stream) {
+    /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
+public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {
       var r = new ZipReader(stream);

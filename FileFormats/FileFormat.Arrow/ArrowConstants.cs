@@ -1,6 +1,9 @@
 #pragma warning disable CS1591
 namespace FileFormat.Arrow;
 
+/// <summary>
+/// Represents an arrow constants.
+/// </summary>
 public static class ArrowConstants {
 
   /// <summary>Arrow IPC File-format magic bytes: ASCII "ARROW1" followed by two zero padding bytes.</summary>

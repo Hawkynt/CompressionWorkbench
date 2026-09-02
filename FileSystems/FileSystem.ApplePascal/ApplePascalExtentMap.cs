@@ -11,7 +11,10 @@ namespace FileSystem.ApplePascal;
 /// </summary>
 public static class ApplePascalExtentMap {
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
     // Boot + directory region = first 6 blocks.

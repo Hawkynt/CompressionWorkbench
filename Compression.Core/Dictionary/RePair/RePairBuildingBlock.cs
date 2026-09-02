@@ -29,13 +29,25 @@ namespace Compression.Core.Dictionary.RePair;
 /// </remarks>
 public sealed class RePairBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_RePair";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_RePair";
   /// <inheritdoc/>
-  public string DisplayName => "Re-Pair";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Re-Pair";
   /// <inheritdoc/>
-  public string Description => "Recursive Pairing, offline grammar-based compression";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Recursive Pairing, offline grammar-based compression";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   // Non-terminals start at 256 (above byte range).
   private const int FirstNonTerminal = 256;
@@ -49,7 +61,10 @@ public sealed class RePairBuildingBlock : IBuildingBlock {
   private const int MaxRules = 65536 - FirstNonTerminal;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write 4-byte LE uncompressed size.
@@ -153,7 +168,10 @@ public sealed class RePairBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

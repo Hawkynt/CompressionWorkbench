@@ -26,7 +26,10 @@ public static class HfsPlusExtentMap {
   private const ushort HfsPlusSignature = 0x482B; // "H+"
   private const ushort HfsxSignature = 0x4858;    // "HX"
 
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    /// <summary>
+  /// Enumerates the value.
+  /// </summary>
+public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < VolumeHeaderOffset + VolumeHeaderSize) yield break;
 

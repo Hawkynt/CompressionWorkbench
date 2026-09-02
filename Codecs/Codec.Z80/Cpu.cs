@@ -33,31 +33,79 @@ public sealed partial class Cpu {
   private readonly IBusZ80 _bus;
 
   // ── main register file ──────────────────────────────────────────────────────
-  public byte A, F, B, C, D, E, H, L;
+    /// <summary>
+  /// Provides the a and f and b and c and d and e and h and l value.
+  /// </summary>
+public byte A, F, B, C, D, E, H, L;
   // alternate set
-  public byte A2, F2, B2, C2, D2, E2, H2, L2;
+    /// <summary>
+  /// Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value.
+  /// </summary>
+public byte A2, F2, B2, C2, D2, E2, H2, L2;
   // index + special
-  public ushort IX, IY, SP, PC;
-  public byte I, R;
+    /// <summary>
+  /// Provides the ix and iy and sp and pc value.
+  /// </summary>
+public ushort IX, IY, SP, PC;
+    /// <summary>
+  /// Provides the i and r value.
+  /// </summary>
+public byte I, R;
   // interrupt state
-  public bool IFF1, IFF2;
-  public int InterruptMode; // 0, 1 or 2
-  public bool Halted;
+    /// <summary>
+  /// Provides the iff 1 and iff 2 value.
+  /// </summary>
+public bool IFF1, IFF2;
+    /// <summary>
+  /// Provides the interrupt mode value.
+  /// </summary>
+public int InterruptMode; // 0, 1 or 2
+    /// <summary>
+  /// Provides the halted value.
+  /// </summary>
+public bool Halted;
 
   /// <summary>Status-register flag bits (the F register layout).</summary>
   [Flags]
   public enum Flags : byte {
-    C = 0x01,  // carry
-    N = 0x02,  // add/subtract
-    PV = 0x04, // parity / overflow
-    X = 0x08,  // undocumented (copy of result bit 3)
-    H = 0x10,  // half-carry
-    Y = 0x20,  // undocumented (copy of result bit 5)
-    Z = 0x40,  // zero
-    S = 0x80,  // sign
+        /// <summary>
+    /// Specifies the c option.
+    /// </summary>
+C = 0x01,  // carry
+        /// <summary>
+    /// Specifies the n option.
+    /// </summary>
+N = 0x02,  // add/subtract
+        /// <summary>
+    /// Specifies the pv option.
+    /// </summary>
+PV = 0x04, // parity / overflow
+        /// <summary>
+    /// Specifies the x option.
+    /// </summary>
+X = 0x08,  // undocumented (copy of result bit 3)
+        /// <summary>
+    /// Specifies the h option.
+    /// </summary>
+H = 0x10,  // half-carry
+        /// <summary>
+    /// Specifies the y option.
+    /// </summary>
+Y = 0x20,  // undocumented (copy of result bit 5)
+        /// <summary>
+    /// Specifies the z option.
+    /// </summary>
+Z = 0x40,  // zero
+        /// <summary>
+    /// Specifies the s option.
+    /// </summary>
+S = 0x80,  // sign
   }
 
-  public Cpu(IBusZ80 bus) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Cpu"/>.
+  /// </summary>
+public Cpu(IBusZ80 bus) {
     this._bus = bus;
     this.Reset();
   }
@@ -77,10 +125,22 @@ public sealed partial class Cpu {
   }
 
   // ── 16-bit register pair accessors ──────────────────────────────────────────
-  public ushort AF { get => (ushort)((this.A << 8) | this.F); set { this.A = (byte)(value >> 8); this.F = (byte)value; } }
-  public ushort BC { get => (ushort)((this.B << 8) | this.C); set { this.B = (byte)(value >> 8); this.C = (byte)value; } }
-  public ushort DE { get => (ushort)((this.D << 8) | this.E); set { this.D = (byte)(value >> 8); this.E = (byte)value; } }
-  public ushort HL { get => (ushort)((this.H << 8) | this.L); set { this.H = (byte)(value >> 8); this.L = (byte)value; } }
+    /// <summary>
+  /// Gets or sets the af.
+  /// </summary>
+public ushort AF { get => (ushort)((this.A << 8) | this.F); set { this.A = (byte)(value >> 8); this.F = (byte)value; } }
+    /// <summary>
+  /// Gets or sets the bc.
+  /// </summary>
+public ushort BC { get => (ushort)((this.B << 8) | this.C); set { this.B = (byte)(value >> 8); this.C = (byte)value; } }
+    /// <summary>
+  /// Gets or sets the de.
+  /// </summary>
+public ushort DE { get => (ushort)((this.D << 8) | this.E); set { this.D = (byte)(value >> 8); this.E = (byte)value; } }
+    /// <summary>
+  /// Gets or sets the hl.
+  /// </summary>
+public ushort HL { get => (ushort)((this.H << 8) | this.L); set { this.H = (byte)(value >> 8); this.L = (byte)value; } }
 
   // ── bus helpers ─────────────────────────────────────────────────────────────
   private byte ReadMem(ushort addr) => this._bus.ReadMem(addr);

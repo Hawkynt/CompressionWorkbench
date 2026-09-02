@@ -32,7 +32,10 @@ public static class BscStream {
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
-  public static void Compress(Stream input, Stream output) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public static void Compress(Stream input, Stream output) {
     var data = ReadAll(input);
 
     // --- Apply pipeline: BWT → MTF → zero-run-length encode ---
@@ -81,7 +84,10 @@ public static class BscStream {
     output.Write(payload);
   }
 
-  public static void Decompress(Stream input, Stream output) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public static void Decompress(Stream input, Stream output) {
     // --- Verify magic ---
     var magic = new byte[4];
     input.ReadExactly(magic);

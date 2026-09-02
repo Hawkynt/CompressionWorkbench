@@ -8,16 +8,31 @@ namespace Compression.Core.Entropy;
 /// </summary>
 public sealed class ShannonFanoBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_ShannonFano";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_ShannonFano";
   /// <inheritdoc/>
-  public string DisplayName => "Shannon-Fano";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Shannon-Fano";
   /// <inheritdoc/>
-  public string Description => "Historical predecessor to Huffman, recursive frequency splitting";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Historical predecessor to Huffman, recursive frequency splitting";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Entropy;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Entropy;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
 
     // Write original size.
@@ -80,7 +95,10 @@ public sealed class ShannonFanoBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var offset = 0;
 
     // Read original size.

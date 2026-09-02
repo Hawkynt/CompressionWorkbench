@@ -329,7 +329,10 @@ public sealed class RomFsWriter : IDisposable {
     ((uint)buf[offset + 2] << 8) | buf[offset + 3];
 
   /// <inheritdoc/>
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (_disposed) return;
     _disposed = true;
     if (!_leaveOpen) _output.Dispose();

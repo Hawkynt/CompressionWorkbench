@@ -17,19 +17,34 @@ namespace FileFormat.Bzip2;
 /// </remarks>
 public sealed class Bzip2BuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Bzip2";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Bzip2";
   /// <inheritdoc/>
-  public string DisplayName => "bzip2";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "bzip2";
   /// <inheritdoc/>
-  public string Description => "Burrows-Wheeler transform with move-to-front and multi-table Huffman coding";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Burrows-Wheeler transform with move-to-front and multi-table Huffman coding";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Classic;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Classic;
 
   /// <summary>Block size multiplier used for the benchmark stream (9 → 900 KB blocks).</summary>
   private const int BlockSize100k = 9;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var output = new MemoryStream();
     using (var bzip2 = new Bzip2Stream(output, CompressionStreamMode.Compress, BlockSize100k, leaveOpen: true))
       bzip2.Write(data);
@@ -38,7 +53,10 @@ public sealed class Bzip2BuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     using var input = new MemoryStream(data.ToArray());
     using var bzip2 = new Bzip2Stream(input, CompressionStreamMode.Decompress);
     using var output = new MemoryStream();

@@ -17,9 +17,15 @@ public sealed class TrDosWriter {
 
   private readonly List<(string Name, char Type, byte[] Data)> _files = [];
 
-  public void AddFile(string name, char type, byte[] data) => _files.Add((name, type, data));
+    /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
+public void AddFile(string name, char type, byte[] data) => _files.Add((name, type, data));
 
-  public byte[] Build(string label = "DISK") {
+    /// <summary>
+  /// Performs the build operation.
+  /// </summary>
+public byte[] Build(string label = "DISK") {
     var disk = new byte[DiskSize];
 
     // The disk is a fixed 640 KB, and the loop below wrote a file only when it

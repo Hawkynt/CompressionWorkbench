@@ -50,7 +50,10 @@ public sealed class PackItWriter : IDisposable {
   }
 
   /// <inheritdoc />
-  public void Dispose() {
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() {
     if (!this._disposed) {
       this._disposed = true;
       this._stream.Flush();

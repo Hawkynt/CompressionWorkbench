@@ -35,12 +35,18 @@ public sealed class GenuineDvr3Reader : IDisposable {
   private int _rootStart;
   private int _rootEntries;
 
-  public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<DriveSpace3Entry> Entries => this._entries;
 
   /// <summary>The inner volume label (0x08 root entry), or "" when none was written.</summary>
   public string VolumeLabel { get; private set; } = "";
 
-  public GenuineDvr3Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="GenuineDvr3Reader"/>.
+  /// </summary>
+public GenuineDvr3Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -111,7 +117,10 @@ public sealed class GenuineDvr3Reader : IDisposable {
   private ushort NextCluster(int cluster) =>
     BinaryPrimitives.ReadUInt16LittleEndian(this._data.AsSpan(this._fatStart * Ss + cluster * 2));
 
-  public byte[] Extract(DriveSpace3Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(DriveSpace3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.Size == 0) return [];
 
@@ -154,5 +163,8 @@ public sealed class GenuineDvr3Reader : IDisposable {
     return output;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

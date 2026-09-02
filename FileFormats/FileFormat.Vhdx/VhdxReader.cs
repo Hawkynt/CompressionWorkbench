@@ -29,18 +29,48 @@ namespace FileFormat.Vhdx;
 /// </remarks>
 public sealed class VhdxReader {
 
-  public const int FileTypeIdentifierOffset = 0x00000;
-  public const int Header1Offset = 0x10000;
-  public const int Header2Offset = 0x20000;
-  public const int RegionTable1Offset = 0x30000;
-  public const int RegionTable2Offset = 0x40000;
-  public const int RegionSize = 0x10000;  // 64 KiB
+    /// <summary>
+  /// Defines the file type identifier offset constant value.
+  /// </summary>
+public const int FileTypeIdentifierOffset = 0x00000;
+    /// <summary>
+  /// Defines the header 1 offset constant value.
+  /// </summary>
+public const int Header1Offset = 0x10000;
+    /// <summary>
+  /// Defines the header 2 offset constant value.
+  /// </summary>
+public const int Header2Offset = 0x20000;
+    /// <summary>
+  /// Defines the region table 1 offset constant value.
+  /// </summary>
+public const int RegionTable1Offset = 0x30000;
+    /// <summary>
+  /// Defines the region table 2 offset constant value.
+  /// </summary>
+public const int RegionTable2Offset = 0x40000;
+    /// <summary>
+  /// Defines the region size constant value.
+  /// </summary>
+public const int RegionSize = 0x10000;  // 64 KiB
 
-  public static readonly byte[] FileSignature = "vhdxfile"u8.ToArray();
-  public static readonly byte[] HeaderSignature = "head"u8.ToArray();
-  public static readonly byte[] RegionTableSignature = "regi"u8.ToArray();
+    /// <summary>
+  /// Provides the file signature value.
+  /// </summary>
+public static readonly byte[] FileSignature = "vhdxfile"u8.ToArray();
+    /// <summary>
+  /// Provides the header signature value.
+  /// </summary>
+public static readonly byte[] HeaderSignature = "head"u8.ToArray();
+    /// <summary>
+  /// Provides the region table signature value.
+  /// </summary>
+public static readonly byte[] RegionTableSignature = "regi"u8.ToArray();
 
-  public sealed record VhdxImage(
+    /// <summary>
+  /// Represents a vhdx image.
+  /// </summary>
+public sealed record VhdxImage(
     string Creator,
     byte[] FileTypeIdentifier,   // first 64 KiB
     byte[] HeaderPrimary,        // 64 KiB at 0x10000
@@ -51,7 +81,10 @@ public sealed class VhdxReader {
     HeaderInfo? BackupHeaderInfo,
     long TotalFileSize);
 
-  public sealed record HeaderInfo(
+    /// <summary>
+  /// Represents a header info.
+  /// </summary>
+public sealed record HeaderInfo(
     uint Checksum,
     ulong SequenceNumber,
     Guid FileWriteGuid,
@@ -62,7 +95,10 @@ public sealed class VhdxReader {
     uint LogLength,
     ulong LogOffset);
 
-  public static VhdxImage Read(ReadOnlySpan<byte> data) => Read(data, data.Length);
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static VhdxImage Read(ReadOnlySpan<byte> data) => Read(data, data.Length);
 
   /// <summary>
   /// Parses VHDX header bytes. <paramref name="data"/> only needs to span the

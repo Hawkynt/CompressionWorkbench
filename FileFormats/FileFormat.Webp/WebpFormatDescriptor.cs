@@ -14,26 +14,65 @@ namespace FileFormat.Webp;
 /// </summary>
 public sealed class WebpFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
-  public string Id => "Webp";
-  public string DisplayName => "WebP";
-  public FormatCategory Category => FormatCategory.Image;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Webp";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "WebP";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Image;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".webp";
-  public IReadOnlyList<string> Extensions => [".webp"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".webp";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".webp"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("WEBP"u8.ToArray(), Offset: 8, Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "VP8/VP8L")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "VP8/VP8L")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "WebP image container (pseudo-archive): FULL.webp + metadata.ini always; " +
     "animated frames (ANMF) surface as standalone WebPs; EXIF/XMP/ICCP chunks extractable.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var blob = ReadAll(stream);
     return BuildEntries(blob)
       .Select((e, i) => new ArchiveEntryInfo(
@@ -44,7 +83,10 @@ public sealed class WebpFormatDescriptor :
       .ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var blob = ReadAll(stream);
     foreach (var e in BuildEntries(blob)) {
       if (files != null && files.Length > 0 && !FormatHelpers.MatchesFilter(e.Name, files))
@@ -53,7 +95,10 @@ public sealed class WebpFormatDescriptor :
     }
   }
 
-  public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
+    /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
+public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     var blob = ReadAll(input);
     foreach (var e in BuildEntries(blob)) {
       if (!e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) continue;

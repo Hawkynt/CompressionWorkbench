@@ -12,15 +12,36 @@ namespace FileFormat.Pcapng;
 public sealed class PcapngReader {
 
   // Block type constants — pcapng §11.
-  public const uint BtSectionHeader = 0x0A0D0D0Au;
-  public const uint BtInterfaceDescription = 0x00000001u;
-  public const uint BtEnhancedPacket = 0x00000006u;
-  public const uint BtSimplePacket = 0x00000003u;
-  public const uint ByteOrderMagic = 0x1A2B3C4Du;
+    /// <summary>
+  /// Defines the bt section header constant value.
+  /// </summary>
+public const uint BtSectionHeader = 0x0A0D0D0Au;
+    /// <summary>
+  /// Defines the bt interface description constant value.
+  /// </summary>
+public const uint BtInterfaceDescription = 0x00000001u;
+    /// <summary>
+  /// Defines the bt enhanced packet constant value.
+  /// </summary>
+public const uint BtEnhancedPacket = 0x00000006u;
+    /// <summary>
+  /// Defines the bt simple packet constant value.
+  /// </summary>
+public const uint BtSimplePacket = 0x00000003u;
+    /// <summary>
+  /// Defines the byte order magic constant value.
+  /// </summary>
+public const uint ByteOrderMagic = 0x1A2B3C4Du;
 
-  public sealed record Interface(uint LinkType, uint Snaplen);
+    /// <summary>
+  /// Represents an interface.
+  /// </summary>
+public sealed record Interface(uint LinkType, uint Snaplen);
 
-  public sealed record Packet(int InterfaceId, ulong TimestampRaw, byte[] Data, uint OriginalLength) {
+    /// <summary>
+  /// Represents a packet.
+  /// </summary>
+public sealed record Packet(int InterfaceId, ulong TimestampRaw, byte[] Data, uint OriginalLength) {
     /// <summary>Decode the timestamp using the interface's <c>if_tsresol</c> (we
     /// default to 6 → microseconds since the option is not always present).</summary>
     public DateTime ToDateTime(int tsResolutionPow10 = 6) {
@@ -35,14 +56,20 @@ public sealed class PcapngReader {
     }
   }
 
-  public sealed record Capture(
+    /// <summary>
+  /// Represents a capture.
+  /// </summary>
+public sealed record Capture(
     bool LittleEndian,
     ushort VersionMajor,
     ushort VersionMinor,
     IReadOnlyList<Interface> Interfaces,
     IReadOnlyList<Packet> Packets);
 
-  public static Capture Read(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
+public static Capture Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12) throw new InvalidDataException("pcapng: file smaller than minimum SHB.");
 
     // First block must be a Section Header Block. Detect endianness from BOM.

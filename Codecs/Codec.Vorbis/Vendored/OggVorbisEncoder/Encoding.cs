@@ -2,12 +2,18 @@ using System;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents an encoding.
+/// </summary>
 public static class Encoding
 {
     private const int Man = 21;
     private const int ExpBias = 768; // bias toward values smaller than 1.
 
-    public static int Log(int value)
+        /// <summary>
+    /// Performs the log operation.
+    /// </summary>
+public static int Log(int value)
     {
         int ret;
 
@@ -17,7 +23,10 @@ public static class Encoding
         return ret;
     }
 
-    public static float UnpackFloat(int value)
+        /// <summary>
+    /// Performs the unpack float operation.
+    /// </summary>
+public static float UnpackFloat(int value)
     {
         double mant = value & 0x1fffff;
         var sign = value & 0x80000000;
@@ -32,7 +41,10 @@ public static class Encoding
     //given a list of word lengths, generate a list of codewords.  Works
     //  for length ordered or unordered, always assigns the lowest valued
     //  codewords first.  Extended to handle unused entries (length 0) 
-    public static uint[] MakeWords(byte[] l, int sparsecount)
+        /// <summary>
+    /// Performs the make words operation.
+    /// </summary>
+public static uint[] MakeWords(byte[] l, int sparsecount)
     {
         var count = 0;
         var n = l.Length;

@@ -46,32 +46,80 @@ public sealed class Os9RbfFormatDescriptor :
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => Os9RbfExtentMap.Enumerate(image);
 
-  public string Id => "Os9Rbf";
-  public string DisplayName => "Microware OS-9 RBF";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Os9Rbf";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Microware OS-9 RBF";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".os9";
-  public IReadOnlyList<string> Extensions => [".os9", ".rbf"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".os9";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".os9", ".rbf"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // RBF identification sectors have no fixed magic — detection is by extension
   // plus structural validation (DD.TOT, DD.DIR, DD.BIT plausibility) in the reader.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Microware OS-9 RBF disk image (35-track DSDD CoCo reference, ~315 KB, 256-byte sectors). " +
     "Files described by file-descriptor sectors with segment lists; root directory only.";
 
-  public long? MaxTotalArchiveSize => Os9Layout.TotalBytes;
-  public long? MinTotalArchiveSize => 0;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => Os9Layout.TotalBytes;
+    /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
+public long? MinTotalArchiveSize => 0;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "ASCII filenames up to 28 characters; flat root directory; ~315 KB total payload.";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = "Flat root directory only; no subdirectories."; return false; }
     var name = Path.GetFileName(input.ArchiveName);
     if (name.Length > Os9Layout.DirEntryNameMaxBytes - 1) {
@@ -88,14 +136,20 @@ public sealed class Os9RbfFormatDescriptor :
     return true;
   }
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var v = ReadVolume(stream);
     return v.Files.Select((f, i) => new ArchiveEntryInfo(
       i, f.Name, f.ByteLength, f.ByteLength, "stored",
       f.IsDirectory, false, f.Created)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var v = ReadVolume(stream);
     foreach (var f in v.Files) {
       if (f.IsDirectory) continue;
@@ -104,7 +158,10 @@ public sealed class Os9RbfFormatDescriptor :
     }
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var files = inputs
       .Where(i => !i.IsDirectory)
       .Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()))
@@ -186,14 +243,23 @@ public sealed class Os9RbfFormatDescriptor :
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
     => new Os9RbfBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new Os9RbfBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>

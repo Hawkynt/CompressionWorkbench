@@ -27,7 +27,10 @@ public sealed class HashChainMatchFinder : IMatchFinder {
   }
 
   /// <inheritdoc />
-  public Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3) {
+    /// <summary>
+  /// Performs the find match operation.
+  /// </summary>
+public Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3) {
     if (position + 2 >= data.Length)
       return default;
 

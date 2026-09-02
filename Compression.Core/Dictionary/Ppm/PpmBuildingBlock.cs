@@ -10,17 +10,35 @@ namespace Compression.Core.Dictionary.Ppm;
 /// </summary>
 public sealed class PpmBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_PPM";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_PPM";
   /// <inheritdoc/>
-  public string DisplayName => "PPM";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "PPM";
   /// <inheritdoc/>
-  public string Description => "Prediction by Partial Matching (Cleary & Witten): order-3 context model with escape method C and full exclusion, arithmetic coded";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Prediction by Partial Matching (Cleary & Witten): order-3 context model with escape method C and full exclusion, arithmetic coded";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.ContextMixing;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) => PpmCompressor.Compress(data);
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) => PpmCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) => PpmCompressor.Decompress(data);
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) => PpmCompressor.Decompress(data);
 }

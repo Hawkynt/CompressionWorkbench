@@ -12,9 +12,15 @@ public sealed class IffCdafReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<IffCdafEntry> _entries = [];
 
-  public IReadOnlyList<IffCdafEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<IffCdafEntry> Entries => _entries;
 
-  public IffCdafReader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="IffCdafReader"/>.
+  /// </summary>
+public IffCdafReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -73,12 +79,18 @@ public sealed class IffCdafReader : IDisposable {
     }
   }
 
-  public byte[] Extract(IffCdafEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(IffCdafEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.Size > _data.Length)
       throw new InvalidDataException("IFF-CDAF: data extends beyond file.");
     return _data.AsSpan(entry.Offset, (int)entry.Size).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

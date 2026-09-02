@@ -13,7 +13,10 @@ public sealed class IrcamWriter {
   private const int DataOffset = 1024;
   private const uint Format16BitLinear = 2;
 
-  public byte[] Write(byte[] interleavedLe, int channels, int sampleRate) {
+    /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
+public byte[] Write(byte[] interleavedLe, int channels, int sampleRate) {
     var blob = new byte[DataOffset + interleavedLe.Length];
     var hdr = blob.AsSpan();
     hdr[0] = 0x64; hdr[1] = 0xA3; hdr[2] = 0x01; hdr[3] = 0x00;

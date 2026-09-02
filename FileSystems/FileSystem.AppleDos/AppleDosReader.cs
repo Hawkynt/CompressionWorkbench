@@ -16,19 +16,43 @@ namespace FileSystem.AppleDos;
 /// </remarks>
 public sealed class AppleDosReader : IDisposable {
 
-  public const int StandardSize = 143360;
-  public const int TracksPerDisk = 35;
-  public const int SectorsPerTrack = 16;
-  public const int SectorSize = 256;
-  public const int CatalogTrack = 17;
-  public const int VtocSector = 0;
+    /// <summary>
+  /// Defines the standard size constant value.
+  /// </summary>
+public const int StandardSize = 143360;
+    /// <summary>
+  /// Defines the tracks per disk constant value.
+  /// </summary>
+public const int TracksPerDisk = 35;
+    /// <summary>
+  /// Defines the sectors per track constant value.
+  /// </summary>
+public const int SectorsPerTrack = 16;
+    /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
+public const int SectorSize = 256;
+    /// <summary>
+  /// Defines the catalog track constant value.
+  /// </summary>
+public const int CatalogTrack = 17;
+    /// <summary>
+  /// Defines the vtoc sector constant value.
+  /// </summary>
+public const int VtocSector = 0;
 
   private readonly byte[] _data;
   private readonly List<AppleDosEntry> _entries = [];
 
-  public IReadOnlyList<AppleDosEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<AppleDosEntry> Entries => _entries;
 
-  public AppleDosReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AppleDosReader"/>.
+  /// </summary>
+public AppleDosReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -36,7 +60,10 @@ public sealed class AppleDosReader : IDisposable {
     Parse();
   }
 
-  public AppleDosReader(byte[] data) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AppleDosReader"/>.
+  /// </summary>
+public AppleDosReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     _data = data;
     Parse();
@@ -173,7 +200,10 @@ public sealed class AppleDosReader : IDisposable {
     return result;
   }
 
-  public byte[] Extract(AppleDosEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(AppleDosEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var sectors = CollectDataSectors(entry.TrackSectorListTrack, entry.TrackSectorListSector);
     if (sectors.Count == 0) return [];
@@ -192,5 +222,8 @@ public sealed class AppleDosReader : IDisposable {
     return trimmed;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

@@ -20,7 +20,10 @@ public sealed class Jfs1Reader {
   private readonly int _inodesPerBlock;
   private readonly List<Jfs1Entry> _entries = [];
 
-  public Jfs1Reader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="Jfs1Reader"/>.
+  /// </summary>
+public Jfs1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
     _image = new ImageAccessor(stream, leaveOpen: true);
@@ -32,9 +35,15 @@ public sealed class Jfs1Reader {
     Recurse(2, "");
   }
 
-  public IReadOnlyList<Jfs1Entry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<Jfs1Entry> Entries => _entries;
 
-  public byte[] Extract(Jfs1Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(Jfs1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (entry.Size == 0 || entry.FirstBlock == 0) return [];

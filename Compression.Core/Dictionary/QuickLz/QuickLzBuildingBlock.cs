@@ -11,16 +11,25 @@ namespace Compression.Core.Dictionary.QuickLz;
 /// </remarks>
 public sealed class QuickLzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_QuickLz";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_QuickLz";
   /// <inheritdoc/>
   public string DisplayName => "QuickLZ 1.5 level 1";
   /// <inheritdoc/>
   public string Description => "QuickLZ 1.5 level-1 hash-indexed LZ77 payload coding";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     var compressed = QuickLzCompressor.Compress(data);
     var result = new byte[checked(4 + compressed.Length)];
     BinaryPrimitives.WriteInt32LittleEndian(result, data.Length);

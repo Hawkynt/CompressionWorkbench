@@ -163,7 +163,10 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        public void ResetState()
+                /// <summary>
+        /// Performs the reset state operation.
+        /// </summary>
+public void ResetState()
         {
             EncControlState dummy = new EncControlState();
             analysis.Reset();
@@ -2079,12 +2082,18 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc/>
-        public string GetVersionString()
+                /// <summary>
+        /// Gets the version string.
+        /// </summary>
+public string GetVersionString()
         {
             return CodecHelpers.GetVersionString();
         }
 
-        public void Dispose() { }
+                /// <summary>
+        /// Releases resources held by this instance.
+        /// </summary>
+public void Dispose() { }
 
         #endregion
     }

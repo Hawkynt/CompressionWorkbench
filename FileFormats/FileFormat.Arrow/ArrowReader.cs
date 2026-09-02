@@ -37,7 +37,10 @@ public sealed class ArrowReader {
   /// <summary>"full" when the entire stream walked without errors, "partial" if any structural error was encountered partway through.</summary>
   public string ParseStatus { get; }
 
-  public ArrowReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="ArrowReader"/>.
+  /// </summary>
+public ArrowReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));
 

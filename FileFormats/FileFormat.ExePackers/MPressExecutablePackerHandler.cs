@@ -37,8 +37,14 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
-  public string Id => "mpress";
-  public string DisplayName => "MPRESS executable packer";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "mpress";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "MPRESS executable packer";
 
   private static ReadOnlySpan<byte> MPressLiteral => "MPRESS"u8;
   private static ReadOnlySpan<byte> MatcodeLiteral => "MATCODE"u8;
@@ -49,7 +55,10 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>The two parameter bytes are counted as part of the packed size.</summary>
   private const int ParameterSize = 2;
 
-  public ExecutableUnpackCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.CanDecompressPayload |
@@ -58,7 +67,10 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsX86 |
     ExecutableUnpackCapabilities.SupportsX64;
 
-  public DetectionResult Detect(ReadOnlySpan<byte> image) {
+    /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
+public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var isPe = PackerScanner.IsPe(image);
     var isElf = image.Length >= 4 && image[0] == 0x7F && image[1] == (byte)'E' && image[2] == (byte)'L' && image[3] == (byte)'F';
     if (!isPe && !isElf)
@@ -77,7 +89,10 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
     ]);
   }
 
-  public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
+    /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
+public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
     return new(
@@ -93,7 +108,10 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
-  public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
+    /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
+public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
         new(ExecutableDiagnosticCode.PayloadNotFound, "Input exceeds configured executable unpacking size limit.", true),

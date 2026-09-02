@@ -23,7 +23,10 @@ public sealed class ProDosBlockMover : IFilesystemBlockMover {
   private static readonly byte[] TwoImgMagic = "2IMG"u8.ToArray();
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
     // Overlap-safe: a run shifted forward by less than its own length
     // overwrites its own tail, and copying that front to back reads bytes
@@ -34,7 +37,10 @@ public sealed class ProDosBlockMover : IFilesystemBlockMover {
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     image.Position = 0;
     using var ms = new MemoryStream();
     image.CopyTo(ms);

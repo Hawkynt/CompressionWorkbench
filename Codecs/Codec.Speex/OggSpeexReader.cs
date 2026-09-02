@@ -19,7 +19,10 @@ public sealed class OggSpeexReader {
   private readonly List<byte> _partial = new();
   private bool _eof;
 
-  public OggSpeexReader(Stream stream) => this._stream = stream;
+    /// <summary>
+  /// Initializes a new instance of <see cref="OggSpeexReader"/>.
+  /// </summary>
+public OggSpeexReader(Stream stream) => this._stream = stream;
 
   /// <summary>Reads and parses the first packet as the Speex header.</summary>
   public SpeexHeader ReadHeader() {
@@ -34,7 +37,10 @@ public sealed class OggSpeexReader {
   /// </summary>
   public byte[]? TryReadComments() => this.TryReadPacket(out var pkt) ? pkt : null;
 
-  public bool TryReadPacket(out byte[] packet) {
+    /// <summary>
+  /// Attempts to read the packet from the supplied input.
+  /// </summary>
+public bool TryReadPacket(out byte[] packet) {
     while (this._pending.Count == 0 && !this._eof)
       this.FillFromNextPage();
     if (this._pending.Count > 0) {

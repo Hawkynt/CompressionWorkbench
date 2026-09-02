@@ -3,22 +3,64 @@ using System.Text.Json;
 
 namespace FileFormat.Iceberg;
 
+/// <summary>
+/// Reads iceberg data.
+/// </summary>
 public sealed class IcebergReader {
 
-  public int FormatVersion { get; }
-  public string TableUuid { get; }
-  public string Location { get; }
-  public long LastUpdatedMs { get; }
-  public int LastColumnId { get; }
-  public int CurrentSchemaId { get; }
-  public long CurrentSnapshotId { get; }
-  public int SnapshotCount { get; }
-  public int PartitionSpecCount { get; }
-  public int SortOrderCount { get; }
-  public IReadOnlyList<string> SchemaColumns { get; }
-  public string ParseStatus { get; }
+    /// <summary>
+  /// Gets the format version.
+  /// </summary>
+public int FormatVersion { get; }
+    /// <summary>
+  /// Gets the table uuid.
+  /// </summary>
+public string TableUuid { get; }
+    /// <summary>
+  /// Gets the location.
+  /// </summary>
+public string Location { get; }
+    /// <summary>
+  /// Gets the last updated ms.
+  /// </summary>
+public long LastUpdatedMs { get; }
+    /// <summary>
+  /// Gets the last column id.
+  /// </summary>
+public int LastColumnId { get; }
+    /// <summary>
+  /// Gets the current schema id.
+  /// </summary>
+public int CurrentSchemaId { get; }
+    /// <summary>
+  /// Gets the current snapshot id.
+  /// </summary>
+public long CurrentSnapshotId { get; }
+    /// <summary>
+  /// Gets the snapshot count.
+  /// </summary>
+public int SnapshotCount { get; }
+    /// <summary>
+  /// Gets the partition spec count.
+  /// </summary>
+public int PartitionSpecCount { get; }
+    /// <summary>
+  /// Gets the sort order count.
+  /// </summary>
+public int SortOrderCount { get; }
+    /// <summary>
+  /// Gets the schema columns.
+  /// </summary>
+public IReadOnlyList<string> SchemaColumns { get; }
+    /// <summary>
+  /// Gets the parse status.
+  /// </summary>
+public string ParseStatus { get; }
 
-  public IcebergReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="IcebergReader"/>.
+  /// </summary>
+public IcebergReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
 
     JsonDocument doc;

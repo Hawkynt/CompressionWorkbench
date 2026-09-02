@@ -16,10 +16,16 @@ public sealed class Mp4Demuxer {
   /// <summary>A single sample (video frame or audio packet).</summary>
   public sealed record SampleEntry(byte[] Data);
 
-  public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale,
+    /// <summary>
+  /// Represents a track.
+  /// </summary>
+public sealed record Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale,
                              IReadOnlyList<SampleEntry> Samples);
 
-  public IReadOnlyList<Track> Demux(byte[] file) {
+    /// <summary>
+  /// Performs the demux operation.
+  /// </summary>
+public IReadOnlyList<Track> Demux(byte[] file) {
     var parser = new BoxParser();
     var boxes = parser.Parse(file);
     var moov = BoxParser.Find(boxes, "moov") ?? throw new InvalidDataException("MP4: missing 'moov'.");

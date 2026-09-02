@@ -37,12 +37,27 @@ public sealed class OneFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<OneFsEntry> _entries = [];
 
-  public IReadOnlyList<OneFsEntry> Entries => _entries;
-  public string Tag { get; private set; } = "";
-  public uint TrailingWord { get; private set; }
-  public bool ValidHeader { get; private set; }
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<OneFsEntry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the tag.
+  /// </summary>
+public string Tag { get; private set; } = "";
+    /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
+public uint TrailingWord { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
+public bool ValidHeader { get; private set; }
 
-  public OneFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="OneFsReader"/>.
+  /// </summary>
+public OneFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -90,10 +105,16 @@ public sealed class OneFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  public byte[] Extract(OneFsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(OneFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

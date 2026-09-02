@@ -10,19 +10,37 @@ namespace Compression.Core.Dictionary.Density;
 /// </remarks>
 public sealed class DensityBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Density";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Density";
   /// <inheritdoc/>
-  public string DisplayName => "Density (Chameleon)";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Density (Chameleon)";
   /// <inheritdoc/>
-  public string Description => "Predictive 4-byte-chunk dictionary coder: a hash of the previous chunk predicts the next one at zero bit cost when correct";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Predictive 4-byte-chunk dictionary coder: a hash of the previous chunk predicts the next one at zero bit cost when correct";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) =>
     DensityChameleonCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) =>
     DensityChameleonDecompressor.Decompress(data);
 }

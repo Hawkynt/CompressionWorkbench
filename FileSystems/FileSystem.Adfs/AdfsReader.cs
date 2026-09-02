@@ -44,7 +44,10 @@ public sealed class AdfsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<AdfsEntry> _entries = [];
 
-  public IReadOnlyList<AdfsEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<AdfsEntry> Entries => this._entries;
 
   /// <summary>Sector size — 256 bytes for old map (S/M/L), 1024 for new map (D/E/F).</summary>
   public int SectorSize { get; private set; } = 256;
@@ -65,7 +68,10 @@ public sealed class AdfsReader : IDisposable {
   // The 4-byte directory marker at offset 0 + offset 0x4CB.
   // We accept "Hugo" (master variant) and "Nick" (BBC Micro variant).
 
-  public AdfsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="AdfsReader"/>.
+  /// </summary>
+public AdfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -340,7 +346,10 @@ public sealed class AdfsReader : IDisposable {
     return (Encoding.ASCII.GetString(nameBytes, 0, n), attrs);
   }
 
-  public byte[] Extract(AdfsEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(AdfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     if (this.IsNewMap) return this.ReadObject(entry.IndirectAddress, (int)entry.Size);
@@ -350,5 +359,8 @@ public sealed class AdfsReader : IDisposable {
     return this._data.AsSpan((int)offset, take).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

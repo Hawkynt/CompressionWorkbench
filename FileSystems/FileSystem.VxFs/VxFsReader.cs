@@ -63,26 +63,77 @@ public sealed class VxFsReader {
   /// statically-laid-out leading portion of <c>struct vxfs_sb</c>.</summary>
   public const int HeaderCaptureSize = 1024;
 
-  public bool Valid { get; private set; }
-  public bool IsBigEndian { get; private set; }
-  public string ParseStatus { get; private set; } = "unparsed";
+    /// <summary>
+  /// Gets a value indicating whether valid.
+  /// </summary>
+public bool Valid { get; private set; }
+    /// <summary>
+  /// Gets a value indicating whether is big endian.
+  /// </summary>
+public bool IsBigEndian { get; private set; }
+    /// <summary>
+  /// Gets or sets the parse status.
+  /// </summary>
+public string ParseStatus { get; private set; } = "unparsed";
 
-  public uint VsMagic { get; private set; }
-  public int VsVersion { get; private set; }
-  public uint VsMtime { get; private set; }
-  public uint VsCtime { get; private set; }
-  public int VsBlockSize { get; private set; }
-  public int VsSize { get; private set; }
-  public int VsDsize { get; private set; }
-  public int VsOldNau { get; private set; }
-  public int VsImmedLen { get; private set; }
-  public int VsNdAddr { get; private set; }
-  public int VsFirstAu { get; private set; }
-  public byte[] HeaderRaw { get; private set; } = [];
+    /// <summary>
+  /// Gets or sets the vs magic.
+  /// </summary>
+public uint VsMagic { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs version.
+  /// </summary>
+public int VsVersion { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs mtime.
+  /// </summary>
+public uint VsMtime { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs ctime.
+  /// </summary>
+public uint VsCtime { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs block size.
+  /// </summary>
+public int VsBlockSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs size.
+  /// </summary>
+public int VsSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs dsize.
+  /// </summary>
+public int VsDsize { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs old nau.
+  /// </summary>
+public int VsOldNau { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs immed len.
+  /// </summary>
+public int VsImmedLen { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs nd addr.
+  /// </summary>
+public int VsNdAddr { get; private set; }
+    /// <summary>
+  /// Gets or sets the vs first au.
+  /// </summary>
+public int VsFirstAu { get; private set; }
+    /// <summary>
+  /// Gets or sets the header raw.
+  /// </summary>
+public byte[] HeaderRaw { get; private set; } = [];
 
-  public List<VxFsEntry> Entries { get; } = new();
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public List<VxFsEntry> Entries { get; } = new();
 
-  public VxFsReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="VxFsReader"/>.
+  /// </summary>
+public VxFsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     var image = ReadAllBounded(stream);
     Parse(image);

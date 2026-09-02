@@ -33,13 +33,25 @@ namespace Compression.Core.Dictionary.BriefLz;
 /// </remarks>
 public sealed class BriefLzBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_BriefLz";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_BriefLz";
   /// <inheritdoc/>
-  public string DisplayName => "BriefLZ";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "BriefLZ";
   /// <inheritdoc/>
-  public string Description => "Ibsen's byte-oriented LZ77 with an interleaved tag-bit stream and Elias-gamma coded match length/offset";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Ibsen's byte-oriented LZ77 with an interleaved tag-bit stream and Elias-gamma coded match length/offset";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   private const int MinMatch = 3;
   private const int MaxMatch = int.MaxValue - MinMatch; // gamma has no practical upper bound
@@ -49,7 +61,10 @@ public sealed class BriefLzBuildingBlock : IBuildingBlock {
   private const int MaxWindow = 1 << 20;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) {
     using var ms = new MemoryStream();
     Span<byte> header = stackalloc byte[4];
     BinaryPrimitives.WriteInt32LittleEndian(header, data.Length);
@@ -95,7 +110,10 @@ public sealed class BriefLzBuildingBlock : IBuildingBlock {
   }
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) {
     var originalSize = BinaryPrimitives.ReadInt32LittleEndian(data);
     if (originalSize == 0)
       return [];

@@ -40,22 +40,58 @@ namespace FileSystem.CephFs;
 /// </summary>
 public sealed class CephFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "CephFs";
-  public string DisplayName => "CephFS / RADOS";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "CephFs";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "CephFS / RADOS";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".ceph";
-  public IReadOnlyList<string> Extensions => [".ceph", ".rados"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ceph";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ceph", ".rados"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "CEPH" (0x43455048 BE) at offset 0.
     new("CEPH"u8.ToArray(), Offset: 0, Confidence: 0.90),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "CephFS / RADOS — detection-only — distributed FS, no single-image content surface. " +
     "Magic 'CEPH' at offset 0 of OSD object metadata. " +
     "Stage-0 confirmed: metadata lives in a RADOS metadata pool (MDS-managed), " +
@@ -63,13 +99,19 @@ public sealed class CephFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "(BlueStore/FileStore backends); R/O over a single image is structurally impossible " +
     "without the live mon/mds cluster state.";
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new CephFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new CephFsReader(stream);
     foreach (var e in r.Entries) {
       if (e.IsDirectory) continue;

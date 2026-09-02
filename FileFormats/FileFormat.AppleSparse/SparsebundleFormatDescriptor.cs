@@ -44,23 +44,59 @@ namespace FileFormat.AppleSparse;
 /// </remarks>
 public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  public string Id => "Sparsebundle";
-  public string DisplayName => "Apple Sparsebundle";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Sparsebundle";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "Apple Sparsebundle";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".sparsebundle";
-  public IReadOnlyList<string> Extensions => [".sparsebundle"];
-  public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".sparsebundle";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".sparsebundle"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
   // Sparsebundle Info.plist is generic Apple XML plist; no usable file-level
   // magic that doesn't collide with every other plist on the system. Detection
   // is via the .sparsebundle extension on a directory or path.
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description =>
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures => [];
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description =>
     "Apple sparsebundle (Time Machine / hdiutil bundle disk image). " +
     "R-only by design: sparsebundle is a directory layout " +
     "(Info.plist + Info.bckup + token + bands/<hex>) and the IArchiveModifiable " +
@@ -75,7 +111,10 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var reader = TryOpenReader(stream);
     if (reader == null) {
@@ -103,7 +142,10 @@ public sealed class SparsebundleFormatDescriptor : IFormatDescriptor, IArchiveFo
     ];
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);
 

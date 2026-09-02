@@ -2,6 +2,9 @@ using OggVorbisEncoder.Setup.Templates.FloorBooks;
 
 namespace OggVorbisEncoder.Setup.Templates;
 
+/// <summary>
+/// Represents a shared floors.
+/// </summary>
 public static class SharedFloors
 {
     private static readonly IStaticCodeBook[] Floor128X4Books =
@@ -141,7 +144,10 @@ public static class SharedFloors
         new Line512X17_3Sub3()
     };
 
-    public static readonly IStaticCodeBook[][] FloorBooks =
+        /// <summary>
+    /// Provides the floor books value.
+    /// </summary>
+public static readonly IStaticCodeBook[][] FloorBooks =
     {
         Floor128X4Books,
         Floor256X4Books,
@@ -155,7 +161,10 @@ public static class SharedFloors
         Floor512X17Books
     };
 
-    public static readonly Floor[] Floor =
+        /// <summary>
+    /// Provides the floor value.
+    /// </summary>
+public static readonly Floor[] Floor =
     {
         /* 0: 128 x 4 */
         new Floor(new[] {0}, new[] {4}, new[] {2}, new[] {0},

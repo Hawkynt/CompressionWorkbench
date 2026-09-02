@@ -16,9 +16,15 @@ public sealed class TapReader {
   private readonly byte[] _data;
   private readonly List<TapEntry> _entries = [];
 
-  public IReadOnlyList<TapEntry> Entries => _entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<TapEntry> Entries => _entries;
 
-  public TapReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="TapReader"/>.
+  /// </summary>
+public TapReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();

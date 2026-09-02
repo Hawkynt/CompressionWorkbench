@@ -3,9 +3,15 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents a static code book extensions.
+/// </summary>
 public static class StaticCodeBookExtensions
 {
-    public static int GetQuantVals(this IStaticCodeBook book)
+        /// <summary>
+    /// Gets the quant vals.
+    /// </summary>
+public static int GetQuantVals(this IStaticCodeBook book)
     {
         var vals = (int)Math.Floor(Math.Pow(book.LengthList.Length, 1f / book.Dimensions));
 

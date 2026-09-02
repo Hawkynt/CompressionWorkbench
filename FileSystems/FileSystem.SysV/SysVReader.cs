@@ -52,11 +52,23 @@ public sealed class SysVReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<SysVEntry> _entries = [];
 
-  public IReadOnlyList<SysVEntry> Entries => this._entries;
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<SysVEntry> Entries => this._entries;
 
-  public uint Magic { get; private set; }
-  public int BlockSize { get; private set; }
-  public ushort IListBlocks { get; private set; }
+    /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
+public uint Magic { get; private set; }
+    /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
+public int BlockSize { get; private set; }
+    /// <summary>
+  /// Gets or sets the i list blocks.
+  /// </summary>
+public ushort IListBlocks { get; private set; }
 
   // Constants
   private const int SuperblockOffset = 512;
@@ -64,7 +76,10 @@ public sealed class SysVReader : IDisposable {
   internal const uint MagicSysV = 0xFD187E20;
   internal const int RootInode = 2;
 
-  public SysVReader(Stream stream) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="SysVReader"/>.
+  /// </summary>
+public SysVReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     if (stream.CanSeek) stream.Position = 0;
@@ -398,7 +413,10 @@ public sealed class SysVReader : IDisposable {
   /// </summary>
   public long FirstDataByte => (long)this.IListBlocks * this.BlockSize;
 
-  public byte[] Extract(SysVEntry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(SysVEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     var inode = this.ReadInode((uint)entry.InodeNumber);
@@ -409,5 +427,8 @@ public sealed class SysVReader : IDisposable {
     return data;
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

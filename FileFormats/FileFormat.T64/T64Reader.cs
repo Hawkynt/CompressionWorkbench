@@ -4,17 +4,29 @@ using System.Text;
 
 namespace FileFormat.T64;
 
+/// <summary>
+/// Reads t 64 data.
+/// </summary>
 public sealed class T64Reader : IDisposable {
   private readonly byte[] _data;
   private readonly List<T64Entry> _entries = [];
 
-  public IReadOnlyList<T64Entry> Entries => _entries;
-  public string TapeName { get; private set; } = "";
+    /// <summary>
+  /// Gets the entries.
+  /// </summary>
+public IReadOnlyList<T64Entry> Entries => _entries;
+    /// <summary>
+  /// Gets or sets the tape name.
+  /// </summary>
+public string TapeName { get; private set; } = "";
 
   private const int HeaderSize = 64;
   private const int EntrySize = 32;
 
-  public T64Reader(Stream stream, bool leaveOpen = false) {
+    /// <summary>
+  /// Initializes a new instance of <see cref="T64Reader"/>.
+  /// </summary>
+public T64Reader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -70,7 +82,10 @@ public sealed class T64Reader : IDisposable {
     }
   }
 
-  public byte[] Extract(T64Entry entry) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Extract(T64Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Size == 0) return [];
 
@@ -81,5 +96,8 @@ public sealed class T64Reader : IDisposable {
     return _data.AsSpan(offset, length).ToArray();
   }
 
-  public void Dispose() { }
+    /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
+public void Dispose() { }
 }

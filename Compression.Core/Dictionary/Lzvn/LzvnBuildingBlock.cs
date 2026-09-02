@@ -12,19 +12,37 @@ namespace Compression.Core.Dictionary.Lzvn;
 /// </remarks>
 public sealed class LzvnBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Lzvn";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Lzvn";
   /// <inheritdoc/>
-  public string DisplayName => "LZVN";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "LZVN";
   /// <inheritdoc/>
-  public string Description => "Byte-oriented opcode LZ77 in the spirit of Apple's fast LZVN codec, with tiered distance encoding";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Byte-oriented opcode LZ77 in the spirit of Apple's fast LZVN codec, with tiered distance encoding";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data) =>
     LzvnCompressor.Compress(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data) =>
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data) =>
     LzvnDecompressor.Decompress(data);
 }

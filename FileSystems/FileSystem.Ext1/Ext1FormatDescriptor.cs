@@ -91,23 +91,41 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFilesystemBlockMover delegation ───────────────────────────────────
 
   /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
+    /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
+public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     var mover = new Ext1BlockMover();
     mover.Init(image);
     mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
   }
 
   /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
+public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var mover = new Ext1BlockMover();
     mover.Init(image);
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
-  public string Id => "Ext1";
-  public string DisplayName => "ext1";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Ext1";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "ext1";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -149,17 +167,41 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Ext1Modifier.RemoveFile(archive, name, wipeData: true);
   }
 
-  public string DefaultExtension => ".ext1";
-  public IReadOnlyList<string> Extensions => [".ext1"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".ext1";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".ext1"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     // ext1 magic 0xEF51 (LE u16) at file offset 1080 = superblock_offset (1024)
     // + s_magic field offset (56). Same slot as ext2's 0xEF53.
     [new([0x51, 0xEF], Offset: 1080, Confidence: 0.9f)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "ext1 (1992) Linux filesystem image — round-trip WORM, no Linux mkfs.";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "ext1 (1992) Linux filesystem image — round-trip WORM, no Linux mkfs.";
 
   // ext1 superblock geometry — identical layout to GOOD_OLD ext2.
   private const int SuperblockOffset = 1024;
@@ -172,12 +214,24 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // (128 - 11 reserved) bound the file count. The advertised cap reflects the
   // total image size — well under the WORM ceiling but matches what writer
   // produces.
-  public long? MaxTotalArchiveSize => 4L * 1024 * 1024;
-  public long? MinTotalArchiveSize => 4L * 1024 * 1024;
-  public string AcceptedInputsDescription =>
+    /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+public long? MaxTotalArchiveSize => 4L * 1024 * 1024;
+    /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
+public long? MinTotalArchiveSize => 4L * 1024 * 1024;
+    /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+public string AcceptedInputsDescription =>
     "ext1 WORM: flat root directory, each file ≤ 4 GiB (rev-0 layout; i_size is a uint32).";
 
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) {
       reason = "ext1 writer is flat WORM — directory entries are not preserved.";
       return false;
@@ -195,7 +249,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return true;
   }
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     // Same reason as Extract: ReadAll stops at HeaderReadCap, so a larger volume
     // has to be walked in place or its entries come back empty.
@@ -242,7 +299,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
     var w = new Ext1Writer();
@@ -289,7 +349,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     w.BuildTo(output, blockSize, w.PlanTotalBlocks(blockSize));
   }
 
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <summary>
@@ -374,7 +437,10 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // A seekable image is walked in place. ReadAll stops at HeaderReadCap, so
     // buffering silently truncated anything larger -- and FULL.ext1 would double
     // the image in memory on top of that.

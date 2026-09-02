@@ -7,19 +7,37 @@ namespace Compression.Core.Transforms;
 /// </summary>
 public sealed class RleBuildingBlock : IBuildingBlock {
   /// <inheritdoc/>
-  public string Id => "BB_Rle";
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "BB_Rle";
   /// <inheritdoc/>
-  public string DisplayName => "RLE";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "RLE";
   /// <inheritdoc/>
-  public string Description => "Run-Length Encoding, replaces repeated bytes with count+value pairs";
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Run-Length Encoding, replaces repeated bytes with count+value pairs";
   /// <inheritdoc/>
-  public AlgorithmFamily Family => AlgorithmFamily.Transform;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Transform;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
+public byte[] Compress(ReadOnlySpan<byte> data)
     => RunLengthEncoding.Encode(data);
 
   /// <inheritdoc/>
-  public byte[] Decompress(ReadOnlySpan<byte> data)
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public byte[] Decompress(ReadOnlySpan<byte> data)
     => RunLengthEncoding.Decode(data);
 }

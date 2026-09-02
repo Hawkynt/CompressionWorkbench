@@ -16,27 +16,66 @@ namespace FileFormat.Vhd;
 /// </list>
 /// </summary>
 public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
-  public string Id => "Vhd";
-  public string DisplayName => "VHD";
-  public FormatCategory Category => FormatCategory.Archive;
-  public FormatCapabilities Capabilities =>
+    /// <summary>
+  /// Gets the id.
+  /// </summary>
+public string Id => "Vhd";
+    /// <summary>
+  /// Gets the display name.
+  /// </summary>
+public string DisplayName => "VHD";
+    /// <summary>
+  /// Gets the category.
+  /// </summary>
+public FormatCategory Category => FormatCategory.Archive;
+    /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
+public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
-  public string DefaultExtension => ".vhd";
-  public IReadOnlyList<string> Extensions => [".vhd"];
-  public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures =>
+    /// <summary>
+  /// Gets the default extension.
+  /// </summary>
+public string DefaultExtension => ".vhd";
+    /// <summary>
+  /// Gets the extensions.
+  /// </summary>
+public IReadOnlyList<string> Extensions => [".vhd"];
+    /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
+public IReadOnlyList<string> CompoundExtensions => [];
+    /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
+public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("conectix"u8.ToArray(), Offset: 0, Confidence: 0.95)];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  public string? TarCompressionFormatId => null;
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Microsoft VHD virtual hard disk";
+    /// <summary>
+  /// Gets the methods.
+  /// </summary>
+public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+    /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
+public string? TarCompressionFormatId => null;
+    /// <summary>
+  /// Gets the family.
+  /// </summary>
+public AlgorithmFamily Family => AlgorithmFamily.Archive;
+    /// <summary>
+  /// Gets the description.
+  /// </summary>
+public string Description => "Microsoft VHD virtual hard disk";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
-  public List<ArchiveEntryInfo> List(Stream stream, string? password) {
+    /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
+public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
         // Partition-aware path: if the guest disk carries an MBR/GPT, surface
@@ -65,14 +104,20 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    /// <summary>
+  /// Performs the create operation.
+  /// </summary>
+public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VhdWriter();
     w.SetDiskData(fatImage);
     output.Write(w.Build());
   }
 
-  public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
+    /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
+public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (TryOpenVhdStream(stream) is { } vhdStream) {
       using (vhdStream) {
         vhdStream.Position = 0;
@@ -103,12 +148,18 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveLayoutMap ───────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VhdLayoutMap.Enumerate(archive);
+    /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => VhdLayoutMap.Enumerate(archive);
 
   // ── IFilesystemExtentMap ────────────────────────────────────────────
 
   /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
+public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     if (TryOpenVhdStream(image) is { } vhdStream) {
       using (vhdStream) {
         var inner = InnerFsDetector.Detect(vhdStream);
@@ -127,7 +178,10 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveModifiable (inner-FS-aware) ────────────────────────────
 
   /// <inheritdoc />
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
+public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (TryOpenVhdStream(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -161,7 +215,10 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <inheritdoc />
-  public void Remove(Stream archive, string[] entryNames) {
+    /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
+public void Remove(Stream archive, string[] entryNames) {
     if (TryOpenVhdStream(archive) is { } guestForPart) {
       using (guestForPart) {
         try {
@@ -197,11 +254,17 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
 
   /// <inheritdoc />
-  public void Defragment(Stream archive)
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
   /// <inheritdoc />
-  public void Defragment(Stream archive, DefragOptions options) {
+    /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
+public void Defragment(Stream archive, DefragOptions options) {
     if (TryOpenVhdStream(archive) is { } vhdStream) {
       using (vhdStream) {
         var inner = InnerFsDetector.Detect(vhdStream);
@@ -233,7 +296,10 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// freshly-created dynamic VHD requires the virtual size to be large
   /// enough to hold any new partitions.
   /// </remarks>
-  public Stream OpenGuestDiskStream(Stream image) {
+    /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
+public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)
       throw new NotSupportedException("Partition editing requires a writable VHD stream.");
