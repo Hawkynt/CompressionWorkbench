@@ -32,7 +32,7 @@ The authoritative runtime inventory remains `FormatRegistry` (`cwb formats`). Th
 | Matroska / WebM | ✅ | ✅ | ⬜ | ⬜ | `FileFormat.Matroska`. |
 | MPEG-2 Transport Stream | ✅ | ✅ | ⬜ | ⬜ | `FileFormat.MpegTs`; per-PID elementary streams. |
 | MPEG Program Stream / VOB | ⬜ | ⬜ | ⬜ | ⬜ | High-value gap; PES/program-stream demux can reuse existing audio work. |
-| ASF / WMV / WMA envelope | ⬜ | ⬜ | ⬜ | ⬜ | High-value gap because WMA v1/v2, Pro and Lossless decoders already exist. |
+| ASF / WMV / WMA envelope | ✅ | ✅ | ⬜ | ⬜ | `FileFormat.Asf`; read-only walk of the Header Object children (File Properties, Stream Properties, Content Description, Extended Content Description, Codec List) and the Data Object. No writer. |
 | FLV | ⬜ | ⬜ | ⬜ | ⬜ | Add FLV tag/timestamp parsing and demux first. |
 | RealMedia / RealAudio | ✅ | ✅ | ⬜ | ⬜ | `FileFormat.RealMedia`; codec coverage is tracked separately. |
 | Ogg / OGM | ✅ | ✅ | ⬜ | ⬜ | `FileFormat.Ogg`; carried codec support is separate. |
@@ -42,7 +42,7 @@ The authoritative runtime inventory remains `FormatRegistry` (`cwb formats`). Th
 | Westwood VQA | ⬜ | ⬜ | ⬜ | ⬜ | GSpot compatibility gap. |
 | Vivo `.viv` | ⬜ | ⬜ | ⬜ | ⬜ | GSpot compatibility gap. |
 | Nullsoft NSV | ⬜ | ⬜ | ⬜ | ⬜ | GSpot compatibility gap. |
-| Shockwave Flash `.swf` | ⬜ | ⬜ | ⬜ | ⬜ | Container/tag parsing should remain separate from embedded codecs. |
+| Shockwave Flash `.swf` | ✅ | 🟨 | 🟨 | ⬜ | `FileFormat.Swf`; extract and create through the stream operations, including the `CWS` compressed variant. Tag-level parsing and embedded codecs remain separate. |
 | WAV / RIFF WAVE | ✅ | ✅ | ✅ | ⬜ | Codec dispatch is tracked in the audio ledger. |
 | RF64 / Wave64 | ✅ | ✅ | ✅ | ⬜ | Large-file WAVE-family envelopes. |
 | AIFF | ✅ | ✅ | ✅ | ⬜ | Compressed AIFC variants require separate audit. |
@@ -79,8 +79,8 @@ The complete historical descriptions remain at [ftyps.com](https://www.ftyps.com
 
 ## Priority gaps
 
-1. ASF/WMV container wiring.
-2. MPEG Program Stream/VOB/PES.
-3. FLV.
-4. Explicit ISO-BMFF brand registry using MP4RA plus the ftyps historical alias set.
-5. VMD, VQA, Vivo and NSV as container-first legacy targets.
+1. MPEG Program Stream/VOB/PES — the largest remaining GSpot envelope, and the PES layer is shared with the existing MPEG-TS work.
+2. FLV — tag/timestamp parsing and demux, which also unlocks the VP6-era video identifiers.
+3. Explicit ISO-BMFF brand registry using MP4RA plus the ftyps historical alias set.
+4. VMD, VQA, Vivo and NSV as container-first legacy targets.
+5. ASF writing and editing; the read side is done, so this is a writer rather than a new envelope.
