@@ -23,12 +23,27 @@ public sealed class UnrealPakFormatDescriptor :
     IArchiveDefragmentable,
     IFormatOptionsSchema {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "UnrealPak";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Unreal Pak";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".pak";
 
   /// <summary>
@@ -36,23 +51,44 @@ public sealed class UnrealPakFormatDescriptor :
   /// which have a different TOC/chunk layout and must not be routed through the Pak parser.
   /// </summary>
   public IReadOnlyList<string> Extensions => [".pak"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // Pak magic lives in the footer, not at offset zero. Extension routing disambiguates it from
   // Quake PAK while the reader validates the footer magic and its complete index hash.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("auto", "Auto (Stored/Zlib)"),
     new("stored", "Stored"),
     new("zlib", "Zlib"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Unreal legacy Pak index: v1-v7 read with SHA-1 verification and block-aware Stored/Zlib extraction; " +
     "deterministic v3 creation plus trailer-only v3 add/replace/remove with verified rebuild fallback. " +
     "v8+ modern indexes and IoStore are not falsely claimed.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("CompressionBlockSize", "Zlib block size", FormatOptionKind.Integer, "65536",
       ["16384", "32768", "65536", "131072", "262144", "1048576"],
@@ -61,6 +97,9 @@ public sealed class UnrealPakFormatDescriptor :
       Description: "Legacy Pak mount-point prefix. Empty preserves archive input paths exactly; Unreal projects often use ../../../Game/."),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var reader = Open(stream);
     var entries = new List<ArchiveEntryInfo>();
@@ -80,6 +119,9 @@ public sealed class UnrealPakFormatDescriptor :
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(outputDir);
     var reader = Open(stream);
@@ -113,6 +155,9 @@ public sealed class UnrealPakFormatDescriptor :
     return EmptyBoundedStream();
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var stream = this.OpenEntry(archive, entryName, password);
     using var output = new MemoryStream();

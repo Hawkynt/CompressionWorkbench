@@ -35,6 +35,9 @@
 
 namespace Concentus.Enums
 {
+    /// <summary>
+    /// Specifies opus framesize values.
+    /// </summary>
     public enum OpusFramesize
     {
         /// <summary>

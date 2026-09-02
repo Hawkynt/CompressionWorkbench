@@ -10,6 +10,9 @@ namespace FileFormat.PngCrushAdapters;
 /// </summary>
 public static class PngLayoutMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead)

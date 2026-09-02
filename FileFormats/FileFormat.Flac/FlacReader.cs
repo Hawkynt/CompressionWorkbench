@@ -8,6 +8,9 @@ namespace FileFormat.Flac;
 /// </summary>
 public static class FlacReader {
   /// <inheritdoc cref="Codec.Flac.FlacCodec.Decompress"/>
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output)
     => Codec.Flac.FlacCodec.Decompress(input, output);
 
@@ -15,6 +18,9 @@ public static class FlacReader {
   public readonly record struct AudioProperties(int SampleRate, int Channels, int BitsPerSample, long TotalSamples);
 
   /// <inheritdoc cref="Codec.Flac.FlacCodec.ReadAudioProperties"/>
+  /// <summary>
+  /// Reads the audio properties from the supplied input.
+  /// </summary>
   public static AudioProperties ReadAudioProperties(ReadOnlySpan<byte> flacBytes) {
     var p = Codec.Flac.FlacCodec.ReadAudioProperties(flacBytes);
     return new AudioProperties(p.SampleRate, p.Channels, p.BitsPerSample, p.TotalSamples);

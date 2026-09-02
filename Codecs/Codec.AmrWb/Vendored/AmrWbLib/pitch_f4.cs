@@ -13,6 +13,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private const int UP_SAMP = 4;

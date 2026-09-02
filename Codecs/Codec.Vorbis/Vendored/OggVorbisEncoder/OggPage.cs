@@ -13,6 +13,9 @@ namespace OggVorbisEncoder;
 /// </remarks>
 public class OggPage
 {
+    /// <summary>
+    /// Initializes a new instance of <see cref="OggPage"/>.
+    /// </summary>
     public OggPage(
         byte[] header,
         byte[] body)

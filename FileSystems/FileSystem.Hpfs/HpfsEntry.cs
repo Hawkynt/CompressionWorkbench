@@ -5,8 +5,17 @@ namespace FileSystem.Hpfs;
 /// Directory entry in an OS/2 HPFS volume.
 /// </summary>
 public sealed class HpfsEntry {
+  /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
   public string Name { get; init; } = "";
+  /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
   public long Size { get; init; }
+  /// <summary>
+  /// Gets a value indicating whether is directory.
+  /// </summary>
   public bool IsDirectory { get; init; }
   /// <summary>LBA of the file's fnode (0 if synthetic/root).</summary>
   internal uint FnodeLba { get; init; }

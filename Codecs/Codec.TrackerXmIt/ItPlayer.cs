@@ -31,14 +31,26 @@ public sealed class ItPlayer {
     this._sampleRate = sampleRate;
   }
 
+  /// <summary>
+  /// Performs the load operation.
+  /// </summary>
   public static ItPlayer Load(byte[] blob, int sampleRate = TrackerRender.OutputSampleRate)
     => new(ItModule.Parse(blob), sampleRate);
 
+  /// <summary>
+  /// Gets the module.
+  /// </summary>
   public ItModule Module => this._mod;
 
+  /// <summary>
+  /// Performs the render operation.
+  /// </summary>
   public byte[] Render(double maxSeconds = TrackerRender.MaxSeconds)
     => new ItEngine(this._mod, this._sampleRate).Render(maxSeconds);
 
+  /// <summary>
+  /// Performs the estimate seconds operation.
+  /// </summary>
   public double EstimateSeconds()
     => new ItEngine(this._mod, this._sampleRate).EstimateSeconds(TrackerRender.MaxSeconds);
 

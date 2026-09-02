@@ -28,12 +28,18 @@ public sealed class ResourceDllReader {
     ushort LanguageId,
     byte[] Data);
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public List<Entry> Read(Stream stream) =>
     ReadAll(stream)
       .Where(r => r.TypeId == RtRcData && r.NameString != null)
       .Select(r => new Entry(r.NameString!, r.Data))
       .ToList();
 
+  /// <summary>
+  /// Reads the all from the supplied input.
+  /// </summary>
   public List<RawResource> ReadAll(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek)

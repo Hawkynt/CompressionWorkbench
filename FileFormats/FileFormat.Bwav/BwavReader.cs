@@ -13,6 +13,9 @@ namespace FileFormat.Bwav;
 /// </summary>
 public sealed class BwavReader {
 
+  /// <summary>
+  /// Represents a channel info.
+  /// </summary>
   public sealed record ChannelInfo(
     int Codec,
     int ChannelPan,
@@ -27,6 +30,9 @@ public sealed class BwavReader {
     short Hist1,
     short Hist2);
 
+  /// <summary>
+  /// Represents a parsed bwav.
+  /// </summary>
   public sealed record ParsedBwav(
     int Version,
     uint Crc,
@@ -34,6 +40,9 @@ public sealed class BwavReader {
     IReadOnlyList<ChannelInfo> Channels,
     short[][] Pcm);           // [channel][sampleCount]
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedBwav Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x10)
       throw new InvalidDataException("BWAV too short for header.");

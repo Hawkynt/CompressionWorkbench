@@ -25,6 +25,9 @@ public static class Ext1ExtentMap {
   private const int InodeSize = 128;
   private const uint RootInode = 2;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.Length < SuperblockOffset + 264) yield break;

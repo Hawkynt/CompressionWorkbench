@@ -13,6 +13,9 @@ namespace FileFormat.Avi;
 /// </summary>
 public static class AviLayoutMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (file.Length < 12)

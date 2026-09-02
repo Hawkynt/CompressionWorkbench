@@ -44,6 +44,9 @@ using System.Text;
 
 namespace Concentus.Structs
 {
+    /// <summary>
+    /// Represents an opus repacketizer.
+    /// </summary>
     public class OpusRepacketizer
     {
         internal byte toc = 0;
@@ -69,6 +72,9 @@ namespace Concentus.Structs
   * @param rp <tt>OpusRepacketizer*</tt>: The repacketizer state to
   *                                       (re)initialize.
   */
+        /// <summary>
+        /// Performs the reset operation.
+        /// </summary>
         public void Reset()
         {
             this.nb_frames = 0;
@@ -167,6 +173,9 @@ namespace Concentus.Structs
   *                              audio stored in the repacketizer state to more
   *                              than 120 ms.
   */
+        /// <summary>
+        /// Performs the add packet operation.
+        /// </summary>
         public int AddPacket(Span<byte> data, int data_offset, int len)
         {
             return opus_repacketizer_cat_impl(data, data_offset, len, 0);
@@ -182,6 +191,9 @@ namespace Concentus.Structs
   * @returns The total number of frames contained in the packet data submitted
   *          to the repacketizer state.
   */
+        /// <summary>
+        /// Gets the num frames.
+        /// </summary>
         public int GetNumFrames()
         {
             return this.nb_frames;
@@ -357,6 +369,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BUFFER_TOO_SMALL \a maxlen was insufficient to contain the
   *                                complete output packet.
   */
+        /// <summary>
+        /// Performs the create packet operation.
+        /// </summary>
         public int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)
         {
             return opus_repacketizer_out_range_impl(begin, end, data, data_offset, maxlen, 0, 0);
@@ -391,6 +406,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BUFFER_TOO_SMALL \a maxlen was insufficient to contain the
   *                                complete output packet.
   */
+        /// <summary>
+        /// Performs the create packet operation.
+        /// </summary>
         public int CreatePacket(byte[] data, int data_offset, int maxlen)
         {
             return opus_repacketizer_out_range_impl(0, this.nb_frames, data, data_offset, maxlen, 0, 0);
@@ -408,6 +426,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BAD_ARG \a len was less than 1 or new_len was less than len.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
+        /// <summary>
+        /// Performs the pad packet operation.
+        /// </summary>
         public static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)
         {
             OpusRepacketizer rp = new OpusRepacketizer();
@@ -441,6 +462,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BAD_ARG \a len was less than 1.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
+        /// <summary>
+        /// Performs the unpad packet operation.
+        /// </summary>
         public static int UnpadPacket(byte[] data, int data_offset, int len)
         {
             int ret;
@@ -472,6 +496,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BAD_ARG \a len was less than 1.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
+        /// <summary>
+        /// Performs the pad multistream packet operation.
+        /// </summary>
         public static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)
         {
             int s;
@@ -518,6 +545,9 @@ namespace Concentus.Structs
   * @retval #OPUS_BAD_ARG \a len was less than 1 or new_len was less than len.
   * @retval #OPUS_INVALID_PACKET \a data did not contain a valid Opus packet.
   */
+        /// <summary>
+        /// Performs the unpad multistream packet operation.
+        /// </summary>
         public static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)
         {
             int s;

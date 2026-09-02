@@ -59,34 +59,85 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   ];
 
   // WORM write constraints.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => 16L * 1024 * 1024;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "JFS1 filesystem image; single allocation group; long names supported via continuation slots.";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     // Long names are supported via continuation-slot chains; no leaf length cap.
     reason = null;
     return true;
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Jfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "JFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".jfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".jfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new("JFS1"u8.ToArray(), Offset: 32768, Confidence: 0.90)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "IBM Journaled File System image (R/W: arbitrary-depth dtree mutation w/ long names + recursive subdir removal)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new JfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -94,6 +145,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new JfsReader(stream);
     foreach (var e in r.Entries) {
@@ -138,6 +192,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new JfsWriter();
     if (options.HasOption("VolumeLabel")) w.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
@@ -191,6 +248,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     w.BuildToStreaming(output);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -265,6 +325,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // split, external dtree leaf split, xtree root promotion, IAG full, FSIT
   // extent growth — caller falls back to defragment-rebuild.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in — and where it can still edit, it has no room
@@ -287,6 +350,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     WriteAll(archive, image);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -399,6 +465,9 @@ public sealed class JfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       "complete", 1, -1, -1, archive.Length, finalExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => JfsExtentMap.Enumerate(image);
 

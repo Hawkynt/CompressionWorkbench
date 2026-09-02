@@ -19,14 +19,16 @@ Implements `IChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Adler32` | `Adler32()` |  |
-| `Value` | `uint Value { get; }` |  |
+| `Adler32` | `Adler32()` | Initializes a new instance of `Adler32`. |
+| `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the Adler-32 of the given data in a single call. |
-| `Reset` | `void Reset()` |  |
-| `Update` | `void Update(ReadOnlySpan<byte> data)` |  |
-| `Update` | `void Update(byte b)` |  |
+| `Reset` | `void Reset()` | Resets the checksum to its initial state. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the checksum with the supplied data. |
+| `Update` | `void Update(byte b)` | Updates the checksum with the supplied data. |
 
 #### `Adler32ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Adler32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -42,11 +44,11 @@ Implements `IChecksum`.
 | --- | --- | --- |
 | `Crc16` | `Crc16(ushort polynomial = 40961, ushort initialValue = 0)` | Initializes a new `Crc16` with the specified polynomial. |
 | `Arc` | `const ushort Arc` | CRC-16/ARC polynomial (reflected form). |
-| `Value` | `uint Value { get; }` |  |
+| `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` | Computes the CRC-16 of the given data using the ARC polynomial. |
-| `Reset` | `void Reset()` |  |
-| `Update` | `void Update(ReadOnlySpan<byte> data)` |  |
-| `Update` | `void Update(byte b)` |  |
+| `Reset` | `void Reset()` | Resets the checksum to its initial state. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the checksum with the supplied data. |
+| `Update` | `void Update(byte b)` | Updates the checksum with the supplied data. |
 
 #### `Crc16Ccitt`
 
@@ -58,19 +60,23 @@ Implements `IChecksum`.
 | --- | --- | --- |
 | `Crc16Ccitt` | `Crc16Ccitt(ushort initialValue = 0)` | Initializes a new `Crc16Ccitt` with the specified initial value. |
 | `Polynomial` | `const ushort Polynomial` | CRC-16/CCITT polynomial (non-reflected form). |
-| `Value` | `uint Value { get; }` |  |
+| `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static ushort Compute(ReadOnlySpan<byte> data, ushort initial = 0)` | Computes the CRC-16/CCITT of the given data. |
-| `Reset` | `void Reset()` |  |
-| `Update` | `void Update(ReadOnlySpan<byte> data)` |  |
-| `Update` | `void Update(byte b)` |  |
+| `Reset` | `void Reset()` | Resets the checksum to its initial state. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the checksum with the supplied data. |
+| `Update` | `void Update(byte b)` | Updates the checksum with the supplied data. |
 
 #### `Crc16CcittChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc16Ccitt`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `get_SupportedChecksumSizes` | `static IReadOnlyList<ChecksumSizeRange> get_SupportedChecksumSizes()` |  |
 
 #### `Crc16ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc16`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -87,14 +93,16 @@ Implements `IChecksum`.
 | `Crc32` | `Crc32(uint polynomial = 3988292384)` | Initializes a new `Crc32` with the specified polynomial. |
 | `Castagnoli` | `const uint Castagnoli` | Castagnoli (CRC-32C) polynomial. |
 | `Ieee` | `const uint Ieee` | Standard IEEE 802.3 polynomial (used by ZIP, GZIP, PNG, etc.). |
-| `Value` | `uint Value { get; }` |  |
+| `Value` | `uint Value { get; }` | Gets the current checksum value. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data)` | Computes the CRC-32 of the given data in a single call using the IEEE polynomial. |
 | `Compute` | `static uint Compute(ReadOnlySpan<byte> data, uint polynomial)` | Computes the CRC-32 of the given data with the specified polynomial. |
-| `Reset` | `void Reset()` |  |
-| `Update` | `void Update(ReadOnlySpan<byte> data)` |  |
-| `Update` | `void Update(byte b)` |  |
+| `Reset` | `void Reset()` | Resets the checksum to its initial state. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the checksum with the supplied data. |
+| `Update` | `void Update(byte b)` | Updates the checksum with the supplied data. |
 
 #### `Crc32ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc32`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -112,11 +120,13 @@ Implements `IChecksum`.
 | `Ecma182` | `const ulong Ecma182` | ECMA-182 polynomial used by the XZ format. |
 | `Value64` | `ulong Value64 { get; }` | Gets the full 64-bit CRC value. |
 | `Compute` | `static ulong Compute(ReadOnlySpan<byte> data)` | Computes the CRC-64 of the given data in a single call using the ECMA-182 polynomial. |
-| `Reset` | `void Reset()` |  |
-| `Update` | `void Update(ReadOnlySpan<byte> data)` |  |
-| `Update` | `void Update(byte b)` |  |
+| `Reset` | `void Reset()` | Resets the checksum to its initial state. |
+| `Update` | `void Update(ReadOnlySpan<byte> data)` | Updates the checksum with the supplied data. |
+| `Update` | `void Update(byte b)` | Updates the checksum with the supplied data. |
 
 #### `Crc64ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc64`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -153,8 +163,8 @@ ABA routing transit number check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstEightDigits)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> routingNumber)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstEightDigits)` | Generates the Aba Routing check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> routingNumber)` | Determines whether the supplied value has a valid Aba Routing. |
 
 #### `Adler`
 
@@ -162,11 +172,13 @@ Adler checksum family matching the variants in Hawkynt's algorithm registry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` |  |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` |  |
-| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data)` |  |
+| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` | Computes the 16-bit Adler checksum of the supplied data. |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` | Computes the 32-bit Adler checksum of the supplied data. |
+| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data)` | Computes the 64-bit Adler checksum of the supplied data. |
 
 #### `AdlerChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Adler`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -186,9 +198,11 @@ BSD rotating checksum used by historic `sum -r`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` | Computes the Bsd Checksum checksum of the supplied data. |
 
 #### `BsdChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `BsdChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -203,31 +217,35 @@ Implements `IEnumerable`, `IEnumerable<int>`, `IEquatable<ChecksumSizeRange>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChecksumSizeRange` | `ChecksumSizeRange(int MinimumBits, int MaximumBits, int StepBits = 1)` | Describes a contiguous arithmetic range of supported checksum-output sizes, in bits. |
-| `MaximumBits` | `int MaximumBits { get; init; }` |  |
-| `MinimumBits` | `int MinimumBits { get; init; }` |  |
-| `StepBits` | `int StepBits { get; init; }` |  |
-| `Contains` | `bool Contains(int bits)` |  |
-| `Exact` | `static ChecksumSizeRange Exact(int bits)` |  |
-| `GetEnumerator` | `Enumerator GetEnumerator()` |  |
+| `MaximumBits` | `int MaximumBits { get; init; }` | Gets the largest supported checksum output size, in bits. |
+| `MinimumBits` | `int MinimumBits { get; init; }` | Gets the smallest supported checksum output size, in bits. |
+| `StepBits` | `int StepBits { get; init; }` | Gets the increment, in bits, between supported sizes in the range. |
+| `Contains` | `bool Contains(int bits)` | Determines whether the range contains the specified bit size. |
+| `Exact` | `static ChecksumSizeRange Exact(int bits)` | Creates a `ChecksumSizeRange` containing exactly one bit size. |
+| `GetEnumerator` | `Enumerator GetEnumerator()` | Returns an enumerator over the bit sizes represented by the range. |
 
 #### `ChecksumSizeRange.Enumerator`
+
+Enumerates the bit sizes represented by `ChecksumSizeRange`.
 
 Implements `IDisposable`, `IEnumerator`, `IEnumerator<int>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerator` | `Enumerator(ChecksumSizeRange range)` |  |
-| `Current` | `int Current { get; }` |  |
-| `Dispose` | `void Dispose()` |  |
-| `MoveNext` | `bool MoveNext()` |  |
-| `Reset` | `void Reset()` |  |
+| `Enumerator` | `Enumerator(ChecksumSizeRange range)` | Enumerates the bit sizes represented by `ChecksumSizeRange`. |
+| `Current` | `int Current { get; }` | Gets the current bit size in the enumeration. |
+| `Dispose` | `void Dispose()` | Releases resources associated with the enumerator. |
+| `MoveNext` | `bool MoveNext()` | Advances the enumerator to the next supported bit size. |
+| `Reset` | `void Reset()` | Resets the enumerator to its initial position. |
 
 #### `ChecksumSizeRangeExtensions`
 
+Provides helpers for collections of `ChecksumSizeRange` values.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnumerateSizes` | `static IEnumerable<int> EnumerateSizes(this IReadOnlyList<ChecksumSizeRange> ranges)` |  |
-| `Supports` | `static bool Supports(this IReadOnlyList<ChecksumSizeRange> ranges, int bits)` |  |
+| `EnumerateSizes` | `static IEnumerable<int> EnumerateSizes(this IReadOnlyList<ChecksumSizeRange> ranges)` | Enumerates every supported bit size represented by the supplied ranges. |
+| `Supports` | `static bool Supports(this IReadOnlyList<ChecksumSizeRange> ranges, int bits)` | Determines whether any range in the collection contains the specified bit size. |
 
 #### `ComplementChecksum`
 
@@ -235,11 +253,13 @@ One's and two's complement checksum helpers.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OnesComplement16` | `static ushort OnesComplement16(ReadOnlySpan<byte> data)` |  |
-| `TwosComplement16` | `static ushort TwosComplement16(ReadOnlySpan<byte> data)` |  |
-| `TwosComplement8` | `static byte TwosComplement8(ReadOnlySpan<byte> data)` |  |
+| `OnesComplement16` | `static ushort OnesComplement16(ReadOnlySpan<byte> data)` | Computes a 16-bit one's-complement checksum of the supplied data. |
+| `TwosComplement16` | `static ushort TwosComplement16(ReadOnlySpan<byte> data)` | Computes a 16-bit two's-complement checksum of the supplied data. |
+| `TwosComplement8` | `static byte TwosComplement8(ReadOnlySpan<byte> data)` | Computes an 8-bit two's-complement checksum of the supplied data. |
 
 #### `ComplementChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `ComplementChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -259,8 +279,8 @@ Selects the complement arithmetic used by `ComplementChecksum`.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `OnesComplement` | `0` |  |
-| `TwosComplement` | `1` |  |
+| `OnesComplement` | `0` | Selects one's-complement arithmetic. |
+| `TwosComplement` | `1` | Selects two's-complement arithmetic. |
 
 #### `ConstantWeight`
 
@@ -268,7 +288,7 @@ Constant-weight validation helper.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Validate` | `static bool Validate(ReadOnlySpan<byte> data, int expectedOneBits)` |  |
+| `Validate` | `static bool Validate(ReadOnlySpan<byte> data, int expectedOneBits)` | Determines whether the supplied value has a valid Constant Weight. |
 
 #### `Crc`
 
@@ -276,12 +296,12 @@ Bit-accurate generic CRC implementation using normal-form polynomials.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
-| `Compute24` | `static uint Compute24(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
-| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
-| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
-| `Compute` | `static ulong Compute(ReadOnlySpan<byte> data, CrcParameters parameters)` |  |
+| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 16-bit CRC checksum of the supplied data. |
+| `Compute24` | `static uint Compute24(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 24-bit CRC checksum of the supplied data. |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 32-bit CRC checksum of the supplied data. |
+| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 64-bit CRC checksum of the supplied data. |
+| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the 8-bit CRC checksum of the supplied data. |
+| `Compute` | `static ulong Compute(ReadOnlySpan<byte> data, CrcParameters parameters)` | Computes the CRC checksum of the supplied data. |
 
 #### `Crc128`
 
@@ -289,9 +309,11 @@ Generic 128-bit CRC using normal-form polynomials.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static UInt128 Compute(ReadOnlySpan<byte> data, Crc128Parameters parameters)` |  |
+| `Compute` | `static UInt128 Compute(ReadOnlySpan<byte> data, Crc128Parameters parameters)` | Computes the CRC-128 checksum of the supplied data. |
 
 #### `Crc128ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc128`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -306,11 +328,11 @@ Implements `IEquatable<Crc128Parameters>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Crc128Parameters` | `Crc128Parameters(UInt128 Polynomial, UInt128 InitialValue, bool ReflectInput, bool ReflectOutput, UInt128 FinalXor)` | Parameters for the educational 128-bit CRC variants in the source registry. |
-| `FinalXor` | `UInt128 FinalXor { get; init; }` |  |
-| `InitialValue` | `UInt128 InitialValue { get; init; }` |  |
-| `Polynomial` | `UInt128 Polynomial { get; init; }` |  |
-| `ReflectInput` | `bool ReflectInput { get; init; }` |  |
-| `ReflectOutput` | `bool ReflectOutput { get; init; }` |  |
+| `FinalXor` | `UInt128 FinalXor { get; init; }` | Gets the value XORed with the CRC register to produce the final checksum. |
+| `InitialValue` | `UInt128 InitialValue { get; init; }` | Gets the initial 128-bit CRC register value. |
+| `Polynomial` | `UInt128 Polynomial { get; init; }` | Gets the normal-form 128-bit CRC polynomial. |
+| `ReflectInput` | `bool ReflectInput { get; init; }` | Gets whether each input byte is reflected before processing. |
+| `ReflectOutput` | `bool ReflectOutput { get; init; }` | Gets whether the CRC register is reflected before the final XOR. |
 
 #### `Crc128Presets`
 
@@ -318,11 +340,13 @@ Implements `IEquatable<Crc128Parameters>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BigData` | `static readonly Crc128Parameters BigData` |  |
-| `Hpc` | `static readonly Crc128Parameters Hpc` |  |
-| `Standard` | `static readonly Crc128Parameters Standard` |  |
+| `BigData` | `static readonly Crc128Parameters BigData` | Provides the new value used by `Crc128Presets`. |
+| `Hpc` | `static readonly Crc128Parameters Hpc` | Provides the new value used by `Crc128Presets`. |
+| `Standard` | `static readonly Crc128Parameters Standard` | Provides the new value used by `Crc128Presets`. |
 
 #### `CrcChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Crc`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -337,12 +361,12 @@ Implements `IEquatable<CrcParameters>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CrcParameters` | `CrcParameters(int Width, ulong Polynomial, ulong InitialValue, bool ReflectInput, bool ReflectOutput, ulong FinalXor)` | Parameters for CRC widths from 8 through 64 bits. |
-| `FinalXor` | `ulong FinalXor { get; init; }` |  |
-| `InitialValue` | `ulong InitialValue { get; init; }` |  |
-| `Polynomial` | `ulong Polynomial { get; init; }` |  |
-| `ReflectInput` | `bool ReflectInput { get; init; }` |  |
-| `ReflectOutput` | `bool ReflectOutput { get; init; }` |  |
-| `Width` | `int Width { get; init; }` |  |
+| `FinalXor` | `ulong FinalXor { get; init; }` | Gets the value XORed with the CRC register to produce the final checksum. |
+| `InitialValue` | `ulong InitialValue { get; init; }` | Gets the initial CRC register value. |
+| `Polynomial` | `ulong Polynomial { get; init; }` | Gets the normal-form CRC polynomial. |
+| `ReflectInput` | `bool ReflectInput { get; init; }` | Gets whether each input byte is reflected before processing. |
+| `ReflectOutput` | `bool ReflectOutput { get; init; }` | Gets whether the CRC register is reflected before the final XOR. |
+| `Width` | `int Width { get; init; }` | Gets the CRC width, in bits. |
 
 #### `CrcPresets`
 
@@ -350,25 +374,25 @@ CRC parameter presets represented by the JavaScript source registry plus common 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Crc16Ansi` | `static readonly CrcParameters Crc16Ansi` |  |
-| `Crc16Arc` | `static readonly CrcParameters Crc16Arc` |  |
-| `Crc16Ccitt` | `static readonly CrcParameters Crc16Ccitt` |  |
-| `Crc16Ibm` | `static readonly CrcParameters Crc16Ibm` |  |
-| `Crc16Xmodem` | `static readonly CrcParameters Crc16Xmodem` |  |
-| `Crc24FlexRay` | `static readonly CrcParameters Crc24FlexRay` |  |
-| `Crc24Interlaken` | `static readonly CrcParameters Crc24Interlaken` |  |
-| `Crc24OpenPgp` | `static readonly CrcParameters Crc24OpenPgp` |  |
-| `Crc32Bzip2` | `static readonly CrcParameters Crc32Bzip2` |  |
-| `Crc32Castagnoli` | `static readonly CrcParameters Crc32Castagnoli` |  |
-| `Crc32Ieee` | `static readonly CrcParameters Crc32Ieee` |  |
-| `Crc32Posix` | `static readonly CrcParameters Crc32Posix` |  |
-| `Crc64Ecma182` | `static readonly CrcParameters Crc64Ecma182` |  |
-| `Crc64We` | `static readonly CrcParameters Crc64We` |  |
-| `Crc64Xz` | `static readonly CrcParameters Crc64Xz` |  |
-| `Crc8Autosar` | `static readonly CrcParameters Crc8Autosar` |  |
-| `Crc8Cdma2000` | `static readonly CrcParameters Crc8Cdma2000` |  |
-| `Crc8Maxim` | `static readonly CrcParameters Crc8Maxim` |  |
-| `Crc8Smbus` | `static readonly CrcParameters Crc8Smbus` |  |
+| `Crc16Ansi` | `static readonly CrcParameters Crc16Ansi` | Provides the new value used by `CrcPresets`. |
+| `Crc16Arc` | `static readonly CrcParameters Crc16Arc` | Provides the new value used by `CrcPresets`. |
+| `Crc16Ccitt` | `static readonly CrcParameters Crc16Ccitt` | Provides the new value used by `CrcPresets`. |
+| `Crc16Ibm` | `static readonly CrcParameters Crc16Ibm` | Provides the Crc-16 Ibm value used by `CrcPresets`. |
+| `Crc16Xmodem` | `static readonly CrcParameters Crc16Xmodem` | Provides the Crc-16 Xmodem value used by `CrcPresets`. |
+| `Crc24FlexRay` | `static readonly CrcParameters Crc24FlexRay` | Provides the new value used by `CrcPresets`. |
+| `Crc24Interlaken` | `static readonly CrcParameters Crc24Interlaken` | Provides the new value used by `CrcPresets`. |
+| `Crc24OpenPgp` | `static readonly CrcParameters Crc24OpenPgp` | Provides the new value used by `CrcPresets`. |
+| `Crc32Bzip2` | `static readonly CrcParameters Crc32Bzip2` | Provides the new value used by `CrcPresets`. |
+| `Crc32Castagnoli` | `static readonly CrcParameters Crc32Castagnoli` | Provides the new value used by `CrcPresets`. |
+| `Crc32Ieee` | `static readonly CrcParameters Crc32Ieee` | Provides the new value used by `CrcPresets`. |
+| `Crc32Posix` | `static readonly CrcParameters Crc32Posix` | Provides the new value used by `CrcPresets`. |
+| `Crc64Ecma182` | `static readonly CrcParameters Crc64Ecma182` | Provides the new value used by `CrcPresets`. |
+| `Crc64We` | `static readonly CrcParameters Crc64We` | Provides the new value used by `CrcPresets`. |
+| `Crc64Xz` | `static readonly CrcParameters Crc64Xz` | Provides the new value used by `CrcPresets`. |
+| `Crc8Autosar` | `static readonly CrcParameters Crc8Autosar` | Provides the new value used by `CrcPresets`. |
+| `Crc8Cdma2000` | `static readonly CrcParameters Crc8Cdma2000` | Provides the new value used by `CrcPresets`. |
+| `Crc8Maxim` | `static readonly CrcParameters Crc8Maxim` | Provides the new value used by `CrcPresets`. |
+| `Crc8Smbus` | `static readonly CrcParameters Crc8Smbus` | Provides the new value used by `CrcPresets`. |
 
 #### `Cusip`
 
@@ -376,8 +400,8 @@ CUSIP check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstEightCharacters)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> cusip)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstEightCharacters)` | Generates the Cusip check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> cusip)` | Determines whether the supplied value has a valid Cusip. |
 
 #### `Damm`
 
@@ -385,8 +409,8 @@ Damm check digit using the standard anti-symmetric quasigroup.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the Damm check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` | Determines whether the supplied value has a valid Damm. |
 
 #### `Fletcher`
 
@@ -394,12 +418,14 @@ Fletcher checksum family. The 32/64-bit variants deliberately consume bytes, mat
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` |  |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` |  |
-| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data)` |  |
-| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data)` |  |
+| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` | Computes the 16-bit Fletcher checksum of the supplied data. |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` | Computes the 32-bit Fletcher checksum of the supplied data. |
+| `Compute64` | `static ulong Compute64(ReadOnlySpan<byte> data)` | Computes the 64-bit Fletcher checksum of the supplied data. |
+| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data)` | Computes the 8-bit Fletcher checksum of the supplied data. |
 
 #### `FletcherChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Fletcher`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -419,11 +445,11 @@ EAN/UPC/GTIN modulo-10 check digits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `GenerateEan13` | `static int GenerateEan13(ReadOnlySpan<char> twelveDigits)` |  |
-| `GenerateEan8` | `static int GenerateEan8(ReadOnlySpan<char> sevenDigits)` |  |
-| `GenerateUpcA` | `static int GenerateUpcA(ReadOnlySpan<char> elevenDigits)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> value)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the GTIN check digit for the supplied value. |
+| `GenerateEan13` | `static int GenerateEan13(ReadOnlySpan<char> twelveDigits)` | Generates the Ean-13 for the supplied value. |
+| `GenerateEan8` | `static int GenerateEan8(ReadOnlySpan<char> sevenDigits)` | Generates the Ean-8 for the supplied value. |
+| `GenerateUpcA` | `static int GenerateUpcA(ReadOnlySpan<char> elevenDigits)` | Generates the Upc A for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> value)` | Determines whether the supplied value has a valid GTIN. |
 
 #### `Iban`
 
@@ -431,7 +457,7 @@ International Bank Account Number MOD-97 validation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> iban)` |  |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> iban)` | Determines whether the supplied value has a valid IBAN. |
 
 #### `Iccid`
 
@@ -439,8 +465,8 @@ ICCID check digit (Luhn).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> iccid)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the ICCID check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> iccid)` | Determines whether the supplied value has a valid ICCID. |
 
 #### `Imei`
 
@@ -448,8 +474,8 @@ IMEI check digit (Luhn).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> fourteenDigits)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> imei)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> fourteenDigits)` | Generates the IMEI check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> imei)` | Determines whether the supplied value has a valid IMEI. |
 
 #### `InternetChecksum`
 
@@ -457,10 +483,12 @@ Internet checksum from RFC 1071 (one's-complement sum of big-endian 16-bit words
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` |  |
-| `Verify` | `static bool Verify(ReadOnlySpan<byte> dataIncludingChecksum)` |  |
+| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` | Computes the Internet Checksum checksum of the supplied data. |
+| `Verify` | `static bool Verify(ReadOnlySpan<byte> dataIncludingChecksum)` | Determines whether the supplied data, including its checksum, is valid. |
 
 #### `InternetChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `InternetChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -472,10 +500,10 @@ ISBN-10 and ISBN-13 check digits.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateIsbn10CheckDigit` | `static char GenerateIsbn10CheckDigit(ReadOnlySpan<char> firstNineDigits)` |  |
-| `GenerateIsbn13CheckDigit` | `static int GenerateIsbn13CheckDigit(ReadOnlySpan<char> firstTwelveDigits)` |  |
-| `ValidateIsbn10` | `static bool ValidateIsbn10(ReadOnlySpan<char> isbn)` |  |
-| `ValidateIsbn13` | `static bool ValidateIsbn13(ReadOnlySpan<char> isbn)` |  |
+| `GenerateIsbn10CheckDigit` | `static char GenerateIsbn10CheckDigit(ReadOnlySpan<char> firstNineDigits)` | Generates the Isbn-10 Check Digit for the supplied value. |
+| `GenerateIsbn13CheckDigit` | `static int GenerateIsbn13CheckDigit(ReadOnlySpan<char> firstTwelveDigits)` | Generates the Isbn-13 Check Digit for the supplied value. |
+| `ValidateIsbn10` | `static bool ValidateIsbn10(ReadOnlySpan<char> isbn)` | Determines whether the supplied value has a valid Isbn-10. |
+| `ValidateIsbn13` | `static bool ValidateIsbn13(ReadOnlySpan<char> isbn)` | Determines whether the supplied value has a valid Isbn-13. |
 
 #### `Isin`
 
@@ -483,8 +511,8 @@ ISIN check digit (ISO 6166 letter expansion followed by Luhn).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> elevenCharacters)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> isin)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> elevenCharacters)` | Generates the ISIN check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> isin)` | Determines whether the supplied value has a valid ISIN. |
 
 #### `Issn`
 
@@ -492,8 +520,8 @@ ISSN modulo-11 check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static char GenerateCheckDigit(ReadOnlySpan<char> firstSevenDigits)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> issn)` |  |
+| `GenerateCheckDigit` | `static char GenerateCheckDigit(ReadOnlySpan<char> firstSevenDigits)` | Generates the ISSN check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> issn)` | Determines whether the supplied value has a valid ISSN. |
 
 #### `Lrc`
 
@@ -501,9 +529,11 @@ Longitudinal redundancy check (two's complement of the 8-bit byte sum).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte Compute(ReadOnlySpan<byte> data)` | Computes the Lrc checksum of the supplied data. |
 
 #### `LrcChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Lrc`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -515,8 +545,8 @@ Luhn modulo-10 check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the Luhn check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` | Determines whether the supplied value has a valid Luhn. |
 
 #### `ModuloCheckDigit`
 
@@ -524,7 +554,7 @@ Generic weighted modulo check-digit helper.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Generate` | `static int Generate(ReadOnlySpan<char> payload, ReadOnlySpan<int> weights, int modulus, bool complement = true)` |  |
+| `Generate` | `static int Generate(ReadOnlySpan<char> payload, ReadOnlySpan<int> weights, int modulus, bool complement = true)` | Generates the for the supplied value. |
 
 #### `Nmea0183`
 
@@ -532,9 +562,11 @@ NMEA-0183 XOR checksum. Delimiters '$'/'!' and '*' plus suffix are ignored when 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte Compute(ReadOnlySpan<byte> sentence)` |  |
+| `Compute` | `static byte Compute(ReadOnlySpan<byte> sentence)` | Computes the NMEA-0183 checksum of the supplied data. |
 
 #### `Nmea0183ChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Nmea0183`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -546,8 +578,8 @@ US National Provider Identifier check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstNineDigits)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> npi)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstNineDigits)` | Generates the NPI check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> npi)` | Determines whether the supplied value has a valid NPI. |
 
 #### `Parity`
 
@@ -555,12 +587,14 @@ Parity helpers.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BitParity` | `static int BitParity(byte value)` |  |
-| `BlockParity` | `static byte BlockParity(ReadOnlySpan<byte> data)` |  |
-| `EvenParityBit` | `static byte EvenParityBit(byte value)` |  |
-| `OddParityBit` | `static byte OddParityBit(byte value)` |  |
+| `BitParity` | `static int BitParity(byte value)` | Computes the parity of the set bits in the supplied byte. |
+| `BlockParity` | `static byte BlockParity(ReadOnlySpan<byte> data)` | Computes the longitudinal parity byte for the supplied data. |
+| `EvenParityBit` | `static byte EvenParityBit(byte value)` | Computes the parity bit required to give the supplied byte even parity. |
+| `OddParityBit` | `static byte OddParityBit(byte value)` | Computes the parity bit required to give the supplied byte odd parity. |
 
 #### `ParityChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `Parity`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -580,8 +614,8 @@ POSTNET and PLANET barcode check digit (sum of digits completed to a multiple of
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> value)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the Postal Barcode check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> value)` | Determines whether the supplied value has a valid Postal Barcode. |
 
 #### `Sedol`
 
@@ -589,8 +623,8 @@ SEDOL check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstSixCharacters)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> sedol)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> firstSixCharacters)` | Generates the Sedol check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> sedol)` | Determines whether the supplied value has a valid Sedol. |
 
 #### `SumChecksum`
 
@@ -598,11 +632,13 @@ Simple additive checksum variants.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` |  |
-| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` |  |
-| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data)` |  |
+| `Compute16` | `static ushort Compute16(ReadOnlySpan<byte> data)` | Computes the 16-bit Sum Checksum checksum of the supplied data. |
+| `Compute32` | `static uint Compute32(ReadOnlySpan<byte> data)` | Computes the 32-bit Sum Checksum checksum of the supplied data. |
+| `Compute8` | `static byte Compute8(ReadOnlySpan<byte> data)` | Computes the 8-bit Sum Checksum checksum of the supplied data. |
 
 #### `SumChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `SumChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -622,9 +658,11 @@ System V checksum used by historic `sum -s`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static ushort Compute(ReadOnlySpan<byte> data)` | Computes the Sys V Checksum checksum of the supplied data. |
 
 #### `SysVChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `SysVChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -636,8 +674,8 @@ Verhoeff check digit using the dihedral group D5 tables.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` |  |
+| `GenerateCheckDigit` | `static int GenerateCheckDigit(ReadOnlySpan<char> payload)` | Generates the Verhoeff check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> digits)` | Determines whether the supplied value has a valid Verhoeff. |
 
 #### `Vin`
 
@@ -645,8 +683,8 @@ Vehicle Identification Number check digit.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GenerateCheckDigit` | `static char GenerateCheckDigit(ReadOnlySpan<char> vinWithoutReliableCheckDigit)` |  |
-| `Validate` | `static bool Validate(ReadOnlySpan<char> vin)` |  |
+| `GenerateCheckDigit` | `static char GenerateCheckDigit(ReadOnlySpan<char> vinWithoutReliableCheckDigit)` | Generates the VIN check digit for the supplied value. |
+| `Validate` | `static bool Validate(ReadOnlySpan<char> vin)` | Determines whether the supplied value has a valid VIN. |
 
 #### `XorChecksum`
 
@@ -654,9 +692,11 @@ XOR checksum, also used by NMEA-0183 sentence checksums.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compute` | `static byte Compute(ReadOnlySpan<byte> data)` |  |
+| `Compute` | `static byte Compute(ReadOnlySpan<byte> data)` | Computes the Xor Checksum checksum of the supplied data. |
 
 #### `XorChecksumSizeExtensions`
+
+Provides supported checksum-output size metadata for `XorChecksum`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

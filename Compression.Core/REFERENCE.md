@@ -3472,7 +3472,7 @@ Block-group arithmetic shared by the ext-family writers. ext1 and ext2/3/4 lay t
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BytesPerInode` | `static int BytesPerInode(long volumeBytes)` | Rounds the required inode count up to a sensible group size: every reserved/dir/file inode with headroom, never below the classic 128, and a multiple of 8 so the inode bitmap's byte boundaries stay tidy. |
-| `ChooseInodeCount` | `static int ChooseInodeCount(int needed)` |  |
+| `ChooseInodeCount` | `static int ChooseInodeCount(int needed)` | Performs the choose inode count operation. |
 | `Compute` | `static ExtGeometry Compute(int blockSize, int totalBlocks, int inodeSize, int neededInodes, int descriptorSize = 32)` | Works out how many block groups an ext-family volume needs and how the per-group metadata is sized. A group holds 8 * blockSize blocks because its block bitmap is a single block; anything larger takes more groups. Inodes are shared evenly across them, so a one-group volume ends up with exactly the geometry this writer produced before groups existed. |
 | `DescriptorSize` | `static int DescriptorSize(ReadOnlySpan<byte> superblock)` | How wide one group descriptor is on the volume whose superblock this is. |
 
@@ -3577,14 +3577,14 @@ MBR partition-type bytes for common filesystems.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Fat12` | `const byte Fat12` |  |
-| `Fat16Lba` | `const byte Fat16Lba` |  |
-| `Fat16Small` | `const byte Fat16Small` |  |
-| `Fat16` | `const byte Fat16` |  |
-| `Fat32Chs` | `const byte Fat32Chs` |  |
-| `Fat32Lba` | `const byte Fat32Lba` |  |
-| `Linux` | `const byte Linux` |  |
-| `NtfsExfat` | `const byte NtfsExfat` |  |
+| `Fat12` | `const byte Fat12` | Defines the fat 12 constant value. |
+| `Fat16Lba` | `const byte Fat16Lba` | Defines the fat 16 lba constant value. |
+| `Fat16Small` | `const byte Fat16Small` | Defines the fat 16 small constant value. |
+| `Fat16` | `const byte Fat16` | Defines the fat 16 constant value. |
+| `Fat32Chs` | `const byte Fat32Chs` | Defines the fat 32 chs constant value. |
+| `Fat32Lba` | `const byte Fat32Lba` | Defines the fat 32 lba constant value. |
+| `Linux` | `const byte Linux` | Defines the linux constant value. |
+| `NtfsExfat` | `const byte NtfsExfat` | Defines the ntfs exfat constant value. |
 
 #### `PartitionEditor`
 
@@ -3727,18 +3727,18 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PartitionWindowStream` | `PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true)` |  |
-| `CanRead` | `override bool CanRead { get; }` |  |
-| `CanSeek` | `override bool CanSeek { get; }` |  |
-| `CanWrite` | `override bool CanWrite { get; }` |  |
-| `Length` | `override long Length { get; }` |  |
-| `Position` | `override long Position { get; set; }` |  |
-| `Dispose` | `protected override void Dispose(bool disposing)` |  |
-| `Flush` | `override void Flush()` |  |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
-| `SetLength` | `override void SetLength(long value)` |  |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+| `PartitionWindowStream` | `PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true)` | Initializes a new instance of `PartitionWindowStream`. |
+| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
+| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
+| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
+| `Length` | `override long Length { get; }` | Gets the length. |
+| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
+| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
+| `Flush` | `override void Flush()` | Performs the flush operation. |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
+| `SetLength` | `override void SetLength(long value)` | Sets the length. |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
 
 #### `PartitionedDiskLister`
 
@@ -5052,27 +5052,31 @@ LZMA-style byte-aligned range encoder with adaptive binary probabilities.
 
 #### `CpuArchitecture`
 
+Specifies cpu architecture values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `X86` | `0` |  |
-| `X64` | `1` |  |
-| `Arm32` | `2` |  |
-| `Arm64` | `3` |  |
-| `PowerPc32` | `4` |  |
-| `PowerPc64` | `5` |  |
-| `Mips32Le` | `6` |  |
-| `Mips32Be` | `7` |  |
-| `Mips64Le` | `8` |  |
-| `Mips64Be` | `9` |  |
-| `Unknown` | `10` |  |
+| `X86` | `0` | Specifies the x 86 option. |
+| `X64` | `1` | Specifies the x 64 option. |
+| `Arm32` | `2` | Specifies the arm 32 option. |
+| `Arm64` | `3` | Specifies the arm 64 option. |
+| `PowerPc32` | `4` | Specifies the power pc 32 option. |
+| `PowerPc64` | `5` | Specifies the power pc 64 option. |
+| `Mips32Le` | `6` | Specifies the mips 32 le option. |
+| `Mips32Be` | `7` | Specifies the mips 32 be option. |
+| `Mips64Le` | `8` | Specifies the mips 64 le option. |
+| `Mips64Be` | `9` | Specifies the mips 64 be option. |
+| `Unknown` | `10` | Specifies an unknown or unrecognized value. |
 
 #### `DetectionResult`
+
+Represents a detection result.
 
 Implements `IEquatable<DetectionResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DetectionResult` | `DetectionResult(bool IsMatch, string PackerId, double Confidence, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `DetectionResult` | `DetectionResult(bool IsMatch, string PackerId, double Confidence, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents a detection result. |
 | `Confidence` | `double Confidence { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
 | `IsMatch` | `bool IsMatch { get; init; }` |  |
@@ -5080,78 +5084,92 @@ Implements `IEquatable<DetectionResult>`.
 
 #### `ElfParser`
 
+Represents an elf parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ElfParser` | `ElfParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `ExecutableContainerKind`
 
+Specifies executable container kind values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Pe` | `0` |  |
-| `Elf` | `1` |  |
-| `MachO` | `2` |  |
-| `FatMachO` | `3` |  |
-| `DosMz` | `4` |  |
-| `DosCom` | `5` |  |
-| `LinearExecutable` | `6` |  |
-| `Unknown` | `7` |  |
+| `Pe` | `0` | Specifies the pe option. |
+| `Elf` | `1` | Specifies the elf option. |
+| `MachO` | `2` | Specifies the mach o option. |
+| `FatMachO` | `3` | Specifies the fat mach o option. |
+| `DosMz` | `4` | Specifies the dos mz option. |
+| `DosCom` | `5` | Specifies the dos com option. |
+| `LinearExecutable` | `6` | Specifies the linear executable option. |
+| `Unknown` | `7` | Specifies an unknown or unrecognized value. |
 
 #### `ExecutableContainerParsers`
 
+Represents an executable container parsers.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Elf` | `static readonly IExecutableContainerParser Elf` |  |
-| `FatMachO` | `static readonly IExecutableContainerParser FatMachO` |  |
-| `MachO` | `static readonly IExecutableContainerParser MachO` |  |
-| `Pe` | `static readonly IExecutableContainerParser Pe` |  |
-| `ParseBestEffort` | `static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image)` |  |
+| `Elf` | `static readonly IExecutableContainerParser Elf` | Provides the elf value. |
+| `FatMachO` | `static readonly IExecutableContainerParser FatMachO` | Provides the fat mach o value. |
+| `MachO` | `static readonly IExecutableContainerParser MachO` | Provides the mach o value. |
+| `Pe` | `static readonly IExecutableContainerParser Pe` | Provides the pe value. |
+| `ParseBestEffort` | `static ExecutableImageInfo ParseBestEffort(ReadOnlySpan<byte> image)` | Parses the best effort from the supplied data. |
 
 #### `ExecutableDiagnostic`
+
+Represents an executable diagnostic.
 
 Implements `IEquatable<ExecutableDiagnostic>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableDiagnostic` | `ExecutableDiagnostic(ExecutableDiagnosticCode Code, string Message, bool IsError = false)` |  |
+| `ExecutableDiagnostic` | `ExecutableDiagnostic(ExecutableDiagnosticCode Code, string Message, bool IsError = false)` | Represents an executable diagnostic. |
 | `Code` | `ExecutableDiagnosticCode Code { get; init; }` |  |
 | `IsError` | `bool IsError { get; init; }` |  |
 | `Message` | `string Message { get; init; }` |  |
 
 #### `ExecutableDiagnosticCode`
 
+Specifies executable diagnostic code values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `NotPackedExecutable` | `0` |  |
-| `UnsupportedContainer` | `1` |  |
-| `UnsupportedArchitecture` | `2` |  |
-| `UnsupportedPackerVersion` | `3` |  |
-| `PayloadNotFound` | `4` |  |
-| `UnsupportedCompressionMethod` | `5` |  |
-| `DecompressionFailed` | `6` |  |
-| `TransformNotReversible` | `7` |  |
-| `MemoryImageBuildFailed` | `8` |  |
-| `ExecutableRebuildFailed` | `9` |  |
-| `RunnableRebuildNotGuaranteed` | `10` |  |
+| `NotPackedExecutable` | `0` | Specifies the not packed executable option. |
+| `UnsupportedContainer` | `1` | Specifies the unsupported container option. |
+| `UnsupportedArchitecture` | `2` | Specifies the unsupported architecture option. |
+| `UnsupportedPackerVersion` | `3` | Specifies the unsupported packer version option. |
+| `PayloadNotFound` | `4` | Specifies the payload not found option. |
+| `UnsupportedCompressionMethod` | `5` | Specifies the unsupported compression method option. |
+| `DecompressionFailed` | `6` | Specifies the decompression failed option. |
+| `TransformNotReversible` | `7` | Specifies the transform not reversible option. |
+| `MemoryImageBuildFailed` | `8` | Specifies the memory image build failed option. |
+| `ExecutableRebuildFailed` | `9` | Specifies the executable rebuild failed option. |
+| `RunnableRebuildNotGuaranteed` | `10` | Specifies the runnable rebuild not guaranteed option. |
 
 #### `ExecutableDiagnosticsJson`
 
+Represents an executable diagnostics json.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Build` | `static byte[] Build(string packer, ExecutableImageInfo imageInfo, UnpackResult result)` |  |
+| `Build` | `static byte[] Build(string packer, ExecutableImageInfo imageInfo, UnpackResult result)` | Performs the build operation. |
 
 #### `ExecutableImageInfo`
+
+Represents an executable image info.
 
 Implements `IEquatable<ExecutableImageInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableImageInfo` | `ExecutableImageInfo(ExecutableContainerKind Container, CpuArchitecture Architecture, ulong PreferredBaseAddress, ulong EntryPoint, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableImport> Imports, IReadOnlyList<ExecutableRelocation> Relocations, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `ExecutableImageInfo` | `ExecutableImageInfo(ExecutableContainerKind Container, CpuArchitecture Architecture, ulong PreferredBaseAddress, ulong EntryPoint, IReadOnlyList<ExecutableRegion> Regions, IReadOnlyList<ExecutableImport> Imports, IReadOnlyList<ExecutableRelocation> Relocations, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents an executable image info. |
 | `Architecture` | `CpuArchitecture Architecture { get; init; }` |  |
 | `Container` | `ExecutableContainerKind Container { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
@@ -5163,28 +5181,34 @@ Implements `IEquatable<ExecutableImageInfo>`.
 
 #### `ExecutableImport`
 
+Represents an executable import.
+
 Implements `IEquatable<ExecutableImport>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableImport` | `ExecutableImport(string ModuleName, string SymbolName, ulong Address)` |  |
+| `ExecutableImport` | `ExecutableImport(string ModuleName, string SymbolName, ulong Address)` | Represents an executable import. |
 | `Address` | `ulong Address { get; init; }` |  |
 | `ModuleName` | `string ModuleName { get; init; }` |  |
 | `SymbolName` | `string SymbolName { get; init; }` |  |
 
 #### `ExecutableMemoryImageBuilder`
 
+Represents an executable memory image builder.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Build` | `static ValueTuple<byte[], IReadOnlyList<ExecutableRegion>, IReadOnlyList<ExecutableDiagnostic>> Build(ExecutableImageInfo info, byte[] replacementPayload = null, string replacementTargetRegionName = null, UnpackOptions options = null)` |  |
+| `Build` | `static ValueTuple<byte[], IReadOnlyList<ExecutableRegion>, IReadOnlyList<ExecutableDiagnostic>> Build(ExecutableImageInfo info, byte[] replacementPayload = null, string replacementTargetRegionName = null, UnpackOptions options = null)` | Performs the build operation. |
 
 #### `ExecutableRegion`
+
+Represents an executable region.
 
 Implements `IEquatable<ExecutableRegion>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableRegion` | `ExecutableRegion(string Name, ulong FileOffset, ulong FileSize, ulong VirtualAddress, ulong VirtualSize, ExecutableRegionFlags Flags, byte[] FileBytes, byte[] MemoryBytes)` |  |
+| `ExecutableRegion` | `ExecutableRegion(string Name, ulong FileOffset, ulong FileSize, ulong VirtualAddress, ulong VirtualSize, ExecutableRegionFlags Flags, byte[] FileBytes, byte[] MemoryBytes)` | Represents an executable region. |
 | `FileBytes` | `byte[] FileBytes { get; init; }` |  |
 | `FileOffset` | `ulong FileOffset { get; init; }` |  |
 | `FileSize` | `ulong FileSize { get; init; }` |  |
@@ -5196,66 +5220,78 @@ Implements `IEquatable<ExecutableRegion>`.
 
 #### `ExecutableRegionFlags`
 
+Specifies executable region flags values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `Read` | `1` |  |
-| `Write` | `2` |  |
-| `Execute` | `4` |  |
-| `Bss` | `8` |  |
+| `None` | `0` | Specifies that no option is selected. |
+| `Read` | `1` | Specifies the read option. |
+| `Write` | `2` | Specifies the write option. |
+| `Execute` | `4` | Specifies the execute option. |
+| `Bss` | `8` | Specifies the bss option. |
 
 #### `ExecutableRelocation`
+
+Represents an executable relocation.
 
 Implements `IEquatable<ExecutableRelocation>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ExecutableRelocation` | `ExecutableRelocation(ulong Address, string Type)` |  |
+| `ExecutableRelocation` | `ExecutableRelocation(ulong Address, string Type)` | Represents an executable relocation. |
 | `Address` | `ulong Address { get; init; }` |  |
 | `Type` | `string Type { get; init; }` |  |
 
 #### `ExecutableUnpackCapabilities`
 
+Specifies executable unpack capabilities values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `CanDetect` | `1` |  |
-| `CanLocatePayload` | `2` |  |
-| `CanDecompressPayload` | `4` |  |
-| `CanBuildMemoryImage` | `8` |  |
-| `CanRebuildExecutable` | `16` |  |
-| `CanProduceRunnableExecutable` | `32` |  |
-| `SupportsPe` | `256` |  |
-| `SupportsElf` | `512` |  |
-| `SupportsMachO` | `1024` |  |
-| `SupportsX86` | `65536` |  |
-| `SupportsX64` | `131072` |  |
-| `SupportsArm32` | `262144` |  |
-| `SupportsArm64` | `524288` |  |
+| `None` | `0` | Specifies that no option is selected. |
+| `CanDetect` | `1` | Specifies the can detect option. |
+| `CanLocatePayload` | `2` | Specifies the can locate payload option. |
+| `CanDecompressPayload` | `4` | Specifies the can decompress payload option. |
+| `CanBuildMemoryImage` | `8` | Specifies the can build memory image option. |
+| `CanRebuildExecutable` | `16` | Specifies the can rebuild executable option. |
+| `CanProduceRunnableExecutable` | `32` | Specifies the can produce runnable executable option. |
+| `SupportsPe` | `256` | Specifies the supports pe option. |
+| `SupportsElf` | `512` | Specifies the supports elf option. |
+| `SupportsMachO` | `1024` | Specifies the supports mach o option. |
+| `SupportsX86` | `65536` | Specifies the supports x 86 option. |
+| `SupportsX64` | `131072` | Specifies the supports x 64 option. |
+| `SupportsArm32` | `262144` | Specifies the supports arm 32 option. |
+| `SupportsArm64` | `524288` | Specifies the supports arm 64 option. |
 
 #### `ExecutableUnpackLevel`
 
+Specifies executable unpack level values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `DetectionOnly` | `0` |  |
-| `PayloadLocated` | `1` |  |
-| `PayloadDecompressed` | `2` |  |
-| `RuntimeMemoryImage` | `3` |  |
-| `RebuiltExecutable` | `4` |  |
-| `RunnableRebuiltExecutable` | `5` |  |
+| `DetectionOnly` | `0` | Specifies the detection only option. |
+| `PayloadLocated` | `1` | Specifies the payload located option. |
+| `PayloadDecompressed` | `2` | Specifies the payload decompressed option. |
+| `RuntimeMemoryImage` | `3` | Specifies the runtime memory image option. |
+| `RebuiltExecutable` | `4` | Specifies the rebuilt executable option. |
+| `RunnableRebuiltExecutable` | `5` | Specifies the runnable rebuilt executable option. |
 
 #### `FatMachOParser`
+
+Represents a fat mach o parser.
 
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FatMachOParser` | `FatMachOParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `IExecutableContainerParser`
+
+Defines the contract for i executable container parser.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5264,6 +5300,8 @@ Implements `IExecutableContainerParser`.
 | `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
 
 #### `IExecutablePackerHandler`
+
+Defines the contract for i executable packer handler.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5276,6 +5314,8 @@ Implements `IExecutableContainerParser`.
 
 #### `IPackerTransform`
 
+Defines the contract for i packer transform.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Id` | `string Id { get; }` |  |
@@ -5284,22 +5324,26 @@ Implements `IExecutableContainerParser`.
 
 #### `MachOParser`
 
+Represents a mach o parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MachOParser` | `MachOParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `PackedExecutable`
+
+Represents a packed executable.
 
 Implements `IEquatable<PackedExecutable>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PackedExecutable` | `PackedExecutable(string PackerId, byte[] OriginalImage, DetectionResult Detection, ExecutableImageInfo ImageInfo, ExecutableUnpackCapabilities Capabilities, IReadOnlyDictionary<string, string> Metadata)` |  |
+| `PackedExecutable` | `PackedExecutable(string PackerId, byte[] OriginalImage, DetectionResult Detection, ExecutableImageInfo ImageInfo, ExecutableUnpackCapabilities Capabilities, IReadOnlyDictionary<string, string> Metadata)` | Represents a packed executable. |
 | `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; init; }` |  |
 | `Detection` | `DetectionResult Detection { get; init; }` |  |
 | `ImageInfo` | `ExecutableImageInfo ImageInfo { get; init; }` |  |
@@ -5309,49 +5353,59 @@ Implements `IEquatable<PackedExecutable>`.
 
 #### `PeParser`
 
+Represents a pe parser.
+
 Implements `IExecutableContainerParser`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PeParser` | `PeParser()` |  |
-| `Kind` | `ExecutableContainerKind Kind { get; }` |  |
-| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` |  |
-| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` |  |
+| `Kind` | `ExecutableContainerKind Kind { get; }` | Gets the kind. |
+| `CanParse` | `bool CanParse(ReadOnlySpan<byte> image)` | Performs the can parse operation. |
+| `Parse` | `ExecutableImageInfo Parse(ReadOnlySpan<byte> image)` | Parses the value from the supplied data. |
 
 #### `PeRebuilder`
 
+Represents a pe rebuilder.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `RebuildSynthetic` | `static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload)` |  |
+| `RebuildSynthetic` | `static byte[] RebuildSynthetic(ExecutableImageInfo original, byte[] payload)` | Performs the rebuild synthetic operation. |
 
 #### `TransformResult`
+
+Represents a transform result.
 
 Implements `IEquatable<TransformResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `TransformResult` | `TransformResult(byte[] Payload, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `TransformResult` | `TransformResult(byte[] Payload, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents a transform result. |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
 | `Payload` | `byte[] Payload { get; init; }` |  |
 
 #### `UnpackArtifact`
 
+Represents an unpack artifact.
+
 Implements `IEquatable<UnpackArtifact>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackArtifact` | `UnpackArtifact(string Name, byte[] Data, string Method = "stored")` |  |
+| `UnpackArtifact` | `UnpackArtifact(string Name, byte[] Data, string Method = "stored")` | Represents an unpack artifact. |
 | `Data` | `byte[] Data { get; init; }` |  |
 | `Method` | `string Method { get; init; }` |  |
 | `Name` | `string Name { get; init; }` |  |
 
 #### `UnpackOptions`
 
+Specifies options for unpack.
+
 Implements `IEquatable<UnpackOptions>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackOptions` | `UnpackOptions(bool StrictRebuild = false, bool BestEffort = true, long MaximumInputSize = 268435456, long MaximumDecompressedSize = 536870912, int MaximumRegionCount = 4096, ulong MaximumVirtualAddressSpan = 536870912)` |  |
+| `UnpackOptions` | `UnpackOptions(bool StrictRebuild = false, bool BestEffort = true, long MaximumInputSize = 268435456, long MaximumDecompressedSize = 536870912, int MaximumRegionCount = 4096, ulong MaximumVirtualAddressSpan = 536870912)` | Specifies options for unpack. |
 | `BestEffort` | `bool BestEffort { get; init; }` |  |
 | `MaximumDecompressedSize` | `long MaximumDecompressedSize { get; init; }` |  |
 | `MaximumInputSize` | `long MaximumInputSize { get; init; }` |  |
@@ -5361,11 +5415,13 @@ Implements `IEquatable<UnpackOptions>`.
 
 #### `UnpackResult`
 
+Represents an unpack result.
+
 Implements `IEquatable<UnpackResult>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UnpackResult` | `UnpackResult(ExecutableUnpackLevel Level, ExecutableUnpackCapabilities Capabilities, IReadOnlyList<UnpackArtifact> Artifacts, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` |  |
+| `UnpackResult` | `UnpackResult(ExecutableUnpackLevel Level, ExecutableUnpackCapabilities Capabilities, IReadOnlyList<UnpackArtifact> Artifacts, IReadOnlyList<ExecutableDiagnostic> Diagnostics)` | Represents an unpack result. |
 | `Artifacts` | `IReadOnlyList<UnpackArtifact> Artifacts { get; init; }` |  |
 | `Capabilities` | `ExecutableUnpackCapabilities Capabilities { get; init; }` |  |
 | `Diagnostics` | `IReadOnlyList<ExecutableDiagnostic> Diagnostics { get; init; }` |  |
@@ -5473,12 +5529,12 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DefragStagingBuffer` | `DefragStagingBuffer(long memoryBudgetBytes = 268435456)` |  |
+| `DefragStagingBuffer` | `DefragStagingBuffer(long memoryBudgetBytes = 268435456)` | Initializes a new instance of `DefragStagingBuffer`. |
 | `DefaultMemoryBudgetBytes` | `const long DefaultMemoryBudgetBytes` | Bytes held in memory before the rest goes to scratch. |
 | `HeldInMemoryBytes` | `long HeldInMemoryBytes { get; }` | Bytes currently held in memory. |
 | `MemoryBudgetBytes` | `long MemoryBudgetBytes { get; }` | Bytes this buffer may hold in memory before spilling. |
 | `Spilled` | `bool Spilled { get; }` | Whether anything had to go to scratch rather than memory. |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Park` | `void Park(Stream image, int slot, long offset, long length)` | Reads a run out of the image and holds it under `slot`. |
 | `Unpark` | `void Unpark(Stream image, int slot, long offset)` | Writes the run held under `slot` back into the image. |
 
@@ -5615,11 +5671,11 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectorCache` | `SectorCache(Stream stream, int chunkSize = 65536, int maxChunks = 4096)` |  |
+| `SectorCache` | `SectorCache(Stream stream, int chunkSize = 65536, int maxChunks = 4096)` | Initializes a new instance of `SectorCache`. |
 | `DefaultChunkSize` | `const int DefaultChunkSize` | Default chunk size (64 KB). |
 | `DefaultMaxChunks` | `const int DefaultMaxChunks` | Default chunk count (4096 × 64 KB ≈ 256 MB cap). |
 | `Length` | `long Length { get; }` | Stream length passthrough. |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `InvalidateAll` | `void InvalidateAll()` | Drops all cached chunks (e.g. after a full image rewrite). |
 | `Invalidate` | `void Invalidate(long offset, int length)` | Invalidates cached chunks overlapping [offset, offset+length). Call after any direct write to the underlying stream so the next Read returns the fresh bytes from disk. |
 | `Read` | `byte[] Read(long offset, int length)` | Convenience wrapper that allocates the destination buffer. |

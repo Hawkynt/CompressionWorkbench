@@ -82,6 +82,9 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Empty: all SWM volumes share the WIM <c>"MSWIM\0\0\0"</c> magic. Detection
   /// is extension-only to avoid shadowing the WIM descriptor.
   /// </remarks>
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <inheritdoc/>
@@ -140,6 +143,9 @@ public sealed class SwmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files))

@@ -14,17 +14,35 @@ namespace GroovyCodecs.Mp3
     public class Mp3Encoder : IMp3Encoder
     {
 
+        /// <summary>
+        /// Defines the bitrate auto constant value.
+        /// </summary>
         public const int BITRATE_AUTO = -1;
 
         // channel mode has no influence on mono files.
+        /// <summary>
+        /// Defines the channel mode auto constant value.
+        /// </summary>
         public const int CHANNEL_MODE_AUTO = -1;
 
+        /// <summary>
+        /// Defines the channel mode dual channel constant value.
+        /// </summary>
         public const int CHANNEL_MODE_DUAL_CHANNEL = 2;
 
+        /// <summary>
+        /// Defines the channel mode joint stereo constant value.
+        /// </summary>
         public const int CHANNEL_MODE_JOINT_STEREO = 1;
 
+        /// <summary>
+        /// Defines the channel mode mono constant value.
+        /// </summary>
         public const int CHANNEL_MODE_MONO = 3;
 
+        /// <summary>
+        /// Defines the channel mode stereo constant value.
+        /// </summary>
         public const int CHANNEL_MODE_STEREO = 0;
 
         private static readonly int DEFAULT_QUALITY = QUALITY_MIDDLE;
@@ -42,13 +60,25 @@ namespace GroovyCodecs.Mp3
         // in VBR mode, bitrate is ignored.
         private static readonly bool DEFAULT_VBR = false;
 
+        /// <summary>
+        /// Defines the mpeg version 1 constant value.
+        /// </summary>
         public const int MPEG_VERSION_1 = 1; // MPEG-1
 
         // constants from lame.h
+        /// <summary>
+        /// Defines the mpeg version 2 constant value.
+        /// </summary>
         public const int MPEG_VERSION_2 = 0; // MPEG-2
 
+        /// <summary>
+        /// Defines the mpeg version 2 dot 5 constant value.
+        /// </summary>
         public const int MPEG_VERSION_2DOT5 = 2; // MPEG-2.5
 
+        /// <summary>
+        /// Defines the not specified constant value.
+        /// </summary>
         public const int NOT_SPECIFIED = -1;
 
         /// <summary>
@@ -84,17 +114,32 @@ namespace GroovyCodecs.Mp3
         /// </summary>
         public const string P_VBR = "vbr";
 
+        /// <summary>
+        /// Defines the quality high constant value.
+        /// </summary>
         public const int QUALITY_HIGH = 2;
 
         // quality==0 not yet coded in LAME (3.83alpha)
         // high mean bitrate in VBR // mode
+        /// <summary>
+        /// Defines the quality highest constant value.
+        /// </summary>
         public const int QUALITY_HIGHEST = 1;
 
+        /// <summary>
+        /// Defines the quality low constant value.
+        /// </summary>
         public const int QUALITY_LOW = 7;
 
         // low mean bitrate in VBR mode
+        /// <summary>
+        /// Defines the quality lowest constant value.
+        /// </summary>
         public const int QUALITY_LOWEST = 9;
 
+        /// <summary>
+        /// Defines the quality middle constant value.
+        /// </summary>
         public const int QUALITY_MIDDLE = 5;
 
         private int bitRate = DEFAULT_BITRATE;
@@ -172,6 +217,9 @@ namespace GroovyCodecs.Mp3
 
         internal Mp3Version ver;
 
+        /// <summary>
+        /// Initializes a new instance of <see cref="Mp3Encoder"/>.
+        /// </summary>
         public Mp3Encoder()
         {
 
@@ -223,18 +271,27 @@ namespace GroovyCodecs.Mp3
             SetFormat(sourceFormat, null);
         }
 
+        /// <summary>
+        /// Gets or sets the source format.
+        /// </summary>
         public virtual AudioFormat SourceFormat
         {
             set => SetFormat(value, null);
             get => sourceFormat;
         }
 
+        /// <summary>
+        /// Gets or sets the target format.
+        /// </summary>
         public virtual AudioFormat TargetFormat
         {
             set => SetFormat(null, value);
             get => targetFormat;
         }
 
+        /// <summary>
+        /// Sets the format.
+        /// </summary>
         public virtual void SetFormat(AudioFormat sourceFormat, AudioFormat targetFormat)
         {
             this.sourceFormat = sourceFormat;
@@ -288,10 +345,19 @@ namespace GroovyCodecs.Mp3
         /// </summary>
         public virtual int PCMBufferSize => DEFAULT_PCM_BUFFER_SIZE;
 
+        /// <summary>
+        /// Gets the mp 3 buffer size.
+        /// </summary>
         public virtual int MP3BufferSize => PCMBufferSize / 2 + 1024;
 
+        /// <summary>
+        /// Gets the input buffer size.
+        /// </summary>
         public virtual int InputBufferSize => PCMBufferSize;
 
+        /// <summary>
+        /// Gets the output buffer size.
+        /// </summary>
         public virtual int OutputBufferSize => MP3BufferSize;
 
         /// <summary>
@@ -318,11 +384,17 @@ namespace GroovyCodecs.Mp3
             return result;
         }
 
+        /// <summary>
+        /// Encodes the supplied input.
+        /// </summary>
         public virtual int EncodeFinish(byte[] encoded)
         {
             return lame.lame_encode_flush(gfp, encoded, 0, encoded.Length);
         }
 
+        /// <summary>
+        /// Performs the close operation.
+        /// </summary>
         public virtual void Close()
         {
             lame.lame_close(gfp);
@@ -377,6 +449,9 @@ namespace GroovyCodecs.Mp3
             }
         }
 
+        /// <summary>
+        /// Gets the effective quality.
+        /// </summary>
         public virtual int EffectiveQuality
         {
             get
@@ -394,14 +469,29 @@ namespace GroovyCodecs.Mp3
             }
         }
 
+        /// <summary>
+        /// Gets the effective bit rate.
+        /// </summary>
         public virtual int EffectiveBitRate => effBitRate;
 
+        /// <summary>
+        /// Gets the effective channel mode.
+        /// </summary>
         public virtual int EffectiveChannelMode => effChMode;
 
+        /// <summary>
+        /// Gets a value indicating whether effective vbr.
+        /// </summary>
         public virtual bool EffectiveVBR => effVbr != 0;
 
+        /// <summary>
+        /// Gets the effective sample rate.
+        /// </summary>
         public virtual int EffectiveSampleRate => effSampleRate;
 
+        /// <summary>
+        /// Performs the convert byte array to float operation.
+        /// </summary>
         public float ConvertByteArrayToFloat(byte[] bytes, int offset, ByteOrder byteOrder)
         {
             var byte0 = bytes[offset + 0];

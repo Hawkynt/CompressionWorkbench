@@ -14,7 +14,13 @@ namespace FileFormat.Its;
 /// </summary>
 public static class ItsSampleDecoder {
 
+  /// <summary>
+  /// Defines the header size constant value.
+  /// </summary>
   public const int HeaderSize = 80;
+  /// <summary>
+  /// Defines the fallback sample rate constant value.
+  /// </summary>
   public const int FallbackSampleRate = 8363;
 
   /// <summary>Parsed header fields plus the resolved on-disk PCM data range.</summary>
@@ -134,6 +140,9 @@ public static class ItsSampleDecoder {
     }
   }
 
+  /// <summary>
+  /// Reads the ascii trim from the supplied input.
+  /// </summary>
   public static string ReadAsciiTrim(byte[] blob, int offset, int length) {
     var end = Math.Min(offset + length, blob.Length);
     var sb = new StringBuilder();
@@ -145,6 +154,9 @@ public static class ItsSampleDecoder {
     return sb.ToString().Trim();
   }
 
+  /// <summary>
+  /// Performs the sanitize file name operation.
+  /// </summary>
   public static string SanitizeFileName(string name) {
     var sb = new StringBuilder(name.Length);
     foreach (var c in name)

@@ -16,23 +16,59 @@ namespace FileSystem.Msa;
 /// </list>
 /// </summary>
 public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Msa";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MSA (Magic Shadow Archiver)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
   // so the verb works via rebuild but nothing is modified in place. CanModify
   // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".msa";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".msa"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x0E, 0x0F], Confidence: 0.80)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rle", "RLE")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Atari ST Magic Shadow Archiver disk image with RLE compression";
 
   /// <summary>
@@ -60,6 +96,9 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new MsaReader(stream);
     var disk = DecodedDisk(r);
@@ -248,6 +287,9 @@ public sealed class MsaFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IArchiveDefragmentable ───────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

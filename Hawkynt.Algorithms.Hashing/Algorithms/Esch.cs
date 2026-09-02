@@ -5,11 +5,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Esch256 based on SPARKLE-384.</summary>
 public static class Esch256 {
+  /// <summary>
+  /// Computes the Esch-256 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => EschCore.Compute(data, 32, 12, 7, 11);
 }
 
 /// <summary>Esch384 based on SPARKLE-512.</summary>
 public static class Esch384 {
+  /// <summary>
+  /// Computes the Esch-384 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => EschCore.Compute(data, 48, 16, 8, 12);
 }
 

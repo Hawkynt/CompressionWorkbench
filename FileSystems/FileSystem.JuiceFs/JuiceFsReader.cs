@@ -57,10 +57,22 @@ public sealed class JuiceFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<JuiceFsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<JuiceFsEntry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
   public uint TrailingWord { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="JuiceFsReader"/>.
+  /// </summary>
   public JuiceFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -105,10 +117,16 @@ public sealed class JuiceFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(JuiceFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

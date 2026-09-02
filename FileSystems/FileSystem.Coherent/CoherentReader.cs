@@ -22,11 +22,17 @@ public sealed class CoherentReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<CoherentEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<CoherentEntry> Entries => this._entries;
   /// <summary>True once a valid coh_super_block (s_fname/s_fpack volume strings) was found.</summary>
   public bool Valid { get; private set; }
   /// <summary>Volume name from the superblock s_fname field (e.g. "noname").</summary>
   public string VolumeName { get; private set; } = "";
+  /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
   public int BlockSize { get; private set; } = 512;
 
   // The coh_super_block sits at file offset 0 (the copy the Linux sysv driver
@@ -39,6 +45,9 @@ public sealed class CoherentReader : IDisposable {
   internal const int CohFpackOffset = 0x1EA;
   private const int RootInode = 2;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="CoherentReader"/>.
+  /// </summary>
   public CoherentReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -216,6 +225,9 @@ public sealed class CoherentReader : IDisposable {
     return Encoding.ASCII.GetString(data, offset, end - offset);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(CoherentEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -227,5 +239,8 @@ public sealed class CoherentReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

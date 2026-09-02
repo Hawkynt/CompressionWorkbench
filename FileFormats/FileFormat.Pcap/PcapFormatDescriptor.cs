@@ -21,15 +21,39 @@ namespace FileFormat.Pcap;
 public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
   private const int MaxPackets = 100;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Pcap";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PCAP (libpcap capture)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".pcap";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".pcap", ".cap"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Raw leading-byte sequences for the four recognised libpcap global-header magic
     // constants.  The reader distinguishes byte order and timestamp resolution
@@ -39,11 +63,26 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new([0xA1, 0xB2, 0x3C, 0x4D], Confidence: 0.95), // little-endian, nanosecond
     new([0x4D, 0x3C, 0xB2, 0xA1], Confidence: 0.95), // big-endian,    nanosecond
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Classic libpcap packet capture: global header + per-packet link-layer frames.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       Index: i, Name: e.Name,
@@ -79,6 +118,9 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
@@ -86,6 +128,9 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) {
     foreach (var e in BuildEntries(input)) {
       if (e.Name.Equals(entryName, StringComparison.OrdinalIgnoreCase)) {

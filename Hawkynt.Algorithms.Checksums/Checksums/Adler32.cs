@@ -6,27 +6,44 @@ namespace Compression.Core.Checksums;
 /// Adler-32 checksum as used by zlib, with Nmax optimization and SIMD vectorization.
 /// </summary>
 public sealed class Adler32 : IChecksum {
+  /// <summary>
+  /// Initializes a new instance of <see cref="Adler32"/>.
+  /// </summary>
+  public Adler32() { }
+
   private const uint Mod = 65521; // largest prime less than 2^16
   private const int Nmax = 5552;  // max bytes before modulus is needed
 
   private uint _a = 1;
   private uint _b;
 
+  /// <summary>
+  /// Gets the current checksum value.
+  /// </summary>
   /// <inheritdoc />
   public uint Value => (this._b << 16) | this._a;
 
+  /// <summary>
+  /// Resets the checksum to its initial state.
+  /// </summary>
   /// <inheritdoc />
   public void Reset() {
     this._a = 1;
     this._b = 0;
   }
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(byte b) {
     this._a = (this._a + b) % Adler32.Mod;
     this._b = (this._b + this._a) % Adler32.Mod;
   }
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
     var a = this._a;

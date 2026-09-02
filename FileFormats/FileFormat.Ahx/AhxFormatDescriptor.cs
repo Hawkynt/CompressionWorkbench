@@ -16,29 +16,71 @@ namespace FileFormat.Ahx;
 /// </summary>
 public sealed class AhxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ahx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "AHX / THX Synth-Tracker";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ahx";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ahx", ".thx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("THX"u8.ToArray(), Offset: 0, Confidence: 0.9),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Classic;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Amiga AHX / THX synth-tracker module surfaced as a read-only pseudo-archive " +
     "(FULL + metadata + raw position/track/instrument blocks); the synth is never emulated.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     Decompose(ReadAll(stream)).Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null, e.Kind)).ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in Decompose(ReadAll(stream))) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;

@@ -43,14 +43,38 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB"]),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Reiser4";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Reiser4";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".reiser4";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".reiser4"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "ReIsEr4" at byte offset 65536 (= 16 * 4096). Confidence 0.9: the 7-byte
     // magic is highly unlikely to land at exactly this offset by chance, but
@@ -61,11 +85,26 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // magics that live at position 0.
     new("ReIsEr4"u8.ToArray(), Offset: (int)Reiser4MasterSb.MasterOffset, Confidence: 0.9),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Reiser4 filesystem image — master + format40 superblock surface only.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -119,6 +158,9 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
@@ -193,6 +235,9 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // cde40 directory units) is not reproduced here. Files go in the workbench-layout
   // payload area past those blocks, with the block-allocator bitmap and
   // sb_free_blocks kept consistent so the volume stays internally coherent.
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     var w = new Reiser4Writer();
@@ -230,6 +275,9 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     w.Write(output);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -349,12 +397,24 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
   }
 
   // ── IArchiveWriteConstraints ─────────────────────────────────────────
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     reason = null;
     return true;
   }
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => Reiser4Writer.BlockSize * (long)Reiser4Writer.MinBlockCount; // 16 MB
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "Reiser4 image; files are stored in the workbench-layout payload area past the reserved blocks.";
 

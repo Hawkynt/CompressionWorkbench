@@ -47,10 +47,25 @@ public static class MonkeysAudioCodec {
   // MAC_FORMAT_FLAG_CRC: we always emit the CRC32 + special-frame machinery.
   private const int FormatFlagsWrite = 0;
 
+  /// <summary>
+  /// Defines the compression fast constant value.
+  /// </summary>
   public const int CompressionFast = 1000;
+  /// <summary>
+  /// Defines the compression normal constant value.
+  /// </summary>
   public const int CompressionNormal = 2000;
+  /// <summary>
+  /// Defines the compression high constant value.
+  /// </summary>
   public const int CompressionHigh = 3000;
+  /// <summary>
+  /// Defines the compression extra high constant value.
+  /// </summary>
   public const int CompressionExtraHigh = 4000;
+  /// <summary>
+  /// Defines the compression insane constant value.
+  /// </summary>
   public const int CompressionInsane = 5000;
 
   // Special-frame codes (Prepare.h).

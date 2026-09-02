@@ -13,10 +13,19 @@ namespace FileFormat.Sdat;
 /// </summary>
 public sealed class SdatReader {
 
+  /// <summary>
+  /// Represents a file entry.
+  /// </summary>
   public sealed record FileEntry(int Index, int Offset, int Size, string Magic, byte[] Data);
 
+  /// <summary>
+  /// Represents a parsed sdat.
+  /// </summary>
   public sealed record ParsedSdat(int Version, IReadOnlyList<FileEntry> Files);
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedSdat Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x40)
       throw new InvalidDataException("SDAT too short for header.");

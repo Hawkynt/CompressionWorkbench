@@ -17,9 +17,18 @@ namespace FileFormat.Xmi;
 /// </summary>
 public static class XmiToMidiConverter {
 
+  /// <summary>
+  /// Defines the division constant value.
+  /// </summary>
   public const int Division = 60;
+  /// <summary>
+  /// Defines the tempo micros per quarter constant value.
+  /// </summary>
   public const int TempoMicrosPerQuarter = 500000;
 
+  /// <summary>
+  /// Represents a song.
+  /// </summary>
   public sealed record Song(byte[] Midi, IReadOnlyList<byte> Timbres);
 
   /// <summary>

@@ -57,6 +57,9 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
   // edit -> re-create rebuild (default IArchiveModifiable); relayouting the container
   // on edit is honest R/W. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
@@ -75,6 +78,9 @@ public sealed class FreeArcFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   // "ArC\x01" — the four-byte signature that opens every FreeArc archive.
   // Confidence is set high (0.95) because the combination of 'r', 'C' and 0x01
   // makes accidental collisions with the legacy ARC format (which uses 0x1A) extremely unlikely.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([(byte)'A', (byte)'r', (byte)'C', 0x01], Confidence: 0.95)];
 

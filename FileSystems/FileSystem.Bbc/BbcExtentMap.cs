@@ -16,6 +16,9 @@ public static class BbcExtentMap {
   private const int SectorSize = 256;
   private const int SectorsPerTrack = 10;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

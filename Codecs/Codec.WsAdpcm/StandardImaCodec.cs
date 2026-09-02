@@ -30,9 +30,18 @@ public static class StandardImaCodec {
 
   /// <summary>Mutable IMA decoder/encoder state (predictor + step index).</summary>
   public struct State {
+    /// <summary>
+    /// Provides the predictor value.
+    /// </summary>
     public int Predictor;
+    /// <summary>
+    /// Provides the step index value.
+    /// </summary>
     public int StepIndex;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="State"/>.
+    /// </summary>
     public State(int predictor, int stepIndex) {
       this.Predictor = predictor;
       this.StepIndex = Math.Clamp(stepIndex, 0, 88);

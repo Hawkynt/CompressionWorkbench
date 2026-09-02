@@ -1,9 +1,18 @@
 namespace OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter7;
 
+/// <summary>
+/// Represents a chapter 7 short.
+/// </summary>
 public class Chapter7Short : IStaticCodeBook
 {
+    /// <summary>
+    /// Gets the dimensions.
+    /// </summary>
     public int Dimensions { get; } = 2;
 
+    /// <summary>
+    /// Gets the length list.
+    /// </summary>
     public byte[] LengthList { get; } = {
          5,12,17,16,16,17,17,17,17,17, 4, 7,11,11,12, 9,
         17,10,17,17, 7, 7, 8, 9, 7, 9,11,10,15,17, 7, 9,
@@ -14,11 +23,29 @@ public class Chapter7Short : IStaticCodeBook
          6, 8, 5, 9,
     };
 
+    /// <summary>
+    /// Gets the map type.
+    /// </summary>
     public CodeBookMapType MapType { get; } = (CodeBookMapType)0;
+    /// <summary>
+    /// Gets the quant min.
+    /// </summary>
     public int QuantMin { get; } = 0;
+    /// <summary>
+    /// Gets the quant delta.
+    /// </summary>
     public int QuantDelta { get; } = 0;
+    /// <summary>
+    /// Gets the quant.
+    /// </summary>
     public int Quant { get; } = 0;
+    /// <summary>
+    /// Gets the quant sequence p.
+    /// </summary>
     public int QuantSequenceP { get; } = 0;
 
+    /// <summary>
+    /// Gets the quant list.
+    /// </summary>
     public int[] QuantList { get; } = null;
 }

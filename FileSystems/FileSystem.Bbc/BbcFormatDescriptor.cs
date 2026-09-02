@@ -46,18 +46,39 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => BbcExtentMap.Enumerate(image);
 
   // 40-track SSD: 40 * 10 * 256 = 102 400 bytes. Writer emits this canonical size.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => BbcWriter.DiskSize40;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "BBC Micro Acorn DFS disk image (40/80-track, single or double sided).";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
 
   /// <summary>Canonical BBC DFS image sizes: 40-track SSD (102 400) and 80-track SSD (204 800).</summary>
   public IReadOnlyList<long> CanonicalSizes => [BbcWriter.DiskSize40, BbcWriter.DiskSize40 * 2L];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Bbc";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "BBC DFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
@@ -85,18 +106,45 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ssd";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ssd", ".dsd"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // DFS has no magic bytes — the catalog is just raw ASCII padded with spaces.
   // Detection is extension-based.
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "BBC Micro Acorn DFS floppy disk image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var doubleSided = false;  // Callers who know better can pass the right reader directly.
     using var r = new BbcReader(stream, doubleSided);
@@ -105,6 +153,9 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new BbcReader(stream, doubleSided: false);
     foreach (var e in r.Entries) {
@@ -116,6 +167,9 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var total = 0L;
     foreach (var i in inputs) if (!i.IsDirectory) total += i.InMemoryContent?.LongLength ?? new FileInfo(i.FullPath).Length;
@@ -148,6 +202,9 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new BbcBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

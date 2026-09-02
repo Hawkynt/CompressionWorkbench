@@ -28,6 +28,9 @@ public static class D64ExtentMap {
     17, 17, 17, 17, 17,
   ];
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

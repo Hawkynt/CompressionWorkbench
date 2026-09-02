@@ -13,14 +13,29 @@ namespace FileFormat.Matlab;
 /// </summary>
 public sealed class MatlabReader {
 
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description { get; }
+  /// <summary>
+  /// Gets the version.
+  /// </summary>
   public int Version { get; }
+  /// <summary>
+  /// Gets a value indicating whether is little endian.
+  /// </summary>
   public bool IsLittleEndian { get; }
+  /// <summary>
+  /// Gets the arrays.
+  /// </summary>
   public IReadOnlyList<MatlabArrayInfo> Arrays { get; }
 
   /// <summary>"full" if every top-level element parsed cleanly to EOF; "partial" if a truncated or unrecognized element was encountered partway through.</summary>
   public string ParseStatus { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="MatlabReader"/>.
+  /// </summary>
   public MatlabReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanSeek) throw new ArgumentException("Stream must be seekable.", nameof(stream));

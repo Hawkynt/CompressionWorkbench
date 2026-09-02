@@ -8,32 +8,95 @@ namespace FileFormat.NetCdf;
 /// Parsed NetCDF classic header: numrecs, dimensions, variables, attributes.
 /// </summary>
 public sealed class NetCdfHeader {
+  /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
   public int Version { get; set; }
+  /// <summary>
+  /// Gets or sets the num recs.
+  /// </summary>
   public long NumRecs { get; set; }
+  /// <summary>
+  /// Gets the dimensions.
+  /// </summary>
   public List<NetCdfDimension> Dimensions { get; } = new();
+  /// <summary>
+  /// Gets the variables.
+  /// </summary>
   public List<NetCdfVariable> Variables { get; } = new();
+  /// <summary>
+  /// Gets the global attributes.
+  /// </summary>
   public List<NetCdfAttribute> GlobalAttributes { get; } = new();
 }
 
+/// <summary>
+/// Represents a net cdf dimension.
+/// </summary>
 public sealed class NetCdfDimension {
+  /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
   public string Name { get; set; } = "";
+  /// <summary>
+  /// Gets or sets the length.
+  /// </summary>
   public long Length { get; set; }
+  /// <summary>
+  /// Gets a value indicating whether is unlimited.
+  /// </summary>
   public bool IsUnlimited { get; set; }
 }
 
+/// <summary>
+/// Represents a net cdf attribute.
+/// </summary>
 public sealed class NetCdfAttribute {
+  /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
   public string Name { get; set; } = "";
+  /// <summary>
+  /// Gets or sets the nc type.
+  /// </summary>
   public int NcType { get; set; }
+  /// <summary>
+  /// Gets or sets the value count.
+  /// </summary>
   public long ValueCount { get; set; }
+  /// <summary>
+  /// Gets or sets the raw value.
+  /// </summary>
   public byte[] RawValue { get; set; } = [];
 }
 
+/// <summary>
+/// Represents a net cdf variable.
+/// </summary>
 public sealed class NetCdfVariable {
+  /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
   public string Name { get; set; } = "";
+  /// <summary>
+  /// Gets or sets the dim ids.
+  /// </summary>
   public int[] DimIds { get; set; } = [];
+  /// <summary>
+  /// Gets or sets the nc type.
+  /// </summary>
   public int NcType { get; set; }
+  /// <summary>
+  /// Gets or sets the vsize bytes.
+  /// </summary>
   public long VsizeBytes { get; set; }
+  /// <summary>
+  /// Gets or sets the begin offset.
+  /// </summary>
   public long BeginOffset { get; set; }
+  /// <summary>
+  /// Gets the attributes.
+  /// </summary>
   public List<NetCdfAttribute> Attributes { get; } = new();
 }
 

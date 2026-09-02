@@ -16,19 +16,46 @@ namespace FileFormat.NuFx;
 public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable,
     IArchiveLayoutMap, IFormatOptionsSchema, IArchiveWriteConstraints, IFormatValidator {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "NuFx";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NuFX / ShrinkIt";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".shk";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".shk", ".sdk", ".bxy"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(NuFxArchive.MasterSignature, Offset: 0, Confidence: 0.98f),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("nulzw2", "ShrinkIt LZW/2"),
     new("nulzw1", "ShrinkIt LZW/1"),
@@ -38,11 +65,19 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new("stored", "Stored"),
     new("auto", "Auto (smallest)"),
   ];
+  /// <summary>Gets the tar compression format id.</summary>
   public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the family.</summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+
+  /// <summary>Gets the description.</summary>
   public string Description =>
     "Apple II/IIgs NuFX (ShrinkIt) archive — SHK/SDK read/write with Stored, Squeeze, LZW/1, LZW/2, LZC-12 and LZC-16 threads.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("Mode", "Archive mode", FormatOptionKind.Enum, "Files", ["Files", "DiskImage"],
       "Files creates a normal .shk archive. DiskImage creates the single disk-image record used by .sdk."),
@@ -54,11 +89,23 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       "Default ProDOS access byte for newly created records. 227 (0xE3) is an unlocked file."),
   ];
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => uint.MaxValue;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => NuFxArchive.MasterHeaderLength;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "Regular files with slash-separated paths; SDK disk-image mode accepts exactly one file whose size is a multiple of 512 bytes.";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     ArgumentNullException.ThrowIfNull(input);
     if (input.IsDirectory) {
@@ -82,6 +129,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return true;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     RejectPassword(password);
     var archive = NuFxArchive.Parse(stream);
@@ -98,6 +148,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     RejectPassword(password);
     var archive = NuFxArchive.Parse(stream);
@@ -108,6 +161,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the open entry operation.
+  /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     RejectPassword(password);
     var parsed = NuFxArchive.Parse(archive);
@@ -118,6 +174,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
+  /// <summary>
+  /// Performs the extract entry to memory operation.
+  /// </summary>
   public byte[] ExtractEntryToMemory(Stream archive, string entryName, string? password) {
     using var input = this.OpenEntry(archive, entryName, password);
     using var output = new MemoryStream();
@@ -125,6 +184,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return output.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -159,6 +221,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     NuFxArchive.Create(output, records);
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -184,6 +249,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     entryNames ??= [];
@@ -201,9 +269,15 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     NuFxArchive.RequireWritablePlainArchive(archive);
@@ -217,6 +291,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     NuFxArchive.ReplaceRange(archive, parsed.StartOffset, parsed.NuFxLength, rebuilt.ToArray());
   }
 
+  /// <summary>
+  /// Enumerates the layout.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var parsed = NuFxArchive.Parse(archive);
     yield return new DefragBlockInfo(parsed.StartOffset, NuFxArchive.MasterHeaderLength, DefragBlockKind.Used, FileName: "<NuFX master>");
@@ -224,6 +301,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       yield return new DefragBlockInfo(record.StartOffset, record.RecordLength, DefragBlockKind.Used, FileName: record.Name);
   }
 
+  /// <summary>
+  /// Performs the shrink operation.
+  /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -251,6 +331,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < NuFxArchive.MasterHeaderLength) {
@@ -285,6 +368,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ValidationLevel.Header, issues);
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateStructure(Stream stream) {
     try {
       var parsed = NuFxArchive.Parse(stream);
@@ -297,6 +383,9 @@ public sealed class NuFxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateIntegrity(Stream stream) {
     try {
       var parsed = NuFxArchive.Parse(stream);

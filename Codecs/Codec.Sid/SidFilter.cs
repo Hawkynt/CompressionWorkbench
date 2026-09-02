@@ -29,6 +29,9 @@ public sealed class SidFilter {
   private bool _bandPass;
   private bool _highPass;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SidFilter"/>.
+  /// </summary>
   public SidFilter(SidModel model, double clockHz) {
     this._model = model;
     this._clockHz = clockHz;

@@ -15,26 +15,71 @@ namespace FileFormat.SplitFile;
 /// </summary>
 public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => throw new NotSupportedException(
       "Split-file (.001/.002/...) is a multi-part file join — defragmentation isn't meaningful for a stream view.");
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "SplitFile";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Split File (.001)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".001";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".001"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Split file parts (.001, .002, ...) joined into a single file";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     // Split files need filesystem access (multiple files), not a single stream.
     // When invoked from a stream, we report the stream as a single entry.
@@ -42,6 +87,9 @@ public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveForma
       "Stored", false, false, null)];
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // For stream-based extraction, just copy the stream content.
     // Real split file joining requires filesystem paths (handled by CLI/UI layer).
@@ -51,6 +99,9 @@ public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveForma
     stream.CopyTo(fs);
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     // SplitFile Create joins all input files sequentially into one output stream.
     foreach (var (_, data) in FormatHelpers.FilesOnly(inputs))

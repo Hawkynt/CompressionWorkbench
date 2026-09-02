@@ -78,6 +78,9 @@ public sealed class ExtWriter {
     return key;
   }
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, data, null, null));
 
   /// <summary>

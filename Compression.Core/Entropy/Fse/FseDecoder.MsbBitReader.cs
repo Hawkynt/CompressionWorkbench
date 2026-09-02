@@ -1,5 +1,8 @@
 namespace Compression.Core.Entropy.Fse;
 
+/// <summary>
+/// Decodes fse data.
+/// </summary>
 public sealed partial class FseDecoder {
     /// <summary>
     /// Reads bits from MSB to LSB of a flat bit buffer. The buffer is stored

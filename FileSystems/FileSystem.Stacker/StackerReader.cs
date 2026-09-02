@@ -34,24 +34,54 @@ public sealed class StackerReader : IDisposable {
   private readonly List<StackerEntry> _entries = [];
   private readonly Dictionary<int, (int physicalSector, int compressedLength, bool compressed)> _map = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<StackerEntry> Entries => this._entries;
 
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
+  /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
   public int Version { get; private set; }
 
   /// <summary>Volume path from the SCB banner (e.g. <c>C:\STACVOL.DSK</c>).</summary>
   public string VolumeName { get; private set; } = "";
 
+  /// <summary>
+  /// Gets or sets the reserved sectors.
+  /// </summary>
   public int ReservedSectors { get; private set; }
+  /// <summary>
+  /// Gets or sets the sectors per cluster.
+  /// </summary>
   public int SectorsPerCluster { get; private set; }
+  /// <summary>
+  /// Gets or sets the number of fats.
+  /// </summary>
   public int NumberOfFats { get; private set; }
+  /// <summary>
+  /// Gets or sets the sectors per fat.
+  /// </summary>
   public int SectorsPerFat { get; private set; }
+  /// <summary>
+  /// Gets or sets the root entries.
+  /// </summary>
   public int RootEntries { get; private set; }
+  /// <summary>
+  /// Gets or sets the volume sectors.
+  /// </summary>
   public long VolumeSectors { get; private set; }
 
   /// <summary>Physical sector at which the inner FAT12 image begins (the SCB sector).</summary>
   public long InnerBootSectorOffset { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="StackerReader"/>.
+  /// </summary>
   public StackerReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -220,6 +250,9 @@ public sealed class StackerReader : IDisposable {
     return ext.Length > 0 ? $"{name}.{ext}" : name;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(StackerEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
@@ -271,6 +304,9 @@ public sealed class StackerReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
   public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidHeader ? "ok" : "invalid").Append('\n');
@@ -288,5 +324,8 @@ public sealed class StackerReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

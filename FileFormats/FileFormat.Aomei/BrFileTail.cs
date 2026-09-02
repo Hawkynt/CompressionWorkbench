@@ -31,6 +31,9 @@ public readonly struct BrFileTail {
   /// Field layout is TODO per spec §10.1.</summary>
   public readonly byte[] BodyRaw;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BrFileTail"/>.
+  /// </summary>
   public BrFileTail(uint flag, uint size, uint crc32, byte[] bodyRaw) {
     this.Flag = flag;
     this.Size = size;

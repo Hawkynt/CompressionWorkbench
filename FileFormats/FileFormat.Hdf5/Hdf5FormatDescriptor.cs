@@ -26,22 +26,61 @@ public sealed class Hdf5FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // Real HDF5 files with 100s of MB of object headers need a B-tree walker anyway.
   private const int ScanCapBytes = 64 * 1024 * 1024;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hdf5";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HDF5";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".h5";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".h5", ".hdf5"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new(Hdf5Signature, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Hierarchical Data Format v5 (metadata surfacing only)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo> {
       new(0, "FULL.h5", stream.Length, stream.Length, "stored", false, false, null, "Source"),
@@ -53,6 +92,9 @@ public sealed class Hdf5FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // Stream FULL.h5 directly — never buffer the whole file.
     if (files == null || files.Length == 0 || MatchesFilter("FULL.h5", files)) {

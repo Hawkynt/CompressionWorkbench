@@ -81,6 +81,9 @@ public static class ExtModifier {
 
   // ── Rebuild-style API (atomic batch mutate via read-then-rebuild) ──────────
 
+  /// <summary>
+  /// Performs the mutate operation.
+  /// </summary>
   public static void Mutate(
       Stream archive,
       IReadOnlyList<(string Name, byte[] Data)> replacements,

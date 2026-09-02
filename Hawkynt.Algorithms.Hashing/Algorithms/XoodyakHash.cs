@@ -8,6 +8,9 @@ public static class XoodyakHash {
   private const int StateBytes = 48;
   private const int Rate = 16;
 
+  /// <summary>
+  /// Computes the Xoodyak Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     Span<byte> state = stackalloc byte[StateBytes];
     var count = 0;

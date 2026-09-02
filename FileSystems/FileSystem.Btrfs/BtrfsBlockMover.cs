@@ -89,6 +89,9 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
   /// <summary>Bytes an extent's address is aligned to, as the superblock says.</summary>
   private int _sectorSize = 4096;
 
+  /// <summary>
+  /// Performs the init operation.
+  /// </summary>
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     Span<byte> sb = stackalloc byte[SbSize];
@@ -148,6 +151,9 @@ public sealed class BtrfsBlockMover : IFilesystemBlockMover {
   /// initialises from the stream — callers may pass an uninitialised mover and
   /// it still works, mirroring the FAT/ext patterns.</para>
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     if (_nodeSize <= 0) Init(image);
     if (oldOffset != newOffset) this._moved[oldOffset] = newOffset;

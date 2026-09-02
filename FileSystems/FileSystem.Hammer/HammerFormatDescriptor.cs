@@ -40,21 +40,57 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Description: "Volume label (newfs_hammer -L); max 63 ASCII chars."),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Hammer";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HAMMER (DragonFly BSD)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".hammer";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".hammer"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(HammerVolumeOndisk.MagicBytesLE, Offset: 0, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "HAMMER (DragonFly BSD original) filesystem image — volume header surface only. " +
     "WORM emit deferred: HAMMER1 requires a real cluster B-tree (zone blockmap → " +
@@ -63,6 +99,9 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "valid undo-fifo head/tail — none of which we can validate without a running " +
     "DragonFly BSD instance. Multi-week effort, deferred to a future phase.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -150,6 +189,9 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     writer.WriteTo(output);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
@@ -233,6 +275,9 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

@@ -109,9 +109,21 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "HfsPlus";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "HFS+";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
@@ -153,13 +165,34 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     foreach (var name in entryNames)
       HfsPlusModifier.RemoveFile(archive, name, wipeData: true);
   }
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".dmg";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".dmg", ".hfsx", ".hfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x48, 0x2B], Offset: 1024, Confidence: 0.85)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("hfsplus", "HFS+")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Apple HFS+ filesystem image. Writer emits full 248-byte TN1150
@@ -167,6 +200,9 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public string Description => "Apple HFS+ filesystem image";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new HfsPlusReader(stream, leaveOpen: true);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
@@ -207,6 +243,9 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var caseSensitive = options.GetOptionBool("CaseSensitive", false);
     var journal = options.GetOptionBool("Journal", true);
@@ -267,6 +306,9 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     output.Write(w.BuildAutoSized(blockSize));
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new HfsPlusReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {
@@ -324,6 +366,9 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

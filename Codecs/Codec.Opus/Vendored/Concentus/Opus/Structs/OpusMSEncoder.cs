@@ -842,7 +842,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+[Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             short[] pcm,
             int pcm_offset,
@@ -876,7 +876,7 @@ namespace Concentus.Structs
         }
 
         /// <inheritdoc />
-        [Obsolete("Use Span<> overrides if possible")]
+[Obsolete("Use Span<> overrides if possible")]
         public int EncodeMultistream(
             float[] pcm,
             int pcm_offset,
@@ -1251,6 +1251,9 @@ namespace Concentus.Structs
             return CodecHelpers.GetVersionString();
         }
 
+        /// <summary>
+        /// Releases resources held by this instance.
+        /// </summary>
         public void Dispose() { }
 
         #endregion

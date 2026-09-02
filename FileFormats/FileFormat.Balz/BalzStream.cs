@@ -21,6 +21,9 @@ public static class BalzStream {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -40,6 +43,9 @@ public static class BalzStream {
     enc.Flush();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     // Read 4-byte big-endian uncompressed size
     int b0 = input.ReadByte(), b1 = input.ReadByte(), b2 = input.ReadByte(), b3 = input.ReadByte();

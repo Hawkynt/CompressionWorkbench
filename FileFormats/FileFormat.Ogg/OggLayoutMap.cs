@@ -13,6 +13,9 @@ namespace FileFormat.Ogg;
 /// </summary>
 public static class OggLayoutMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream file) {
     ArgumentNullException.ThrowIfNull(file);
     if (file.Length < 27)

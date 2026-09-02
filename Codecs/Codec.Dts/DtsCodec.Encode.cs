@@ -16,6 +16,9 @@ public sealed record DtsEncoderOptions(
   bool PadFinalFrame = true
 );
 
+/// <summary>
+/// Represents a dts codec.
+/// </summary>
 public static partial class DtsCodec {
 
   private const int EncoderSamplesPerFrame = 512;

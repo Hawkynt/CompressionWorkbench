@@ -56,22 +56,58 @@ public sealed class Ocfs2FormatDescriptor
     FilesystemSchemaPresets.VolumeLabel(maxChars: 63),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ocfs2";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "OCFS2 (Oracle Cluster Filesystem 2)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ocfs2";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ocfs2"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Ocfs2Superblock.SignatureBytes, Offset: (int)Ocfs2Superblock.DefaultSuperBlockOffset, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "OCFS2 (Oracle Cluster Filesystem 2) — spec-correct reader (INODE01 dinodes, "
     + "real ocfs2_dinode offsets, 8-byte inline-data header, 16-byte extent-list "
@@ -86,6 +122,9 @@ public sealed class Ocfs2FormatDescriptor
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     // Try the writer-produced image path first (has real file entries)
     try {
@@ -105,6 +144,9 @@ public sealed class Ocfs2FormatDescriptor
     return ListTriage(stream);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     // A volume too large to buffer is walked from its metadata head and each
     // file streamed out of the extent its dinode records.
@@ -135,6 +177,9 @@ public sealed class Ocfs2FormatDescriptor
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Ocfs2Writer();
     var label = options?.GetOption("VolumeLabel", "") ?? "";
@@ -218,9 +263,15 @@ public sealed class Ocfs2FormatDescriptor
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -271,6 +322,9 @@ public sealed class Ocfs2FormatDescriptor
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     byte[] head;

@@ -14,6 +14,9 @@ namespace FileFormat.Ircam;
 /// offset 1024 in file byte order.
 /// </summary>
 public sealed class IrcamReader {
+  /// <summary>
+  /// Represents a parsed ircam.
+  /// </summary>
   public sealed record ParsedIrcam(
     int SampleRate,
     int Channels,
@@ -23,6 +26,9 @@ public sealed class IrcamReader {
 
   private const int DataOffset = 1024;
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedIrcam Read(ReadOnlySpan<byte> data) {
     if (data.Length < DataOffset)
       throw new InvalidDataException("IRCAM file too short for 1024-byte header.");

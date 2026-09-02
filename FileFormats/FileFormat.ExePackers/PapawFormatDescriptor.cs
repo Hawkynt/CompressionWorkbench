@@ -18,31 +18,73 @@ namespace FileFormat.ExePackers;
 public sealed class PapawFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private static readonly byte[] XzHeaderPrefix = [0xFD, 0x37, 0x7A, 0x58, 0x5A];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Papaw";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Papaw executable wrapper";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   // A Papaw file is an ELF executable (content/footer-detected, no canonical
   // extension); ".elf" is the honest suggested-output extension, matching the
   // sibling ELF wrapper descriptors. Extensions stays empty to avoid collisions.
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".elf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("xz-lzma2", "XZ/LZMA2"), new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Papaw ELF executable wrapper - statically restores the appended XZ/LZMA2 payload and reconstructed original executable.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream)
       .Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.LongLength, e.CompressedSize,
         e.Method, false, false, null))
       .ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;

@@ -20,23 +20,59 @@ namespace FileSystem.BeeGfs;
 /// </summary>
 public sealed class BeeGfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "BeeGfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "BeeGFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".beegfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".beegfs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // ASCII "BeeGFS" (6 bytes) at offset 0.
     new("BeeGFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
     // ASCII "BeeG" (0x42656547 BE) at offset 0 — short tag form.
     new("BeeG"u8.ToArray(), Offset: 0, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "BeeGFS — Stage 0 detection only. Distributed parallel cluster FS (Fraunhofer, ex-FhGFS): " +
     "the namespace lives across metadata-target processes (per-inode files + xattrs on a regular " +
@@ -47,12 +83,18 @@ public sealed class BeeGfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     "Magic 'BeeGFS' / 0x42656547 at offset 0 of a chunk-file or dump-tool output is the only " +
     "single-stream surface available.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new BeeGfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new BeeGfsReader(stream);
     foreach (var e in r.Entries) {

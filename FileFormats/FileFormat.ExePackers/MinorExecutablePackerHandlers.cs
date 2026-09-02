@@ -6,19 +6,40 @@ using Compression.Core.ExecutableUnpacking;
 
 namespace FileFormat.ExePackers;
 
+/// <summary>
+/// Represents a minor executable packer handler base.
+/// </summary>
 public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public abstract string Id { get; }
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public abstract string DisplayName { get; }
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public virtual ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected abstract bool IsPackerSection(string name);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected abstract ReadOnlySpan<byte> LiteralSignature { get; }
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public virtual DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -33,6 +54,9 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, $"{this.DisplayName} signature not found.", true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -49,6 +73,9 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", BuildMetadataJson(packed), "stored"),
@@ -123,6 +150,9 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
     return result with { Artifacts = artifacts };
   }
 
+  /// <summary>
+  /// Performs the build metadata json operation.
+  /// </summary>
   protected byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
     sb.Append("{\n");
@@ -165,12 +195,18 @@ public abstract class MinorExecutablePackerHandlerBase : IExecutablePackerHandle
 /// diagnostic so callers never mistake location for unpacking.
 /// </summary>
 public abstract class ProtectorExecutablePackerHandlerBase : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
     ExecutableUnpackCapabilities.SupportsPe |
     ExecutableUnpackCapabilities.SupportsX86;
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var artifacts = new List<UnpackArtifact> {
       new("metadata.json", this.BuildMetadataJson(packed), "stored"),
@@ -227,19 +263,52 @@ public abstract class ProtectorExecutablePackerHandlerBase : MinorExecutablePack
   }
 }
 
+/// <summary>
+/// Represents an alienyze executable packer handler.
+/// </summary>
 public sealed class AlienyzeExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "alienyze";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Alienyze";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.Contains("alien", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "Alienyze"u8;
 }
 
+/// <summary>
+/// Represents an amber executable packer handler.
+/// </summary>
 public sealed class AmberExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "amber";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Amber reflective PE loader";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => false;
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "amber"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var hasAscii = image.IndexOf("amber"u8) >= 0 || image.IndexOf("Amber"u8) >= 0 || image.IndexOf("AMBER"u8) >= 0;
@@ -329,13 +398,31 @@ public sealed class AmberExecutablePackerHandler : MinorExecutablePackerHandlerB
   }
 }
 
+/// <summary>
+/// Represents an exe 32pack executable packer handler.
+/// </summary>
 public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "exe32pack";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Exe32pack";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name is ".i" or ".f" or ".c" or ".v" or ".h";
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "exe32pack"u8;
   
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var sections = PackerScanner.GetPeSections(image);
@@ -346,21 +433,54 @@ public sealed class Exe32packExecutablePackerHandler : MinorExecutablePackerHand
   }
 }
 
+/// <summary>
+/// Represents a neolite executable packer handler.
+/// </summary>
 public sealed class NeoliteExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "neolite";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Neolite";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.Contains("neolit", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "NeoLite"u8;
 }
 
+/// <summary>
+/// Represents a ns pack executable packer handler.
+/// </summary>
 public sealed class NsPackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "nspack";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "NSPack";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.StartsWith("nsp", StringComparison.OrdinalIgnoreCase) ||
     name.StartsWith(".nsp", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "NsPack"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -373,6 +493,9 @@ public sealed class NsPackExecutablePackerHandler : MinorExecutablePackerHandler
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "NSPack marker was not found.", true)]);
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var generic = base.Unpack(packed, options);
     var payload = PackerScanner.GetPeSectionRanges(packed.OriginalImage)
@@ -417,12 +540,30 @@ public sealed class NsPackExecutablePackerHandler : MinorExecutablePackerHandler
   }
 }
 
+/// <summary>
+/// Represents a petite executable packer handler.
+/// </summary>
 public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "petite";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "PEtite";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.StartsWith(".petite", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "Petite"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -435,6 +576,9 @@ public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandler
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "PEtite marker was not found.", true)]);
   }
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public override ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -502,11 +646,26 @@ public sealed class PetiteExecutablePackerHandler : MinorExecutablePackerHandler
 /// why, rather than guessing at a decryption.
 /// </remarks>
 public sealed class YodaProtectorExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "yodaprotector";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Yoda's Protector";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.Contains("yP", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "yoda"u8;
 
+  /// <summary>
+  /// Gets the static unpack obstacle.
+  /// </summary>
   protected override string StaticUnpackObstacle =>
     "Yoda's Protector: payload located, not decoded. The stub is layered but static — a plaintext " +
     "prologue decrypts the stub body, which carries a per-section-class polymorphic byte cipher and " +
@@ -516,14 +675,32 @@ public sealed class YodaProtectorExecutablePackerHandler : ProtectorExecutablePa
     "cipher for a given section cannot yet be identified. No decryption is attempted rather than guessed.";
 }
 
+/// <summary>
+/// Represents a yoda crypter executable packer handler.
+/// </summary>
 public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "yodacrypter";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Yoda's Crypter";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.Equals("yC", StringComparison.Ordinal) ||
     name.Equals(".yC", StringComparison.Ordinal);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "Yoda's"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -536,6 +713,9 @@ public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHa
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Yoda's Crypter marker was not found.", true)]);
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var payload = PackerScanner.GetPeSectionRanges(packed.OriginalImage)
       .Where(s => IsPackerSection(s.Name) && s.RawSize > 0 && s.RawOffset < packed.OriginalImage.Length)
@@ -611,14 +791,32 @@ public sealed class YodaCrypterExecutablePackerHandler : MinorExecutablePackerHa
   }
 }
 
+/// <summary>
+/// Represents a themida executable packer handler.
+/// </summary>
 public sealed class ThemidaExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "themida";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "Themida";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.Contains("themida", StringComparison.OrdinalIgnoreCase) ||
     name.Equals(".boot", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => [] ;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var sections = PackerScanner.GetPeSections(image);
@@ -631,14 +829,32 @@ public sealed class ThemidaExecutablePackerHandler : ProtectorExecutablePackerHa
   }
 }
 
+/// <summary>
+/// Represents a telock executable packer handler.
+/// </summary>
 public sealed class TelockExecutablePackerHandler : ProtectorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "telock";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "TELock";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     string.IsNullOrWhiteSpace(name) ||
     name.Contains("tElock", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "tElock"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var sections = PackerScanner.GetPeSections(image);
@@ -695,12 +911,30 @@ public sealed class TelockExecutablePackerHandler : ProtectorExecutablePackerHan
   }
 }
 
+/// <summary>
+/// Represents a win upack fallback executable packer handler.
+/// </summary>
 public sealed class WinUpackFallbackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "winupackfallback";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "WinUpack";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.Contains("Upack", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "Upack"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var sections = PackerScanner.GetPeSections(image);
@@ -727,11 +961,26 @@ public sealed class WinUpackFallbackExecutablePackerHandler : MinorExecutablePac
 /// ferris@logicoma" credit banner starting with 0.2.0.
 /// </summary>
 public sealed class SquishyExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "squishy";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "squishy";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) => name.Equals("logicoma", StringComparison.Ordinal);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "logicoma"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, "Not a valid PE.", true)]);
@@ -791,15 +1040,33 @@ public sealed class SquishyExecutablePackerHandler : MinorExecutablePackerHandle
   }
 }
 
+/// <summary>
+/// Represents a fsg fallback executable packer handler.
+/// </summary>
 public sealed class FsgFallbackExecutablePackerHandler : MinorExecutablePackerHandlerBase {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public override string Id => "fsgfallback";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public override string DisplayName => "FSG";
+  /// <summary>
+  /// Performs the is packer section operation.
+  /// </summary>
   protected override bool IsPackerSection(string name) =>
     name.Equals("ta", StringComparison.OrdinalIgnoreCase) ||
     name.Equals("a", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("fsg", StringComparison.OrdinalIgnoreCase);
+  /// <summary>
+  /// Gets the literal signature.
+  /// </summary>
   protected override ReadOnlySpan<byte> LiteralSignature => "FSG!"u8;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public override DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image)) return new(false, this.Id, 0, []);
     var sections = PackerScanner.GetPeSections(image);
@@ -809,6 +1076,9 @@ public sealed class FsgFallbackExecutablePackerHandler : MinorExecutablePackerHa
     return new(false, this.Id, 0, []);
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     var generic = base.Unpack(packed, options);
     if (generic.Level >= ExecutableUnpackLevel.PayloadLocated)

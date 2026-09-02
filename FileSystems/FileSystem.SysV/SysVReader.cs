@@ -52,10 +52,22 @@ public sealed class SysVReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<SysVEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<SysVEntry> Entries => this._entries;
 
+  /// <summary>
+  /// Gets or sets the magic.
+  /// </summary>
   public uint Magic { get; private set; }
+  /// <summary>
+  /// Gets or sets the block size.
+  /// </summary>
   public int BlockSize { get; private set; }
+  /// <summary>
+  /// Gets or sets the i list blocks.
+  /// </summary>
   public ushort IListBlocks { get; private set; }
 
   // Constants
@@ -64,6 +76,9 @@ public sealed class SysVReader : IDisposable {
   internal const uint MagicSysV = 0xFD187E20;
   internal const int RootInode = 2;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="SysVReader"/>.
+  /// </summary>
   public SysVReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -398,6 +413,9 @@ public sealed class SysVReader : IDisposable {
   /// </summary>
   public long FirstDataByte => (long)this.IListBlocks * this.BlockSize;
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(SysVEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -409,5 +427,8 @@ public sealed class SysVReader : IDisposable {
     return data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

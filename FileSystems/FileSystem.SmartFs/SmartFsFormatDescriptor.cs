@@ -34,15 +34,39 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => SmartFsExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "SmartFs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "SmartFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".smartfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".smartfs", ".smart"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // SMRT signature commonly appears at offset 10 (after 5-byte per-sector
     // header + 5-byte format sector prefix). We declare two offsets so the
@@ -50,9 +74,21 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     new("SMRT"u8.ToArray(), Offset: 10, Confidence: 0.85),
     new("SMRT"u8.ToArray(), Offset: 8,  Confidence: 0.80),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "SmartFS wear-levelled raw-flash filesystem (Apache NuttX). Reads the format sector, walks " +
     "the root directory and each file's sector chain, and writes a volume in the state mksmartfs " +
@@ -60,12 +96,18 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "sectors erased. Wear-level rotation and CRC-protected sector headers are what a running " +
     "NuttX target adds afterwards; neither is needed to read or lay out a volume.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SmartFsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new SmartFsReader(stream);
     foreach (var e in r.Entries) {
@@ -102,6 +144,9 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);

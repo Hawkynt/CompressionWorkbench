@@ -32,6 +32,9 @@ public static class BscStream {
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public static void Compress(Stream input, Stream output) {
     var data = ReadAll(input);
 
@@ -81,6 +84,9 @@ public static class BscStream {
     output.Write(payload);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     // --- Verify magic ---
     var magic = new byte[4];

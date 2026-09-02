@@ -32,7 +32,13 @@ namespace FileSystem.ProDos;
 public sealed class ProDosWriter {
 
   private const int BlockSize = ProDosReader.BlockSize;   // 512
+  /// <summary>
+  /// Defines the floppy total blocks constant value.
+  /// </summary>
   public const int FloppyTotalBlocks = 280;               // 143 360 bytes
+  /// <summary>
+  /// Defines the disk 800 k total blocks constant value.
+  /// </summary>
   public const int Disk800KTotalBlocks = 1600;            // 819 200 bytes
   private const int VolumeDirStartBlock = ProDosReader.VolumeDirStartBlock;  // 2
   private const int VolumeDirBlockCount = 4;              // blocks 2..5
@@ -45,6 +51,9 @@ public sealed class ProDosWriter {
   /// <summary>Adds a file (default file_type = BIN 0x06).</summary>
   public void AddFile(string name, byte[] data) => this._files.Add((name, data, FileType: (byte)0x06));
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte fileType, byte[] data) => this._files.Add((name, data, fileType));
 
   /// <summary>A file resolved to its data storage (key block already written to the image).</summary>

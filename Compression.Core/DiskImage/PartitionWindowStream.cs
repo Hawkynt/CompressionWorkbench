@@ -14,6 +14,9 @@ public sealed class PartitionWindowStream : Stream {
   private readonly bool _leaveOpen;
   private long _position;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="PartitionWindowStream"/>.
+  /// </summary>
   public PartitionWindowStream(Stream inner, long offset, long length, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(inner);
     if (!inner.CanSeek) throw new ArgumentException("Underlying stream must be seekable.", nameof(inner));
@@ -25,10 +28,25 @@ public sealed class PartitionWindowStream : Stream {
     _leaveOpen = leaveOpen;
   }
 
+  /// <summary>
+  /// Gets a value indicating whether can read.
+  /// </summary>
   public override bool CanRead => _inner.CanRead;
+  /// <summary>
+  /// Gets a value indicating whether can seek.
+  /// </summary>
   public override bool CanSeek => true;
+  /// <summary>
+  /// Gets a value indicating whether can write.
+  /// </summary>
   public override bool CanWrite => _inner.CanWrite;
+  /// <summary>
+  /// Gets the length.
+  /// </summary>
   public override long Length => _length;
+  /// <summary>
+  /// Gets or sets the position.
+  /// </summary>
   public override long Position {
     get => _position;
     set {
@@ -37,6 +55,9 @@ public sealed class PartitionWindowStream : Stream {
     }
   }
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public override int Read(byte[] buffer, int offset, int count) {
     if (_position >= _length) return 0;
     var remaining = _length - _position;
@@ -47,6 +68,9 @@ public sealed class PartitionWindowStream : Stream {
     return n;
   }
 
+  /// <summary>
+  /// Performs the seek operation.
+  /// </summary>
   public override long Seek(long offset, SeekOrigin origin) {
     _position = origin switch {
       SeekOrigin.Begin => offset,
@@ -57,7 +81,13 @@ public sealed class PartitionWindowStream : Stream {
     return _position;
   }
 
+  /// <summary>
+  /// Performs the flush operation.
+  /// </summary>
   public override void Flush() => _inner.Flush();
+  /// <summary>
+  /// Sets the length.
+  /// </summary>
   public override void SetLength(long value) {
     if (value > _length)
       throw new IOException($"Cannot extend partition window beyond {_length} bytes.");
@@ -65,6 +95,9 @@ public sealed class PartitionWindowStream : Stream {
     // outside [0, value) remain in place as unused space inside the partition.
   }
 
+  /// <summary>
+  /// Writes the value to the supplied output.
+  /// </summary>
   public override void Write(byte[] buffer, int offset, int count) {
     if (!_inner.CanWrite) throw new NotSupportedException("Underlying stream is read-only.");
     if (_position + count > _length)
@@ -74,6 +107,9 @@ public sealed class PartitionWindowStream : Stream {
     _position += count;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   protected override void Dispose(bool disposing) {
     if (disposing && !_leaveOpen) _inner.Dispose();
     base.Dispose(disposing);

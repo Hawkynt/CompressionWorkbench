@@ -32,22 +32,58 @@ namespace FileFormat.BochsDisk;
 /// </list>
 /// </summary>
 public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "BochsDisk";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Bochs Redolog Disk";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".redolog";
   // Generic extensions (.img) would collide; rely on the strong leading magic.
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".redolog"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("Bochs Virtual HD Image"u8.ToArray(), Confidence: 0.97),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Bochs Redolog growing/undoable disk: catalog + per-extent bitmap; reconstructs disk.raw read-only.";
 
@@ -66,6 +102,9 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
     long CatalogOffset,
     bool Valid);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var entries = new List<ArchiveEntryInfo> {
@@ -94,6 +133,9 @@ public sealed class BochsDiskFormatDescriptor : IFormatDescriptor, IArchiveForma
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Wants(files, "FULL.redolog"))
       WriteFile(outputDir, "FULL.redolog", ReadAll(stream));

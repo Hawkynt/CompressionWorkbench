@@ -96,6 +96,9 @@ public sealed class Ym2612Codec {
   private uint _egCounter;
 
   /// <param name="clock">FM clock in Hz (7670454 for the NTSC Mega Drive).</param>
+  /// <summary>
+  /// Initializes a new instance of <see cref="Ym2612Codec"/>.
+  /// </summary>
   public Ym2612Codec(double clock = 7670454.0) => this._nativeRate = clock / Prescale;
 
   /// <summary>The chip's native output sample rate (clock / 144).</summary>

@@ -56,27 +56,66 @@ public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Sfar";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "BioWare SFAR";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   // WORM: writes the stored-only variant. LZX-packed creation remains out of scope —
   // every block is written verbatim with the 32-byte header tagged "\0\0\0\0".
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".sfar";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".sfar"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0x53, 0x46, 0x41, 0x52], Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("sfar", "SFAR")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "BioWare Sirius File Archive (Mass Effect 3 DLC, read-only)";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new SfarReader(stream, leaveOpen: true);
     var method = r.IsLzxCompressed ? "LZX" : "Stored";
@@ -84,6 +123,9 @@ public sealed class SfarFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       i, e.Name, e.Size, e.Size, method, false, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new SfarReader(stream, leaveOpen: true);
     foreach (var e in r.Entries) {

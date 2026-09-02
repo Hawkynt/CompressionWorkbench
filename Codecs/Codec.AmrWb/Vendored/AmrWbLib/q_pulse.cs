@@ -14,6 +14,9 @@ namespace AmrWbLib;
 
 //#define NB_POS 16                          /* pos in track, mask for sign bit */
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     int NB_POS = 16;

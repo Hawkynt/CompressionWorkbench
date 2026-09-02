@@ -11,6 +11,9 @@ namespace CompressionWorkbench.FileFormat.Ico;
 /// </summary>
 public sealed class IcoReader {
 
+  /// <summary>
+  /// Represents an icon entry.
+  /// </summary>
   public sealed record IconEntry(
     int Index,
     int Width,
@@ -23,11 +26,17 @@ public sealed class IcoReader {
     byte[] Data          // ready-to-write PNG bytes or fully-formed BMP bytes
   );
 
+  /// <summary>
+  /// Represents a bundle.
+  /// </summary>
   public sealed record Bundle(
     bool IsCursor,
     IReadOnlyList<IconEntry> Entries
   );
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static Bundle Read(ReadOnlySpan<byte> data) {
     if (data.Length < 6) throw new InvalidDataException("ICO: truncated header");
 

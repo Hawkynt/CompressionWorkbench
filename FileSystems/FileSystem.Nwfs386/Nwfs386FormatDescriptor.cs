@@ -27,25 +27,64 @@ namespace FileSystem.Nwfs386;
 /// expose the "NetW" four-byte tag at offset 0 instead of the HOTFIX area.</para>
 /// </remarks>
 public sealed class Nwfs386FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Nwfs386";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NWFS386 (Novell NetWare 386 raw)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nwfs386";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nwfs386", ".nw386"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "NetW" ASCII at offset 0 — proprietary marker present in some NWFS386
     // raw partition dumps. Confidence 0.60 — short ASCII string at fixed
     // offset, not from a published vendor spec.
     new([0x4E, 0x65, 0x74, 0x57], Offset: 0, Confidence: 0.60),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Novell NetWare 386 raw partition — opaque single-entry surface.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     byte[] image;
@@ -62,6 +101,9 @@ public sealed class Nwfs386FormatDescriptor : IFormatDescriptor, IArchiveFormatO
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {

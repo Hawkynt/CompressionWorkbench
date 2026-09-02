@@ -25,6 +25,9 @@ public static class RomFsExtentMap {
 
   private static readonly byte[] Magic = "-rom1fs-"u8.ToArray();
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

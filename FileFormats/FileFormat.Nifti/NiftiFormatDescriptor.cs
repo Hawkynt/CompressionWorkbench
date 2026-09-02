@@ -27,15 +27,39 @@ namespace FileFormat.Nifti;
 /// </remarks>
 public sealed class NiftiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Nifti";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NIfTI";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".nii";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".nii"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [".nii.gz"];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // NIfTI-1 single-file magic at offset 344. Confidence moderate because the
     // leading bytes of the file are an i16/i32 header that doesn't have a bit
@@ -46,19 +70,37 @@ public sealed class NiftiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     new([(byte)'n', (byte)'+', (byte)'2', 0x00], Offset: 4, Confidence: 0.90),
     new([(byte)'n', (byte)'i', (byte)'2', 0x00], Offset: 4, Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "NIfTI-1 / NIfTI-2 medical imaging (single-file .nii, optionally gzip-framed as .nii.gz). " +
     "Surfaces header + voxel payload with parsed dimensionality + datatype.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     this.BuildEntries(stream)
       .Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Data.LongLength, e.Data.LongLength,
         "stored", false, false, null, e.Kind))
       .ToList();
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in this.BuildEntries(stream)) {
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;

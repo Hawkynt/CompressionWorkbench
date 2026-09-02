@@ -4,11 +4,17 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>COMB4P(MD4, MD5) hash combiner.</summary>
 public static class Comb4PMd4Md5 {
+  /// <summary>
+  /// Computes the Comb-4 P Md-4 Md-5 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => Comb4P.Compute(data, Md4.Compute, Md5.Compute);
 }
 
 /// <summary>COMB4P(SHA-1, RIPEMD-160) hash combiner.</summary>
 public static class Comb4PSha1Ripemd160 {
+  /// <summary>
+  /// Computes the Comb-4 P Sha-1 Ripemd-160 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => Comb4P.Compute(data, Sha1.Compute, Ripemd160.Compute);
 }
 

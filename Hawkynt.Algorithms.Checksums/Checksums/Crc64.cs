@@ -30,12 +30,21 @@ public sealed class Crc64 : IChecksum {
   /// <remarks>Returns the lower 32 bits of the CRC-64 for interface compatibility.</remarks>
   uint IChecksum.Value => (uint)this.Value64;
 
+  /// <summary>
+  /// Resets the checksum to its initial state.
+  /// </summary>
   /// <inheritdoc />
   public void Reset() => this._crc = 0xFFFFFFFFFFFFFFFFUL;
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(byte b) => this._crc = this._tables[0][(this._crc ^ b) & 0xFF] ^ (this._crc >> 8);
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
     var crc = this._crc;

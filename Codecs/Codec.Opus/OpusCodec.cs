@@ -107,6 +107,9 @@ public static partial class OpusCodec {
   }
 }
 
+/// <summary>
+/// Represents an opus stream info.
+/// </summary>
 public sealed record OpusStreamInfo(
   int SampleRate,
   int Channels,

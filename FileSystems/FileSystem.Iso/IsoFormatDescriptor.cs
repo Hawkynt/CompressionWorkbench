@@ -279,6 +279,9 @@ public sealed class IsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       IsoModifier.AddFile(archive, name, data);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

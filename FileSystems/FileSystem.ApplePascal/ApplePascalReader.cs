@@ -37,21 +37,54 @@ namespace FileSystem.ApplePascal;
 /// </para>
 /// </summary>
 public sealed class ApplePascalReader : IDisposable {
+  /// <summary>
+  /// Defines the block size constant value.
+  /// </summary>
   public const int BlockSize = 512;
+  /// <summary>
+  /// Defines the directory block constant value.
+  /// </summary>
   public const int DirectoryBlock = 2;
+  /// <summary>
+  /// Defines the directory offset constant value.
+  /// </summary>
   public const int DirectoryOffset = DirectoryBlock * BlockSize;
+  /// <summary>
+  /// Defines the entry size constant value.
+  /// </summary>
   public const int EntrySize = 26;
+  /// <summary>
+  /// Defines the max entries constant value.
+  /// </summary>
   public const int MaxEntries = 77;
 
   private readonly byte[] _data;
   private readonly List<ApplePascalEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<ApplePascalEntry> Entries => _entries;
+  /// <summary>
+  /// Gets a value indicating whether valid volume.
+  /// </summary>
   public bool ValidVolume { get; private set; }
+  /// <summary>
+  /// Gets or sets the volume name.
+  /// </summary>
   public string VolumeName { get; private set; } = "";
+  /// <summary>
+  /// Gets or sets the total blocks.
+  /// </summary>
   public int TotalBlocks { get; private set; }
+  /// <summary>
+  /// Gets or sets the file count.
+  /// </summary>
   public int FileCount { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ApplePascalReader"/>.
+  /// </summary>
   public ApplePascalReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -128,6 +161,9 @@ public sealed class ApplePascalReader : IDisposable {
     return baseName + ext;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(ApplePascalEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -136,6 +172,9 @@ public sealed class ApplePascalReader : IDisposable {
     return _data.AsSpan(offset, (int)entry.Size).ToArray();
   }
 
+  /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
   public byte[] BuildSurfaceMetadata() {
     var b = new StringBuilder();
     b.Append("parse_status=").Append(this.ValidVolume ? "ok" : "invalid").Append('\n');
@@ -146,5 +185,8 @@ public sealed class ApplePascalReader : IDisposable {
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

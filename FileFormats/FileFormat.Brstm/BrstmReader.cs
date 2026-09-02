@@ -16,6 +16,9 @@ namespace FileFormat.Brstm;
 /// </summary>
 public sealed class BrstmReader {
 
+  /// <summary>
+  /// Represents a stream info.
+  /// </summary>
   public sealed record StreamInfo(
     int Codec,
     bool Loop,
@@ -31,11 +34,17 @@ public sealed class BrstmReader {
     int FinalBlockSamples,
     int FinalBlockSizePadded);
 
+  /// <summary>
+  /// Represents a parsed brstm.
+  /// </summary>
   public sealed record ParsedBrstm(
     StreamInfo Info,
     short[][] Coefs,           // [channel][16]
     short[][] Pcm);            // [channel][totalSamples] decoded to PCM16
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedBrstm Read(ReadOnlySpan<byte> data) {
     if (data.Length < 0x40)
       throw new InvalidDataException("BRSTM too short for RSTM header.");

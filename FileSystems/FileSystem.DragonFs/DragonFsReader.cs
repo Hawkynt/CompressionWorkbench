@@ -29,16 +29,34 @@ public sealed class DragonFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<DragonFsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<DragonFsEntry> Entries => _entries;
 
+  /// <summary>
+  /// Gets a value indicating whether valid root.
+  /// </summary>
   public bool ValidRoot { get; private set; }
+  /// <summary>
+  /// Gets or sets the root offset.
+  /// </summary>
   public int RootOffset { get; private set; }
 
+  /// <summary>
+  /// Defines the default root offset constant value.
+  /// </summary>
   public const int DefaultRootOffset = 256;
   // Newer Libdragon images can prepend an 8-byte "DragonFS" ASCII tag
   // before the root entry table for robust auto-detect; we accept either.
+  /// <summary>
+  /// Provides the optional tag value.
+  /// </summary>
   public static readonly byte[] OptionalTag = "DragonFS"u8.ToArray();
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DragonFsReader"/>.
+  /// </summary>
   public DragonFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -121,6 +139,9 @@ public sealed class DragonFsReader : IDisposable {
     return Encoding.ASCII.GetString(span.Slice(0, end));
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(DragonFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -129,6 +150,9 @@ public sealed class DragonFsReader : IDisposable {
     return _data.AsSpan(entry.DataOffset, (int)entry.Size).ToArray();
   }
 
+  /// <summary>
+  /// Performs the build surface metadata operation.
+  /// </summary>
   public byte[] BuildSurfaceMetadata() {
     var bldr = new StringBuilder();
     bldr.Append("parse_status=ok\n");
@@ -138,5 +162,8 @@ public sealed class DragonFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

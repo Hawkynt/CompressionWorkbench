@@ -75,6 +75,9 @@ public sealed class Human68kWriter {
   /// <summary>Data clusters a FAT16 allocation table can address.</summary>
   private const int MaxClusters = 65524;
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build() {
     if (this._files.Count > this._rootEntries)
       throw new InvalidOperationException(

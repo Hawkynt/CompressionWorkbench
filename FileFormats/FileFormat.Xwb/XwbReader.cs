@@ -17,6 +17,9 @@ namespace FileFormat.Xwb;
 /// </summary>
 public sealed class XwbReader {
 
+  /// <summary>
+  /// Represents a bank info.
+  /// </summary>
   public sealed record BankInfo(
     uint Flags,
     int EntryCount,
@@ -25,6 +28,9 @@ public sealed class XwbReader {
     int EntryNameElementSize,
     uint Alignment);
 
+  /// <summary>
+  /// Represents an entry info.
+  /// </summary>
   public sealed record EntryInfo(
     int Index,
     string Name,
@@ -38,6 +44,9 @@ public sealed class XwbReader {
     bool Decodable,
     short[]? Pcm);        // decoded PCM16 (interleaved); null when not decodable
 
+  /// <summary>
+  /// Represents a parsed xwb.
+  /// </summary>
   public sealed record ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryInfo> Entries);
 
   private const int SegmentCount = 5;
@@ -46,6 +55,9 @@ public sealed class XwbReader {
   private const int SegEntryNames = 3;
   private const int SegEntryWaveData = 4;
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedXwb Read(ReadOnlySpan<byte> data) {
     if (data.Length < 8)
       throw new InvalidDataException("XWB too short for header.");

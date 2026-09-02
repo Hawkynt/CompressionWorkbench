@@ -19,6 +19,9 @@ public sealed class Ba2Writer : IDisposable {
   /// <param name="stream">Output stream. Must be seekable — header offsets are back-patched after data is written.</param>
   /// <param name="leaveOpen">Leave <paramref name="stream"/> open on Dispose.</param>
   /// <param name="compress">When true, attempt zlib compression per file and only keep it if it shrinks the payload.</param>
+  /// <summary>
+  /// Initializes a new instance of <see cref="Ba2Writer"/>.
+  /// </summary>
   public Ba2Writer(Stream stream, bool leaveOpen = false, bool compress = true) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     if (!stream.CanSeek)

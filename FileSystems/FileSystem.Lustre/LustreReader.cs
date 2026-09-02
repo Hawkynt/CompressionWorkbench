@@ -53,9 +53,21 @@ public sealed class LustreReader : IDisposable {
   /// </summary>
   private MemoryStream? _extStream;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<LustreEntry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the tag.
+  /// </summary>
   public string Tag { get; private set; } = "";
+  /// <summary>
+  /// Gets or sets the trailing word.
+  /// </summary>
   public uint TrailingWord { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid header.
+  /// </summary>
   public bool ValidHeader { get; private set; }
 
   /// <summary>True if the input was identified as an ldiskfs (ext4) image and delegated to <see cref="ExtReader"/>.</summary>
@@ -64,6 +76,9 @@ public sealed class LustreReader : IDisposable {
   /// <summary>Volume label parsed from the ldiskfs superblock (offset 1024+120, 16 bytes), or empty if not ldiskfs / unset.</summary>
   public string LdiskfsVolumeLabel { get; private set; } = "";
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="LustreReader"/>.
+  /// </summary>
   public LustreReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -185,11 +200,17 @@ public sealed class LustreReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(LustreEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     _extReader?.Dispose();
     _extStream?.Dispose();

@@ -57,6 +57,10 @@ the bytes that actually move rather than the whole volume.
 
 R/W descriptor for UDF 2.01 (Universal Disk Format) volume images per ECMA-167 and the OSTA UDF profile. References:
 
+### UdfReader
+
+Reads the directory tree of a UDF volume image and extracts the files it holds.
+
 ### UdfWriter
 
 Writes a minimal UDF 1.02 filesystem image (ECMA-167). Builds a real directory tree from slash-separated file paths, short allocation descriptors. Computes ECMA-167 §7.2.1 DescriptorCRC (CRC-16/CCITT, init=0, poly=0x1021, non-reflected) and TagChecksum for every descriptor tag so that strict readers (xorriso, Linux udf.ko, mkudffs fsck) accept the produced images. Layout: `Sectors 0-15: System area Sector 16: VRS BEA01 Sector 17: VRS NSR02 Sector 18: VRS TEA01 Sector 32-35: Main VDS (PVD + Partition + LVD + Terminator) Sector 256: AVDP Sector 257: Partition start: File Set Descriptor (FSD) at LBN 0 Sector 258: Root directory File Entry at LBN 1 Sector 259+: Per-node File Entries, directory FID data, file data` A directory's data is a sequence of File Identifier Descriptors (FID, tag 257). The first FID of every directory is the parent entry (Parent flag 0x08, zero-length identifier, ICB pointing at the parent FE). Every directory and file is a File Entry (FE, tag 261); directories carry file type 4, regular files file type 5. A subdirectory FID carries the Directory flag 0x02 and points at the child directory's FE.

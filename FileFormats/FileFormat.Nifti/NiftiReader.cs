@@ -22,6 +22,9 @@ namespace FileFormat.Nifti;
 /// </remarks>
 public sealed class NiftiReader {
 
+  /// <summary>
+  /// The NIfTI header revision the file declares.
+  /// </summary>
   public enum NiftiVersion { Nifti1 = 1, Nifti2 = 2 }
 
   /// <summary>Parsed NIfTI file — header, raw header bytes, voxels, and key metadata.</summary>

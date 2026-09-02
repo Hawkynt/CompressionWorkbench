@@ -41,11 +41,26 @@ public sealed class FatxReader : IDisposable {
   private readonly ImageAccessor _data;
   private readonly List<FatxEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<FatxEntry> Entries => this._entries;
 
+  /// <summary>
+  /// Gets or sets the sectors per cluster.
+  /// </summary>
   public uint SectorsPerCluster { get; private set; }
+  /// <summary>
+  /// Gets or sets the root dir cluster.
+  /// </summary>
   public uint RootDirCluster { get; private set; }
+  /// <summary>
+  /// Gets or sets the fat type.
+  /// </summary>
   public int FatType { get; private set; }
+  /// <summary>
+  /// Gets the cluster size.
+  /// </summary>
   public int ClusterSize => (int)this.SectorsPerCluster * SectorSize;
 
   internal const int SectorSize = 512;
@@ -53,6 +68,9 @@ public sealed class FatxReader : IDisposable {
   internal const int DirRecordSize = 0x40;
   private const uint MagicFatx = 0x58544146; // 'F','A','T','X' little-endian
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="FatxReader"/>.
+  /// </summary>
   public FatxReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -154,6 +172,9 @@ public sealed class FatxReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(FatxEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -197,5 +218,8 @@ public sealed class FatxReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

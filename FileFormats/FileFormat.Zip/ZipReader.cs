@@ -82,6 +82,9 @@ public sealed class ZipReader : IDisposable {
     return true;
   }
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public byte[] ExtractEntry(ZipEntry entry) {
     this._stream.Position = entry.LocalHeaderOffset;
     var reader = new BinaryReader(this._stream, System.Text.Encoding.Latin1, leaveOpen: true);

@@ -4,15 +4,27 @@ using System.Text;
 
 namespace FileFormat.T64;
 
+/// <summary>
+/// Writes a Commodore 64 T64 tape container, building the tape record and the directory of program entries.
+/// </summary>
 public sealed class T64Writer {
   private readonly List<(string Name, ushort StartAddress, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, ushort startAddress, byte[] data) =>
     _files.Add((name, startAddress, data));
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) =>
     _files.Add((name, 0x0801, data)); // default BASIC start address
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build(string tapeName = "TAPE") {
     var headerSize = 64;
     var dirSize = _files.Count * 32;

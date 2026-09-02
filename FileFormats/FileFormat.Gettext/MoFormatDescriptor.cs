@@ -16,22 +16,58 @@ namespace FileFormat.Gettext;
 /// </list>
 /// </summary>
 public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Mo";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MO (gettext binary catalog)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".mo";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".mo"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([0xDE, 0x12, 0x04, 0x95], Confidence: 0.95),
     new([0x95, 0x04, 0x12, 0xDE], Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Compiled gettext message catalog; each message extractable as text. R-only: in-place R/W " +
     "is not honestly available because the 28-byte MO header records numStrings + " +
@@ -41,11 +77,17 @@ public sealed class MoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     "(length, offset) pairs already written. That's a full rebuild, not an in-place mutation, so " +
     "promoting to CanModify would mis-advertise the surface.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = Read(stream);
     return GettextEntryHelper.ToArchiveEntries(entries);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) =>
     GettextEntryHelper.Extract(Read(stream), outputDir, files);
 

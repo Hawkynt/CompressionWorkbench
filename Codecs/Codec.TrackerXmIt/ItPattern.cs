@@ -6,12 +6,27 @@ namespace Codec.TrackerXmIt;
 /// <summary>A decoded IT pattern: rows × 64 channels of <see cref="ItCell"/> (per ITTECH.TXT).</summary>
 public sealed class ItPattern {
 
+  /// <summary>
+  /// Defines the max channels constant value.
+  /// </summary>
   public const int MaxChannels = 64;
+  /// <summary>
+  /// Provides the rows value.
+  /// </summary>
   public int Rows = 64;
+  /// <summary>
+  /// Provides the cells value.
+  /// </summary>
   public ItCell[] Cells = []; // row-major: cells[row * MaxChannels + channel]
 
+  /// <summary>
+  /// Performs the cell operation.
+  /// </summary>
   public ItCell Cell(int row, int channel) => this.Cells[row * MaxChannels + channel];
 
+  /// <summary>
+  /// Performs the empty operation.
+  /// </summary>
   public static ItPattern Empty() {
     return new ItPattern { Rows = 64, Cells = new ItCell[64 * MaxChannels] };
   }
@@ -81,10 +96,28 @@ public sealed class ItPattern {
 
 /// <summary>One IT pattern cell. Note 255 = note off, 254 = note cut, 246..253 = note fade range.</summary>
 public struct ItCell {
+  /// <summary>
+  /// Provides the has note and has instrument and has volume and has command value.
+  /// </summary>
   public bool HasNote, HasInstrument, HasVolume, HasCommand;
+  /// <summary>
+  /// Provides the note value.
+  /// </summary>
   public byte Note;        // 0..119 note, 255 = off, 254 = cut, 253 = fade
+  /// <summary>
+  /// Provides the instrument value.
+  /// </summary>
   public byte Instrument;  // 1-based
+  /// <summary>
+  /// Provides the volume value.
+  /// </summary>
   public byte Volume;      // 0..64 volume; 65..213 volume-column commands
+  /// <summary>
+  /// Provides the command value.
+  /// </summary>
   public byte Command;     // 1=A..26=Z
+  /// <summary>
+  /// Provides the param value.
+  /// </summary>
   public byte Param;
 }

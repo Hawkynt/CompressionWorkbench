@@ -22,11 +22,26 @@ namespace FileFormat.Onnx;
 /// </remarks>
 public sealed class OnnxReader {
 
+  /// <summary>
+  /// Represents an opset import.
+  /// </summary>
   public sealed record OpsetImport(string Domain, long Version);
+  /// <summary>
+  /// Represents an operator.
+  /// </summary>
   public sealed record Operator(string OpType, string Domain, string Name, IReadOnlyList<string> Inputs, IReadOnlyList<string> Outputs);
+  /// <summary>
+  /// Represents a tensor.
+  /// </summary>
   public sealed record Tensor(string Name, int DataType, long[] Dims, byte[] RawData);
+  /// <summary>
+  /// Represents a value info.
+  /// </summary>
   public sealed record ValueInfo(string Name, int ElementType, long[] Dims);
 
+  /// <summary>
+  /// Represents a model.
+  /// </summary>
   public sealed record Model(
     long IrVersion,
     string ProducerName,

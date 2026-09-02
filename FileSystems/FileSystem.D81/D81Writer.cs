@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.D81;
 
+/// <summary>
+/// Builds a Commodore 1581 D81 disk image from a set of files, filling in the header block, BAM and directory.
+/// </summary>
 public sealed class D81Writer {
   private const int StandardSize = 819200;
   private const int SectorSize = 256;
@@ -18,8 +21,14 @@ public sealed class D81Writer {
 
   private readonly List<(string Name, byte FileType, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte fileType, byte[] data) => _files.Add((name, fileType, data));
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _files.Add((name, 0x82, data)); // PRG default
 
   /// <summary>

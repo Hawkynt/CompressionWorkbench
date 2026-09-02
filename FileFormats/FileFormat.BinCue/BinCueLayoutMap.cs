@@ -12,6 +12,9 @@ public static class BinCueLayoutMap {
 
   private const int Iso9660SectorSize = 2048;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     stream.Position = 0;

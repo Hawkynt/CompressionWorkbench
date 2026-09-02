@@ -58,6 +58,9 @@ public sealed class UdfWriter {
   /// </summary>
   public string VolumeIdentifier { get; set; } = "UDF Volume";
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -117,6 +120,9 @@ public sealed class UdfWriter {
     public int DataLength;     // exact byte length of the (directory or file) data
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     var root = BuildTree();
 

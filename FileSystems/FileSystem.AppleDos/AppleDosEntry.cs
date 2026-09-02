@@ -5,8 +5,17 @@ namespace FileSystem.AppleDos;
 /// Directory entry in an Apple DOS 3.3 disk image.
 /// </summary>
 public sealed class AppleDosEntry {
+  /// <summary>
+  /// Gets or sets the name.
+  /// </summary>
   public string Name { get; init; } = "";
+  /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
   public long Size { get; init; }
+  /// <summary>
+  /// Gets a value indicating whether is directory.
+  /// </summary>
   public bool IsDirectory => false;
   /// <summary>DOS 3.3 file type nibble. Low 7 bits: 0=T(ext), 1=I(nteger BASIC),
   /// 2=A(pplesoft BASIC), 4=B(inary), 8=S, 0x10=R, 0x20=AA, 0x40=BB. High bit = locked.</summary>

@@ -15,9 +15,18 @@ public sealed class WrapsterReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<WrapsterEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<WrapsterEntry> Entries => _entries;
+  /// <summary>
+  /// Gets or sets the version.
+  /// </summary>
   public int Version { get; private set; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="WrapsterReader"/>.
+  /// </summary>
   public WrapsterReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -176,6 +185,9 @@ public sealed class WrapsterReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(WrapsterEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset + entry.DataLength > _data.Length)
@@ -183,5 +195,8 @@ public sealed class WrapsterReader : IDisposable {
     return _data.AsSpan(entry.Offset, entry.DataLength).ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

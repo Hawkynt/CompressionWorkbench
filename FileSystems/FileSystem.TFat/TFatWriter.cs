@@ -36,6 +36,9 @@ public sealed class TFatWriter {
     set => _initialSequence = value;
   }
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) => _inner.AddFile(name, data);
 
   /// <summary>

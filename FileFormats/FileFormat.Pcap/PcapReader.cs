@@ -10,22 +10,58 @@ namespace FileFormat.Pcap;
 /// </summary>
 public sealed class PcapReader {
 
+  /// <summary>
+  /// Defines the magic native micro constant value.
+  /// </summary>
   public const uint MagicNativeMicro = 0xA1B2C3D4u;
+  /// <summary>
+  /// Defines the magic swap micro constant value.
+  /// </summary>
   public const uint MagicSwapMicro   = 0xD4C3B2A1u;
+  /// <summary>
+  /// Defines the magic native nano constant value.
+  /// </summary>
   public const uint MagicNativeNano  = 0xA1B23C4Du;
+  /// <summary>
+  /// Defines the magic swap nano constant value.
+  /// </summary>
   public const uint MagicSwapNano    = 0x4DC3B2A1u;
 
+  /// <summary>
+  /// Represents a capture.
+  /// </summary>
   public sealed class Capture {
+    /// <summary>
+    /// Gets or sets the version major.
+    /// </summary>
     public required ushort VersionMajor { get; init; }
+    /// <summary>
+    /// Gets or sets the version minor.
+    /// </summary>
     public required ushort VersionMinor { get; init; }
+    /// <summary>
+    /// Gets or sets the snaplen.
+    /// </summary>
     public required uint Snaplen { get; init; }
     /// <summary>Link-layer header type (1 = Ethernet, 101 = raw IP, 113 = Linux cooked, etc.).</summary>
     public required uint LinkType { get; init; }
+    /// <summary>
+    /// Gets a value indicating whether little endian.
+    /// </summary>
     public required bool LittleEndian { get; init; }
+    /// <summary>
+    /// Gets a value indicating whether nanosecond.
+    /// </summary>
     public required bool Nanosecond { get; init; }
+    /// <summary>
+    /// Gets or sets the packets.
+    /// </summary>
     public required IReadOnlyList<Packet> Packets { get; init; }
   }
 
+  /// <summary>
+  /// Represents a packet.
+  /// </summary>
   public sealed record Packet(uint TimestampSeconds, uint TimestampFraction, uint OriginalLength, byte[] Data);
 
   /// <summary>Parse a pcap file in full.</summary>

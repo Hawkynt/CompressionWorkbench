@@ -35,36 +35,84 @@ public abstract class G711FormatDescriptorBase : IFormatDescriptor, IArchiveForm
   /// <summary>Human label for this variant, e.g. <c>A-law</c> / <c>µ-law</c>.</summary>
   protected abstract string Variant { get; }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public abstract string Id { get; }
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public abstract string DisplayName { get; }
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public abstract string DefaultExtension { get; }
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public abstract IReadOnlyList<string> Extensions { get; }
 
   // ── common descriptor metadata ───────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Audio;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   // Headerless: no magic — dispatch is extension-only (precedent: FlacArchiveDescriptor).
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => $"Raw {this.Variant} (G.711) stream; full file + decoded mono PCM WAV.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(this.BuildEntries(stream));
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(this.BuildEntries(stream), outputDir, files);
 
+  /// <summary>
+  /// Performs the extract entry operation.
+  /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(this.BuildEntries(input), entryName, output);
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fileList = FormatHelpers.FilesOnly(inputs).ToList();
     var fullName = "FULL" + this.DefaultExtension;
@@ -96,10 +144,19 @@ public abstract class G711FormatDescriptorBase : IFormatDescriptor, IArchiveForm
 
   // ── IArchiveWriteConstraints ──────────────────────────────────────────────────
 
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     $"Raw {this.Variant} archive accepts: FULL{this.DefaultExtension} or a single mono 16-bit WAV.";
 
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
     if (name == ("full" + this.DefaultExtension) || name.EndsWith(".wav") || name == "metadata.ini") {

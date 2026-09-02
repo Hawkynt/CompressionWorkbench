@@ -20,6 +20,9 @@ public sealed class Gfs1Reader {
   private readonly int _inodesPerBlock;
   private readonly List<Gfs1Entry> _entries = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Gfs1Reader"/>.
+  /// </summary>
   public Gfs1Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -33,8 +36,14 @@ public sealed class Gfs1Reader {
     Recurse(2, "");
   }
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<Gfs1Entry> Entries => _entries;
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(Gfs1Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];

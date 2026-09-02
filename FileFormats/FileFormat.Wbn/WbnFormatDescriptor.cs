@@ -22,22 +22,58 @@ namespace FileFormat.Wbn;
 /// </summary>
 public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Wbn";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Web Bundle";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".wbn";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".wbn"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(WbnConstants.Magic, Offset: 0, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("webbundle", "Web Bundle")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Web Bundle / Bundled HTTP Exchanges (read-only pseudo-archive). The " +
     "outer CBOR array stores a `sections-lengths` byte string at index 2 that " +
@@ -50,6 +86,9 @@ public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     "edit fails verification. This descriptor therefore does not implement " +
     "IArchiveModifiable.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     var fileSize = stream.Length;
@@ -60,6 +99,9 @@ public sealed class WbnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ];
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ArgumentNullException.ThrowIfNull(stream);
     ArgumentNullException.ThrowIfNull(outputDir);

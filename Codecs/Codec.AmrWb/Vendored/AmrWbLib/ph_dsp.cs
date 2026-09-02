@@ -12,6 +12,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private const int pitch_0_9 = 14746;                   /* 0.9 in Q14 */

@@ -61,6 +61,9 @@ public static class OpenVmsDirectory {
 
   /// <summary>One entry of a directory: a name, and the file it names.</summary>
   public sealed record class Entry(int FileId, ushort Sequence, string Name, long Size) {
+    /// <summary>
+    /// Gets a value indicating whether is free.
+    /// </summary>
     public bool IsFree => this.FileId == 0;
   }
 

@@ -109,17 +109,41 @@ namespace FileFormat.Paragon;
 /// </summary>
 public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Paragon";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Paragon Backup";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".pbf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".pbf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // "PImg" (0x50 0x49 0x6D 0x67) - "Paragon Image" tag at offset 0.
     // Documented in the TrID file-identifier database for "Paragon Backup
@@ -129,12 +153,24 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // in real samples.
     new("PImg"u8.ToArray(), Offset: 0, Confidence: 0.92),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("zlib", "zlib (DEFLATE per chunk)"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Paragon Backup & Recovery (.pbf) - R/O metadata + structured header on vendor-produced " +
     "files; R/W (Add / Replace / Remove) for our own writer's CWBP-discriminated layout via " +
@@ -192,12 +228,18 @@ public sealed class ParagonFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     "promotion pass can extend the parser against a real sample without re-running the binary " +
     "RE. Format is obsolete for creation since HDM 16; restore content with vendor tools.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ParagonReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ParagonReader(stream);
     foreach (var e in r.Entries) {

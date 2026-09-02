@@ -31,10 +31,25 @@ namespace FileFormat.MpegTs;
 /// </remarks>
 public sealed class MpegTsReader {
 
+  /// <summary>
+  /// Defines the sync byte constant value.
+  /// </summary>
   public const byte SyncByte = 0x47;
+  /// <summary>
+  /// Defines the packet size constant value.
+  /// </summary>
   public const int PacketSize = 188;
+  /// <summary>
+  /// Defines the m 2ts packet size constant value.
+  /// </summary>
   public const int M2tsPacketSize = 192; // Blu-ray BDAV: 4-byte timestamp prefix + 188-byte packet
+  /// <summary>
+  /// Defines the pat pid constant value.
+  /// </summary>
   public const int PatPid = 0x0000;
+  /// <summary>
+  /// Defines the null pid constant value.
+  /// </summary>
   public const int NullPid = 0x1FFF;
 
   /// <summary>

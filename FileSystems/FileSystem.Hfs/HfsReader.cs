@@ -4,6 +4,9 @@ using System.Text;
 
 namespace FileSystem.Hfs;
 
+/// <summary>
+/// Reads the catalog of a Classic Macintosh HFS volume and extracts the files it holds.
+/// </summary>
 public sealed class HfsReader : IDisposable {
   private const ushort HfsMagic = 0x4244;
   private const int MdbOffset = 1024;
@@ -22,8 +25,14 @@ public sealed class HfsReader : IDisposable {
   private int _catalogStartBlock;
   private int _catalogBlockCount;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<HfsEntry> Entries => this._entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="HfsReader"/>.
+  /// </summary>
   public HfsReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -190,6 +199,9 @@ public sealed class HfsReader : IDisposable {
     return string.Join('/', parts);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(HfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory || entry.BlockCount == 0) return [];
@@ -200,5 +212,8 @@ public sealed class HfsReader : IDisposable {
     return this._data.AsSpan(offset, len).ToArray();
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

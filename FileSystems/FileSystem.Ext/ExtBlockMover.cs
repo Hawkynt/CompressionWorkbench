@@ -86,7 +86,13 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
       : (_blocksCount - _firstDataBlock + _blocksPerGroup - 1) / _blocksPerGroup;
   }
 
+  /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
   public long FirstDataByte => (long)_firstDataBlock * _blockSize;
+  /// <summary>
+  /// Gets the block size.
+  /// </summary>
   public int BlockSize => _blockSize;
 
   private uint OffsetToBlock(long offset) => (uint)(offset / _blockSize);
@@ -273,6 +279,9 @@ public sealed class ExtBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
   /// Crash mid-3: file reachable via new pointers, old blocks still marked
   /// allocated (orphan) → fsck frees them.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => this.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length, releaseOldSpace: true);
 

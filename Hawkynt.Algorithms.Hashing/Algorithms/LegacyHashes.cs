@@ -24,6 +24,9 @@ public static class Md2 {
     0x31,0x44,0x50,0xB4,0x8F,0xED,0x1F,0x1A,0xDB,0x99,0x8D,0x33,0x9F,0x11,0x83,0x14
   ];
 
+  /// <summary>
+  /// Computes the Md-2 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var pad = 16 - data.Length % 16;
     var padded = new byte[data.Length + pad];
@@ -69,6 +72,9 @@ public static class Md2 {
 
 /// <summary>MD4 from RFC 1320.</summary>
 public static class Md4 {
+  /// <summary>
+  /// Computes the Md-4 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     uint a0 = 0x67452301;
     uint b0 = 0xEFCDAB89;
@@ -142,6 +148,9 @@ public static class Sm3 {
     0xA96F30BC, 0x163138AA, 0xE38DEE4D, 0xB0FB0E4E
   ];
 
+  /// <summary>
+  /// Computes the Sm-3 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {
     var state = Initial.ToArray();
     var paddedLength = checked(((data.Length + 9 + 63) / 64) * 64);

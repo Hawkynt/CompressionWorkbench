@@ -20,26 +20,62 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
   // Image-size presets all map to a segment count (MB / 2 = segments). The smallest
   // offered preset (64 MB = 32 segments) is well above the writer's 16-segment floor.
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(["64 MB", "128 MB", "256 MB", "512 MB", "1 GB", "2 GB"]),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "F2fs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "F2FS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".f2fs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".f2fs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x10, 0x20, 0xF5, 0xF2], Offset: 1024, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// F2FS flash-friendly filesystem image — R/W via log-structured append.
@@ -64,10 +100,22 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // F2FS minimum image = ~30 MB in the real-world mkfs.f2fs tool; our writer emits 64 MB by
   // default. A file is capped by what the inode's node tree can address: 923 direct
   // addresses, two direct nodes, two indirect and one double-indirect.
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
   public long? MaxTotalArchiveSize => null;
+  /// <summary>
+  /// Gets the min total archive size.
+  /// </summary>
   public long? MinTotalArchiveSize => 64L * 1024 * 1024;
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
   public string AcceptedInputsDescription =>
     "F2FS filesystem image (nested directories, inline or hash-bucket dentries).";
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
   public bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) { reason = null; return true; }
     try {
@@ -84,6 +132,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return true;
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new F2fsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -91,6 +142,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new F2fsReader(stream);
     foreach (var e in r.Entries) {
@@ -139,6 +193,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -216,6 +273,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     _        => 0, // Auto (fit to files)
   };
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -282,6 +342,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);
@@ -354,6 +417,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // multi-level indirect inode trees, and main-area-segment growth are
   // genuinely out of scope.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.
@@ -377,6 +443,9 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     WriteAll(archive, updated);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {

@@ -18,6 +18,9 @@ public static class LifExtentMap {
   private const int SectorSize = 256;
   private const ushort LifMagic = 0x8000;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

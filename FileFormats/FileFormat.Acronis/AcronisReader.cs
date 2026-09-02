@@ -65,9 +65,21 @@ public sealed class AcronisReader {
       ? entry.Name
       : entry.Path.TrimEnd('/', '\\') + "/" + entry.Name;
 
+  /// <summary>
+  /// Gets the header.
+  /// </summary>
   public AcronisVolumeHeader Header { get; }
+  /// <summary>
+  /// Gets the trailer.
+  /// </summary>
   public AcronisSliceTrailer? Trailer { get; }
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<AcronisFileEntry> Entries { get; }
+  /// <summary>
+  /// Gets the config attributes.
+  /// </summary>
   public IReadOnlyList<AcronisConfigAttribute> ConfigAttributes { get; }
 
   /// <summary>All records walked from the metadata stream (in archive order).</summary>
@@ -154,6 +166,9 @@ public sealed class AcronisReader {
   // recordOffset (relative to end of header) → Blob record (for fast lookup during extraction).
   private readonly Dictionary<long, AcronisRecord> _blobsByRecordOffset;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="AcronisReader"/>.
+  /// </summary>
   public AcronisReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;

@@ -25,6 +25,9 @@ public sealed class LittleFsWriter {
   private readonly uint _blockSize;
   private readonly DirNode _root = new(string.Empty);
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="LittleFsWriter"/>.
+  /// </summary>
   public LittleFsWriter(uint blockSize = DefaultBlockSize) {
     if (blockSize is < 128u or > 65536u || (blockSize & (blockSize - 1)) != 0)
       throw new ArgumentOutOfRangeException(nameof(blockSize), "block size must be a power of two in [128, 65536].");
@@ -50,12 +53,18 @@ public sealed class LittleFsWriter {
     dir.Files[leaf] = data;
   }
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build() {
     using var ms = new MemoryStream();
     this.WriteTo(ms);
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 

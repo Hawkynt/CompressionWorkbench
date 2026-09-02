@@ -11,6 +11,9 @@ public static class LzsStream {
 
   private static readonly byte[] Magic = [0x1F, 0x9D, 0x8C, 0x53];
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -23,6 +26,9 @@ public static class LzsStream {
     output.Write(compressed);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     Span<byte> magicBuf = stackalloc byte[4];
     input.ReadExactly(magicBuf);

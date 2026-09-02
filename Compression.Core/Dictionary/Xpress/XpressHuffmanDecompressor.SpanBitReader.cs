@@ -2,6 +2,9 @@ using System.Buffers.Binary;
 
 namespace Compression.Core.Dictionary.Xpress;
 
+/// <summary>
+/// Represents a xpress huffman decompressor.
+/// </summary>
 public static partial class XpressHuffmanDecompressor {
 
   /// <summary>

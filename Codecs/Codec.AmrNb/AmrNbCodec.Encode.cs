@@ -10,6 +10,9 @@ public sealed record AmrNbEncoderOptions(
   bool PadFinalFrame = true
 );
 
+/// <summary>
+/// Represents an amr nb codec.
+/// </summary>
 public static partial class AmrNbCodec {
   private const float LsfResidualHz = SampleRate / 32768f;
   private const float Mr122PredictionFactor = 0.65f;

@@ -21,7 +21,13 @@ namespace FileSystem.ZxScl;
 /// </remarks>
 public sealed class ZxSclReader : IDisposable {
 
+  /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
   public const int SectorSize = 256;
+  /// <summary>
+  /// Defines the header size constant value.
+  /// </summary>
   public const int HeaderSize = 14;
   /// <summary>Upper bound on payload size before CRC: 40 tracks x 16 sectors x 256 bytes x 4-layer.</summary>
   public const int MaxPayloadSize = 655360;
@@ -32,8 +38,14 @@ public sealed class ZxSclReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<ZxSclEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<ZxSclEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ZxSclReader"/>.
+  /// </summary>
   public ZxSclReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
@@ -42,6 +54,9 @@ public sealed class ZxSclReader : IDisposable {
     Parse();
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ZxSclReader"/>.
+  /// </summary>
   public ZxSclReader(byte[] data) {
     ArgumentNullException.ThrowIfNull(data);
     _data = data;
@@ -105,6 +120,9 @@ public sealed class ZxSclReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(ZxSclEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     var off = (int)entry.DataOffset;
@@ -116,5 +134,8 @@ public sealed class ZxSclReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 }

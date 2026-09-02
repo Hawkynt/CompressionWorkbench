@@ -19,6 +19,9 @@ public sealed class ItFilter {
   private double _x1, _x2, _y1, _y2;
   private bool _active;
 
+  /// <summary>
+  /// Gets a value indicating whether active.
+  /// </summary>
   public bool Active => this._active;
 
   /// <summary>

@@ -35,16 +35,40 @@ namespace FileSystem.Yaffs2;
 public sealed class Yaffs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Yaffs2";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "YAFFS2";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".yaffs2";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".yaffs2", ".yaffs"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // YAFFS2 has no superblock, but every image starts with chunk 0 holding the
     // root directory's object header: type YAFFS_OBJECT_TYPE_DIRECTORY (3) and
@@ -55,13 +79,28 @@ public sealed class Yaffs2FormatDescriptor
     new([0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
       Offset: 0, Confidence: 0.50),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Yet Another Flash File System v2 (raw NAND image) — read/write with mkyaffs2image-compatible layout.";
 
   // ── IArchiveFormatOperations (List / Extract) ─────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new List<ArchiveEntryInfo>();
     ImageAccessor image;
@@ -101,6 +140,9 @@ public sealed class Yaffs2FormatDescriptor
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     ImageAccessor image;
     try {
@@ -194,6 +236,9 @@ public sealed class Yaffs2FormatDescriptor
 
   // ── IArchiveCreatable ─────────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Yaffs2Writer();
     foreach (var (name, data) in FlatFiles(inputs))
@@ -208,6 +253,9 @@ public sealed class Yaffs2FormatDescriptor
   // the scanner's seqNumber-max filter resolves the live view. Add detects
   // name collisions and routes them through Replace.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.
@@ -219,6 +267,9 @@ public sealed class Yaffs2FormatDescriptor
     Yaffs2InPlaceModifier.Add(archive, inputs);
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -246,6 +297,9 @@ public sealed class Yaffs2FormatDescriptor
 
   // ── IArchiveDefragmentable ────────────────────────────────────────────
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -414,6 +468,9 @@ public sealed class Yaffs2FormatDescriptor
 
   // ── IFilesystemExtentMap ──────────────────────────────────────────────
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     try {
       if (image.CanSeek) image.Position = 0;

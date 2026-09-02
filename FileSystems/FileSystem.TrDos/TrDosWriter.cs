@@ -17,8 +17,14 @@ public sealed class TrDosWriter {
 
   private readonly List<(string Name, char Type, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, char type, byte[] data) => _files.Add((name, type, data));
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build(string label = "DISK") {
     var disk = new byte[DiskSize];
 

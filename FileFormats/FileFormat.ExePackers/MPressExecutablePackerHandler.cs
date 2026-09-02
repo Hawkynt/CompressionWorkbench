@@ -37,7 +37,13 @@ namespace FileFormat.ExePackers;
 /// </para>
 /// </remarks>
 public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "mpress";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "MPRESS executable packer";
 
   private static ReadOnlySpan<byte> MPressLiteral => "MPRESS"u8;
@@ -49,6 +55,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
   /// <summary>The two parameter bytes are counted as part of the packed size.</summary>
   private const int ParameterSize = 2;
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -58,6 +67,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
     ExecutableUnpackCapabilities.SupportsX86 |
     ExecutableUnpackCapabilities.SupportsX64;
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     var isPe = PackerScanner.IsPe(image);
     var isElf = image.Length >= 4 && image[0] == 0x7F && image[1] == (byte)'E' && image[2] == (byte)'L' && image[3] == (byte)'F';
@@ -77,6 +89,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
     ]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -93,6 +108,9 @@ public sealed class MPressExecutablePackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [

@@ -30,22 +30,58 @@ namespace FileFormat.ParallelsHdd;
 /// </list>
 /// </summary>
 public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "ParallelsHdd";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Parallels Disk (HDS)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".hds";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".hds"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("WithoutFreeSpace"u8.ToArray(), Confidence: 0.9),
     new("WithFreeSpace\0\0\0"u8.ToArray(), Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Parallels expanding disk (.hds): WithoutFreeSpace/WithFreeSpace header + geometry + BAT of " +
     "u32 sector offsets. Surfaces FULL.hds, metadata.ini and a BAT-reconstructed disk.raw. Read-only.";
@@ -63,6 +99,9 @@ public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFo
     uint BatEntries,
     long BatOffset);
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var fullSize = SafeLength(stream);
     var entries = new List<ArchiveEntryInfo> {
@@ -91,6 +130,9 @@ public sealed class ParallelsHddFormatDescriptor : IFormatDescriptor, IArchiveFo
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (Wants(files, "FULL.hds"))
       WriteFile(outputDir, "FULL.hds", ReadAll(stream));

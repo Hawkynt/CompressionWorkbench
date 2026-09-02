@@ -77,12 +77,24 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => NtfsExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Ntfs";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "NTFS";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
   // R/W: a mutable filesystem. Add/Remove produce a valid modified image; the
   // implementation re-packs the volume, so existing data may move — acceptable for
   // a conceptually read-write container. See FormatCapabilities.cs (WORM vs R/W).
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
@@ -104,6 +116,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   private const long ResidentCeilingBytes = 1024;
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;
@@ -235,6 +250,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ((IArchiveShrinkable)this).ShrinkDefault(input, output);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -349,14 +367,35 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         try { File.Delete(path); } catch { /* scratch file already gone */ }
     }
   }
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".ntfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".ntfs", ".img"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'N', (byte)'T', (byte)'F', (byte)'S', (byte)' ', (byte)' ', (byte)' ', (byte)' '], Offset: 3, Confidence: 0.90)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// NTFS filesystem image with LZNT1 compression support. The writer emits
@@ -370,6 +409,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public string Description => "NTFS filesystem image with LZNT1 compression and full $MFT system files";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new NtfsReader(stream);
     var entries = r.Entries.Select((e, i) => new ArchiveEntryInfo(
@@ -411,6 +453,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -538,6 +583,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     _        => 0,                       // "Auto (fit to files)" or unknown → auto-size
   };
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new NtfsReader(stream);
     foreach (var e in r.Entries) {
@@ -594,6 +642,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     combined.BuildTo(archive, declaredBytes);
   }
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier walks the volume in memory, which a volume past two
     // gigabytes does not fit in. Above that the edit unpacks and relays it out.

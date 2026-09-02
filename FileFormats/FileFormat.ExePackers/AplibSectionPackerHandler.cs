@@ -24,12 +24,21 @@ namespace FileFormat.ExePackers;
 /// honesty bar the UPX handler applies to its synthetic rebuild.
 /// </remarks>
 public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public abstract string Id { get; }
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public abstract string DisplayName { get; }
 
   /// <summary>Display name of the packer as written into metadata (e.g. "FSG", "ASPack").</summary>
   protected abstract string PackerLabel { get; }
 
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public ExecutableUnpackCapabilities Capabilities =>
     ExecutableUnpackCapabilities.CanDetect |
     ExecutableUnpackCapabilities.CanLocatePayload |
@@ -45,6 +54,9 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
   /// </summary>
   protected abstract (bool Match, double Confidence, string Reason) DetectPe(ReadOnlySpan<byte> image);
 
+  /// <summary>
+  /// Performs the detect operation.
+  /// </summary>
   public DetectionResult Detect(ReadOnlySpan<byte> image) {
     if (!PackerScanner.IsPe(image))
       return new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, $"{this.PackerLabel}: not a valid PE.", true)]);
@@ -54,6 +66,9 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
       : new(false, this.Id, 0, [new(ExecutableDiagnosticCode.NotPackedExecutable, reason, true)]);
   }
 
+  /// <summary>
+  /// Parses the value from the supplied data.
+  /// </summary>
   public PackedExecutable Parse(ReadOnlySpan<byte> image, DetectionResult detection) {
     var imageBytes = image.ToArray();
     var info = ExecutableContainerParsers.ParseBestEffort(image);
@@ -70,6 +85,9 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
       });
   }
 
+  /// <summary>
+  /// Performs the unpack operation.
+  /// </summary>
   public virtual UnpackResult Unpack(PackedExecutable packed, UnpackOptions options) {
     if (packed.OriginalImage.LongLength > options.MaximumInputSize)
       return new(ExecutableUnpackLevel.DetectionOnly, ExecutableUnpackCapabilities.CanDetect, [], [
@@ -123,6 +141,9 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
 
   private readonly record struct Candidate(int Offset, int? ExpectedSize, byte[] Bytes);
 
+  /// <summary>
+  /// Represents a decoded.
+  /// </summary>
   protected readonly record struct Decoded(int Offset, byte[] Compressed, byte[] Data);
 
   private static List<Candidate> CollectCandidates(byte[] image) {
@@ -253,6 +274,9 @@ public abstract class AplibSectionPackerHandler : IExecutablePackerHandler {
     name.Contains("pec", StringComparison.OrdinalIgnoreCase) ||
     name.Contains("fsg", StringComparison.OrdinalIgnoreCase);
 
+  /// <summary>
+  /// Performs the build metadata json operation.
+  /// </summary>
   protected byte[] BuildMetadataJson(PackedExecutable packed) {
     var sb = new StringBuilder();
     sb.Append("{\n");

@@ -65,9 +65,21 @@ public sealed class CookCodec {
 
   /// <summary>Parsed RA framing + cook extradata describing one cook stream.</summary>
   public sealed class StreamInfo {
+    /// <summary>
+    /// Provides the channels value.
+    /// </summary>
     public int Channels;
+    /// <summary>
+    /// Provides the sample rate value.
+    /// </summary>
     public int SampleRate;
+    /// <summary>
+    /// Provides the block align value.
+    /// </summary>
     public int BlockAlign;       // coded frame size fed to the decoder (== sub_packet_size for cook)
+    /// <summary>
+    /// Provides the extradata value.
+    /// </summary>
     public byte[] Extradata = [];
   }
 

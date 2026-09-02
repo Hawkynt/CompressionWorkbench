@@ -19,6 +19,9 @@ public static class MfsExtentMap {
   private const ushort MfsMagic = 0xD2D7;
   private const int MdbOffset = 1024;
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

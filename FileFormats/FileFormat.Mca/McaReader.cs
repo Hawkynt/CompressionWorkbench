@@ -15,13 +15,22 @@ namespace FileFormat.Mca;
 /// </para>
 /// </summary>
 public sealed class McaReader {
+  /// <summary>
+  /// Represents a chunk entry.
+  /// </summary>
   public sealed record ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType);
 
   private readonly byte[] _data;
   private readonly List<ChunkEntry> _chunks = [];
 
+  /// <summary>
+  /// Gets the chunks.
+  /// </summary>
   public IReadOnlyList<ChunkEntry> Chunks => this._chunks;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="McaReader"/>.
+  /// </summary>
   public McaReader(byte[] data) {
     this._data = data;
     if (data.Length < 8192) return;

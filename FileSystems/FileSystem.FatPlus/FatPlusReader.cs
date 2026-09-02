@@ -52,6 +52,9 @@ public sealed class FatPlusReader : IDisposable {
   private readonly bool _leaveOpen;
   private readonly List<FatPlusEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<FatPlusEntry> Entries => this._entries;
 
   /// <summary>FAT type (12, 16, or 32). FAT+ is most commonly applied to FAT32 but the spec also covers FAT16.</summary>
@@ -70,6 +73,9 @@ public sealed class FatPlusReader : IDisposable {
   private int _rootCluster;
   private int _clusterBytes;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="FatPlusReader"/>.
+  /// </summary>
   public FatPlusReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     this._stream = stream;
@@ -342,6 +348,9 @@ public sealed class FatPlusReader : IDisposable {
     _ => true
   };
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!this._leaveOpen) this._stream.Dispose();
   }

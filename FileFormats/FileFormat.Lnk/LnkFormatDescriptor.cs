@@ -20,14 +20,35 @@ namespace FileFormat.Lnk;
 /// </list>
 /// </summary>
 public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Lnk";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Windows Shell Link";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".lnk";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".lnk"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
   // Full 20-byte magic: HeaderSize (0x0000004C LE) + LinkCLSID.
@@ -36,12 +57,27 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00,
     0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
   ];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Magic20, Offset: 0, Confidence: 0.99),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Windows Shell Link (.lnk) shortcut. Surfaces header, ID list, LinkInfo, " +
     "UTF-16/ANSI string blocks, and any extra data blocks. " +
@@ -64,6 +100,9 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     IsUnicode           = 1 << 7,
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     List<(string Name, byte[] Data)> entries;
     try {
@@ -78,6 +117,9 @@ public sealed class LnkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     List<(string Name, byte[] Data)> entries;
     try {

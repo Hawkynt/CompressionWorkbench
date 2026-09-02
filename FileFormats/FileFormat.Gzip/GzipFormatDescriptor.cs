@@ -6,20 +6,59 @@ using Compression.Core.Deflate;
 
 namespace FileFormat.Gzip;
 
+/// <summary>
+/// Describes gzip format.
+/// </summary>
 public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatValidator, IFormatOptionsSchema {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Gzip";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "GZIP";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Stream;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".gz";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".gz", ".gzip"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x1F, 0x8B], Confidence: 0.80)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("deflate", "Deflate", SupportsOptimize: true)];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Deflate with CRC32, the ubiquitous HTTP/file compression standard";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
@@ -46,36 +85,57 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// both, <see cref="DeflateCompressionLevel.Default"/>.</summary>
   internal static DeflateCompressionLevel ParseLevel(FormatCreateOptions options) => DeflateLevelOption.Parse(options);
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Decompress(Stream input, Stream output) {
     using var ds = new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output) {
     using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
     input.CopyTo(cs);
   }
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options) {
     using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       ParseLevel(options), leaveOpen: true);
     input.CopyTo(cs);
   }
 
+  /// <summary>
+  /// Performs the compress optimal operation.
+  /// </summary>
   public void CompressOptimal(Stream input, Stream output) {
     using var cs = new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       DeflateCompressionLevel.Maximum, leaveOpen: true);
     input.CopyTo(cs);
   }
 
+  /// <summary>
+  /// Performs the wrap decompress operation.
+  /// </summary>
   public Stream? WrapDecompress(Stream input) =>
     new GzipStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
 
+  /// <summary>
+  /// Performs the wrap compress operation.
+  /// </summary>
   public Stream? WrapCompress(Stream output) =>
     new GzipStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < 10) {
@@ -112,6 +172,9 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       Level = ValidationLevel.Header, Issues = issues };
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     // GZIP is a stream format — structure check verifies trailer is present
@@ -135,6 +198,9 @@ public sealed class GzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       Level = ValidationLevel.Structure, Issues = issues };
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {

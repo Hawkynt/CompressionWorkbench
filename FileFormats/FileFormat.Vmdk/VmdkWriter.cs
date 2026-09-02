@@ -4,9 +4,15 @@ using System.Text;
 
 namespace FileFormat.Vmdk;
 
+/// <summary>
+/// Writes a VMware VMDK virtual disk, emitting the descriptor and the grain directory for the extent data.
+/// </summary>
 public sealed class VmdkWriter {
   private byte[]? _diskData;
 
+  /// <summary>
+  /// Sets the disk data.
+  /// </summary>
   public void SetDiskData(byte[] data) => _diskData = data;
 
   // SparseExtentHeader is a byte-packed structure (no natural alignment).

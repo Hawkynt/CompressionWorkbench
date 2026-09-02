@@ -32,6 +32,9 @@ public sealed class DmgReader : IDisposable {
   /// <summary>All partitions found in the DMG, each exposed as a named entry.</summary>
   public IReadOnlyList<DmgEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="DmgReader"/>.
+  /// </summary>
   public DmgReader(Stream stream, bool leaveOpen = false) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -327,6 +330,9 @@ public sealed class DmgReader : IDisposable {
     _ = block; _ = destOffset; _ = destLength; _ = output;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() { }
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,9 @@ public sealed class Ac3BitReader {
   private int _bytePos;
   private int _bitPos;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Ac3BitReader"/>.
+  /// </summary>
   public Ac3BitReader(byte[] data, int offset, int length) {
     ArgumentNullException.ThrowIfNull(data);
     if (offset < 0 || length < 0 || offset + length > data.Length)

@@ -31,8 +31,14 @@ public sealed class VhdReader : IDisposable {
   private int _bitmapSectors;
   private long _virtualSize;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<VhdEntry> Entries => _entries;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="VhdReader"/>.
+  /// </summary>
   public VhdReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     _streamLength = stream.Length;
@@ -128,6 +134,9 @@ public sealed class VhdReader : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(VhdEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
 
@@ -163,5 +172,8 @@ public sealed class VhdReader : IDisposable {
     return result;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => _cache.Dispose();
 }

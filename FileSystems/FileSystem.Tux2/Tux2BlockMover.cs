@@ -48,6 +48,9 @@ public sealed class Tux2BlockMover : IFilesystemBlockMover {
   /// Nothing to do: a record carries its own name and lengths, and where it
   /// sits is recorded nowhere.
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(fileName);

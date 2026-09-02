@@ -11,6 +11,9 @@ public static class CubeHash256 {
     0xD89041C3U,0x6107FBD5U,0x6C859D41U,0xF0B26679U,0x09392549U,0x5FA25603U,0x65C892FDU,0x93CB6285U,
     0x2AF2B5AEU,0x9E4B4E60U,0x774ABFDDU,0x85254725U,0x15815AEBU,0x4AB6AAD6U,0x9CDAF8AFU,0xD6032C0AU
   ];
+  /// <summary>
+  /// Computes the Cube Hash-256 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => CubeHashCore.Compute(data, 32, Iv);
 }
 
@@ -22,6 +25,9 @@ public static class CubeHash512 {
     0xFCD398D9U,0x148FE485U,0x1B017BEFU,0xB6444532U,0x6A536159U,0x2FF5781CU,0x91FA7934U,0x0DBADEA9U,
     0xD65C8A2BU,0xA5A70E75U,0xB1C62456U,0xBC796576U,0x1921C8F7U,0xE7989AF1U,0x7795D246U,0xD43E3B44U
   ];
+  /// <summary>
+  /// Computes the Cube Hash-512 hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => CubeHashCore.Compute(data, 64, Iv);
 }
 

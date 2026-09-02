@@ -25,6 +25,9 @@ namespace FileFormat.LhF;
 public static class LhFModifier {
   private const int HeaderSize = 8;            // "LhF\0" + count + flags
   private const int TrackHeaderSize = 8;       // trackNum + compSize + checksum
+  /// <summary>
+  /// Defines the track size constant value.
+  /// </summary>
   public const int TrackSize = LhFWriter.TrackSize;
 
   /// <summary>

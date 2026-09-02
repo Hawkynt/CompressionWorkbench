@@ -5,12 +5,18 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Google HighwayHash portable 64-, 128-, and 256-bit keyed hash.</summary>
 public static class HighwayHash {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     HashSizeRange.Exact(64),
     HashSizeRange.Exact(128),
     HashSizeRange.Exact(256)
   ];
 
+  /// <summary>
+  /// Computes the Highway Hash hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, ReadOnlySpan<byte> key, int hashSizeBits = 64) {
     if (key.Length != 32)
       throw new ArgumentException("HighwayHash requires a 256-bit key.", nameof(key));
@@ -46,6 +52,9 @@ public static class HighwayHash {
       0xBE5466CF34E90C6CUL, 0x452821E638D01377UL
     ];
 
+    /// <summary>
+    /// Performs the state operation provided by <see cref="HighwayHash"/>.
+    /// </summary>
     public State(ReadOnlySpan<byte> key) {
       for (var lane = 0; lane < 4; ++lane) {
         var keyLane = BinaryPrimitives.ReadUInt64LittleEndian(key.Slice(lane * 8, 8));
@@ -54,6 +63,9 @@ public static class HighwayHash {
       }
     }
 
+    /// <summary>
+    /// Adds the supplied data to the current Highway Hash hash computation.
+    /// </summary>
     public void Update(ReadOnlySpan<byte> packet) {
       Span<ulong> lanes = stackalloc ulong[4];
       for (var lane = 0; lane < 4; ++lane)
@@ -61,6 +73,9 @@ public static class HighwayHash {
       Update(lanes);
     }
 
+    /// <summary>
+    /// Performs the update remainder operation provided by <see cref="HighwayHash"/>.
+    /// </summary>
     public void UpdateRemainder(ReadOnlySpan<byte> bytes) {
       var size = bytes.Length;
       var sizePair = ((ulong)size << 32) + (uint)size;
@@ -91,6 +106,9 @@ public static class HighwayHash {
       Update(packet);
     }
 
+    /// <summary>
+    /// Performs the finalize-64 operation provided by <see cref="HighwayHash"/>.
+    /// </summary>
     public byte[] Finalize64() {
       for (var i = 0; i < 4; ++i)
         PermuteAndUpdate();
@@ -99,6 +117,9 @@ public static class HighwayHash {
       return result;
     }
 
+    /// <summary>
+    /// Performs the finalize-128 operation provided by <see cref="HighwayHash"/>.
+    /// </summary>
     public byte[] Finalize128() {
       for (var i = 0; i < 6; ++i)
         PermuteAndUpdate();
@@ -108,6 +129,9 @@ public static class HighwayHash {
       return result;
     }
 
+    /// <summary>
+    /// Performs the finalize-256 operation provided by <see cref="HighwayHash"/>.
+    /// </summary>
     public byte[] Finalize256() {
       for (var i = 0; i < 10; ++i)
         PermuteAndUpdate();

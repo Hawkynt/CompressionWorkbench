@@ -25,16 +25,146 @@ internal static class ChecksumSizeSets {
 // Static extension members provide a uniform Type.SupportedChecksumSizes surface without
 // multiplying implementation wrappers. Each receiver has its own containing class because
 // C# lowers static extension properties to parameterless getter methods.
-public static class AdlerChecksumSizeExtensions { extension(Adler) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.EvenPowerOfTwoOrByteAligned; } }
-public static class FletcherChecksumSizeExtensions { extension(Fletcher) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.EvenPowerOfTwoOrByteAligned; } }
-public static class BsdChecksumSizeExtensions { extension(BsdChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16; } }
-public static class SysVChecksumSizeExtensions { extension(SysVChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16; } }
-public static class SumChecksumSizeExtensions { extension(SumChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned; } }
-public static class LrcChecksumSizeExtensions { extension(Lrc) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8; } }
-public static class XorChecksumSizeExtensions { extension(XorChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8; } }
-public static class InternetChecksumSizeExtensions { extension(InternetChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16; } }
-public static class ComplementChecksumSizeExtensions { extension(ComplementChecksum) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned; } }
-public static class ParityChecksumSizeExtensions { extension(Parity) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned; } }
-public static class Nmea0183ChecksumSizeExtensions { extension(Nmea0183) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8; } }
-public static class CrcChecksumSizeExtensions { extension(Crc) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64; } }
-public static class Crc128ChecksumSizeExtensions { extension(Crc128) { public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128; } }
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Adler"/>.
+/// </summary>
+public static class AdlerChecksumSizeExtensions {
+  extension(Adler) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.EvenPowerOfTwoOrByteAligned;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Fletcher"/>.
+/// </summary>
+public static class FletcherChecksumSizeExtensions {
+  extension(Fletcher) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.EvenPowerOfTwoOrByteAligned;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="BsdChecksum"/>.
+/// </summary>
+public static class BsdChecksumSizeExtensions {
+  extension(BsdChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="SysVChecksum"/>.
+/// </summary>
+public static class SysVChecksumSizeExtensions {
+  extension(SysVChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="SumChecksum"/>.
+/// </summary>
+public static class SumChecksumSizeExtensions {
+  extension(SumChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Lrc"/>.
+/// </summary>
+public static class LrcChecksumSizeExtensions {
+  extension(Lrc) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="XorChecksum"/>.
+/// </summary>
+public static class XorChecksumSizeExtensions {
+  extension(XorChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="InternetChecksum"/>.
+/// </summary>
+public static class InternetChecksumSizeExtensions {
+  extension(InternetChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits16;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="ComplementChecksum"/>.
+/// </summary>
+public static class ComplementChecksumSizeExtensions {
+  extension(ComplementChecksum) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Parity"/>.
+/// </summary>
+public static class ParityChecksumSizeExtensions {
+  extension(Parity) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.PowerOfTwoOrByteAligned;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Nmea0183"/>.
+/// </summary>
+public static class Nmea0183ChecksumSizeExtensions {
+  extension(Nmea0183) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Crc"/>.
+/// </summary>
+public static class CrcChecksumSizeExtensions {
+  extension(Crc) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits8To64;
+  }
+}
+/// <summary>
+/// Provides supported checksum-output size metadata for <see cref="Crc128"/>.
+/// </summary>
+public static class Crc128ChecksumSizeExtensions {
+  extension(Crc128) {
+    /// <summary>
+    /// Gets the supported checksum-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<ChecksumSizeRange> SupportedChecksumSizes => ChecksumSizeSets.Bits128;
+  }
+}

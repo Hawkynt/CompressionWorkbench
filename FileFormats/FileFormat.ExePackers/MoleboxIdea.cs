@@ -24,6 +24,9 @@ namespace FileFormat.ExePackers;
 /// </remarks>
 public static class MoleboxIdea {
   private const int Modulus = 0x10001;
+  /// <summary>
+  /// Defines the block size constant value.
+  /// </summary>
   public const int BlockSize = 8;
   private const int SubkeyCount = 52;
 

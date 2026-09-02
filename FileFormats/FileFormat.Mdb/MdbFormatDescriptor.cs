@@ -25,24 +25,63 @@ public sealed class MdbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // The version byte is at 0x14 and the pointer at 0x2C — 64 bytes is plenty.
   private const int HeadPeekSize = 64;
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Mdb";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Microsoft Access (Jet Red / ACCDB)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".mdb";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".mdb", ".accdb"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(JetSignature, Offset: 4, Confidence: 0.95),
     new(AceSignature, Offset: 4, Confidence: 0.95),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Microsoft Access database (Jet Red 3/4, ACCDB) page-level surfacing";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var streamLen = stream.Length;
     var head = ReadHead(stream);
@@ -71,6 +110,9 @@ public sealed class MdbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var streamLen = stream.Length;
     var head = ReadHead(stream);

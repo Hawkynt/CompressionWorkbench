@@ -48,20 +48,59 @@ public sealed class Tux3Reader : IDisposable {
   private readonly long _len;
   private readonly List<Tux3Entry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<Tux3Entry> Entries => _entries;
 
+  /// <summary>
+  /// Gets or sets the birthday.
+  /// </summary>
   public ulong Birthday { get; private set; }
+  /// <summary>
+  /// Gets or sets the flags.
+  /// </summary>
   public ulong Flags { get; private set; }
+  /// <summary>
+  /// Gets or sets the i root.
+  /// </summary>
   public ulong IRoot { get; private set; }
+  /// <summary>
+  /// Gets or sets the o root.
+  /// </summary>
   public ulong ORoot { get; private set; }
+  /// <summary>
+  /// Gets or sets the a root.
+  /// </summary>
   public ulong ARoot { get; private set; }
+  /// <summary>
+  /// Gets or sets the block bits.
+  /// </summary>
   public ulong BlockBits { get; private set; }
+  /// <summary>
+  /// Gets or sets the vol blocks.
+  /// </summary>
   public ulong VolBlocks { get; private set; }
+  /// <summary>
+  /// Gets or sets the free blocks.
+  /// </summary>
   public ulong FreeBlocks { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether valid superblock.
+  /// </summary>
   public bool ValidSuperblock { get; private set; }
+  /// <summary>
+  /// Gets a value indicating whether has worm table.
+  /// </summary>
   public bool HasWormTable { get; private set; }
+  /// <summary>
+  /// Gets or sets the worm file count.
+  /// </summary>
   public uint WormFileCount { get; private set; }
 
+  /// <summary>
+  /// Provides the magic value.
+  /// </summary>
   public static readonly byte[] Magic = "TUX3SUPR"u8.ToArray();
 
   /// <summary>
@@ -70,9 +109,18 @@ public sealed class Tux3Reader : IDisposable {
   /// </summary>
   public static readonly byte[] WormTableMagic = "TUX3WORM"u8.ToArray();
 
+  /// <summary>
+  /// Defines the superblock offset constant value.
+  /// </summary>
   public const int SuperblockOffset = 4096;
+  /// <summary>
+  /// Defines the worm table offset constant value.
+  /// </summary>
   public const int WormTableOffset = 8192;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="Tux3Reader"/>.
+  /// </summary>
   public Tux3Reader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -181,6 +229,9 @@ public sealed class Tux3Reader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(Tux3Entry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.Offset < 0) return entry.Data;
@@ -204,5 +255,8 @@ public sealed class Tux3Reader : IDisposable {
     return take;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._img.Dispose();
 }

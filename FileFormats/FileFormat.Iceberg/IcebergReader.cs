@@ -3,21 +3,63 @@ using System.Text.Json;
 
 namespace FileFormat.Iceberg;
 
+/// <summary>
+/// Reads Apache Iceberg table metadata and exposes the manifests and data files it references as archive entries.
+/// </summary>
 public sealed class IcebergReader {
 
+  /// <summary>
+  /// Gets the format version.
+  /// </summary>
   public int FormatVersion { get; }
+  /// <summary>
+  /// Gets the table uuid.
+  /// </summary>
   public string TableUuid { get; }
+  /// <summary>
+  /// Gets the location.
+  /// </summary>
   public string Location { get; }
+  /// <summary>
+  /// Gets the last updated ms.
+  /// </summary>
   public long LastUpdatedMs { get; }
+  /// <summary>
+  /// Gets the last column id.
+  /// </summary>
   public int LastColumnId { get; }
+  /// <summary>
+  /// Gets the current schema id.
+  /// </summary>
   public int CurrentSchemaId { get; }
+  /// <summary>
+  /// Gets the current snapshot id.
+  /// </summary>
   public long CurrentSnapshotId { get; }
+  /// <summary>
+  /// Gets the snapshot count.
+  /// </summary>
   public int SnapshotCount { get; }
+  /// <summary>
+  /// Gets the partition spec count.
+  /// </summary>
   public int PartitionSpecCount { get; }
+  /// <summary>
+  /// Gets the sort order count.
+  /// </summary>
   public int SortOrderCount { get; }
+  /// <summary>
+  /// Gets the schema columns.
+  /// </summary>
   public IReadOnlyList<string> SchemaColumns { get; }
+  /// <summary>
+  /// Gets the parse status.
+  /// </summary>
   public string ParseStatus { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="IcebergReader"/>.
+  /// </summary>
   public IcebergReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
 

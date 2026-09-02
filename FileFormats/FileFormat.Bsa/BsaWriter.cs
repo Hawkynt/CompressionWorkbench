@@ -11,16 +11,25 @@ public sealed class BsaWriter : IDisposable {
   private readonly bool _compress;
   private readonly List<(string Path, byte[] Data)> _files = [];
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="BsaWriter"/>.
+  /// </summary>
   public BsaWriter(Stream stream, bool leaveOpen = false, bool compress = false) {
     _stream = stream;
     _leaveOpen = leaveOpen;
     _compress = compress;
   }
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string path, byte[] data) {
     _files.Add((path.Replace('/', '\\'), data));
   }
 
+  /// <summary>
+  /// Performs the finish operation.
+  /// </summary>
   public void Finish() {
     // Group files by folder
     var folders = _files.GroupBy(f => Path.GetDirectoryName(f.Path) ?? "")
@@ -109,6 +118,9 @@ public sealed class BsaWriter : IDisposable {
     }
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() {
     if (!_leaveOpen) _stream.Dispose();
   }

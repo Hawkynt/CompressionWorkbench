@@ -44,8 +44,8 @@ MSB-first bit reader used for AAC/ADTS parsing. Bits are consumed from the most 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AacBitReader` | `AacBitReader(byte[] data)` |  |
-| `AacBitReader` | `AacBitReader(byte[] data, int offset, int length)` |  |
+| `AacBitReader` | `AacBitReader(byte[] data)` | Initializes a new instance of `AacBitReader`. |
+| `AacBitReader` | `AacBitReader(byte[] data, int offset, int length)` | Initializes a new instance of `AacBitReader`. |
 | `BitsRemaining` | `long BitsRemaining { get; }` | Total bits remaining in the stream. |
 | `BytePosition` | `int BytePosition { get; }` | Current byte position, rounded up if any bits have been consumed in the current byte. |
 | `ByteAlign` | `void ByteAlign()` | Aligns to the next byte boundary, if not already aligned. |
@@ -99,8 +99,8 @@ Pure-managed AAC-LC/ADTS encoder. It implements the normative long-window transf
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EncoderDelaySamples` | `const int EncoderDelaySamples` |  |
-| `FrameSamples` | `const int FrameSamples` |  |
+| `EncoderDelaySamples` | `const int EncoderDelaySamples` | Defines the encoder delay samples constant value. |
+| `FrameSamples` | `const int FrameSamples` | Defines the frame samples constant value. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, AacEncoderOptions options)` | Encodes interleaved PCM16 to a CRC-absent ADTS AAC-LC stream. |
 
 #### `AacEncoderOptions`
@@ -126,8 +126,8 @@ AAC long-window shape.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Sine` | `0` |  |
-| `Kbd` | `1` |  |
+| `Sine` | `0` | Specifies the sine option. |
+| `Kbd` | `1` | Specifies the kbd option. |
 
 #### `AacObjectType`
 
@@ -135,20 +135,20 @@ AAC MPEG Audio Object Types (subset). Values match ISO/IEC 14496-3 Table 1.16. A
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Null` | `0` |  |
-| `AacMain` | `1` |  |
-| `AacLc` | `2` |  |
-| `AacSsr` | `3` |  |
-| `AacLtp` | `4` |  |
-| `Sbr` | `5` |  |
-| `AacScalable` | `6` |  |
-| `TwinVQ` | `7` |  |
-| `Celp` | `8` |  |
-| `Hvxc` | `9` |  |
-| `Er_AacLc` | `17` |  |
-| `Er_AacLtp` | `19` |  |
-| `Er_AacScalable` | `20` |  |
-| `Ps` | `29` |  |
+| `Null` | `0` | Specifies the null option. |
+| `AacMain` | `1` | Specifies the aac main option. |
+| `AacLc` | `2` | Specifies the aac lc option. |
+| `AacSsr` | `3` | Specifies the aac ssr option. |
+| `AacLtp` | `4` | Specifies the aac ltp option. |
+| `Sbr` | `5` | Specifies the sbr option. |
+| `AacScalable` | `6` | Specifies the aac scalable option. |
+| `TwinVQ` | `7` | Specifies the twin vq option. |
+| `Celp` | `8` | Specifies the celp option. |
+| `Hvxc` | `9` | Specifies the hvxc option. |
+| `Er_AacLc` | `17` | Specifies the er aac lc option. |
+| `Er_AacLtp` | `19` | Specifies the er aac ltp option. |
+| `Er_AacScalable` | `20` | Specifies the er aac scalable option. |
+| `Ps` | `29` | Specifies the ps option. |
 
 #### `AacStereoCodingMode`
 
@@ -156,9 +156,9 @@ Stereo spectral coding mode for AAC channel-pair elements.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Independent` | `0` |  |
-| `MidSide` | `1` |  |
-| `Auto` | `2` |  |
+| `Independent` | `0` | Specifies the independent option. |
+| `MidSide` | `1` | Specifies the mid side option. |
+| `Auto` | `2` | Selects the value automatically. |
 
 #### `AacStreamInfo`
 
@@ -206,7 +206,7 @@ Bonk audio decoder, ported from ffmpeg `libavcodec/bonk.c` (and the file layout 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HeaderBytes` | `const int HeaderBytes` |  |
+| `HeaderBytes` | `const int HeaderBytes` | Defines the header bytes constant value. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> interleavedPcm, int channels, int sampleRate, int nTaps = 4, int samplesPerPacket = 256)` | Encodes raw interleaved little-endian 16-bit PCM to a complete Bonk file in lossless mode. Coefficients are sent as all-zero taps (so the lattice is a pass-through) and each packet's samples are coded through the canonical inverse of `ReadIntList`; the produced stream decodes back to the exact input. Intended for deterministic round-trip verification. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> file)` | Decodes a Bonk file to raw interleaved little-endian 16-bit PCM. |
 | `ReadStreamInfo` | `static BonkStreamInfo ReadStreamInfo(ReadOnlySpan<byte> file, out int dataOffset)` | Reads the `'\0BONK'` tag + 17-byte header from the start of a Bonk file. |
@@ -255,7 +255,7 @@ FLAC codec: decodes a FLAC stream to interleaved little-endian PCM, and reads ST
 | --- | --- | --- |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a FLAC stream into raw interleaved little-endian PCM on `output`. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<int> interleaved, FlacEncoderOptions options)` | Encodes interleaved signed integer PCM to native FLAC. Samples are interpreted in the declared bit depth without implicit scaling. The writer supports one through eight channels, constant/verbatim/fixed predictors 0-4 with Rice residual coding, and all FLAC stereo decorrelation assignments. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels, int blockSize = 4096, FlacSubframeMode compression = 0, FlacStereoMode stereoMode = 0)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int sampleRate, int channels, int blockSize = 4096, FlacSubframeMode compression = 0, FlacStereoMode stereoMode = 0)` | Encodes the supplied input. |
 | `ReadAudioProperties` | `static AudioProperties ReadAudioProperties(ReadOnlySpan<byte> flacBytes)` | Reads STREAMINFO without a full decode; used by archive descriptors to build per-channel WAV headers. |
 
 #### `FlacCodec.AudioProperties`
@@ -274,11 +274,13 @@ Implements `IEquatable<AudioProperties>`.
 
 #### `FlacEncoderOptions`
 
+Specifies options for flac encoder.
+
 Implements `IEquatable<FlacEncoderOptions>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FlacEncoderOptions` | `FlacEncoderOptions(int SampleRate, int Channels, int BitsPerSample = 16, int BlockSize = 4096, FlacSubframeMode Compression = 0, FlacStereoMode StereoMode = 0)` |  |
+| `FlacEncoderOptions` | `FlacEncoderOptions(int SampleRate, int Channels, int BitsPerSample = 16, int BlockSize = 4096, FlacSubframeMode Compression = 0, FlacStereoMode StereoMode = 0)` | Specifies options for flac encoder. |
 | `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
 | `BlockSize` | `int BlockSize { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
@@ -288,25 +290,29 @@ Implements `IEquatable<FlacEncoderOptions>`.
 
 #### `FlacStereoMode`
 
+Specifies flac stereo mode values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Auto` | `0` |  |
-| `Independent` | `1` |  |
-| `LeftSide` | `2` |  |
-| `RightSide` | `3` |  |
-| `MidSide` | `4` |  |
+| `Auto` | `0` | Selects the value automatically. |
+| `Independent` | `1` | Specifies the independent option. |
+| `LeftSide` | `2` | Specifies the left side option. |
+| `RightSide` | `3` | Specifies the right side option. |
+| `MidSide` | `4` | Specifies the mid side option. |
 
 #### `FlacSubframeMode`
 
+Specifies flac subframe mode values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Auto` | `0` |  |
-| `Verbatim` | `1` |  |
-| `Fixed0` | `2` |  |
-| `Fixed1` | `3` |  |
-| `Fixed2` | `4` |  |
-| `Fixed3` | `5` |  |
-| `Fixed4` | `6` |  |
+| `Auto` | `0` | Selects the value automatically. |
+| `Verbatim` | `1` | Specifies the verbatim option. |
+| `Fixed0` | `2` | Specifies the fixed 0 option. |
+| `Fixed1` | `3` | Specifies the fixed 1 option. |
+| `Fixed2` | `4` | Specifies the fixed 2 option. |
+| `Fixed3` | `5` | Specifies the fixed 3 option. |
+| `Fixed4` | `6` | Specifies the fixed 4 option. |
 
 ### Namespace `Codec.Gsm610`
 
@@ -368,39 +374,45 @@ Standard MIDI File (SMF) parser + per-track re-emitter. The archive descriptor u
 | `MidiCodec` | `MidiCodec()` |  |
 | `BuildSingleTrackFile` | `byte[] BuildSingleTrackFile(byte[] trackBody, int division)` | Wraps a raw MTrk body in a format-0 SMF file using `division` copied from the source. |
 | `ExtractTrackBytes` | `byte[] ExtractTrackBytes(ReadOnlySpan<byte> data, TrackChunk track)` | Returns the raw `MTrk` payload bytes (minus the 8-byte "MTrk" + length header). |
-| `FindTracks` | `IReadOnlyList<TrackChunk> FindTracks(ReadOnlySpan<byte> data)` |  |
+| `FindTracks` | `IReadOnlyList<TrackChunk> FindTracks(ReadOnlySpan<byte> data)` | Performs the find tracks operation. |
 | `ParseMetaEvents` | `IReadOnlyList<MetaEvent> ParseMetaEvents(ReadOnlySpan<byte> data, TrackChunk track)` | Reads meta-events from a single MTrk chunk. Running-status preservation is handled correctly — every event's delta-time + status is decoded before the meta filter so the stream position stays coherent. |
-| `ReadHeader` | `FileHeader ReadHeader(ReadOnlySpan<byte> data)` |  |
+| `ReadHeader` | `FileHeader ReadHeader(ReadOnlySpan<byte> data)` | Reads the header from the supplied input. |
 
 #### `MidiCodec.FileHeader`
+
+Represents a file header.
 
 Implements `IEquatable<FileHeader>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FileHeader` | `FileHeader(int Format, int NumTracks, int Division)` |  |
+| `FileHeader` | `FileHeader(int Format, int NumTracks, int Division)` | Represents a file header. |
 | `Division` | `int Division { get; init; }` |  |
 | `Format` | `int Format { get; init; }` |  |
 | `NumTracks` | `int NumTracks { get; init; }` |  |
 
 #### `MidiCodec.MetaEvent`
 
+Represents a meta event.
+
 Implements `IEquatable<MetaEvent>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MetaEvent` | `MetaEvent(int TrackIndex, byte Type, byte[] Data)` |  |
+| `MetaEvent` | `MetaEvent(int TrackIndex, byte Type, byte[] Data)` | Represents a meta event. |
 | `Data` | `byte[] Data { get; init; }` |  |
 | `TrackIndex` | `int TrackIndex { get; init; }` |  |
 | `Type` | `byte Type { get; init; }` |  |
 
 #### `MidiCodec.TrackChunk`
 
+Represents a track chunk.
+
 Implements `IEquatable<TrackChunk>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `TrackChunk` | `TrackChunk(int Index, int FileOffset, int ByteLength)` |  |
+| `TrackChunk` | `TrackChunk(int Index, int FileOffset, int ByteLength)` | Represents a track chunk. |
 | `ByteLength` | `int ByteLength { get; init; }` |  |
 | `FileOffset` | `int FileOffset { get; init; }` |  |
 | `Index` | `int Index { get; init; }` |  |
@@ -440,11 +452,11 @@ Layer III channel mode.
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Auto` | `-1` |  |
-| `Stereo` | `0` |  |
-| `JointStereo` | `1` |  |
-| `DualChannel` | `2` |  |
-| `Mono` | `3` |  |
+| `Auto` | `-1` | Selects the value automatically. |
+| `Stereo` | `0` | Specifies the stereo option. |
+| `JointStereo` | `1` | Specifies the joint stereo option. |
+| `DualChannel` | `2` | Specifies the dual channel option. |
+| `Mono` | `3` | Specifies the mono option. |
 
 #### `Mp3EncoderOptions`
 
@@ -549,10 +561,10 @@ Ogg page walker specialised for Opus streams. Reassembles packets across page bo
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OggOpusReader` | `OggOpusReader(Stream stream)` |  |
-| `ReadHead` | `OpusHeadPacket ReadHead()` |  |
-| `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` |  |
-| `TryReadTags` | `OpusTagsPacket TryReadTags()` |  |
+| `OggOpusReader` | `OggOpusReader(Stream stream)` | Initializes a new instance of `OggOpusReader`. |
+| `ReadHead` | `OpusHeadPacket ReadHead()` | Reads the head from the supplied input. |
+| `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` | Attempts to read the packet from the supplied input. |
+| `TryReadTags` | `OpusTagsPacket TryReadTags()` | Attempts to read the tags from the supplied input. |
 
 #### `OpusBandwidth`
 
@@ -643,9 +655,9 @@ One of the three Opus operating modes, decoded from the TOC byte's config field 
 
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `SilkOnly` | `0` |  |
-| `Hybrid` | `1` |  |
-| `CeltOnly` | `2` |  |
+| `SilkOnly` | `0` | Specifies the silk only option. |
+| `Hybrid` | `1` | Specifies the hybrid option. |
+| `CeltOnly` | `2` | Specifies the celt only option. |
 
 #### `OpusPacketReader`
 
@@ -676,9 +688,9 @@ Rational-rate resampler used to bring SILK's 8 / 12 / 16 / 24 kHz output up to C
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OpusResampler` | `OpusResampler(int inputRate, int outputRate, int channels)` | Creates a resampler converting `inputRate` → `outputRate`. |
-| `Channels` | `int Channels { get; }` |  |
-| `InputRate` | `int InputRate { get; }` |  |
-| `OutputRate` | `int OutputRate { get; }` |  |
+| `Channels` | `int Channels { get; }` | Gets the channels. |
+| `InputRate` | `int InputRate { get; }` | Gets the input rate. |
+| `OutputRate` | `int OutputRate { get; }` | Gets the output rate. |
 | `Resample` | `int Resample(ReadOnlySpan<float> input, Span<float> output)` | Resamples `input` (interleaved float) into `output`. |
 
 #### `OpusSilk`
@@ -694,11 +706,13 @@ SILK decoder entry point — linear-predictive speech codec path used for narrow
 
 #### `OpusStreamInfo`
 
+Represents an opus stream info.
+
 Implements `IEquatable<OpusStreamInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OpusStreamInfo` | `OpusStreamInfo(int SampleRate, int Channels, int PreSkip, int InputSampleRate, string Vendor, int ChannelMappingFamily, int StreamCount, int CoupledStreamCount, IReadOnlyList<byte> ChannelMapping)` |  |
+| `OpusStreamInfo` | `OpusStreamInfo(int SampleRate, int Channels, int PreSkip, int InputSampleRate, string Vendor, int ChannelMappingFamily, int StreamCount, int CoupledStreamCount, IReadOnlyList<byte> ChannelMapping)` | Represents an opus stream info. |
 | `ChannelMappingFamily` | `int ChannelMappingFamily { get; init; }` |  |
 | `ChannelMapping` | `IReadOnlyList<byte> ChannelMapping { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
@@ -711,11 +725,13 @@ Implements `IEquatable<OpusStreamInfo>`.
 
 #### `OpusTagsPacket`
 
+Represents an opus tags packet.
+
 Implements `IEquatable<OpusTagsPacket>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OpusTagsPacket` | `OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments)` |  |
+| `OpusTagsPacket` | `OpusTagsPacket(string Vendor, IReadOnlyList<string> Comments)` | Represents an opus tags packet. |
 | `Comments` | `IReadOnlyList<string> Comments { get; init; }` |  |
 | `Vendor` | `string Vendor { get; init; }` |  |
 
@@ -806,6 +822,8 @@ Ogg Vorbis I decoder. Reads an Ogg-wrapped Vorbis bitstream and produces interle
 | `ReadStreamInfo` | `static VorbisStreamInfo ReadStreamInfo(Stream input)` | Reads the identification + comment packets and returns metadata without decoding any audio frames. |
 
 #### `VorbisEncoder`
+
+Encodes vorbis data.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1031,23 +1049,27 @@ Implements `IDisposable`, `IResampler`.
 
 #### `OpusApplication`
 
+Specifies opus application values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `OPUS_APPLICATION_UNIMPLEMENTED` | `0` |  |
+| `OPUS_APPLICATION_UNIMPLEMENTED` | `0` | Specifies the opus application unimplemented option. |
 | `OPUS_APPLICATION_VOIP` | `2048` | Best for most VoIP/videoconference applications where listening quality and intelligibility matter most |
 | `OPUS_APPLICATION_AUDIO` | `2049` | Best for broadcast/high-fidelity application where the decoded audio should be as close as possible to the input |
 | `OPUS_APPLICATION_RESTRICTED_LOWDELAY` | `2051` | Only use when lowest-achievable latency is what matters most. Voice-optimized modes cannot be used. |
 
 #### `OpusBandwidth`
 
+Specifies opus bandwidth values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `OPUS_BANDWIDTH_AUTO` | `-1000` |  |
-| `OPUS_BANDWIDTH_NARROWBAND` | `1101` |  |
-| `OPUS_BANDWIDTH_MEDIUMBAND` | `1102` |  |
-| `OPUS_BANDWIDTH_WIDEBAND` | `1103` |  |
-| `OPUS_BANDWIDTH_SUPERWIDEBAND` | `1104` |  |
-| `OPUS_BANDWIDTH_FULLBAND` | `1105` |  |
+| `OPUS_BANDWIDTH_AUTO` | `-1000` | Specifies the opus bandwidth auto option. |
+| `OPUS_BANDWIDTH_NARROWBAND` | `1101` | Specifies the opus bandwidth narrowband option. |
+| `OPUS_BANDWIDTH_MEDIUMBAND` | `1102` | Specifies the opus bandwidth mediumband option. |
+| `OPUS_BANDWIDTH_WIDEBAND` | `1103` | Specifies the opus bandwidth wideband option. |
+| `OPUS_BANDWIDTH_SUPERWIDEBAND` | `1104` | Specifies the opus bandwidth superwideband option. |
+| `OPUS_BANDWIDTH_FULLBAND` | `1105` | Specifies the opus bandwidth fullband option. |
 
 #### `OpusError`
 
@@ -1067,6 +1089,8 @@ Note that since most API-level errors are detected and thrown as OpusExceptions,
 
 #### `OpusFramesize`
 
+Specifies opus framesize values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `OPUS_FRAMESIZE_ARG` | `5000` | Select frame size from the argument (default) |
@@ -1080,18 +1104,22 @@ Note that since most API-level errors are detected and thrown as OpusExceptions,
 
 #### `OpusMode`
 
+Specifies opus mode values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `MODE_AUTO` | `-1000` |  |
-| `MODE_SILK_ONLY` | `1000` |  |
-| `MODE_HYBRID` | `1001` |  |
-| `MODE_CELT_ONLY` | `1002` |  |
+| `MODE_AUTO` | `-1000` | Specifies the mode auto option. |
+| `MODE_SILK_ONLY` | `1000` | Specifies the mode silk only option. |
+| `MODE_HYBRID` | `1001` | Specifies the mode hybrid option. |
+| `MODE_CELT_ONLY` | `1002` | Specifies the mode celt only option. |
 
 #### `OpusSignal`
 
+Specifies opus signal values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `OPUS_SIGNAL_AUTO` | `-1000` |  |
+| `OPUS_SIGNAL_AUTO` | `-1000` | Specifies the opus signal auto option. |
 | `OPUS_SIGNAL_VOICE` | `3001` | Signal being encoded is voice |
 | `OPUS_SIGNAL_MUSIC` | `3002` | Signal being encoded is music |
 
@@ -1156,7 +1184,7 @@ Implements `IDisposable`, `IOpusEncoder`.
 | `UseDTX` | `bool UseDTX { get; set; }` | Gets or sets a flag to enable Discontinuous Transmission mode. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, the encoder detects silence and background noise and reduces the number of output packets, with up to 600ms in between separate packet transmissions. |
 | `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets or sets a flag to enable Forward Error Correction. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, lost packets can be partially recovered by decoding data stored in the following packet. |
 | `UseVBR` | `bool UseVBR { get; set; }` | Gets or sets a flag to enable Variable Bitrate encoding. This is recommended as it generally improves audio quality with little impact on average bitrate |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Encode` | `int Encode(ReadOnlySpan<float> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
 | `Encode` | `int Encode(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame. |
 | `Encode` | `int Encode(float[] in_pcm, int in_pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
@@ -1218,7 +1246,7 @@ Implements `IDisposable`, `IOpusMultiStreamEncoder`.
 | `UseVBR` | `bool UseVBR { get; set; }` |  |
 | `CreateSurround` | `static OpusMSEncoder CreateSurround(int Fs, int channels, int mapping_family, out int streams, out int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a multichannel Opus encoder using the "new API". This constructor allows you to use predefined Vorbis channel mappings, or specify your own. |
 | `Create` | `static OpusMSEncoder Create(int Fs, int channels, int streams, int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a new multichannel Opus encoder using the "old API". |
-| `Dispose` | `void Dispose()` |  |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
 | `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
 | `EncodeMultistream` | `int EncodeMultistream(float[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
@@ -1253,18 +1281,20 @@ Contains the parsed information from a single Opus packet, such as the bandwidth
 
 #### `OpusRepacketizer`
 
+Represents an opus repacketizer.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OpusRepacketizer` | `OpusRepacketizer()` | Creates a new repacketizer |
-| `AddPacket` | `int AddPacket(Span<byte> data, int data_offset, int len)` |  |
-| `CreatePacket` | `int CreatePacket(byte[] data, int data_offset, int maxlen)` |  |
-| `CreatePacket` | `int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)` |  |
-| `GetNumFrames` | `int GetNumFrames()` |  |
-| `PadMultistreamPacket` | `static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)` |  |
-| `PadPacket` | `static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)` |  |
-| `Reset` | `void Reset()` |  |
-| `UnpadMultistreamPacket` | `static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)` |  |
-| `UnpadPacket` | `static int UnpadPacket(byte[] data, int data_offset, int len)` |  |
+| `AddPacket` | `int AddPacket(Span<byte> data, int data_offset, int len)` | Performs the add packet operation. |
+| `CreatePacket` | `int CreatePacket(byte[] data, int data_offset, int maxlen)` | Performs the create packet operation. |
+| `CreatePacket` | `int CreatePacket(int begin, int end, byte[] data, int data_offset, int maxlen)` | Performs the create packet operation. |
+| `GetNumFrames` | `int GetNumFrames()` | Gets the num frames. |
+| `PadMultistreamPacket` | `static int PadMultistreamPacket(byte[] data, int data_offset, int len, int new_len, int nb_streams)` | Performs the pad multistream packet operation. |
+| `PadPacket` | `static int PadPacket(Span<byte> data, int data_offset, int len, int new_len)` | Performs the pad packet operation. |
+| `Reset` | `void Reset()` | Performs the reset operation. |
+| `UnpadMultistreamPacket` | `static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)` | Performs the unpad multistream packet operation. |
+| `UnpadPacket` | `static int UnpadPacket(byte[] data, int data_offset, int len)` | Performs the unpad packet operation. |
 
 ### Namespace `FileFormat.Aiff`
 
@@ -1279,25 +1309,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AiffFormatDescriptor` | `AiffFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `AiffReader`
 
@@ -1307,15 +1337,17 @@ IFF/AIFF + AIFC container parser. Walks the FORM chunk chain and surfaces the CO
 | --- | --- | --- |
 | `AiffReader` | `AiffReader()` |  |
 | `Decode80BitFloatToInt` | `static int Decode80BitFloatToInt(ReadOnlySpan<byte> b)` | Decodes the 80-bit IEEE 754 extended-precision float that AIFF uses for the sample rate field. Returns the value truncated to int; non-finite/negative inputs return 0. |
-| `Read` | `ParsedAiff Read(ReadOnlySpan<byte> data)` |  |
+| `Read` | `ParsedAiff Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
 
 #### `AiffReader.ParsedAiff`
+
+Represents a parsed aiff.
 
 Implements `IEquatable<ParsedAiff>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ParsedAiff` | `ParsedAiff(int NumChannels, int SampleRate, int BitsPerSample, int SampleFrames, string CompressionId, string CompressionName, bool IsAifc, byte[] SoundData, byte[] Annotations, byte[] Markers, byte[] Instrument, byte[] Id3, IReadOnlyList<ValueTuple<string, byte[]>> OtherChunks)` |  |
+| `ParsedAiff` | `ParsedAiff(int NumChannels, int SampleRate, int BitsPerSample, int SampleFrames, string CompressionId, string CompressionName, bool IsAifc, byte[] SoundData, byte[] Annotations, byte[] Markers, byte[] Instrument, byte[] Id3, IReadOnlyList<ValueTuple<string, byte[]>> OtherChunks)` | Represents a parsed aiff. |
 | `Annotations` | `byte[] Annotations { get; init; }` |  |
 | `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
 | `CompressionId` | `string CompressionId { get; init; }` |  |
@@ -1366,25 +1398,25 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AkbFormatDescriptor` | `AkbFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly; all other entries delegate to the reader's per-entry extract and are wrapped in a `BoundedEntryStream` sized to their logical length. |
 
 #### `AkbReader`
@@ -1437,21 +1469,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AlacFormatDescriptor` | `AlacFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Ape`
 
@@ -1466,21 +1498,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApeFormatDescriptor` | `ApeFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Au`
 
@@ -1495,25 +1527,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AuFormatDescriptor` | `AuFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `AuReader`
 
@@ -1522,15 +1554,17 @@ Sun / NeXT `.au` (`.snd`) header parser. The first 24 bytes are all big-endian: 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AuReader` | `AuReader()` |  |
-| `Read` | `ParsedAu Read(ReadOnlySpan<byte> data)` |  |
+| `Read` | `ParsedAu Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
 
 #### `AuReader.ParsedAu`
+
+Represents a parsed au.
 
 Implements `IEquatable<ParsedAu>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ParsedAu` | `ParsedAu(uint Encoding, int SampleRate, int NumChannels, byte[] SoundData, string Annotation)` |  |
+| `ParsedAu` | `ParsedAu(uint Encoding, int SampleRate, int NumChannels, byte[] SoundData, string Annotation)` | Represents a parsed au. |
 | `Annotation` | `string Annotation { get; init; }` |  |
 | `Encoding` | `uint Encoding { get; init; }` |  |
 | `NumChannels` | `int NumChannels { get; init; }` |  |
@@ -1571,25 +1605,25 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AwbFormatDescriptor` | `AwbFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The underlying reader produces the entry's bytes (decoded if the format compresses per-entry); the returned stream is a `BoundedEntryStream` sized to the entry's logical length so adjacent entries and any trailing padding are physically unreachable through this view. |
 
 #### `AwbReader`
@@ -1639,25 +1673,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BonkFormatDescriptor` | `BonkFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Dfpwm`
 
@@ -1672,25 +1706,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DfpwmFormatDescriptor` | `DfpwmFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Flac`
 
@@ -1705,21 +1739,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FlacArchiveDescriptor` | `FlacArchiveDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `FlacFormatDescriptor`
 
@@ -1730,24 +1764,24 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayou
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FlacFormatDescriptor` | `FlacFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Compress` | `void Compress(Stream input, Stream output)` |  |
-| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `FlacLayoutMap`
 
@@ -1755,7 +1789,7 @@ Walks a FLAC file and emits the byte-level layout: fLaC magic, STREAMINFO, other
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` |  |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` | Enumerates the value. |
 
 #### `FlacReader`
 
@@ -1763,8 +1797,8 @@ Thin back-compat shim over `FlacCodec`. New code should call the codec class dir
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
-| `ReadAudioProperties` | `static AudioProperties ReadAudioProperties(ReadOnlySpan<byte> flacBytes)` |  |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `ReadAudioProperties` | `static AudioProperties ReadAudioProperties(ReadOnlySpan<byte> flacBytes)` | Reads the audio properties from the supplied input. |
 
 #### `FlacReader.AudioProperties`
 
@@ -1801,21 +1835,21 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FmodFormatDescriptor` | `FmodFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single FSB entry as a bounded read-only stream. The `BuildEntries` parser produces decoded byte buffers per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so adjacent samples cannot leak. |
 
 ### Namespace `FileFormat.It`
@@ -1831,21 +1865,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ItFormatDescriptor` | `ItFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Midi`
 
@@ -1860,25 +1894,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MidiFormatDescriptor` | `MidiFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Mod`
 
@@ -1893,21 +1927,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ModFormatDescriptor` | `ModFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Mp3`
 
@@ -1920,7 +1954,7 @@ Parses an ID3v1 (/v1.1) tag — the fixed 128-byte trailer at the end of many ol
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Id3v1Reader` | `Id3v1Reader()` |  |
-| `Read` | `Tag Read(ReadOnlySpan<byte> file)` |  |
+| `Read` | `Tag Read(ReadOnlySpan<byte> file)` | Reads the value from the supplied input. |
 
 #### `Id3v1Reader.Tag`
 
@@ -1950,11 +1984,13 @@ Parses ID3v2 tag frames prepended to an MP3. Extracts common text frames (TIT2/T
 
 #### `Id3v2Reader.Frame`
 
+Represents a frame.
+
 Implements `IEquatable<Frame>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Frame` | `Frame(string Id, string MimeType, string Description, byte[] Payload)` |  |
+| `Frame` | `Frame(string Id, string MimeType, string Description, byte[] Payload)` | Represents a frame. |
 | `Description` | `string Description { get; init; }` |  |
 | `Id` | `string Id { get; init; }` |  |
 | `MimeType` | `string MimeType { get; init; }` |  |
@@ -1982,28 +2018,28 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Mp3FormatDescriptor` | `Mp3FormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
@@ -2013,7 +2049,7 @@ Walks an MP3 file and emits `DefragBlockInfo` tiles for the ID3v2 header, tag fr
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` |  |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
 
 #### `Mp3Optimizer`
 
@@ -2038,22 +2074,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OggFormatDescriptor` | `OggFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `OggLayoutMap`
 
@@ -2061,7 +2097,7 @@ Walks an OGG bitstream at the page level and emits `DefragBlockInfo` tiles for b
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` |  |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
 
 #### `OggPageParser`
 
@@ -2070,16 +2106,18 @@ Walks an Ogg bitstream at the page level (RFC 3533). Each page begins with the m
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OggPageParser` | `OggPageParser()` |  |
-| `Pages` | `List<Page> Pages(ReadOnlySpan<byte> data)` |  |
+| `Pages` | `List<Page> Pages(ReadOnlySpan<byte> data)` | Performs the pages operation. |
 | `StreamPackets` | `IEnumerable<byte[]> StreamPackets(ReadOnlySpan<byte> data, uint serial)` | Yields reassembled packet blobs for a single logical bitstream (filtered by `serial`). |
 
 #### `OggPageParser.Page`
+
+Represents a page.
 
 Implements `IEquatable<Page>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Page` | `Page(uint Serial, byte Flags, byte[][] Segments)` |  |
+| `Page` | `Page(uint Serial, byte Flags, byte[][] Segments)` | Represents a page. |
 | `Flags` | `byte Flags { get; init; }` |  |
 | `Segments` | `byte[][] Segments { get; init; }` |  |
 | `Serial` | `uint Serial { get; init; }` |  |
@@ -2091,15 +2129,17 @@ Parses a Vorbis / Opus comment block. Layout: vendor length + vendor string + co
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VorbisCommentReader` | `VorbisCommentReader()` |  |
-| `Read` | `Parsed Read(ReadOnlySpan<byte> body)` |  |
+| `Read` | `Parsed Read(ReadOnlySpan<byte> body)` | Reads the value from the supplied input. |
 
 #### `VorbisCommentReader.Parsed`
+
+Represents a parsed.
 
 Implements `IEquatable<Parsed>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Parsed` | `Parsed(string Vendor, IReadOnlyList<ValueTuple<string, string>> Comments)` |  |
+| `Parsed` | `Parsed(string Vendor, IReadOnlyList<ValueTuple<string, string>> Comments)` | Represents a parsed. |
 | `Comments` | `IReadOnlyList<ValueTuple<string, string>> Comments { get; init; }` |  |
 | `Vendor` | `string Vendor { get; init; }` |  |
 
@@ -2109,17 +2149,19 @@ Implements `IEquatable<Parsed>`.
 
 #### `PsfConstants`
 
+Represents a psf constants.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Crc32Polynomial` | `const uint Crc32Polynomial` |  |
-| `EntryHeader` | `const string EntryHeader` |  |
-| `EntryProgram` | `const string EntryProgram` |  |
-| `EntryReserved` | `const string EntryReserved` |  |
-| `EntryTags` | `const string EntryTags` |  |
-| `HeaderSize` | `const int HeaderSize` |  |
-| `Magic` | `static readonly byte[] Magic` |  |
-| `TagPrefix` | `const string TagPrefix` |  |
-| `VersionPs1` | `const byte VersionPs1` |  |
+| `Crc32Polynomial` | `const uint Crc32Polynomial` | Defines the crc 32 polynomial constant value. |
+| `EntryHeader` | `const string EntryHeader` | Defines the entry header constant value. |
+| `EntryProgram` | `const string EntryProgram` | Defines the entry program constant value. |
+| `EntryReserved` | `const string EntryReserved` | Defines the entry reserved constant value. |
+| `EntryTags` | `const string EntryTags` | Defines the entry tags constant value. |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `Magic` | `static readonly byte[] Magic` | Provides the magic value. |
+| `TagPrefix` | `const string TagPrefix` | Defines the tag prefix constant value. |
+| `VersionPs1` | `const byte VersionPs1` | Defines the version ps 1 constant value. |
 
 #### `PsfCrc32`
 
@@ -2148,23 +2190,23 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PsfFormatDescriptor` | `PsfFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 #### `PsfReader`
 
@@ -2215,25 +2257,25 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `QoaFormatDescriptor` | `QoaFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.S3m`
 
@@ -2248,21 +2290,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `S3mFormatDescriptor` | `S3mFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Wav`
 
@@ -2286,28 +2328,28 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavFormatDescriptor` | `WavFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` |  |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
 
@@ -2317,7 +2359,7 @@ Walks a WAV (RIFF/WAVE) file's chunk structure and emits `DefragBlockInfo` tiles
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` |  |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
 
 #### `WavOptimizer`
 
@@ -2338,15 +2380,17 @@ RIFF/WAVE header + per-channel PCM extraction. Supports format codes: 1 — line
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavReader` | `WavReader()` |  |
-| `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` |  |
+| `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
 
 #### `WavReader.ParsedWav`
+
+Represents a parsed wav.
 
 Implements `IEquatable<ParsedWav>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ParsedWav` | `ParsedWav(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks, uint? ChannelMask = null)` |  |
+| `ParsedWav` | `ParsedWav(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks, uint? ChannelMask = null)` | Represents a parsed wav. |
 | `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
 | `ChannelMask` | `uint? ChannelMask { get; init; }` |  |
 | `FormatCode` | `int FormatCode { get; init; }` |  |
@@ -2368,21 +2412,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavPackFormatDescriptor` | `WavPackFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.WwiseBnk`
 
@@ -2390,21 +2434,25 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `HircObject`
 
+Represents a hirc object.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HircObject` | `HircObject()` |  |
-| `Id` | `uint Id { get; init; }` |  |
-| `Size` | `uint Size { get; init; }` |  |
-| `Type` | `byte Type { get; init; }` |  |
+| `Id` | `uint Id { get; init; }` | Gets or sets the id. |
+| `Size` | `uint Size { get; init; }` | Gets or sets the size. |
+| `Type` | `byte Type { get; init; }` | Gets or sets the type. |
 
 #### `WemEntry`
+
+Represents a wem entry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WemEntry` | `WemEntry()` |  |
-| `Offset` | `uint Offset { get; init; }` |  |
-| `Size` | `uint Size { get; init; }` |  |
-| `WemId` | `uint WemId { get; init; }` |  |
+| `Offset` | `uint Offset { get; init; }` | Gets or sets the offset. |
+| `Size` | `uint Size { get; init; }` | Gets or sets the size. |
+| `WemId` | `uint WemId { get; init; }` | Gets or sets the wem id. |
 
 #### `WwiseBnkFormatDescriptor`
 
@@ -2415,22 +2463,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WwiseBnkFormatDescriptor` | `WwiseBnkFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single bank entry as a bounded read-only stream. Handles the synthetic `FULL.bnk` passthrough, the `metadata.ini` summary, `hirc_objects.txt`, and per-WEM positional slices. All returns are wrapped in `BoundedEntryStream` sized to their logical length so adjacent regions can't leak. |
 
 #### `WwiseBnkReader`
@@ -2439,17 +2487,17 @@ Parses a Wwise SoundBank (.bnk) file as a sequence of RIFF-style 4CC+uint32-size
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `WwiseBnkReader` | `WwiseBnkReader(Stream stream)` |  |
-| `BankId` | `uint BankId { get; }` |  |
-| `BankVersion` | `uint BankVersion { get; }` |  |
+| `WwiseBnkReader` | `WwiseBnkReader(Stream stream)` | Initializes a new instance of `WwiseBnkReader`. |
+| `BankId` | `uint BankId { get; }` | Gets or sets the bank id. |
+| `BankVersion` | `uint BankVersion { get; }` | Gets or sets the bank version. |
 | `ChunkSpans` | `Dictionary<string, ValueTuple<long, long>> ChunkSpans { get; }` | Maps each top-level chunk tag to its (body offset, body length) so callers can surface a raw per-section blob (BKHD.bin, HIRC.bin, …). |
-| `Chunks` | `Dictionary<string, long> Chunks { get; }` |  |
-| `DataChunkOffset` | `long DataChunkOffset { get; }` |  |
-| `DataChunkSize` | `long DataChunkSize { get; }` |  |
-| `HircObjects` | `List<HircObject> HircObjects { get; }` |  |
-| `Wems` | `List<WemEntry> Wems { get; }` |  |
+| `Chunks` | `Dictionary<string, long> Chunks { get; }` | Gets the chunks. |
+| `DataChunkOffset` | `long DataChunkOffset { get; }` | Gets or sets the data chunk offset. |
+| `DataChunkSize` | `long DataChunkSize { get; }` | Gets or sets the data chunk size. |
+| `HircObjects` | `List<HircObject> HircObjects { get; }` | Gets the hirc objects. |
+| `Wems` | `List<WemEntry> Wems { get; }` | Gets the wems. |
 | `ExtractChunk` | `byte[] ExtractChunk(string tag)` | Reads a top-level chunk's raw body bytes by its 4CC tag. |
-| `ExtractWem` | `byte[] ExtractWem(WemEntry e)` |  |
+| `ExtractWem` | `byte[] ExtractWem(WemEntry e)` | Performs the extract wem operation. |
 
 ### Namespace `FileFormat.Xm`
 
@@ -2464,21 +2512,21 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XmFormatDescriptor` | `XmFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `GroovyCodecs.Mp3`
 
@@ -2486,12 +2534,16 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `IMp3Decoder`
 
+Decodes i mp 3 data.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `close` | `void close()` |  |
 | `decode` | `void decode(MemoryStream sampleBuffer, bool playOriginal)` |  |
 
 #### `IMp3Encoder`
+
+Encodes i mp 3 data.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2516,13 +2568,15 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `Mp3Decoder`
 
+Decodes mp 3 data.
+
 Implements `IMp3Decoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Mp3Decoder` | `Mp3Decoder(string mp3File)` |  |
-| `close` | `virtual void close()` |  |
-| `decode` | `virtual void decode(MemoryStream sampleBuffer, bool playOriginal)` |  |
+| `Mp3Decoder` | `Mp3Decoder(string mp3File)` | Initializes a new instance of `Mp3Decoder`. |
+| `close` | `virtual void close()` | Performs the close operation. |
+| `decode` | `virtual void decode(MemoryStream sampleBuffer, bool playOriginal)` | Performs the decode operation. |
 
 #### `Mp3Encoder`
 
@@ -2532,47 +2586,47 @@ Implements `IMp3Encoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Mp3Encoder` | `Mp3Encoder()` |  |
+| `Mp3Encoder` | `Mp3Encoder()` | Initializes a new instance of `Mp3Encoder`. |
 | `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat)` | Initializes the encoder with the given source/PCM format. The default mp3 encoding parameters are used, see DEFAULT_BITRATE, DEFAULT_CHANNEL_MODE, DEFAULT_QUALITY, and DEFAULT_VBR. |
 | `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat, AudioFormat targetFormat)` | Initializes the encoder with the given source/PCM format. The mp3 parameters are read from the targetFormat's properties. For any parameter that is not set, global system properties are queried for backwards tritonus compatibility. Last, parameters will use the default values DEFAULT_BITRATE, DEFAULT_CHANNEL_MODE, DEFAULT_QUALITY, and DEFAULT_VBR. |
 | `Mp3Encoder` | `Mp3Encoder(AudioFormat sourceFormat, int bitRate, int channelMode, int quality, bool VBR)` | Initializes the encoder, overriding any parameters set in the audio format's properties or in the system properties. |
-| `BITRATE_AUTO` | `const int BITRATE_AUTO` |  |
-| `CHANNEL_MODE_AUTO` | `const int CHANNEL_MODE_AUTO` |  |
-| `CHANNEL_MODE_DUAL_CHANNEL` | `const int CHANNEL_MODE_DUAL_CHANNEL` |  |
-| `CHANNEL_MODE_JOINT_STEREO` | `const int CHANNEL_MODE_JOINT_STEREO` |  |
-| `CHANNEL_MODE_MONO` | `const int CHANNEL_MODE_MONO` |  |
-| `CHANNEL_MODE_STEREO` | `const int CHANNEL_MODE_STEREO` |  |
-| `MPEG_VERSION_1` | `const int MPEG_VERSION_1` |  |
-| `MPEG_VERSION_2DOT5` | `const int MPEG_VERSION_2DOT5` |  |
-| `MPEG_VERSION_2` | `const int MPEG_VERSION_2` |  |
-| `NOT_SPECIFIED` | `const int NOT_SPECIFIED` |  |
+| `BITRATE_AUTO` | `const int BITRATE_AUTO` | Defines the bitrate auto constant value. |
+| `CHANNEL_MODE_AUTO` | `const int CHANNEL_MODE_AUTO` | Defines the channel mode auto constant value. |
+| `CHANNEL_MODE_DUAL_CHANNEL` | `const int CHANNEL_MODE_DUAL_CHANNEL` | Defines the channel mode dual channel constant value. |
+| `CHANNEL_MODE_JOINT_STEREO` | `const int CHANNEL_MODE_JOINT_STEREO` | Defines the channel mode joint stereo constant value. |
+| `CHANNEL_MODE_MONO` | `const int CHANNEL_MODE_MONO` | Defines the channel mode mono constant value. |
+| `CHANNEL_MODE_STEREO` | `const int CHANNEL_MODE_STEREO` | Defines the channel mode stereo constant value. |
+| `MPEG_VERSION_1` | `const int MPEG_VERSION_1` | Defines the mpeg version 1 constant value. |
+| `MPEG_VERSION_2DOT5` | `const int MPEG_VERSION_2DOT5` | Defines the mpeg version 2 dot 5 constant value. |
+| `MPEG_VERSION_2` | `const int MPEG_VERSION_2` | Defines the mpeg version 2 constant value. |
+| `NOT_SPECIFIED` | `const int NOT_SPECIFIED` | Defines the not specified constant value. |
 | `P_BITRATE` | `const string P_BITRATE` | property key to read/set the bitrate: an Integer value. Set to -1 for default bitrate. |
 | `P_CHMODE` | `const string P_CHMODE` | property key to read/set the channel mode: a String, one of "jointstereo", "dual", "mono", "auto" (default). |
 | `P_QUALITY` | `const string P_QUALITY` | property key to read/set the quality: an Integer from 1 (highest) to 9 (lowest). |
 | `P_VBR` | `const string P_VBR` | property key to read/set the VBR mode: an instance of Boolean (default: false) |
-| `QUALITY_HIGHEST` | `const int QUALITY_HIGHEST` |  |
-| `QUALITY_HIGH` | `const int QUALITY_HIGH` |  |
-| `QUALITY_LOWEST` | `const int QUALITY_LOWEST` |  |
-| `QUALITY_LOW` | `const int QUALITY_LOW` |  |
-| `QUALITY_MIDDLE` | `const int QUALITY_MIDDLE` |  |
-| `EffectiveBitRate` | `virtual int EffectiveBitRate { get; }` |  |
-| `EffectiveChannelMode` | `virtual int EffectiveChannelMode { get; }` |  |
+| `QUALITY_HIGHEST` | `const int QUALITY_HIGHEST` | Defines the quality highest constant value. |
+| `QUALITY_HIGH` | `const int QUALITY_HIGH` | Defines the quality high constant value. |
+| `QUALITY_LOWEST` | `const int QUALITY_LOWEST` | Defines the quality lowest constant value. |
+| `QUALITY_LOW` | `const int QUALITY_LOW` | Defines the quality low constant value. |
+| `QUALITY_MIDDLE` | `const int QUALITY_MIDDLE` | Defines the quality middle constant value. |
+| `EffectiveBitRate` | `virtual int EffectiveBitRate { get; }` | Gets the effective bit rate. |
+| `EffectiveChannelMode` | `virtual int EffectiveChannelMode { get; }` | Gets the effective channel mode. |
 | `EffectiveFormat` | `virtual AudioFormat EffectiveFormat { get; }` |  |
-| `EffectiveQuality` | `virtual int EffectiveQuality { get; }` |  |
-| `EffectiveSampleRate` | `virtual int EffectiveSampleRate { get; }` |  |
-| `EffectiveVBR` | `virtual bool EffectiveVBR { get; }` |  |
+| `EffectiveQuality` | `virtual int EffectiveQuality { get; }` | Gets the effective quality. |
+| `EffectiveSampleRate` | `virtual int EffectiveSampleRate { get; }` | Gets the effective sample rate. |
+| `EffectiveVBR` | `virtual bool EffectiveVBR { get; }` | Gets a value indicating whether effective vbr. |
 | `EncoderVersion` | `virtual string EncoderVersion { get; }` | returns -1 if string is too short or returns one of the exception constants if everything OK, returns the length of the string |
-| `InputBufferSize` | `virtual int InputBufferSize { get; }` |  |
-| `MP3BufferSize` | `virtual int MP3BufferSize { get; }` |  |
-| `OutputBufferSize` | `virtual int OutputBufferSize { get; }` |  |
+| `InputBufferSize` | `virtual int InputBufferSize { get; }` | Gets the input buffer size. |
+| `MP3BufferSize` | `virtual int MP3BufferSize { get; }` | Gets the mp 3 buffer size. |
+| `OutputBufferSize` | `virtual int OutputBufferSize { get; }` | Gets the output buffer size. |
 | `PCMBufferSize` | `virtual int PCMBufferSize { get; }` |  |
-| `SourceFormat` | `virtual AudioFormat SourceFormat { get; set; }` |  |
-| `TargetFormat` | `virtual AudioFormat TargetFormat { get; set; }` |  |
-| `Close` | `virtual void Close()` |  |
-| `ConvertByteArrayToFloat` | `float ConvertByteArrayToFloat(byte[] bytes, int offset, ByteOrder byteOrder)` |  |
+| `SourceFormat` | `virtual AudioFormat SourceFormat { get; set; }` | Gets or sets the source format. |
+| `TargetFormat` | `virtual AudioFormat TargetFormat { get; set; }` | Gets or sets the target format. |
+| `Close` | `virtual void Close()` | Performs the close operation. |
+| `ConvertByteArrayToFloat` | `float ConvertByteArrayToFloat(byte[] bytes, int offset, ByteOrder byteOrder)` | Performs the convert byte array to float operation. |
 | `EncodeBuffer` | `virtual int EncodeBuffer(byte[] pcm, int offset, int length, byte[] encoded)` | Encode a block of data. Throws IllegalArgumentException when parameters are wrong. When the array is too small, an ArrayIndexOutOfBoundsException is thrown. should be the value returned by getPCMBufferSize. |
-| `EncodeFinish` | `virtual int EncodeFinish(byte[] encoded)` |  |
-| `SetFormat` | `virtual void SetFormat(AudioFormat sourceFormat, AudioFormat targetFormat)` |  |
+| `EncodeFinish` | `virtual int EncodeFinish(byte[] encoded)` | Encodes the supplied input. |
+| `SetFormat` | `virtual void SetFormat(AudioFormat sourceFormat, AudioFormat targetFormat)` | Sets the format. |
 
 ### Namespace `GroovyCodecs.Mp3.Common`
 
@@ -2580,11 +2634,13 @@ Implements `IMp3Encoder`.
 
 #### `Arrays`
 
+Represents an arrays.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Fill` | `static void Fill<T>(T[] array, T value)` |  |
-| `Fill` | `static void Fill<T>(T[] array, int start, int end, T value)` |  |
-| `Sort` | `static void Sort<T>(T[] array, int start, int end)` |  |
+| `Fill` | `static void Fill<T>(T[] array, T value)` | Performs the fill operation. |
+| `Fill` | `static void Fill<T>(T[] array, int start, int end, T value)` | Performs the fill operation. |
+| `Sort` | `static void Sort<T>(T[] array, int start, int end)` | Performs the sort operation. |
 
 ### Namespace `GroovyCodecs.Types`
 
@@ -2592,35 +2648,43 @@ Implements `IMp3Encoder`.
 
 #### `AudioFormat`
 
+Represents an audio format.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AudioFormat` | `AudioFormat()` |  |
 | `AverageBytesPerSecond` | `int AverageBytesPerSecond { get; set; }` | for buffer estimation |
-| `BigEndian` | `bool BigEndian { get; set; }` |  |
+| `BigEndian` | `bool BigEndian { get; set; }` | Gets a value indicating whether big endian. |
 | `BitsPerSample` | `short BitsPerSample { get; set; }` | number of bits per sample of mono data |
 | `BlockAlign` | `short BlockAlign { get; set; }` | block size of data |
 | `Channels` | `short Channels { get; set; }` | number of channels |
-| `IsFloatingPoint` | `bool IsFloatingPoint { get; set; }` |  |
-| `Properties` | `Dictionary<string, object> Properties { get; set; }` |  |
+| `IsFloatingPoint` | `bool IsFloatingPoint { get; set; }` | Gets a value indicating whether is floating point. |
+| `Properties` | `Dictionary<string, object> Properties { get; set; }` | Gets or sets the properties. |
 | `SampleRate` | `int SampleRate { get; set; }` | sample rate |
 
 #### `ByteOrder`
 
+Specifies byte order values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `BIG_ENDIAN` | `0` |  |
-| `LITTLE_ENDIAN` | `1` |  |
+| `BIG_ENDIAN` | `0` | Specifies the big endian option. |
+| `LITTLE_ENDIAN` | `1` | Specifies the little endian option. |
 
 #### `MimeType`
 
+Specifies mime type values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `MIMETYPE_NONE` | `0` |  |
-| `MIMETYPE_JPEG` | `1` |  |
-| `MIMETYPE_PNG` | `2` |  |
-| `MIMETYPE_GIF` | `3` |  |
+| `MIMETYPE_NONE` | `0` | Specifies the mimetype none option. |
+| `MIMETYPE_JPEG` | `1` | Specifies the mimetype jpeg option. |
+| `MIMETYPE_PNG` | `2` | Specifies the mimetype png option. |
+| `MIMETYPE_GIF` | `3` | Specifies the mimetype gif option. |
 
 #### `Mp3Version`
+
+Represents a mp 3 version.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2638,106 +2702,128 @@ Implements `IMp3Encoder`.
 
 #### `Block`
 
+Represents a block.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Windows` | `static readonly float[][] Windows` |  |
+| `Windows` | `static readonly float[][] Windows` | Provides the windows value. |
 
 #### `CodecSetup`
 
+Represents a codec setup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CodecSetup` | `CodecSetup(EncodeSetup encodeSetup)` |  |
-| `BlockSizes` | `int[] BlockSizes { get; }` |  |
-| `BookParams` | `IList<IStaticCodeBook> BookParams { get; }` |  |
-| `EncodeSetup` | `EncodeSetup EncodeSetup { get; }` |  |
-| `FloorParams` | `IList<Floor> FloorParams { get; }` |  |
-| `FullBooks` | `CodeBook[] FullBooks { get; set; }` |  |
-| `MapParams` | `IList<Mapping> MapParams { get; }` |  |
-| `ModeParams` | `IList<Mode> ModeParams { get; }` |  |
-| `PsyGlobalParam` | `PsyGlobal PsyGlobalParam { get; set; }` |  |
-| `PsyParams` | `IList<PsyInfo> PsyParams { get; }` |  |
-| `ResidueParams` | `IList<ResidueEntry> ResidueParams { get; }` |  |
+| `CodecSetup` | `CodecSetup(EncodeSetup encodeSetup)` | Initializes a new instance of `CodecSetup`. |
+| `BlockSizes` | `int[] BlockSizes { get; }` | Gets the block sizes. |
+| `BookParams` | `IList<IStaticCodeBook> BookParams { get; }` | Gets the book params. |
+| `EncodeSetup` | `EncodeSetup EncodeSetup { get; }` | Gets the encode setup. |
+| `FloorParams` | `IList<Floor> FloorParams { get; }` | Gets the floor params. |
+| `FullBooks` | `CodeBook[] FullBooks { get; set; }` | Gets or sets the full books. |
+| `MapParams` | `IList<Mapping> MapParams { get; }` | Gets the map params. |
+| `ModeParams` | `IList<Mode> ModeParams { get; }` | Gets the mode params. |
+| `PsyGlobalParam` | `PsyGlobal PsyGlobalParam { get; set; }` | Gets or sets the psy global param. |
+| `PsyParams` | `IList<PsyInfo> PsyParams { get; }` | Gets the psy params. |
+| `ResidueParams` | `IList<ResidueEntry> ResidueParams { get; }` | Gets the residue params. |
 
 #### `Comments`
+
+Represents a comments.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Comments` | `Comments()` |  |
-| `UserComments` | `List<string> UserComments { get; }` |  |
-| `AddTag` | `void AddTag(string tag, string contents)` |  |
+| `UserComments` | `List<string> UserComments { get; }` | Gets the user comments. |
+| `AddTag` | `void AddTag(string tag, string contents)` | Performs the add tag operation. |
 
 #### `EncodeBuffer`
 
+Represents an encode buffer.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EncodeBuffer` | `EncodeBuffer()` |  |
-| `EncodeBuffer` | `EncodeBuffer(int initialBufferSize)` |  |
-| `GetBytes` | `byte[] GetBytes()` |  |
-| `WriteBook` | `void WriteBook(CodeBook book, int a)` |  |
-| `WriteString` | `void WriteString(string str)` |  |
-| `Write` | `void Write(uint value, int bits)` |  |
+| `EncodeBuffer` | `EncodeBuffer()` | Initializes a new instance of `EncodeBuffer`. |
+| `EncodeBuffer` | `EncodeBuffer(int initialBufferSize)` | Initializes a new instance of `EncodeBuffer`. |
+| `GetBytes` | `byte[] GetBytes()` | Gets the bytes. |
+| `WriteBook` | `void WriteBook(CodeBook book, int a)` | Writes the book to the supplied output. |
+| `WriteString` | `void WriteString(string str)` | Writes the string to the supplied output. |
+| `Write` | `void Write(uint value, int bits)` | Writes the value to the supplied output. |
 
 #### `EncodeSetup`
 
+Represents an encode setup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EncodeSetup` | `EncodeSetup(ISetupTemplate template, double baseSetting)` |  |
-| `AmplitudeTrackDbPerSec` | `double AmplitudeTrackDbPerSec { get; }` |  |
-| `AthAbsoluteDecibel` | `double AthAbsoluteDecibel { get; }` |  |
-| `AthFloatingDecibel` | `double AthFloatingDecibel { get; }` |  |
-| `BaseSetting` | `double BaseSetting { get; }` |  |
-| `LowPassKilohertz` | `double LowPassKilohertz { get; }` |  |
-| `Template` | `ISetupTemplate Template { get; }` |  |
-| `GetBestMatch` | `static EncodeSetup GetBestMatch(int channels, int sampleRate, float quality)` |  |
+| `EncodeSetup` | `EncodeSetup(ISetupTemplate template, double baseSetting)` | Initializes a new instance of `EncodeSetup`. |
+| `AmplitudeTrackDbPerSec` | `double AmplitudeTrackDbPerSec { get; }` | Gets the amplitude track db per sec. |
+| `AthAbsoluteDecibel` | `double AthAbsoluteDecibel { get; }` | Gets the ath absolute decibel. |
+| `AthFloatingDecibel` | `double AthFloatingDecibel { get; }` | Gets the ath floating decibel. |
+| `BaseSetting` | `double BaseSetting { get; }` | Gets the base setting. |
+| `LowPassKilohertz` | `double LowPassKilohertz { get; }` | Gets the low pass kilohertz. |
+| `Template` | `ISetupTemplate Template { get; }` | Gets the template. |
+| `GetBestMatch` | `static EncodeSetup GetBestMatch(int channels, int sampleRate, float quality)` | Gets the best match. |
 
 #### `Encoding`
 
+Represents an encoding.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Log` | `static int Log(int value)` |  |
-| `MakeWords` | `static uint[] MakeWords(byte[] l, int sparsecount)` |  |
-| `UnpackFloat` | `static float UnpackFloat(int value)` |  |
+| `Log` | `static int Log(int value)` | Performs the log operation. |
+| `MakeWords` | `static uint[] MakeWords(byte[] l, int sparsecount)` | Performs the make words operation. |
+| `UnpackFloat` | `static float UnpackFloat(int value)` | Performs the unpack float operation. |
 
 #### `FloatExtensions`
 
+Represents a float extensions.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ToDecibel` | `static float ToDecibel(this float x)` |  |
+| `ToDecibel` | `static float ToDecibel(this float x)` | Performs the to decibel operation. |
 
 #### `HeaderPacketBuilder`
 
+Represents a header packet builder.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BuildBooksPacket` | `static OggPacket BuildBooksPacket(VorbisInfo info)` |  |
-| `BuildCommentsPacket` | `static OggPacket BuildCommentsPacket(Comments comments)` |  |
-| `BuildInfoPacket` | `static OggPacket BuildInfoPacket(VorbisInfo info)` |  |
+| `BuildBooksPacket` | `static OggPacket BuildBooksPacket(VorbisInfo info)` | Performs the build books packet operation. |
+| `BuildCommentsPacket` | `static OggPacket BuildCommentsPacket(Comments comments)` | Performs the build comments packet operation. |
+| `BuildInfoPacket` | `static OggPacket BuildInfoPacket(VorbisInfo info)` | Performs the build info packet operation. |
 
 #### `LookupCollection`
 
+Represents a lookup collection.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnvelopeLookup` | `EnvelopeLookup EnvelopeLookup { get; }` |  |
-| `FftLookup` | `DrftLookup[] FftLookup { get; }` |  |
-| `FloorLookup` | `FloorLookup[] FloorLookup { get; }` |  |
-| `PsyGlobalLookup` | `PsyGlobalLookup PsyGlobalLookup { get; }` |  |
-| `PsyLookup` | `PsyLookup[] PsyLookup { get; }` |  |
-| `ResidueLookup` | `ResidueLookup[] ResidueLookup { get; }` |  |
-| `TransformLookup` | `MdctLookup[] TransformLookup { get; }` |  |
-| `Create` | `static LookupCollection Create(VorbisInfo info)` |  |
+| `EnvelopeLookup` | `EnvelopeLookup EnvelopeLookup { get; }` | Gets the envelope lookup. |
+| `FftLookup` | `DrftLookup[] FftLookup { get; }` | Gets the fft lookup. |
+| `FloorLookup` | `FloorLookup[] FloorLookup { get; }` | Gets the floor lookup. |
+| `PsyGlobalLookup` | `PsyGlobalLookup PsyGlobalLookup { get; }` | Gets the psy global lookup. |
+| `PsyLookup` | `PsyLookup[] PsyLookup { get; }` | Gets the psy lookup. |
+| `ResidueLookup` | `ResidueLookup[] ResidueLookup { get; }` | Gets the residue lookup. |
+| `TransformLookup` | `MdctLookup[] TransformLookup { get; }` | Gets the transform lookup. |
+| `Create` | `static LookupCollection Create(VorbisInfo info)` | Performs the create operation. |
 
 #### `MathExtensions`
 
+Represents a math extensions.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SafeAbs` | `static int SafeAbs(int value)` |  |
+| `SafeAbs` | `static int SafeAbs(int value)` | Performs the safe abs operation. |
 
 #### `OffsetMemory<T>`
 
+Represents an offset memory.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OffsetMemory` | `OffsetMemory(in Memory<T> memory, int offset)` |  |
-| `Item` | `T this[int index] { get; }` |  |
-| `Offset` | `int Offset { get; }` |  |
+| `OffsetMemory` | `OffsetMemory(in Memory<T> memory, int offset)` | Initializes a new instance of `OffsetMemory`. |
+| `Item` | `T this[int index] { get; }` | Gets or sets the value at the specified index. |
+| `Offset` | `int Offset { get; }` | Gets the offset. |
 
 #### `OggPacket`
 
@@ -2745,7 +2831,7 @@ Encapsulates the data for a single raw packet of data
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OggPacket` | `OggPacket(byte[] packetData, bool endOfStream, int granulePosition, int packetNumber)` |  |
+| `OggPacket` | `OggPacket(byte[] packetData, bool endOfStream, int granulePosition, int packetNumber)` | Initializes a new instance of `OggPacket`. |
 | `EndOfStream` | `bool EndOfStream { get; }` | Flag indicating whether this packet ends a bitstream. |
 | `GranulePosition` | `int GranulePosition { get; }` | A number indicating the position of this packet in the decoded data. This is the last sample, frame or other unit of information ('granule') that can be completely decoded from this packet. |
 | `PacketData` | `byte[] PacketData { get; }` | This is treated as an opaque type by the ogg layer. |
@@ -2757,7 +2843,7 @@ Encapsulates the data for an Ogg page.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OggPage` | `OggPage(byte[] header, byte[] body)` |  |
+| `OggPage` | `OggPage(byte[] header, byte[] body)` | Initializes a new instance of `OggPage`. |
 | `Body` | `byte[] Body { get; }` | The data for this page. |
 | `Header` | `byte[] Header { get; }` | The page header for this page. The exact contents of this header are defined in the framing spec document. |
 
@@ -2767,9 +2853,9 @@ Tracks the encode/decode state of the current logical bitstream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OggStream` | `OggStream(int serialNumber)` |  |
-| `Finished` | `bool Finished { get; }` |  |
-| `PacketIn` | `void PacketIn(OggPacket packet)` |  |
+| `OggStream` | `OggStream(int serialNumber)` | Initializes a new instance of `OggStream`. |
+| `Finished` | `bool Finished { get; }` | Gets a value indicating whether finished. |
+| `PacketIn` | `void PacketIn(OggPacket packet)` | Performs the packet in operation. |
 | `PageOut` | `bool PageOut(out OggPage page, bool force)` |  |
 
 #### `ProcessingState`
@@ -2778,27 +2864,31 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Create` | `static ProcessingState Create(VorbisInfo info)` |  |
-| `EnsureBufferSize` | `void EnsureBufferSize(int needed)` |  |
-| `PacketOut` | `bool PacketOut(out OggPacket packet)` |  |
+| `Create` | `static ProcessingState Create(VorbisInfo info)` | Performs the create operation. |
+| `EnsureBufferSize` | `void EnsureBufferSize(int needed)` | Performs the ensure buffer size operation. |
+| `PacketOut` | `bool PacketOut(out OggPacket packet)` | Performs the packet out operation. |
 | `WriteData` | `void WriteData(float[][] data, int length, int read_offset = 0)` | Writes the provided data to the pcm buffer |
-| `WriteEndOfStream` | `void WriteEndOfStream()` |  |
+| `WriteEndOfStream` | `void WriteEndOfStream()` | Writes the end of stream to the supplied output. |
 
 #### `StaticCodeBookExtensions`
 
+Represents a static code book extensions.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GetQuantVals` | `static int GetQuantVals(this IStaticCodeBook book)` |  |
+| `GetQuantVals` | `static int GetQuantVals(this IStaticCodeBook book)` | Gets the quant vals. |
 
 #### `VorbisInfo`
 
+Represents a vorbis info.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BitRateNominal` | `int BitRateNominal { get; }` |  |
-| `Channels` | `int Channels { get; }` |  |
-| `CodecSetup` | `CodecSetup CodecSetup { get; }` |  |
-| `SampleRate` | `int SampleRate { get; }` |  |
-| `InitVariableBitRate` | `static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)` |  |
+| `BitRateNominal` | `int BitRateNominal { get; }` | Gets the bit rate nominal. |
+| `Channels` | `int Channels { get; }` | Gets the channels. |
+| `CodecSetup` | `CodecSetup CodecSetup { get; }` | Gets the codec setup. |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate. |
+| `InitVariableBitRate` | `static VorbisInfo InitVariableBitRate(int channels, int sampleRate, float baseQuality)` | Performs the init variable bit rate operation. |
 
 ### Namespace `OggVorbisEncoder.Lookups`
 
@@ -2806,87 +2896,107 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 
 #### `Delta`
 
+Represents a delta.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Delta` | `Delta(float min, float max)` |  |
-| `Max` | `float Max` |  |
-| `Min` | `float Min` |  |
+| `Delta` | `Delta(float min, float max)` | Initializes a new instance of `Delta`. |
+| `Max` | `float Max` | Provides the max value. |
+| `Min` | `float Min` | Provides the min value. |
 
 #### `DrftLookup`
 
+Represents a drft lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DrftLookup` | `DrftLookup(int n)` |  |
-| `N` | `int N { get; }` |  |
-| `Forward` | `void Forward(float[] data)` |  |
+| `DrftLookup` | `DrftLookup(int n)` | Initializes a new instance of `DrftLookup`. |
+| `N` | `int N { get; }` | Gets the n. |
+| `Forward` | `void Forward(float[] data)` | Performs the forward operation. |
 
 #### `EnvelopeBand`
 
+Represents an envelope band.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnvelopeBand` | `EnvelopeBand(int begin, int windowLength)` |  |
-| `Begin` | `int Begin { get; }` |  |
-| `Total` | `float Total { get; }` |  |
-| `Window` | `float[] Window { get; }` |  |
+| `EnvelopeBand` | `EnvelopeBand(int begin, int windowLength)` | Initializes a new instance of `EnvelopeBand`. |
+| `Begin` | `int Begin { get; }` | Gets the begin. |
+| `Total` | `float Total { get; }` | Gets the total. |
+| `Window` | `float[] Window { get; }` | Gets the window. |
 
 #### `EnvelopeFilterState`
+
+Represents an envelope filter state.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EnvelopeFilterState` | `EnvelopeFilterState()` |  |
-| `ConvertAmplitudeToDelta` | `Delta ConvertAmplitudeToDelta(float amplitude, int stretch)` |  |
-| `SpreadNearDc` | `float SpreadNearDc(float input)` |  |
+| `ConvertAmplitudeToDelta` | `Delta ConvertAmplitudeToDelta(float amplitude, int stretch)` | Performs the convert amplitude to delta operation. |
+| `SpreadNearDc` | `float SpreadNearDc(float input)` | Performs the spread near dc operation. |
 
 #### `EnvelopeLookup`
 
+Represents an envelope lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EnvelopeLookup` | `EnvelopeLookup(PsyGlobal psyGlobal, VorbisInfo info)` |  |
-| `EnvelopePost` | `const int EnvelopePost` |  |
-| `Mark` | `bool Mark(int beginWindow, int endWindow)` |  |
-| `Search` | `int Search(float[][] pcm, int pcmCurrent, int centerWindow, int testWindow)` |  |
-| `Shift` | `void Shift(int shift)` |  |
+| `EnvelopeLookup` | `EnvelopeLookup(PsyGlobal psyGlobal, VorbisInfo info)` | Initializes a new instance of `EnvelopeLookup`. |
+| `EnvelopePost` | `const int EnvelopePost` | Defines the envelope post constant value. |
+| `Mark` | `bool Mark(int beginWindow, int endWindow)` | Performs the mark operation. |
+| `Search` | `int Search(float[][] pcm, int pcmCurrent, int centerWindow, int testWindow)` | Performs the search operation. |
+| `Shift` | `void Shift(int shift)` | Performs the shift operation. |
 
 #### `FloorLookup`
 
+Represents a floor lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FloorLookup` | `FloorLookup(Floor floor)` |  |
-| `Encode` | `bool Encode(EncodeBuffer buffer, IList<IStaticCodeBook> staticBooks, CodeBook[] books, int[] post, int[] ilogmask, int pcmEnd, int n)` |  |
-| `Fit` | `int[] Fit(in Span<float> logmdct, float[] logmask)` |  |
+| `FloorLookup` | `FloorLookup(Floor floor)` | Initializes a new instance of `FloorLookup`. |
+| `Encode` | `bool Encode(EncodeBuffer buffer, IList<IStaticCodeBook> staticBooks, CodeBook[] books, int[] post, int[] ilogmask, int pcmEnd, int n)` | Encodes the supplied input. |
+| `Fit` | `int[] Fit(in Span<float> logmdct, float[] logmask)` | Performs the fit operation. |
 
 #### `MdctLookup`
 
+Represents a mdct lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MdctLookup` | `MdctLookup(int n)` |  |
-| `Forward` | `void Forward(in Span<float> input, in Span<float> output)` |  |
+| `MdctLookup` | `MdctLookup(int n)` | Initializes a new instance of `MdctLookup`. |
+| `Forward` | `void Forward(in Span<float> input, in Span<float> output)` | Performs the forward operation. |
 
 #### `PsyGlobalLookup`
 
+Represents a psy global lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PsyGlobalLookup` | `PsyGlobalLookup(PsyGlobal global)` |  |
-| `AmpMax` | `float AmpMax { get; }` |  |
-| `DecayAmpMax` | `void DecayAmpMax(int n, int sampleRate)` |  |
+| `PsyGlobalLookup` | `PsyGlobalLookup(PsyGlobal global)` | Initializes a new instance of `PsyGlobalLookup`. |
+| `AmpMax` | `float AmpMax { get; }` | Gets or sets the amp max. |
+| `DecayAmpMax` | `void DecayAmpMax(int n, int sampleRate)` | Performs the decay amp max operation. |
 
 #### `PsyLookup`
 
+Represents a psy lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PsyLookup` | `PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)` |  |
-| `CoupleQuantizeNormalize` | `void CoupleQuantizeNormalize(int blobno, PsyGlobal psyGlobal, Mapping mapping, float[][] mdct, int[][] iwork, bool[] nonzero, int slidingLowpass, int channels)` |  |
-| `NoiseMask` | `void NoiseMask(in Span<float> logmdct, float[] logmask)` |  |
-| `OffsetAndMix` | `void OffsetAndMix(float[] noise, float[] tone, int offsetIndex, float[] logmask, float[] mdct, in Span<float> logmdct)` |  |
-| `ToneMask` | `void ToneMask(float[] pcm, float[] logmask, float globalSpecMax, float localSpecMax)` |  |
+| `PsyLookup` | `PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)` | Initializes a new instance of `PsyLookup`. |
+| `CoupleQuantizeNormalize` | `void CoupleQuantizeNormalize(int blobno, PsyGlobal psyGlobal, Mapping mapping, float[][] mdct, int[][] iwork, bool[] nonzero, int slidingLowpass, int channels)` | Performs the couple quantize normalize operation. |
+| `NoiseMask` | `void NoiseMask(in Span<float> logmdct, float[] logmask)` | Performs the noise mask operation. |
+| `OffsetAndMix` | `void OffsetAndMix(float[] noise, float[] tone, int offsetIndex, float[] logmask, float[] mdct, in Span<float> logmdct)` | Performs the offset and mix operation. |
+| `ToneMask` | `void ToneMask(float[] pcm, float[] logmask, float globalSpecMax, float localSpecMax)` | Performs the tone mask operation. |
 
 #### `ResidueLookup`
 
+Represents a residue lookup.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ResidueLookup` | `ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)` |  |
-| `Class` | `int[][] Class(int[][] couples, bool[] nonzero, int channels)` |  |
-| `Forward` | `int Forward(EncodeBuffer buffer, int pcmend, int[][] couples, bool[] nonzero, int channels, int[][] partword)` |  |
+| `ResidueLookup` | `ResidueLookup(ResidueEntry residue, CodeBook[] fullBooks)` | Initializes a new instance of `ResidueLookup`. |
+| `Class` | `int[][] Class(int[][] couples, bool[] nonzero, int channels)` | Performs the class operation. |
+| `Forward` | `int Forward(EncodeBuffer buffer, int pcmend, int[][] couples, bool[] nonzero, int channels, int[][] partword)` | Performs the forward operation. |
 
 ### Namespace `OggVorbisEncoder.Setup`
 
@@ -2894,87 +3004,103 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 
 #### `AdjBlock`
 
+Represents an adj block.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AdjBlock` | `AdjBlock(int[] block)` |  |
-| `Block` | `int[] Block { get; }` |  |
+| `AdjBlock` | `AdjBlock(int[] block)` | Initializes a new instance of `AdjBlock`. |
+| `Block` | `int[] Block { get; }` | Gets the block. |
 
 #### `AdjStereo`
 
+Represents an adj stereo.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AdjStereo` | `AdjStereo(int[] pre, int[] post, float[] kilohertz, float[] lowPassKilohertz)` |  |
-| `Kilohertz` | `float[] Kilohertz { get; }` |  |
-| `LowPassKilohertz` | `float[] LowPassKilohertz { get; }` |  |
-| `Post` | `int[] Post { get; }` |  |
-| `Pre` | `int[] Pre { get; }` |  |
+| `AdjStereo` | `AdjStereo(int[] pre, int[] post, float[] kilohertz, float[] lowPassKilohertz)` | Initializes a new instance of `AdjStereo`. |
+| `Kilohertz` | `float[] Kilohertz { get; }` | Gets the kilohertz. |
+| `LowPassKilohertz` | `float[] LowPassKilohertz { get; }` | Gets the low pass kilohertz. |
+| `Post` | `int[] Post { get; }` | Gets the post. |
+| `Pre` | `int[] Pre { get; }` | Gets the pre. |
 
 #### `Att3`
 
+Represents an att 3.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Att3` | `Att3(int[] att, float boost, float decay)` |  |
-| `Att` | `int[] Att { get; }` |  |
-| `Boost` | `float Boost { get; }` |  |
-| `Decay` | `float Decay { get; }` |  |
+| `Att3` | `Att3(int[] att, float boost, float decay)` | Initializes a new instance of `Att3`. |
+| `Att` | `int[] Att { get; }` | Gets the att. |
+| `Boost` | `float Boost { get; }` | Gets the boost. |
+| `Decay` | `float Decay { get; }` | Gets the decay. |
 
 #### `CodeBook`
 
+Represents a code book.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CodeBook` | `CodeBook(int dimensions, int entries, int usedEntries, IStaticCodeBook staticBook, float[] valueList, uint[] codeList, int[] decIndex, byte[] decCodeLengths, uint[] decFirstTable, int decFirstTableN, int decMaxLength, int quantValues, int minVal, int delta)` |  |
+| `CodeBook` | `CodeBook(int dimensions, int entries, int usedEntries, IStaticCodeBook staticBook, float[] valueList, uint[] codeList, int[] decIndex, byte[] decCodeLengths, uint[] decFirstTable, int decFirstTableN, int decMaxLength, int quantValues, int minVal, int delta)` | Initializes a new instance of `CodeBook`. |
 | `CodeList` | `uint[] CodeList { get; }` | list of bitstream codewords for each entry |
-| `DecCodeLengths` | `byte[] DecCodeLengths { get; }` |  |
-| `DecFirstTableN` | `int DecFirstTableN { get; }` |  |
-| `DecFirstTable` | `uint[] DecFirstTable { get; }` |  |
+| `DecCodeLengths` | `byte[] DecCodeLengths { get; }` | Gets the dec code lengths. |
+| `DecFirstTableN` | `int DecFirstTableN { get; }` | Gets the dec first table n. |
+| `DecFirstTable` | `uint[] DecFirstTable { get; }` | Gets the dec first table. |
 | `DecIndex` | `int[] DecIndex { get; }` | only used if sparseness collapsed |
-| `DecMaxLength` | `int DecMaxLength { get; }` |  |
-| `Delta` | `int Delta { get; }` |  |
+| `DecMaxLength` | `int DecMaxLength { get; }` | Gets the dec max length. |
+| `Delta` | `int Delta { get; }` | Gets the delta. |
 | `Dimensions` | `int Dimensions { get; }` | codebook dimensions (elements per vector) |
 | `Entries` | `int Entries { get; }` | codebook entries |
-| `MinVal` | `int MinVal { get; }` |  |
-| `QuantValues` | `int QuantValues { get; }` |  |
-| `StaticBook` | `IStaticCodeBook StaticBook { get; }` |  |
+| `MinVal` | `int MinVal { get; }` | Gets the min val. |
+| `QuantValues` | `int QuantValues { get; }` | Gets the quant values. |
+| `StaticBook` | `IStaticCodeBook StaticBook { get; }` | Gets the static book. |
 | `UsedEntries` | `int UsedEntries { get; }` | populated codebook entries |
 | `ValueList` | `float[] ValueList { get; }` | list of dim*entries actual entry values |
-| `InitEncode` | `static CodeBook InitEncode(IStaticCodeBook source)` |  |
+| `InitEncode` | `static CodeBook InitEncode(IStaticCodeBook source)` | Performs the init encode operation. |
 
 #### `CodeBookMapType`
 
+Specifies code book map type values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `None` | `0` |  |
-| `Implicit` | `1` |  |
-| `Listed` | `2` |  |
+| `None` | `0` | Specifies that no option is selected. |
+| `Implicit` | `1` | Specifies the implicit option. |
+| `Listed` | `2` | Specifies the listed option. |
 
 #### `CompandBlock`
 
+Represents a compand block.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompandBlock` | `CompandBlock(int[] data)` |  |
-| `Data` | `int[] Data { get; }` |  |
+| `CompandBlock` | `CompandBlock(int[] data)` | Initializes a new instance of `CompandBlock`. |
+| `Data` | `int[] Data { get; }` | Gets the data. |
 
 #### `Floor`
 
+Represents a floor.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Floor` | `Floor(int[] partitionClass, int[] classDimensions, int[] classSubs, int[] classBook, int[][] classSubBook, int mult, int[] postList, float maxOver, float maxUnder, float maxError, float twoFitWeight, float twoFitAtten, int n)` |  |
+| `Floor` | `Floor(int[] partitionClass, int[] classDimensions, int[] classSubs, int[] classBook, int[][] classSubBook, int mult, int[] postList, float maxOver, float maxUnder, float maxError, float twoFitWeight, float twoFitAtten, int n)` | Initializes a new instance of `Floor`. |
 | `ClassBook` | `int[] ClassBook { get; }` | subs ^ dim entries |
 | `ClassDimensions` | `int[] ClassDimensions { get; }` | 1 to 8 |
 | `ClassSubBook` | `int[][] ClassSubBook { get; }` | [VIF_CLASS][subs] [VIF_CLASS][8] |
 | `ClassSubs` | `int[] ClassSubs { get; }` | 0,1,2,3 (bits: 1<<n poss) |
-| `MaxError` | `float MaxError { get; }` |  |
-| `MaxOver` | `float MaxOver { get; }` |  |
-| `MaxUnder` | `float MaxUnder { get; }` |  |
+| `MaxError` | `float MaxError { get; }` | Gets the max error. |
+| `MaxOver` | `float MaxOver { get; }` | Gets the max over. |
+| `MaxUnder` | `float MaxUnder { get; }` | Gets the max under. |
 | `Mult` | `int Mult { get; }` | 1 2 3 or 4 |
-| `N` | `int N { get; set; }` |  |
+| `N` | `int N { get; set; }` | Gets or sets the n. |
 | `PartitionClass` | `int[] PartitionClass { get; }` | 0 to 15 |
 | `PostList` | `int[] PostList { get; }` | first two implicit |
-| `TwoFitAtten` | `float TwoFitAtten { get; }` |  |
-| `TwoFitWeight` | `float TwoFitWeight { get; }` |  |
-| `Clone` | `Floor Clone()` |  |
+| `TwoFitAtten` | `float TwoFitAtten { get; }` | Gets the two fit atten. |
+| `TwoFitWeight` | `float TwoFitWeight { get; }` | Gets the two fit weight. |
+| `Clone` | `Floor Clone()` | Performs the clone operation. |
 
 #### `IMappingTemplate`
+
+Defines the contract for i mapping template.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2982,6 +3108,8 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 | `ResidueTemplate` | `IResidueTemplate[] ResidueTemplate { get; }` |  |
 
 #### `IResidueTemplate`
+
+Defines the contract for i residue template.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2995,6 +3123,8 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 | `Residue` | `ResidueEntry Residue { get; }` |  |
 
 #### `ISetupTemplate`
+
+Defines the contract for i setup template.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3037,11 +3167,15 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 
 #### `IStaticBookBlock`
 
+Defines the contract for i static book block.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Books` | `IStaticCodeBook[][] Books { get; }` |  |
 
 #### `IStaticCodeBook`
+
+Defines the contract for i static code book.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3056,153 +3190,175 @@ Buffers the current vorbis audio analysis/synthesis state. The DSP state belongs
 
 #### `Mapping`
 
+Represents a mapping.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Mapping` | `Mapping(int submaps, int[] channelMuxList, int[] floorSubMap, int[] residueSubMap, int couplingSteps, int[] couplingMag, int[] couplingAng)` |  |
-| `ChannelMuxList` | `int[] ChannelMuxList { get; }` |  |
-| `CouplingAng` | `int[] CouplingAng { get; }` |  |
-| `CouplingMag` | `int[] CouplingMag { get; }` |  |
-| `CouplingSteps` | `int CouplingSteps { get; }` |  |
-| `FloorSubMap` | `int[] FloorSubMap { get; }` |  |
-| `ResidueSubMap` | `int[] ResidueSubMap { get; }` |  |
-| `SubMaps` | `int SubMaps { get; }` |  |
-| `Clone` | `Mapping Clone()` |  |
+| `Mapping` | `Mapping(int submaps, int[] channelMuxList, int[] floorSubMap, int[] residueSubMap, int couplingSteps, int[] couplingMag, int[] couplingAng)` | Initializes a new instance of `Mapping`. |
+| `ChannelMuxList` | `int[] ChannelMuxList { get; }` | Gets the channel mux list. |
+| `CouplingAng` | `int[] CouplingAng { get; }` | Gets the coupling ang. |
+| `CouplingMag` | `int[] CouplingMag { get; }` | Gets the coupling mag. |
+| `CouplingSteps` | `int CouplingSteps { get; }` | Gets the coupling steps. |
+| `FloorSubMap` | `int[] FloorSubMap { get; }` | Gets the floor sub map. |
+| `ResidueSubMap` | `int[] ResidueSubMap { get; }` | Gets the residue sub map. |
+| `SubMaps` | `int SubMaps { get; }` | Gets the sub maps. |
+| `Clone` | `Mapping Clone()` | Performs the clone operation. |
 
 #### `MappingTemplate`
+
+Represents a mapping template.
 
 Implements `IMappingTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MappingTemplate` | `MappingTemplate(Mapping[] mapping, IResidueTemplate[] residueTemplate)` |  |
-| `Mapping` | `Mapping[] Mapping { get; }` |  |
-| `ResidueTemplate` | `IResidueTemplate[] ResidueTemplate { get; }` |  |
+| `MappingTemplate` | `MappingTemplate(Mapping[] mapping, IResidueTemplate[] residueTemplate)` | Initializes a new instance of `MappingTemplate`. |
+| `Mapping` | `Mapping[] Mapping { get; }` | Gets the mapping. |
+| `ResidueTemplate` | `IResidueTemplate[] ResidueTemplate { get; }` | Gets the residue template. |
 
 #### `Mode`
 
+Represents a mode.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Mode` | `Mode(int blockFlag, int windowType, int transformType, int mapping)` |  |
-| `BlockFlag` | `int BlockFlag` |  |
-| `Mapping` | `int Mapping` |  |
-| `TransformType` | `int TransformType` |  |
-| `WindowType` | `int WindowType` |  |
+| `Mode` | `Mode(int blockFlag, int windowType, int transformType, int mapping)` | Initializes a new instance of `Mode`. |
+| `BlockFlag` | `int BlockFlag` | Provides the block flag value. |
+| `Mapping` | `int Mapping` | Provides the mapping value. |
+| `TransformType` | `int TransformType` | Provides the transform type value. |
+| `WindowType` | `int WindowType` | Provides the window type value. |
 
 #### `Noise3`
 
+Represents a noise 3.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Noise3` | `Noise3(int[][] data)` |  |
-| `Data` | `int[][] Data { get; }` |  |
+| `Noise3` | `Noise3(int[][] data)` | Initializes a new instance of `Noise3`. |
+| `Data` | `int[][] Data { get; }` | Gets the data. |
 
 #### `NoiseGuard`
 
+Represents a noise guard.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `NoiseGuard` | `NoiseGuard(int low, int high, int fix)` |  |
-| `Fixed` | `int Fixed { get; }` |  |
-| `High` | `int High { get; }` |  |
-| `Low` | `int Low { get; }` |  |
+| `NoiseGuard` | `NoiseGuard(int low, int high, int fix)` | Initializes a new instance of `NoiseGuard`. |
+| `Fixed` | `int Fixed { get; }` | Gets the fixed. |
+| `High` | `int High { get; }` | Gets the high. |
+| `Low` | `int Low { get; }` | Gets the low. |
 
 #### `PsyGlobal`
 
+Represents a psy global.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PsyGlobal` | `PsyGlobal(int eighthOctaveLines, float[] preEchoThreshold, float[] postEchoThreshold, float stretchPenalty, float preEchoMinEnergy, float ampMaxAttPerSecond, int[] couplingPerKilohertz, int[][] couplingPointLimit, int[] couplingPrePointAmp, int[] couplingPostPointAmp, int[][] slidingLowPass)` |  |
-| `EnvelopeBands` | `const int EnvelopeBands` |  |
-| `PacketBlobs` | `const int PacketBlobs` |  |
-| `AmpMaxAttPerSec` | `float AmpMaxAttPerSec { get; set; }` |  |
-| `CouplingPerKilohertz` | `int[] CouplingPerKilohertz { get; }` |  |
-| `CouplingPointLimit` | `int[][] CouplingPointLimit { get; }` |  |
-| `CouplingPostPointAmp` | `int[] CouplingPostPointAmp { get; set; }` |  |
-| `CouplingPrePointAmp` | `int[] CouplingPrePointAmp { get; set; }` |  |
-| `EighthOctaveLines` | `int EighthOctaveLines { get; }` |  |
-| `PostEchoThreshold` | `float[] PostEchoThreshold { get; }` |  |
-| `PreEchoMinEnergy` | `float PreEchoMinEnergy { get; }` |  |
-| `PreEchoThreshold` | `float[] PreEchoThreshold { get; }` |  |
-| `SlidingLowPass` | `int[][] SlidingLowPass { get; }` |  |
-| `StretchPenalty` | `float StretchPenalty { get; }` |  |
-| `Clone` | `PsyGlobal Clone()` |  |
+| `PsyGlobal` | `PsyGlobal(int eighthOctaveLines, float[] preEchoThreshold, float[] postEchoThreshold, float stretchPenalty, float preEchoMinEnergy, float ampMaxAttPerSecond, int[] couplingPerKilohertz, int[][] couplingPointLimit, int[] couplingPrePointAmp, int[] couplingPostPointAmp, int[][] slidingLowPass)` | Initializes a new instance of `PsyGlobal`. |
+| `EnvelopeBands` | `const int EnvelopeBands` | Defines the envelope bands constant value. |
+| `PacketBlobs` | `const int PacketBlobs` | Defines the packet blobs constant value. |
+| `AmpMaxAttPerSec` | `float AmpMaxAttPerSec { get; set; }` | Gets or sets the amp max att per sec. |
+| `CouplingPerKilohertz` | `int[] CouplingPerKilohertz { get; }` | Gets the coupling per kilohertz. |
+| `CouplingPointLimit` | `int[][] CouplingPointLimit { get; }` | Gets the coupling point limit. |
+| `CouplingPostPointAmp` | `int[] CouplingPostPointAmp { get; set; }` | Gets or sets the coupling post point amp. |
+| `CouplingPrePointAmp` | `int[] CouplingPrePointAmp { get; set; }` | Gets or sets the coupling pre point amp. |
+| `EighthOctaveLines` | `int EighthOctaveLines { get; }` | Gets the eighth octave lines. |
+| `PostEchoThreshold` | `float[] PostEchoThreshold { get; }` | Gets the post echo threshold. |
+| `PreEchoMinEnergy` | `float PreEchoMinEnergy { get; }` | Gets the pre echo min energy. |
+| `PreEchoThreshold` | `float[] PreEchoThreshold { get; }` | Gets the pre echo threshold. |
+| `SlidingLowPass` | `int[][] SlidingLowPass { get; }` | Gets the sliding low pass. |
+| `StretchPenalty` | `float StretchPenalty { get; }` | Gets the stretch penalty. |
+| `Clone` | `PsyGlobal Clone()` | Performs the clone operation. |
 
 #### `PsyInfo`
 
+Represents a psy info.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PsyInfo` | `PsyInfo(int blockFlag, float athAdjAtt, float athMaxAtt, float[] toneMasterAtt, float toneCenterBoost, float toneDecay, float toneAbsLimit, float[] toneAtt, int noiseMaskP, float noiseMaxSuppress, float noiseWindowLow, float noiseWindowHigh, int noiseWindowLowMin, int noiseWindowHighMin, int noiseWindowFixed, float[][] noiseOffset, float[] noiseCompand, float maxCurveDecibel, bool normalize, int normalStart, int normalPartition, double normalThreshold)` |  |
-| `Bands` | `const int Bands` |  |
-| `AthAdjAtt` | `float AthAdjAtt { get; set; }` |  |
-| `AthMaxAtt` | `float AthMaxAtt { get; set; }` |  |
-| `BlockFlag` | `int BlockFlag { get; set; }` |  |
-| `MaxCurveDecibel` | `float MaxCurveDecibel { get; set; }` |  |
-| `NoiseCompand` | `float[] NoiseCompand { get; }` |  |
-| `NoiseMaskP` | `int NoiseMaskP { get; }` |  |
-| `NoiseMaxSuppress` | `float NoiseMaxSuppress { get; set; }` |  |
-| `NoiseOffset` | `float[][] NoiseOffset { get; }` |  |
-| `NoiseWindowFixed` | `int NoiseWindowFixed { get; set; }` |  |
-| `NoiseWindowHighMin` | `int NoiseWindowHighMin { get; set; }` |  |
-| `NoiseWindowHigh` | `float NoiseWindowHigh { get; }` |  |
-| `NoiseWindowLowMin` | `int NoiseWindowLowMin { get; set; }` |  |
-| `NoiseWindowLow` | `float NoiseWindowLow { get; }` |  |
-| `NormalPartition` | `int NormalPartition { get; set; }` |  |
-| `NormalStart` | `int NormalStart { get; set; }` |  |
-| `NormalThreshold` | `double NormalThreshold { get; set; }` |  |
-| `Normalize` | `bool Normalize { get; set; }` |  |
-| `ToneAbsLimit` | `float ToneAbsLimit { get; set; }` |  |
-| `ToneAtt` | `float[] ToneAtt { get; }` |  |
-| `ToneCenterBoost` | `float ToneCenterBoost { get; set; }` |  |
-| `ToneDecay` | `float ToneDecay { get; set; }` |  |
-| `ToneMasterAtt` | `float[] ToneMasterAtt { get; }` |  |
-| `Clone` | `PsyInfo Clone()` |  |
+| `PsyInfo` | `PsyInfo(int blockFlag, float athAdjAtt, float athMaxAtt, float[] toneMasterAtt, float toneCenterBoost, float toneDecay, float toneAbsLimit, float[] toneAtt, int noiseMaskP, float noiseMaxSuppress, float noiseWindowLow, float noiseWindowHigh, int noiseWindowLowMin, int noiseWindowHighMin, int noiseWindowFixed, float[][] noiseOffset, float[] noiseCompand, float maxCurveDecibel, bool normalize, int normalStart, int normalPartition, double normalThreshold)` | Initializes a new instance of `PsyInfo`. |
+| `Bands` | `const int Bands` | Defines the bands constant value. |
+| `AthAdjAtt` | `float AthAdjAtt { get; set; }` | Gets or sets the ath adj att. |
+| `AthMaxAtt` | `float AthMaxAtt { get; set; }` | Gets or sets the ath max att. |
+| `BlockFlag` | `int BlockFlag { get; set; }` | Gets or sets the block flag. |
+| `MaxCurveDecibel` | `float MaxCurveDecibel { get; set; }` | Gets or sets the max curve decibel. |
+| `NoiseCompand` | `float[] NoiseCompand { get; }` | Gets or sets the noise compand. |
+| `NoiseMaskP` | `int NoiseMaskP { get; }` | Gets the noise mask p. |
+| `NoiseMaxSuppress` | `float NoiseMaxSuppress { get; set; }` | Gets or sets the noise max suppress. |
+| `NoiseOffset` | `float[][] NoiseOffset { get; }` | Gets or sets the noise offset. |
+| `NoiseWindowFixed` | `int NoiseWindowFixed { get; set; }` | Gets or sets the noise window fixed. |
+| `NoiseWindowHighMin` | `int NoiseWindowHighMin { get; set; }` | Gets or sets the noise window high min. |
+| `NoiseWindowHigh` | `float NoiseWindowHigh { get; }` | Gets the noise window high. |
+| `NoiseWindowLowMin` | `int NoiseWindowLowMin { get; set; }` | Gets or sets the noise window low min. |
+| `NoiseWindowLow` | `float NoiseWindowLow { get; }` | Gets the noise window low. |
+| `NormalPartition` | `int NormalPartition { get; set; }` | Gets or sets the normal partition. |
+| `NormalStart` | `int NormalStart { get; set; }` | Gets or sets the normal start. |
+| `NormalThreshold` | `double NormalThreshold { get; set; }` | Gets or sets the normal threshold. |
+| `Normalize` | `bool Normalize { get; set; }` | Gets a value indicating whether normalize. |
+| `ToneAbsLimit` | `float ToneAbsLimit { get; set; }` | Gets or sets the tone abs limit. |
+| `ToneAtt` | `float[] ToneAtt { get; }` | Gets or sets the tone att. |
+| `ToneCenterBoost` | `float ToneCenterBoost { get; set; }` | Gets or sets the tone center boost. |
+| `ToneDecay` | `float ToneDecay { get; set; }` | Gets or sets the tone decay. |
+| `ToneMasterAtt` | `float[] ToneMasterAtt { get; }` | Gets or sets the tone master att. |
+| `Clone` | `PsyInfo Clone()` | Performs the clone operation. |
 
 #### `ResidueEntry`
 
+Represents a residue entry.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ResidueEntry` | `ResidueEntry(int begin, int end, int grouping, int partitions, int partitionValues, int groupBook, int[] secondStages, int[] bookList, int[] classMetric1, int[] classMetric2, ResidueType residueType)` |  |
-| `Begin` | `int Begin { get; }` |  |
-| `BookList` | `int[] BookList { get; }` |  |
-| `ClassMetric1` | `int[] ClassMetric1 { get; }` |  |
-| `ClassMetric2` | `int[] ClassMetric2 { get; }` |  |
-| `End` | `int End { get; set; }` |  |
-| `GroupBook` | `int GroupBook { get; set; }` |  |
-| `Grouping` | `int Grouping { get; }` |  |
-| `PartitionValues` | `int PartitionValues { get; }` |  |
-| `Partitions` | `int Partitions { get; }` |  |
-| `ResidueType` | `ResidueType ResidueType { get; }` |  |
-| `SecondStages` | `int[] SecondStages { get; }` |  |
-| `Clone` | `ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)` |  |
+| `ResidueEntry` | `ResidueEntry(int begin, int end, int grouping, int partitions, int partitionValues, int groupBook, int[] secondStages, int[] bookList, int[] classMetric1, int[] classMetric2, ResidueType residueType)` | Initializes a new instance of `ResidueEntry`. |
+| `Begin` | `int Begin { get; }` | Gets the begin. |
+| `BookList` | `int[] BookList { get; }` | Gets the book list. |
+| `ClassMetric1` | `int[] ClassMetric1 { get; }` | Gets the class metric 1. |
+| `ClassMetric2` | `int[] ClassMetric2 { get; }` | Gets the class metric 2. |
+| `End` | `int End { get; set; }` | Gets or sets the end. |
+| `GroupBook` | `int GroupBook { get; set; }` | Gets or sets the group book. |
+| `Grouping` | `int Grouping { get; }` | Gets the grouping. |
+| `PartitionValues` | `int PartitionValues { get; }` | Gets the partition values. |
+| `Partitions` | `int Partitions { get; }` | Gets the partitions. |
+| `ResidueType` | `ResidueType ResidueType { get; }` | Gets the residue type. |
+| `SecondStages` | `int[] SecondStages { get; }` | Gets the second stages. |
+| `Clone` | `ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)` | Performs the clone operation. |
 
 #### `ResidueLimitType`
 
+Specifies residue limit type values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `LowPass` | `0` |  |
-| `PointStereo` | `1` |  |
-| `LowFrequencyEffects` | `2` |  |
+| `LowPass` | `0` | Specifies the low pass option. |
+| `PointStereo` | `1` | Specifies the point stereo option. |
+| `LowFrequencyEffects` | `2` | Specifies the low frequency effects option. |
 
 #### `ResidueTemplate`
+
+Represents a residue template.
 
 Implements `IResidueTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ResidueTemplate` | `ResidueTemplate(ResidueType residueType, ResidueLimitType limitType, int grouping, ResidueEntry residue, IStaticCodeBook bookAux, IStaticCodeBook booxAuxManaged, IStaticBookBlock booksBase, IStaticBookBlock booksBaseManaged)` |  |
-| `BookAuxManaged` | `IStaticCodeBook BookAuxManaged { get; }` |  |
-| `BookAux` | `IStaticCodeBook BookAux { get; }` |  |
-| `BooksBaseManaged` | `IStaticBookBlock BooksBaseManaged { get; }` |  |
-| `BooksBase` | `IStaticBookBlock BooksBase { get; }` |  |
-| `Grouping` | `int Grouping { get; }` |  |
-| `LimitType` | `ResidueLimitType LimitType { get; }` |  |
-| `ResidueType` | `ResidueType ResidueType { get; }` |  |
-| `Residue` | `ResidueEntry Residue { get; }` |  |
+| `ResidueTemplate` | `ResidueTemplate(ResidueType residueType, ResidueLimitType limitType, int grouping, ResidueEntry residue, IStaticCodeBook bookAux, IStaticCodeBook booxAuxManaged, IStaticBookBlock booksBase, IStaticBookBlock booksBaseManaged)` | Initializes a new instance of `ResidueTemplate`. |
+| `BookAuxManaged` | `IStaticCodeBook BookAuxManaged { get; }` | Gets the book aux managed. |
+| `BookAux` | `IStaticCodeBook BookAux { get; }` | Gets the book aux. |
+| `BooksBaseManaged` | `IStaticBookBlock BooksBaseManaged { get; }` | Gets the books base managed. |
+| `BooksBase` | `IStaticBookBlock BooksBase { get; }` | Gets the books base. |
+| `Grouping` | `int Grouping { get; }` | Gets the grouping. |
+| `LimitType` | `ResidueLimitType LimitType { get; }` | Gets the limit type. |
+| `ResidueType` | `ResidueType ResidueType { get; }` | Gets the residue type. |
+| `Residue` | `ResidueEntry Residue { get; }` | Gets the residue. |
 
 #### `ResidueType`
 
+Specifies residue type values.
+
 | Value | Numeric | Summary |
 | --- | --- | --- |
-| `Zero` | `0` |  |
-| `One` | `1` |  |
-| `Two` | `2` |  |
+| `Zero` | `0` | Specifies the zero option. |
+| `One` | `1` | Specifies the one option. |
+| `Two` | `2` | Specifies the two option. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates`
 
@@ -3210,642 +3366,674 @@ Implements `IResidueTemplate`.
 
 #### `Psy`
 
+Represents a psy.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AthFloater` | `static readonly int[] AthFloater` |  |
-| `CompandLongMapping` | `static readonly double[] CompandLongMapping` |  |
-| `CompandShortMapping` | `static readonly double[] CompandShortMapping` |  |
-| `NoiseBiasImpulse` | `static readonly Noise3[] NoiseBiasImpulse` |  |
-| `NoiseBiasLongBlock` | `static readonly Noise3[] NoiseBiasLongBlock` |  |
-| `NoiseBiasPadding` | `static readonly Noise3[] NoiseBiasPadding` |  |
-| `NoiseBiasTransition` | `static readonly Noise3[] NoiseBiasTransition` |  |
-| `NoiseSuppress` | `static readonly int[] NoiseSuppress` |  |
-| `PsyInfoTemplate` | `static readonly PsyInfo PsyInfoTemplate` |  |
-| `ToneSuppress` | `static readonly int[] ToneSuppress` |  |
-| `ToneZeroDecibel` | `static readonly int[] ToneZeroDecibel` |  |
+| `AthFloater` | `static readonly int[] AthFloater` | Provides the ath floater value. |
+| `CompandLongMapping` | `static readonly double[] CompandLongMapping` | Provides the compand long mapping value. |
+| `CompandShortMapping` | `static readonly double[] CompandShortMapping` | Provides the compand short mapping value. |
+| `NoiseBiasImpulse` | `static readonly Noise3[] NoiseBiasImpulse` | Provides the noise bias impulse value. |
+| `NoiseBiasLongBlock` | `static readonly Noise3[] NoiseBiasLongBlock` | Provides the noise bias long block value. |
+| `NoiseBiasPadding` | `static readonly Noise3[] NoiseBiasPadding` | Provides the noise bias padding value. |
+| `NoiseBiasTransition` | `static readonly Noise3[] NoiseBiasTransition` | Provides the noise bias transition value. |
+| `NoiseSuppress` | `static readonly int[] NoiseSuppress` | Provides the noise suppress value. |
+| `PsyInfoTemplate` | `static readonly PsyInfo PsyInfoTemplate` | Provides the psy info template value. |
+| `ToneSuppress` | `static readonly int[] ToneSuppress` | Provides the tone suppress value. |
+| `ToneZeroDecibel` | `static readonly int[] ToneZeroDecibel` | Provides the tone zero decibel value. |
 
 #### `SharedFloors`
 
+Represents a shared floors.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FloorBooks` | `static readonly IStaticCodeBook[][] FloorBooks` |  |
-| `Floor` | `static readonly Floor[] Floor` |  |
+| `FloorBooks` | `static readonly IStaticCodeBook[][] FloorBooks` | Provides the floor books value. |
+| `Floor` | `static readonly Floor[] Floor` | Provides the floor value. |
 
 #### `Stereo11SetupDataTemplate`
+
+Represents a stereo 11 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo11SetupDataTemplate` | `Stereo11SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Stereo16SetupDataTemplate`
+
+Represents a stereo 16 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo16SetupDataTemplate` | `Stereo16SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Stereo22SetupDataTemplate`
+
+Represents a stereo 22 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo22SetupDataTemplate` | `Stereo22SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Stereo32SetupDataTemplate`
+
+Represents a stereo 32 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo32SetupDataTemplate` | `Stereo32SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Stereo44SetupDataTemplate`
+
+Represents a stereo 44 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo44SetupDataTemplate` | `Stereo44SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Stereo8SetupDataTemplate`
+
+Represents a stereo 8 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Stereo8SetupDataTemplate` | `Stereo8SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `StereoXSetupDataTemplate`
+
+Represents a stereo x setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StereoXSetupDataTemplate` | `StereoXSetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `StereoXXSetupDataTemplate`
+
+Represents a stereo xx setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `StereoXXSetupDataTemplate` | `StereoXXSetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Uncoupled11SetupDataTemplate`
+
+Represents an uncoupled 11 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Uncoupled11SetupDataTemplate` | `Uncoupled11SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Uncoupled16SetupDataTemplate`
+
+Represents an uncoupled 16 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Uncoupled16SetupDataTemplate` | `Uncoupled16SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Uncoupled32SetupDataTemplate`
+
+Represents an uncoupled 32 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Uncoupled32SetupDataTemplate` | `Uncoupled32SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `Uncoupled8SetupDataTemplate`
+
+Represents an uncoupled 8 setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Uncoupled8SetupDataTemplate` | `Uncoupled8SetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `UncoupledXSetupDataTemplate`
+
+Represents an uncoupled x setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UncoupledXSetupDataTemplate` | `UncoupledXSetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 #### `UncoupledXXSetupDataTemplate`
+
+Represents an uncoupled xx setup data template.
 
 Implements `ISetupTemplate`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UncoupledXXSetupDataTemplate` | `UncoupledXXSetupDataTemplate()` |  |
-| `BlockSizeLong` | `int[] BlockSizeLong { get; }` |  |
-| `BlockSizeShort` | `int[] BlockSizeShort { get; }` |  |
-| `CouplingRestriction` | `int CouplingRestriction { get; }` |  |
-| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` |  |
-| `FloorMappings` | `int[][] FloorMappings { get; }` |  |
-| `FloorParams` | `Floor[] FloorParams { get; }` |  |
-| `GlobalMapping` | `double[] GlobalMapping { get; }` |  |
-| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` |  |
-| `Mappings` | `int Mappings { get; }` |  |
-| `Maps` | `IMappingTemplate[] Maps { get; }` |  |
-| `PsyAthAbs` | `int[] PsyAthAbs { get; }` |  |
-| `PsyAthFloat` | `int[] PsyAthFloat { get; }` |  |
-| `PsyLowPass` | `double[] PsyLowPass { get; }` |  |
-| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` |  |
-| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` |  |
-| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` |  |
-| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` |  |
-| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` |  |
-| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` |  |
-| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` |  |
-| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` |  |
-| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` |  |
-| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` |  |
-| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` |  |
-| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` |  |
-| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` |  |
-| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` |  |
-| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` |  |
-| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` |  |
-| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` |  |
-| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` |  |
-| `QualityMapping` | `double[] QualityMapping { get; }` |  |
-| `SampleRateMapping` | `double[] SampleRateMapping { get; }` |  |
-| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` |  |
-| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` |  |
-| `StereoModes` | `AdjStereo[] StereoModes { get; }` |  |
+| `BlockSizeLong` | `int[] BlockSizeLong { get; }` | Gets the block size long. |
+| `BlockSizeShort` | `int[] BlockSizeShort { get; }` | Gets the block size short. |
+| `CouplingRestriction` | `int CouplingRestriction { get; }` | Gets the coupling restriction. |
+| `FloorBooks` | `IStaticCodeBook[][] FloorBooks { get; }` | Gets the floor books. |
+| `FloorMappings` | `int[][] FloorMappings { get; }` | Gets the floor mappings. |
+| `FloorParams` | `Floor[] FloorParams { get; }` | Gets the floor params. |
+| `GlobalMapping` | `double[] GlobalMapping { get; }` | Gets the global mapping. |
+| `GlobalParams` | `PsyGlobal[] GlobalParams { get; }` | Gets the global params. |
+| `Mappings` | `int Mappings { get; }` | Gets the mappings. |
+| `Maps` | `IMappingTemplate[] Maps { get; }` | Gets the maps. |
+| `PsyAthAbs` | `int[] PsyAthAbs { get; }` | Gets the psy ath abs. |
+| `PsyAthFloat` | `int[] PsyAthFloat { get; }` | Gets the psy ath float. |
+| `PsyLowPass` | `double[] PsyLowPass { get; }` | Gets the psy low pass. |
+| `PsyNoiseBiasImpulse` | `Noise3[] PsyNoiseBiasImpulse { get; }` | Gets the psy noise bias impulse. |
+| `PsyNoiseBiasLong` | `Noise3[] PsyNoiseBiasLong { get; }` | Gets the psy noise bias long. |
+| `PsyNoiseBiasPadding` | `Noise3[] PsyNoiseBiasPadding { get; }` | Gets the psy noise bias padding. |
+| `PsyNoiseBiasTrans` | `Noise3[] PsyNoiseBiasTrans { get; }` | Gets the psy noise bias trans. |
+| `PsyNoiseCompandLongMapping` | `double[] PsyNoiseCompandLongMapping { get; }` | Gets the psy noise compand long mapping. |
+| `PsyNoiseCompandShortMapping` | `double[] PsyNoiseCompandShortMapping { get; }` | Gets the psy noise compand short mapping. |
+| `PsyNoiseCompand` | `CompandBlock[] PsyNoiseCompand { get; }` | Gets the psy noise compand. |
+| `PsyNoiseDecibelSuppress` | `int[] PsyNoiseDecibelSuppress { get; }` | Gets the psy noise decibel suppress. |
+| `PsyNoiseGuards` | `NoiseGuard[] PsyNoiseGuards { get; }` | Gets the psy noise guards. |
+| `PsyNoiseNormalPartition` | `int[][] PsyNoiseNormalPartition { get; }` | Gets the psy noise normal partition. |
+| `PsyNoiseNormalStart` | `int[][] PsyNoiseNormalStart { get; }` | Gets the psy noise normal start. |
+| `PsyNoiseNormalThreshold` | `double[] PsyNoiseNormalThreshold { get; }` | Gets the psy noise normal threshold. |
+| `PsyTone0Decibel` | `int[] PsyTone0Decibel { get; }` | Gets the psy tone 0 decibel. |
+| `PsyToneAdjImpulse` | `AdjBlock[] PsyToneAdjImpulse { get; }` | Gets the psy tone adj impulse. |
+| `PsyToneAdjLong` | `AdjBlock[] PsyToneAdjLong { get; }` | Gets the psy tone adj long. |
+| `PsyToneAdjOther` | `AdjBlock[] PsyToneAdjOther { get; }` | Gets the psy tone adj other. |
+| `PsyToneDecibelSuppress` | `int[] PsyToneDecibelSuppress { get; }` | Gets the psy tone decibel suppress. |
+| `PsyToneMasterAtt` | `Att3[] PsyToneMasterAtt { get; }` | Gets the psy tone master att. |
+| `QualityMapping` | `double[] QualityMapping { get; }` | Gets the quality mapping. |
+| `SampleRateMapping` | `double[] SampleRateMapping { get; }` | Gets the sample rate mapping. |
+| `SampleRateMaxRestriction` | `int SampleRateMaxRestriction { get; }` | Gets the sample rate max restriction. |
+| `SampleRateMinRestriction` | `int SampleRateMinRestriction { get; }` | Gets the sample rate min restriction. |
+| `StereoModes` | `AdjStereo[] StereoModes { get; }` | Gets the stereo modes. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter0`
 
@@ -3853,211 +4041,237 @@ Implements `ISetupTemplate`.
 
 #### `Chapter0Single`
 
+Represents a chapter 0 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Single` | `Chapter0Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter1`
 
@@ -4065,227 +4279,255 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Long`
 
+Represents a chapter 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Long` | `Chapter1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter1Short`
+
+Represents a chapter 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Short` | `Chapter1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Coupled.Chapter2`
 
@@ -4293,275 +4535,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter2Long`
 
+Represents a chapter 2 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Long` | `Chapter2Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter2Short`
+
+Represents a chapter 2 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Short` | `Chapter2Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter0`
 
@@ -4569,179 +4845,201 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter0Single`
 
+Represents a chapter 0 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Single` | `Chapter0Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter1`
 
@@ -4749,243 +5047,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Long`
 
+Represents a chapter 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Long` | `Chapter1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter1Short`
+
+Represents a chapter 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Short` | `Chapter1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo16.Uncoupled.Chapter2`
 
@@ -4993,275 +5321,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter2Long`
 
+Represents a chapter 2 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Long` | `Chapter2Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter2Short`
+
+Represents a chapter 2 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Short` | `Chapter2Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled`
 
@@ -5269,135 +5631,165 @@ Implements `IStaticCodeBook`.
 
 #### `Blocks`
 
+Represents a blocks.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Blocks` | `Blocks()` |  |
 
 #### `Blocks.Block0`
 
+Represents a block 0.
+
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block0` | `Block0()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block1`
+
+Represents a block 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block1` | `Block1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block2`
+
+Represents a block 2.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block2` | `Block2()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block3`
+
+Represents a block 3.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block3` | `Block3()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block4`
+
+Represents a block 4.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block4` | `Block4()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block5`
+
+Represents a block 5.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block5` | `Block5()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block6`
+
+Represents a block 6.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block6` | `Block6()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block7`
+
+Represents a block 7.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block7` | `Block7()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block8`
+
+Represents a block 8.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block8` | `Block8()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block9`
+
+Represents a block 9.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block9` | `Block9()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.BlockNeg1`
+
+Represents a block neg 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BlockNeg1` | `BlockNeg1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.ManagedBlock0`
+
+Represents a managed block 0.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedBlock0` | `ManagedBlock0()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.ManagedBlock1`
+
+Represents a managed block 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedBlock1` | `ManagedBlock1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.ManagedBlockNeg1`
+
+Represents a managed block neg 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedBlockNeg1` | `ManagedBlockNeg1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter0`
 
@@ -5405,227 +5797,255 @@ Implements `IStaticBookBlock`.
 
 #### `Chapter0Long`
 
+Represents a chapter 0 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Long` | `Chapter0Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter0Short`
+
+Represents a chapter 0 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Short` | `Chapter0Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter1`
 
@@ -5633,227 +6053,255 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Long`
 
+Represents a chapter 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Long` | `Chapter1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter1Short`
+
+Represents a chapter 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Short` | `Chapter1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter2`
 
@@ -5861,243 +6309,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter2Long`
 
+Represents a chapter 2 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Long` | `Chapter2Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter2Short`
+
+Represents a chapter 2 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Short` | `Chapter2Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter3`
 
@@ -6105,243 +6583,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter3Long`
 
+Represents a chapter 3 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter3Long` | `Chapter3Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter3Short`
+
+Represents a chapter 3 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter3Short` | `Chapter3Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter4`
 
@@ -6349,243 +6857,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter4Long`
 
+Represents a chapter 4 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter4Long` | `Chapter4Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter4Short`
+
+Represents a chapter 4 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter4Short` | `Chapter4Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter5`
 
@@ -6593,243 +7131,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter5Long`
 
+Represents a chapter 5 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter5Long` | `Chapter5Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter5Short`
+
+Represents a chapter 5 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter5Short` | `Chapter5Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter6`
 
@@ -6837,275 +7405,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter6Long`
 
+Represents a chapter 6 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter6Long` | `Chapter6Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter6Short`
+
+Represents a chapter 6 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter6Short` | `Chapter6Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter7`
 
@@ -7113,275 +7715,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter7Long`
 
+Represents a chapter 7 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter7Long` | `Chapter7Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter7Short`
+
+Represents a chapter 7 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter7Short` | `Chapter7Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter8`
 
@@ -7389,275 +8025,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter8Long`
 
+Represents a chapter 8 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter8Long` | `Chapter8Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter8Short`
+
+Represents a chapter 8 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter8Short` | `Chapter8Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.Chapter9`
 
@@ -7665,275 +8335,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter9Long`
 
+Represents a chapter 9 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter9Long` | `Chapter9Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter9Short`
+
+Represents a chapter 9 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter9Short` | `Chapter9Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ChapterNeg1`
 
@@ -7941,227 +8645,255 @@ Implements `IStaticCodeBook`.
 
 #### `ChapterNeg1Long`
 
+Represents a chapter neg 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChapterNeg1Long` | `ChapterNeg1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `ChapterNeg1Short`
+
+Represents a chapter neg 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChapterNeg1Short` | `ChapterNeg1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapter0`
 
@@ -8169,227 +8901,255 @@ Implements `IStaticCodeBook`.
 
 #### `ManagedChapter0Long`
 
+Represents a managed chapter 0 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapter0Long` | `ManagedChapter0Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `ManagedChapter0Short`
+
+Represents a managed chapter 0 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapter0Short` | `ManagedChapter0Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapter1`
 
@@ -8397,227 +9157,255 @@ Implements `IStaticCodeBook`.
 
 #### `ManagedChapter1Long`
 
+Represents a managed chapter 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapter1Long` | `ManagedChapter1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `ManagedChapter1Short`
+
+Represents a managed chapter 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapter1Short` | `ManagedChapter1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Coupled.ManagedChapterNeg1`
 
@@ -8625,227 +9413,255 @@ Implements `IStaticCodeBook`.
 
 #### `ManagedChapterNeg1Long`
 
+Represents a managed chapter neg 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapterNeg1Long` | `ManagedChapterNeg1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `ManagedChapterNeg1Short`
+
+Represents a managed chapter neg 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ManagedChapterNeg1Short` | `ManagedChapterNeg1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_2`
+
+Represents a page 8 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_2` | `Page8_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled`
 
@@ -8853,108 +9669,132 @@ Implements `IStaticCodeBook`.
 
 #### `Blocks`
 
+Represents a blocks.
+
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Blocks` | `Blocks()` |  |
 
 #### `Blocks.Block0`
 
+Represents a block 0.
+
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block0` | `Block0()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block1`
+
+Represents a block 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block1` | `Block1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block2`
+
+Represents a block 2.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block2` | `Block2()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block3`
+
+Represents a block 3.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block3` | `Block3()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block4`
+
+Represents a block 4.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block4` | `Block4()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block5`
+
+Represents a block 5.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block5` | `Block5()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block6`
+
+Represents a block 6.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block6` | `Block6()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block7`
+
+Represents a block 7.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block7` | `Block7()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block8`
+
+Represents a block 8.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block8` | `Block8()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.Block9`
+
+Represents a block 9.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Block9` | `Block9()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 #### `Blocks.BlockNeg1`
+
+Represents a block neg 1.
 
 Implements `IStaticBookBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BlockNeg1` | `BlockNeg1()` |  |
-| `Books` | `IStaticCodeBook[][] Books { get; }` |  |
+| `Books` | `IStaticCodeBook[][] Books { get; }` | Gets the books. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter0`
 
@@ -8962,195 +9802,219 @@ Implements `IStaticBookBlock`.
 
 #### `Chapter0Long`
 
+Represents a chapter 0 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Long` | `Chapter0Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter0Short`
+
+Represents a chapter 0 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Short` | `Chapter0Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter1`
 
@@ -9158,195 +10022,219 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Long`
 
+Represents a chapter 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Long` | `Chapter1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter1Short`
+
+Represents a chapter 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Short` | `Chapter1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter2`
 
@@ -9354,195 +10242,219 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter2Long`
 
+Represents a chapter 2 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Long` | `Chapter2Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter2Short`
+
+Represents a chapter 2 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter2Short` | `Chapter2Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter3`
 
@@ -9550,195 +10462,219 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter3Long`
 
+Represents a chapter 3 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter3Long` | `Chapter3Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter3Short`
+
+Represents a chapter 3 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter3Short` | `Chapter3Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter4`
 
@@ -9746,195 +10682,219 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter4Long`
 
+Represents a chapter 4 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter4Long` | `Chapter4Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter4Short`
+
+Represents a chapter 4 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter4Short` | `Chapter4Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter5`
 
@@ -9942,243 +10902,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter5Long`
 
+Represents a chapter 5 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter5Long` | `Chapter5Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter5Short`
+
+Represents a chapter 5 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter5Short` | `Chapter5Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter6`
 
@@ -10186,243 +11176,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter6Long`
 
+Represents a chapter 6 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter6Long` | `Chapter6Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter6Short`
+
+Represents a chapter 6 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter6Short` | `Chapter6Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter7`
 
@@ -10430,243 +11450,273 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter7Long`
 
+Represents a chapter 7 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter7Long` | `Chapter7Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter7Short`
+
+Represents a chapter 7 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter7Short` | `Chapter7Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter8`
 
@@ -10674,275 +11724,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter8Long`
 
+Represents a chapter 8 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter8Long` | `Chapter8Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter8Short`
+
+Represents a chapter 8 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter8Short` | `Chapter8Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.Chapter9`
 
@@ -10950,275 +12034,309 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter9Long`
 
+Represents a chapter 9 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter9Long` | `Chapter9Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter9Short`
+
+Represents a chapter 9 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter9Short` | `Chapter9Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_1`
+
+Represents a page 5 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_1` | `Page5_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.ChapterNeg1`
 
@@ -11226,195 +12344,219 @@ Implements `IStaticCodeBook`.
 
 #### `ChapterNeg1Long`
 
+Represents a chapter neg 1 long.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChapterNeg1Long` | `ChapterNeg1Long()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `ChapterNeg1Short`
+
+Represents a chapter neg 1 short.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ChapterNeg1Short` | `ChapterNeg1Short()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Coupled.Chapter0`
 
@@ -11422,211 +12564,237 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter0Single`
 
+Represents a chapter 0 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Single` | `Chapter0Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Coupled.Chapter1`
 
@@ -11634,211 +12802,237 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Single`
 
+Represents a chapter 1 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Single` | `Chapter1Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Uncoupled.Chapter0`
 
@@ -11846,179 +13040,201 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter0Single`
 
+Represents a chapter 0 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter0Single` | `Chapter0Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_1`
+
+Represents a page 6 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_1` | `Page6_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_2`
+
+Represents a page 7 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_2` | `Page7_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo8.Uncoupled.Chapter1`
 
@@ -12026,227 +13242,255 @@ Implements `IStaticCodeBook`.
 
 #### `Chapter1Single`
 
+Represents a chapter 1 single.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter1Single` | `Chapter1Single()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page1_0`
+
+Represents a page 1 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page1_0` | `Page1_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page2_0`
+
+Represents a page 2 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page2_0` | `Page2_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page3_0`
+
+Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page4_0`
+
+Represents a page 4 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page4_0` | `Page4_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page5_0`
+
+Represents a page 5 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page5_0` | `Page5_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page6_0`
+
+Represents a page 6 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page6_0` | `Page6_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_0`
+
+Represents a page 7 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_0` | `Page7_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
+
+Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page7_1` | `Page7_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_0`
+
+Represents a page 8 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_0` | `Page8_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page8_1`
+
+Represents a page 8 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_0`
+
+Represents a page 9 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_0` | `Page9_0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_1`
+
+Represents a page 9 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_1` | `Page9_1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page9_2`
+
+Represents a page 9 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Page9_2` | `Page9_2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 ### Namespace `OggVorbisEncoder.Setup.Templates.FloorBooks`
 
@@ -12254,1552 +13498,1746 @@ Implements `IStaticCodeBook`.
 
 #### `Line1024X27Class1`
 
+Represents a line 1024 x 27 class 1.
+
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27Class1` | `Line1024X27Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27Class2`
+
+Represents a line 1024 x 27 class 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27Class2` | `Line1024X27Class2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27Class3`
+
+Represents a line 1024 x 27 class 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27Class3` | `Line1024X27Class3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27Class4`
+
+Represents a line 1024 x 27 class 4.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27Class4` | `Line1024X27Class4()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_0Sub0`
+
+Represents a line 1024 x 27 0 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_0Sub0` | `Line1024X27_0Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_1Sub0`
+
+Represents a line 1024 x 27 1 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_1Sub0` | `Line1024X27_1Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_1Sub1`
+
+Represents a line 1024 x 27 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_1Sub1` | `Line1024X27_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_2Sub0`
+
+Represents a line 1024 x 27 2 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_2Sub0` | `Line1024X27_2Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_2Sub1`
+
+Represents a line 1024 x 27 2 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_2Sub1` | `Line1024X27_2Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_3Sub1`
+
+Represents a line 1024 x 27 3 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_3Sub1` | `Line1024X27_3Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_3Sub2`
+
+Represents a line 1024 x 27 3 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_3Sub2` | `Line1024X27_3Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_3Sub3`
+
+Represents a line 1024 x 27 3 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_3Sub3` | `Line1024X27_3Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_4Sub1`
+
+Represents a line 1024 x 27 4 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_4Sub1` | `Line1024X27_4Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_4Sub2`
+
+Represents a line 1024 x 27 4 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_4Sub2` | `Line1024X27_4Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line1024X27_4Sub3`
+
+Represents a line 1024 x 27 4 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line1024X27_4Sub3` | `Line1024X27_4Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11Class1`
+
+Represents a line 128 x 11 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11Class1` | `Line128X11Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11Class2`
+
+Represents a line 128 x 11 class 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11Class2` | `Line128X11Class2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11Class3`
+
+Represents a line 128 x 11 class 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11Class3` | `Line128X11Class3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_0Sub0`
+
+Represents a line 128 x 11 0 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_0Sub0` | `Line128X11_0Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_1Sub0`
+
+Represents a line 128 x 11 1 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_1Sub0` | `Line128X11_1Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_1Sub1`
+
+Represents a line 128 x 11 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_1Sub1` | `Line128X11_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_2Sub1`
+
+Represents a line 128 x 11 2 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_2Sub1` | `Line128X11_2Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_2Sub2`
+
+Represents a line 128 x 11 2 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_2Sub2` | `Line128X11_2Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_2Sub3`
+
+Represents a line 128 x 11 2 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_2Sub3` | `Line128X11_2Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_3Sub1`
+
+Represents a line 128 x 11 3 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_3Sub1` | `Line128X11_3Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_3Sub2`
+
+Represents a line 128 x 11 3 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_3Sub2` | `Line128X11_3Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X11_3Sub3`
+
+Represents a line 128 x 11 3 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X11_3Sub3` | `Line128X11_3Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17Class1`
+
+Represents a line 128 x 17 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17Class1` | `Line128X17Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17Class2`
+
+Represents a line 128 x 17 class 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17Class2` | `Line128X17Class2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17Class3`
+
+Represents a line 128 x 17 class 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17Class3` | `Line128X17Class3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_0Sub0`
+
+Represents a line 128 x 17 0 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_0Sub0` | `Line128X17_0Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_1Sub0`
+
+Represents a line 128 x 17 1 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_1Sub0` | `Line128X17_1Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_1Sub1`
+
+Represents a line 128 x 17 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_1Sub1` | `Line128X17_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_2Sub1`
+
+Represents a line 128 x 17 2 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_2Sub1` | `Line128X17_2Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_2Sub2`
+
+Represents a line 128 x 17 2 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_2Sub2` | `Line128X17_2Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_2Sub3`
+
+Represents a line 128 x 17 2 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_2Sub3` | `Line128X17_2Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_3Sub1`
+
+Represents a line 128 x 17 3 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_3Sub1` | `Line128X17_3Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_3Sub2`
+
+Represents a line 128 x 17 3 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_3Sub2` | `Line128X17_3Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X17_3Sub3`
+
+Represents a line 128 x 17 3 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X17_3Sub3` | `Line128X17_3Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X4Class0`
+
+Represents a line 128 x 4 class 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X4Class0` | `Line128X4Class0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X4Sub0`
+
+Represents a line 128 x 4 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X4Sub0` | `Line128X4Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X4Sub1`
+
+Represents a line 128 x 4 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X4Sub1` | `Line128X4Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X4Sub2`
+
+Represents a line 128 x 4 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X4Sub2` | `Line128X4Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X4Sub3`
+
+Represents a line 128 x 4 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X4Sub3` | `Line128X4Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7Class0`
+
+Represents a line 128 x 7 class 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7Class0` | `Line128X7Class0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7Class1`
+
+Represents a line 128 x 7 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7Class1` | `Line128X7Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_0Sub1`
+
+Represents a line 128 x 7 0 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_0Sub1` | `Line128X7_0Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_0Sub2`
+
+Represents a line 128 x 7 0 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_0Sub2` | `Line128X7_0Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_0Sub3`
+
+Represents a line 128 x 7 0 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_0Sub3` | `Line128X7_0Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_1Sub1`
+
+Represents a line 128 x 7 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_1Sub1` | `Line128X7_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_1Sub2`
+
+Represents a line 128 x 7 1 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_1Sub2` | `Line128X7_1Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line128X7_1Sub3`
+
+Represents a line 128 x 7 1 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line128X7_1Sub3` | `Line128X7_1Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27Class1`
+
+Represents a line 2048 x 27 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27Class1` | `Line2048X27Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27Class2`
+
+Represents a line 2048 x 27 class 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27Class2` | `Line2048X27Class2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27Class3`
+
+Represents a line 2048 x 27 class 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27Class3` | `Line2048X27Class3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27Class4`
+
+Represents a line 2048 x 27 class 4.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27Class4` | `Line2048X27Class4()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_0Sub0`
+
+Represents a line 2048 x 27 0 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_0Sub0` | `Line2048X27_0Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_1Sub0`
+
+Represents a line 2048 x 27 1 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_1Sub0` | `Line2048X27_1Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_1Sub1`
+
+Represents a line 2048 x 27 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_1Sub1` | `Line2048X27_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_2Sub0`
+
+Represents a line 2048 x 27 2 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_2Sub0` | `Line2048X27_2Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_2Sub1`
+
+Represents a line 2048 x 27 2 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_2Sub1` | `Line2048X27_2Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_3Sub1`
+
+Represents a line 2048 x 27 3 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_3Sub1` | `Line2048X27_3Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_3Sub2`
+
+Represents a line 2048 x 27 3 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_3Sub2` | `Line2048X27_3Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_3Sub3`
+
+Represents a line 2048 x 27 3 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_3Sub3` | `Line2048X27_3Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_4Sub1`
+
+Represents a line 2048 x 27 4 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_4Sub1` | `Line2048X27_4Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_4Sub2`
+
+Represents a line 2048 x 27 4 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_4Sub2` | `Line2048X27_4Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line2048X27_4Sub3`
+
+Represents a line 2048 x 27 4 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line2048X27_4Sub3` | `Line2048X27_4Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4Class0`
+
+Represents a line 256 x 4 class 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4Class0` | `Line256X4Class0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4LowClass0`
+
+Represents a line 256 x 4 low class 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4LowClass0` | `Line256X4LowClass0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4LowSub0`
+
+Represents a line 256 x 4 low sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4LowSub0` | `Line256X4LowSub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4LowSub1`
+
+Represents a line 256 x 4 low sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4LowSub1` | `Line256X4LowSub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4LowSub2`
+
+Represents a line 256 x 4 low sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4LowSub2` | `Line256X4LowSub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4LowSub3`
+
+Represents a line 256 x 4 low sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4LowSub3` | `Line256X4LowSub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4Sub0`
+
+Represents a line 256 x 4 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4Sub0` | `Line256X4Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4Sub1`
+
+Represents a line 256 x 4 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4Sub1` | `Line256X4Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4Sub2`
+
+Represents a line 256 x 4 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4Sub2` | `Line256X4Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X4Sub3`
+
+Represents a line 256 x 4 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X4Sub3` | `Line256X4Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7Class0`
+
+Represents a line 256 x 7 class 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7Class0` | `Line256X7Class0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7Class1`
+
+Represents a line 256 x 7 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7Class1` | `Line256X7Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_0Sub1`
+
+Represents a line 256 x 7 0 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_0Sub1` | `Line256X7_0Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_0Sub2`
+
+Represents a line 256 x 7 0 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_0Sub2` | `Line256X7_0Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_0Sub3`
+
+Represents a line 256 x 7 0 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_0Sub3` | `Line256X7_0Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_1Sub1`
+
+Represents a line 256 x 7 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_1Sub1` | `Line256X7_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_1Sub2`
+
+Represents a line 256 x 7 1 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_1Sub2` | `Line256X7_1Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line256X7_1Sub3`
+
+Represents a line 256 x 7 1 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line256X7_1Sub3` | `Line256X7_1Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17Class1`
+
+Represents a line 512 x 17 class 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17Class1` | `Line512X17Class1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17Class2`
+
+Represents a line 512 x 17 class 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17Class2` | `Line512X17Class2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17Class3`
+
+Represents a line 512 x 17 class 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17Class3` | `Line512X17Class3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_0Sub0`
+
+Represents a line 512 x 17 0 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_0Sub0` | `Line512X17_0Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_1Sub0`
+
+Represents a line 512 x 17 1 sub 0.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_1Sub0` | `Line512X17_1Sub0()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_1Sub1`
+
+Represents a line 512 x 17 1 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_1Sub1` | `Line512X17_1Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_2Sub1`
+
+Represents a line 512 x 17 2 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_2Sub1` | `Line512X17_2Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_2Sub2`
+
+Represents a line 512 x 17 2 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_2Sub2` | `Line512X17_2Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_2Sub3`
+
+Represents a line 512 x 17 2 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_2Sub3` | `Line512X17_2Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_3Sub1`
+
+Represents a line 512 x 17 3 sub 1.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_3Sub1` | `Line512X17_3Sub1()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_3Sub2`
+
+Represents a line 512 x 17 3 sub 2.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_3Sub2` | `Line512X17_3Sub2()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Line512X17_3Sub3`
+
+Represents a line 512 x 17 3 sub 3.
 
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Line512X17_3Sub3` | `Line512X17_3Sub3()` |  |
-| `Dimensions` | `int Dimensions { get; }` |  |
-| `LengthList` | `byte[] LengthList { get; }` |  |
-| `MapType` | `CodeBookMapType MapType { get; }` |  |
-| `QuantDelta` | `int QuantDelta { get; }` |  |
-| `QuantList` | `int[] QuantList { get; }` |  |
-| `QuantMin` | `int QuantMin { get; }` |  |
-| `QuantSequenceP` | `int QuantSequenceP { get; }` |  |
-| `Quant` | `int Quant { get; }` |  |
+| `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
+| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
+| `Quant` | `int Quant { get; }` | Gets the quant. |

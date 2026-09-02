@@ -1,8 +1,14 @@
 using System;
 
 namespace OggVorbisEncoder;
+/// <summary>
+/// Represents a math extensions.
+/// </summary>
 public static class MathExtensions
 {
+    /// <summary>
+    /// Performs the safe abs operation.
+    /// </summary>
     public static int SafeAbs(int value)
     {
         // The absolute value of MinValue of int cannot be represented as int

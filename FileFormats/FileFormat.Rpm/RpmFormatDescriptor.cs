@@ -83,21 +83,60 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       yield return new DefragBlockInfo(pos, payloadLen, DefragBlockKind.Used, FileName: "payload.cpio");
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Rpm";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "RPM";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".rpm";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".rpm"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0xED, 0xAB, 0xEE, 0xDB], Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("rpm", "RPM")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Red Hat Package Manager archive";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (stream.CanSeek) stream.Position = 0;
     var r = new RpmReader(stream);
@@ -113,6 +152,9 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return result;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (stream.CanSeek) stream.Position = 0;
     var r = new RpmReader(stream);
@@ -157,6 +199,9 @@ public sealed class RpmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return memoryStream.ToArray();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new RpmWriter();
     foreach (var (name, data) in FormatHelpers.FilesOnly(inputs))

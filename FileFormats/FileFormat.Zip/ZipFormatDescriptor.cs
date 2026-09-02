@@ -99,9 +99,21 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       });
   }
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Zip";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "ZIP";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
@@ -130,28 +142,58 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ZipModifier.RemoveFile(archive, name, wipeData: true);
   }
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".zip";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".zip", ".zipx"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'P', (byte)'K', 0x03, 0x04], Confidence: 0.95),
     new([(byte)'P', (byte)'K', 0x05, 0x06], Confidence: 0.90)
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("deflate", "Deflate", SupportsOptimize: true),
     new("store", "Store"), new("deflate64", "Deflate64"),
     new("bzip2", "BZip2"), new("lzma", "LZMA"), new("zstd", "Zstandard"), new("ppmd", "PPMd")
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Universal archive with multiple compression methods";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new ZipReader(stream, password: password);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FileName, e.UncompressedSize, e.CompressedSize,
       e.CompressionMethod.ToString(), e.IsDirectory, e.IsEncrypted, e.LastModified)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new ZipReader(stream, password: password);
     foreach (var e in r.Entries) {
@@ -363,6 +405,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     var issues = new List<ValidationIssue>();
     if (header.Length < 30) {
@@ -409,6 +454,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Level = ValidationLevel.Header, Issues = issues };
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateStructure(Stream stream) {
     var issues = new List<ValidationIssue>();
     int entryCount;
@@ -477,6 +525,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips: false, fileSizeLookup: null);
   }
 
+  /// <summary>
+  /// Validates the supplied data.
+  /// </summary>
   public ValidationResult ValidateIntegrity(Stream stream) {
     var issues = new List<ValidationIssue>();
     try {

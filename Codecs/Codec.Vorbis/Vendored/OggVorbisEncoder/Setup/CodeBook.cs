@@ -2,8 +2,14 @@ using System;
 
 namespace OggVorbisEncoder.Setup;
 
+/// <summary>
+/// Represents a code book.
+/// </summary>
 public class CodeBook
 {
+    /// <summary>
+    /// Initializes a new instance of <see cref="CodeBook"/>.
+    /// </summary>
     public CodeBook(
         int dimensions,
         int entries,
@@ -51,6 +57,9 @@ public class CodeBook
     /// </summary>
     public int UsedEntries { get; }
 
+    /// <summary>
+    /// Gets the static book.
+    /// </summary>
     public IStaticCodeBook StaticBook { get; }
 
     /* for encode, the below are entry-ordered, fully populated */
@@ -72,20 +81,44 @@ public class CodeBook
     /// </summary>
     public int[] DecIndex { get; }
 
+    /// <summary>
+    /// Gets the dec code lengths.
+    /// </summary>
     public byte[] DecCodeLengths { get; }
 
 
+    /// <summary>
+    /// Gets the dec first table.
+    /// </summary>
     public uint[] DecFirstTable { get; }
 
+    /// <summary>
+    /// Gets the dec first table n.
+    /// </summary>
     public int DecFirstTableN { get; }
 
+    /// <summary>
+    /// Gets the dec max length.
+    /// </summary>
     public int DecMaxLength { get; }
 
     /* The current encoder uses only centered, integer-only lattice books. */
+    /// <summary>
+    /// Gets the quant values.
+    /// </summary>
     public int QuantValues { get; }
+    /// <summary>
+    /// Gets the min val.
+    /// </summary>
     public int MinVal { get; }
+    /// <summary>
+    /// Gets the delta.
+    /// </summary>
     public int Delta { get; }
 
+    /// <summary>
+    /// Performs the init encode operation.
+    /// </summary>
     public static CodeBook InitEncode(IStaticCodeBook source)
     {
         return new CodeBook(

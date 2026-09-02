@@ -34,6 +34,9 @@ public sealed class UpxReader {
   /// <summary>PE-style 8-byte section names used by canonical UPX output.</summary>
   public static readonly string[] SectionNames = ["UPX0", "UPX1", "UPX2"];
 
+  /// <summary>
+  /// The executable container the packed image is wrapped in.
+  /// </summary>
   public enum ContainerKind { Pe, Elf, MachO, Unknown }
 
   /// <summary>Aggregated detection confidence after combining all heuristic layers.</summary>
@@ -46,14 +49,29 @@ public sealed class UpxReader {
     Confirmed,
   }
 
+  /// <summary>
+  /// Specifies packer header layout values.
+  /// </summary>
   public enum PackerHeaderLayout {
+    /// <summary>
+    /// Specifies the legacy option.
+    /// </summary>
     Legacy,
+    /// <summary>
+    /// Specifies the modern pe option.
+    /// </summary>
     ModernPe,
   }
 
+  /// <summary>
+  /// Represents a pe section.
+  /// </summary>
   public sealed record PeSection(
     string Name, uint VirtualSize, uint VirtualAddress, uint RawSize, uint RawOffset, uint Characteristics);
 
+  /// <summary>
+  /// Represents a packer header.
+  /// </summary>
   public sealed record PackerHeader(
     int Offset,
     bool MagicIntact,
@@ -85,6 +103,9 @@ public sealed class UpxReader {
     string FingerprintReasoning
   );
 
+  /// <summary>
+  /// Represents an info.
+  /// </summary>
   public sealed record Info(
     ContainerKind Kind,
     DetectionConfidence Confidence,
@@ -100,6 +121,9 @@ public sealed class UpxReader {
     public bool IsUpxPacked => this.Confidence != DetectionConfidence.None;
   }
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static Info Read(ReadOnlySpan<byte> data) {
     var image = data.ToArray();
     var kind = DetectContainer(data);

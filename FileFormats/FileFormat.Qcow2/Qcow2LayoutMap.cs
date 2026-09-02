@@ -12,6 +12,9 @@ public static class Qcow2LayoutMap {
 
   private static readonly byte[] Magic = [0x51, 0x46, 0x49, 0xFB];
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     stream.Position = 0;

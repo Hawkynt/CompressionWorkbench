@@ -14,6 +14,9 @@ public sealed record AmrWbEncoderOptions(
   bool PadFinalFrame = true
 );
 
+/// <summary>
+/// Represents an amr wb codec.
+/// </summary>
 public static partial class AmrWbCodec {
 
   /// <summary>

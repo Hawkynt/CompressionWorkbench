@@ -15,16 +15,40 @@ namespace FileSystem.DoubleSpace;
 /// </list>
 /// </summary>
 public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "DoubleSpace";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "DoubleSpace CVF";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".cvf";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".cvf"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new(Encoding.ASCII.GetBytes("MSDSP6.0"), Offset: 3, Confidence: 0.85),
     // Some CVF files only expose the plaintext "DBLSPACE" name at offset 0
@@ -32,13 +56,22 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     // avoids duplicating the whole descriptor in a separate project.
     new(Encoding.ASCII.GetBytes("DBLSPACE"), Offset: 0, Confidence: 0.80),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored",     "Stored (no compression)"),
     new("ds-lz77",    "DS LZ77"),
     new("ds-lz77+",   "DS LZ77 (lazy matching, slower better ratio)"),
     new("ds-lz77++",  "DS LZ77 (Zopfli-style iteration, best ratio)"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>
   /// Microsoft DoubleSpace compressed volume file (MS-DOS 6.0).
@@ -52,6 +85,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
   public string Description => "Microsoft DoubleSpace compressed volume file MS-DOS 6.0 (MDBPB/MDFAT/BitFAT layout; stored runs, VFAT LFN)";
 
   // ── IFormatOptionsSchema ──────────────────────────────────────────────────
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "Compatibility",
@@ -125,6 +161,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     return ms.ToArray();
   }
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
     if (IsGenuineV2(data)) {
@@ -138,6 +177,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
     if (IsGenuineV2(data)) {
@@ -157,6 +199,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.GetOption("Compatibility", "Extended").Equals("Genuine", StringComparison.OrdinalIgnoreCase)) {
@@ -238,6 +283,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     s.Position = 0; s.SetLength(img.Length); s.Write(img); s.Position = 0;
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => DoubleSpaceExtentMap.Enumerate(image);
 
@@ -291,6 +339,9 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
     mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 

@@ -16,11 +16,23 @@ namespace FileFormat.Vgm;
 /// </summary>
 public static class VgmDecomposer {
 
+  /// <summary>
+  /// Represents an entry kinds.
+  /// </summary>
   public static class EntryKinds {
+    /// <summary>
+    /// Defines the track constant value.
+    /// </summary>
     public const string Track = "Track";
+    /// <summary>
+    /// Defines the tag constant value.
+    /// </summary>
     public const string Tag = "Tag";
   }
 
+  /// <summary>
+  /// Represents an entry.
+  /// </summary>
   public readonly record struct Entry(string Name, byte[] Data, string Kind);
 
   // Map of header offset → (chip name) for the documented clock fields.
@@ -38,6 +50,9 @@ public static class VgmDecomposer {
     (0xE0, "GA20"),
   ];
 
+  /// <summary>
+  /// Performs the decompose operation.
+  /// </summary>
   public static List<Entry> Decompose(byte[] file) {
     var entries = new List<Entry> { new("FULL.vgm", file, EntryKinds.Track) };
     var meta = new IniBuilder("vgm");

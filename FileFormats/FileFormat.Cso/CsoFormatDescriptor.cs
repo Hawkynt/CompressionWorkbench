@@ -24,27 +24,63 @@ namespace FileFormat.Cso;
 /// </summary>
 public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveModifiable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Cso";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "PSP CSO/ZSO";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".cso";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".cso", ".ziso", ".zso"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("CISO"u8.ToArray(), Confidence: 0.90),
     new("ZISO"u8.ToArray(), Confidence: 0.90),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
     new("deflate", "Deflate"),
     new("lz4", "LZ4"),
   ];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
 
   private const uint IndexUncompressedMask = 0x8000_0000u;
@@ -63,6 +99,9 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     uint[] IndexRaw
   );
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var layout = ReadLayout(stream);
     var entries = new List<ArchiveEntryInfo>(4 + layout.BlockCount);
@@ -92,6 +131,9 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return entries;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var layout = ReadLayout(stream);
     var ext = layout.IsZso ? "ziso" : "cso";

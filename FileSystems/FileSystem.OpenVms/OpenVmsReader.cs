@@ -24,6 +24,9 @@ public sealed class OpenVmsReader {
   /// <summary>Convenience accessor over the volume bytes (read-only).</summary>
   public byte[] Image { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="OpenVmsReader"/>.
+  /// </summary>
   public OpenVmsReader(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (image.CanSeek) image.Position = 0;
@@ -37,6 +40,9 @@ public sealed class OpenVmsReader {
     this.Entries = ParseDirectory(this.Image);
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="OpenVmsReader"/>.
+  /// </summary>
   public OpenVmsReader(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     this.Image = image;

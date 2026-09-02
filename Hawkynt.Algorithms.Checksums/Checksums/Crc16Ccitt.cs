@@ -29,15 +29,27 @@ public sealed class Crc16Ccitt : IChecksum {
     this._crc = initialValue;
   }
 
+  /// <summary>
+  /// Gets the current checksum value.
+  /// </summary>
   /// <inheritdoc />
   public uint Value => this._crc;
 
+  /// <summary>
+  /// Resets the checksum to its initial state.
+  /// </summary>
   /// <inheritdoc />
   public void Reset() => this._crc = this._initialValue;
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(byte b) => this._crc = (ushort)((this._crc << 8) ^ _Table[(byte)((this._crc >> 8) ^ b)]);
 
+  /// <summary>
+  /// Updates the checksum with the supplied data.
+  /// </summary>
   /// <inheritdoc />
   public void Update(ReadOnlySpan<byte> data) {
     var crc = this._crc;

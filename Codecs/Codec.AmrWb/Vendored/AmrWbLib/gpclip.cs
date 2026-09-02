@@ -23,6 +23,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private const int DIST_ISF_MAX_IO = 384;                /* 150 Hz (6400Hz=16384) */

@@ -15,26 +15,65 @@ namespace FileFormat.Vmdk;
 /// </list>
 /// </summary>
 public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Vmdk";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "VMDK";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanTest | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vmdk";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vmdk"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures =>
     [new([0x4B, 0x44, 0x4D, 0x56], Offset: 0, Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "VMware virtual disk";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
       using (vmdkStream) {
@@ -61,6 +100,9 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     )).ToList();
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fatImage = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
     var w = new VmdkWriter();
@@ -68,6 +110,9 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     output.Write(w.Build());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     if (VmdkStream.TryOpen(stream) is { } vmdkStream) {
       using (vmdkStream) {
@@ -253,6 +298,9 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// table. Partition edits within already-allocated grains succeed
   /// directly; edits to unallocated regions allocate new grains on demand.
   /// </remarks>
+  /// <summary>
+  /// Performs the open guest disk stream operation.
+  /// </summary>
   public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)

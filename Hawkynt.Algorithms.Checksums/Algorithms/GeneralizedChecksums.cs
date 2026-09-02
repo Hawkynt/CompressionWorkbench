@@ -5,7 +5,13 @@ namespace Hawkynt.Algorithms.Checksums;
 
 /// <summary>Selects the complement arithmetic used by <see cref="ComplementChecksum"/>.</summary>
 public enum ComplementKind {
+  /// <summary>
+  /// Selects one's-complement arithmetic.
+  /// </summary>
   OnesComplement,
+  /// <summary>
+  /// Selects two's-complement arithmetic.
+  /// </summary>
   TwosComplement
 }
 

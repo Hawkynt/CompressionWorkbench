@@ -60,6 +60,9 @@ public sealed class SysVBlockMover : IFilesystemBlockMover {
     return slash < 0 ? normalised : normalised[(slash + 1)..];
   }
 
+  /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 

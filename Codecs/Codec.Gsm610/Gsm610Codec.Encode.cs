@@ -5,6 +5,9 @@ namespace Codec.Gsm610;
 /// <param name="PadFinalFrame">Pad an incomplete final 20 ms frame with the last available sample.</param>
 public sealed record Gsm610EncoderOptions(int Channels = 1, bool PadFinalFrame = true);
 
+/// <summary>
+/// Represents a gsm 610 codec.
+/// </summary>
 public static partial class Gsm610Codec {
 
   /// <summary>

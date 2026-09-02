@@ -234,6 +234,9 @@ public sealed class BtrfsWriter {
     return string.Join('/', parts);
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 

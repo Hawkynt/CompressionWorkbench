@@ -8,6 +8,9 @@
 
 namespace AmrWbLib;
 
+/// <summary>
+/// Represents an amr wb.
+/// </summary>
 public partial class AmrWb
 {
     private unsafe short G_pitch(                            /* (o) Q14 : Gain of pitch lag saturated to 1.2   */

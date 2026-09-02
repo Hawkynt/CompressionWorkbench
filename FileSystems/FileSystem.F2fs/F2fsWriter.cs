@@ -225,6 +225,9 @@ public sealed class F2fsWriter {
       this._volumeLabel = label;
   }
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -256,6 +259,9 @@ public sealed class F2fsWriter {
         $"F2FS: '{name}' needs {blocks:N0} blocks; the inode's node tree addresses {MaxFileBlocks:N0}.");
   }
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build(int totalSegments = DefaultSegmentCount) {
     var image = this.BuildCore(totalSegments);
     if (image.TotalBytes > Array.MaxLength)
@@ -715,6 +721,9 @@ public sealed class F2fsWriter {
     return (int)(total + SsaSegmentsFor((int)total) - 1);
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     var bytes = this.Build();
     output.Write(bytes, 0, bytes.Length);

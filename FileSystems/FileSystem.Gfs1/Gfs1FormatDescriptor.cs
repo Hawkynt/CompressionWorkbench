@@ -36,17 +36,41 @@ public sealed class Gfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Gfs1";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "GFS (Sistina/Red Hat, original)";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".gfs";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".gfs", ".gfs1"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // GFS1 and GFS2 share mh_magic 0x01161970 at the superblock, so magic alone
     // sent every GFS1 volume to the GFS2 descriptor. sb_fs_format at +0x18 is
@@ -62,11 +86,26 @@ public sealed class Gfs1FormatDescriptor :
     // The second meta header the writer lays down right after the superblock.
     new([0x01, 0x16, 0x19, 0x70], Offset: 65536 + 0x40, Confidence: 0.65),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Sistina GFS (pre-GFS2) — WORM writer + nested-directory reader.";
 
+  /// <summary>
+  /// Gets the options schema.
+  /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "4096", AllowedValues: ["4096"],
       Description: "GFS1 block size (always 4096 per Sistina spec)."),
@@ -80,6 +119,9 @@ public sealed class Gfs1FormatDescriptor :
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     try {
       var r = new Gfs1Reader(stream);
@@ -93,6 +135,9 @@ public sealed class Gfs1FormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     try {
       var r = new Gfs1Reader(stream);
@@ -110,6 +155,9 @@ public sealed class Gfs1FormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Performs the create operation.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new Gfs1Writer();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
@@ -137,6 +185,9 @@ public sealed class Gfs1FormatDescriptor :
   // directories are handled in place; deeper trees, a full inode region, or a
   // full directory block fall back to the rebuild delegate.
 
+  /// <summary>
+  /// Adds the supplied entry to the target container.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     // The in-place modifier reads the volume into an array to walk its
     // structures, which a volume past two gigabytes does not fit in. Above that
@@ -150,6 +201,9 @@ public sealed class Gfs1FormatDescriptor :
       (a, i) => ModifyRebuilder.Add(a, i, ReadEntries, BuildImage, largeVolumeCreator: this));
   }
 
+  /// <summary>
+  /// Removes the specified entry from the target container.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     // See Add: past two gigabytes the volume cannot be walked in memory.
     if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
@@ -172,8 +226,14 @@ public sealed class Gfs1FormatDescriptor :
     return w.Build();
   }
 
+  /// <summary>
+  /// Enumerates the extents.
+  /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) => Gfs1ExtentMap.Enumerate(image);
 
+  /// <summary>
+  /// Performs the defragment operation.
+  /// </summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
@@ -244,6 +304,9 @@ public sealed class Gfs1FormatDescriptor :
     }
   }
 
+  /// <summary>
+  /// Performs the wipe unused space operation.
+  /// </summary>
   public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

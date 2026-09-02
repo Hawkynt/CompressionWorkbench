@@ -19,15 +19,39 @@ namespace FileFormat.MachO;
 /// </list>
 /// </summary>
 public sealed class MachOFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "MachO";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Mach-O executable";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".macho";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".macho", ".dylib", ".bundle", ".o"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Fat magic (universal binaries) — all four byte-order variants.
     new([0xCA, 0xFE, 0xBA, 0xBE], Confidence: 0.90),
@@ -40,13 +64,28 @@ public sealed class MachOFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     new([0xCE, 0xFA, 0xED, 0xFE], Confidence: 0.85),
     new([0xCF, 0xFA, 0xED, 0xFE], Confidence: 0.85),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Mach-O executable (single-slice or fat/universal) surfaced as an archive of " +
     "architecture slices, segments, and metadata.";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = new MachOReader().ReadAll(stream);
     return entries.Select((e, i) => new ArchiveEntryInfo(
@@ -54,6 +93,9 @@ public sealed class MachOFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     )).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     foreach (var e in new MachOReader().ReadAll(stream)) {
       if (files != null && !MatchesFilter(e.Name, files)) continue;

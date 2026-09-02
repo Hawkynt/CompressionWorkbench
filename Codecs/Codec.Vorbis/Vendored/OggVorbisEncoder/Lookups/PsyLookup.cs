@@ -6,6 +6,9 @@ using OggVorbisEncoder.Setup;
 
 namespace OggVorbisEncoder.Lookups;
 
+/// <summary>
+/// Represents a psy lookup.
+/// </summary>
 public class PsyLookup
 {
     private readonly float[] _ath;
@@ -23,6 +26,9 @@ public class PsyLookup
     private readonly float[][][] _toneCurves;
     private readonly int _totalOctaveLines;
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="PsyLookup"/>.
+    /// </summary>
     public PsyLookup(PsyInfo psyInfo, PsyGlobal globalParam, int n, int sampleRate)
     {
         _psyInfo = psyInfo;
@@ -364,6 +370,9 @@ public class PsyLookup
         return newToneCurves;
     }
 
+    /// <summary>
+    /// Performs the tone mask operation.
+    /// </summary>
     public void ToneMask(
         float[] pcm,
         float[] logmask,
@@ -397,6 +406,9 @@ public class PsyLookup
             ArrayPool<float>.Shared.Return(seedArr);
     }
 
+    /// <summary>
+    /// Performs the offset and mix operation.
+    /// </summary>
     public void OffsetAndMix(
         float[] noise,
         float[] tone,
@@ -461,6 +473,9 @@ public class PsyLookup
         }
     }
 
+    /// <summary>
+    /// Performs the noise mask operation.
+    /// </summary>
     public void NoiseMask(in Span<float> logmdct, float[] logmask)
     {
         var workArr = ArrayPool<float>.Shared.Rent(_n);
@@ -661,6 +676,9 @@ public class PsyLookup
         ArrayPool<float>.Shared.Return(arr);
     }
 
+    /// <summary>
+    /// Performs the couple quantize normalize operation.
+    /// </summary>
     public void CoupleQuantizeNormalize(
         int blobno,
         PsyGlobal psyGlobal,

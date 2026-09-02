@@ -25,10 +25,19 @@ namespace FileFormat.Acronis;
 /// </para>
 /// </remarks>
 public enum AcronisVolumeVersion {
+  /// <summary>
+  /// Specifies the windows option.
+  /// </summary>
   Windows = 0,
+  /// <summary>
+  /// Specifies the mac option.
+  /// </summary>
   Mac = 1,
 }
 
+/// <summary>
+/// Represents an acronis volume header.
+/// </summary>
 public sealed record AcronisVolumeHeader(
   ushort HeaderLength,
   AcronisVolumeVersion Version,
@@ -40,6 +49,9 @@ public sealed record AcronisVolumeHeader(
   uint BlockSize
 ) {
 
+  /// <summary>
+  /// Defines the magic constant value.
+  /// </summary>
   public const uint Magic = 0xA2B924CE;
 
   /// <summary>Reads the volume header from the start of <paramref name="stream"/>.</summary>

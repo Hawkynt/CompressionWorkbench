@@ -106,14 +106,38 @@ namespace FileFormat.Veeam;
 /// </summary>
 public sealed class VeeamFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Veeam";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Veeam Backup & Replication";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".vbk";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".vbk", ".vib", ".vrb"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // Wrapper-convention tag: ASCII "VEEAM" (5 bytes) at offset 0.
     // Note: real Veeam containers carry the VEEAM tag within the first 4 KiB
@@ -126,9 +150,21 @@ public sealed class VeeamFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     // (.vbk / .vib / .vrb) should be treated as primary.
     new("VEEAM"u8.ToArray(), Offset: 0, Confidence: 0.70),
   ];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "Veeam Backup & Replication — Stage 1 trailer-metadata R/O for the OibSummary XML island; disk content stays " +
     "Stage 0 (detection-only) because the chunked compressed block layer has no published spec. " +
@@ -154,12 +190,18 @@ public sealed class VeeamFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "decryption key derivation is NOT) gates every block. " +
     "Magic 'VEEAM' tag scanned within the first 4 KiB (writer-version-dependent offset).";
 
+  /// <summary>
+  /// Lists the entries in the supplied container.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new VeeamReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var r = new VeeamReader(stream);
     foreach (var e in r.Entries) {

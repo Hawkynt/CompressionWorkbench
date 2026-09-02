@@ -139,6 +139,9 @@ public sealed class IsoWriter {
   /// <summary>When set, Build materialises only the metadata prefix.</summary>
   private bool _prefixOnly;
 
+  /// <summary>
+  /// Performs the build operation.
+  /// </summary>
   public byte[] Build() {
     var root = BuildTree();
 

@@ -31,12 +31,27 @@ namespace FileFormat.Ewf;
 /// </remarks>
 public sealed class EwfReader {
 
+  /// <summary>
+  /// Provides the evf signature value.
+  /// </summary>
   public static readonly byte[] EvfSignature = [0x45, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00]; // "EVF\t\r\n\xFF\x00"
+  /// <summary>
+  /// Provides the lvf signature value.
+  /// </summary>
   public static readonly byte[] LvfSignature = [0x4C, 0x56, 0x46, 0x09, 0x0D, 0x0A, 0xFF, 0x00]; // "LVF\t\r\n\xFF\x00"
 
+  /// <summary>
+  /// Defines the file header size constant value.
+  /// </summary>
   public const int FileHeaderSize = 13;
+  /// <summary>
+  /// Defines the section descriptor size constant value.
+  /// </summary>
   public const int SectionDescriptorSize = 76;
 
+  /// <summary>
+  /// Represents a section.
+  /// </summary>
   public sealed record Section(
     string Type,
     long DescriptorOffset,
@@ -45,12 +60,18 @@ public sealed class EwfReader {
     uint Checksum,
     byte[] Payload);
 
+  /// <summary>
+  /// Represents an ewf image.
+  /// </summary>
   public sealed record EwfImage(
     bool IsLogical,             // true for LVF (.l01), false for EVF (.e01/.ewf)
     ushort SegmentNumber,
     List<Section> Sections,
     long TotalFileSize);
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static EwfImage Read(ReadOnlySpan<byte> data) {
     if (data.Length < FileHeaderSize)
       throw new InvalidDataException("EWF: file shorter than 13-byte header.");

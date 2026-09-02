@@ -51,7 +51,13 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
     _clusterHeapOffset = (long)clusterHeapOffsetSectors * _bytesPerSector;
   }
 
+  /// <summary>
+  /// Gets the first data byte.
+  /// </summary>
   public long FirstDataByte => _clusterHeapOffset;
+  /// <summary>
+  /// Gets the cluster size.
+  /// </summary>
   public int ClusterSize => _clusterSize;
 
   /// <summary>
@@ -74,6 +80,9 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
   /// </summary>
   public bool SupportsHeldRuns => true;
 
+  /// <summary>
+  /// Performs the move extent operation.
+  /// </summary>
   public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
     if (length <= 0 || srcOffset == dstOffset) return;
 
@@ -93,6 +102,9 @@ public sealed class ExFatBlockMover : IFilesystemBlockMover, IFilesystemMetadata
   ///   3. Free old FAT entries (targeted writes, flush).
   ///   4. Update allocation bitmap + PercentInUse (targeted RMW writes, flush).
   /// </remarks>
+  /// <summary>
+  /// Performs the update allocation after move operation.
+  /// </summary>
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
     var clusterCount = (int)((length + _clusterSize - 1) / _clusterSize);
     var oldFirstCluster = OffsetToCluster(oldOffset);

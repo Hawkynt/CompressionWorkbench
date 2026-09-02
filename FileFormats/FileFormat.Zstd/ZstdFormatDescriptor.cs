@@ -3,20 +3,59 @@ using Compression.Registry;
 
 namespace FileFormat.Zstd;
 
+/// <summary>
+/// Describes zstd format.
+/// </summary>
 public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "Zstd";
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "Zstandard";
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Stream;
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsOptimize | FormatCapabilities.CanCompoundWithTar;
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".zst";
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".zst", ".zstd"];
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+  /// <summary>
+  /// Gets the magic signatures.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [new([0x28, 0xB5, 0x2F, 0xFD], Confidence: 0.95)];
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("zstd", "Zstd", SupportsOptimize: true)];
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description => "Facebook's modern codec, excellent speed/ratio tradeoff with dictionary support";
 
   // ── IFormatOptionsSchema ───────────────────────────────────────────────
@@ -45,26 +84,44 @@ public sealed class ZstdFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
     return options.Level is { } l ? Math.Clamp(l, 1, 9) : 3;
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public void Decompress(Stream input, Stream output) {
     using var ds = new ZstdStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output) {
     using var cs = new ZstdStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
     input.CopyTo(cs);
   }
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options) {
     using var cs = new ZstdStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       compressionLevel: ParseLevel(options), leaveOpen: true);
     input.CopyTo(cs);
   }
+  /// <summary>
+  /// Performs the compress optimal operation.
+  /// </summary>
   public void CompressOptimal(Stream input, Stream output) {
     using var cs = new ZstdStream(output, Compression.Core.Streams.CompressionStreamMode.Compress,
       compressionLevel: 9, leaveOpen: true);
     input.CopyTo(cs);
   }
+  /// <summary>
+  /// Performs the wrap decompress operation.
+  /// </summary>
   public Stream? WrapDecompress(Stream input) =>
     new ZstdStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
+  /// <summary>
+  /// Performs the wrap compress operation.
+  /// </summary>
   public Stream? WrapCompress(Stream output) =>
     new ZstdStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
 }

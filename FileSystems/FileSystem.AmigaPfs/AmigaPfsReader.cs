@@ -46,6 +46,9 @@ public sealed class AmigaPfsReader : IDisposable {
   private readonly ImageAccessor _accessor;
   private readonly List<AmigaPfsEntry> _entries = [];
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<AmigaPfsEntry> Entries => this._entries;
 
   /// <summary>4-byte signature found in the boot block: "PFS\x02", "PFS\x03" or "PFSa".</summary>
@@ -57,6 +60,9 @@ public sealed class AmigaPfsReader : IDisposable {
   /// <summary>Disk name from the root block.</summary>
   public string DiskName { get; private set; } = "";
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="AmigaPfsReader"/>.
+  /// </summary>
   public AmigaPfsReader(Stream stream, int blockSize = 512) {
     ArgumentNullException.ThrowIfNull(stream);
     if (blockSize <= 0 || (blockSize & (blockSize - 1)) != 0)
@@ -165,6 +171,9 @@ public sealed class AmigaPfsReader : IDisposable {
     return Encoding.ASCII.GetString(data, offset + 1, end - offset - 1);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(AmigaPfsEntry entry) {
     var (offset, take) = this.Locate(entry);
     if (take <= 0) return [];
@@ -196,5 +205,8 @@ public sealed class AmigaPfsReader : IDisposable {
     return (offset, Math.Min(entry.Size, this._accessor.Length - offset));
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._accessor.Dispose();
 }

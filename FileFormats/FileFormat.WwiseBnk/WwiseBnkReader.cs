@@ -3,15 +3,39 @@ using System.Text;
 
 namespace FileFormat.WwiseBnk;
 
+/// <summary>
+/// Represents a wem entry.
+/// </summary>
 public sealed class WemEntry {
+  /// <summary>
+  /// Gets or sets the wem id.
+  /// </summary>
   public uint WemId { get; init; }
+  /// <summary>
+  /// Gets or sets the offset.
+  /// </summary>
   public uint Offset { get; init; }
+  /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
   public uint Size { get; init; }
 }
 
+/// <summary>
+/// Represents a hirc object.
+/// </summary>
 public sealed class HircObject {
+  /// <summary>
+  /// Gets or sets the type.
+  /// </summary>
   public byte Type { get; init; }
+  /// <summary>
+  /// Gets or sets the id.
+  /// </summary>
   public uint Id { get; init; }
+  /// <summary>
+  /// Gets or sets the size.
+  /// </summary>
   public uint Size { get; init; }
 }
 
@@ -25,12 +49,33 @@ public sealed class WwiseBnkReader {
 
   private readonly Stream _stream;
 
+  /// <summary>
+  /// Gets or sets the bank version.
+  /// </summary>
   public uint BankVersion { get; private set; }
+  /// <summary>
+  /// Gets or sets the bank id.
+  /// </summary>
   public uint BankId { get; private set; }
+  /// <summary>
+  /// Gets or sets the data chunk offset.
+  /// </summary>
   public long DataChunkOffset { get; private set; }
+  /// <summary>
+  /// Gets or sets the data chunk size.
+  /// </summary>
   public long DataChunkSize { get; private set; }
+  /// <summary>
+  /// Gets the wems.
+  /// </summary>
   public List<WemEntry> Wems { get; } = [];
+  /// <summary>
+  /// Gets the hirc objects.
+  /// </summary>
   public List<HircObject> HircObjects { get; } = [];
+  /// <summary>
+  /// Gets the chunks.
+  /// </summary>
   public Dictionary<string, long> Chunks { get; } = [];
 
   /// <summary>Maps each top-level chunk tag to its (body offset, body length) so
@@ -53,6 +98,9 @@ public sealed class WwiseBnkReader {
     return buf;
   }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="WwiseBnkReader"/>.
+  /// </summary>
   public WwiseBnkReader(Stream stream) {
     this._stream = stream;
     stream.Position = 0;
@@ -113,6 +161,9 @@ public sealed class WwiseBnkReader {
     }
   }
 
+  /// <summary>
+  /// Performs the extract wem operation.
+  /// </summary>
   public byte[] ExtractWem(WemEntry e) {
     if (this.DataChunkOffset == 0) throw new InvalidDataException("No DATA chunk present.");
     this._stream.Position = this.DataChunkOffset + e.Offset;

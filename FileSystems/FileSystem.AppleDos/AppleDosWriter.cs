@@ -45,6 +45,9 @@ public sealed class AppleDosWriter {
   /// <summary>Adds a file to the disk image (default type = Binary 'B').</summary>
   public void AddFile(string name, byte[] data) => this._files.Add((name, FileType: 0x04, data));
 
+  /// <summary>
+  /// Performs the add file operation.
+  /// </summary>
   public void AddFile(string name, byte fileType, byte[] data) => this._files.Add((name, fileType, data));
 
   private static int SectorOffset(int track, int sector) =>

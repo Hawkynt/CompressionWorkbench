@@ -12,6 +12,9 @@ public static class PpmdStream {
 
   private static readonly byte[] Magic = [0x8F, 0xAF, 0xAC, 0x84];
 
+  /// <summary>
+  /// Encodes the supplied input.
+  /// </summary>
   public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -24,6 +27,9 @@ public static class PpmdStream {
     output.Write(compressed);
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     Span<byte> magicBuf = stackalloc byte[4];
     input.ReadExactly(magicBuf);

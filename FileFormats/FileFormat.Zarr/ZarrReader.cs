@@ -3,19 +3,55 @@ using System.Text.Json;
 
 namespace FileFormat.Zarr;
 
+/// <summary>
+/// Reads Zarr v2 and v3 array metadata and exposes the chunks of the array as archive entries.
+/// </summary>
 public sealed class ZarrReader {
 
+  /// <summary>
+  /// Gets the zarr format.
+  /// </summary>
   public int ZarrFormat { get; }
+  /// <summary>
+  /// Gets the node type.
+  /// </summary>
   public string NodeType { get; }
+  /// <summary>
+  /// Gets the shape.
+  /// </summary>
   public IReadOnlyList<long> Shape { get; }
+  /// <summary>
+  /// Gets the chunks.
+  /// </summary>
   public IReadOnlyList<long> Chunks { get; }
+  /// <summary>
+  /// Gets the data type.
+  /// </summary>
   public string DataType { get; }
+  /// <summary>
+  /// Gets the compressor.
+  /// </summary>
   public string Compressor { get; }
+  /// <summary>
+  /// Gets the filters count.
+  /// </summary>
   public int FiltersCount { get; }
+  /// <summary>
+  /// Gets the codecs count.
+  /// </summary>
   public int CodecsCount { get; }
+  /// <summary>
+  /// Gets the order.
+  /// </summary>
   public string Order { get; }
+  /// <summary>
+  /// Gets the parse status.
+  /// </summary>
   public string ParseStatus { get; }
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="ZarrReader"/>.
+  /// </summary>
   public ZarrReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
 

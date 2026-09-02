@@ -17,6 +17,9 @@ namespace FileFormat.Aiff;
 /// </para>
 /// </summary>
 public sealed class AiffReader {
+  /// <summary>
+  /// Represents a parsed aiff.
+  /// </summary>
   public sealed record ParsedAiff(
     int NumChannels,
     int SampleRate,
@@ -32,6 +35,9 @@ public sealed class AiffReader {
     byte[]? Id3,                     // ID3 chunk, null if absent
     IReadOnlyList<(string Id, byte[] Data)> OtherChunks);
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public ParsedAiff Read(ReadOnlySpan<byte> data) {
     if (data.Length < 12)
       throw new InvalidDataException("AIFF too short for FORM header.");

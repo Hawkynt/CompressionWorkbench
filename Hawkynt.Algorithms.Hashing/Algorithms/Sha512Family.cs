@@ -5,6 +5,9 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>SHA-384, SHA-512, SHA-512/224 and SHA-512/256 from FIPS 180-4.</summary>
 public static class Sha512Family {
+  /// <summary>
+  /// Gets the supported hash-output sizes, in bits.
+  /// </summary>
   public static IReadOnlyList<HashSizeRange> SupportedHashSizes { get; } = [
     new(224, 256, 32),
     new(384, 512, 128)
@@ -53,6 +56,9 @@ public static class Sha512Family {
     0x96283EE2A88EFFE3UL, 0xBE5E1E2553863992UL, 0x2B0199FC2C85B8AAUL, 0x0EB72DDC81C52CA2UL
   ];
 
+  /// <summary>
+  /// Computes the Sha-512 Family hash of the supplied data.
+  /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data, int hashSizeBits = 512) => hashSizeBits switch {
     224 => ComputeCore(data, Sha512_224Initial, 28),
     256 => ComputeCore(data, Sha512_256Initial, 32),
@@ -61,9 +67,21 @@ public static class Sha512Family {
     _ => throw new ArgumentOutOfRangeException(nameof(hashSizeBits))
   };
 
+  /// <summary>
+  /// Computes the 512-bit Sha-512 Family hash of the supplied data.
+  /// </summary>
   public static byte[] Compute512(ReadOnlySpan<byte> data) => Compute(data, 512);
+  /// <summary>
+  /// Computes the 384-bit Sha-512 Family hash of the supplied data.
+  /// </summary>
   public static byte[] Compute384(ReadOnlySpan<byte> data) => Compute(data, 384);
+  /// <summary>
+  /// Performs the compute-512 224 operation provided by <see cref="Sha512Family"/>.
+  /// </summary>
   public static byte[] Compute512_224(ReadOnlySpan<byte> data) => Compute(data, 224);
+  /// <summary>
+  /// Performs the compute-512 256 operation provided by <see cref="Sha512Family"/>.
+  /// </summary>
   public static byte[] Compute512_256(ReadOnlySpan<byte> data) => Compute(data, 256);
 
   private static byte[] ComputeCore(ReadOnlySpan<byte> data, ReadOnlySpan<ulong> initial, int outputBytes) {

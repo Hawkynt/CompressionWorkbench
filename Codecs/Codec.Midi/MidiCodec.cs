@@ -16,12 +16,24 @@ namespace Codec.Midi;
 /// </para>
 /// </summary>
 public sealed class MidiCodec {
+  /// <summary>
+  /// Represents a file header.
+  /// </summary>
   public sealed record FileHeader(int Format, int NumTracks, int Division);
 
+  /// <summary>
+  /// Represents a track chunk.
+  /// </summary>
   public sealed record TrackChunk(int Index, int FileOffset, int ByteLength);
 
+  /// <summary>
+  /// Represents a meta event.
+  /// </summary>
   public sealed record MetaEvent(int TrackIndex, byte Type, byte[] Data);
 
+  /// <summary>
+  /// Reads the header from the supplied input.
+  /// </summary>
   public FileHeader ReadHeader(ReadOnlySpan<byte> data) {
     if (data.Length < 14 ||
         data[0] != 'M' || data[1] != 'T' || data[2] != 'h' || data[3] != 'd')
@@ -35,6 +47,9 @@ public sealed class MidiCodec {
     return new FileHeader(format, ntrks, division);
   }
 
+  /// <summary>
+  /// Performs the find tracks operation.
+  /// </summary>
   public IReadOnlyList<TrackChunk> FindTracks(ReadOnlySpan<byte> data) {
     var tracks = new List<TrackChunk>();
     var pos = 8 + BinaryPrimitives.ReadInt32BigEndian(data[4..]);

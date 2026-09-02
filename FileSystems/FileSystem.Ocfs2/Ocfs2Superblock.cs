@@ -93,15 +93,45 @@ public sealed class Ocfs2Superblock {
   /// <summary>Byte offset where the superblock dinode was found.</summary>
   public long SuperBlockOffset { get; private init; }
 
+  /// <summary>
+  /// Gets or sets the major rev.
+  /// </summary>
   public ushort MajorRev { get; private init; }
+  /// <summary>
+  /// Gets or sets the minor rev.
+  /// </summary>
   public ushort MinorRev { get; private init; }
+  /// <summary>
+  /// Gets or sets the blocksize bits.
+  /// </summary>
   public uint BlocksizeBits { get; private init; }
+  /// <summary>
+  /// Gets or sets the clustersize bits.
+  /// </summary>
   public uint ClustersizeBits { get; private init; }
+  /// <summary>
+  /// Gets or sets the max slots.
+  /// </summary>
   public ushort MaxSlots { get; private init; }
+  /// <summary>
+  /// Gets or sets the root blkno.
+  /// </summary>
   public ulong RootBlkno { get; private init; }
+  /// <summary>
+  /// Gets or sets the system dir blkno.
+  /// </summary>
   public ulong SystemDirBlkno { get; private init; }
+  /// <summary>
+  /// Gets or sets the first cluster group.
+  /// </summary>
   public ulong FirstClusterGroup { get; private init; }
+  /// <summary>
+  /// Gets or sets the label.
+  /// </summary>
   public string Label { get; private init; } = "";
+  /// <summary>
+  /// Gets or sets the uuid hex.
+  /// </summary>
   public string UuidHex { get; private init; } = "";
 
   /// <summary>Raw 4 KB capture of the superblock dinode block (pad with 0 if image was shorter).</summary>

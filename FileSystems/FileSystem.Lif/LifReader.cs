@@ -12,9 +12,18 @@ namespace FileSystem.Lif;
 /// </summary>
 public sealed class LifReader {
 
+  /// <summary>
+  /// Defines the lif magic constant value.
+  /// </summary>
   public const ushort LifMagic = 0x8000;
+  /// <summary>
+  /// Defines the sector size constant value.
+  /// </summary>
   public const int SectorSize = 256;
 
+  /// <summary>
+  /// Represents a file entry.
+  /// </summary>
   public sealed record FileEntry(
     string Name,
     ushort FileType,
@@ -24,6 +33,9 @@ public sealed class LifReader {
     DateTime? Created
   );
 
+  /// <summary>
+  /// Represents a volume.
+  /// </summary>
   public sealed record Volume(
     string Label,
     int DirectoryStartSector,
@@ -32,6 +44,9 @@ public sealed class LifReader {
     byte[] Image  // raw bytes, retained so Extract can read sector ranges
   );
 
+  /// <summary>
+  /// Reads the value from the supplied input.
+  /// </summary>
   public static Volume Read(ReadOnlySpan<byte> image) {
     if (image.Length < SectorSize) throw new InvalidDataException("LIF: image shorter than one 256-byte sector.");
     var magic = BinaryPrimitives.ReadUInt16BigEndian(image);
@@ -79,6 +94,9 @@ public sealed class LifReader {
       Image: image.ToArray());
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public static byte[] Extract(Volume v, FileEntry e) {
     var startByte = (long)e.StartSector * SectorSize;
     var len = e.LengthSectors * SectorSize;

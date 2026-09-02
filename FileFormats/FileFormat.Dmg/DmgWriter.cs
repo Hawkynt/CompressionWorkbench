@@ -27,6 +27,9 @@ public sealed class DmgWriter {
 
   private readonly List<(string name, byte[] data)> _partitions = [];
 
+  /// <summary>
+  /// Performs the add partition operation.
+  /// </summary>
   public void AddPartition(string name, byte[] data) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
@@ -35,6 +38,9 @@ public sealed class DmgWriter {
     _partitions.Add((name, data));
   }
 
+  /// <summary>
+  /// Writes the to to the supplied output.
+  /// </summary>
   public void WriteTo(Stream output) {
     ArgumentNullException.ThrowIfNull(output);
 

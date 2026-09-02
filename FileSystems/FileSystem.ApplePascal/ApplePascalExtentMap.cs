@@ -11,6 +11,9 @@ namespace FileSystem.ApplePascal;
 /// </summary>
 public static class ApplePascalExtentMap {
 
+  /// <summary>
+  /// Enumerates the value.
+  /// </summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     image.Position = 0;

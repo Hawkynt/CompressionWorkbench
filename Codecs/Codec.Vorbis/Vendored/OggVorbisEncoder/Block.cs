@@ -1,5 +1,8 @@
 namespace OggVorbisEncoder;
 
+/// <summary>
+/// Represents a block.
+/// </summary>
 public static class Block
 {
     private static readonly float[] Win64 =
@@ -2074,6 +2077,9 @@ public static class Block
         1.0000000000F, 1.0000000000F, 1.0000000000F, 1.0000000000F
     };
 
+    /// <summary>
+    /// Provides the windows value.
+    /// </summary>
     public static readonly float[][] Windows = new[]
     {
         Win64,

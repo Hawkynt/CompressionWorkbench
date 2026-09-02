@@ -28,6 +28,9 @@ public sealed class JfsReader : IDisposable {
   public int BlockSize => this._blockSize;
   private long _filesetInodeTableOffset;
 
+  /// <summary>
+  /// Gets the entries.
+  /// </summary>
   public IReadOnlyList<JfsEntry> Entries => _entries;
 
   private ushort U16(long off) => this._len >= off + 2 ? this._img.ReadUInt16(off) : (ushort)0;
@@ -40,6 +43,9 @@ public sealed class JfsReader : IDisposable {
   /// <summary>Total size of the backing image in bytes.</summary>
   public long Length => this._len;
 
+  /// <summary>
+  /// Initializes a new instance of <see cref="JfsReader"/>.
+  /// </summary>
   public JfsReader(Stream stream, bool leaveOpen = true) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -267,6 +273,9 @@ public sealed class JfsReader : IDisposable {
     return sb.ToString();
   }
 
+  /// <summary>
+  /// Decodes the supplied input.
+  /// </summary>
   public byte[] Extract(JfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
@@ -381,6 +390,9 @@ public sealed class JfsReader : IDisposable {
     return written;
   }
 
+  /// <summary>
+  /// Releases resources held by this instance.
+  /// </summary>
   public void Dispose() => this._img.Dispose();
 
   // ── pxd_t helpers ─────────────────────────────────────────────────────

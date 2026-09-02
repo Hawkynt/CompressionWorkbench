@@ -192,5 +192,8 @@ public sealed class Mp4FastStart : IFileInternalChunkMover {
     }
   }
 
+  /// <summary>
+  /// Represents an atom info.
+  /// </summary>
   public sealed record AtomInfo(string Type, long Offset, long Size, int HeaderSize);
 }
