@@ -6,11 +6,6 @@ namespace Hawkynt.Algorithms.Hashing;
 /// <summary>Subterranean-Hash, a 256-bit lightweight hash based on the 257-bit Subterranean permutation.</summary>
 public static class SubterraneanHash {
   /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits256;
-
-  /// <summary>
   /// Computes the Subterranean Hash hash of the supplied data.
   /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) {

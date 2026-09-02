@@ -697,44 +697,54 @@ public static class Streebog256HashSizeExtensions {
 /// Provides supported hash-output size metadata for <see cref="Streebog512"/>.
 /// </summary>
 public static class Streebog512HashSizeExtensions {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
+  extension(Streebog512) {
+    /// <summary>
+    /// Gets the supported hash-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
+  }
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="SubterraneanHash"/>.
 /// </summary>
 public static class SubterraneanHashSizeExtensions {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
+  extension(SubterraneanHash) {
+    /// <summary>
+    /// Gets the supported hash-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
+  }
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="Whirlpool"/>.
 /// </summary>
 public static class WhirlpoolHashSizeExtensions {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
+  extension(Whirlpool) {
+    /// <summary>
+    /// Gets the supported hash-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits512;
+  }
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="XoodyakHash"/>.
 /// </summary>
 public static class XoodyakHashSizeExtensions {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
+  extension(XoodyakHash) {
+    /// <summary>
+    /// Gets the supported hash-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits256;
+  }
 }
 /// <summary>
 /// Provides supported hash-output size metadata for <see cref="XxHash3"/>.
 /// </summary>
 public static class XxHash3HashSizeExtensions {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64And128;
+  extension(XxHash3) {
+    /// <summary>
+    /// Gets the supported hash-output sizes, in bits.
+    /// </summary>
+    public static IReadOnlyList<HashSizeRange> SupportedHashSizes => HashSizeSets.Bits64And128;
+  }
 }

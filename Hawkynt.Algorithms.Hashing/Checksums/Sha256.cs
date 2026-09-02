@@ -10,11 +10,6 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Sha256 {
   /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits256;
-
-  /// <summary>
   /// The size of the SHA-256 hash output in bytes (32 bytes / 256 bits).
   /// </summary>
   public const int HashSize = 32;

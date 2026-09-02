@@ -5,11 +5,6 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Crc64 : IChecksum {
   /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits64;
-
-  /// <summary>
   /// ECMA-182 polynomial used by the XZ format.
   /// </summary>
   public const ulong Ecma182 = 0xC96C5795D7870F42UL;

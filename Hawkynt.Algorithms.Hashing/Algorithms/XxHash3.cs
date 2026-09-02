@@ -4,11 +4,6 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>xxHash3 registry implementation, including its 64- and 128-bit output modes.</summary>
 public static class XxHash3 {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits64And128;
-
   private const ulong Prime64_1 = 0x9E3779B185EBCA87UL;
   private const ulong Prime64_2 = 0xC2B2AE3D27D4EB4FUL;
   private const ulong Prime64_3 = 0x165667B19E3779F9UL;

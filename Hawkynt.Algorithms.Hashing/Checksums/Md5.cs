@@ -6,11 +6,6 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public static class Md5 {
   /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits128;
-
-  /// <summary>
   /// Computes the MD5 hash of the given data.
   /// </summary>
   /// <param name="data">The data to hash.</param>

@@ -15,11 +15,6 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Crc32 : IChecksum {
   /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits32;
-
-  /// <summary>
   /// Standard IEEE 802.3 polynomial (used by ZIP, GZIP, PNG, etc.).
   /// </summary>
   public const uint Ieee = 0xEDB88320u;

@@ -13,11 +13,6 @@ public static class Streebog256 {
 /// <summary>Streebog-512 (GOST R 34.11-2012) hash function.</summary>
 public static class Streebog512 {
   /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits512;
-
-  /// <summary>
   /// Computes the Streebog-512 hash of the supplied data.
   /// </summary>
   public static byte[] Compute(ReadOnlySpan<byte> data) => StreebogCore.Compute(data, 64);

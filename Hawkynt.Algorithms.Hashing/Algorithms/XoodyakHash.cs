@@ -5,11 +5,6 @@ namespace Hawkynt.Algorithms.Hashing;
 
 /// <summary>Xoodyak hash mode from the JavaScript registry.</summary>
 public static class XoodyakHash {
-  /// <summary>
-  /// Gets the supported hash-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Hashing.HashSizeRange> SupportedHashSizes => global::Hawkynt.Algorithms.Hashing.HashSizeSets.Bits256;
-
   private const int StateBytes = 48;
   private const int Rate = 16;
 

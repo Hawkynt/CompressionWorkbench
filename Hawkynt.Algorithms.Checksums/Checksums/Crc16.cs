@@ -5,11 +5,6 @@ namespace Compression.Core.Checksums;
 /// </summary>
 public sealed class Crc16 : IChecksum {
   /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits16;
-
-  /// <summary>
   /// CRC-16/ARC polynomial (reflected form).
   /// </summary>
   public const ushort Arc = 0xA001;

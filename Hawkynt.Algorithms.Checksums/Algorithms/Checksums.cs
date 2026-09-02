@@ -278,11 +278,6 @@ public static class Parity {
 /// <summary>NMEA-0183 XOR checksum. Delimiters '$'/'!' and '*' plus suffix are ignored when present.</summary>
 public static class Nmea0183 {
   /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits8;
-
-  /// <summary>
   /// Computes the NMEA-0183 checksum of the supplied data.
   /// </summary>
   public static byte Compute(ReadOnlySpan<byte> sentence) {
@@ -336,11 +331,6 @@ public readonly record struct CrcParameters(
 
 /// <summary>Bit-accurate generic CRC implementation using normal-form polynomials.</summary>
 public static class Crc {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits8To64;
-
   /// <summary>
   /// Computes the CRC checksum of the supplied data.
   /// </summary>
@@ -513,11 +503,6 @@ public readonly record struct Crc128Parameters(
 
 /// <summary>Generic 128-bit CRC using normal-form polynomials.</summary>
 public static class Crc128 {
-  /// <summary>
-  /// Gets the supported checksum-output sizes, in bits.
-  /// </summary>
-  public static global::System.Collections.Generic.IReadOnlyList<global::Hawkynt.Algorithms.Checksums.ChecksumSizeRange> SupportedChecksumSizes => global::Hawkynt.Algorithms.Checksums.ChecksumSizeSets.Bits128;
-
   private static readonly UInt128 TopBit = UInt128.One << 127;
 
   /// <summary>
