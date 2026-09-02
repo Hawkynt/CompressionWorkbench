@@ -25,6 +25,7 @@ namespace Compression.Tests.Operations;
 /// rather than failed — but a successful op that yields wrong/missing content fails loudly.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class FilesystemCrudCycleTests {
 
   private const string Seed = "seed.txt";

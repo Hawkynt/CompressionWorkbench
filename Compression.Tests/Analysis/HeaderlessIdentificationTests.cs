@@ -9,6 +9,7 @@ using Compression.Core.Transforms;
 namespace Compression.Tests.Analysis;
 
 [TestFixture]
+[Category("Slow")]
 public class HeaderlessIdentificationTests {
 
   // ── Construct → Strip → Identify ───────────────────────────────────

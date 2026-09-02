@@ -19,6 +19,7 @@ namespace Compression.Tests.ConversionMatrix;
 /// </summary>
 [TestFixture]
 [Category("ConversionMatrix")]
+[Category("Slow")]
 public class ConversionMatrixTests {
 
   /// <summary>

@@ -9,6 +9,7 @@ namespace Compression.Tests.BenchmarkMatrix;
 /// Identifies algorithms that are too slow for interactive benchmarking.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class BenchmarkStressTests {
 
   private const int Size = 65536; // 64 KB — realistic benchmark size

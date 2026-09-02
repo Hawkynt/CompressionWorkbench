@@ -66,6 +66,7 @@ public class BuildingBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("Slow")]
   [TestCaseSource(nameof(AllBuildingBlocks))]
   [CancelAfter(30000)]
   public void RoundTrip_Large_Text(IBuildingBlock block) {
@@ -87,6 +88,7 @@ public class BuildingBlockTests {
     Assert.That(decompressed, Is.EqualTo(data));
   }
 
+  [Category("Slow")]
   [TestCaseSource(nameof(AllBuildingBlocks))]
   [CancelAfter(30000)]
   public void RoundTrip_Large_Zeroes(IBuildingBlock block) {

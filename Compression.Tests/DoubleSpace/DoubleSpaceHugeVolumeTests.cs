@@ -11,6 +11,7 @@ namespace Compression.Tests.DoubleSpace;
 /// driver-mountable, with inner FAT12 + MDFAT geometry sized to the cluster count.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class DoubleSpaceHugeVolumeTests {
 
   private static (string Name, byte[] Data)[] BigSet(int files, int bytesEach, int seed) {

@@ -7,6 +7,7 @@ using Compression.Core.Transforms;
 namespace Compression.Tests.Analysis;
 
 [TestFixture]
+[Category("Slow")]
 public class ChainReconstructorTests {
 
   [Test, Category("HappyPath")]

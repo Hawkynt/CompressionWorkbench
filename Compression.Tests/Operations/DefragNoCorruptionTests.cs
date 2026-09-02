@@ -15,6 +15,7 @@ namespace Compression.Tests.Operations;
 /// entries because their content-addressed identities can't survive extract→recreate.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class DefragNoCorruptionTests {
 
   // EVERY creatable defragmentable format (reflection over the marker) — filesystems

@@ -13,6 +13,7 @@ namespace Compression.Tests.Apfs;
 /// the real acceptance gate because no Linux <c>fsck_apfs</c> exists.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class ApfsFullScopeMutationTests {
 
   private const int SmallImage = 4 * 1024 * 1024;

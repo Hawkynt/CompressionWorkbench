@@ -6,6 +6,7 @@ using FileFormat.Gbs;
 namespace Compression.Tests.Gbs;
 
 [TestFixture]
+[Category("Slow")]
 public class GbsTests {
 
   private static byte[] BuildGbs() {

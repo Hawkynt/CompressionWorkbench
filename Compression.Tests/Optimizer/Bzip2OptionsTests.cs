@@ -12,6 +12,7 @@ namespace Compression.Tests.Optimizer;
 /// still round-trips.
 /// </summary>
 [TestFixture]
+[Category("Slow")]
 public class Bzip2OptionsTests {
 
   private static byte[] CompressibleSample() {

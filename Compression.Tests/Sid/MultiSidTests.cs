@@ -6,6 +6,7 @@ using FileFormat.Sid;
 namespace Compression.Tests.Sid;
 
 [TestFixture]
+[Category("Slow")]
 public class MultiSidTests {
 
   // Builds a renderable PSID with init writing a tone to one or more SID windows. The program

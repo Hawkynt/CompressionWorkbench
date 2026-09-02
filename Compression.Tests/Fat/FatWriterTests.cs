@@ -1,6 +1,7 @@
 namespace Compression.Tests.Fat;
 
 [TestFixture]
+[Category("Slow")]
 public class FatWriterTests {
 
   // ── FAT32 auto-size minimum (no ballooning) ───────────────────────────────

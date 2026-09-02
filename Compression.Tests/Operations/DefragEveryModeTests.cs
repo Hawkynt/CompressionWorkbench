@@ -20,6 +20,7 @@ namespace Compression.Tests.Operations;
 /// failure. Anything else escaping is.</para>
 /// </remarks>
 [TestFixture]
+[Category("Slow")]
 public class DefragEveryModeTests {
 
   private static readonly DefragMode[] Modes = [
