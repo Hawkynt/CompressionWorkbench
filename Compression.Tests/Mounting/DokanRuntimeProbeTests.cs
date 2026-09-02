@@ -22,12 +22,17 @@ public sealed class DokanRuntimeProbeTests {
     Assert.Multiple(() => {
       Assert.That(profile.Id, Is.EqualTo("dokan"));
       Assert.That(profile.IsAvailable, Is.True);
-      Assert.That(profile.SupportsReadOnly, Is.False);
+      // Read-only mounting is implemented and MountAsync serves it; read-write
+      // is not, and MountAsync refuses every access mode but ReadOnly. The
+      // profile has to say exactly that — the point of this test is that the
+      // advertised modes never run ahead of the callbacks behind them.
+      Assert.That(profile.SupportsReadOnly, Is.True);
       Assert.That(profile.SupportsReadWrite, Is.False);
       Assert.That(profile.RequiredReadCapabilities, Is.EqualTo(FilesystemDriverCapabilities.None));
       Assert.That(profile.RequiredWriteCapabilities, Is.EqualTo(FilesystemDriverCapabilities.None));
       Assert.That(
-        profile.Limitations.Any(static limitation => limitation.Contains("intentionally disabled", StringComparison.Ordinal)),
+        profile.Limitations.Any(static limitation =>
+          limitation.Contains("Read-write Dokan mounting is disabled", StringComparison.Ordinal)),
         Is.True
       );
     });

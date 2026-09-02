@@ -87,8 +87,12 @@ public sealed class EwfFormatDescriptor :
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var image = ReadImage(stream);
     if (!image.IsLogical && MatchesRequested("media.raw", files)) {
+      // Same tolerance List applies: a header-only or truncated EWF has no
+      // reconstructable medium, and that must not cost the caller the metadata
+      // and section blobs that are the whole point of opening such an image.
       try { WriteFile(outputDir, "media.raw", EwfReader.ExtractMedia(image)); }
       catch (NotSupportedException) { }
+      catch (InvalidDataException) { }
     }
     if (MatchesRequested("metadata.ini", files))
       WriteFile(outputDir, "metadata.ini", BuildMetadata(image));

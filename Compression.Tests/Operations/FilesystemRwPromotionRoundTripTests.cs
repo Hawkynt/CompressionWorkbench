@@ -37,7 +37,11 @@ public sealed class FilesystemRwPromotionRoundTripTests {
 
     image.Position = 0;
     modifier.Add(image, [ArchiveInputInfo.InMemory("C.DAT", c)]);
-    Assert.That(ListNames(archiveOps, image), Does.Contain("C.DAT").IgnoreCase, formatId);
+    // Compared by leaf name, as the survivor checks below are: a filesystem
+    // descriptor is free to list volume-absolute paths (CramFS lists "/C.DAT")
+    // and that is a naming convention, not a failure to store the entry.
+    Assert.That(ListNames(archiveOps, image).Any(n => Matches(n, "C.DAT")), Is.True,
+      $"{formatId}: C.DAT was not added");
 
     image.Position = 0;
     modifier.Remove(image, ["B.BIN"]);
@@ -69,8 +73,13 @@ public sealed class FilesystemRwPromotionRoundTripTests {
     Assert.That(ops, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(ops, Is.InstanceOf<IArchiveModifiable>());
 
-    var original = Enumerable.Range(0, 300_123).Select(i => (byte)(i * 13)).ToArray();
-    var replacement = Enumerable.Range(0, 130_777).Select(i => (byte)(i * 17)).ToArray();
+    // Sector multiples: an EWF volume section records sector count and sector
+    // size, so a medium's length is a whole number of sectors by construction
+    // and a sub-sector payload comes back zero-padded to the next one. Sizing
+    // the probes on that boundary keeps this test about replace/clear semantics
+    // instead of a fidelity the container cannot carry.
+    var original = Enumerable.Range(0, 300_544).Select(i => (byte)(i * 13)).ToArray();
+    var replacement = Enumerable.Range(0, 131_072).Select(i => (byte)(i * 17)).ToArray();
     using var image = new MemoryStream();
     ((IArchiveCreatable)ops).Create(image,
       [ArchiveInputInfo.InMemory("capture.raw", original)], new FormatCreateOptions());
