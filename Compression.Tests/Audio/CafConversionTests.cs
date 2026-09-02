@@ -29,7 +29,7 @@ public sealed class CafConversionTests {
     var parsed = new CafReader().Read(caf.ToArray());
     Assert.Multiple(() => {
       Assert.That(parsed.FormatId, Is.EqualTo("lpcm"));
-      Assert.That(parsed.FormatFlags & 0x2u, Is.Zero, "big-endian flag must be clear for canonical LE PCM");
+      Assert.That(parsed.FormatFlags & 0x2u, Is.Zero, "little-endian flag stays clear: CAF LPCM ships big-endian");
       Assert.That(parsed.FormatFlags & 0x4u, Is.Not.Zero, "signed-integer flag");
       Assert.That(parsed.FormatFlags & 0x8u, Is.Not.Zero, "packed flag");
       Assert.That(parsed.InterleavedPcm, Is.EqualTo(pcm));

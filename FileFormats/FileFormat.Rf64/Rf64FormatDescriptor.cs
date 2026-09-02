@@ -115,7 +115,7 @@ public sealed class Rf64FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       throw new InvalidOperationException("RF64 archive create needs either FULL.rf64 or one or more per-channel WAVs.");
 
     var channels = new List<WavReader.ParsedWav>();
-    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().Read(data));
+    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().ReadCanonicalPcm(data));
 
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))

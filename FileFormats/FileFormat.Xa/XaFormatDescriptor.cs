@@ -142,7 +142,7 @@ public sealed class XaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     if (channelBlobs.Count is 0 or > 2)
       throw new InvalidOperationException("XA archive create needs either FULL.xa or one (mono) or two (stereo) per-channel WAVs.");
 
-    var channels = channelBlobs.Select(c => new WavReader().Read(c.Data)).ToList();
+    var channels = channelBlobs.Select(c => new WavReader().ReadCanonicalPcm(c.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.NumChannels != 1))
       throw new InvalidOperationException("XA create expects mono per-channel WAVs.");

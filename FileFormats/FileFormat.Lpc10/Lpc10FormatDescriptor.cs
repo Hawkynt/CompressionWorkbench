@@ -117,7 +117,7 @@ public sealed class Lpc10FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     if (wav.Data == null)
       throw new InvalidOperationException("Raw LPC-10 create needs either FULL.lpc10 or a single mono 16-bit WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("LPC-10 is mono; the source WAV must have exactly one channel.");
     if (parsed.BitsPerSample != 16)

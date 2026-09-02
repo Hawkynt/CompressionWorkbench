@@ -138,7 +138,7 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var channels = files
       .Where(static file => file.Name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
       .OrderBy(static file => ChannelLayout.OrderIndex(Path.GetFileNameWithoutExtension(file.Name)))
-      .Select(static file => new WavReader().Read(file.Data))
+      .Select(static file => new WavReader().ReadCanonicalPcm(file.Data))
       .ToArray();
     if (channels.Length is < 1 or > 8)
       throw new InvalidOperationException("Ogg creation requires 1-8 mono WAV channels.");

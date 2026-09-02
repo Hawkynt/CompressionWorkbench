@@ -115,7 +115,7 @@ public sealed class BwavFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (channelBlobs.Count == 0)
       throw new InvalidOperationException("BWAV archive create needs either FULL.bwav or one or more per-channel WAVs.");
 
-    var channels = channelBlobs.Select(b => new WavReader().Read(b.Data)).ToList();
+    var channels = channelBlobs.Select(b => new WavReader().ReadCanonicalPcm(b.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.NumChannels != 1 || c.SampleRate != first.SampleRate || c.BitsPerSample != 16))
       throw new InvalidOperationException("All channel WAVs must be mono 16-bit and share the same sample rate.");

@@ -6,8 +6,9 @@ using Codec.ImaAdpcm;
 namespace FileFormat.Caf;
 
 /// <summary>
-/// Apple Core Audio Format (<c>.caf</c>) parser. All container integers are big-endian;
-/// LPCM sample endianness is controlled by Core Audio's standard ASBD flags.
+/// Apple Core Audio Format (<c>.caf</c>) parser. All container integers are big-endian, and so are
+/// LPCM samples unless the ASBD little-endian flag says otherwise; either way callers get canonical
+/// little-endian PCM back.
 /// G.711 and QuickTime IMA4 are decoded to canonical PCM16.
 /// </summary>
 public sealed class CafReader {
@@ -27,7 +28,10 @@ public sealed class CafReader {
     long? ValidFrames = null);
 
   private const uint FlagIsFloat = 0x1;
-  private const uint FlagIsBigEndian = 0x2;
+
+  // Core Audio states sample byte order by its absence: bit 1 marks little-endian samples, so a
+  // cleared bit is CAF's canonical big-endian layout - the inverse polarity of every other flag.
+  private const uint FlagIsLittleEndian = 0x2;
   private const int Ima4PacketBytesPerChannel = 34;
   private const int Ima4FramesPerPacket = 64;
 
@@ -108,7 +112,7 @@ public sealed class CafReader {
     if (sampleRate < 1) throw new InvalidDataException("CAF sample rate must be positive.");
 
     var isFloat = (formatFlags & FlagIsFloat) != 0;
-    var bigEndian = (formatFlags & FlagIsBigEndian) != 0;
+    var littleEndian = (formatFlags & FlagIsLittleEndian) != 0;
     var payload = rawData ?? [];
 
     switch (formatId) {
@@ -123,7 +127,7 @@ public sealed class CafReader {
     }
 
     var canonical = payload;
-    if (formatId == "lpcm" && bigEndian && bitsPerChannel > 8)
+    if (formatId == "lpcm" && !littleEndian && bitsPerChannel > 8)
       canonical = ConvertBeToLe(payload, bitsPerChannel / 8);
 
     return new ParsedCaf(channels, sampleRate, bitsPerChannel, formatFlags, isFloat, formatId,

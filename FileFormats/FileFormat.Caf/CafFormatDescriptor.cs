@@ -109,7 +109,7 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (channelBlobs.Length == 0)
       throw new InvalidOperationException("CAF archive create needs either FULL.caf or one or more per-channel WAVs.");
 
-    var channels = channelBlobs.Select(static file => new WavReader().Read(file.Data)).ToArray();
+    var channels = channelBlobs.Select(static file => new WavReader().ReadCanonicalPcm(file.Data)).ToArray();
     var first = channels[0];
     if (channels.Any(channel => channel.SampleRate != first.SampleRate ||
                                 channel.BitsPerSample != first.BitsPerSample ||
@@ -122,7 +122,10 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     WriteCaf(output, channels.Length, first.SampleRate, first.BitsPerSample, first.FormatCode == 3, interleaved);
   }
 
-  /// <summary>Writes standards-compliant little-endian packed LPCM CAF.</summary>
+  /// <summary>
+  /// Writes standards-compliant packed LPCM CAF. Samples leave in CAF's canonical big-endian
+  /// order, which is what a cleared little-endian ASBD flag promises a reader.
+  /// </summary>
   internal static void WriteCaf(Stream output, int channels, int sampleRate, int bitsPerChannel,
     bool isFloat, ReadOnlySpan<byte> interleaved) {
     Span<byte> header = stackalloc byte[8];
@@ -145,7 +148,17 @@ public sealed class CafFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var data = new byte[4 + interleaved.Length];
     interleaved.CopyTo(data.AsSpan(4));
+    ToBigEndianSamples(data.AsSpan(4), (bitsPerChannel + 7) / 8);
     WriteChunk(output, "data"u8, data);
+  }
+
+  /// <summary>Reverses each sample in place; callers hand in canonical little-endian PCM.</summary>
+  internal static void ToBigEndianSamples(Span<byte> samples, int bytesPerSample) {
+    if (bytesPerSample <= 1) return;
+    if (samples.Length % bytesPerSample != 0)
+      throw new InvalidDataException("CAF LPCM payload is not aligned to its sample width.");
+    for (var offset = 0; offset < samples.Length; offset += bytesPerSample)
+      samples.Slice(offset, bytesPerSample).Reverse();
   }
 
   private const uint FlagIsFloat = 0x1;

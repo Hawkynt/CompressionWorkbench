@@ -20,7 +20,7 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     if (input.CanSeek) input.Position = 0;
     using var memory = new MemoryStream();
     input.CopyTo(memory);
-    var parsed = new WavReader().Read(memory.ToArray());
+    var parsed = new WavReader().ReadCanonicalPcm(memory.ToArray());
     if (parsed.FormatCode is not (1 or 3))
       throw new NotSupportedException($"WAVE format code 0x{parsed.FormatCode:X4} is not decoded to canonical PCM.");
     return new AudioPcmBuffer(

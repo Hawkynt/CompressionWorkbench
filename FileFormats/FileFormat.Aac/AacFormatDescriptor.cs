@@ -129,7 +129,7 @@ public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var channels = files
       .Where(static file => file.Name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
       .OrderBy(static file => ChannelLayout.OrderIndex(Path.GetFileNameWithoutExtension(file.Name)))
-      .Select(static file => new WavReader().Read(file.Data))
+      .Select(static file => new WavReader().ReadCanonicalPcm(file.Data))
       .ToArray();
     if (channels.Length is < 1 or > 2)
       throw new InvalidOperationException("AAC-LC creation requires one or two mono WAV channels.");

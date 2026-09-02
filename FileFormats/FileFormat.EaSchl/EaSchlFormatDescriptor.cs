@@ -111,7 +111,7 @@ public sealed class EaSchlFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     if (wavInput.Data == null)
       throw new InvalidOperationException("EaSchl archive create needs either FULL.eam or a WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.BitsPerSample != 16)
       throw new InvalidOperationException("EaSchl create expects 16-bit PCM input.");
 

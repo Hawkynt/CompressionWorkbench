@@ -171,7 +171,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       throw new InvalidOperationException("WAV archive create needs either FULL.wav or one or more per-channel WAVs.");
 
     var channels = new List<WavReader.ParsedWav>();
-    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().Read(data));
+    foreach (var (_, data) in channelBlobs) channels.Add(new WavReader().ReadCanonicalPcm(data));
 
     var first = channels[0];
     if (channels.Any(c => c.SampleRate != first.SampleRate || c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
@@ -233,7 +233,7 @@ public sealed class WavFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
-    parsed = new WavReader().Read(blob);
+    parsed = new WavReader().ReadCanonicalPcm(blob);
 
     var entries = new List<(string, string, byte[])> {
       ("FULL.wav", "Container", blob),

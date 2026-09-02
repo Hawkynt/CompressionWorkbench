@@ -5,9 +5,13 @@ namespace FileFormat.Wav;
 
 /// <summary>
 /// RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float,
-/// G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Compressed formats are decoded
+/// G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Block-based codecs are decoded
 /// to canonical little-endian PCM and trimmed to the optional <c>fact</c> sample
 /// count so codec block padding never leaks into downstream transcoding.
+/// <para>G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so
+/// <see cref="Read"/> surfaces them verbatim under their own format code and container remuxing
+/// can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than
+/// packets use <see cref="ReadCanonicalPcm"/>, which decodes them like every other codec.</para>
 /// </summary>
 public sealed class WavReader {
   /// <summary>
@@ -84,14 +88,6 @@ public sealed class WavReader {
     if (sampleRate < 1) throw new InvalidDataException("WAV sample rate must be positive.");
 
     switch (formatCode) {
-      case 6: {
-        var shorts = Codec.ALaw.ALawCodec.Decode(rawData);
-        return Pcm16(numChannels, sampleRate, shorts, metadata, channelMask, factSampleFrames);
-      }
-      case 7: {
-        var shorts = Codec.MuLaw.MuLawCodec.Decode(rawData);
-        return Pcm16(numChannels, sampleRate, shorts, metadata, channelMask, factSampleFrames);
-      }
       case 0x0011: {
         if (blockAlign <= 0) throw new InvalidDataException("IMA ADPCM needs blockAlign.");
         var perChannel = Codec.ImaAdpcm.ImaAdpcmCodec.Decode(rawData, blockAlign, numChannels);
@@ -113,6 +109,30 @@ public sealed class WavReader {
       default:
         return new ParsedWav(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata, channelMask);
     }
+  }
+
+  /// <summary>
+  /// Reads and, on top of <see cref="Read"/>, decodes the G.711 payloads that survive verbatim for
+  /// remuxing, so callers wanting linear samples never have to know which codec carried them.
+  /// </summary>
+  public ParsedWav ReadCanonicalPcm(ReadOnlySpan<byte> data) {
+    var parsed = this.Read(data);
+    return parsed.FormatCode switch {
+      6 => DecodeG711(parsed, Codec.ALaw.ALawCodec.Decode(parsed.InterleavedPcm)),
+      7 => DecodeG711(parsed, Codec.MuLaw.MuLawCodec.Decode(parsed.InterleavedPcm)),
+      _ => parsed,
+    };
+  }
+
+  private static ParsedWav DecodeG711(ParsedWav parsed, ReadOnlySpan<short> samples) {
+    uint? factSampleFrames = null;
+    foreach (var (id, body) in parsed.MetadataChunks)
+      if (id == "fact" && body.Length >= 4) {
+        factSampleFrames = BinaryPrimitives.ReadUInt32LittleEndian(body);
+        break;
+      }
+    return Pcm16(parsed.NumChannels, parsed.SampleRate, samples,
+      parsed.MetadataChunks, parsed.ChannelMask, factSampleFrames);
   }
 
   private static ParsedWav Pcm16(int channels, int sampleRate, ReadOnlySpan<short> samples,

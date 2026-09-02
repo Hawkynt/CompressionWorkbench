@@ -35,7 +35,7 @@ public sealed class WavCompressedConversionTests {
       Assert.That(ReadFactSampleFrames(encoded), Is.EqualTo((uint)frames));
     });
 
-    var decoded = new WavReader().Read(encoded);
+    var decoded = new WavReader().ReadCanonicalPcm(encoded);
     Assert.Multiple(() => {
       Assert.That(decoded.FormatCode, Is.EqualTo(1));
       Assert.That(decoded.SampleRate, Is.EqualTo(sampleRate));

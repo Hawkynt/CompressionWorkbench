@@ -111,7 +111,7 @@ public sealed class SwavFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (wavInput.Data == null)
       throw new InvalidOperationException("SWAV archive create needs either FULL.swav or one mono WAV.");
 
-    var wav = new WavReader().Read(wavInput.Data);
+    var wav = new WavReader().ReadCanonicalPcm(wavInput.Data);
     if (wav.NumChannels != 1 || wav.BitsPerSample != 16)
       throw new InvalidOperationException("SWAV create requires a mono 16-bit WAV.");
 

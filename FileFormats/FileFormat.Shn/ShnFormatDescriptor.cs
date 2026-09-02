@@ -118,7 +118,7 @@ public sealed class ShnFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (channelBlobs.Count == 0)
       throw new InvalidOperationException("SHN archive create needs either FULL.shn or one or more per-channel WAVs.");
 
-    var channels = channelBlobs.Select(f => new WavReader().Read(f.Data)).ToList();
+    var channels = channelBlobs.Select(f => new WavReader().ReadCanonicalPcm(f.Data)).ToList();
     var first = channels[0];
     if (channels.Any(c => c.BitsPerSample != first.BitsPerSample || c.NumChannels != 1))
       throw new InvalidOperationException("All channel WAVs must be mono and share the same bit depth.");

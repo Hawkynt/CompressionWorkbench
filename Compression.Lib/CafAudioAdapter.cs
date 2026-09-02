@@ -90,11 +90,13 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       case "lpcm":
       case "pcm":
         WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", FlagIsSignedInteger | FlagIsPacked,
-          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample), NormalizeSignedEightBit(pcm));
+          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample),
+          ToCafSampleOrder(NormalizeSignedEightBit(pcm), pcm.Format.BitsPerSample));
         break;
       case "float":
         WriteCaf(output, pcm.Format.SampleRate, pcm.Format.Channels, "lpcm", FlagIsFloat | FlagIsPacked,
-          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample), pcm.InterleavedData);
+          checked((uint)pcm.Format.BytesPerFrame), 1, checked((uint)pcm.Format.BitsPerSample),
+          ToCafSampleOrder(pcm.InterleavedData, pcm.Format.BitsPerSample));
         break;
       case "mulaw":
         WriteG711(output, pcm, aLaw: false);
@@ -168,6 +170,21 @@ internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     BinaryPrimitives.WriteInt64BigEndian(header[4..], body.Length);
     output.Write(header);
     output.Write(body);
+  }
+
+  /// <summary>
+  /// Reverses multi-byte samples. The descriptors below leave Core Audio's little-endian flag
+  /// clear, and a cleared flag promises big-endian samples, so canonical PCM has to be flipped.
+  /// </summary>
+  private static byte[] ToCafSampleOrder(byte[] canonical, int bitsPerSample) {
+    var bytesPerSample = bitsPerSample / 8;
+    if (bytesPerSample <= 1) return canonical;
+    if (canonical.Length % bytesPerSample != 0)
+      throw new InvalidDataException("PCM payload is not aligned to its sample width.");
+    var result = (byte[])canonical.Clone();
+    for (var offset = 0; offset < result.Length; offset += bytesPerSample)
+      result.AsSpan(offset, bytesPerSample).Reverse();
+    return result;
   }
 
   private static byte[] NormalizeSignedEightBit(AudioPcmBuffer pcm) {

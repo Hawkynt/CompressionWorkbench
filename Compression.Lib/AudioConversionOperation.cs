@@ -127,7 +127,7 @@ public static class AudioConversionOperation {
     foreach (var entry in entries) {
       Rewind(input);
       var bytes = sourceArchive.ExtractEntryToMemory(input, entry.Name, password: null);
-      decoded.Add(new WavReader().Read(bytes));
+      decoded.Add(new WavReader().ReadCanonicalPcm(bytes));
     }
 
     if (decoded.Count == 1 && decoded[0].NumChannels > 1) {

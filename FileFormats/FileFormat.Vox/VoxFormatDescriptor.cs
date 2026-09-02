@@ -121,7 +121,7 @@ public sealed class VoxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (wav.Data == null)
       throw new InvalidOperationException("VOX archive create needs either FULL.vox or a mono WAV.");
 
-    var parsed = new WavReader().Read(wav.Data);
+    var parsed = new WavReader().ReadCanonicalPcm(wav.Data);
     if (parsed.NumChannels != 1)
       throw new InvalidOperationException("VOX is mono — supply a single-channel WAV.");
 
