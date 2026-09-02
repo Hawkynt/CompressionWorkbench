@@ -2561,11 +2561,12 @@ Implements `IFileInternalChunkMover`.
 
 #### `WavReader`
 
-RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Compressed formats are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so codec block padding never leaks into downstream transcoding.
+RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Block-based codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so codec block padding never leaks into downstream transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavReader` | `WavReader()` |  |
+| `ReadCanonicalPcm` | `ParsedWav ReadCanonicalPcm(ReadOnlySpan<byte> data)` | Reads and, on top of `Read`, decodes the G.711 payloads that survive verbatim for remuxing, so callers wanting linear samples never have to know which codec carried them. |
 | `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` |  |
 
 #### `WavReader.ParsedWav`
