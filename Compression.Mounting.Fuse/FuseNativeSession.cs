@@ -3,17 +3,14 @@ using System.Runtime.InteropServices;
 namespace Compression.Mounting.Fuse;
 
 internal sealed class FuseNativeSession : IDisposable {
-  private readonly FuseFilesystemOperations _operations;
   private readonly FuseNativeCallbacks _callbacks;
   private FuseArgs _args;
   private IntPtr _session;
   private Task? _loopTask;
   private int _disposed;
 
-  private FuseNativeSession(FuseFilesystemOperations operations) {
-    this._operations = operations ?? throw new ArgumentNullException(nameof(operations));
-    this._callbacks = new(operations);
-  }
+  private FuseNativeSession(FuseFilesystemOperations operations)
+    => this._callbacks = new(operations ?? throw new ArgumentNullException(nameof(operations)));
 
   public bool IsMounted
     => Volatile.Read(ref this._disposed) == 0
@@ -233,6 +230,8 @@ internal sealed class FuseNativeCallbacks : IDisposable {
   public void Dispose() {
     if (Interlocked.Exchange(ref this._disposed, 1) != 0)
       return;
+
+    GC.KeepAlive(this._delegates);
     if (this._selfHandle.IsAllocated)
       this._selfHandle.Free();
   }
