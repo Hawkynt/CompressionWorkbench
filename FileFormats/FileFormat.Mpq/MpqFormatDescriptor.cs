@@ -63,13 +63,24 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds (or replaces by name) files inside an existing MPQ archive via the
-  /// verified extract -> edit -> re-create rebuild. The auto-generated
-  /// <c>(listfile)</c> is dropped from the extracted tree before re-creation
-  /// (the writer regenerates it and refuses it as an explicit input), so entry
-  /// names still round-trip without duplicating the listing.
+  /// Adds or replaces files through the changed-byte MPQ v1 path when the hash
+  /// and block tables are the contiguous physical trailer. Changed stored
+  /// payloads overwrite the old table region, then only the encrypted tables and
+  /// four mutable header fields are regenerated. Existing payload blocks — even
+  /// compressed/encrypted or unnamed ones — retain their original offsets and
+  /// bytes. Non-canonical layouts fall back to the verified rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    try {
+      MpqInPlaceModifier.Add(archive, inputs);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       DropGeneratedListfile(tmpDir);
       foreach (var input in inputs) {
@@ -83,12 +94,23 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Removes the named entries via the verified extract -> edit -> re-create
-  /// rebuild, dropping the auto-generated <c>(listfile)</c> the same way
-  /// <see cref="Add"/> does.
+  /// Removes names by tombstoning their hash slots, regenerating the listfile and
+  /// trailing encrypted tables, and wiping a payload block only when no surviving
+  /// hash entry still references it. Shared/aliased blocks therefore remain valid.
+  /// Non-canonical table layouts use the verified rebuild fallback.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    var skip = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    try {
+      MpqInPlaceModifier.Remove(archive, entryNames);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
+    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       DropGeneratedListfile(tmpDir);
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
@@ -117,10 +139,8 @@ public sealed class MpqFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable archive. Add/Replace/Remove go through the verified extract ->
-  // edit -> re-create rebuild (with the auto-generated "(listfile)" filtered);
-  // relayouting the container on edit is honest R/W. See FormatCapabilities.cs
-  // (WORM vs R/W).
+  // R/W: canonical MPQ v1 layouts use a genuine random-access trailer-table
+  // editor; unusual layouts retain the verified extract/edit/re-create fallback.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
