@@ -86,7 +86,7 @@ public static class ArchiveOperations {
   /// that takes an explicit <see cref="FormatDetector.Format"/>.
   /// </summary>
   public static void Create(string outputPath, IReadOnlyList<ArchiveInput> inputs, CompressionOptions opts)
-    => Create(outputPath, inputs, opts, FormatDetector.DetectByExtension(outputPath));
+    => Create(outputPath, inputs, opts, FormatDetector.DetectByExtensionForCreate(outputPath));
 
   /// <summary>
   /// Creates a new archive in the explicitly-requested <paramref name="format"/>.
@@ -148,7 +148,11 @@ public static class ArchiveOperations {
       new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
     var registryOpts = new Compression.Registry.FormatCreateOptions {
       Password = opts.Password,
-      MethodName = opts.Method.Name,
+      // MethodSpec.Default is the literal name "default" on the Lib side. It means "no preference";
+      // FormatCreateOptions.MethodName spells that as null. Leaking the sentinel across the
+      // boundary handed every creator a method called "default", which the lenient ones ignored
+      // and the strict ones -- Binary II, EGG, Lynx, NuFX, VIB -- correctly refused as unknown.
+      MethodName = opts.Method.IsDefault ? null : opts.Method.Name,
       Optimize = opts.Method.Optimize,
       Level = opts.Level,
       DictSize = opts.DictSize,

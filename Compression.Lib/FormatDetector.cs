@@ -654,7 +654,21 @@ public static partial class FormatDetector {
     var byExt = DetectByExtension(path);
     if (byExt != Format.Unknown) return byExt;
 
-    return DetectByMagicFromFile(path);
+    var byMagic = DetectByMagicFromFile(path);
+
+    // A bare host executable may only be the bootloader of what the file really is. On Windows a
+    // PyInstaller onefile is an .exe, and the extension routes it through the overlay scan that
+    // finds the CArchive cookie appended after the PE image. On Linux and macOS the same build has
+    // NO extension: it is an ELF or Mach-O with the archive appended, magic said "executable", and
+    // detection stopped there -- a real PyInstaller build came back as Elf. Give an extension-less
+    // executable the same overlay scan the .exe branch gets, and let a trailer outrank the stub.
+    if (byMagic is Format.Elf or Format.MachO && string.IsNullOrEmpty(Path.GetExtension(path))) {
+      var overlay = DetectInstaller(path);
+      if (overlay != Format.Unknown && overlay != byMagic)
+        return overlay;
+    }
+
+    return byMagic;
   }
 
   /// <summary>
@@ -663,6 +677,32 @@ public static partial class FormatDetector {
   /// none of them recognises the bytes, leaving the caller's first-claim-wins
   /// answer in place.
   /// </summary>
+  /// <summary>
+  /// The extension lookup for a file that is about to be WRITTEN. Same registry, same compound
+  /// and single-extension handling as <see cref="DetectByExtension"/>, with one difference: a
+  /// shared extension is settled by capability rather than by content, because there is no
+  /// content yet. Of the descriptors claiming the extension, the first that can create wins.
+  /// </summary>
+  /// <remarks>
+  /// <c>.bundle</c> is claimed by Mach-O (read-only) and Unity asset bundles (creatable);
+  /// <c>.vib</c> by Veeam backups (read-only) and VIB packages (creatable). The read-side lookup
+  /// is first-claim-wins and enumerates the read-only one first, so creating a
+  /// <c>roundtrip.bundle</c> asked Mach-O to write it and got "no creatable descriptor" — a
+  /// format that advertised <c>CanCreate</c> was unreachable through its own extension.
+  /// </remarks>
+  public static Format DetectByExtensionForCreate(string path) {
+    EnsureRegistryMapped();
+    var singleExt = Path.GetExtension(path.ToLowerInvariant());
+    if (!string.IsNullOrEmpty(singleExt)
+        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants)
+        && claimants.Count > 1)
+      foreach (var candidate in claimants)
+        if (GetDesc(candidate) is { } desc && desc.Capabilities.HasFlag(FormatCapabilities.CanCreate))
+          return candidate;
+
+    return DetectByExtension(path);
+  }
+
   private static Format ResolveSharedExtension(string path, List<Format> claimants) {
     var header = ReadHeader(path);
     if (header.Length == 0) return Format.Unknown;
