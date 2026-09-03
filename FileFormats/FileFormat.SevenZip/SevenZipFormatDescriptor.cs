@@ -50,16 +50,16 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       newFiles.Add((input.ArchiveName, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
     }
+    if (newFiles.Count == 0)
+      return;
 
-    if (newFiles.Count > 0) {
-      try {
+    try {
+      archive.Position = 0;
+      SevenZipInPlaceAdder.Add(archive, newFiles);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
         archive.Position = 0;
-        SevenZipInPlaceAdder.Add(archive, newFiles);
-        return;
-      } catch (NotSupportedException) {
-        if (archive.CanSeek)
-          archive.Position = 0;
-      }
     }
 
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
@@ -83,6 +83,8 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
+    if (entryNames.Length == 0)
+      return;
 
     try {
       archive.Position = 0;
@@ -476,7 +478,7 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         ValidEntries = validEntries, TotalEntries = totalEntries };
     } catch (Exception ex) {
       issues.Add(new(ValidationLevel.Integrity, IssueSeverity.Error, "7Z_INTEGRITY_FAILED",
-        $"Entry validation failed: {ex.Message}"));
+        $"Integrity check failed: {ex.Message}"));
       return new() { IsValid = false, Confidence = 0.5, Health = FormatHealth.Damaged,
         Level = ValidationLevel.Integrity, Issues = issues };
     }
