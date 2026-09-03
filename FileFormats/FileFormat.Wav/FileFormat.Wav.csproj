@@ -12,6 +12,9 @@
     <ProjectReference Include="..\..\Codecs\Codec.ALaw\Codec.ALaw.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.ImaAdpcm\Codec.ImaAdpcm.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.MsAdpcm\Codec.MsAdpcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.OkiAdpcm\Codec.OkiAdpcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.G72x\Codec.G72x.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.G722\Codec.G722.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Gsm610\Codec.Gsm610.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.TrueSpeech\Codec.TrueSpeech.csproj" />
   </ItemGroup>
