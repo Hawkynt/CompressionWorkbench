@@ -7,6 +7,7 @@ internal sealed class FuseNativeSession : IDisposable {
   private FuseArgs _args;
   private IntPtr _session;
   private Task? _loopTask;
+  private int _mounted;
   private int _disposed;
 
   private FuseNativeSession(FuseFilesystemOperations operations)
@@ -14,6 +15,7 @@ internal sealed class FuseNativeSession : IDisposable {
 
   public bool IsMounted
     => Volatile.Read(ref this._disposed) == 0
+       && Volatile.Read(ref this._mounted) != 0
        && this._session != IntPtr.Zero
        && this._loopTask is { IsCompleted: false };
 
@@ -43,7 +45,8 @@ internal sealed class FuseNativeSession : IDisposable {
       return;
 
     LibFuseNative.fuse_session_exit(session);
-    LibFuseNative.fuse_session_unmount(session);
+    if (Interlocked.Exchange(ref this._mounted, 0) != 0)
+      LibFuseNative.fuse_session_unmount(session);
 
     if (this._loopTask is { } loopTask)
       await loopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -57,7 +60,8 @@ internal sealed class FuseNativeSession : IDisposable {
     try {
       if (session != IntPtr.Zero) {
         LibFuseNative.fuse_session_exit(session);
-        LibFuseNative.fuse_session_unmount(session);
+        if (Interlocked.Exchange(ref this._mounted, 0) != 0)
+          LibFuseNative.fuse_session_unmount(session);
 
         try {
           this._loopTask?.Wait(TimeSpan.FromSeconds(5));
@@ -99,6 +103,7 @@ internal sealed class FuseNativeSession : IDisposable {
     if (mountResult != 0)
       throw new IOException($"libfuse3 failed to mount '{mountPoint}' (error {mountResult}).");
 
+    Volatile.Write(ref this._mounted, 1);
     var session = this._session;
     this._loopTask = Task.Factory.StartNew(
       () => {
