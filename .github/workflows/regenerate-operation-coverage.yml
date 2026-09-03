@@ -1,0 +1,33 @@
+name: Regenerate operation coverage
+
+on:
+  push:
+    branches:
+      - feat/operation-coverage-checklists
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Regenerate matrix
+        run: python .github/coverage-matrix.py
+      - name: Commit generated document
+        shell: bash
+        run: |
+          if git diff --quiet -- docs/OPERATION_COVERAGE.md; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add docs/OPERATION_COVERAGE.md
+          git commit -m "docs: regenerate operation coverage checklist"
+          git push
