@@ -31,21 +31,18 @@ byte-identical and keep the archive/image valid (the project's defrag
 invariant: total logical content unchanged, files byte-identical, output still
 round-trips and stays fsck-clean where a filesystem tool exists).
 
-## Totals (live registry, all categories)
+## Totals (source capability contracts, all categories)
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment       | 243 |
-| Wipe             | 225 |
-| Purge            | 223 |
-| Shrink           | 96 |
+| Defragment        | 215 |
+| Wipe              | 226 |
+| Purge             | 224 |
+| Shrink            | 96 |
 | Optimize (layout) | 101 |
-| Metadata-reorder | 9 |
+| Metadata-reorder  | 9 |
 
-(Counts are regenerated from explicit descriptor capability interfaces in this tree. Runtime marker/flag consistency is enforced by CI; the UI/CLI gate on the same capability contracts. "Wipe" counts the direct `IWipeEmpty`
-implementers plus the `IFilesystemExtentMap` / `IArchiveLayoutMap` fallback the
-wiper accepts. "Purge" counts `IArchiveModifiable` (Remove-all).)
-
+(Counts are regenerated from the source capability contracts. Shared source files are scanned for every descriptor class, not just the first one. Explicit `NotSupportedException` verb stubs are excluded. "Wipe" includes the extent/layout-map fallback accepted by the wiper.)
 ## Default-mechanism rollout
 
 Most maintenance verbs no longer require bespoke per-format code. The capability
@@ -150,7 +147,7 @@ no unbacked flag). That the modify *works* (round-trips) is covered by the regis
 
 ## Filesystem descriptors
 
-Generated from the descriptor capability interfaces in this tree. `☑` means the operation is exposed and backed by an implementation; `☐` means it is not exposed. **Compact** is the composite defrag → optimize → shrink action (or a create-backed minimal-geometry rebuild). A checked operation may be native/in-place or a verified offline rebuild; mounted-driver R/W readiness is tracked separately.
+Generated from the descriptor capability contracts in this tree. `☑` means the operation is exposed and is not an explicit `NotSupportedException` stub; `☐` means it is not exposed or is deliberately unsupported. **Compact** is the composite defrag → optimize → shrink action. A checked operation may be native/in-place or a verified offline rebuild; mounted-driver R/W readiness is tracked separately.
 
 | Format | Compact | Defrag | Shrink | Purge | Wipe | Optimize |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -220,6 +217,7 @@ Generated from the descriptor capability interfaces in this tree. `☑` means th
 | MinixV2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | MooseFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Msa | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
+| Nib | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ |
 | Nilfs1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | Nilfs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | Nss | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ |
@@ -269,118 +267,83 @@ Generated from the descriptor capability interfaces in this tree. `☑` means th
 
 ## Archive / stream descriptors with at least one operation
 
-This table is intentionally exhaustive for descriptors that expose at least one maintenance operation; there is no hidden “~175 defrag-only formats” bucket. Archive **defrag** includes verified repack/relayout. **Optimize** includes layout tuning and finite compression/dictionary/solid-block parameter search; candidates only win after round-trip verification.
+This table is exhaustive for descriptors that expose at least one executable maintenance operation according to the source capability contracts; explicit throw-only stubs are not counted. Archive **defrag** includes verified repack/relayout. **Optimize** includes layout tuning and finite compression/dictionary/solid-block parameter search; candidates only win after round-trip verification.
 
 | Format | Compact | Defrag | Shrink | Purge | Wipe | Optimize | Meta reorder |
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Aac | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Ace | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | AcronisTib | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Adx | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Afs | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Aica | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Aiff | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Akb | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | AlZip | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Ampk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | AndroidBundle | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| AndroidOta | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| AndroidSparse | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ani | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Aomei | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Aomei | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Apk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| ApkNativeLibs | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| AppImage | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| AppleSingle | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| ApkNativeLibs | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| AppleSingle | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Appx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Ar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Arc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Arj | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Asar | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ast | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Au | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Aud | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Avi | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Avr | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Awb | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Ba2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Bcstm | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Bfstm | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Big | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | BinaryII | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| BinCue | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Bkf | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Bonk | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| BinCue | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Bkf | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Brotli | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Brr | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Brstm | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Bsa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Bwav | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Bzip2 | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Cab | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Caf | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Cb7 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Cbr | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Cbz | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cdi | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Cdi | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Chm | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | CompactPro | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Cpio | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Crate | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Crx | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Cso | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Cur | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Cvsd | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Cso | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Dcs | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Deb | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Dff | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Dfpwm | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| DiskDoubler | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Dmg | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| DiskDoubler | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Dmg | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Dms | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Doc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Doc | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Docx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Dsf | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Dtb | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Dtb | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Dzip | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Ear | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| EaSchl | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Egg | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Eml | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Eml | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Epub | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Esd | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Esd | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Ewf | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Fits | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Fits | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Fla | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Flac | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Flac | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | FreeArc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| GameMaker | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Gar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Gem | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ghost | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Ghost | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Gif | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
 | Gob | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | GodotPck | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Grp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Gzip | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Ha | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Hcom | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Hog | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Hpi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Hps | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ico | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Ico | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | IffCdaf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| InnoSetup | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Ipa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ipsw | ☑ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ircam | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Ipsw | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Jar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Kmz | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Lbr | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Lfd | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | LhF | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lnk | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Lpc10 | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Lrzip | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Lynx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Lz4 | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
@@ -388,27 +351,22 @@ This table is intentionally exhaustive for descriptors that expose at least one 
 | Lzip | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Lzma | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | LzxAmiga | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Macrium | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Maff | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Maud | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Mbox | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Mdf | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Mbox | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Mdf | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Mhk | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Midi | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Mix | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Mkv | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Mo | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Mp3 | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ |
+| Mp3 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
 | Mp4 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
 | Mpq | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Msg | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Msi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Msg | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Msi | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Msix | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Narc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Nds | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Npy | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Npz | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Nrg | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Npz | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Nrg | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Nsa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Nsis | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | NuFx | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ | ☐ |
@@ -416,108 +374,79 @@ This table is intentionally exhaustive for descriptors that expose at least one 
 | Odp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Ods | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Odt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ogg | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Ova | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Ogg | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
+| Ova | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | PackDisk | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | PackIt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Paf | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Pak | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Paragon | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Pbp | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Pdf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Paragon | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| Pbp | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Pdf | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Pfs0 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Png | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Ppt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Ppt | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Pptx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Psarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Psf | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Pvf | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Qcow2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Qoa | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Qoi | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Rar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Rar | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Rarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| ResourceDll | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Rf64 | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Rgss | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Roq | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Rpa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Rpm | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Sar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Sarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | SevenZip | ☑ | ☑ | ☐ | ☑ | ☑ | ☑ | ☐ |
-| Sfar | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Sfar | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Shar | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Shn | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Sketch | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Slf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Smp | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Snap | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Sndr | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Sndt | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Sol | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Spark | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Sparseimage | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Sphere | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| SplitFile | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| Sparseimage | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Sqx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Srec | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | StuffIt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| StuffItX | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Svx8 | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Swav | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| StuffItX | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Swm | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | T64 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Tap | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Tar | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Tfc | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | TfRecord | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| ThumbsDb | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| ThumbsDb | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Tiff | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
 | Tnef | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Tta | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ttc | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Txw | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | U8 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| UefiFv | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
+| UefiFv | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
 | Uharc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Umx | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Umx | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | UnityBundle | ☑ | ☑ | ☐ | ☑ | ☐ | ☑ | ☐ |
 | UnrealPak | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Vag | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Vdi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Vhd | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Vhdx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Vib | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Vmdk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Voc | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Vox | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Vpk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Vpp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | VppV2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Vsdx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Wacz | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Wacz | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Wad | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Wad2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | War | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Warc | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wav | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Wave64 | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Wbn | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Wheel | ☑ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wim | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Wav | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
+| Wheel | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Wim | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Wrapster | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Xa | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Xar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | xDisk | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Xls | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
+| Xls | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Xlsx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | xMash | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Xpi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Xps | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
 | Xz | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Ypf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Zap | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
+| Zap | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
 | Zip | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
 | Zlib | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
 | Zoo | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
