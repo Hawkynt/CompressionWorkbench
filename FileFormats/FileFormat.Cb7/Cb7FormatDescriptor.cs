@@ -33,16 +33,16 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (string.IsNullOrEmpty(input.ArchiveName)) continue;
       newFiles.Add((input.ArchiveName, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
     }
+    if (newFiles.Count == 0)
+      return;
 
-    if (newFiles.Count > 0) {
-      try {
+    try {
+      archive.Position = 0;
+      SevenZipInPlaceAdder.Add(archive, newFiles);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
         archive.Position = 0;
-        SevenZipInPlaceAdder.Add(archive, newFiles);
-        return;
-      } catch (NotSupportedException) {
-        if (archive.CanSeek)
-          archive.Position = 0;
-      }
     }
 
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
@@ -64,6 +64,8 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
+    if (entryNames.Length == 0)
+      return;
 
     try {
       archive.Position = 0;
