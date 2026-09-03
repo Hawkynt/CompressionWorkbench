@@ -72,16 +72,21 @@ internal static class SmartFsLayout {
   /// <summary>Permission bits an entry carries; 0644 for the files this writer emits.</summary>
   public const ushort EntryModeMask = 0x01FF;
 
+  /// <summary>All logical sector sizes represented by SmartFS's three-bit size code.</summary>
+  public static readonly int[] SectorSizes = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768];
+
   /// <summary>Sector-size code for the size NuttX records in the format sector.</summary>
   public static byte SizeCode(int sectorSize) => sectorSize switch {
-    256 => 0, 512 => 1, 1024 => 2, 2048 => 3, 4096 => 4,
+    256 => 0, 512 => 1, 1024 => 2, 2048 => 3,
+    4096 => 4, 8192 => 5, 16384 => 6, 32768 => 7,
     _ => throw new ArgumentOutOfRangeException(nameof(sectorSize),
-      $"SmartFS sectors are 256, 512, 1024, 2048 or 4096 bytes; got {sectorSize}."),
+      $"SmartFS sectors are powers of two from 256 through 32768 bytes; got {sectorSize}."),
   };
 
   /// <summary>The sector size a code stands for, or zero when it stands for none.</summary>
   public static int SizeFromCode(byte code) => code switch {
-    0 => 256, 1 => 512, 2 => 1024, 3 => 2048, 4 => 4096,
+    0 => 256, 1 => 512, 2 => 1024, 3 => 2048,
+    4 => 4096, 5 => 8192, 6 => 16384, 7 => 32768,
     _ => 0,
   };
 }
