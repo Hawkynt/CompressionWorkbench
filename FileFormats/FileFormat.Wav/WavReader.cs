@@ -5,7 +5,7 @@ namespace FileFormat.Wav;
 
 /// <summary>
 /// RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float,
-/// G.711, IMA/MS/OKI/G.72x ADPCM, G.722, TrueSpeech and Microsoft GSM 06.10 WAV49.
+/// G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, TrueSpeech and Microsoft GSM 06.10 WAV49.
 /// Block/bit-packed codecs are decoded to canonical little-endian PCM and trimmed to
 /// the optional <c>fact</c> sample count so padding never leaks into transcoding.
 /// <para>G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so
@@ -135,6 +135,8 @@ public sealed class WavReader {
           throw new InvalidDataException($"G.726 ADPCM requires 2, 3, 4 or 5 coded bits/sample, got {bitsPerSample}.");
         return Pcm16(1, sampleRate, Codec.G72x.G72xCodec.DecodeG726(rawData, bitsPerSample), metadata, channelMask, factSampleFrames);
       }
+      case 0x0050 or 0x0055:
+        return DecodeMpegAudio(rawData, formatCode, numChannels, sampleRate, fmtExtra, metadata, channelMask, factSampleFrames);
       case 0x0065 or 0x028F: {
         RequireMono(numChannels, "G.722 ADPCM");
         if (sampleRate != 16_000)
@@ -159,6 +161,54 @@ public sealed class WavReader {
       0x0007 => DecodeG711(parsed, Codec.MuLaw.MuLawCodec.Decode(parsed.InterleavedPcm)),
       _ => parsed,
     };
+  }
+
+  private static ParsedWav DecodeMpegAudio(
+    byte[] rawData,
+    int formatCode,
+    int declaredChannels,
+    int declaredSampleRate,
+    byte[] fmtExtra,
+    IReadOnlyList<(string Id, byte[] Data)> metadata,
+    uint? channelMask,
+    uint? factSampleFrames) {
+    var header = FindFirstMpegHeader(rawData);
+    if (formatCode == 0x0055) {
+      if (header.Layer != 3)
+        throw new InvalidDataException($"WAVE_FORMAT_MPEGLAYER3 carries MPEG Layer {header.Layer}, expected Layer III.");
+      if (fmtExtra.Length < 14 || BinaryPrimitives.ReadUInt16LittleEndian(fmtExtra) < 12)
+        throw new InvalidDataException("MPEGLAYER3WAVEFORMAT requires cbSize >= 12.");
+      var id = BinaryPrimitives.ReadUInt16LittleEndian(fmtExtra.AsSpan(2));
+      if (id is not (1 or 2))
+        throw new InvalidDataException($"Unsupported MPEGLAYER3WAVEFORMAT wID {id}.");
+      if (BinaryPrimitives.ReadUInt16LittleEndian(fmtExtra.AsSpan(10)) == 0)
+        throw new InvalidDataException("MPEGLAYER3WAVEFORMAT nFramesPerBlock must be positive.");
+    }
+
+    if (header.Channels != declaredChannels)
+      throw new InvalidDataException($"MPEG frame declares {header.Channels} channels but WAVE fmt declares {declaredChannels}.");
+    if (header.SampleRateHz != declaredSampleRate)
+      throw new InvalidDataException($"MPEG frame declares {header.SampleRateHz} Hz but WAVE fmt declares {declaredSampleRate} Hz.");
+
+    using var encoded = new MemoryStream(rawData, writable: false);
+    using var decoded = new MemoryStream();
+    Codec.Mp3.Mp3Codec.Decompress(encoded, decoded);
+    return Pcm16Bytes(declaredChannels, declaredSampleRate, decoded.ToArray(), metadata, channelMask, factSampleFrames);
+  }
+
+  private static Codec.Mp3.Mp3FrameHeader FindFirstMpegHeader(ReadOnlySpan<byte> data) {
+    for (var offset = 0; offset + 4 <= data.Length; ++offset) {
+      if (data[offset] != 0xFF || (data[offset + 1] & 0xE0) != 0xE0)
+        continue;
+      try {
+        var header = Codec.Mp3.Mp3FrameHeader.Parse(data.Slice(offset, 4));
+        if (header.FrameLengthBytes > 0 && offset + header.FrameLengthBytes <= data.Length)
+          return header;
+      } catch (InvalidDataException) {
+        // False-positive sync candidate; keep scanning.
+      }
+    }
+    throw new InvalidDataException("MPEG audio WAVE payload contains no complete MPEG frame.");
   }
 
   private static void RequireMono(int channels, string codec) {
@@ -187,6 +237,19 @@ public sealed class WavReader {
     var pcm = new byte[sampleCount * 2];
     for (var i = 0; i < sampleCount; ++i)
       BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2, 2), samples[i]);
+    return new ParsedWav(channels, sampleRate, 16, 1, pcm, metadata, channelMask);
+  }
+
+  private static ParsedWav Pcm16Bytes(int channels, int sampleRate, byte[] pcm,
+    IReadOnlyList<(string Id, byte[] Data)> metadata, uint? channelMask, uint? factSampleFrames) {
+    if ((pcm.Length & 1) != 0)
+      throw new InvalidDataException("Decoded PCM16 payload has odd byte length.");
+    var availableSamples = pcm.Length / 2;
+    var sampleCount = factSampleFrames is { } frames
+      ? checked((int)Math.Min((long)availableSamples, (long)frames * channels))
+      : availableSamples;
+    if (sampleCount * 2 != pcm.Length)
+      Array.Resize(ref pcm, checked(sampleCount * 2));
     return new ParsedWav(channels, sampleRate, 16, 1, pcm, metadata, channelMask);
   }
 
