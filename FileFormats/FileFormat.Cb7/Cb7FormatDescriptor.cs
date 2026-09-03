@@ -18,24 +18,15 @@ namespace FileFormat.Cb7;
 public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <summary>
-  /// Adds (or replaces by name) pages inside an existing CB7 archive. Delegates to
-  /// the 7z in-place editors (CB7 is a 7z variant): a pure add of new names takes
-  /// the genuine byte-additive append (<see cref="SevenZipInPlaceAdder"/>) writing a
-  /// fresh solid block at the old header offset, a same-name update excises the old
-  /// entry first (<see cref="SevenZipInPlaceRemover"/>). Any case the in-place path
-  /// cannot serve byte-additively falls back to the verified extract -> re-create
-  /// rebuild.
+  /// Adds new pages directly through the 7z changed-byte append path. The
+  /// underlying writer validates collisions and unsupported layouts and serializes
+  /// replacement metadata before its first archive write; same-name replacement or
+  /// unsupported profiles therefore fall back to verified rebuild without an
+  /// O(total bytes) transaction snapshot around pure additions.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-
-    // Snapshot the original bytes so a failed/aborted in-place attempt never
-    // leaves the caller's stream half-written.
-    archive.Position = 0;
-    using var original = new MemoryStream();
-    archive.CopyTo(original);
-    var originalBytes = original.ToArray();
 
     var newFiles = new List<(string Name, byte[] Data, bool IsDirectory)>();
     foreach (var input in inputs) {
@@ -43,31 +34,15 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       newFiles.Add((input.ArchiveName, input.IsDirectory ? [] : input.ReadContent(), input.IsDirectory));
     }
 
-    // Names that already exist must be updated, not merely appended: excise the old
-    // entries in place first (whole-folder removal only), then append. Any
-    // non-byte-additive case throws and routes the whole operation to the rebuild.
-    var existing = ExistingNames(originalBytes);
-    var collisions = newFiles.Where(f => existing.Contains(f.Name)).Select(f => f.Name).ToArray();
-
-    try {
-      using var work = new MemoryStream();
-      work.Write(originalBytes, 0, originalBytes.Length);
-      work.Position = 0;
-      if (collisions.Length > 0)
-        SevenZipInPlaceRemover.Remove(work, collisions);
-      SevenZipInPlaceAdder.Add(work, newFiles);
-
-      var result = work.ToArray();
-      archive.Position = 0;
-      archive.Write(result, 0, result.Length);
-      archive.SetLength(result.Length);
-      archive.Flush();
-      return;
-    } catch (NotSupportedException) {
-      // Restore the untouched original, then take the verified rebuild path.
-      archive.Position = 0;
-      archive.Write(originalBytes, 0, originalBytes.Length);
-      archive.SetLength(originalBytes.Length);
+    if (newFiles.Count > 0) {
+      try {
+        archive.Position = 0;
+        SevenZipInPlaceAdder.Add(archive, newFiles);
+        return;
+      } catch (NotSupportedException) {
+        if (archive.CanSeek)
+          archive.Position = 0;
+      }
     }
 
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
@@ -82,36 +57,21 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Removes the named pages. A removal that drops one or more entire solid blocks
-  /// (folders) is served by the genuine in-place remover
-  /// (<see cref="SevenZipInPlaceRemover"/>); anything it cannot serve byte-additively
-  /// falls back to the verified extract -> re-create rebuild.
+  /// Removes pages directly when they comprise complete 7z solid folders (or
+  /// empty-stream metadata). Unsupported partial-solid removals and non-trivial
+  /// layouts are rejected before compaction and use the verified rebuild path.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
 
-    archive.Position = 0;
-    using var original = new MemoryStream();
-    archive.CopyTo(original);
-    var originalBytes = original.ToArray();
-
     try {
-      using var work = new MemoryStream();
-      work.Write(originalBytes, 0, originalBytes.Length);
-      work.Position = 0;
-      SevenZipInPlaceRemover.Remove(work, entryNames);
-
-      var result = work.ToArray();
       archive.Position = 0;
-      archive.Write(result, 0, result.Length);
-      archive.SetLength(result.Length);
-      archive.Flush();
+      SevenZipInPlaceRemover.Remove(archive, entryNames);
       return;
     } catch (NotSupportedException) {
-      archive.Position = 0;
-      archive.Write(originalBytes, 0, originalBytes.Length);
-      archive.SetLength(originalBytes.Length);
+      if (archive.CanSeek)
+        archive.Position = 0;
     }
 
     var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
@@ -122,17 +82,6 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           File.Delete(file);
       }
     });
-  }
-
-  /// <summary>The non-directory entry names currently present in the CB7 (7z) archive.</summary>
-  private static HashSet<string> ExistingNames(byte[] archiveBytes) {
-    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    using var ms = new MemoryStream(archiveBytes, writable: false);
-    using var r = new SevenZipReader(ms, leaveOpen: true);
-    foreach (var e in r.Entries)
-      if (!e.IsDirectory)
-        names.Add(e.Name);
-    return names;
   }
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the 7z archive in listing order.</summary>
@@ -191,9 +140,8 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // R/W: a mutable comic-book archive (7z variant). Add/Replace/Remove take the
-  // genuine in-place 7z block editors where byte-additive, else the verified
-  // extract -> edit -> re-create rebuild. See FormatCapabilities.cs (WORM vs R/W).
+  // R/W: a mutable comic-book archive (7z variant). Supported plain-header edits
+  // go straight through the native 7z block editors; unsupported profiles rebuild.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
