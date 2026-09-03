@@ -35,7 +35,7 @@ round-trips and stays fsck-clean where a filesystem tool exists).
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment       | 244 |
+| Defragment       | 243 |
 | Wipe             | 225 |
 | Purge            | 223 |
 | Shrink           | 96 |
@@ -247,7 +247,7 @@ Generated from the descriptor capability interfaces in this tree. `☑` means th
 | SquashFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | Stacker | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | SysV | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| TahoeLafs | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ |
+| TahoeLafs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | TFat | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
 | Tfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
 | Ti99 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
