@@ -5,6 +5,7 @@ using Compression.Lib;
 using Compression.NativeUI;
 using Compression.Mounting;
 using Compression.Mounting.Dokan;
+using Compression.Mounting.Fuse;
 using Hawkynt.NativeForms;
 using Hawkynt.NativeForms.Backends;
 using Hawkynt.NativeForms.Backends.Gtk;
@@ -20,6 +21,10 @@ if (OperatingSystem.IsWindows()) {
   var dokan = new DokanFilesystemMountBackend();
   if (dokan.RuntimeStatus.IsAvailable)
     backends.Add(dokan);
+} else if (OperatingSystem.IsLinux()) {
+  var fuse = new FuseFilesystemMountBackend();
+  if (fuse.RuntimeStatus.IsAvailable)
+    backends.Add(fuse);
 }
 
 var mountBackends = new MountBackendRegistry(backends);
