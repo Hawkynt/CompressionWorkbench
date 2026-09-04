@@ -83,13 +83,20 @@ public partial class AnalysisWindow : Window {
     }
   }
 
-  internal void RunAnalysis(string fileName, byte[] data) {
+  internal void RunAnalysis(string fileName, byte[] data) => _ = RunAnalysisAsync(fileName, data);
+
+  /// <summary>
+  /// Loads the data and analyses it, completing only once the results are on screen.
+  /// Interactive callers do not need that signal and use <see cref="RunAnalysis"/>;
+  /// documentation capture does, because it renders the window immediately afterwards.
+  /// </summary>
+  internal System.Threading.Tasks.Task RunAnalysisAsync(string fileName, byte[] data) {
     _filePath = fileName;
     _fileData = data;
     FilePathBox.Text = fileName;
     FilePathBox.Foreground = Brushes.Black;
     RunBtn.IsEnabled = true;
-    ExecuteAnalysis();
+    return ExecuteAnalysisAsync();
   }
 
   private void OnBrowse(object sender, RoutedEventArgs e) {
@@ -222,7 +229,9 @@ public partial class AnalysisWindow : Window {
     };
   }
 
-  private async void ExecuteAnalysis() {
+  private async void ExecuteAnalysis() => await ExecuteAnalysisAsync();
+
+  private async System.Threading.Tasks.Task ExecuteAnalysisAsync() {
     if (_fileData == null || _filePath == null) return;
 
     var options = BuildOptions();
