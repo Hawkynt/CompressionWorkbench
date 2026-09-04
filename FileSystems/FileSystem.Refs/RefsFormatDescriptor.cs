@@ -38,7 +38,8 @@ public sealed class RefsFormatDescriptor :
   public FormatCategory Category => FormatCategory.Archive;
   // CanModify covers the offline-quiescent image editor only. A mounted ReFS
   // driver's transactional write path is a separate readiness tier and is not
-  // what this flag reports — see DRIVER_READINESS.md.
+  // what this flag reports — see the ReFS limitation in
+  // Hawkynt.FileFormats.FileSystems/README.md.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>

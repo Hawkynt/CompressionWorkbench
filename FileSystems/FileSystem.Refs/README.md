@@ -56,7 +56,7 @@ Offline in-place mutation and a mounted filesystem driver are not the same trans
 
 Some native-transaction pieces are already decoded independently: alternate CHKP preparation/publication and MLog framing/inner redo records. They are deliberately not exposed as a fake mounted write path until immutable replacement-page CoW, log integrity/circular management and recovery are connected into one durability protocol.
 
-The remaining work before this core can honestly be called a complete mounted R/W implementation is tracked in `DRIVER_READINESS.md`. The largest pieces are:
+The remaining work before this core can honestly be called a complete mounted R/W implementation (the ReFS limitation in the package README carries the summary):
 
 - native CoW metadata transactions that allocate replacement pages rather than overwriting live pages;
 - MLog XOR-fold integrity, circular-log management, complete emitted redo payloads and replay/restart;
