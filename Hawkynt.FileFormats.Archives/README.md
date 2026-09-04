@@ -101,7 +101,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/droe/acefile) |
-| [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | R | ✅ | — |  | [GitHub](https://github.com/kholtman/afio) |
+| [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
 | [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://kippler.com/win/unalz/) |
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
@@ -321,7 +321,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [gettext .mo](https://en.wikipedia.org/wiki/Gettext) | `Mo` | `.mo` | WORM | ✅ | — | Entries are NNNN_<stem>.txt | [gnu.org](https://www.gnu.org/software/gettext/manual/html_node/MO-Files.html) |
 | [gettext .po](https://en.wikipedia.org/wiki/Gettext) | `Po` | `.po` `.pot` | R | ✅ | — |  | [gnu.org](https://www.gnu.org/software/gettext/manual/html_node/PO-Files.html) |
 | [AppleSingle](https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats) | `AppleSingle` | `.as` `.applesingle` | R/W | ✅ | — | Inputs must map to AppleSingle entry ids | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
-| [AppleDouble](https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats) | `AppleDouble` | `.appledouble` | R | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
+| [AppleDouble](https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats) | `AppleDouble` | `.appledouble` | R/W | ✅ | — | Same body as AppleSingle under the sidecar magic; a data fork is refused, it belongs in the sibling file | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | [PKCS #12](https://en.wikipedia.org/wiki/PKCS_12) | `Pkcs12` | `.p12` `.pfx` | R | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc7292) |
 | [PAR2](https://en.wikipedia.org/wiki/Parchive) | `Par2` | `.par2` | R | ✅ | — |  | [parchive.sourceforge.net](https://parchive.sourceforge.net) |
 | [Motorola S-record](https://en.wikipedia.org/wiki/SREC_(file_format)) | `Srec` | `.s19` `.s28` `.s37` `.srec` … | WORM | ✅ | — | Entries are metadata.ini plus firmware.bin | [srecord.sourceforge.net](https://srecord.sourceforge.net) |
@@ -461,7 +461,7 @@ Measured against the [chesvectain/PackingData](https://github.com/chesvectain/Pa
 ### 🚧 Gaps
 
 - **Media containers.** ASF, Matroska, AVI, MPEG-TS, MPEG-PS, FLV, RealMedia, Smacker and Bink demux only; MP4 muxes audio tracks only. No container writer takes video elementary streams yet. ISO-BMFF brands are parsed generically, without a brand registry.
-- **Whole-image and typed-input writers** (Amiga disk archivers, DMS, sparse images, PBP, ICO/CUR/ANI, TTC, AppleSingle, Wrapster, OVA) create only what their format can hold; arbitrary file trees are refused with a message rather than mangled.
+- **Whole-image and typed-input writers** (Amiga disk archivers, DMS, sparse images, PBP, ICO/CUR/ANI, TTC, AppleSingle/AppleDouble, Wrapster, OVA) create only what their format can hold; arbitrary file trees are refused with a message rather than mangled.
 - **Reverse-engineered backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
 - **Executable packers** blocked at Locate are listed above with the reason; the manifest audit names the unmapped ones.
 
