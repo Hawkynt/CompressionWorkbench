@@ -55,11 +55,15 @@ public sealed class FuseFilesystemOperationsTests {
     this._sut.Forget(inode, ulong.MaxValue);
 
     Span<byte> buffer = stackalloc byte[3];
+    var attributesError = this._sut.GetAttributes(inode, out _);
+    var readError = this._sut.ReadFile(handleId, 1, buffer, out var count);
+    var text = Encoding.ASCII.GetString(buffer);
+
     Assert.Multiple(() => {
-      Assert.That(this._sut.GetAttributes(inode, out _), Is.Zero);
-      Assert.That(this._sut.ReadFile(handleId, 1, buffer, out var count), Is.Zero);
+      Assert.That(attributesError, Is.Zero);
+      Assert.That(readError, Is.Zero);
       Assert.That(count, Is.EqualTo(3));
-      Assert.That(Encoding.ASCII.GetString(buffer), Is.EqualTo("bcd"));
+      Assert.That(text, Is.EqualTo("bcd"));
     });
 
     Assert.That(this._sut.ReleaseFile(handleId), Is.Zero);
