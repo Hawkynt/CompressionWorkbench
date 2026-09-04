@@ -67,15 +67,22 @@ public sealed class SharFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// In-place Remove is not implemented for Shar — the heredoc/uudecode
-  /// block boundaries depend on arbitrary user content and cannot be
-  /// scanned safely without re-parsing the whole script. Callers should
-  /// rebuild via the rebuild-based <c>Defragment</c> path instead.
+  /// Removes entries through the verified extract → drop → re-create rebuild.
+  /// Shar cannot be edited in place for removal: heredoc and uudecode block
+  /// boundaries depend on arbitrary user content, and a body may legitimately
+  /// contain delimiter look-alike text, so the script is re-emitted from the
+  /// surviving entries instead of being cut.
   /// </summary>
-  public void Remove(Stream archive, string[] entryNames) =>
-    throw new NotSupportedException(
-      "Shar Remove is not implemented in-place — rebuild via the defragmenter " +
-      "to drop entries (heredoc bodies can contain arbitrary delimiter-lookalike text).");
+  public void Remove(Stream archive, string[] entryNames) {
+    var skip = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(rel) || skip.Contains(Path.GetFileName(rel)))
+          File.Delete(file);
+      }
+    });
+  }
   /// <summary>
   /// Gets the default extension.
   /// </summary>

@@ -30,5 +30,75 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Vib\FileFormat.Vib.csproj" PrivateAssets="all" />
+
+    <!-- Media containers registered but not packaged (A/V envelopes demuxed into per-stream entries). -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Asf\FileFormat.Asf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" PrivateAssets="all" />
+
+    <!-- Archive, package and installer containers registered but not packaged. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.BitRock\FileFormat.BitRock.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Cb7\FileFormat.Cb7.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Egg\FileFormat.Egg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.GameMaker\FileFormat.GameMaker.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lnk\FileFormat.Lnk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ova\FileFormat.Ova.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pack200\FileFormat.Pack200.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Par2\FileFormat.Par2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pkcs12\FileFormat.Pkcs12.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.PyInstaller\FileFormat.PyInstaller.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Srec\FileFormat.Srec.csproj" PrivateAssets="all" />
+
+    <!-- Document, e-book and mail containers registered but not packaged. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Ai\FileFormat.Ai.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Doc\FileFormat.Doc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Eml\FileFormat.Eml.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Fb2\FileFormat.Fb2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Fla\FileFormat.Fla.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lit\FileFormat.Lit.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mbox\FileFormat.Mbox.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mobi\FileFormat.Mobi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Msg\FileFormat.Msg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.OneNote\FileFormat.OneNote.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pdf\FileFormat.Pdf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ppt\FileFormat.Ppt.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pst\FileFormat.Pst.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sketch\FileFormat.Sketch.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.ThumbsDb\FileFormat.ThumbsDb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.WordPerfect\FileFormat.WordPerfect.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xls\FileFormat.Xls.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Xps\FileFormat.Xps.csproj" PrivateAssets="all" />
+
+    <!-- Executable images and console ROMs surfaced as pseudo-archives. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Elf\FileFormat.Elf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Gb\FileFormat.Gb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MachO\FileFormat.MachO.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mz\FileFormat.Mz.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Nes\FileFormat.Nes.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.NetAssembly\FileFormat.NetAssembly.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Snes\FileFormat.Snes.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.WebAssembly\FileFormat.WebAssembly.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.ZxSnapshot\FileFormat.ZxSnapshot.csproj" PrivateAssets="all" />
+
+    <!-- Data, capture and scientific containers surfaced as pseudo-archives. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Arrow\FileFormat.Arrow.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Avro\FileFormat.Avro.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Fits\FileFormat.Fits.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Iceberg\FileFormat.Iceberg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Leveldb\FileFormat.Leveldb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Matlab\FileFormat.Matlab.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MatlabV4\FileFormat.MatlabV4.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mca\FileFormat.Mca.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Mdb\FileFormat.Mdb.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.NetCdf\FileFormat.NetCdf.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Orc\FileFormat.Orc.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Parquet\FileFormat.Parquet.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pcap\FileFormat.Pcap.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Pcapng\FileFormat.Pcapng.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Sqlite\FileFormat.Sqlite.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Tds\FileFormat.Tds.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.TfRecord\FileFormat.TfRecord.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zarr\FileFormat.Zarr.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

@@ -130,12 +130,23 @@ public class SharInPlaceModifyTests {
     } finally { File.Delete(tmp); }
   }
 
-  [Test, Category("HonestScope")]
-  public void Descriptor_Remove_ThrowsNotSupported() {
-    using var ms = new MemoryStream(BuildSeedShar(("seed.txt", "seed-content")));
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_Remove_RebuildsWithoutTheDroppedEntry() {
+    using var ms = new MemoryStream();
+    ms.Write(BuildSeedShar(("seed.txt", "seed-content"), ("keep.txt", "keep-content")));
     var d = (IArchiveModifiable)new SharFormatDescriptor();
-    Assert.Throws<NotSupportedException>(() => d.Remove(ms, ["seed.txt"]),
-      "In-place Remove must throw — heredoc bodies can collide with the delimiter probe.");
+
+    ms.Position = 0;
+    d.Remove(ms, ["seed.txt"]);
+
+    ms.Position = 0;
+    var entries = ReadAll(ms);
+    Assert.Multiple(() => {
+      Assert.That(entries.ContainsKey("seed.txt"), Is.False, "the removed entry must be gone");
+      Assert.That(entries["keep.txt"], Is.EqualTo("keep-content"), "the survivor must round-trip byte-identically");
+    });
+    var tail = Encoding.UTF8.GetString(ms.ToArray());
+    Assert.That(tail, Does.EndWith("exit 0\n"), "the rebuilt script must keep its trailing sentinel");
   }
 
   // ── Helpers ────────────────────────────────────────────────────────

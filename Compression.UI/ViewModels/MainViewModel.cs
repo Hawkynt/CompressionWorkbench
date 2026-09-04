@@ -1546,7 +1546,7 @@ internal sealed class MainViewModel : ViewModelBase {
     var idx = dlg.FilterIndex - 1;
     var format = idx >= 0 && idx < formats.Count
       ? formats[idx]
-      : FormatDetector.DetectByExtension(dlg.FileName);
+      : FormatDetector.DetectByExtensionForCreate(dlg.FileName);
 
     // Show options dialog
     var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
