@@ -128,31 +128,15 @@ public static class ArchiveOperations {
       if (incompressible.Count == 0) incompressible = null;
     }
 
-    if (FormatDetector.IsStreamFormat(format)) {
-      var files = inputs.Where(i => !i.IsDirectory).ToArray();
-      if (files.Length != 1)
-        throw new ArgumentException("Stream compression formats require exactly one input file.");
-      CompressStream(files[0].FullPath, outputPath, format, method);
-      return;
-    }
-
-    // Every format dispatches through IArchiveCreatable now — the previous
-    // hardcoded switch for ZIP/7z/RAR has moved into those descriptors'
-    // own Create methods.
-    FormatRegistration.EnsureInitialized();
-    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
-    if (ops is not Compression.Registry.IArchiveCreatable creator)
-      throw new NotSupportedException($"Format {format} has no creatable descriptor");
-
-    var registryInputs = inputs.Select(i =>
-      new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
     var registryOpts = new Compression.Registry.FormatCreateOptions {
       Password = opts.Password,
       // MethodSpec.Default is the literal name "default" on the Lib side. It means "no preference";
       // FormatCreateOptions.MethodName spells that as null. Leaking the sentinel across the
       // boundary handed every creator a method called "default", which the lenient ones ignored
       // and the strict ones -- Binary II, EGG, Lynx, NuFX, VIB -- correctly refused as unknown.
-      MethodName = opts.Method.IsDefault ? null : opts.Method.Name,
+      // EffectiveName covers every spelling of "no preference", including the "default+" and bare
+      // "+" forms that IsDefault answers false for because they set Optimize.
+      MethodName = opts.Method.EffectiveName,
       Optimize = opts.Method.Optimize,
       Level = opts.Level,
       DictSize = opts.DictSize,
@@ -169,6 +153,24 @@ public static class ArchiveOperations {
       FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(formatSpecific ?? opts.FormatSpecific),
     };
 
+    if (FormatDetector.IsStreamFormat(format)) {
+      var files = inputs.Where(i => !i.IsDirectory).ToArray();
+      if (files.Length != 1)
+        throw new ArgumentException("Stream compression formats require exactly one input file.");
+      CompressStream(files[0].FullPath, outputPath, format, method, registryOpts);
+      return;
+    }
+
+    // Every format dispatches through IArchiveCreatable now — the previous
+    // hardcoded switch for ZIP/7z/RAR has moved into those descriptors'
+    // own Create methods.
+    FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (ops is not Compression.Registry.IArchiveCreatable creator)
+      throw new NotSupportedException($"Format {format} has no creatable descriptor");
+
+    var registryInputs = inputs.Select(i =>
+      new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
     // An entry larger than a byte[] can hold cannot go through Create(), whose
     // inputs surface their bytes via ArchiveInputInfo.ReadContent(). Route those
     // through CreateFromStreams instead, which hands the writer a stream factory
@@ -224,7 +226,10 @@ public static class ArchiveOperations {
       string? password, MethodSpec method = default) {
     if (method.Name == null) method = MethodSpec.Default;
     var srcFormat = FormatDetector.Detect(inputPath);
-    var dstFormat = FormatDetector.DetectByExtension(outputPath);
+    // The source exists, so it is resolved by content; the target does not yet, so a shared
+    // extension there has to be settled by capability. The read-side resolver is first-claim-wins
+    // and would hand a .bundle/.vib target to the read-only claimant, which then fails at Create.
+    var dstFormat = FormatDetector.DetectByExtensionForCreate(outputPath);
 
     var tempOutputPath = AtomicFileWriter.MakeTempPath(outputPath);
     try {
@@ -374,7 +379,7 @@ public static class ArchiveOperations {
     }
 
     // Rebuild fallback: extract everything, splat inputs on top, recreate.
-    AddViaRebuild(archivePath, inputs, opts ?? new CompressionOptions());
+    AddViaRebuild(archivePath, inputs, opts ?? new CompressionOptions(), format);
   }
 
   /// <summary>
@@ -394,7 +399,7 @@ public static class ArchiveOperations {
       return;
     }
 
-    RemoveViaRebuild(archivePath, entryNames, opts ?? new CompressionOptions());
+    RemoveViaRebuild(archivePath, entryNames, opts ?? new CompressionOptions(), format);
   }
 
   /// <summary>
@@ -411,8 +416,16 @@ public static class ArchiveOperations {
     Add(archivePath, [new ArchiveInput(newSourcePath, entryName)], opts);
   }
 
+  /// <remarks>
+  /// <paramref name="format" /> is the format the archive was detected as, by content. The rebuild
+  /// writes it back in that same format; re-resolving the path by extension here would let a shared
+  /// extension turn the rebuild into a format conversion. For <c>.vib</c> that meant a read-only
+  /// Veeam backup came back out as a VIB package, silently, because the create-side resolver picks
+  /// the claimant that can create. Handing the detected format through instead makes an unwritable
+  /// format fail loudly at the creator lookup, which is the honest answer.
+  /// </remarks>
   private static void AddViaRebuild(string archivePath, IReadOnlyList<ArchiveInput> inputs,
-                                    CompressionOptions opts) {
+                                    CompressionOptions opts, F format) {
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_add_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Directory.CreateDirectory(tempDir);
@@ -428,15 +441,16 @@ public static class ArchiveOperations {
         File.Copy(i.FullPath, dest, overwrite: true);
       }
 
-      Create(archivePath, EnumerateTempInputs(tempDir), opts);
+      Create(archivePath, EnumerateTempInputs(tempDir), opts, format);
     }
     finally {
       if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
     }
   }
 
+  /// <inheritdoc cref="AddViaRebuild" />
   private static void RemoveViaRebuild(string archivePath, string[] entryNames,
-                                       CompressionOptions opts) {
+                                       CompressionOptions opts, F format) {
     var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_rm_" + Guid.NewGuid().ToString("N")[..8]);
     try {
@@ -449,7 +463,7 @@ public static class ArchiveOperations {
           File.Delete(path);
       }
 
-      Create(archivePath, EnumerateTempInputs(tempDir), opts);
+      Create(archivePath, EnumerateTempInputs(tempDir), opts, format);
     }
     finally {
       if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
@@ -727,11 +741,15 @@ public static class ArchiveOperations {
     ops.Decompress(input, output);
   }
 
-  private static void CompressStreamPair(Stream input, Stream output, F format) {
+  private static void CompressStreamPair(Stream input, Stream output, F format,
+                                         Compression.Registry.FormatCreateOptions? options = null) {
     FormatRegistration.EnsureInitialized();
     var ops = Compression.Registry.FormatRegistry.GetStreamOps(format.ToString())
       ?? throw new NotSupportedException($"No compressor for: {format}");
-    ops.Compress(input, output);
+    if (options == null)
+      ops.Compress(input, output);
+    else
+      ops.Compress(input, output, options);
   }
 
   private static void CompressStreamPairOptimal(Stream input, Stream output, F format) {
@@ -775,13 +793,27 @@ public static class ArchiveOperations {
     });
   }
 
-  private static void CompressStream(string inputPath, string outputPath, F format, MethodSpec method = default) {
+  /// <summary>
+  /// Compresses a single file into a stream format. <paramref name="options"/> carries the level,
+  /// dictionary size and format-specific knobs the caller asked for.
+  /// </summary>
+  /// <remarks>
+  /// <see cref="Compression.Registry.IStreamFormatOperations"/> has taken a
+  /// <see cref="Compression.Registry.FormatCreateOptions"/> overload of <c>Compress</c> since the
+  /// schema work, and gzip, zlib, bzip2, xz, lzma, lzip, zstd, lz4 and brotli all override it. This
+  /// path was still calling the no-options overload, so <c>--level</c>, <c>--dict-size</c> and every
+  /// schema knob were accepted on the command line and then dropped on the floor for exactly the
+  /// nine formats that could have honoured them.
+  /// </remarks>
+  private static void CompressStream(string inputPath, string outputPath, F format,
+                                     MethodSpec method = default,
+                                     Compression.Registry.FormatCreateOptions? options = null) {
     AtomicFileWriter.WriteAtomic(outputPath, outFs => {
       using var inFs = File.OpenRead(inputPath);
       if (method.Optimize)
         CompressStreamPairOptimal(inFs, outFs, format);
       else
-        CompressStreamPair(inFs, outFs, format);
+        CompressStreamPair(inFs, outFs, format, options);
     });
   }
 
@@ -1046,7 +1078,9 @@ public static class ArchiveOperations {
       if (!Enum.TryParse<FormatDetector.Format>(targetFormatId, ignoreCase: true, out dstFormat))
         throw new NotSupportedException($"Unknown target format: {targetFormatId}");
     } else {
-      dstFormat = FormatDetector.DetectByExtension(outputPath);
+      // Resolve the target by capability, not by content: the file is about to be written, and
+      // the very next check rejects a target that cannot create.
+      dstFormat = FormatDetector.DetectByExtensionForCreate(outputPath);
     }
 
     if (dstFormat == FormatDetector.Format.Unknown)
@@ -1093,9 +1127,7 @@ public static class ArchiveOperations {
         inputs = inputs.Where(i => !i.IsDirectory).ToList();
       }
 
-      var memOpts = new Compression.Registry.FormatCreateOptions {
-        FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(createOptions?.FormatSpecific),
-      };
+      var memOpts = createOptions?.Copy() ?? new Compression.Registry.FormatCreateOptions();
       Compression.Lib.InMemoryProcessing.RebuildToFileAtomic(outputPath, dstCreatable, inputs, memOpts);
       return warnings;
     }
@@ -1127,9 +1159,7 @@ public static class ArchiveOperations {
     // with CanSeek=true and Length=entry.OriginalSize, which lets AddEntry
     // pick the zero-buffer (length-up-front) path automatically. A spilled
     // DeferredLengthWriteStream is never instantiated for a normal convert.
-    var streamOpts = new Compression.Registry.FormatCreateOptions {
-      FormatSpecific = Compression.Registry.FormatCreateOptions.FormatSpecificFrom(createOptions?.FormatSpecific),
-    };
+    var streamOpts = createOptions?.Copy() ?? new Compression.Registry.FormatCreateOptions();
     using (var sharedSrc = File.OpenRead(inputPath))
     using (var writer = ArchiveWriter.Create(outputPath, dstFormat.ToString(), streamOpts)) {
       foreach (var e in srcEntries) {

@@ -474,7 +474,9 @@ convertCmd.SetAction((ParseResult ctx) => {
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
   var srcFormat = FormatDetector.Detect(input.FullName);
-  var dstFormat = FormatDetector.DetectByExtension(output.FullName);
+  // The banner must name the format the conversion will actually write, so it resolves the
+  // target the way Convert does -- by capability, not by first extension claimant.
+  var dstFormat = FormatDetector.DetectByExtensionForCreate(output.FullName);
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   Console.WriteLine($"Converting {input.Name} ({srcFormat}) -> {output.Name} ({dstFormat}){methodLabel}");
 

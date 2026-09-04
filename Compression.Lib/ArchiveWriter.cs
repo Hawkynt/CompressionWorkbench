@@ -116,7 +116,9 @@ public sealed class ArchiveWriter : IDisposable {
   /// </summary>
   public static ArchiveWriter Create(string outputPath, FormatCreateOptions? options = null) {
     ArgumentNullException.ThrowIfNull(outputPath);
-    var format = FormatDetector.DetectByExtension(outputPath);
+    // Capability-based resolution: the path names a file that does not exist yet, so a shared
+    // extension cannot be settled by content. Of the claimants, the one that can create wins.
+    var format = FormatDetector.DetectByExtensionForCreate(outputPath);
     if (format == FormatDetector.Format.Unknown)
       throw new NotSupportedException(
         $"Cannot determine format from extension: {Path.GetExtension(outputPath)}. " +

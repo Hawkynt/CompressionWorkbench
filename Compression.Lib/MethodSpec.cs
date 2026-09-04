@@ -11,16 +11,41 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
 
   public static MethodSpec Default => new("default", false);
 
+  /// <remarks>
+  /// Every trailing <c>+</c> is stripped, not just the last one, so the base name matches what
+  /// <see cref="Compression.Registry.MethodNameParser.Parse" /> derives on the far side of the
+  /// create boundary. That parser documents <c>deflate++</c> as "~100× effort"; stripping a single
+  /// <c>+</c> here left the base name as <c>deflate+</c>, which is not a method any creator knows.
+  /// <see cref="Optimize" /> is a flag rather than a count, so a plus level above one is reported
+  /// as plain optimize rather than smuggled through in the name.
+  /// </remarks>
   public static MethodSpec Parse(string? input) {
     if (string.IsNullOrWhiteSpace(input)) return Default;
     var trimmed = input.Trim();
-    if (trimmed.EndsWith('+'))
-      return new(trimmed[..^1].ToLowerInvariant(), true);
-    return new(trimmed.ToLowerInvariant(), false);
+    var optimize = trimmed.EndsWith('+');
+    trimmed = trimmed.TrimEnd('+');
+    return new(trimmed.ToLowerInvariant(), optimize);
   }
 
   /// <summary>Whether this is the default "no preference" spec.</summary>
   public bool IsDefault => Name == "default" && !Optimize;
+
+  /// <summary>
+  /// The method name as the registry boundary spells it: <see langword="null" /> when the spec
+  /// carries no method preference at all.
+  /// </summary>
+  /// <remarks>
+  /// <see cref="Compression.Registry.FormatCreateOptions.MethodName" /> uses <see langword="null" />
+  /// for "no preference"; this side spells the same thing as the literal <c>"default"</c>. Three
+  /// further spellings mean it too and must not reach a creator either: a bare <c>"+"</c> parses to
+  /// an empty base name, <c>default(MethodSpec)</c> leaves the name null, and <c>"default+"</c>
+  /// keeps the sentinel while setting <see cref="Optimize" />. <see cref="IsDefault" /> answers
+  /// false for that last one — it also requires <c>!Optimize</c>, which is right for the tier
+  /// decision in <c>ArchiveOperations.ConvertCore</c> but wrong for the boundary, where a
+  /// <c>-m default+</c> then handed every creator a method literally named "default": the lenient
+  /// ones ignored it and the strict ones correctly refused it as unknown.
+  /// </remarks>
+  public string? EffectiveName => Name is null or "" or "default" ? null : Name;
 
   public override string ToString() => Optimize ? $"{Name}+" : Name;
 
