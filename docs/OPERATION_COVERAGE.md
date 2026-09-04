@@ -1,7 +1,9 @@
 # Operation Coverage
 
-Measures which of the user-facing maintenance operations each archive and
-filesystem descriptor supports. An operation is "supported" when the descriptor
+Measures which of the user-facing maintenance operations each filesystem
+descriptor supports. The archive-domain descriptors are covered by the
+*Maintenance* column of the package README,
+[`Hawkynt.FileFormats.Archives/README.md`](../Hawkynt.FileFormats.Archives/README.md). An operation is "supported" when the descriptor
 implements the corresponding capability interface (directly or via a base class).
 The canonical definitions of these verbs live in
 [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md) → *The five maintenance verbs*; this file
@@ -273,32 +275,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | Zfs | Y | Y | Y | Y | · | Y |
 | ZxScl | Y | Y | Y | Y | Y | · |
 
-## Archive / stream descriptors with at least one operation
-
-| Format | Defrag | Shrink | Wipe | Optimize | MetaReorder |
-|--------|:------:|:------:|:----:|:--------:|:-----------:|
-| Zip | Y | **Y** | Y | N | N |
-| SevenZip (7z) | Y | N | **Y** | N | N |
-| Tar | Y | **Y** | **Y** | N | N |
-| Mp3 | Y | N | N | N | Y |
-| Mp4 | N | N | N | N | Y |
-| Avi | N | N | N | N | Y |
-| Matroska | N | N | N | N | Y |
-| Ogg | N | N | N | N | Y |
-| Wav | Y | N | N | N | Y |
-| Png / Tiff / Jpeg (Crush adapters) | N | N | N | N | Y |
-
-Bold cells were added in this wave. ~175 further archive descriptors implement
-Defragment only (via `DefragRebuilder`); they are counted in the totals but not
-listed individually here.
-
 ## N/A notes
 
 - **Shrink on fixed-geometry images** (most read-only filesystems, optical
   images): no smaller canonical size exists, so Shrink is intentionally absent.
-- **Metadata-reorder on archives with a single central directory** (Zip, 7z):
-  Defragment already lands the central directory in its canonical contiguous
-  trailing position, so a separate reorder pass would be a no-op.
-- **Cluster-tip wiping on solid/streamed containers** (7z, Tar): there is no
-  per-file cluster slack — the wiper zeros inter-block gaps and trailing junk
-  only.

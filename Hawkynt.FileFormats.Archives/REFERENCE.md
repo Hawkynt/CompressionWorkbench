@@ -1140,6 +1140,34 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the underlying stream and finalizes the file layout. |
 
+### Namespace `FileFormat.Ai`
+
+[`AiFormatDescriptor`](#aiformatdescriptor)
+
+#### `AiFormatDescriptor`
+
+Adobe Illustrator (.ai). Two historical flavors: - PDF-based (CS and later): PDF wrapper with AI-specific private dictionaries. - PostScript-based (older): %!PS-Adobe- DSC with a hex-encoded TIFF thumbnail. Read-only descriptor surfacing the raw file, DSC metadata where applicable, and a decoded thumbnail when present. References: Adobe "Adobe Illustrator File Format Specification" — the PostScript-era AI documentation; CS-era AI is a PDF wrapperAdobe TN 5001 "PostScript Language Document Structuring Conventions" — the DSC comments parsed here`https://en.wikipedia.org/wiki/Adobe_Illustrator_Artwork` — format history (PostScript-based vs PDF-based flavors)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AiFormatDescriptor` | `AiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Akb`
 
 [`AkbEntry`](#akbentry) · [`AkbFormatDescriptor`](#akbformatdescriptor) · [`AkbReader`](#akbreader) · [`AkbWriter`](#akbwriter)
@@ -2632,6 +2660,62 @@ Creates ARJ archives.
 | `ToArray` | `byte[] ToArray()` | Creates the archive as a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to the specified stream. |
 
+### Namespace `FileFormat.Arrow`
+
+[`ArrowConstants`](#arrowconstants) · [`ArrowFormatDescriptor`](#arrowformatdescriptor) · [`ArrowReader`](#arrowreader)
+
+#### `ArrowConstants`
+
+Represents an arrow constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Alignment` | `const int Alignment` | Arrow IPC messages are aligned to 8-byte boundaries between metadata and body. |
+| `ContinuationMarker` | `const uint ContinuationMarker` | Continuation marker prefixed to message length fields in Arrow IPC streams (0xFFFFFFFF). |
+| `FooterLengthFieldLength` | `const int FooterLengthFieldLength` | Length of the trailing 4-byte UInt32 LE footer-length field that precedes the trailing magic in File format. |
+| `MagicLength` | `const int MagicLength` | Length of the Arrow IPC magic header/footer in bytes. |
+| `Magic` | `static readonly byte[] Magic` | Arrow IPC File-format magic bytes: ASCII "ARROW1" followed by two zero padding bytes. |
+| `MessageHeaderDictionaryBatch` | `const byte MessageHeaderDictionaryBatch` | FlatBuffers-encoded MessageHeader union tag for the DictionaryBatch message. |
+| `MessageHeaderRecordBatch` | `const byte MessageHeaderRecordBatch` | FlatBuffers-encoded MessageHeader union tag for the RecordBatch message. |
+| `MessageHeaderSchema` | `const byte MessageHeaderSchema` | FlatBuffers-encoded MessageHeader union tag for the Schema message. |
+
+#### `ArrowFormatDescriptor`
+
+Apache Arrow IPC (`.arrow`, `.feather`) read-only pseudo-archive. Detects File vs Streaming variants via the leading `"ARROW1\0\0"` magic, walks the FlatBuffers Message envelopes to count messages and record batches, and harvests an approximate schema by string-scanning the Schema message blob. Surfaces a `FULL.arrow` passthrough plus a `metadata.ini` summary. Record-batch buffer decoding is out of scope. References: `https://arrow.apache.org/docs/format/Columnar.html` — Arrow columnar format + IPC (File/Streaming) specification`https://github.com/apache/arrow` — canonical implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArrowFormatDescriptor` | `ArrowFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ArrowReader`
+
+Read-only walker for Apache Arrow IPC files (both File and Streaming variants). Detects the format by leading magic, walks the message sequence counting messages and record batches, and harvests an approximate schema by string-scanning the first message's FlatBuffers metadata. Does not decode record data buffers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArrowReader` | `ArrowReader(Stream stream)` | Initializes a new instance of `ArrowReader`. |
+| `ApproximateSchema` | `IReadOnlyList<string> ApproximateSchema { get; }` | Approximate column names harvested by string-scanning the Schema message's FlatBuffers metadata. |
+| `Format` | `string Format { get; }` | "file" if the file starts with the Arrow1 magic; "streaming" otherwise. |
+| `MessageCount` | `int MessageCount { get; }` | Total number of FlatBuffers messages walked (Schema + RecordBatch + DictionaryBatch). |
+| `ParseStatus` | `string ParseStatus { get; }` | "full" when the entire stream walked without errors, "partial" if any structural error was encountered partway through. |
+| `RecordBatchCount` | `int RecordBatchCount { get; }` | Number of RecordBatch messages found while walking the stream. |
+
 ### Namespace `FileFormat.Arsc`
 
 [`ArscConstants`](#arscconstants) · [`ArscFormatDescriptor`](#arscformatdescriptor) · [`ArscPackageInfo`](#arscpackageinfo) · [`ArscReader`](#arscreader) · [`ChunkHeader`](#chunkheader) · [`ChunkWalker`](#chunkwalker)
@@ -2798,6 +2882,35 @@ Builder for Electron `.asar` archives. Files are concatenated back to back (no p
 | `AddFile` | `void AddFile(string path, byte[] data, bool executable = false)` | Queues a file at the given archive-relative path (forward slashes). |
 | `WriteTo` | `void WriteTo(Stream output)` | Serialises the archive to `output`. |
 
+### Namespace `FileFormat.Asf`
+
+[`AsfFormatDescriptor`](#asfformatdescriptor)
+
+#### `AsfFormatDescriptor`
+
+Surfaces a Microsoft Advanced Systems Format container (`.asf`/`.wma`/ `.wmv`) as an archive of the byte-exact original (`FULL.asf`, Kind `Container`) plus rich metadata and a description of each carried stream. The Data Object packets are depayloaded into per-stream elementary bitstreams (`streams/stream_NN.bin`, Kind `Stream`) and each stream is described in `streams/stream_NN.info.txt` (Kind `Tag`) carrying its codec / bitrate. WMA v1/v2 audio streams (WAVEFORMATEX tags `0x160`/`0x161`) are decoded via `Codec.Wma` and WMA 9 Professional streams (tag `0x162`) via `Codec.WmaPro`, and WMA Lossless streams (tag `0x163`) bit-exactly via `Codec.WmaLossless`, into one mono `<CHANNEL>.wav` per channel (Kind `Channel`); streams the decoders can't handle (an unsupported WMA Pro / Lossless profile, corrupt data) fall back to just the `stream_NN.bin` blob. File properties and the content description land in `metadata.ini`; the Extended Content Description tags land in `metadata/tags.ini`. Read-only; parsing stops gracefully on a malformed object, keeping whatever was read.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsfFormatDescriptor` | `AsfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Avi`
 
 [`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack)
@@ -2908,6 +3021,70 @@ Implements `IEquatable<Track>`.
 | `Index` | `int Index { get; init; }` |  |
 | `StreamType` | `string StreamType { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
+
+### Namespace `FileFormat.Avro`
+
+[`AvroConstants`](#avroconstants) · [`AvroFormatDescriptor`](#avroformatdescriptor) · [`AvroReader`](#avroreader) · [`AvroVarLong`](#avrovarlong)
+
+#### `AvroConstants`
+
+Represents an avro constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultCodec` | `const string DefaultCodec` | Default codec when the meta map omits `avro.codec`. |
+| `MagicLength` | `const int MagicLength` | Length of the OCF magic header in bytes. |
+| `Magic` | `static readonly byte[] Magic` | Avro OCF magic bytes: "Obj" followed by version byte 0x01. |
+| `MetaKeyCodec` | `const string MetaKeyCodec` | Avro meta-map key for the codec name. |
+| `MetaKeySchema` | `const string MetaKeySchema` | Avro meta-map key for the JSON schema (UTF-8 bytes). |
+| `SyncMarkerLength` | `const int SyncMarkerLength` | Length of the sync marker that delimits each block. |
+
+#### `AvroFormatDescriptor`
+
+Apache Avro Object Container File (`.avro`) read-only pseudo-archive. Parses the OCF header (magic, meta map, sync marker) and walks block headers to surface block/record counts. Surfaces a `FULL.avro` passthrough plus a `metadata.ini` summary. Schema-bound record decoding is out of scope. References: `https://avro.apache.org/docs/current/specification/` — Avro specification incl. the Object Container File layout`https://github.com/apache/avro` — canonical implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvroFormatDescriptor` | `AvroFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AvroReader`
+
+Read-only walker for Apache Avro Object Container Files. Parses the header (magic + meta map + sync marker) and walks block headers to count blocks/records. Records themselves are not decoded — that requires the JSON schema.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvroReader` | `AvroReader(Stream stream)` | Initializes a new instance of `AvroReader`. |
+| `BlockCount` | `int BlockCount { get; }` | Gets the block count. |
+| `Codec` | `string Codec { get; }` | Gets the codec. |
+| `ParseStatus` | `string ParseStatus { get; }` | "partial" if the file structure was walked successfully; "corrupt" if a block sync marker mismatched or a structural error was encountered partway through. |
+| `RecordCount` | `long RecordCount { get; }` | Gets the record count. |
+| `Schema` | `string Schema { get; }` | Gets the schema. |
+| `SyncMarker` | `byte[] SyncMarker { get; }` | Gets the sync marker. |
+
+#### `AvroVarLong`
+
+Avro zig-zag variable-length long encoder/decoder. Uses the canonical formula: encode = (n << 1) ^ (n >> 63), decode = (n >> 1) ^ -(n & 1).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadLong` | `static long ReadLong(Stream stream)` | Reads the long from the supplied input. |
+| `WriteLong` | `static void WriteLong(Stream stream, long value)` | Writes the long to the supplied output. |
 
 ### Namespace `FileFormat.Awb`
 
@@ -3221,6 +3398,35 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalises and writes the complete BIGF archive to the output stream. |
 
+### Namespace `FileFormat.Bik`
+
+[`BikFormatDescriptor`](#bikformatdescriptor)
+
+#### `BikFormatDescriptor`
+
+Surfaces a Bink video container (`.bik`, Bink 1 'BIK?' and Bink 2 'KB2?') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.bik` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each audio track's concatenated packets are surfaced as `TRACKn.bin` (Kind `Stream`, Method = the Bink Audio flavour) and, for Bink 1, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.BinkAudio` — both RDFT and DCT flavours — with a graceful fallback to the raw blob on any decode failure. Bink 2 audio is not decoded and remains blob-only. Read-only; parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BikFormatDescriptor` | `BikFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.BinHex`
 
 [`BinHexFormatDescriptor`](#binhexformatdescriptor) · [`BinHexReader`](#binhexreader) · [`BinHexWriter`](#binhexwriter)
@@ -3301,6 +3507,100 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries (and descendants of named directory entries) by shifting the following record tail left and truncating the stream. |
+
+### Namespace `FileFormat.BitRock`
+
+[`BitRockContentScanner`](#bitrockcontentscanner) · [`BitRockContentScanner.BitRockComponentExtract`](#bitrockcontentscannerbitrockcomponentextract) · [`BitRockFile`](#bitrockfile) · [`BitRockFormatDescriptor`](#bitrockformatdescriptor) · [`BitRockPayloadComponent`](#bitrockpayloadcomponent) · [`BitRockReader`](#bitrockreader)
+
+#### `BitRockContentScanner`
+
+Locates and recovers the application payload of a BitRock / InstallBuilder installer. Layout: `[PE image] [cookfs content region] [Metakit VFS] [16-byte trailer] [id] [end magic]`. The content region is a cookfs (`CFS0002`) page archive (see `CookfsArchive`); reconstructing it yields the real deliverable as one or more gzip-wrapped tars laid end to end. Each component's FNAME field holds the tar's original name, e.g. `incamd.2.0.245314.Win64.tar`, `InCAMPro.2.0SP1.246831.Win64.tar`, `InLink.1.5.235442.Win64.tar`.Because the cookfs page store is stripped back to a plain gzip stream, decoding uses the stock `GZipStream` — no private framing — so every component decodes end-to-end and every extracted file is byte-exact. Reconstruction is streamed to a temporary file (bounded memory, never the whole multi-hundred-megabyte payload in RAM), and extraction streams each entry to disk.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnumerateComponent` | `static IEnumerable<ValueTuple<string, long, bool>> EnumerateComponent(Stream content, BitRockPayloadComponent component)` | Enumerates a component's tar entries by streaming its gzip member — never materialising the (multi-hundred-MiB) component. Entry data is skipped, not held. |
+| `ExtractComponentToDisk` | `static BitRockComponentExtract ExtractComponentToDisk(Stream content, BitRockPayloadComponent component, string rootDir, Func<string, bool> accept = null)` | Fully extracts a payload component to `rootDir`, streaming each file straight to disk. The gzip member is decoded by the stock `GZipStream` and every tar header is checksum-validated, so every written file is byte-exact. |
+| `GetOverlayStart` | `static long GetOverlayStart(Stream stream)` | Returns the offset at which the PE overlay (appended installer data) begins, i.e. the end of the last section's raw data. Returns 0 when the PE headers cannot be parsed. |
+| `ReconstructContent` | `static string ReconstructContent(Stream stream, long cookfsEnd)` | Reconstructs the cookfs content region (ending at `cookfsEnd` = the Metakit VFS start) to a temporary file and returns its path, or null when there is no cookfs archive. The caller owns the file and must delete it. Memory stays bounded (pages are streamed). |
+| `ScanMembers` | `static List<BitRockPayloadComponent> ScanMembers(Stream content)` | Scans reconstructed `content` (seekable) for gzip members that carry a tar name in their FNAME field and returns them in order. |
+
+#### `BitRockContentScanner.BitRockComponentExtract`
+
+Result of a full extraction of one payload component.
+
+Implements `IEquatable<BitRockComponentExtract>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitRockComponentExtract` | `BitRockComponentExtract(long FileCount, long DirCount, long TotalBytes, bool CleanEnd)` | Result of a full extraction of one payload component. |
+| `CleanEnd` | `bool CleanEnd { get; init; }` | True when the gzip member decoded to its end without error. |
+| `DirCount` | `long DirCount { get; init; }` | Directory entries seen. |
+| `FileCount` | `long FileCount { get; init; }` | Regular files written to disk (each byte-exact). |
+| `TotalBytes` | `long TotalBytes { get; init; }` | Sum of extracted file sizes. |
+
+#### `BitRockFile`
+
+A file recovered from a BitRock installer's virtual file system.
+
+Implements `IEquatable<BitRockFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitRockFile` | `BitRockFile(string Name, byte[] Content)` | A file recovered from a BitRock installer's virtual file system. |
+| `Content` | `byte[] Content { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+#### `BitRockFormatDescriptor`
+
+Format descriptor for BitRock / InstallBuilder self-extracting installers. Detection is content-based (the end magic and mk4vfs schema near EOF), so it works regardless of file extension. References: `https://installbuilder.com` — InstallBuilder (formerly BitRock), the tool that produces these installers; the container layout is undocumented by the vendorJean-Claude Wippler's Metakit (Mk4) file format — the tclkit runtime VFS embedded in the installer stub, reverse-read here as the `mk4vfs` catalogTcl cookfs archive format — the content region holding the gzip-tar payload components
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitRockFormatDescriptor` | `BitRockFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `BitRockPayloadComponent`
+
+A gzip-wrapped tar component found in the reconstructed cookfs content.
+
+Implements `IEquatable<BitRockPayloadComponent>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitRockPayloadComponent` | `BitRockPayloadComponent(string Name, long ContentOffset, long Length)` | A gzip-wrapped tar component found in the reconstructed cookfs content. |
+| `ContentOffset` | `long ContentOffset { get; init; }` | Offset of the gzip member within the reconstructed content. |
+| `Length` | `long Length { get; init; }` | Byte length of this member within the reconstructed content (up to the next member or the content end). |
+| `Name` | `string Name { get; init; }` | The tar's original name from the gzip FNAME field (e.g. "InCAMPro.2.0SP1.246831.Win64.tar"). |
+
+#### `BitRockReader`
+
+Reader for BitRock / InstallBuilder self-extracting installers. Layout (recovered by binary inspection of real installers): [PE stub] [content region] [embedded Metakit VFS] [16-byte trailer] ["bitrock-lzma-4.0" 16 bytes] ["mFC3acAOJrQinu5aEHu0uH7N5XSQ3Z14" 32-byte magic] The installer runtime is a tclkit whose virtual file system is a Metakit (Mk4) datafile using the mk4vfs schema "dirs[name:S,parent:I,files[name:S,size:I,date:I,contents:B]]". Locating the VFS (mirrors the runtime's own logic): off = EOF - offset_of("bitrock-lzma-4.0") (= 48: 16 id + 32 magic) a,b,c,d = four big-endian int32 read at EOF-16-off a == 0x80000000, top byte of c == 0x80, b == VFS byte length start = EOF - 16 - b - off (VFS begins here, "JL" magic) Metakit metadata encodes column data as segments described by base-128 big-endian integers whose HIGH bit marks the final byte (verified: the schema-string length prefix "80 bc" decodes to 60, the exact schema length). Each view column is described by a (rowCount, byteSize, position) triple; positions are absolute file offsets. The top-level "dirs" view stores its directory names as a NUL-separated pool at VFS offset 8, followed by a per-name length index and a per-directory parent index. Per-directory file catalogues (name pool + size/date columns) and the file contents are stored in the content region. File contents are stored as self-delimiting zlib (or gzip) streams; tiny files may be stored verbatim.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressorId` | `static ReadOnlySpan<byte> CompressorId { get; }` | The compressor identifier stored just before the end magic. |
+| `DirectoryPaths` | `IReadOnlyList<string> DirectoryPaths { get; }` | Full paths of every directory in the tclkit runtime virtual file system. |
+| `EndMagic` | `static ReadOnlySpan<byte> EndMagic { get; }` | The 32-byte end-of-file magic that identifies a BitRock installer. |
+| `Files` | `IReadOnlyList<BitRockFile> Files { get; }` | Runtime file entries recovered from the Metakit VFS (name + decompressed content). |
+| `VfsStart` | `long VfsStart { get; }` | Offset at which the tclkit runtime's Metakit VFS begins — i.e. the end of the cookfs content region that carries the application payload (see `BitRockContentScanner`). |
+| `IsBitRock` | `static bool IsBitRock(Stream stream)` | Returns true if the stream is a BitRock / InstallBuilder installer, i.e. the end magic or compressor id and mk4vfs schema are present near the tail. |
+| `Open` | `static BitRockReader Open(Stream stream)` | Opens a BitRock installer stream, or throws if it is not one. |
+| `TryLocateVfs` | `static bool TryLocateVfs(Stream stream, out long start, out long size)` | Locates the embedded Metakit VFS using the runtime's own footer arithmetic. |
 
 ### Namespace `FileFormat.Bkf`
 
@@ -3778,6 +4078,41 @@ Creates Microsoft Cabinet (CAB) archives.
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? lastModified = null, ushort attributes = 32)` | Adds a file to the cabinet. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, CabCompressionType compressionType = 1)` | Creates a CAB archive split into multiple volumes. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the complete cabinet archive to `output`. |
+
+### Namespace `FileFormat.Cb7`
+
+[`Cb7FormatDescriptor`](#cb7formatdescriptor)
+
+#### `Cb7FormatDescriptor`
+
+Comic book archive — a 7-Zip container of sequentially named page images, conventionally suffixed .cb7. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cb7/.cbz/.cbr naming convention`https://www.7-zip.org/7z.html` — official 7z format page (Igor Pavlov) — the underlying container format`https://py7zr.readthedocs.io/en/latest/archive_format.html` — a community 7z structural reference
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Cb7FormatDescriptor` | `Cb7FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) pages inside an existing CB7 archive. Delegates to the 7z in-place editors (CB7 is a 7z variant): a pure add of new names takes the genuine byte-additive append (`SevenZipInPlaceAdder`) writing a fresh solid block at the old header offset, a same-name update excises the old entry first (`SevenZipInPlaceRemover`). Any case the in-place path cannot serve byte-additively falls back to the verified extract -> re-create rebuild. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the 7z archive in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to 7z (CB7 is a 7z variant). |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named pages. A removal that drops one or more entire solid blocks (folders) is served by the genuine in-place remover (`SevenZipInPlaceRemover`); anything it cannot serve byte-additively falls back to the verified extract -> re-create rebuild. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: gaps between packed solid blocks and any junk before the compressed metadata or trailing the file. The signature header, solid blocks and end-of-archive metadata are live and preserved. Cluster-tip wiping is N/A (7z packs solid blocks with no per-file slack). |
 
 ### Namespace `FileFormat.Cbr`
 
@@ -4758,6 +5093,39 @@ Implements `IDisposable`.
 | `WriteHeader` | `void WriteHeader(DmsHeader header)` | Writes the 56-byte file header. Must be called before writing any tracks. The header will be updated on dispose with correct track ranges and sizes. |
 | `WriteTrack` | `void WriteTrack(int trackNumber, byte[] data, int compressionMode = 0)` | Compresses and writes one track to the archive. |
 
+### Namespace `FileFormat.Doc`
+
+[`DocFormatDescriptor`](#docformatdescriptor)
+
+#### `DocFormatDescriptor`
+
+Microsoft Word 97-2003 binary document (.doc) — WordDocument/table streams inside an OLE2 compound file. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/` — [MS-DOC] — Word (.doc) Binary File Format`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] — Compound File Binary (the OLE2 container)
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DocFormatDescriptor` | `DocFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
+
 ### Namespace `FileFormat.Docx`
 
 [`DocxFormatDescriptor`](#docxformatdescriptor)
@@ -5117,6 +5485,220 @@ Linear scanner that locates zlib substreams inside an EaseUS Todo Backup `.pbd` 
 | `DefaultMaxRetainedPayloadBytes` | `const int DefaultMaxRetainedPayloadBytes` | Maximum decompressed bytes retained per chunk before `InflatedOverCap` kicks in. |
 | `Scan` | `static List<EaseUsZlibChunk> Scan(byte[] data, int startOffset = 12, int maxRetainedPayloadBytes = 65536, int maxCandidates = 4096, bool onlyOverlapping = false)` | Walks `data` from offset `startOffset` onward, locating each `0x78 {0x01\|0x9C\|0xDA}` candidate header and running a trial inflate. Returns the full chunk inventory in scan order. |
 | `TryInflate` | `static EaseUsZlibChunk TryInflate(byte[] data, int offset, int maxRetainedPayloadBytes = 65536)` | Attempts to inflate the candidate zlib substream starting at `offset` in `data`. The decoder reads through a byte-counting one-byte-at-a-time wrapper so the final consumed-byte count is exact — `ZLibStream` internally buffers ~8 KiB at a time, which would otherwise overrun the substream boundary and break multi-stream scanning. |
+
+### Namespace `FileFormat.Egg`
+
+[`EggCompressionMethod`](#eggcompressionmethod) · [`EggEntry`](#eggentry) · [`EggFormatDescriptor`](#eggformatdescriptor) · [`EggReader`](#eggreader) · [`EggWriter`](#eggwriter)
+
+#### `EggCompressionMethod`
+
+Compression methods that the native EGG writer can emit.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Auto` | `-1` | Try raw DEFLATE and keep it only when it beats Store. |
+| `Store` | `0` | Store payload bytes verbatim. |
+| `Deflate` | `1` | Compress with raw RFC 1951 DEFLATE. |
+
+#### `EggEntry`
+
+A file entry parsed from an EGG (ALZip) archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EggEntry` | `EggEntry()` |  |
+| `CompressedSize` | `long CompressedSize { get; }` | Sum of the compressed sizes of the entry's data blocks. |
+| `IsDirectory` | `bool IsDirectory { get; }` | True when the entry is a directory (per the Windows/Posix file-information header). |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the entry (name and/or data) is encrypted; extraction is not supported. |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-modified timestamp (UTC) when a file-information header supplied one. |
+| `MethodName` | `string MethodName { get; }` | Human-readable name of `PrimaryAlgorithm`. |
+| `Name` | `string Name { get; }` | Relative path/name of the entry (forward-slash separated). |
+| `PrimaryAlgorithm` | `int PrimaryAlgorithm { get; }` | Algorithm number of the first data block (0=Store, 1=Deflate, 2=Bzip2, 3=AZO, 4=LZMA). |
+| `UncompressedSize` | `long UncompressedSize { get; }` | Total uncompressed size of the file, as recorded in the File Header. |
+
+#### `EggFormatDescriptor`
+
+EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads Store/Deflate and creates non-solid, single-volume Store/Deflate archives; unsupported methods are listed honestly and rejected on extraction rather than returning incorrect data. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EggFormatDescriptor` | `EggFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a single-volume, non-solid EGG archive using Store/Deflate. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader materialises the entry's decoded bytes; the result is wrapped in a bounded stream sized to its logical length. |
+
+#### `EggReader`
+
+Reads EGG (ALZip) archive files: lists entries and extracts Store/Deflate content.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EggReader` | `EggReader(Stream stream, bool leaveOpen = false)` | Opens an EGG archive over the given seekable stream and parses its directory. |
+| `Entries` | `IReadOnlyList<EggEntry> Entries { get; }` | File entries discovered in the archive. |
+| `IsGloballyEncrypted` | `bool IsGloballyEncrypted { get; }` | True when a global (archive-level) encryption header is present. |
+| `IsSplit` | `bool IsSplit { get; }` | True when the archive is a member of a split (multi-volume) set. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(EggEntry entry)` | Extracts and decompresses an entry into a byte array. Store and Deflate blocks are decoded natively; any other algorithm, or an encrypted / split-volume entry, raises `NotSupportedException` rather than returning wrong bytes. Every decoded block is checked against its declared size and CRC-32. |
+
+#### `EggWriter`
+
+Creates EGG 1.0 archives using the published tagged-record layout. The writer deliberately limits itself to the two methods that the native reader can also decode: Store and raw DEFLATE. AZO, Bzip2, LZMA, encryption, solid mode, and split volumes are not advertised or synthesized.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EggWriter` | `EggWriter(Stream stream, bool leaveOpen = false, uint headerId = 1)` | Creates a writer over a writable stream. |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? lastModifiedUtc = null)` | Adds an explicit directory entry. Parent directories are inferred for conflict checking. |
+| `AddEntry` | `void AddEntry(string path, byte[] data, EggCompressionMethod method = -1, DeflateCompressionLevel level = 6, DateTime? lastModifiedUtc = null)` | Adds a regular file. |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the archive and its final end marker. Calling this more than once is harmless. |
+
+### Namespace `FileFormat.Elf`
+
+[`ElfFormatDescriptor`](#elfformatdescriptor) · [`ElfReader`](#elfreader) · [`ElfReader.Entry`](#elfreaderentry)
+
+#### `ElfFormatDescriptor`
+
+Read-only archive view of an ELF executable, shared object, or relocatable object. Every non-null section is surfaced as an entry under `sections/`, with type-specific aliases (`interp.txt`, `symbols.txt`, `notes/*.bin`). References: `https://www.sco.com/developers/gabi/` — System V gABI — the defining ELF specification`https://man7.org/linux/man-pages/man5/elf.5.html` — elf(5) man page`https://en.wikipedia.org/wiki/Executable_and_Linkable_Format` — format overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ElfFormatDescriptor` | `ElfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ElfReader`
+
+Reads an ELF (Executable and Linkable Format) object / executable / shared library and surfaces each section header as a logical entry. Knows enough to: Decode section names via the section-header string table (`e_shstrndx`).Emit `.interp` as `interp.txt`.Emit `.dynsym` / `.symtab` decoded against their paired string table as a combined `symbols.txt`.Emit each `.note.*` section under `notes/{suffix}.bin`.Emit everything else as `sections/{name}.bin`. Handles both 32-bit (`ELFCLASS32`) and 64-bit (`ELFCLASS64`) variants and both endiannesses, as signalled by `e_ident[EI_CLASS]`/`EI_DATA`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ElfReader` | `ElfReader()` |  |
+| `ReadAll` | `List<Entry> ReadAll(Stream stream)` | Reads the all from the supplied input. |
+
+#### `ElfReader.Entry`
+
+One entry surfaced from an ELF file.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data)` | One entry surfaced from an ELF file. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+### Namespace `FileFormat.Eml`
+
+[`EmlFormatDescriptor`](#emlformatdescriptor) · [`EmlInPlaceModifier`](#emlinplacemodifier) · [`EmlParser`](#emlparser) · [`EmlParser.Part`](#emlparserpart) · [`EmlWriter`](#emlwriter)
+
+#### `EmlFormatDescriptor`
+
+Descriptor for single-message RFC 822 / MIME files. Each message is exposed as a set of archive entries: `FULL.eml` — the original file verbatim.`metadata.ini` — flattened headers (From/To/Subject/Date/Message-ID).`part_NN_*.ext` — each MIME part with its transfer-encoding decoded.`attachments/<name>` — parts marked as attachments. References: `https://www.rfc-editor.org/rfc/rfc5322` — RFC 5322 — Internet Message Format (successor of RFC 822)`https://www.rfc-editor.org/rfc/rfc2045` — RFC 2045 — MIME part one: message body formats`https://www.rfc-editor.org/rfc/rfc2046` — RFC 2046 — MIME part two: media types incl. multipart boundaries
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EmlFormatDescriptor` | `EmlFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends each input as a fresh `Content-Disposition: attachment` MIME part immediately before the closing `--<boundary>--` delimiter. The message must already be a multipart body — single-part messages can't be promoted in place without rewriting the top-level Content-Type header. Routed through `AddAttachment`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | WORM creation: emits a MIME multipart/mixed message where each input is one base64-encoded attachment. With a single input the writer emits a single-part envelope instead. `From`/`To`/`Subject` can be overridden via `FormatSpecific` keys of the same name; the message envelope otherwise uses a deterministic minimal template so round-trips of the same input list are byte-identical. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes attachments by filename. Entry names are matched against the reader's `attachments/<filename>` exposure — passing either the prefixed form or the bare filename works. Routed through `RemoveAttachment`. |
+
+#### `EmlInPlaceModifier`
+
+In-place modifier for RFC 822 / MIME messages with a multipart body. Add appends a fresh MIME part immediately before the closing `--<boundary>--` delimiter; Remove deletes the byte range of a single part between two `--<boundary>` markers. No re-encoding of surviving parts: every byte that wasn't directly touched by the requested change is preserved verbatim at its original offset. Add requires the message to already be a `multipart/*` body (we need the boundary marker to splice against). Single-part messages can't be promoted to multipart in place without rewriting the top-level Content-Type header — which would cascade through the body offsets — so the modifier rejects that case with `NotSupportedException`.Remove identifies the target part by attachment filename (from `Content-Disposition: attachment; filename="…"`) or by zero-based MIME part index. The bytes between the leading `--<boundary>` delimiter that introduces the part and the next `--<boundary>` delimiter (or the closing `--<boundary>--`) are spliced out.Out of scope: editing single-part messages, editing the top-level header block, editing nested multipart bodies (only the top-level multipart container is mutated), changing Content-Transfer-Encoding on surviving parts. Touching any of those would require offset cascades the "in-place at fixed offset" surface honestly can't deliver.Spec source: RFC 2045 (MIME headers), RFC 2046 (multipart bodies), RFC 5322 (RFC 822 successor).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddAttachment` | `static void AddAttachment(Stream archive, string fileName, byte[] content, string contentType = null)` | Splices a fresh MIME part into a multipart message immediately before the closing `--<boundary>--` delimiter. `content` is base64-encoded so it survives the transfer encoding round-trip; the Content-Disposition is set to `attachment` so the reader exposes the new part under `attachments/<name>`. |
+| `RemoveAttachment` | `static void RemoveAttachment(Stream archive, string fileName)` | Removes a MIME part from a multipart message by attachment filename. The byte range from the part's leading `--<boundary>` delimiter (inclusive) to the next delimiter (exclusive) is spliced out. |
+
+#### `EmlParser`
+
+Minimal RFC 822 / MIME parser. Splits a message into its header block + body, then (for multipart payloads) into nested parts. Decodes `base64` and `quoted-printable` transfer encodings. This is deliberately shallow — sufficient for surfacing attachments as archive entries, not a full MIME stack.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Parse` | `static Part Parse(byte[] data)` | Parse an .eml file from its raw bytes. |
+
+#### `EmlParser.Part`
+
+Represents a part.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Part` | `Part()` |  |
+| `ContentDisposition` | `string ContentDisposition { get; }` | Gets the content disposition. |
+| `ContentTransferEncoding` | `string ContentTransferEncoding { get; }` | Gets the content transfer encoding. |
+| `ContentType` | `string ContentType { get; }` | Gets the content type. |
+| `DecodedBody` | `byte[] DecodedBody { get; init; }` | Gets or sets the decoded body. |
+| `FileName` | `string FileName { get; }` | Parse the "name"/"filename" parameter from Content-Disposition or Content-Type. |
+| `Headers` | `IReadOnlyDictionary<string, string> Headers { get; init; }` | Gets or sets the headers. |
+| `IsAttachment` | `bool IsAttachment { get; }` | True if this part has Content-Disposition: attachment. |
+| `MimeType` | `string MimeType { get; }` | Parse the Content-Type mime type, lowercased (e.g. "text/plain"). |
+| `RawBody` | `byte[] RawBody { get; init; }` | Gets or sets the raw body. |
+| `SubParts` | `IReadOnlyList<Part> SubParts { get; init; }` | Gets or sets the sub parts. |
+| `GetHeader` | `string GetHeader(string name)` | Gets the header. |
+
+#### `EmlWriter`
+
+WORM writer for RFC 2822 / MIME email messages. When a single input is provided the writer emits a single-part message; with N inputs it emits a `multipart/mixed` body with one part per input.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EmlWriter` | `EmlWriter()` |  |
+| `Write` | `static void Write(Stream output, IReadOnlyList<ValueTuple<string, byte[], string>> parts, IReadOnlyDictionary<string, string> headers = null)` | Writes a single .eml message to `output`. With zero or one input the message is single-part; with two or more inputs it becomes a `multipart/mixed` message and each input becomes one attachment. |
 
 ### Namespace `FileFormat.Epub`
 
@@ -6646,6 +7228,207 @@ Inherits `ProtectorExecutablePackerHandlerBase`. Implements `IExecutablePackerHa
 | `StaticUnpackObstacle` | `protected override string StaticUnpackObstacle { get; }` | Gets the static unpack obstacle. |
 | `IsPackerSection` | `protected override bool IsPackerSection(string name)` | Performs the is packer section operation. |
 
+### Namespace `FileFormat.Fb2`
+
+[`Fb2FormatDescriptor`](#fb2formatdescriptor)
+
+#### `Fb2FormatDescriptor`
+
+FictionBook 2 eBook — single-file XML. The archive view exposes the original XML under `FULL.fb2`, per-`section` entries as `chapter_NN.xml`, each `binary` element (base64-encoded embedded image) decoded to its content-type-derived extension under `images/`, plus `metadata.ini` carrying title/author/date from the `description`/`title-info` block. References: `https://github.com/gribuser/fb2` — FictionBook 2.x XML schema — the canonical XSD set`https://en.wikipedia.org/wiki/FictionBook` — format overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Fb2FormatDescriptor` | `Fb2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Fits`
+
+[`FitsFormatDescriptor`](#fitsformatdescriptor) · [`FitsHdu`](#fitshdu)
+
+#### `FitsFormatDescriptor`
+
+Read-only archive-shaped descriptor for the FITS (Flexible Image Transport System) format used for astronomical data. Surfaces each HDU as a `.header`/`.data` pair, plus a passthrough `FULL.fits` and a `metadata.ini` summary. References: `https://fits.gsfc.nasa.gov` — NASA/GSFC FITS Support Office — standard documents and conventions registry"Definition of the Flexible Image Transport System (FITS)", version 4.0 — IAU FITS Working Group standard`https://en.wikipedia.org/wiki/Flexible_Image_Transport_System` — format overview
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FitsFormatDescriptor` | `FitsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `FitsHdu`
+
+One Header-Data Unit extracted from a FITS file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FitsHdu` | `FitsHdu()` |  |
+| `AxisSizes` | `List<long> AxisSizes { get; }` | Gets the axis sizes. |
+| `Bitpix` | `int Bitpix { get; set; }` | Gets or sets the bitpix. |
+| `Cards` | `List<string> Cards { get; }` | Gets the cards. |
+| `DataLength` | `long DataLength { get; set; }` | Gets or sets the data length. |
+| `DataOffset` | `long DataOffset { get; set; }` | Gets or sets the data offset. |
+| `Naxis` | `int Naxis { get; set; }` | Gets or sets the naxis. |
+| `Object` | `string Object { get; set; }` | Gets or sets the object. |
+| `Telescope` | `string Telescope { get; set; }` | Gets or sets the telescope. |
+| `Xtension` | `string Xtension { get; set; }` | Gets or sets the xtension. |
+
+### Namespace `FileFormat.Fla`
+
+[`FlaFormatDescriptor`](#flaformatdescriptor)
+
+#### `FlaFormatDescriptor`
+
+Adobe Flash / Animate .fla source file. Two runtime variants are supported: the classic pre-CS4 OLE2 Compound File variant (CFB), and the CS5+ XFL variant which is a plain ZIP container. Detection is by the first bytes. Both are surfaced read-only: CFB streams become `streams/{name}.bin`, ZIP entries are listed flatly by their path inside the archive. Uses compound extension `.fla` with empty magic to avoid conflicting with DOC/ZIP descriptors that own the generic magics. References: Adobe "Flash Professional XFL" format documentation (CS5-era) — the ZIP-based variant`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] — Compound File Binary (the pre-CS4 OLE2 variant's container)`https://en.wikipedia.org/wiki/Adobe_Animate` — application background
+
+Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlaFormatDescriptor` | `FlaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Flv`
+
+[`FlvFormatDescriptor`](#flvformatdescriptor) · [`FlvReader`](#flvreader) · [`FlvReader.ElementaryStream`](#flvreaderelementarystream) · [`FlvReader.FlvFile`](#flvreaderflvfile) · [`FlvReader.ScriptTag`](#flvreaderscripttag)
+
+#### `FlvFormatDescriptor`
+
+Pseudo-archive descriptor for Flash Video (`.flv`). The container is demuxed into one entry per codec stream — AVC video as an Annex-B H.264 elementary stream, AAC audio as ADTS, MP3 as raw frames, every other codec as its concatenated frame payloads — plus the raw AMF0 script tags and a `metadata.ini` carrying the header flags and the decoded `onMetaData` values. References: `https://rtmp.veriskope.com/pdf/video_file_format_spec_v10_1.pdf` — Adobe Flash Video File Format Specification v10.1, Annex E (FLV) and the AUDIODATA/VIDEODATA tag layouts`https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf` — Adobe AMF0 file format specification (script data tags)ISO/IEC 14496-15 §5.2.4 — `AVCDecoderConfigurationRecord`; ISO/IEC 14496-3 §1.6 — `AudioSpecificConfig` and ADTS
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlvFormatDescriptor` | `FlvFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `FlvReader`
+
+Reader for Flash Video (`.flv`) files per the Adobe Flash Video File Format Specification, version 10.1 (Annex E: the FLV file format).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlvReader` | `FlvReader()` |  |
+| `HeaderSize` | `const int HeaderSize` |  |
+| `TagAudio` | `const byte TagAudio` |  |
+| `TagScript` | `const byte TagScript` |  |
+| `TagVideo` | `const byte TagVideo` |  |
+| `AudioCodecName` | `static string AudioCodecName(int soundFormat)` |  |
+| `Read` | `static FlvFile Read(ReadOnlySpan<byte> data)` |  |
+| `VideoCodecName` | `static string VideoCodecName(int codecId)` |  |
+| `WriteAdtsFrame` | `static void WriteAdtsFrame(Stream output, ReadOnlySpan<byte> audioSpecificConfig, ReadOnlySpan<byte> frame)` | Writes one ADTS-framed AAC access unit from an `AudioSpecificConfig` and a raw frame. |
+| `WriteAnnexB` | `static void WriteAnnexB(Stream output, ReadOnlySpan<byte> nalUnits, int lengthSize)` | Re-frames length-prefixed NAL units with Annex-B start codes. |
+
+#### `FlvReader.ElementaryStream`
+
+One demuxed stream.
+
+Implements `IEquatable<ElementaryStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ElementaryStream` | `ElementaryStream(string Kind, string Codec, string Extension, int TagCount, uint FirstTimestampMs, uint LastTimestampMs, byte[] Payload)` | One demuxed stream. |
+| `Codec` | `string Codec { get; init; }` |  |
+| `EntryName` | `string EntryName { get; }` |  |
+| `Extension` | `string Extension { get; init; }` |  |
+| `FirstTimestampMs` | `uint FirstTimestampMs { get; init; }` |  |
+| `Kind` | `string Kind { get; init; }` |  |
+| `LastTimestampMs` | `uint LastTimestampMs { get; init; }` |  |
+| `Payload` | `byte[] Payload { get; init; }` |  |
+| `TagCount` | `int TagCount { get; init; }` |  |
+
+#### `FlvReader.FlvFile`
+
+Result of parsing an FLV file.
+
+Implements `IEquatable<FlvFile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlvFile` | `FlvFile(int Version, bool HasAudioFlag, bool HasVideoFlag, int TagCount, uint LastTimestampMs, IReadOnlyList<ElementaryStream> Streams, IReadOnlyList<ScriptTag> Scripts, IReadOnlyDictionary<string, string> Metadata)` | Result of parsing an FLV file. |
+| `HasAudioFlag` | `bool HasAudioFlag { get; init; }` |  |
+| `HasVideoFlag` | `bool HasVideoFlag { get; init; }` |  |
+| `LastTimestampMs` | `uint LastTimestampMs { get; init; }` |  |
+| `Metadata` | `IReadOnlyDictionary<string, string> Metadata { get; init; }` |  |
+| `Scripts` | `IReadOnlyList<ScriptTag> Scripts { get; init; }` |  |
+| `Streams` | `IReadOnlyList<ElementaryStream> Streams { get; init; }` |  |
+| `TagCount` | `int TagCount { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+#### `FlvReader.ScriptTag`
+
+One script-data tag kept as its raw AMF0 body.
+
+Implements `IEquatable<ScriptTag>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ScriptTag` | `ScriptTag(string Name, uint TimestampMs, byte[] Body)` | One script-data tag kept as its raw AMF0 body. |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `TimestampMs` | `uint TimestampMs { get; init; }` |  |
+
 ### Namespace `FileFormat.FontCollection`
 
 [`OtcFormatDescriptor`](#otcformatdescriptor) · [`OtfFormatDescriptor`](#otfformatdescriptor) · [`TtcFormatDescriptor`](#ttcformatdescriptor) · [`TtcReader`](#ttcreader) · [`TtcReader.Member`](#ttcreadermember) · [`TtcWriter`](#ttcwriter) · [`TtfFormatDescriptor`](#ttfformatdescriptor)
@@ -6883,6 +7666,35 @@ Provides static methods for compressing and decompressing data using the Freeze 
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes a Freeze 2.0 stream to `output`. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Freeze 2.0 stream from `input` and writes the result to `output`. |
 
+### Namespace `FileFormat.GameMaker`
+
+[`GameMakerFormatDescriptor`](#gamemakerformatdescriptor)
+
+#### `GameMakerFormatDescriptor`
+
+GameMaker Studio data file (data.win / game.unx / game.ios). IFF-style FORM container with typed chunks. Surfaces each chunk as a raw blob plus split PNG textures (TXTR), WAV/OGG audio (AUDO) and the string table (STRG). References: `https://github.com/UnderminersTeam/UndertaleModTool` — UndertaleModTool — de-facto reference implementation of the data.win chunk layoutNo official specification — the runtime container is proprietary (YoYo Games) and community-reverse-engineered`https://en.wikipedia.org/wiki/GameMaker` — Wikipedia on the engine
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GameMakerFormatDescriptor` | `GameMakerFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a GameMaker FORM container by recombining input chunks. Inputs named `chunks/<TAG>.bin` are treated as raw chunk payloads and emitted in input order as IFF-style `(tag, size, body)` records under a single `FORM` root. Inputs not matching the chunk shape, and synthetic surfaces produced by the reader (`FULL.win`, `metadata.ini`, `strings.txt`, `textures/`, `audio/`), are silently dropped — they are derived from the chunk stream and cannot be re-embedded generically without a full GameMaker bytecode rebuild. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Gar`
 
 [`GarEntry`](#garentry) · [`GarFormatDescriptor`](#garformatdescriptor) · [`GarReader`](#garreader) · [`GarWriter`](#garwriter)
@@ -6953,6 +7765,35 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds a file to the archive. The full filename (including extension) is stored; the writer groups files of the same extension into a single type entry on `Finish`. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Finalizes the archive layout and writes it to the underlying stream. |
+
+### Namespace `FileFormat.Gb`
+
+[`GbFormatDescriptor`](#gbformatdescriptor)
+
+#### `GbFormatDescriptor`
+
+Game Boy / Game Boy Color ROM. Detected via the fixed Nintendo logo at offset 0x0104 (48 bytes). Surfaces the full ROM, parsed metadata, the 80-byte header, and the ROM split into 16 KiB banks. Read-only. References: `https://gbdev.io/pandocs/` — Pan Docs — the canonical community Game Boy reference (the cartridge-header chapter documents the 0x0104 logo and header fields)`https://en.wikipedia.org/wiki/Game_Boy` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GbFormatDescriptor` | `GbFormatDescriptor()` |  |
+| `NintendoLogoPrefix` | `static readonly byte[] NintendoLogoPrefix` | Provides the nintendo logo prefix value. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Gem`
 
@@ -8018,6 +8859,77 @@ Compressor and decompressor for the Atari ST ICE Packer format (Axe of Delight, 
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses ICE-packed data from a byte span. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses ICE-packed data from `input` and writes the original data to `output`. |
 
+### Namespace `FileFormat.Iceberg`
+
+[`IcebergConstants`](#icebergconstants) · [`IcebergFormatDescriptor`](#icebergformatdescriptor) · [`IcebergReader`](#icebergreader)
+
+#### `IcebergConstants`
+
+Represents an iceberg constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CurrentSchemaIdKey` | `const string CurrentSchemaIdKey` | Defines the current schema id key constant value. |
+| `CurrentSnapshotIdKey` | `const string CurrentSnapshotIdKey` | Defines the current snapshot id key constant value. |
+| `FieldsKey` | `const string FieldsKey` | Defines the fields key constant value. |
+| `FormatVersionKey` | `const string FormatVersionKey` | Defines the format version key constant value. |
+| `LastColumnIdKey` | `const string LastColumnIdKey` | Defines the last column id key constant value. |
+| `LastUpdatedMsKey` | `const string LastUpdatedMsKey` | Defines the last updated ms key constant value. |
+| `LocationKey` | `const string LocationKey` | Defines the location key constant value. |
+| `NameKey` | `const string NameKey` | Defines the name key constant value. |
+| `PartitionSpecsKey` | `const string PartitionSpecsKey` | Defines the partition specs key constant value. |
+| `RequiredKeys` | `static readonly string[] RequiredKeys` | Provides the required keys value. |
+| `SchemaIdKey` | `const string SchemaIdKey` | Defines the schema id key constant value. |
+| `SchemaKey` | `const string SchemaKey` | Defines the schema key constant value. |
+| `SchemasKey` | `const string SchemasKey` | Defines the schemas key constant value. |
+| `SnapshotsKey` | `const string SnapshotsKey` | Defines the snapshots key constant value. |
+| `SortOrdersKey` | `const string SortOrdersKey` | Defines the sort orders key constant value. |
+| `TableUuidKey` | `const string TableUuidKey` | Defines the table uuid key constant value. |
+
+#### `IcebergFormatDescriptor`
+
+Apache Iceberg table metadata.json read-only pseudo-archive. Iceberg is a table format that lives across multiple files; we surface the supplied metadata.json as `FULL.json` plus an INI summary of the parsed fields. Detection is by JSON content sniffing (no extension or magic bytes). References: `https://iceberg.apache.org/spec/` — Apache Iceberg table specification`https://github.com/apache/iceberg` — canonical implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IcebergFormatDescriptor` | `IcebergFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `IcebergReader`
+
+Reads Apache Iceberg table metadata and exposes the manifests and data files it references as archive entries.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IcebergReader` | `IcebergReader(Stream stream)` | Initializes a new instance of `IcebergReader`. |
+| `CurrentSchemaId` | `int CurrentSchemaId { get; }` | Gets the current schema id. |
+| `CurrentSnapshotId` | `long CurrentSnapshotId { get; }` | Gets the current snapshot id. |
+| `FormatVersion` | `int FormatVersion { get; }` | Gets the format version. |
+| `LastColumnId` | `int LastColumnId { get; }` | Gets the last column id. |
+| `LastUpdatedMs` | `long LastUpdatedMs { get; }` | Gets the last updated ms. |
+| `Location` | `string Location { get; }` | Gets the location. |
+| `ParseStatus` | `string ParseStatus { get; }` | Gets the parse status. |
+| `PartitionSpecCount` | `int PartitionSpecCount { get; }` | Gets the partition spec count. |
+| `SchemaColumns` | `IReadOnlyList<string> SchemaColumns { get; }` | Gets the schema columns. |
+| `SnapshotCount` | `int SnapshotCount { get; }` | Gets the snapshot count. |
+| `SortOrderCount` | `int SortOrderCount { get; }` | Gets the sort order count. |
+| `TableUuid` | `string TableUuid { get; }` | Gets the table uuid. |
+
 ### Namespace `FileFormat.IffCdaf`
 
 [`IffCdafEntry`](#iffcdafentry) · [`IffCdafFormatDescriptor`](#iffcdafformatdescriptor) · [`IffCdafModifier`](#iffcdafmodifier) · [`IffCdafReader`](#iffcdafreader) · [`IffCdafWriter`](#iffcdafwriter)
@@ -8420,6 +9332,34 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the archive to the underlying stream. Called automatically on `Dispose`. |
 
+### Namespace `FileFormat.Leveldb`
+
+[`LeveldbFormatDescriptor`](#leveldbformatdescriptor)
+
+#### `LeveldbFormatDescriptor`
+
+LevelDB SSTable (.ldb / .sst) read-only surfacing descriptor. Parses the 48-byte fixed footer (two BlockHandles + magic) and emits the footer, a metadata.ini, and the data region preceding the metaindex as a single blob (block-level splitting requires parsing restart arrays which is out of scope for this page-level surface). References: `https://github.com/google/leveldb` — canonical implementation — SSTable layout documented in doc/table_format.md`https://github.com/facebook/rocksdb` — RocksDB — maintained derivative using the BlockBasedTable variant
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LeveldbFormatDescriptor` | `LeveldbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Lfd`
 
 [`LfdEntry`](#lfdentry) · [`LfdFormatDescriptor`](#lfdformatdescriptor) · [`LfdReader`](#lfdreader) · [`LfdWriter`](#lfdwriter)
@@ -8571,6 +9511,36 @@ Writes LhF (LhFloppy) Amiga disk archives. Each input becomes one 5632-byte trac
 | `AddTrack` | `void AddTrack(int trackNumber, ReadOnlySpan<byte> data)` | Adds a track. `trackNumber` is written verbatim into the per-track header; the order of `AddTrack` calls determines the physical order in the output file. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
+### Namespace `FileFormat.Lit`
+
+[`LitFormatDescriptor`](#litformatdescriptor)
+
+#### `LitFormatDescriptor`
+
+Microsoft Reader eBook (`.lit`). The archive view surfaces the raw container structure: `FULL.lit` (passthrough), `metadata.ini` (version, header length, offsets) and `directory.bin` (the raw directory chunk bytes starting at the container's data offset). Scope cut: the payload is LZX-compressed; this descriptor does NOT decode LZX blocks. It stops at structural surfacing, which is enough to confirm format + extract header/directory bytes for forensic triage. References: `https://en.wikipedia.org/wiki/Microsoft_Reader` — Wikipedia — LIT / Microsoft Reader backgroundConvertLIT ("clit") — the community tool whose source documents the ITOL/ITLS container and DRM levels
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LitFormatDescriptor` | `LitFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+
 ### Namespace `FileFormat.Lizard`
 
 [`LizardFormatDescriptor`](#lizardformatdescriptor) · [`LizardStream`](#lizardstream)
@@ -8607,6 +9577,44 @@ Lizard (formerly LZ5) compression stream. Frame format: magic (06 22 4D 18) + FL
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses input into the Lizard frame format. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Lizard frame stream. |
+
+### Namespace `FileFormat.Lnk`
+
+[`LnkFormatDescriptor`](#lnkformatdescriptor) · [`LnkWriter`](#lnkwriter)
+
+#### `LnkFormatDescriptor`
+
+Windows Shell Link (.lnk) shortcut file surfaced as a read-only archive. Parses the 76-byte ShellLinkHeader, the optional LinkTargetIDList, LinkInfo block, StringData entries (Name/RelativePath/WorkingDir/Arguments/IconLocation), and any trailing ExtraData blocks. Writes each as a distinct entry. References: `https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-shllink/` — [MS-SHLLINK] Shell Link (.LNK) Binary File Format — Microsoft Open Specifications`https://github.com/libyal/liblnk` — liblnk (Joachim Metz) — independent implementation with extensive format documentation
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LnkFormatDescriptor` | `LnkFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | WORM creation: emits a minimal .lnk pointing at a single target path. The first non-directory input's `FullPath` is used as the target (LocalBasePath). The shortcut's WorkingDirectory defaults to the target's parent directory. Additional inputs are ignored — a Shell Link describes exactly one target by design; the writer honours that constraint instead of silently producing nonsense. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `LnkWriter`
+
+WORM writer for Windows Shell Link (.lnk) files. Emits a minimal valid shortcut pointing at a single target path (file or directory). The output contains the 76-byte ShellLinkHeader, a LinkInfo block carrying the LocalBasePath (the target's full path), Unicode StringData blocks for RelativePath / WorkingDir / Arguments / IconLocation when supplied, and a 4-byte terminator block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LnkWriter` | `LnkWriter()` |  |
+| `Write` | `static void Write(Stream output, string targetPath, bool isDirectory = false, uint targetSize = 0, string relativePath = null, string workingDir = null, string arguments = null, string iconLocation = null)` | Writes a .lnk pointing at `targetPath`. Optional fields become Unicode StringData blocks; pass null to omit any of them. |
 
 ### Namespace `FileFormat.Lrzip`
 
@@ -9423,6 +10431,55 @@ Writes MacBinary I/II/III encoded files.
 | `MacBinaryWriter` | `MacBinaryWriter()` |  |
 | `Write` | `static void Write(Stream output, string fileName, byte[] dataFork, byte[] resourceFork = null, string fileType = null, string fileCreator = null, DateTime? modified = null, int version = 130)` | Writes a MacBinary encoded file to the output stream. |
 
+### Namespace `FileFormat.MachO`
+
+[`MachOFormatDescriptor`](#machoformatdescriptor) · [`MachOReader`](#machoreader) · [`MachOReader.Entry`](#machoreaderentry)
+
+#### `MachOFormatDescriptor`
+
+Read-only archive view of Mach-O executables (single-slice and fat/universal). Fat binaries expose each architecture slice as an entry carrying the raw per-slice bytes; single-slice binaries expose one entry per `LC_SEGMENT`/`LC_SEGMENT_64` plus synthetic `symbols.txt`, `metadata/uuid.bin`, and `metadata/code_signature.bin` entries where those load commands are present. References: Apple mach-o/loader.h and mach-o/fat.h headers (macOS SDK) — the authoritative structure definitions`https://github.com/apple-oss-distributions/xnu` — Apple's published XNU source (EXTERNAL_HEADERS/mach-o)`https://en.wikipedia.org/wiki/Mach-O` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MachOFormatDescriptor` | `MachOFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MachOReader`
+
+Reads Mach-O executables as logical archives: Fat / universal binaries yield one entry per embedded slice (`slice_{arch}.macho`), carrying the raw per-slice bytes.Single-slice Mach-O binaries yield one entry per `LC_SEGMENT`/`LC_SEGMENT_64` (under `segments/`) plus metadata entries for `LC_SYMTAB`, `LC_UUID`, and `LC_CODE_SIGNATURE`. All numeric fields are parsed using the endianness implied by the magic word.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MachOReader` | `MachOReader()` |  |
+| `ReadAll` | `List<Entry> ReadAll(Stream stream)` | Reads the all from the supplied input. |
+
+#### `MachOReader.Entry`
+
+One logical entry surfaced from a Mach-O or fat Mach-O file.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data)` | One logical entry surfaced from a Mach-O or fat Mach-O file. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
 ### Namespace `FileFormat.Macrium`
 
 [`MacriumAesType`](#macriumaestype) · [`MacriumBlock`](#macriumblock) · [`MacriumCrypto`](#macriumcrypto) · [`MacriumEntry`](#macriumentry) · [`MacriumFormatDescriptor`](#macriumformatdescriptor) · [`MacriumPreXCodec`](#macriumprexcodec) · [`MacriumPreXFormatDescriptor`](#macriumprexformatdescriptor) · [`MacriumReader`](#macriumreader) · [`MacriumWriter`](#macriumwriter)
@@ -9638,6 +10695,189 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
 
+### Namespace `FileFormat.Matlab`
+
+[`MatlabArrayInfo`](#matlabarrayinfo) · [`MatlabConstants`](#matlabconstants) · [`MatlabFormatDescriptor`](#matlabformatdescriptor) · [`MatlabReader`](#matlabreader)
+
+#### `MatlabArrayInfo`
+
+Summary info about a single top-level MATLAB array discovered in a MAT v5 file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabArrayInfo` | `MatlabArrayInfo(string name, string className, int[] dimensions)` | Initializes a new instance of `MatlabArrayInfo`. |
+| `ClassName` | `string ClassName { get; }` | Gets the class name. |
+| `Dimensions` | `int[] Dimensions { get; }` | Gets the dimensions. |
+| `Name` | `string Name { get; }` | Gets the name. |
+
+#### `MatlabConstants`
+
+Represents a matlab constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DescriptionLength` | `const int DescriptionLength` | Length of the ASCII description portion of the header. |
+| `EndianIM` | `static readonly byte[] EndianIM` | ASCII bytes "IM" (little-endian indicator). |
+| `EndianIndicatorOffset` | `const int EndianIndicatorOffset` | Offset of the endian indicator (2 ASCII chars) within the header. |
+| `EndianMI` | `static readonly byte[] EndianMI` | ASCII bytes "MI" (big-endian indicator). |
+| `ExpectedVersion` | `const ushort ExpectedVersion` | Expected version value (0x0100, written little- or big-endian per file). |
+| `HeaderSize` | `const int HeaderSize` | Total bytes in the MAT v5 file header. |
+| `Magic` | `static readonly byte[] Magic` | "MATLAB" prefix used as the detection magic for MAT v5 files. |
+| `MiCOMPRESSED` | `const uint MiCOMPRESSED` | Defines the mi compressed constant value. |
+| `MiDOUBLE` | `const uint MiDOUBLE` | Defines the mi double constant value. |
+| `MiINT16` | `const uint MiINT16` | Defines the mi int 16 constant value. |
+| `MiINT32` | `const uint MiINT32` | Defines the mi int 32 constant value. |
+| `MiINT64` | `const uint MiINT64` | Defines the mi int 64 constant value. |
+| `MiINT8` | `const uint MiINT8` | Defines the mi int 8 constant value. |
+| `MiMATRIX` | `const uint MiMATRIX` | Defines the mi matrix constant value. |
+| `MiSINGLE` | `const uint MiSINGLE` | Defines the mi single constant value. |
+| `MiUINT16` | `const uint MiUINT16` | Defines the mi uint 16 constant value. |
+| `MiUINT32` | `const uint MiUINT32` | Defines the mi uint 32 constant value. |
+| `MiUINT64` | `const uint MiUINT64` | Defines the mi uint 64 constant value. |
+| `MiUINT8` | `const uint MiUINT8` | Defines the mi uint 8 constant value. |
+| `MiUTF16` | `const uint MiUTF16` | Defines the mi utf 16 constant value. |
+| `MiUTF32` | `const uint MiUTF32` | Defines the mi utf 32 constant value. |
+| `MiUTF8` | `const uint MiUTF8` | Defines the mi utf 8 constant value. |
+| `MxCELL_CLASS` | `const byte MxCELL_CLASS` | Defines the mx cell class constant value. |
+| `MxCHAR_CLASS` | `const byte MxCHAR_CLASS` | Defines the mx char class constant value. |
+| `MxDOUBLE_CLASS` | `const byte MxDOUBLE_CLASS` | Defines the mx double class constant value. |
+| `MxFUNCTION_CLASS` | `const byte MxFUNCTION_CLASS` | Defines the mx function class constant value. |
+| `MxINT16_CLASS` | `const byte MxINT16_CLASS` | Defines the mx int 16 class constant value. |
+| `MxINT32_CLASS` | `const byte MxINT32_CLASS` | Defines the mx int 32 class constant value. |
+| `MxINT64_CLASS` | `const byte MxINT64_CLASS` | Defines the mx int 64 class constant value. |
+| `MxINT8_CLASS` | `const byte MxINT8_CLASS` | Defines the mx int 8 class constant value. |
+| `MxLOGICAL_CLASS` | `const byte MxLOGICAL_CLASS` | Defines the mx logical class constant value. |
+| `MxOBJECT_CLASS` | `const byte MxOBJECT_CLASS` | Defines the mx object class constant value. |
+| `MxOPAQUE_CLASS` | `const byte MxOPAQUE_CLASS` | Defines the mx opaque class constant value. |
+| `MxSINGLE_CLASS` | `const byte MxSINGLE_CLASS` | Defines the mx single class constant value. |
+| `MxSPARSE_CLASS` | `const byte MxSPARSE_CLASS` | Defines the mx sparse class constant value. |
+| `MxSTRUCT_CLASS` | `const byte MxSTRUCT_CLASS` | Defines the mx struct class constant value. |
+| `MxUINT16_CLASS` | `const byte MxUINT16_CLASS` | Defines the mx uint 16 class constant value. |
+| `MxUINT32_CLASS` | `const byte MxUINT32_CLASS` | Defines the mx uint 32 class constant value. |
+| `MxUINT64_CLASS` | `const byte MxUINT64_CLASS` | Defines the mx uint 64 class constant value. |
+| `MxUINT8_CLASS` | `const byte MxUINT8_CLASS` | Defines the mx uint 8 class constant value. |
+| `VersionOffset` | `const int VersionOffset` | Offset of the version field within the header. |
+| `ClassName` | `static string ClassName(byte classCode)` | Maps a MATLAB class code to a human-readable name (used in metadata.ini). |
+
+#### `MatlabFormatDescriptor`
+
+MATLAB MAT v5 (`.mat`) read-only pseudo-archive. Parses the 128-byte header and walks top-level data elements (including zlib-wrapped miCOMPRESSED elements), surfacing each top-level array's name, class, and shape. Surfaces `FULL.mat` plus `metadata.ini`. Numeric data extraction is out of scope. References: `https://www.mathworks.com/help/pdf_doc/matlab/matfile_format.pdf` — MathWorks "MAT-File Format" — official Level 5 specification`https://github.com/scipy/scipy` — scipy.io.loadmat — maintained independent implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabFormatDescriptor` | `MatlabFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MatlabReader`
+
+Read-only walker for MATLAB MAT v5 files. Parses the 128-byte header, validates the "MATLAB" prefix and version field, detects endian, and walks top-level data elements, surfacing each top-level miMATRIX array's name, class, and dimensions. Numeric data is intentionally not extracted — that is a substantial follow-up.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabReader` | `MatlabReader(Stream stream)` | Initializes a new instance of `MatlabReader`. |
+| `Arrays` | `IReadOnlyList<MatlabArrayInfo> Arrays { get; }` | Gets the arrays. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `IsLittleEndian` | `bool IsLittleEndian { get; }` | Gets a value indicating whether is little endian. |
+| `ParseStatus` | `string ParseStatus { get; }` | "full" if every top-level element parsed cleanly to EOF; "partial" if a truncated or unrecognized element was encountered partway through. |
+| `Version` | `int Version { get; }` | Gets the version. |
+
+### Namespace `FileFormat.MatlabV4`
+
+[`MatlabV4Constants`](#matlabv4constants) · [`MatlabV4FormatDescriptor`](#matlabv4formatdescriptor) · [`MatlabV4Reader`](#matlabv4reader) · [`MatlabV4VariableInfo`](#matlabv4variableinfo)
+
+#### `MatlabV4Constants`
+
+Represents a matlab v 4 constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MachineBE` | `const uint MachineBE` | Defines the machine be constant value. |
+| `MachineCray` | `const uint MachineCray` | Defines the machine cray constant value. |
+| `MachineLE` | `const uint MachineLE` | Defines the machine le constant value. |
+| `MachineVaxD` | `const uint MachineVaxD` | Defines the machine vax d constant value. |
+| `MachineVaxG` | `const uint MachineVaxG` | Defines the machine vax g constant value. |
+| `MaxMachine` | `const uint MaxMachine` | Defines the max machine constant value. |
+| `MaxNameLength` | `const int MaxNameLength` | Maximum plausible variable name length (including the null terminator) used for header validation. |
+| `MaxPrecision` | `const uint MaxPrecision` | Defines the max precision constant value. |
+| `MaxType` | `const uint MaxType` | Defines the max type constant value. |
+| `PrecisionDouble` | `const uint PrecisionDouble` | Defines the precision double constant value. |
+| `PrecisionInt16` | `const uint PrecisionInt16` | Defines the precision int 16 constant value. |
+| `PrecisionInt32` | `const uint PrecisionInt32` | Defines the precision int 32 constant value. |
+| `PrecisionSingle` | `const uint PrecisionSingle` | Defines the precision single constant value. |
+| `PrecisionUInt16` | `const uint PrecisionUInt16` | Defines the precision u int 16 constant value. |
+| `PrecisionUInt8` | `const uint PrecisionUInt8` | Defines the precision u int 8 constant value. |
+| `RecordHeaderSize` | `const int RecordHeaderSize` | Total bytes in the per-record fixed header (Type, Rows, Cols, ImagFlag, NameLength). |
+| `TypeFullNumeric` | `const uint TypeFullNumeric` | Defines the type full numeric constant value. |
+| `TypeSparse` | `const uint TypeSparse` | Defines the type sparse constant value. |
+| `TypeText` | `const uint TypeText` | Defines the type text constant value. |
+| `ElementSize` | `static int ElementSize(uint precision)` | Bytes-per-element for each precision code; index by P-digit. |
+| `MachineName` | `static string MachineName(uint machine)` | Maps a machine code (M-digit) to a metadata-friendly endian token. |
+| `TypeName` | `static string TypeName(uint matrixType, uint precision)` | Maps a (T,P) MOPT pair to a human-readable type name surfaced in metadata.ini. |
+
+#### `MatlabV4FormatDescriptor`
+
+MATLAB MAT v4 (pre-1996, `.mat`) read-only pseudo-archive. Walks the fixed 20-byte per-record headers and extracts variable name, type, and shape. Surfaces `FULL.mat` plus `metadata.ini`. Numeric data extraction is intentionally out of scope. MAT v4 has no global magic; detection is by extension. The MAT v5 descriptor's "MATLAB" magic claims v5 files first, leaving extension-only fallback to capture v4 files. References: `https://www.mathworks.com/help/pdf_doc/matlab/matfile_format.pdf` — MathWorks "MAT-File Format" — the Level 4 appendix covers this format`https://github.com/scipy/scipy` — scipy.io.loadmat — maintained independent implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabV4FormatDescriptor` | `MatlabV4FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MatlabV4Reader`
+
+Read-only walker for MATLAB MAT v4 (pre-1996) files. There is no global magic — endianness is derived from the first record's MOPT type code, then each fixed 20-byte record header is parsed followed by the variable name and the real (and optional imaginary) data block. Numeric data itself is intentionally not decoded; the reader only surfaces variable shape and type metadata for the FULL.mat + metadata.ini pseudo-archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabV4Reader` | `MatlabV4Reader(Stream stream)` | Initializes a new instance of `MatlabV4Reader`. |
+| `IsLittleEndian` | `bool IsLittleEndian { get; }` | True when the file's host endianness is little-endian (MOPT M-digit = 0). |
+| `Machine` | `uint Machine { get; }` | Numeric M-digit of the first record's MOPT code (0=LE, 1=BE, 2=VAX-D, 3=VAX-G, 4=Cray). |
+| `ParseStatus` | `string ParseStatus { get; }` | "full" if every record parsed cleanly to EOF; "partial" if a truncated or implausible record was encountered. |
+| `Variables` | `IReadOnlyList<MatlabV4VariableInfo> Variables { get; }` | All top-level variable records discovered while walking the file. |
+
+#### `MatlabV4VariableInfo`
+
+Summary info about a single MATLAB MAT v4 record (top-level variable) discovered while walking the file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MatlabV4VariableInfo` | `MatlabV4VariableInfo(string name, string typeName, uint rows, uint cols, bool isImaginary)` | Constructs a new `MatlabV4VariableInfo`. |
+| `Cols` | `uint Cols { get; }` | Column count from the record header. |
+| `IsImaginary` | `bool IsImaginary { get; }` | True when the record's ImagFlag is non-zero (imaginary parts follow the real data). |
+| `Name` | `string Name { get; }` | Variable name as decoded from the record's name bytes (null terminator stripped). |
+| `Rows` | `uint Rows { get; }` | Row count from the record header. |
+| `TypeName` | `string TypeName { get; }` | Human-readable type name (e.g. "double", "single", "int32", "text", "sparse"). |
+
 ### Namespace `FileFormat.Matroska`
 
 [`EbmlReader`](#ebmlreader) · [`EbmlReader.Element`](#ebmlreaderelement) · [`MkvCuesFrontOptimizer`](#mkvcuesfrontoptimizer) · [`MkvDemuxer`](#mkvdemuxer) · [`MkvDemuxer.Attachment`](#mkvdemuxerattachment) · [`MkvDemuxer.DemuxResult`](#mkvdemuxerdemuxresult) · [`MkvDemuxer.FrameEntry`](#mkvdemuxerframeentry) · [`MkvDemuxer.Track`](#mkvdemuxertrack) · [`MkvFormatDescriptor`](#mkvformatdescriptor) · [`MkvLayoutMap`](#mkvlayoutmap)
@@ -9784,6 +11024,142 @@ Walks the top-level and first-level EBML elements of a Matroska/WebM file and em
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
 
+### Namespace `FileFormat.Mbox`
+
+[`MboxFormatDescriptor`](#mboxformatdescriptor) · [`MboxInPlaceModifier`](#mboxinplacemodifier) · [`MboxMessage`](#mboxmessage) · [`MboxReader`](#mboxreader) · [`MboxWriter`](#mboxwriter)
+
+#### `MboxFormatDescriptor`
+
+Descriptor for the Unix mbox mailbox format. Each RFC 822 message in the mailbox is surfaced as a separate `.eml` entry; the message body is preserved verbatim (including any ">From " byte-stuffed lines). References: `https://www.rfc-editor.org/rfc/rfc4155` — RFC 4155 — the application/mbox media type and mbox conventions`https://en.wikipedia.org/wiki/Mbox` — Wikipedia — mboxo/mboxrd/mboxcl variants
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MboxFormatDescriptor` | `MboxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends every input as a new mbox message in place. The mailbox bytes before `Length` stay byte-identical; only a new `From ` separator + the input's bytes are written at EOF. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh mbox mailbox at `output` by appending each input file as a complete RFC 822 message. Each input is expected to be an `.eml` payload (headers + blank line + body); the writer wraps every message with a "From " envelope separator and byte-stuffs body lines that start with `From ` per RFC 4155. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single mbox message as a bounded read-only stream. The reader splits the mailbox into RFC 822 messages; the matched message's bytes are wrapped in a `BoundedEntryStream` sized to its logical length. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Tombstones the named messages in place. The match is by entry name — see `EntryName` — so callers should pass the names returned by `List`. The byte offsets of every non-targeted message are unchanged after this call. |
+
+#### `MboxInPlaceModifier`
+
+True in-place R/W for Unix mbox mailboxes. The mbox container is a flat stream of `From `-delimited messages (no central index, no structural overhead), so: Add: append a new `From ` separator + the new message bytes at EOF. Every pre-existing byte stays byte-identical.Remove: there is no native delete in mbox. We use the RFC 4155 / POP3 convention of marking the message with an `X-Status: D` header (already understood by mutt, pine, alpine and procmail) and zero-wiping the message body so the deleted content is unrecoverable from the bytes. The separator line + headers area is preserved as a same-size record so byte offsets of every other message are unchanged — truly in-place.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Append` | `static void Append(Stream mbox, byte[] messageBytes, string fromEnvelope = null, DateTime? timestamp = null)` | Appends a single RFC 822 message to the mailbox, prefixed by a canonical `From MAILER-DAEMON@LOCALHOST <date>` separator line. The mailbox bytes preceding `Length` are not modified. The caller is responsible for the message format itself (RFC 822 + body, line endings as they prefer). |
+| `FindMessageRanges` | `static IReadOnlyList<ValueTuple<long, long>> FindMessageRanges(Stream mbox)` | Walks the mbox stream and returns the (start, end) byte offset of every message record. The "From " separator at column 0 belongs to the message that follows it (matching `MboxReader`). |
+| `TombstoneAt` | `static bool TombstoneAt(Stream mbox, int messageIndex)` | Tombstones a message at `messageIndex`: rewrites its in-place byte range as a same-size record carrying an `X-Status: D` header and a zero-filled body (so the original bytes are unrecoverable). Every other message's byte offsets are unchanged — this is true in-place delete. |
+| `TombstoneBySubject` | `static bool TombstoneBySubject(Stream mbox, string subject)` | Tombstones the first message whose Subject header matches `subject` (ordinal comparison). Returns `true` on success. |
+| `TombstoneBySubjects` | `static int TombstoneBySubjects(Stream mbox, IReadOnlyCollection<string> subjects)` | Tombstones every message whose Subject header matches any of `subjects`. Returns the count of tombstoned messages. Hits are gathered first then rewritten back-to-front so the byte offsets we already gathered stay valid as we walk the list. |
+
+#### `MboxMessage`
+
+One RFC 822 message pulled from an mbox stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MboxMessage` | `MboxMessage()` |  |
+| `Date` | `string Date { get; init; }` | Date header value, or null if absent. |
+| `EmlBytes` | `byte[] EmlBytes { get; init; }` | Bytes of the message without the leading "From " separator (suitable as a standalone .eml). |
+| `From` | `string From { get; init; }` | From header value, or null if absent. |
+| `RawBytes` | `byte[] RawBytes { get; init; }` | The full bytes of the record including the leading "From " separator line. |
+| `Subject` | `string Subject { get; init; }` | Subject header value, or null if absent. |
+| `Parse` | `static MboxMessage Parse(byte[] raw)` | Split one mbox record into its separator line, headers, and body. |
+
+#### `MboxReader`
+
+Reader for Unix mbox mailboxes. Splits a byte stream into individual RFC 822 messages, each beginning with a "From " separator line at column 0. The separator belongs to the message that follows it and is included in the extracted `RawBytes`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MboxReader` | `MboxReader()` |  |
+| `ReadAll` | `static IReadOnlyList<MboxMessage> ReadAll(ReadOnlySpan<byte> data)` | Parse all messages from a byte buffer. |
+
+#### `MboxWriter`
+
+Writer for Unix mbox mailboxes. Each appended RFC 822 message is emitted with a leading "From " separator line (column 0) per RFC 4155, and any line in the body that begins with the bytes `From ` is byte-stuffed to `>From ` so the resulting mbox can be unambiguously split by any RFC-conformant reader.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MboxWriter` | `MboxWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `MboxWriter`. |
+| `AddMessage` | `void AddMessage(ReadOnlySpan<byte> emlBytes, string envelopeSender = null, DateTimeOffset? envelopeDate = null)` | Appends a single RFC 822 message to the mailbox. |
+| `Dispose` | `void Dispose()` |  |
+
+### Namespace `FileFormat.Mca`
+
+[`McaFormatDescriptor`](#mcaformatdescriptor) · [`McaReader`](#mcareader) · [`McaReader.ChunkEntry`](#mcareaderchunkentry)
+
+#### `McaFormatDescriptor`
+
+Surfaces a Minecraft region file (`.mca`) as an archive of per-chunk decompressed NBT payloads. Each entry is named `chunk_X_Z.nbt` by its in-region coordinates (0–31 in each axis). Unused chunk slots are skipped. References: `https://minecraft.wiki/w/Region_file_format` — Minecraft Wiki — region/Anvil file layout (locations, timestamps, per-chunk compressed NBT)No official Mojang specification — the layout is community-documented
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McaFormatDescriptor` | `McaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single chunk's decompressed NBT as a bounded read-only stream. The reader produces the decoded bytes per chunk; the matched bytes are wrapped in a `BoundedEntryStream` sized to the chunk's logical length. |
+
+#### `McaReader`
+
+Minecraft region file format (`.mca` / `.mcr`). A region holds up to 32×32 = 1024 chunks in a single 8 KiB header + per-chunk compressed NBT payloads. Layout: 4 KiB location table (1024×uint32 BE: high 3 bytes = 4 KiB-sector offset, low byte = sector count) + 4 KiB timestamp table (1024×uint32 BE) + padded payload area. Each chunk: 4-byte BE length + 1-byte compression type (1 = gzip, 2 = zlib, 3 = uncompressed) + `length-1` bytes of compressed NBT.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `McaReader` | `McaReader(byte[] data)` | Initializes a new instance of `McaReader`. |
+| `Chunks` | `IReadOnlyList<ChunkEntry> Chunks { get; }` | Gets the chunks. |
+| `ExtractChunkNbt` | `byte[] ExtractChunkNbt(ChunkEntry chunk)` | Decompresses and returns the NBT payload for a chunk. Throws when the chunk's compression type is unknown (only 1/2/3 are defined). |
+
+#### `McaReader.ChunkEntry`
+
+Represents a chunk entry.
+
+Implements `IEquatable<ChunkEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChunkEntry` | `ChunkEntry(int RegionX, int RegionZ, long OffsetBytes, int LengthBytes, byte CompressionType)` | Represents a chunk entry. |
+| `CompressionType` | `byte CompressionType { get; init; }` |  |
+| `LengthBytes` | `int LengthBytes { get; init; }` |  |
+| `OffsetBytes` | `long OffsetBytes { get; init; }` |  |
+| `RegionX` | `int RegionX { get; init; }` |  |
+| `RegionZ` | `int RegionZ { get; init; }` |  |
+
 ### Namespace `FileFormat.Mcm`
 
 [`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
@@ -9820,6 +11196,34 @@ Represents a mcm stream.
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+### Namespace `FileFormat.Mdb`
+
+[`MdbFormatDescriptor`](#mdbformatdescriptor)
+
+#### `MdbFormatDescriptor`
+
+Microsoft Access Jet Red / ACCDB read-only surfacing descriptor. Emits raw pages, the first-page header, metadata.ini, and (if locatable) the MSysObjects root-page pointer. Does NOT decode Jet B-trees or rows. References: `https://github.com/mdbtools/mdbtools` — mdbtools — its HACKING notes are the de-facto Jet on-disk format documentationNo official specification — the Jet Red / ACCDB page format is proprietary and community-reverse-engineered`https://en.wikipedia.org/wiki/Microsoft_Access` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MdbFormatDescriptor` | `MdbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Mhk`
 
@@ -9977,6 +11381,36 @@ Computes the 32-bit Westwood "classic" file ID used by Tiberian Dawn / Red Alert
 | --- | --- | --- |
 | `Hash` | `static uint Hash(string filename)` | Computes the Westwood TD/RA1 32-bit file ID for the given filename. |
 
+### Namespace `FileFormat.Mobi`
+
+[`MobiFormatDescriptor`](#mobiformatdescriptor)
+
+#### `MobiFormatDescriptor`
+
+Amazon Mobipocket eBook (`.mobi` / `.prc` / `.azw`). The archive view surfaces: `FULL.mobi`, `metadata.ini` (EXTH + PalmDB title), `cover.*` if an EXTH cover record is present, and per-record raw bodies under `records/`. Scope cut: PalmDOC (LZ77-variant) text decompression is deferred — for now the "book content" entries are exposed as raw compressed records rather than decoded HTML. Metadata + cover, which is what most triage use cases want, works fully. References: `https://wiki.mobileread.com/wiki/MOBI` — MobileRead wiki — de-facto MOBI/EXTH format documentation`https://github.com/kovidgoyal/calibre` — Calibre — maintained implementation`https://en.wikipedia.org/wiki/Mobipocket` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MobiFormatDescriptor` | `MobiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+
 ### Namespace `FileFormat.Mp4`
 
 [`BoxParser`](#boxparser) · [`BoxParser.Box`](#boxparserbox) · [`Mp4Demuxer`](#mp4demuxer) · [`Mp4Demuxer.SampleEntry`](#mp4demuxersampleentry) · [`Mp4Demuxer.Track`](#mp4demuxertrack) · [`Mp4FastStart`](#mp4faststart) · [`Mp4FastStart.AtomInfo`](#mp4faststartatominfo) · [`Mp4FormatDescriptor`](#mp4formatdescriptor) · [`Mp4LayoutMap`](#mp4layoutmap)
@@ -10117,6 +11551,90 @@ Implements `IFileInternalLayoutMap`.
 | --- | --- | --- |
 | `Mp4LayoutMap` | `Mp4LayoutMap()` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
+
+### Namespace `FileFormat.MpegPs`
+
+[`MpegPsFormatDescriptor`](#mpegpsformatdescriptor) · [`MpegPsReader`](#mpegpsreader) · [`MpegPsReader.ElementaryStream`](#mpegpsreaderelementarystream) · [`MpegPsReader.ProgramStream`](#mpegpsreaderprogramstream)
+
+#### `MpegPsFormatDescriptor`
+
+Pseudo-archive descriptor for MPEG program streams — `.mpg`/`.mpeg` (MPEG-1 system and MPEG-2 program streams), DVD-Video `.vob` and `.m2p`. Every elementary stream is exposed as one entry holding the raw stream with PES framing removed; the DVD private-stream-1 substreams (AC-3, DTS, LPCM, sub-pictures) become entries of their own. A `metadata.ini` summarises packs, packets and per-stream timestamps. References: ISO/IEC 13818-1 §2.5 — program stream, pack header, system header, PES packet and program stream map syntaxISO/IEC 11172-1 §2.4 — MPEG-1 system stream pack and packet layout`https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html` — DVD private stream 1 substream ids and headers
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MpegPsFormatDescriptor` | `MpegPsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+#### `MpegPsReader`
+
+Reader for MPEG program streams (`.mpg`, `.vob`, `.m2p`) per ISO/IEC 13818-1 §2.5 (MPEG-2) and ISO/IEC 11172-1 §2.4 (MPEG-1).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MpegPsReader` | `MpegPsReader()` |  |
+| `PackStartCode` | `const byte PackStartCode` |  |
+| `PaddingStreamId` | `const byte PaddingStreamId` |  |
+| `PrivateStream1Id` | `const byte PrivateStream1Id` |  |
+| `PrivateStream2Id` | `const byte PrivateStream2Id` |  |
+| `ProgramEndCode` | `const byte ProgramEndCode` |  |
+| `ProgramStreamDirectoryId` | `const byte ProgramStreamDirectoryId` |  |
+| `ProgramStreamMapId` | `const byte ProgramStreamMapId` |  |
+| `SystemHeaderStartCode` | `const byte SystemHeaderStartCode` |  |
+| `ClassifySubstream` | `static ValueTuple<string, string, int> ClassifySubstream(byte substreamId)` | Classifies a DVD private stream 1 substream and returns the number of bytes to drop from the start of the PES payload: the substream id plus the DVD substream header that precedes the codec data (4 bytes for AC-3/DTS/MLP, 7 for LPCM). |
+| `FindStartCode` | `static int FindStartCode(ReadOnlySpan<byte> data, int from)` | Returns the offset of the next `00 00 01` prefix at or after `from`, or -1. |
+| `ParsePesHeader` | `static ValueTuple<int, long?> ParsePesHeader(ReadOnlySpan<byte> body, int version)` | Returns the payload offset inside a PES packet body (the bytes after the 16-bit length) and the PTS when present. `version` selects between the MPEG-2 fixed header (`10xxxxxx` marker) and the MPEG-1 stuffing/STD/PTS form. |
+| `ReadTimestamp` | `static long ReadTimestamp(ReadOnlySpan<byte> t)` | Decodes the 5-byte 33-bit timestamp field used by PTS and DTS. |
+| `Read` | `static ProgramStream Read(ReadOnlySpan<byte> data)` | Parses a complete program stream held in memory. |
+
+#### `MpegPsReader.ElementaryStream`
+
+One demuxed elementary stream.
+
+Implements `IEquatable<ElementaryStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ElementaryStream` | `ElementaryStream(int StreamId, int SubstreamId, string Kind, string Extension, int PacketCount, long? FirstPts, long? LastPts, byte[] Payload)` | One demuxed elementary stream. |
+| `EntryName` | `string EntryName { get; }` |  |
+| `Extension` | `string Extension { get; init; }` | File extension that suits the raw payload. |
+| `FirstPts` | `long? FirstPts { get; init; }` | First presentation timestamp seen, in 90 kHz ticks. |
+| `Kind` | `string Kind { get; init; }` | Short codec/kind identifier used in entry names (`mpeg2video`, `ac3`, …). |
+| `LastPts` | `long? LastPts { get; init; }` | Last presentation timestamp seen, in 90 kHz ticks. |
+| `PacketCount` | `int PacketCount { get; init; }` | Number of PES packets that contributed. |
+| `Payload` | `byte[] Payload { get; init; }` | The concatenated payload with PES and substream headers removed. |
+| `StreamId` | `int StreamId { get; init; }` | PES stream id (`0xC0`–`0xDF` audio, `0xE0`–`0xEF` video, `0xBD` private 1, `0xBF` private 2). |
+| `SubstreamId` | `int SubstreamId { get; init; }` | DVD substream id for private stream 1, otherwise `-1`. |
+
+#### `MpegPsReader.ProgramStream`
+
+Result of parsing a program stream.
+
+Implements `IEquatable<ProgramStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ProgramStream` | `ProgramStream(int MpegVersion, int PackCount, int PesPacketCount, bool HasProgramEnd, IReadOnlyList<ElementaryStream> Streams)` | Result of parsing a program stream. |
+| `HasProgramEnd` | `bool HasProgramEnd { get; init; }` |  |
+| `MpegVersion` | `int MpegVersion { get; init; }` |  |
+| `PackCount` | `int PackCount { get; init; }` |  |
+| `PesPacketCount` | `int PesPacketCount { get; init; }` |  |
+| `Streams` | `IReadOnlyList<ElementaryStream> Streams { get; init; }` |  |
 
 ### Namespace `FileFormat.MpegTs`
 
@@ -10278,6 +11796,39 @@ Writes Blizzard MPQ v1 archives. WORM creation only; existing archives are not m
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
 
+### Namespace `FileFormat.Msg`
+
+[`MsgFormatDescriptor`](#msgformatdescriptor)
+
+#### `MsgFormatDescriptor`
+
+Microsoft Outlook .msg message — an OLE2/CFB compound file carrying MAPI property streams. References: `https://learn.microsoft.com/en-us/openspecs/exchange_server_protocols/ms-oxmsg/` — [MS-OXMSG] Outlook Item (.msg) File Format — Microsoft Open Specifications`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/` — [MS-CFB] Compound File Binary File Format — the underlying container
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MsgFormatDescriptor` | `MsgFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
+
 ### Namespace `FileFormat.Msi`
 
 [`CfbLayoutMap`](#cfblayoutmap) · [`CfbWriter`](#cfbwriter) · [`MsiEntry`](#msientry) · [`MsiFormatDescriptor`](#msiformatdescriptor) · [`MsiReader`](#msireader)
@@ -10392,6 +11943,71 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly from the `AppxManifest.xml` identity; all other entries delegate to the inner `ZipReader` and are wrapped in a `BoundedEntryStream` sized to the entry's uncompressed length. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries via `ZipModifier`. The synthetic `metadata.ini` listing entry is a derived view and is skipped. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
+
+### Namespace `FileFormat.Mz`
+
+[`MzFormatDescriptor`](#mzformatdescriptor) · [`MzReader`](#mzreader) · [`MzReader.MzImage`](#mzreadermzimage)
+
+#### `MzFormatDescriptor`
+
+Pseudo-archive descriptor for DOS MZ executables. Splits the file into `header.bin` (16-byte DOS header + relocation table + any remaining header paragraphs), `body.bin` (the program image per the DOS loader's declared image size), and `overlay.bin` when the file carries more bytes than the declared image length — a common carrier for installer payloads, appended data, and SCUMM-era game resources. References: `https://en.wikipedia.org/wiki/DOS_MZ_executable` — Wikipedia — MZ header layoutMS-DOS Programmer's Reference (Microsoft Press) — the original EXE header definition`https://learn.microsoft.com/en-us/windows/win32/debug/pe-format` — Microsoft PE/COFF specification — the e_lfanew chain to piggybacked PE images
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MzFormatDescriptor` | `MzFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MzReader`
+
+Reader for pure DOS MZ executables. Splits the file into its three logical regions — the fixed-size header + relocation table, the program image, and any trailing overlay (installer payloads, appended archives, SCUMM resources, etc.).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MzReader` | `MzReader()` |  |
+| `Read` | `static MzImage Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `MzReader.MzImage`
+
+Represents a mz image.
+
+Implements `IEquatable<MzImage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MzImage` | `MzImage(ushort BytesInLastBlock, ushort BlocksInFile, ushort NumRelocs, ushort HeaderParagraphs, ushort MinExtraParagraphs, ushort MaxExtraParagraphs, ushort InitialSs, ushort InitialSp, ushort Checksum, ushort InitialIp, ushort InitialCs, ushort RelocTableOffset, ushort OverlayNumber, uint ExtendedHeaderOffset, string ExtendedSignature, byte[] Header, byte[] Body, byte[] Overlay)` | Represents a mz image. |
+| `BlocksInFile` | `ushort BlocksInFile { get; init; }` |  |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `BytesInLastBlock` | `ushort BytesInLastBlock { get; init; }` |  |
+| `Checksum` | `ushort Checksum { get; init; }` |  |
+| `ExtendedHeaderOffset` | `uint ExtendedHeaderOffset { get; init; }` |  |
+| `ExtendedSignature` | `string ExtendedSignature { get; init; }` |  |
+| `HeaderParagraphs` | `ushort HeaderParagraphs { get; init; }` |  |
+| `Header` | `byte[] Header { get; init; }` |  |
+| `InitialCs` | `ushort InitialCs { get; init; }` |  |
+| `InitialIp` | `ushort InitialIp { get; init; }` |  |
+| `InitialSp` | `ushort InitialSp { get; init; }` |  |
+| `InitialSs` | `ushort InitialSs { get; init; }` |  |
+| `MaxExtraParagraphs` | `ushort MaxExtraParagraphs { get; init; }` |  |
+| `MinExtraParagraphs` | `ushort MinExtraParagraphs { get; init; }` |  |
+| `NumRelocs` | `ushort NumRelocs { get; init; }` |  |
+| `OverlayNumber` | `ushort OverlayNumber { get; init; }` |  |
+| `Overlay` | `byte[] Overlay { get; init; }` |  |
+| `RelocTableOffset` | `ushort RelocTableOffset { get; init; }` |  |
 
 ### Namespace `FileFormat.Narc`
 
@@ -10555,6 +12171,161 @@ Writes a minimal Nintendo DS ROM image with NitroFS containing the input files. 
 | `NdsWriter` | `NdsWriter()` |  |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+
+### Namespace `FileFormat.Nes`
+
+[`NesFormatDescriptor`](#nesformatdescriptor)
+
+#### `NesFormatDescriptor`
+
+iNES / NES 2.0 ROM file. Surfaces the full ROM, parsed metadata, and the PRG/CHR ROM banks as separate files. Read-only. References: `https://www.nesdev.org/wiki/INES` — NESdev wiki — iNES header specification`https://www.nesdev.org/wiki/NES_2.0` — NESdev wiki — NES 2.0 header extension
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NesFormatDescriptor` | `NesFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.NetAssembly`
+
+[`NetAssemblyFormatDescriptor`](#netassemblyformatdescriptor) · [`NetAssemblyReader`](#netassemblyreader) · [`NetAssemblyReader.Entry`](#netassemblyreaderentry)
+
+#### `NetAssemblyFormatDescriptor`
+
+Read-only archive view of a managed .NET assembly (CLI PE). Surfaces the metadata streams, a decoded `references.txt` from `AssemblyRef`, and per-manifest- resource entries under `resources/`. Detection is extension-based (`.dll` / `.exe`) with a parser sanity check: the CLI header (data-directory index 14) must be populated or `List` returns an empty set. References: `https://ecma-international.org/publications-and-standards/standards/ecma-335/` — ECMA-335 Common Language Infrastructure — metadata streams and physical layout`https://learn.microsoft.com/en-us/windows/win32/debug/pe-format` — Microsoft PE/COFF specification — the PE envelope including the CLI header`https://github.com/dotnet/runtime` — .NET runtime — canonical implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetAssemblyFormatDescriptor` | `NetAssemblyFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `NetAssemblyReader`
+
+Reads a .NET assembly PE file and surfaces its CLI metadata content as an archive: Each CLI metadata stream (`#~`, `#Strings`, `#Blob`, `#GUID`, `#US`) → `streams/{name}.bin`.Each embedded resource (from the `ManifestResource` metadata table, best-effort parse of the `#~` stream) → `resources/{name}.bin`.A synthetic `references.txt` listing `AssemblyRef` entries (name + version). This reader handles the outer PE → CLI header → metadata-root → stream-directory walk cleanly and extracts the raw stream bytes. The `#~` tables are parsed only deeply enough to resolve `ManifestResource` and `AssemblyRef` rows; full CLI metadata decoding (signatures, typerefs, etc.) is intentionally out of scope.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetAssemblyReader` | `NetAssemblyReader()` |  |
+| `ReadAll` | `List<Entry> ReadAll(Stream stream)` | Reads the all from the supplied input. |
+
+#### `NetAssemblyReader.Entry`
+
+One entry surfaced from a .NET assembly.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data)` | One entry surfaced from a .NET assembly. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+### Namespace `FileFormat.NetCdf`
+
+[`NetCdfAttribute`](#netcdfattribute) · [`NetCdfDimension`](#netcdfdimension) · [`NetCdfFormatDescriptor`](#netcdfformatdescriptor) · [`NetCdfHeader`](#netcdfheader) · [`NetCdfVariable`](#netcdfvariable)
+
+#### `NetCdfAttribute`
+
+Represents a net cdf attribute.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetCdfAttribute` | `NetCdfAttribute()` |  |
+| `Name` | `string Name { get; set; }` | Gets or sets the name. |
+| `NcType` | `int NcType { get; set; }` | Gets or sets the nc type. |
+| `RawValue` | `byte[] RawValue { get; set; }` | Gets or sets the raw value. |
+| `ValueCount` | `long ValueCount { get; set; }` | Gets or sets the value count. |
+
+#### `NetCdfDimension`
+
+Represents a net cdf dimension.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetCdfDimension` | `NetCdfDimension()` |  |
+| `IsUnlimited` | `bool IsUnlimited { get; set; }` | Gets a value indicating whether is unlimited. |
+| `Length` | `long Length { get; set; }` | Gets or sets the length. |
+| `Name` | `string Name { get; set; }` | Gets or sets the name. |
+
+#### `NetCdfFormatDescriptor`
+
+Read-only descriptor for NetCDF Classic (CDF-1, CDF-2, CDF-5). Fires on the `CDF\x01 / CDF\x02 / CDF\x05` magic. NetCDF-4 files (HDF5-based) are handled by the HDF5 descriptor. References: `https://www.unidata.ucar.edu/software/netcdf/` — Unidata NetCDF portal — the classic CDF-1/2/5 format specification lives in its documentation`https://github.com/Unidata/netcdf-c` — canonical C implementation`https://en.wikipedia.org/wiki/NetCDF` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetCdfFormatDescriptor` | `NetCdfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `NetCdfHeader`
+
+Parsed NetCDF classic header: numrecs, dimensions, variables, attributes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetCdfHeader` | `NetCdfHeader()` |  |
+| `Dimensions` | `List<NetCdfDimension> Dimensions { get; }` | Gets the dimensions. |
+| `GlobalAttributes` | `List<NetCdfAttribute> GlobalAttributes { get; }` | Gets the global attributes. |
+| `NumRecs` | `long NumRecs { get; set; }` | Gets or sets the num recs. |
+| `Variables` | `List<NetCdfVariable> Variables { get; }` | Gets the variables. |
+| `Version` | `int Version { get; set; }` | Gets or sets the version. |
+
+#### `NetCdfVariable`
+
+Represents a net cdf variable.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NetCdfVariable` | `NetCdfVariable()` |  |
+| `Attributes` | `List<NetCdfAttribute> Attributes { get; }` | Gets the attributes. |
+| `BeginOffset` | `long BeginOffset { get; set; }` | Gets or sets the begin offset. |
+| `DimIds` | `int[] DimIds { get; set; }` | Gets or sets the dim ids. |
+| `Name` | `string Name { get; set; }` | Gets or sets the name. |
+| `NcType` | `int NcType { get; set; }` | Gets or sets the nc type. |
+| `VsizeBytes` | `long VsizeBytes { get; set; }` | Gets or sets the vsize bytes. |
 
 ### Namespace `FileFormat.Nifti`
 
@@ -11105,6 +12876,54 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
 
+### Namespace `FileFormat.OneNote`
+
+[`OneNoteDetector`](#onenotedetector) · [`OneNoteFormatDescriptor`](#onenoteformatdescriptor) · [`OneNoteVariant`](#onenotevariant)
+
+#### `OneNoteDetector`
+
+Represents an one note detector.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Detect` | `static OneNoteVariant Detect(Stream stream)` | Performs the detect operation. |
+
+#### `OneNoteFormatDescriptor`
+
+Microsoft OneNote section (`.one` / `.onetoc2`) read-only pseudo-archive. Detection only — surfaces a `FULL.one` passthrough plus a `metadata.ini` summary identifying the variant (2007 vs 2010+). MS-ONESTORE revision-based packed object streams are not decoded. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-onestore/` — [MS-ONESTORE] OneNote Revision Store File Format — Microsoft Open Specifications`https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-one/` — [MS-ONE] OneNote section data structures
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneNoteFormatDescriptor` | `OneNoteFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `FULL.one` entry is exposed as a passthrough slice over the whole archive; `metadata.ini` is built on the fly. Both are wrapped in `BoundedEntryStream` sized to their logical length. |
+
+#### `OneNoteVariant`
+
+Specifies one note variant values.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` | Specifies an unknown or unrecognized value. |
+| `OneNote2007` | `1` | Specifies the one note 2007 option. |
+| `OneNote2010Plus` | `2` | Specifies the one note 2010 plus option. |
+
 ### Namespace `FileFormat.Onnx`
 
 [`OnnxFormatDescriptor`](#onnxformatdescriptor) · [`OnnxReader`](#onnxreader) · [`OnnxReader.Model`](#onnxreadermodel) · [`OnnxReader.Operator`](#onnxreaderoperator) · [`OnnxReader.OpsetImport`](#onnxreaderopsetimport) · [`OnnxReader.Tensor`](#onnxreadertensor) · [`OnnxReader.ValueInfo`](#onnxreadervalueinfo) · [`ProtobufReader`](#protobufreader)
@@ -11245,6 +13064,305 @@ Minimal read-only Protocol Buffers (proto3) decoder. Handles the four wire types
 | `ReadTag` | `bool ReadTag(out int fieldNumber, out int wireType)` | Reads a tag (field number + wire type); returns false at EOF. |
 | `ReadVarint` | `ulong ReadVarint()` | Reads an unsigned LEB128 varint (up to 10 bytes). |
 | `SkipField` | `void SkipField(int wireType)` | Skips one wire-format value (tag already consumed). |
+
+### Namespace `FileFormat.Orc`
+
+[`OrcConstants`](#orcconstants) · [`OrcFormatDescriptor`](#orcformatdescriptor) · [`OrcReader`](#orcreader) · [`ProtobufWalker`](#protobufwalker)
+
+#### `OrcConstants`
+
+Represents an orc constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressionLz4` | `const int CompressionLz4` | Defines the compression lz 4 constant value. |
+| `CompressionLzo` | `const int CompressionLzo` | Defines the compression lzo constant value. |
+| `CompressionNone` | `const int CompressionNone` | Defines the compression none constant value. |
+| `CompressionSnappy` | `const int CompressionSnappy` | Defines the compression snappy constant value. |
+| `CompressionZlib` | `const int CompressionZlib` | Defines the compression zlib constant value. |
+| `CompressionZstd` | `const int CompressionZstd` | Defines the compression zstd constant value. |
+| `FooterFieldHeaderLength` | `const int FooterFieldHeaderLength` | Defines the footer field header length constant value. |
+| `FooterFieldNumberOfRows` | `const int FooterFieldNumberOfRows` | Defines the footer field number of rows constant value. |
+| `FooterFieldStripes` | `const int FooterFieldStripes` | Defines the footer field stripes constant value. |
+| `FooterFieldTypes` | `const int FooterFieldTypes` | Defines the footer field types constant value. |
+| `FooterFieldUserMetadata` | `const int FooterFieldUserMetadata` | Defines the footer field user metadata constant value. |
+| `MagicLength` | `const int MagicLength` | Length of the ORC magic in bytes. |
+| `Magic` | `static readonly byte[] Magic` | Apache ORC magic bytes ("ORC") at file start and inside the PostScript magic field. |
+| `MinFileLength` | `const int MinFileLength` | Minimum file size: 3-byte leading magic + at least 1-byte PostScript length trailer. |
+| `PsFieldCompressionBlockSize` | `const int PsFieldCompressionBlockSize` | Defines the ps field compression block size constant value. |
+| `PsFieldCompression` | `const int PsFieldCompression` | Defines the ps field compression constant value. |
+| `PsFieldFooterLength` | `const int PsFieldFooterLength` | Defines the ps field footer length constant value. |
+| `PsFieldMagic` | `const int PsFieldMagic` | Defines the ps field magic constant value. |
+| `PsFieldMetadataLength` | `const int PsFieldMetadataLength` | Defines the ps field metadata length constant value. |
+| `PsFieldStripeStatisticsLength` | `const int PsFieldStripeStatisticsLength` | Defines the ps field stripe statistics length constant value. |
+| `PsFieldVersion` | `const int PsFieldVersion` | Defines the ps field version constant value. |
+| `PsFieldWriterVersion` | `const int PsFieldWriterVersion` | Defines the ps field writer version constant value. |
+| `Wire32Bit` | `const int Wire32Bit` | Defines the wire 32 bit constant value. |
+| `Wire64Bit` | `const int Wire64Bit` | Defines the wire 64 bit constant value. |
+| `WireLengthDelimited` | `const int WireLengthDelimited` | Defines the wire length delimited constant value. |
+| `WireVarint` | `const int WireVarint` | Defines the wire varint constant value. |
+| `CompressionName` | `static string CompressionName(int value)` | Maps the ORC compression enum value to a stable string label. |
+
+#### `OrcFormatDescriptor`
+
+Apache ORC (`.orc`) read-only pseudo-archive. Validates the leading "ORC" magic, reads the 1-byte PostScript-length trailer, walks the uncompressed PostScript Protobuf to extract the compression codec, footer length and writer version, and (when compression is NONE) walks the Footer Protobuf to surface row count, type count and stripe count. Surfaces a `FULL.orc` passthrough plus a `metadata.ini` summary. Stripe-level decompression and full record decoding are intentionally out of scope. References: `https://orc.apache.org/specification/` — Apache ORC file format specification`https://github.com/apache/orc` — canonical implementation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OrcFormatDescriptor` | `OrcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `OrcReader`
+
+Read-only walker for Apache ORC files. Validates the leading "ORC" magic, reads the 1-byte PostScript-length trailer at file end, parses the uncompressed PostScript Protobuf, and (when the file's compression codec is NONE) walks the uncompressed Footer Protobuf to surface the total row count, type count, and stripe count. When the footer is compressed (ZLIB/SNAPPY/ LZO/LZ4/ZSTD), the codec name is reported but the footer is not decompressed and parse status is "partial". Full record decode is intentionally out of scope.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OrcReader` | `OrcReader(Stream stream)` | Initializes a new instance of `OrcReader`. |
+| `Compression` | `string Compression { get; }` | Compression codec name (NONE / ZLIB / SNAPPY / LZO / LZ4 / ZSTD / unknown). |
+| `FooterLength` | `long FooterLength { get; }` | PostScript field 1: byte length of the Footer Protobuf preceding the PostScript. |
+| `MagicOk` | `bool MagicOk { get; }` | True when the leading 3 bytes are "ORC" and the PostScript magic field also reads "ORC". |
+| `NumberOfRows` | `long NumberOfRows { get; }` | Footer field 5: total number of rows. 0 when unknown (compressed footer or missing). |
+| `ParseStatus` | `string ParseStatus { get; }` | "full" if PostScript and (when uncompressed) Footer were both walked end-to-end; "partial" otherwise. |
+| `PsLength` | `int PsLength { get; }` | The 1-byte PostScript length read from the very last byte of the file. |
+| `StripeCount` | `int StripeCount { get; }` | Number of stripe descriptors found in Footer field 2. 0 when unknown. |
+| `TypeCount` | `int TypeCount { get; }` | Number of type descriptors found in Footer field 3. 0 when unknown. |
+| `WriterVersion` | `string WriterVersion { get; }` | Writer version as dotted "major.minor.patch" string from PostScript repeated field 4. |
+
+#### `ProtobufWalker`
+
+Minimal Protobuf wire-format decoder/encoder used to walk the ORC PostScript and Footer. Implements only the subset required: unsigned varints, length-delimited bytes/strings, tag (field number + wire type) headers, and a tolerant `Skip` helper that walks past values of any wire type. Not a full Protobuf implementation; no message reflection.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadLengthDelimited` | `static byte[] ReadLengthDelimited(Stream stream)` | Reads a length-delimited byte array (length varint followed by raw bytes). |
+| `ReadString` | `static string ReadString(Stream stream)` | Reads a length-delimited UTF-8 string. |
+| `ReadTag` | `static ValueTuple<int, int> ReadTag(Stream stream)` | Reads a Protobuf tag and decomposes it into (field number, wire type). |
+| `ReadVarInt` | `static int ReadVarInt(Stream stream)` | Reads an unsigned Protobuf varint and casts to int. Throws if outside int range. |
+| `ReadVarLong` | `static long ReadVarLong(Stream stream)` | Reads an unsigned Protobuf varint as a 64-bit value (NOT zig-zag). |
+| `Skip` | `static void Skip(Stream stream, int wireType)` | Skips a single Protobuf field value of the given wire type. Tolerates unknown wire types by raising `InvalidDataException`; callers using this for "skip unknown field" behavior should catch and stop walking gracefully. |
+| `WriteLengthDelimited` | `static void WriteLengthDelimited(Stream stream, byte[] data)` | Writes a length-delimited byte array. |
+| `WriteString` | `static void WriteString(Stream stream, string value)` | Writes a length-delimited UTF-8 string. |
+| `WriteTag` | `static void WriteTag(Stream stream, int fieldNumber, int wireType)` | Encodes (field number, wire type) into a tag varint. |
+| `WriteVarInt` | `static void WriteVarInt(Stream stream, int value)` | Writes an unsigned Protobuf varint int. |
+| `WriteVarLong` | `static void WriteVarLong(Stream stream, long value)` | Writes an unsigned Protobuf varint (NOT zig-zag). |
+
+### Namespace `FileFormat.Ova`
+
+[`OvaFormatDescriptor`](#ovaformatdescriptor) · [`OvaReader`](#ovareader) · [`OvaReader.ManifestCheck`](#ovareadermanifestcheck) · [`OvaReader.OvaMember`](#ovareaderovamember) · [`OvaWriter`](#ovawriter) · [`OvaWriter.OvaInput`](#ovawriterovainput)
+
+#### `OvaFormatDescriptor`
+
+OVA (Open Virtual Appliance) — an uncompressed TAR carrying an OVF (Open Virtualization Format) XML descriptor, one or more virtual disk images (typically `.vmdk`), and an optional `.mf` manifest of checksums. List/Extract delegate to `OvaReader`: every TAR member is surfaced verbatim alongside a `FULL.ova` copy of the whole container and a `metadata.ini` distilled from the OVF XML (VM name, disk count, guest OS type). The OVF is parsed with lightweight pattern matching — no schema validation — so any well-formed appliance round-trips, and malformed input degrades to `parse_status=partial` rather than throwing.Create/Add build a spec-correct ustar TAR via `OvaWriter`: the OVF first, then disks, then a freshly generated `.mf` with correct SHA-256 lines. When no OVF input is supplied a minimal valid envelope is synthesised that references each disk's `ovf:href`. References: `https://www.dmtf.org/standards/ovf` — DMTF Open Virtualization Format standard — OVA is the single-file TAR packaging of an OVF descriptor`https://en.wikipedia.org/wiki/Open_Virtualization_Format` — Wikipedia
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OvaFormatDescriptor` | `OvaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) members and rebuilds the appliance so the regenerated `.mf` stays consistent with the new member set. TAR has no central directory, so this is a full rewrite-in-place. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a spec-correct OVA from `inputs`: the OVF is placed first, disks next, then a generated `.mf` with correct SHA-256 lines. A minimal OVF envelope is synthesised when none is supplied so the appliance is still well-formed. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named members and rebuilds the appliance with a regenerated manifest reflecting the survivors. |
+
+#### `OvaReader`
+
+Walks an OVA (Open Virtualization Appliance) container — an uncompressed POSIX/ustar TAR — and surfaces its members: the `.ovf` XML descriptor (always the first entry), one or more disk images (`.vmdk`/`.vhd`), an optional `.mf` manifest of checksums and an optional `.cert`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Disks` | `IEnumerable<OvaMember> Disks { get; }` | Every disk-image member (`.vmdk`/`.vhd`/`.img`/`.vhdx`/`.iso`). |
+| `Manifest` | `OvaMember Manifest { get; }` | The first `.mf` manifest member, or null when none is present. |
+| `Members` | `IReadOnlyList<OvaMember> Members { get; }` | All members in archive order. |
+| `Ovf` | `OvaMember Ovf { get; }` | The first `.ovf` member, or null when none is present. |
+| `Partial` | `bool Partial { get; }` | True when TAR parsing hit an error before reaching the end of the archive. |
+| `IsDisk` | `static bool IsDisk(string name)` | True when `name` has a recognised disk-image extension. |
+| `ManifestVerifies` | `bool ManifestVerifies()` | True when a manifest exists and every line it lists verifies. |
+| `ParseManifest` | `static IEnumerable<ValueTuple<string, string, string>> ParseManifest(string text)` | Parses manifest lines of the form `ALGO(file)= hex` (whitespace after the `=` is optional). Lines that don't match are skipped. |
+| `Read` | `static OvaReader Read(Stream stream)` | Reads every TAR member of `stream` into memory. Never throws on malformed input — sets `Partial` and keeps whatever was parsed. |
+| `VerifyManifest` | `IReadOnlyList<ManifestCheck> VerifyManifest()` | Parses the `.mf` manifest (if any) and verifies each listed file's digest against the corresponding member's bytes. Returns an empty list when no manifest is present. |
+
+#### `OvaReader.ManifestCheck`
+
+The result of verifying one manifest line against a member.
+
+Implements `IEquatable<ManifestCheck>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ManifestCheck` | `ManifestCheck(string FileName, string Algorithm, string Expected, string Actual, bool Matches)` | The result of verifying one manifest line against a member. |
+| `Actual` | `string Actual { get; init; }` | The hex digest computed from the member's bytes, or null if the member is absent. |
+| `Algorithm` | `string Algorithm { get; init; }` | The hash algorithm named in the manifest (e.g. "SHA256"). |
+| `Expected` | `string Expected { get; init; }` | The hex digest recorded in the manifest. |
+| `FileName` | `string FileName { get; init; }` | The file the manifest line refers to. |
+| `Matches` | `bool Matches { get; init; }` | True when `Actual` equals `Expected` (case-insensitive). |
+
+#### `OvaReader.OvaMember`
+
+A single member extracted from the OVA container.
+
+Implements `IEquatable<OvaMember>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OvaMember` | `OvaMember(string Name, byte[] Data)` | A single member extracted from the OVA container. |
+| `Data` | `byte[] Data { get; init; }` | The member's raw bytes. |
+| `Name` | `string Name { get; init; }` | The member's name as stored in the TAR. |
+
+#### `OvaWriter`
+
+Builds a spec-correct OVA (Open Virtualization Appliance): an uncompressed POSIX/ustar TAR whose first entry is the `.ovf` XML descriptor, followed by the disk image(s), followed by a generated `.mf` manifest carrying a correct `SHA256(file)= <hex>` line for every other member.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OvaWriter` | `OvaWriter()` |  |
+| `ManifestAlgorithm` | `string ManifestAlgorithm { get; set; }` | The hash algorithm written into the generated manifest. Defaults to SHA256. |
+| `Add` | `OvaWriter Add(string name, byte[] data)` | Adds a member, classifying it as the OVF, a disk, or an extra (cert, etc.). |
+| `ToArray` | `byte[] ToArray()` | Builds an OVA into a fresh byte array. |
+| `Write` | `void Write(Stream output)` | Writes the OVA to `output`. Order: the OVF first (supplied or synthesised), then disks, then extras, then the generated manifest. |
+
+#### `OvaWriter.OvaInput`
+
+A file to place into the OVA.
+
+Implements `IEquatable<OvaInput>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OvaInput` | `OvaInput(string Name, byte[] Data)` | A file to place into the OVA. |
+| `Data` | `byte[] Data { get; init; }` | The member's raw bytes. |
+| `Name` | `string Name { get; init; }` | The member name as it appears in the archive. |
+
+### Namespace `FileFormat.Pack200`
+
+[`Pack200BandReader`](#pack200bandreader) · [`Pack200Coding`](#pack200coding) · [`Pack200DecodeStatus`](#pack200decodestatus) · [`Pack200FormatDescriptor`](#pack200formatdescriptor) · [`Pack200Reader`](#pack200reader) · [`Pack200Segment`](#pack200segment)
+
+#### `Pack200BandReader`
+
+A forward-only cursor over the byte stream of a Pack200 segment that decodes bands of integers using their BHSD codings (JSR-200 section 5.4).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pack200BandReader` | `Pack200BandReader(byte[] data)` | Creates a reader positioned at the start of `data`. |
+| `Length` | `int Length { get; }` | Total number of bytes available. |
+| `Position` | `int Position { get; }` | Current byte offset of the cursor. |
+| `ReadBand` | `long[] ReadBand(Pack200Coding coding, int count)` | Reads `count` values as a single band, applying the coding's signedness per value and its running-delta accumulation across the band. |
+| `ReadByte` | `int ReadByte()` | Reads a single raw byte, advancing the cursor. |
+| `ReadValue` | `long ReadValue(Pack200Coding coding)` | Decodes one value using `coding`. The delta flag is intentionally ignored here; callers use `ReadBand` to apply running deltas across a band. |
+
+#### `Pack200Coding`
+
+A Pack200 (JSR-200) band coding, described by its (B, H, S, D) parameters.
+
+Implements `IEquatable<Pack200Coding>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pack200Coding` | `Pack200Coding(int B, int H, int S, int D)` | A Pack200 (JSR-200) band coding, described by its (B, H, S, D) parameters. |
+| `Byte1` | `static readonly Pack200Coding Byte1` | BYTE1 (B=1, H=256, S=0, D=0): a single raw byte. |
+| `Char3` | `static readonly Pack200Coding Char3` | CHAR3 (B=3, H=128, S=0, D=0): the default coding for cp_Utf8 characters. |
+| `Delta5` | `static readonly Pack200Coding Delta5` | DELTA5 (B=5, H=64, S=1, D=1): signed running-delta references (e.g. cp_Utf8_prefix, class_this). |
+| `Signed5` | `static readonly Pack200Coding Signed5` | SIGNED5 (B=5, H=64, S=1, D=0): signed literal values. |
+| `Udelta5` | `static readonly Pack200Coding Udelta5` | UDELTA5 (B=5, H=64, S=0, D=1): unsigned running-delta references (e.g. cp_Class, cp_String). |
+| `Unsigned5` | `static readonly Pack200Coding Unsigned5` | UNSIGNED5 (B=5, H=64, S=0, D=0): the default coding for most count/index bands. |
+| `B` | `int B { get; init; }` | Maximum bytes per value. |
+| `D` | `int D { get; init; }` | Delta flag (0 or 1). |
+| `H` | `int H { get; init; }` | High radix. |
+| `L` | `int L { get; }` | Number of low byte values (0..L-1) that terminate a coded value. |
+| `S` | `int S { get; init; }` | Signedness (0, 1 or 2). |
+
+#### `Pack200DecodeStatus`
+
+Decode status of a Pack200 segment. Listing must never throw, so an incompletely-decoded segment reports `Partial` with a reason.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Full` | `0` | Header and class names were decoded successfully. |
+| `Partial` | `1` | Header decoded, but class names could not be fully resolved. |
+
+#### `Pack200FormatDescriptor`
+
+Format descriptor for Pack200 (JSR-200) archives — the compressed representation of a set of Java `.class` files used by `pack200`/`unpack200`. References: `https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html` — "Pack200: A Packed Class Deployment Format" (the JSR-200 band/coding spec)`https://jcp.org/en/jsr/detail?id=200` — JSR 200, "Network Transfer Format for Java Archives"`https://en.wikipedia.org/wiki/Pack200` — format overview (removed from the JDK in Java 14)
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pack200FormatDescriptor` | `Pack200FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `Pack200Reader`
+
+Decodes the segment structure of a Pack200 (JSR-200) archive: it inflates a gzip-wrapped `.pack.gz` when needed, parses the archive header, walks the constant-pool and class bands, and recovers the internal names of the classes the archive defines.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pack200Reader` | `Pack200Reader()` |  |
+| `Magic` | `static readonly byte[] Magic` | The Pack200 archive magic word, 0xCAFED00D, stored big-endian. |
+| `LooksLikePack200` | `static bool LooksLikePack200(ReadOnlySpan<byte> header)` | Returns true if `header` begins with the raw or gzip-wrapped Pack200 magic. |
+| `Read` | `Pack200Segment Read(Stream stream)` | Reads and decodes the first segment of a Pack200 archive from `stream`. |
+
+#### `Pack200Segment`
+
+The parsed contents of a single Pack200 (JSR-200) segment: the archive header fields plus the internal names of the classes it defines.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pack200Segment` | `Pack200Segment()` |  |
+| `ClassCount` | `int ClassCount { get; init; }` | Number of classes defined in this segment. |
+| `ClassNames` | `IReadOnlyList<string> ClassNames { get; init; }` | Internal names (e.g. `java/lang/Object`) of the classes this segment defines. |
+| `ClassPoolCount` | `int ClassPoolCount { get; init; }` | Number of constant-pool Class entries. |
+| `DefaultClassMajVersion` | `int DefaultClassMajVersion { get; init; }` | Default class-file major version for classes in this segment. |
+| `DefaultClassMinVersion` | `int DefaultClassMinVersion { get; init; }` | Default class-file minor version for classes in this segment. |
+| `MajVersion` | `int MajVersion { get; init; }` | Archive major version. |
+| `MinVersion` | `int MinVersion { get; init; }` | Archive minor version. |
+| `ModTime` | `long ModTime { get; init; }` | Modification time (seconds since the Unix epoch) recorded in the archive header, if present. |
+| `Options` | `int Options { get; init; }` | Archive option bit flags (AO_* in the specification). |
+| `ResourceFileCount` | `int ResourceFileCount { get; init; }` | Number of non-class resource files carried in this segment. |
+| `StatusNote` | `string StatusNote { get; init; }` | Human-readable note describing why decoding was partial, if applicable. |
+| `Status` | `Pack200DecodeStatus Status { get; init; }` | Whether the segment was fully decoded or only partially. |
+| `Utf8Count` | `int Utf8Count { get; init; }` | Number of constant-pool UTF-8 entries. |
 
 ### Namespace `FileFormat.PackBits`
 
@@ -11625,6 +13743,34 @@ PAQ8 stream compressor. Writes a simplified single-file paq8l container with an 
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into the PAQ8 container on `output`. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a PAQ8 container from `input` into `output`. |
 
+### Namespace `FileFormat.Par2`
+
+[`Par2FormatDescriptor`](#par2formatdescriptor)
+
+#### `Par2FormatDescriptor`
+
+PAR2 (Parchive v2) recovery archive. A PAR2 file is a flat sequence of packets, each laid out as: 8-byte magic `"PAR2\0PKT"`, u64 little-endian packet length (header + body, total), 16-byte MD5 of the packet (covering everything after the length field), 16-byte recovery-set ID, 16-byte packet type, then the body. Well-known packet types: `"PAR 2.0\0Main\0\0\0\0"` (block size + protected file IDs), `"PAR 2.0\0FileDesc"` (per-file 16-byte ID + MD5 + 16-byte MD5 of first 16 KiB + u64 length + UTF-8 name), `"PAR 2.0\0IFSC\0\0\0\0"` (input file slice checksums) and `"PAR 2.0\0RecvSlic"` (Reed-Solomon recovery slices).This descriptor surfaces a verbatim `FULL.par2`, a `metadata.ini` (recovery-set id, packet count, block size, protected-file count), a `files.ini` listing each protected file's name and length parsed from the FileDesc packets, and one raw entry per packet under `packets/NNNN_<type>.bin`. Read-only; malformed input degrades to FULL + partial metadata without throwing. References: `https://parchive.sourceforge.net` — Parchive project — hosts the PAR 2.0 specification`https://github.com/Parchive/par2cmdline` — par2cmdline — maintained reference implementation`https://en.wikipedia.org/wiki/Parchive` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Par2FormatDescriptor` | `Par2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Paragon`
 
 [`ParagonChunkInfo`](#paragonchunkinfo) · [`ParagonEntry`](#paragonentry) · [`ParagonFormatDescriptor`](#paragonformatdescriptor) · [`ParagonInPlaceModifier`](#paragoninplacemodifier) · [`ParagonReader`](#paragonreader) · [`ParagonWriter`](#paragonwriter)
@@ -11749,6 +13895,93 @@ Implements `IDisposable`.
 | `Finalise` | `void Finalise()` | Finalises the file: writes the chunk-offset table at the current body end, patches the header's `ChunkCount` / `ChunkTableOffset` / `TotalLogicalSize` fields, and flushes. Always call this before disposing the writer. |
 | `WriteChunk` | `void WriteChunk(ReadOnlySpan<byte> chunkData)` | Writes a single chunk verbatim — no splitting. Use when the caller already chose the per-chunk granularity (e.g. partition-image emitters that want one chunk per partition). |
 | `WritePayload` | `void WritePayload(ReadOnlySpan<byte> payload)` | Writes a payload as a sequence of chunks. Splits at the configured chunk size; each chunk is either stored verbatim or zlib-compressed per the constructor's `compressChunks` argument. |
+
+### Namespace `FileFormat.Parquet`
+
+[`ParquetConstants`](#parquetconstants) · [`ParquetFormatDescriptor`](#parquetformatdescriptor) · [`ParquetReader`](#parquetreader) · [`ThriftCompact`](#thriftcompact)
+
+#### `ParquetConstants`
+
+Represents a parquet constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MagicLength` | `const int MagicLength` | Length of the Parquet magic in bytes. |
+| `Magic` | `static readonly byte[] Magic` | Apache Parquet magic bytes ("PAR1") at file start and just before the trailer. |
+| `TrailerLength` | `const int TrailerLength` | Trailer length: 4-byte LE footer length + 4-byte trailing magic. |
+| `TypeBinary` | `const byte TypeBinary` | Defines the type binary constant value. |
+| `TypeBoolFalse` | `const byte TypeBoolFalse` | Defines the type bool false constant value. |
+| `TypeBoolTrue` | `const byte TypeBoolTrue` | Defines the type bool true constant value. |
+| `TypeByte` | `const byte TypeByte` | Defines the type byte constant value. |
+| `TypeDouble` | `const byte TypeDouble` | Defines the type double constant value. |
+| `TypeI16` | `const byte TypeI16` | Defines the type i 16 constant value. |
+| `TypeI32` | `const byte TypeI32` | Defines the type i 32 constant value. |
+| `TypeI64` | `const byte TypeI64` | Defines the type i 64 constant value. |
+| `TypeList` | `const byte TypeList` | Defines the type list constant value. |
+| `TypeMap` | `const byte TypeMap` | Defines the type map constant value. |
+| `TypeSet` | `const byte TypeSet` | Defines the type set constant value. |
+| `TypeStop` | `const byte TypeStop` | Defines the type stop constant value. |
+| `TypeStruct` | `const byte TypeStruct` | Defines the type struct constant value. |
+
+#### `ParquetFormatDescriptor`
+
+Apache Parquet (`.parquet`) read-only pseudo-archive. Validates the leading and trailing PAR1 magics, reads the footer length, and walks the Thrift compact-encoded FileMetaData footer to surface version, row count, row-group count, schema element names and the created-by string. Surfaces a `FULL.parquet` passthrough plus a `metadata.ini` summary. Page-level decompression and full record decoding are out of scope. References: `https://github.com/apache/parquet-format` — canonical format specification repository`https://parquet.apache.org` — Apache Parquet project documentation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParquetFormatDescriptor` | `ParquetFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ParquetReader`
+
+Read-only walker for Apache Parquet files. Validates the leading and trailing PAR1 magics, reads the footer length, and walks the Thrift compact-encoded FileMetaData footer to extract version, row count, schema element names, row-group count, and the created-by string. Page-level decompression and full record decoding are intentionally out of scope.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParquetReader` | `ParquetReader(Stream stream)` | Initializes a new instance of `ParquetReader`. |
+| `Columns` | `IReadOnlyList<string> Columns { get; }` | Names (SchemaElement.name, field 4) collected from FileMetaData.schema (field 2). |
+| `CreatedBy` | `string CreatedBy { get; }` | FileMetaData.created_by (Thrift field 6, string). Null if not present. |
+| `NumRowGroups` | `int NumRowGroups { get; }` | Number of FileMetaData.row_groups list elements (Thrift field 4). |
+| `NumRows` | `long NumRows { get; }` | FileMetaData.num_rows (Thrift field 3, i64). 0 if not present. |
+| `ParseStatus` | `string ParseStatus { get; }` | "full" if the Thrift footer was walked end-to-end without error; "partial" otherwise. |
+| `Version` | `int Version { get; }` | FileMetaData.version (Thrift field 1, i32). 0 if not present in the footer. |
+
+#### `ThriftCompact`
+
+Minimal Thrift compact protocol decoder/encoder for walking the Parquet FileMetaData footer. Implements only the subset needed: zig-zag varints, binary/string, field headers, list headers, and recursive skip for unknown values. Not a full Thrift implementation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadBinaryBytes` | `static byte[] ReadBinaryBytes(Stream stream)` | Reads a length-prefixed binary blob as raw bytes. |
+| `ReadBinary` | `static string ReadBinary(Stream stream)` | Reads a length-prefixed binary blob and decodes as UTF-8. |
+| `ReadFieldHeader` | `static byte ReadFieldHeader(Stream stream, ref int prevFieldId)` | Reads one field header byte. Returns the field type (low 4 bits). On stop (0) returns 0 without touching `prevFieldId`. Otherwise, when the high-nibble delta is non-zero, advances `prevFieldId` by that delta. When the delta nibble is 0, reads a zig-zag varint i16 holding the absolute field id. |
+| `ReadListHeader` | `static ValueTuple<int, byte> ReadListHeader(Stream stream)` | Reads a list/set header. Returns (size, elementType). Size is in the high nibble (0..14) or, when the high nibble is 15, in a following zig-zag varint i32. |
+| `ReadVarInt` | `static int ReadVarInt(Stream stream)` | Reads a zig-zag varint and casts to int. Throws if outside int range. |
+| `ReadVarLong` | `static long ReadVarLong(Stream stream)` | Reads a zig-zag varint as a 64-bit signed long. |
+| `SkipStruct` | `static void SkipStruct(Stream stream)` | Reads field headers until the struct-stop byte, skipping each field's value. |
+| `Skip` | `static void Skip(Stream stream, byte type)` | Skips the value of a field with the given compact-protocol type code. For container types (struct, list, set, map) this walks recursively until the contained values are consumed. |
+| `WriteBinaryBytes` | `static void WriteBinaryBytes(Stream stream, byte[] bytes)` | Writes a length-prefixed binary blob. |
+| `WriteBinary` | `static void WriteBinary(Stream stream, string value)` | Writes a length-prefixed binary blob from UTF-8 string. |
+| `WriteFieldHeader` | `static void WriteFieldHeader(Stream stream, byte type, int fieldId, ref int prevFieldId)` | Writes a field header. If the delta from `prevFieldId` to `fieldId` fits in 1..15, packs it in the high nibble; otherwise emits a zero-delta header followed by a zig-zag varint with the absolute id. |
+| `WriteListHeader` | `static void WriteListHeader(Stream stream, int size, byte elementType)` | Writes a list/set header. |
+| `WriteStop` | `static void WriteStop(Stream stream)` | Writes the struct-stop byte. |
+| `WriteVarInt` | `static void WriteVarInt(Stream stream, int value)` | Writes a zig-zag varint int. |
+| `WriteVarLong` | `static void WriteVarLong(Stream stream, long value)` | Writes a zig-zag varint long. |
 
 ### Namespace `FileFormat.Partclone`
 
@@ -11894,6 +14127,256 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the PBP archive to the stream and finishes writing. |
 
+### Namespace `FileFormat.Pcap`
+
+[`PcapFormatDescriptor`](#pcapformatdescriptor) · [`PcapReader`](#pcapreader) · [`PcapReader.Capture`](#pcapreadercapture) · [`PcapReader.Packet`](#pcapreaderpacket)
+
+#### `PcapFormatDescriptor`
+
+Descriptor for libpcap capture files. Surfaces each raw link-layer frame as a separate archive entry. To keep listings manageable the first 100 packets are exposed verbatim; larger captures are tail-truncated and a note is left in `metadata.ini`. References: `https://www.tcpdump.org` — tcpdump/libpcap project — the pcap-savefile(5) man page documents the capture file layout`https://github.com/the-tcpdump-group/libpcap` — canonical implementation`https://en.wikipedia.org/wiki/Pcap` — Wikipedia
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PcapFormatDescriptor` | `PcapFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+
+#### `PcapReader`
+
+Reader for libpcap capture files. Handles the four known global-header magic constants (native/swapped × microsecond/nanosecond) and decodes each packet record into its link-layer payload bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PcapReader` | `PcapReader()` |  |
+| `MagicNativeMicro` | `const uint MagicNativeMicro` | Defines the magic native micro constant value. |
+| `MagicNativeNano` | `const uint MagicNativeNano` | Defines the magic native nano constant value. |
+| `MagicSwapMicro` | `const uint MagicSwapMicro` | Defines the magic swap micro constant value. |
+| `MagicSwapNano` | `const uint MagicSwapNano` | Defines the magic swap nano constant value. |
+| `Read` | `static Capture Read(ReadOnlySpan<byte> data)` | Parse a pcap file in full. |
+
+#### `PcapReader.Capture`
+
+Represents a capture.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Capture` | `Capture()` |  |
+| `LinkType` | `uint LinkType { get; init; }` | Link-layer header type (1 = Ethernet, 101 = raw IP, 113 = Linux cooked, etc.). |
+| `LittleEndian` | `bool LittleEndian { get; init; }` | Gets a value indicating whether little endian. |
+| `Nanosecond` | `bool Nanosecond { get; init; }` | Gets a value indicating whether nanosecond. |
+| `Packets` | `IReadOnlyList<Packet> Packets { get; init; }` | Gets or sets the packets. |
+| `Snaplen` | `uint Snaplen { get; init; }` | Gets or sets the snaplen. |
+| `VersionMajor` | `ushort VersionMajor { get; init; }` | Gets or sets the version major. |
+| `VersionMinor` | `ushort VersionMinor { get; init; }` | Gets or sets the version minor. |
+
+#### `PcapReader.Packet`
+
+Represents a packet.
+
+Implements `IEquatable<Packet>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Packet` | `Packet(uint TimestampSeconds, uint TimestampFraction, uint OriginalLength, byte[] Data)` | Represents a packet. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `OriginalLength` | `uint OriginalLength { get; init; }` |  |
+| `TimestampFraction` | `uint TimestampFraction { get; init; }` |  |
+| `TimestampSeconds` | `uint TimestampSeconds { get; init; }` |  |
+
+### Namespace `FileFormat.Pcapng`
+
+[`PcapngFormatDescriptor`](#pcapngformatdescriptor) · [`PcapngReader`](#pcapngreader) · [`PcapngReader.Capture`](#pcapngreadercapture) · [`PcapngReader.Interface`](#pcapngreaderinterface) · [`PcapngReader.Packet`](#pcapngreaderpacket)
+
+#### `PcapngFormatDescriptor`
+
+Pseudo-archive descriptor for the modern pcapng (PCAP Next Generation) capture format. Each Enhanced/Simple Packet Block is exposed as its own entry. The first 100 packets are emitted verbatim; larger captures are tail-truncated and a note is left in `metadata.ini`. References: `https://github.com/pcapng/pcapng` — canonical pcapng specification repository (IETF draft source)IETF draft-ietf-opsawg-pcapng — the specification text produced from that repository`https://wiki.wireshark.org` — Wireshark wiki — pcapng development notes
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PcapngFormatDescriptor` | `PcapngFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+
+#### `PcapngReader`
+
+Reader for the modern pcapng capture format (RFC draft-tuexen-opsawg-pcapng). Walks the block stream, surfaces each Enhanced Packet Block (EPB) and Simple Packet Block (SPB) payload, and records per-interface metadata extracted from the Section Header Block (SHB) and Interface Description Blocks (IDBs).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PcapngReader` | `PcapngReader()` |  |
+| `BtEnhancedPacket` | `const uint BtEnhancedPacket` | Defines the bt enhanced packet constant value. |
+| `BtInterfaceDescription` | `const uint BtInterfaceDescription` | Defines the bt interface description constant value. |
+| `BtSectionHeader` | `const uint BtSectionHeader` | Defines the bt section header constant value. |
+| `BtSimplePacket` | `const uint BtSimplePacket` | Defines the bt simple packet constant value. |
+| `ByteOrderMagic` | `const uint ByteOrderMagic` | Defines the byte order magic constant value. |
+| `Read` | `static Capture Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `PcapngReader.Capture`
+
+Represents a capture.
+
+Implements `IEquatable<Capture>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Capture` | `Capture(bool LittleEndian, ushort VersionMajor, ushort VersionMinor, IReadOnlyList<Interface> Interfaces, IReadOnlyList<Packet> Packets)` | Represents a capture. |
+| `Interfaces` | `IReadOnlyList<Interface> Interfaces { get; init; }` |  |
+| `LittleEndian` | `bool LittleEndian { get; init; }` |  |
+| `Packets` | `IReadOnlyList<Packet> Packets { get; init; }` |  |
+| `VersionMajor` | `ushort VersionMajor { get; init; }` |  |
+| `VersionMinor` | `ushort VersionMinor { get; init; }` |  |
+
+#### `PcapngReader.Interface`
+
+Represents an interface.
+
+Implements `IEquatable<Interface>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Interface` | `Interface(uint LinkType, uint Snaplen)` | Represents an interface. |
+| `LinkType` | `uint LinkType { get; init; }` |  |
+| `Snaplen` | `uint Snaplen { get; init; }` |  |
+
+#### `PcapngReader.Packet`
+
+Represents a packet.
+
+Implements `IEquatable<Packet>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Packet` | `Packet(int InterfaceId, ulong TimestampRaw, byte[] Data, uint OriginalLength)` | Represents a packet. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `InterfaceId` | `int InterfaceId { get; init; }` |  |
+| `OriginalLength` | `uint OriginalLength { get; init; }` |  |
+| `TimestampRaw` | `ulong TimestampRaw { get; init; }` |  |
+| `ToDateTime` | `DateTime ToDateTime(int tsResolutionPow10 = 6)` | Decode the timestamp using the interface's `if_tsresol` (we default to 6 → microseconds since the option is not always present). |
+
+### Namespace `FileFormat.Pdf`
+
+[`PdfEntry`](#pdfentry) · [`PdfFormatDescriptor`](#pdfformatdescriptor) · [`PdfInPlaceModifier`](#pdfinplacemodifier) · [`PdfLayoutMap`](#pdflayoutmap) · [`PdfReader`](#pdfreader) · [`PdfWriter`](#pdfwriter)
+
+#### `PdfEntry`
+
+Represents an extractable resource from a PDF file: an image, an embedded file attachment, or a synthesised single-page slice.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PdfEntry` | `PdfEntry()` |  |
+| `Filter` | `string Filter { get; init; }` | Gets or sets the filter. |
+| `Height` | `int Height { get; init; }` | Gets or sets the height. |
+| `Name` | `string Name { get; init; }` | Gets or sets the name. |
+| `ObjectNumber` | `int ObjectNumber { get; init; }` | Gets or sets the object number. |
+| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `Width` | `int Width { get; init; }` | Gets or sets the width. |
+
+#### `PdfFormatDescriptor`
+
+PDF document surfaced as an archive: embedded images plus EmbeddedFiles attachments, with in-place attachment R/W via ISO 32000 incremental updates. References: `https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf` — ISO 32000-1:2008 (PDF 1.7) as republished by Adobe — including the incremental-update and EmbeddedFiles clauses`https://pdfa.org` — PDF Association — ISO 32000-2 (PDF 2.0) resources`https://en.wikipedia.org/wiki/PDF` — Wikipedia
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PdfFormatDescriptor` | `PdfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds file attachments to an existing PDF via ISO 32000-1 §7.5.6 incremental updates. Every byte before the original `%%EOF` stays byte-identical; a single new section is appended carrying the new EmbeddedFile + Filespec objects, a revised Catalog, a new xref subsection and a trailer with `/Prev` linking to the original xref. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Tombstones the named attachments via an incremental update. Their original Filespec + EmbeddedFile object bytes survive (true in-place — not overwritten) but are marked free ('f', generation+1) in the new xref subsection, so the spec-aware `PdfReader` stops listing them. |
+
+#### `PdfInPlaceModifier`
+
+True in-place R/W for PDF file attachments via ISO 32000-1 §7.5.6 incremental updates. Every pre-existing byte of the file is preserved byte-identical; mutations are appended after the current EOF as a new section consisting of: One revised Catalog object (with the updated /EmbeddedFiles tree).For `AddFile`: one new Filespec + one new EmbeddedFile per input.A new xref subsection covering the revised Catalog and (for Add) the new objects, or for Remove, the freed Filespec + EmbeddedFile entries marked 'f'.A new trailer dictionary with `/Prev` pointing at the original xref offset.A new `startxref` + `%%EOF` tail.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream pdf, string name, byte[] data)` | Appends one or more file attachments to the PDF via an ISO 32000-1 incremental update. The bytes before the original `%%EOF` stay byte-identical: only a new section is written at the tail. |
+| `AddFiles` | `static void AddFiles(Stream pdf, IReadOnlyList<ValueTuple<string, byte[]>> attachments)` | Bulk variant of `AddFile`: appends every (name, data) pair in a single incremental update section, so a multi-add commits only one new xref subsection + trailer. |
+| `RemoveFiles` | `static int RemoveFiles(Stream pdf, IReadOnlyList<string> names)` | Removes named attachments via an ISO 32000-1 incremental update. The freed objects (Filespec + EmbeddedFile) are tombstoned in the new xref subsection with the 'f' tag and an incremented generation; their original on-disk bytes survive untouched but become unreachable to any spec-aware reader walking the trailer chain. |
+
+#### `PdfLayoutMap`
+
+Walks the structural elements of a PDF file and emits the byte-level layout: %PDF header, objects (`N 0 obj` markers), xref table, and `%%EOF` marker as `DefragBlockInfo` tiles.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` | Enumerates the value. |
+
+#### `PdfReader`
+
+Reads a PDF file and extracts embedded images and file attachments.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PdfReader` | `PdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `PdfReader`. |
+| `Entries` | `IReadOnlyList<PdfEntry> Entries { get; }` | Gets the entries. |
+| `PageEntries` | `IReadOnlyList<PdfEntry> PageEntries { get; }` | Per-page slice entries (one self-contained single-page PDF per leaf page). Kept separate from `Entries` so the existing image/attachment surface is unchanged for callers that only care about embedded content. |
+| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
+| `Extract` | `byte[] Extract(PdfEntry entry)` | Decodes the supplied input. |
+
+#### `PdfWriter`
+
+Writes a minimal PDF 1.7 file containing the input files as embedded file attachments (EmbeddedFiles in the Names tree). Every PDF viewer can list them via "File → Attachments"; our `PdfReader` extracts them too. One blank page is emitted (PDF spec requires at least one page).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PdfWriter` | `PdfWriter()` |  |
+| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+
 ### Namespace `FileFormat.PeResources`
 
 [`PeResourcesFormatDescriptor`](#peresourcesformatdescriptor)
@@ -12004,6 +14487,84 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the PFS0 archive to the stream and finishes writing. |
 
+### Namespace `FileFormat.Pkcs12`
+
+[`Pkcs12FormatDescriptor`](#pkcs12formatdescriptor) · [`Pkcs12Parser`](#pkcs12parser) · [`Pkcs12Parser.Bag`](#pkcs12parserbag) · [`Pkcs12Parser.BagKind`](#pkcs12parserbagkind)
+
+#### `Pkcs12FormatDescriptor`
+
+Descriptor for PKCS#12 / PFX certificate bundles. Performs a shallow ASN.1 walk and surfaces each top-level SafeBag as its own entry: certificates as `cert_NN.der` (plus PEM side-copy), plain keys as `key_NN.der`, encrypted/shrouded keys as `encrypted_key_NN.der`, and any password-encrypted ContentInfo as a single opaque DER blob. No decryption is attempted — this is strictly a structural view. References: `https://www.rfc-editor.org/rfc/rfc7292` — RFC 7292 — PKCS #12 v1.1: Personal Information Exchange Syntax`https://en.wikipedia.org/wiki/PKCS_12` — Wikipedia overviewOpenSSL `openssl pkcs12` — de-facto reference implementation
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pkcs12FormatDescriptor` | `Pkcs12FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Each entry's decoded byte buffer is produced by `BuildEntries` and wrapped in a `BoundedEntryStream` sized to its logical length. |
+
+#### `Pkcs12Parser`
+
+Shallow ASN.1 walker for PKCS#12 / PFX bundles (RFC 7292). We never decrypt anything here — the aim is simply to enumerate each top-level SafeBag by its OID so the contents can be extracted verbatim. Encrypted / password-protected `EncryptedData` envelopes are reported but left as opaque DER blobs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OidCertBag` | `const string OidCertBag` | Defines the oid cert bag constant value. |
+| `OidCrlBag` | `const string OidCrlBag` | Defines the oid crl bag constant value. |
+| `OidData` | `const string OidData` | Defines the oid data constant value. |
+| `OidEncryptedData` | `const string OidEncryptedData` | Defines the oid encrypted data constant value. |
+| `OidKeyBag` | `const string OidKeyBag` | Defines the oid key bag constant value. |
+| `OidSafeContentsBag` | `const string OidSafeContentsBag` | Defines the oid safe contents bag constant value. |
+| `OidSecretBag` | `const string OidSecretBag` | Defines the oid secret bag constant value. |
+| `OidShroudedKeyBag` | `const string OidShroudedKeyBag` | Defines the oid shrouded key bag constant value. |
+| `OidSignedData` | `const string OidSignedData` | Defines the oid signed data constant value. |
+| `OidX509Cert` | `const string OidX509Cert` | Defines the oid x 509 cert constant value. |
+| `Walk` | `static IReadOnlyList<Bag> Walk(ReadOnlySpan<byte> der)` | Walk a PFX blob, producing one `Bag` per SafeBag discovered (nested ContentInfo containers are flattened). Encrypted SafeContents blocks are emitted as a single opaque `EncryptedContent`. |
+
+#### `Pkcs12Parser.Bag`
+
+Represents a bag.
+
+Implements `IEquatable<Bag>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bag` | `Bag(int Index, BagKind Kind, string BagOid, byte[] ValueDer)` | Represents a bag. |
+| `BagOid` | `string BagOid { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Kind` | `BagKind Kind { get; init; }` |  |
+| `ValueDer` | `byte[] ValueDer { get; init; }` |  |
+
+#### `Pkcs12Parser.BagKind`
+
+Specifies bag kind values.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Cert` | `0` | Specifies the cert option. |
+| `Key` | `1` | Specifies the key option. |
+| `ShroudedKey` | `2` | Specifies the shrouded key option. |
+| `Crl` | `3` | Specifies the crl option. |
+| `Secret` | `4` | Specifies the secret option. |
+| `Nested` | `5` | Specifies the nested option. |
+| `EncryptedContent` | `6` | Specifies the encrypted content option. |
+| `Unknown` | `7` | Specifies an unknown or unrecognized value. |
+
 ### Namespace `FileFormat.Ply`
 
 [`PlyFormatDescriptor`](#plyformatdescriptor)
@@ -12108,6 +14669,39 @@ PPMd stream container format. Layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), then t
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+### Namespace `FileFormat.Ppt`
+
+[`PptFormatDescriptor`](#pptformatdescriptor)
+
+#### `PptFormatDescriptor`
+
+Microsoft PowerPoint 97-2003 (.ppt) presentation — an OLE2/CFB compound document. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-ppt/6be79dde-33c1-4c1b-8ccc-4b2301c08662` — [MS-PPT]: PowerPoint (.ppt) Binary File Format (Microsoft Open Specifications)`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b` — [MS-CFB]: Compound File Binary File Format — the OLE2 container
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PptFormatDescriptor` | `PptFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
 
 ### Namespace `FileFormat.Pptx`
 
@@ -12320,6 +14914,97 @@ Implements `IDisposable`.
 | `VersionByte` | `byte VersionByte { get; set; }` | The platform/version byte (default 0x01 = PS1). |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
+
+### Namespace `FileFormat.Pst`
+
+[`PstFormatDescriptor`](#pstformatdescriptor)
+
+#### `PstFormatDescriptor`
+
+Microsoft Outlook personal storage (`.pst` / `.ost`). The archive view surfaces: `FULL.pst` (passthrough), `metadata.ini` (format=ansi|unicode, version, file size, header CRC, root BBT/NBT offsets) and `header.bin` (raw 512-byte container header). Scope cut: this descriptor does NOT enumerate the B-tree of node/block pages or extract folders/messages — that's a non-trivial reverse-engineering effort (MS-PST spec, LTP layer, PC/TC tables). Structural surfacing only. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-pst/141923d5-15ab-4ef1-a524-6dce75aae546` — [MS-PST]: Outlook Personal Folders (.pst) File Format (Microsoft Open Specifications)`https://github.com/libyal/libpff` — libpff — open PST/OST implementation with format documentation`https://en.wikipedia.org/wiki/Personal_Storage_Table` — Wikipedia overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PstFormatDescriptor` | `PstFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `FULL.pst` is exposed as a passthrough slice over the whole archive; `metadata.ini` and `header.bin` are produced by `BuildSynthetic` and wrapped in a `BoundedEntryStream` sized to their logical length. |
+
+### Namespace `FileFormat.PyInstaller`
+
+[`PyInstallerEntry`](#pyinstallerentry) · [`PyInstallerFormatDescriptor`](#pyinstallerformatdescriptor) · [`PyInstallerReader`](#pyinstallerreader)
+
+#### `PyInstallerEntry`
+
+A single entry in a PyInstaller CArchive table of contents.
+
+Implements `IEquatable<PyInstallerEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PyInstallerEntry` | `PyInstallerEntry(string Name, char TypeCode, bool IsCompressed, long DataOffset, long CompressedLength, long UncompressedLength)` | A single entry in a PyInstaller CArchive table of contents. |
+| `CompressedLength` | `long CompressedLength { get; init; }` | Number of stored bytes. |
+| `DataOffset` | `long DataOffset { get; init; }` | Absolute byte offset of the entry data within the source stream. |
+| `IsCompressed` | `bool IsCompressed { get; init; }` | True when the stored bytes are zlib-compressed. |
+| `Name` | `string Name { get; init; }` | Entry name (module name, binary filename, or data path). |
+| `TypeCode` | `char TypeCode { get; init; }` | CArchive type code: 'z'/'Z' PYZ archive, 'm' module, 'M' package module, 's' pyc source, 'b' binary, 'x' data, 'o' runtime option, 'd' dependency. |
+| `UncompressedLength` | `long UncompressedLength { get; init; }` | Length after inflation (equals `CompressedLength` when stored). |
+
+#### `PyInstallerFormatDescriptor`
+
+Read-only descriptor for the PyInstaller CArchive appended to a "onefile" executable. Detection is by the trailing MEI cookie (see `FormatDetector.DetectInstaller`); listing/extraction is delegated to `PyInstallerReader`. References: `https://github.com/pyinstaller/pyinstaller` — canonical implementation (bootloader sources define the MEI cookie and CArchive TOC)`https://pyinstaller.org/en/stable/advanced-topics.html` — official docs on the CArchive / ZlibArchive layout and the bootstrap process
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PyInstallerFormatDescriptor` | `PyInstallerFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `PyInstallerReader`
+
+Reads a PyInstaller CArchive — the package that a "onefile" build appends to the bootloader PE executable (or a bare `.pkg` CArchive). It locates the `MEI` magic cookie near end-of-file, parses the table of contents, and exposes each entry's data (zlib-inflated when flagged). Entries carrying an embedded PYZ (`PYZ\0`) archive can additionally enumerate their module names.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PyInstallerReader` | `PyInstallerReader(Stream stream)` | Opens a reader over a seekable stream containing a PyInstaller CArchive. |
+| `CookieSize` | `const int CookieSize` | Total cookie size in bytes: 8 magic + 4×4 header fields + 64-byte lib name. |
+| `MagicCookie` | `static readonly byte[] MagicCookie` | The 8-byte magic cookie that marks a PyInstaller CArchive. |
+| `PythonLibraryName` | `string PythonLibraryName { get; }` | Gets the embedded Python shared-library name (e.g. "python313.dll"). |
+| `PythonVersion` | `int PythonVersion { get; }` | Gets the Python version encoded in the cookie (e.g. 313 for 3.13). |
+| `FindCookie` | `static long FindCookie(Stream stream)` | Scans backward from end-of-file for the last occurrence of the MEI cookie (a onefile build may append an Authenticode signature after it). Returns the byte offset of the cookie, or -1 when the file contains no CArchive. |
+| `GetData` | `byte[] GetData(PyInstallerEntry entry)` | Returns the entry data, zlib-inflated when the entry is compressed. |
+| `GetPyzModuleNames` | `IReadOnlyList<string> GetPyzModuleNames(PyInstallerEntry entry)` | Enumerates the module names inside a PYZ entry (type code 'z'/'Z'). Returns an empty list for non-PYZ entries or when the embedded TOC cannot be parsed. |
+| `ReadPyzModuleNames` | `static IReadOnlyList<string> ReadPyzModuleNames(ReadOnlySpan<byte> pyz)` | Parses a PYZ blob (`PYZ\0` magic, 4-byte Python magic, u32 BE TOC offset, then a marshalled list of `(name, (typecode, offset, length))` tuples) and returns the module names. |
+| `ReadToc` | `IReadOnlyList<PyInstallerEntry> ReadToc()` | Parses and returns every entry in the table of contents. |
 
 ### Namespace `FileFormat.QuickLz`
 
@@ -12567,6 +15252,35 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Finish` | `void Finish()` | Performs the finish operation. |
 | `NormalizePath` | `static string NormalizePath(string path)` | Performs the normalize path operation. |
+
+### Namespace `FileFormat.RealMedia`
+
+[`RealMediaFormatDescriptor`](#realmediaformatdescriptor)
+
+#### `RealMediaFormatDescriptor`
+
+Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on failure and parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RealMediaFormatDescriptor` | `RealMediaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.RefPack`
 
@@ -13505,7 +16219,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the SHAR archive per the requested mode. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | In-place Remove is not implemented for Shar — the heredoc/uudecode block boundaries depend on arbitrary user content and cannot be scanned safely without re-parsing the whole script. Callers should rebuild via the rebuild-based `Defragment` path instead. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries through the verified extract → drop → re-create rebuild. Shar cannot be edited in place for removal: heredoc and uudecode block boundaries depend on arbitrary user content, and a body may legitimately contain delimiter look-alike text, so the script is re-emitted from the surviving entries instead of being cut. |
 
 #### `SharInPlaceModifier`
 
@@ -13534,6 +16248,35 @@ Creates a shell archive (shar) file. Text files use heredoc (cat), binary files 
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the shar archive. |
 | `ToByteArray` | `byte[] ToByteArray()` | Writes the shar archive to a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the shar archive to a stream. |
+
+### Namespace `FileFormat.Sketch`
+
+[`SketchFormatDescriptor`](#sketchformatdescriptor)
+
+#### `SketchFormatDescriptor`
+
+Sketch design files (.sketch). A ZIP container holding document.json, meta.json, user.json, pages/*.json, previews/preview.png and embedded image/text-preview assets. Read-only descriptor surfacing the canonical parts plus a derived metadata.ini. References: `https://developer.sketch.com/file-format/` — official Sketch file-format documentation`https://github.com/sketch-hq/sketch-document` — sketch-document — official file-format schemas
+
+Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SketchFormatDescriptor` | `SketchFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Slf`
 
@@ -13608,6 +16351,35 @@ Implements `IDisposable`.
 | `AddEntry` | `void AddEntry(string name, byte[] data)` | Adds an entry to the archive. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes the SLF library to the destination stream. |
+
+### Namespace `FileFormat.Smk`
+
+[`SmkFormatDescriptor`](#smkformatdescriptor)
+
+#### `SmkFormatDescriptor`
+
+Surfaces a Smacker container (`.smk`, 'SMK2'/'SMK4') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.smk` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each present audio track's concatenated chunks are surfaced as `TRACKn.bin` (Kind `Stream`) and, for compressed Smacker audio (SMKA) or uncompressed PCM, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.SmackerAudio` / PCM, with a graceful fallback to the raw blob on any decode failure. Bink-audio-in-Smacker tracks remain blob-only. Read-only; parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmkFormatDescriptor` | `SmkFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Snap`
 
@@ -13694,6 +16466,34 @@ Writes data in the Snappy framing format (streams).
 | --- | --- | --- |
 | `SnappyFrameWriter` | `SnappyFrameWriter(Stream output)` | Initializes a new `SnappyFrameWriter`. |
 | `Write` | `void Write(ReadOnlySpan<byte> data)` | Writes data as a Snappy framing stream. |
+
+### Namespace `FileFormat.Snes`
+
+[`SnesFormatDescriptor`](#snesformatdescriptor)
+
+#### `SnesFormatDescriptor`
+
+SNES / Super Famicom ROM file. No magic bytes — detection is by extension. Surfaces the full ROM, parsed metadata, optional SMC copier header, the ROM body, and the 64-byte internal header region. Read-only. References: `https://snes.nesdev.org/wiki/ROM_header` — SNESdev wiki — internal ROM header layout (LoROM/HiROM/ExHiROM)`https://problemkaputt.de/fullsnes.htm` — Martin Korth's "fullsnes" — authoritative SNES hardware/cartridge documentation
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SnesFormatDescriptor` | `SnesFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
 ### Namespace `FileFormat.Spark`
 
@@ -13848,6 +16648,34 @@ Splits a file into numbered parts (.001, .002, ...).
 | --- | --- | --- |
 | `Split` | `static int Split(Stream input, string outputDir, string baseName, long partSize)` | Splits the input stream into parts of the given size. |
 
+### Namespace `FileFormat.Sqlite`
+
+[`SqliteFormatDescriptor`](#sqliteformatdescriptor)
+
+#### `SqliteFormatDescriptor`
+
+SQLite 3 database read-only surfacing descriptor. Emits the raw pages, the 100-byte database header, a metadata.ini summary, and a textual dump of the freelist trunk chain. Does NOT decode B-trees or execute SQL: pure page-level introspection. References: `https://www.sqlite.org/fileformat2.html` — official SQLite database file-format documentation`https://en.wikipedia.org/wiki/SQLite` — Wikipedia overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SqliteFormatDescriptor` | `SqliteFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Squeeze`
 
 [`SqueezeFormatDescriptor`](#squeezeformatdescriptor) · [`SqueezeStream`](#squeezestream)
@@ -13967,6 +16795,68 @@ Creates SQX archives matching the real SQX format specification.
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, string password = null)` | Creates an SQX archive split into multiple volumes. |
 | `ToArray` | `byte[] ToArray()` | Creates an SQX archive as a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to a stream. |
+
+### Namespace `FileFormat.Srec`
+
+[`SrecFormatDescriptor`](#srecformatdescriptor) · [`SrecImage`](#srecimage) · [`SrecReader`](#srecreader) · [`SrecWriter`](#srecwriter)
+
+#### `SrecFormatDescriptor`
+
+Pseudo-archive descriptor for Motorola S-record firmware files (S19/S28/S37). Decodes the ASCII records into a flat binary and surfaces `firmware.bin` + `metadata.ini`; `Create` re-encodes a flat `firmware.bin` back into S-record text. Sibling of the Intel HEX descriptor in `FileFormat.FirmwareHex`. References: Motorola "M68000 Family Programmer's Reference Manual" — S-record appendix (the defining document)`https://srecord.sourceforge.net` — SRecord tool suite — thorough format documentation`https://en.wikipedia.org/wiki/SREC_(file_format)` — format overview
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SrecFormatDescriptor` | `SrecFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Re-encodes a flat firmware image (the `firmware.bin` input, or the single non-metadata input) as S-record text at base address 0. The address width is auto-selected from the image size. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SrecImage`
+
+A decoded Motorola S-record image: address-ordered, non-overlapping byte runs plus the declared start address (S7/S8/S9 termination). Flattening fills inter-segment gaps with a caller-chosen byte.
+
+Implements `IEquatable<SrecImage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SrecImage` | `SrecImage(IReadOnlyList<ValueTuple<uint, byte[]>> Segments, uint? StartAddress, int RecordCount, int DataRecordCount, int TotalDataBytes)` | A decoded Motorola S-record image: address-ordered, non-overlapping byte runs plus the declared start address (S7/S8/S9 termination). Flattening fills inter-segment gaps with a caller-chosen byte. |
+| `BaseAddress` | `uint BaseAddress { get; }` | Lowest address across all segments, or 0 when empty. |
+| `DataRecordCount` | `int DataRecordCount { get; init; }` |  |
+| `RecordCount` | `int RecordCount { get; init; }` |  |
+| `Segments` | `IReadOnlyList<ValueTuple<uint, byte[]>> Segments { get; init; }` |  |
+| `StartAddress` | `uint? StartAddress { get; init; }` |  |
+| `TotalDataBytes` | `int TotalDataBytes { get; init; }` |  |
+| `ToFlatBinary` | `byte[] ToFlatBinary(byte fill = 255)` | Flattens all segments into one contiguous binary from the lowest address to the end of the highest segment. Gaps are filled with `fill`. |
+
+#### `SrecReader`
+
+Parser for Motorola S-record text (`S<type><count><address><data><checksum>`). Recognised record types: S0 header, S1/S2/S3 data (2/3/4-byte address), S5/S6 record counts (informational), S7/S8/S9 termination (4/3/2-byte start address). The checksum is the ones'-complement of the byte sum of the count, address and data fields.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `static SrecImage Read(string text)` | Parses an S-record document into an `SrecImage`. |
+
+#### `SrecWriter`
+
+Emits Motorola S-record text for a flat binary image. Picks the data-record type from the address width (S1/S2/S3 for 2/3/4-byte addresses) — either auto-selected from the highest address or pinned by the caller — and writes the matching S9/S8/S7 termination record.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static string Write(byte[] data, uint baseAddress = 0, int addressWidth = 0, string header = null, uint startAddress = 0, int bytesPerRecord = 16)` | Encodes `data` as an S-record document. |
 
 ### Namespace `FileFormat.Stl`
 
@@ -14599,6 +17489,111 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive marker (two 512-byte zero blocks) and pads the output to a multiple of `blockingFactor * 512` bytes. |
 
+### Namespace `FileFormat.Tds`
+
+[`TdsFormatDescriptor`](#tdsformatdescriptor)
+
+#### `TdsFormatDescriptor`
+
+Autodesk 3D Studio `.3ds` — binary chunk-based 3D scene container. Every chunk starts with a 2-byte chunk ID (little-endian) followed by a 4-byte chunk size (little-endian, inclusive of the 6-byte header). Nested chunks share the same header format. Primary chunk at offset 0 has ID `0x4D4D` ("MM"); common nested chunks include `0x3D3D` (EDIT3DS), `0x4000` (OBJ_TRIMESH), `0x4100` (TRI_MESH), `0x4110` (TRI_VERTEXPOINT), `0x4120` (TRI_FACEL), `0x4130` (TRI_MATERIAL). References: `http://paulbourke.net/dataformats/3ds/` — Paul Bourke's 3DS chunk cataloguelib3ds — open 3DS parser, de-facto structural reference`https://en.wikipedia.org/wiki/.3ds` — Wikipedia overview
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TdsFormatDescriptor` | `TdsFormatDescriptor()` |  |
+| `ChunkEdit` | `const ushort ChunkEdit` | Edit (scene) chunk. |
+| `ChunkFaceList` | `const ushort ChunkFaceList` | Face list. |
+| `ChunkMain` | `const ushort ChunkMain` | Primary chunk ID (M3DMAGIC). |
+| `ChunkObject` | `const ushort ChunkObject` | Named object chunk. |
+| `ChunkTriMesh` | `const ushort ChunkTriMesh` | Triangle mesh (child of OBJECT). |
+| `ChunkVertexList` | `const ushort ChunkVertexList` | Vertex list. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Read-only archive capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Archive category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | No compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Default extension. |
+| `Description` | `string Description { get; }` | Short description. |
+| `DisplayName` | `string DisplayName { get; }` | Display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Known extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Archive family. |
+| `Id` | `string Id { get; }` | Format identifier. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Magic: `4D 4D` at offset 0 — weak (2 bytes), raised by extension match and the List() implementation's size-consistency check. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Stored only. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Not a tar compound format. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+
+### Namespace `FileFormat.TfRecord`
+
+[`TfRecordEntry`](#tfrecordentry) · [`TfRecordFormatDescriptor`](#tfrecordformatdescriptor) · [`TfRecordReader`](#tfrecordreader) · [`TfRecordWriter`](#tfrecordwriter)
+
+#### `TfRecordEntry`
+
+Represents a single record in a TFRecord file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TfRecordEntry` | `TfRecordEntry()` |  |
+| `IsCorrupt` | `bool IsCorrupt { get; init; }` | Gets a value indicating whether either the length-CRC or data-CRC failed validation. |
+| `Name` | `string Name { get; init; }` | Gets the synthesized record name (e.g. "record_00000.bin"). |
+| `Offset` | `long Offset { get; init; }` | Gets the absolute file offset where the record's data payload begins (past length+length-CRC). |
+| `Size` | `long Size { get; init; }` | Gets the size of the record's data payload in bytes. |
+
+#### `TfRecordFormatDescriptor`
+
+TensorFlow TFRecord — a flat sequence of CRC-32C-protected length-prefixed records. References: `https://www.tensorflow.org/tutorials/load_data/tfrecord` — official TFRecord format documentation`https://github.com/tensorflow/tensorflow` — TensorFlow sources — record framing defined in the RecordWriter/RecordReader code
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TfRecordFormatDescriptor` | `TfRecordFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the TFRecord stream in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the TFRecord stream per the requested mode. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `TfRecordReader`
+
+Reads records from a TensorFlow TFRecord file.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TfRecordReader` | `TfRecordReader(Stream stream, bool leaveOpen = false)` | Initializes a new `TfRecordReader` from a stream. |
+| `Entries` | `IReadOnlyList<TfRecordEntry> Entries { get; }` | Gets all records discovered in the file (corrupt records are flagged but still listed). |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(TfRecordEntry entry)` | Extracts the raw payload bytes for a given entry. |
+
+#### `TfRecordWriter`
+
+Writes records to a TensorFlow TFRecord file.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TfRecordWriter` | `TfRecordWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `TfRecordWriter`. |
+| `AddRecord` | `void AddRecord(ReadOnlySpan<byte> data)` | Appends a record. Records are written immediately — no buffering — since each one is self-contained framing. |
+| `AddRecord` | `void AddRecord(byte[] data)` | Convenience overload for byte arrays. |
+| `Dispose` | `void Dispose()` |  |
+
 ### Namespace `FileFormat.Tfc`
 
 [`TfcEntry`](#tfcentry) · [`TfcFormatDescriptor`](#tfcformatdescriptor) · [`TfcReader`](#tfcreader) · [`TfcWriter`](#tfcwriter)
@@ -14670,6 +17665,39 @@ Implements `IDisposable`.
 | `AddBundle` | `void AddBundle(byte[] uncompressedData, uint blockSize = 131072)` | Queues a stored bundle to be emitted on flush. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes all queued bundles to the stream and marks the writer as finished. |
+
+### Namespace `FileFormat.ThumbsDb`
+
+[`ThumbsDbFormatDescriptor`](#thumbsdbformatdescriptor)
+
+#### `ThumbsDbFormatDescriptor`
+
+Windows Thumbs.db thumbnail cache — an OLE2/CFB compound document holding per-image thumbnail streams. References: `https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b` — [MS-CFB]: Compound File Binary File Format — the OLE2 container`https://en.wikipedia.org/wiki/Windows_thumbnail_cache` — Wikipedia overviewinternal stream layout undocumented by Microsoft; reverse-engineered by the digital-forensics community (e.g. the vinetto tool)
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ThumbsDbFormatDescriptor` | `ThumbsDbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
 
 ### Namespace `FileFormat.Tnef`
 
@@ -16416,6 +19444,70 @@ WORM writer for Web Bundle (`.wbn`) files. Emits the canonical 10-byte CBOR-arra
 | `DefaultVersion` | `const string DefaultVersion` | Default version tag emitted when none is supplied via options. |
 | `Write` | `static void Write(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a Web Bundle from `inputs` to `output`. |
 
+### Namespace `FileFormat.WebAssembly`
+
+[`WasmFormatDescriptor`](#wasmformatdescriptor) · [`WasmReader`](#wasmreader) · [`WasmReader.Module`](#wasmreadermodule) · [`WasmReader.Section`](#wasmreadersection)
+
+#### `WasmFormatDescriptor`
+
+Pseudo-archive descriptor for WebAssembly binary modules. Each section is surfaced as an entry — well-known sections (type, import, function, code …) get descriptive names, and custom sections (e.g. `name`, `producers`, `.debug_info`) carry their embedded name in the entry filename. References: `https://webassembly.github.io/spec/core/` — WebAssembly Core Specification — binary format chapter`https://webassembly.org/` — project home`https://en.wikipedia.org/wiki/WebAssembly` — Wikipedia overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WasmFormatDescriptor` | `WasmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `WasmReader`
+
+Reader for WebAssembly binary modules (the `.wasm` on-disk format defined by the W3C WebAssembly Core specification, §5). Walks the section list and surfaces each section as an opaque byte payload tagged with its numeric id and (for custom sections) the name embedded at the head of the section body.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WasmReader` | `WasmReader()` |  |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | Magic bytes that begin every wasm binary. |
+| `Read` | `static Module Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `WasmReader.Module`
+
+Represents a module.
+
+Implements `IEquatable<Module>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Module` | `Module(uint Version, IReadOnlyList<Section> Sections)` | Represents a module. |
+| `Sections` | `IReadOnlyList<Section> Sections { get; init; }` |  |
+| `Version` | `uint Version { get; init; }` |  |
+
+#### `WasmReader.Section`
+
+Per-section metadata + raw body bytes.
+
+Implements `IEquatable<Section>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Section` | `Section(int Id, string TypeName, string CustomName, byte[] Body)` | Per-section metadata + raw body bytes. |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `CustomName` | `string CustomName { get; init; }` |  |
+| `Id` | `int Id { get; init; }` |  |
+| `TypeName` | `string TypeName { get; init; }` |  |
+
 ### Namespace `FileFormat.Wheel`
 
 [`WheelFormatDescriptor`](#wheelformatdescriptor)
@@ -16600,6 +19692,34 @@ Writes a WIM (Windows Imaging) file to a stream.
 | `Write` | `void Write(IReadOnlyList<ValueTuple<string, byte[]>> files)` | Writes a complete WIM file holding one image of the given named files. |
 | `Write` | `void Write(IReadOnlyList<byte[]> resources)` | Writes a complete WIM file holding the given resources, naming them `resource_0`, `resource_1` and so on. |
 
+### Namespace `FileFormat.WordPerfect`
+
+[`WordPerfectFormatDescriptor`](#wordperfectformatdescriptor)
+
+#### `WordPerfectFormatDescriptor`
+
+WordPerfect documents (.wpd and friends). All versions share the 4-byte prefix `FF 57 50 43` ("\xFFWPC"). Read-only descriptor surfacing the header plus the prefix and document areas carved out by the header's document-area pointer. Prefix packet structure and document text are not parsed. References: `https://sourceforge.net/projects/libwpd/` — libwpd — open WordPerfect implementation; its documentation is the de-facto format reference`https://en.wikipedia.org/wiki/WordPerfect` — Wikipedia overview
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WordPerfectFormatDescriptor` | `WordPerfectFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Wrapster`
 
 [`WrapsterEntry`](#wrapsterentry) · [`WrapsterFormatDescriptor`](#wrapsterformatdescriptor) · [`WrapsterModifier`](#wrapstermodifier) · [`WrapsterReader`](#wrapsterreader) · [`WrapsterWriter`](#wrapsterwriter)
@@ -16757,6 +19877,39 @@ Implements `IDisposable`.
 | `AddFile` | `void AddFile(string name, byte[] data, DateTime? modified = null)` | Adds a file to the archive. |
 | `Dispose` | `void Dispose()` | Writes the archive and flushes. |
 
+### Namespace `FileFormat.Xls`
+
+[`XlsFormatDescriptor`](#xlsformatdescriptor)
+
+#### `XlsFormatDescriptor`
+
+Microsoft Excel 97-2003 (.xls) workbook — BIFF8 streams in an OLE2/CFB compound document. References: `https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/cd03cb5f-ca02-4934-a391-bb674cb8aa06` — [MS-XLS]: Excel Binary File Format (.xls) Structure (Microsoft Open Specifications)`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b` — [MS-CFB]: Compound File Binary File Format — the OLE2 container
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XlsFormatDescriptor` | `XlsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the archive: any byte not covered by a live extent in the layout map (headers, entry data and directory structures are live and preserved, so the archive still lists and extracts identically). Cluster-tip wiping is N/A (entries are stored byte-exact with no per-file slack). |
+
 ### Namespace `FileFormat.Xlsx`
 
 [`XlsxFormatDescriptor`](#xlsxformatdescriptor)
@@ -16828,6 +19981,43 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+
+### Namespace `FileFormat.Xps`
+
+[`XpsFormatDescriptor`](#xpsformatdescriptor)
+
+#### `XpsFormatDescriptor`
+
+XPS / OpenXPS document — an OPC ZIP package (Microsoft / ECMA-388). References: `https://ecma-international.org/publications-and-standards/standards/ecma-388/` — ECMA-388 Open XML Paper Specification`https://en.wikipedia.org/wiki/Open_XML_Paper_Specification` — Wikipedia overview
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XpsFormatDescriptor` | `XpsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) parts inside an existing XPS package. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended part's local file header + compressed data are read or written; pre-existing entries stay byte-identical. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XPS is a ZIP variant). |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XPS is a ZIP variant). |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named parts; uses `ZipModifier`. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
 
 ### Namespace `FileFormat.Xz`
 
@@ -17151,6 +20341,83 @@ Writes ZAP (Amiga Disk Archiver) images. Tracks are stored uncompressed -- the r
 | `TrackSize` | `const int TrackSize` | Defines the track size constant value. |
 | `AddTrack` | `void AddTrack(int trackNumber, ReadOnlySpan<byte> data)` | Performs the add track operation. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+
+### Namespace `FileFormat.Zarr`
+
+[`ZarrConstants`](#zarrconstants) · [`ZarrFormatDescriptor`](#zarrformatdescriptor) · [`ZarrReader`](#zarrreader)
+
+#### `ZarrConstants`
+
+Represents a zarr constants.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AttributesKey` | `const string AttributesKey` | Defines the attributes key constant value. |
+| `ChunkGridKey` | `const string ChunkGridKey` | Defines the chunk grid key constant value. |
+| `ChunkKeyEncodingKey` | `const string ChunkKeyEncodingKey` | Defines the chunk key encoding key constant value. |
+| `ChunkShapeKey` | `const string ChunkShapeKey` | Defines the chunk shape key constant value. |
+| `ChunksKey` | `const string ChunksKey` | Defines the chunks key constant value. |
+| `CodecsKey` | `const string CodecsKey` | Defines the codecs key constant value. |
+| `CompressorKey` | `const string CompressorKey` | Defines the compressor key constant value. |
+| `ConfigurationKey` | `const string ConfigurationKey` | Defines the configuration key constant value. |
+| `DataTypeKey` | `const string DataTypeKey` | Defines the data type key constant value. |
+| `DimensionNamesKey` | `const string DimensionNamesKey` | Defines the dimension names key constant value. |
+| `DimensionSeparatorKey` | `const string DimensionSeparatorKey` | Defines the dimension separator key constant value. |
+| `DtypeKey` | `const string DtypeKey` | Defines the dtype key constant value. |
+| `FillValueKey` | `const string FillValueKey` | Defines the fill value key constant value. |
+| `FiltersKey` | `const string FiltersKey` | Defines the filters key constant value. |
+| `IdKey` | `const string IdKey` | Defines the id key constant value. |
+| `NameKey` | `const string NameKey` | Defines the name key constant value. |
+| `NodeTypeArray` | `const string NodeTypeArray` | Defines the node type array constant value. |
+| `NodeTypeGroup` | `const string NodeTypeGroup` | Defines the node type group constant value. |
+| `NodeTypeKey` | `const string NodeTypeKey` | Defines the node type key constant value. |
+| `OrderKey` | `const string OrderKey` | Defines the order key constant value. |
+| `ShapeKey` | `const string ShapeKey` | Defines the shape key constant value. |
+| `V2RequiredKeys` | `static readonly string[] V2RequiredKeys` | Provides the v 2 required keys value. |
+| `V3RequiredKeys` | `static readonly string[] V3RequiredKeys` | Provides the v 3 required keys value. |
+| `ZarrFormatKey` | `const string ZarrFormatKey` | Defines the zarr format key constant value. |
+
+#### `ZarrFormatDescriptor`
+
+Zarr v2/v3 array metadata read-only pseudo-archive. Zarr is a chunked N-D array store used by NumPy/SciPy/xarray; we surface a single `.zarray` (v2) or `zarr.json` (v3) document as `FULL.json` plus an INI summary. Detection is by JSON content sniffing (no extension or magic bytes). References: `https://zarr-specs.readthedocs.io/` — Zarr storage specifications (v2 and v3)`https://zarr.dev/` — Zarr project home`https://github.com/zarr-developers/zarr-specs` — specification repository
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZarrFormatDescriptor` | `ZarrFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ZarrReader`
+
+Reads Zarr v2 and v3 array metadata and exposes the chunks of the array as archive entries.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZarrReader` | `ZarrReader(Stream stream)` | Initializes a new instance of `ZarrReader`. |
+| `Chunks` | `IReadOnlyList<long> Chunks { get; }` | Gets the chunks. |
+| `CodecsCount` | `int CodecsCount { get; }` | Gets the codecs count. |
+| `Compressor` | `string Compressor { get; }` | Gets the compressor. |
+| `DataType` | `string DataType { get; }` | Gets the data type. |
+| `FiltersCount` | `int FiltersCount { get; }` | Gets the filters count. |
+| `NodeType` | `string NodeType { get; }` | Gets the node type. |
+| `Order` | `string Order { get; }` | Gets the order. |
+| `ParseStatus` | `string ParseStatus { get; }` | Gets the parse status. |
+| `Shape` | `IReadOnlyList<long> Shape { get; }` | Gets the shape. |
+| `ZarrFormat` | `int ZarrFormat { get; }` | Gets the zarr format. |
 
 ### Namespace `FileFormat.Zip`
 
@@ -17802,3 +21069,32 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 | `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
 | `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
 | `FinishCompression` | `protected override void FinishCompression()` |  |
+
+### Namespace `FileFormat.ZxSnapshot`
+
+[`ZxSnapshotFormatDescriptor`](#zxsnapshotformatdescriptor)
+
+#### `ZxSnapshotFormatDescriptor`
+
+ZX Spectrum snapshot and tape formats: `.sna`, `.z80`, `.tap`, `.tzx`. Detects TZX by magic, the rest by size / extension heuristics. Read-only; compressed Z80 pages are surfaced verbatim, not decompressed. References: `https://sinclair.wiki.zxnet.co.uk/wiki/TAP_format` — Sinclair wiki — TAP format (companion SNA/Z80/TZX pages document the snapshot formats)World of Spectrum "File format reference" — long-standing community documentation of .sna/.z80/.tap/.tzxTZX specification v1.20 — originally maintained at World of Spectrum
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZxSnapshotFormatDescriptor` | `ZxSnapshotFormatDescriptor()` |  |
+| `TzxMagic` | `static readonly byte[] TzxMagic` | Provides the tzx magic value. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
