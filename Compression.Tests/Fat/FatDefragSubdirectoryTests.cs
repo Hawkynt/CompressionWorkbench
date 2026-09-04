@@ -451,4 +451,47 @@ public class FatDefragSubdirectoryTests {
       Assert.That(after[path], Is.EqualTo(data), $"nested file {path} content intact");
     }
   }
+
+  [Test, Category("RoundTrip")]
+  public void ANestedFileWhoseFirstClusterMoves_HasItsDirectoryEntryRepointed() {
+    // Packing against the tail moves every owner, so a nested file's FIRST
+    // cluster changes — which is what makes the parent directory's entry need
+    // repointing. Every earlier fixture only ever moved a nested file's later
+    // clusters, so the entry never had to change and the walk that finds it was
+    // never exercised past the root.
+    var payload = new byte[1_800];
+    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 13 + 3);
+
+    var w = new FatWriter();
+    w.AddFile("readme.txt", Encoding.ASCII.GetBytes("root readme payload"));
+    w.AddFile("docs/deep.txt", payload);
+    w.AddFile("docs/api/leaf.txt", Encoding.ASCII.GetBytes("leaf body"));
+    var image = w.BuildAutoSized();
+
+    var g = FatGeometry.Read(image);
+    var startBefore = FindStartCluster(image, g, "DEEP.TXT");
+    Assert.That(startBefore, Is.GreaterThanOrEqualTo(2), "the nested file has to exist to begin with");
+
+    using var ms = new MemoryStream();
+    ms.Write(image);
+    ms.SetLength(image.Length);
+    var before = ExtractAll(ms);
+
+    new FatFormatDescriptor().Defragment(ms, new DefragOptions {
+      Mode = DefragMode.ConsolidateAtEnd,
+      Profile = LayoutProfile.Performance,
+    });
+
+    var packed = ms.ToArray();
+    var g2 = FatGeometry.Read(packed);
+    var startAfter = FindStartCluster(packed, g2, "DEEP.TXT");
+    Assert.That(startAfter, Is.Not.EqualTo(startBefore),
+      "nothing moved, so this fixture proves nothing — pick a mode that relocates the file");
+
+    var after = ExtractAll(ms);
+    foreach (var (path, data) in before) {
+      Assert.That(after, Contains.Key(path), $"nested file {path} still present at its path");
+      Assert.That(after[path], Is.EqualTo(data), $"nested file {path} content intact");
+    }
+  }
 }
