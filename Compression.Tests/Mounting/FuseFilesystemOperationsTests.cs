@@ -40,7 +40,30 @@ public sealed class FuseFilesystemOperationsTests {
     Assert.That(this._sut.LookupCount(first.Inode), Is.EqualTo(1));
 
     this._sut.Forget(first.Inode, ulong.MaxValue);
-    Assert.That(this._sut.LookupCount(first.Inode), Is.Zero);
+    Assert.Multiple(() => {
+      Assert.That(this._sut.LookupCount(first.Inode), Is.Zero);
+      Assert.That(this._sut.GetAttributes(first.Inode, out _), Is.EqualTo(FuseErrno.NoEntry));
+      Assert.That(this._sut.TrackedInodeCount, Is.EqualTo(1));
+    });
+  }
+
+  [Test]
+  public void OpenFilePinsInodeUntilReleaseEvenAfterForget() {
+    var inode = LookupReadme();
+    Assert.That(this._sut.OpenFile(inode, flags: 0, out var handleId), Is.Zero);
+
+    this._sut.Forget(inode, ulong.MaxValue);
+
+    Span<byte> buffer = stackalloc byte[3];
+    Assert.Multiple(() => {
+      Assert.That(this._sut.GetAttributes(inode, out _), Is.Zero);
+      Assert.That(this._sut.ReadFile(handleId, 1, buffer, out var count), Is.Zero);
+      Assert.That(count, Is.EqualTo(3));
+      Assert.That(Encoding.ASCII.GetString(buffer), Is.EqualTo("bcd"));
+    });
+
+    Assert.That(this._sut.ReleaseFile(handleId), Is.Zero);
+    Assert.That(this._sut.GetAttributes(inode, out _), Is.EqualTo(FuseErrno.NoEntry));
   }
 
   [TestCase(0x1)]
@@ -55,6 +78,21 @@ public sealed class FuseFilesystemOperationsTests {
       Assert.That(error, Is.EqualTo(FuseErrno.ReadOnlyFileSystem));
       Assert.That(handleId, Is.Zero);
       Assert.That(this._filesystem.OpenCount, Is.Zero);
+    });
+  }
+
+  [Test]
+  public void AccessReportsReadOnlyAndExecutableSemantics() {
+    var inode = LookupReadme();
+
+    Assert.Multiple(() => {
+      Assert.That(this._sut.Access(inode, 0), Is.Zero);
+      Assert.That(this._sut.Access(inode, 0x4), Is.Zero);
+      Assert.That(this._sut.Access(inode, 0x1), Is.EqualTo(FuseErrno.AccessDenied));
+      Assert.That(this._sut.Access(inode, 0x2), Is.EqualTo(FuseErrno.ReadOnlyFileSystem));
+      Assert.That(this._sut.Access(FuseFilesystemOperations.RootInode, 0x1), Is.Zero);
+      Assert.That(this._sut.Access(FuseFilesystemOperations.RootInode, 0x2), Is.EqualTo(FuseErrno.ReadOnlyFileSystem));
+      Assert.That(this._sut.Access(inode, 0x8), Is.EqualTo(FuseErrno.InvalidArgument));
     });
   }
 
@@ -94,20 +132,36 @@ public sealed class FuseFilesystemOperationsTests {
   }
 
   [Test]
-  public void DirectoryHandleKeepsStableSnapshotAndOffsets() {
+  public void DirectoryHandleIncludesDotEntriesAndKeepsStableSnapshotOffsets() {
     Assert.That(this._sut.Lookup(FuseFilesystemOperations.RootInode, "docs", out var docs), Is.Zero);
     Assert.That(this._sut.OpenDirectory(docs.Inode, out var handleId), Is.Zero);
 
     this._filesystem.AddFile(this._docs, "later.txt", "new");
 
     Assert.That(this._sut.ReadDirectory(handleId, 0, out var allEntries), Is.Zero);
-    Assert.That(this._sut.ReadDirectory(handleId, 1, out var afterFirst), Is.Zero);
+    Assert.That(this._sut.ReadDirectory(handleId, 2, out var afterDots), Is.Zero);
+    Assert.That(this._sut.ReadDirectory(handleId, 3, out var afterFirstChild), Is.Zero);
 
     Assert.Multiple(() => {
-      Assert.That(allEntries.Select(static entry => entry.Name), Is.EqualTo(new[] { "readme.txt" }));
-      Assert.That(allEntries[0].NextOffset, Is.EqualTo(1));
-      Assert.That(afterFirst, Is.Empty);
+      Assert.That(allEntries.Select(static entry => entry.Name), Is.EqualTo(new[] { ".", "..", "readme.txt" }));
+      Assert.That(allEntries.Select(static entry => entry.NextOffset), Is.EqualTo(new long[] { 1, 2, 3 }));
+      Assert.That(allEntries[0].Inode, Is.EqualTo(docs.Inode));
+      Assert.That(allEntries[1].Inode, Is.EqualTo(FuseFilesystemOperations.RootInode));
+      Assert.That(afterDots.Select(static entry => entry.Name), Is.EqualTo(new[] { "readme.txt" }));
+      Assert.That(afterFirstChild, Is.Empty);
     });
+  }
+
+  [Test]
+  public void DirectorySnapshotPinsUnlookedUpChildInodesOnlyUntilRelease() {
+    Assert.That(this._sut.Lookup(FuseFilesystemOperations.RootInode, "docs", out var docs), Is.Zero);
+    var before = this._sut.TrackedInodeCount;
+
+    Assert.That(this._sut.OpenDirectory(docs.Inode, out var handleId), Is.Zero);
+    Assert.That(this._sut.TrackedInodeCount, Is.EqualTo(before + 1));
+
+    Assert.That(this._sut.ReleaseDirectory(handleId), Is.Zero);
+    Assert.That(this._sut.TrackedInodeCount, Is.EqualTo(before));
   }
 
   [Test]
@@ -132,8 +186,18 @@ public sealed class FuseFilesystemOperationsTests {
       Assert.That(Marshal.SizeOf<LinuxStat>(), Is.EqualTo(144));
       Assert.That(Marshal.SizeOf<FuseFileInfo>(), Is.EqualTo(64));
       Assert.That(Marshal.SizeOf<FuseEntryParam>(), Is.EqualTo(176));
-      Assert.That(Marshal.SizeOf<FuseLowLevelOps>(), Is.EqualTo(25 * IntPtr.Size));
+      Assert.That(Marshal.SizeOf<FuseLowLevelOps>(), Is.EqualTo(30 * IntPtr.Size));
     });
+  }
+
+  [Test]
+  public void DirectoryStatsExposePosixMinimumLinkCount() {
+    var stat = FuseStatFactory.Create(
+      FuseFilesystemOperations.RootInode,
+      this._filesystem.Stat(this._filesystem.RootNodeId)
+    );
+
+    Assert.That(stat.LinkCount, Is.GreaterThanOrEqualTo(2));
   }
 
   [Test]
