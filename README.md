@@ -138,28 +138,28 @@ They were designed as "a bag of files with a directory". The exhaustive per-form
 
 Formats that *are* archives by structure but have never been presented that way in ordinary file managers. CompressionWorkbench slices each one along its natural payload boundary and exposes the same `List` / `Extract` surface as ZIP.
 
-State columns audited against actual `IArchiveCreatable` / `IArchiveModifiable` implementation, not advertised intent. Where one bullet covers multiple projects with different states (e.g. ICO is WORM, ANI is R), each project's state is shown explicitly.
+State columns audited against actual `IArchiveCreatable` / `IArchiveModifiable` implementation, not advertised intent. Where one bullet covers multiple projects with different states (e.g. ICO is R/W, ANI is WORM), each project's state is shown explicitly.
 
 | Container                              | State                                  | Entries become                                                                     | Where shipped                                          |
 | -------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | **PE resource DLLs/EXEs**              | PeResources=R, ResourceDll=WORM        | one entry per resource: `RT_GROUP_ICON` → `.ico`, `RT_BITMAP` → `.bmp`, `RT_MANIFEST` → `.xml`, `RT_STRING` → `.txt`, `RT_VERSION` → `.rcv`, raw `RT_RCDATA` | `FileFormat.PeResources`, `FileFormat.ResourceDll`     |
-| **ICO / CUR / ANI**                    | Ico=WORM, Ani=R                        | one entry per `ICONDIRENTRY` → `.png` / `.bmp` (cursor adds hotspot)               | `FileFormat.Ico`, `FileFormat.PngCrushAdapters.Ani`    |
+| **ICO / CUR / ANI**                    | Ico=R/W, Cur=WORM, Ani=WORM            | one entry per `ICONDIRENTRY` → `.png` / `.bmp` (cursor adds hotspot)               | `FileFormat.Ico`, `FileFormat.PngCrushAdapters.Ani`    |
 | **Multi-page TIFF / BigTIFF**          | sibling-provided                       | one single-page `.tif` per IFD                                                     | `FileFormat.PngCrushAdapters.Tiff` / `BigTiff`         |
 | **Multi-frame GIF / MNG / FLI / DCX**  | sibling-provided                       | one `.gif` / `.png` per frame                                                      | `FileFormat.Gif`, `PngCrushAdapters.{Mng,Fli,Dcx}`     |
 | **Animated PNG (APNG)**                | sibling-provided                       | one `.png` per frame with dispose/blend applied against previous frames            | `FileFormat.PngCrushAdapters.Apng`                     |
 | **Icon containers (ICNS, MPO)**        | sibling-provided                       | Apple icon suite / stereoscopic JPEG pair                                          | `FileFormat.PngCrushAdapters.{Icns,Mpo}`               |
 | **Font collections (TTC / OTC)**       | R                                      | one `.ttf` / `.otf` per member font                                                | `FileFormat.FontCollection`                            |
 | **Single-font (TTF / OTF)**            | R                                      | per-glyph entries (cmap + glyf slicing; CFF/OpenType passes through)               | `FileFormat.FontCollection.Ttf`                        |
-| **Gettext MO / PO**                    | R                                      | one `.txt` per msgid/msgstr pair                                                   | `FileFormat.Gettext`                                   |
+| **Gettext MO / PO**                    | Mo=WORM, Po=R                          | one `.txt` per msgid/msgstr pair                                                   | `FileFormat.Gettext`                                   |
 | **WAV / FLAC / MP3**                   | WAV=WORM, FLAC=WORM, MP3=WORM          | full file + per-channel WAV + ID3v2/RIFF metadata + APIC cover art                 | `FileFormat.Wav`, `FileFormat.Flac`, `FileFormat.Mp3`  |
 | **Ogg**                                | R                                      | per-logical-stream packets + Vorbis/Opus comments                                  | `FileFormat.Ogg`                                       |
-| **MP4 / MOV / MKV / WebM**             | R                                      | demuxed tracks (H.264 → Annex-B), attachments, chapters                            | `FileFormat.Mp4`, `FileFormat.Matroska`                |
-| **MPEG Transport Stream**              | R                                      | per-PID elementary streams (video/audio/data)                                      | `FileFormat.MpegTs`                                    |
+| **MP4 / MOV / MKV / WebM**             | Mp4=WORM (audio mux), Mkv=R            | demuxed tracks (H.264 → Annex-B), attachments, chapters                            | `FileFormat.Mp4`, `FileFormat.Matroska`                |
+| **MPEG Transport / Program Stream, FLV** | R                                    | per-PID elementary streams; PES-stripped streams and DVD substreams; per-codec streams | `FileFormat.MpegTs`, `FileFormat.MpegPs`, `FileFormat.Flv` |
 | **Blu-ray PGS (SUP)**                  | R                                      | subtitle segments grouped by epoch                                                 | `FileFormat.Sup`                                       |
 | **VobSub (DVD)**                       | R                                      | `.idx` metadata + per-entry slices of the sibling `.sub` PES stream                | `FileFormat.VobSub`                                    |
 | **HLS M3U8**                           | R                                      | segment list with per-variant metadata                                             | `FileFormat.M3u8`                                      |
 | **U-Boot uImage, FDT/DTB, UEFI FV**    | R                                      | firmware header metadata + decompressed payload or per-FFS/property entries        | `FileFormat.UImage`, `FileFormat.Dtb`, `FileFormat.UefiFv` |
-| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX, ASPack and the aPLib packers (FSG / PECompact / RLPack) — see `docs/EXE-PACKER-COVERAGE.md` | `FileFormat.ExePackers`                                |
+| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX, ASPack and the aPLib packers (FSG / PECompact / RLPack) — see the *Executable packer handlers* table in `Hawkynt.FileFormats.Archives/README.md` | `FileFormat.ExePackers`                                |
 
 ### Honest failure
 
@@ -252,8 +252,9 @@ source code** — `IArchiveCreatable` and `IArchiveModifiable` interface impleme
 > maintenance verbs (optimize / shrink / defrag / purge / wipe), the block-map
 > display contract, and the streaming (OOM-free) paths — and **which interface a
 > format must implement to unlock each** is specified in
-> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage counts are in
-> [`docs/OPERATION_COVERAGE.md`](docs/OPERATION_COVERAGE.md).
+> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage of the filesystem
+> descriptors is in [`docs/OPERATION_COVERAGE.md`](docs/OPERATION_COVERAGE.md); for archives it is
+> the Maintenance column of [`Hawkynt.FileFormats.Archives/README.md`](Hawkynt.FileFormats.Archives/README.md).
 
 > **How big an input can a building block take?** The measured ceilings, the
 > `Array.MaxLength` limit that `IBuildingBlock` cannot exceed, the 32-bit quantities

@@ -253,10 +253,22 @@ testCmd.SetAction((ParseResult ctx) => {
 
   Console.Write($"Testing {archive.Name}...");
   var sw = Stopwatch.StartNew();
-  var ok = ArchiveOperations.Test(archive.FullName, password);
+  var result = ArchiveOperations.TestDetailed(archive.FullName, password);
   sw.Stop();
-  Console.WriteLine(ok ? $" OK ({sw.ElapsedMilliseconds}ms)" : " FAILED");
-  return ok ? 0 : 1;
+  // "not testable" is not a failed integrity check -- nothing is known to be wrong with the file,
+  // there is just no verifier for it. It gets its own message and its own exit code so a script
+  // can tell the two apart.
+  switch (result) {
+    case ArchiveTestResult.Ok:
+      Console.WriteLine($" OK ({sw.ElapsedMilliseconds}ms)");
+      return 0;
+    case ArchiveTestResult.Corrupt:
+      Console.WriteLine(" FAILED");
+      return 1;
+    default:
+      Console.WriteLine(" NOT TESTABLE (no registered verifier for this format)");
+      return 2;
+  }
 });
 
 // ── add / remove / replace ───────────────────────────────────────────
@@ -474,7 +486,9 @@ convertCmd.SetAction((ParseResult ctx) => {
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
   var srcFormat = FormatDetector.Detect(input.FullName);
-  var dstFormat = FormatDetector.DetectByExtension(output.FullName);
+  // The banner must name the format the conversion will actually write, so it resolves the
+  // target the way Convert does -- by capability, not by first extension claimant.
+  var dstFormat = FormatDetector.DetectByExtensionForCreate(output.FullName);
   var methodLabel = method.IsDefault ? "" : $" [{method}]";
   Console.WriteLine($"Converting {input.Name} ({srcFormat}) -> {output.Name} ({dstFormat}){methodLabel}");
 

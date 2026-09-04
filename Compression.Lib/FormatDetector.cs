@@ -692,16 +692,31 @@ public static partial class FormatDetector {
   /// </remarks>
   public static Format DetectByExtensionForCreate(string path) {
     EnsureRegistryMapped();
+
+    // Start from the read-side answer and keep it when it can create. That lookup is not a plain
+    // first-claim-wins map: it resolves compound extensions, and it carries hand-tuned rules for
+    // the extensions many formats claim -- ".img" falls back to FAT precisely so the raw map does
+    // not hand it to a niche descriptor, and ".deb" goes through DetectArOrDeb. Scanning the raw
+    // claimant list first defeated all of that, so ".img" resolved to Bfs and ".deb" to a bare ar
+    // archive: both are creatable, and both are the wrong format to write.
+    var byExtension = DetectByExtension(path);
+    if (byExtension != Format.Unknown && CanCreate(byExtension))
+      return byExtension;
+
+    // The read-side claimant cannot create, so this is a shared extension whose first claimant is
+    // read-only. Take the first one that can write instead.
     var singleExt = Path.GetExtension(path.ToLowerInvariant());
     if (!string.IsNullOrEmpty(singleExt)
-        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants)
-        && claimants.Count > 1)
+        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants))
       foreach (var candidate in claimants)
-        if (GetDesc(candidate) is { } desc && desc.Capabilities.HasFlag(FormatCapabilities.CanCreate))
+        if (CanCreate(candidate))
           return candidate;
 
-    return DetectByExtension(path);
+    return byExtension;
   }
+
+  private static bool CanCreate(Format format)
+    => GetDesc(format) is { } desc && desc.Capabilities.HasFlag(FormatCapabilities.CanCreate);
 
   private static Format ResolveSharedExtension(string path, List<Format> claimants) {
     var header = ReadHeader(path);

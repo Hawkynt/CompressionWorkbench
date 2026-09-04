@@ -355,6 +355,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Sup\FileFormat.Sup.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.VobSub\FileFormat.VobSub.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.M3u8\FileFormat.M3u8.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Flv\FileFormat.Flv.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MpegPs\FileFormat.MpegPs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.MpegTs\FileFormat.MpegTs.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Pcapng\FileFormat.Pcapng.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mz\FileFormat.Mz.csproj" />

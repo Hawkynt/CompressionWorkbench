@@ -106,4 +106,50 @@ public class SharedExtensionDisambiguationTests {
   public void UnsharedExtension_ForCreate_MatchesTheReadSideLookup() {
     Assert.That(Det.DetectByExtensionForCreate("x.zip"), Is.EqualTo(Det.DetectByExtension("x.zip")));
   }
+
+  // The create-side lookup only overrides the read-side answer when that answer cannot create.
+  // Scanning the raw claimant map first instead defeated the hand-tuned rules DetectByExtension
+  // carries: ".img" falls back to FAT precisely so the map does not hand it to a niche descriptor,
+  // and ".deb" goes through DetectArOrDeb. Both were being resolved to a different, creatable, and
+  // wrong format -- Bfs and a bare ar archive.
+
+  [TestCase(".img", "Fat")]
+  [TestCase(".deb", "Deb")]
+  public void SharedExtension_ForCreate_KeepsTheReadSideAnswerWhenItCanCreate(string ext, string expected) {
+    Assert.That(Det.DetectByExtension("x" + ext).ToString(), Is.EqualTo(expected),
+      "precondition: the read-side lookup already resolves this extension deliberately");
+    Assert.That(Det.DetectByExtensionForCreate("x" + ext).ToString(), Is.EqualTo(expected));
+  }
+
+  // A compound extension is resolved by the longest match, which the create-side lookup must not
+  // trade for a single-extension claimant -- Convert's tar-restream tiers key on the compound id.
+  [TestCase(".tar.gz", "TarGz")]
+  [TestCase(".tar.xz", "TarXz")]
+  [TestCase(".tar.bz2", "TarBz2")]
+  [TestCase(".tar.zst", "TarZst")]
+  public void CompoundExtension_ForCreate_MatchesTheReadSideLookup(string ext, string expected) {
+    Assert.That(Det.DetectByExtensionForCreate("x" + ext).ToString(), Is.EqualTo(expected));
+    Assert.That(Det.DetectByExtensionForCreate("x" + ext), Is.EqualTo(Det.DetectByExtension("x" + ext)));
+  }
+
+  /// <summary>
+  /// The create-side lookup may only differ from the read-side one where the read-side claimant
+  /// genuinely cannot write. Anything else means it is substituting a format the caller did not ask
+  /// for, which is how .img and .deb went wrong.
+  /// </summary>
+  [Test]
+  public void ForCreate_OnlyOverridesAClaimantThatCannotCreate() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var wrong = new List<string>();
+    foreach (var ext in Compression.Registry.FormatRegistry.All
+               .SelectMany(d => d.Extensions).Distinct(StringComparer.OrdinalIgnoreCase)) {
+      var readSide = Det.DetectByExtension("probe" + ext);
+      if (readSide == Det.DetectByExtensionForCreate("probe" + ext)) continue;
+      var desc = Compression.Registry.FormatRegistry.GetById(readSide.ToString());
+      if (desc != null && desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate))
+        wrong.Add($"{ext}: read-side {readSide} can create, yet create-side picks "
+                  + Det.DetectByExtensionForCreate("probe" + ext));
+    }
+    Assert.That(wrong, Is.Empty, string.Join("\n", wrong));
+  }
 }

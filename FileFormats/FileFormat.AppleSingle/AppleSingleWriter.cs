@@ -24,7 +24,21 @@ public static class AppleSingleWriter {
   /// the data area immediately after it. The 16-byte filler block is left
   /// zero (RFC 1740 v2 convention).
   /// </summary>
-  public static byte[] Build(IReadOnlyList<(uint EntryId, byte[] Data)> entries) {
+  public static byte[] Build(IReadOnlyList<(uint EntryId, byte[] Data)> entries)
+    => Build(entries, AppleSingleReader.MagicSingle);
+
+  /// <summary>
+  /// Serializes the given entries under an explicit container magic —
+  /// <see cref="AppleSingleReader.MagicSingle"/> or
+  /// <see cref="AppleSingleReader.MagicDouble"/>.
+  /// </summary>
+  /// <remarks>
+  /// RFC 1740 gives the two containers one body and two headers: the entry-id namespace, the
+  /// 26-byte header, the 12-byte directory slots and the payload area are identical, and only the
+  /// leading 32-bit magic distinguishes them. AppleDouble is the same file minus the data fork,
+  /// which is why <see cref="AppleSingleReader.Read" /> has always accepted both.
+  /// </remarks>
+  public static byte[] Build(IReadOnlyList<(uint EntryId, byte[] Data)> entries, uint magic) {
     ArgumentNullException.ThrowIfNull(entries);
     if (entries.Count > ushort.MaxValue)
       throw new ArgumentException($"AppleSingle: too many entries ({entries.Count} > {ushort.MaxValue}).", nameof(entries));
@@ -35,7 +49,7 @@ public static class AppleSingleWriter {
       total += entries[i].Data.Length;
 
     var buf = new byte[total];
-    BinaryPrimitives.WriteUInt32BigEndian(buf.AsSpan(0), AppleSingleReader.MagicSingle);
+    BinaryPrimitives.WriteUInt32BigEndian(buf.AsSpan(0), magic);
     BinaryPrimitives.WriteUInt32BigEndian(buf.AsSpan(4), 0x00020000); // version 2
     // Bytes 8..24 = 16-byte zero filler (RFC 1740 v2).
     BinaryPrimitives.WriteUInt16BigEndian(buf.AsSpan(24), (ushort)entries.Count);

@@ -86,8 +86,9 @@ public class ConversionMatrixTests {
   // quarantine in place); and any failing pair NOT listed here still FAILS HARD
   // (so regressions on the 1440 passing pairs are caught).
   //
-  // Each reason is prefixed with its BUCKET in square brackets. The full
-  // bucketed worklist lives in docs/CONVERSION_GAPS.md. Buckets:
+  // Each reason is prefixed with its BUCKET in square brackets. This dictionary
+  // is the worklist; the per-format naming quirks behind the entries are the
+  // Notes column of the package READMEs. Buckets:
   //   [self-rejecting reader]              writer emits a file its own/auto reader rejects
   //   [not in Format enum]                 registry-creatable but Id missing from Format enum
   //   [single-payload/whole-image target]  target collapses a tree into one stream/blob
@@ -257,7 +258,7 @@ public class ConversionMatrixTests {
       // enforced — fail loudly rather than silently leave a passing pair ignored.
       if (gapReason != null)
         Assert.Fail($"{pair}: STALE KnownConversionGaps entry — this pair now PASSES. " +
-          $"Remove it from KnownGapTargets/KnownGapPairs and docs/CONVERSION_GAPS.md. (was: {gapReason})");
+          $"Remove it from KnownGapTargets/KnownGapPairs. (was: {gapReason})");
     } finally {
       try { if (Directory.Exists(work)) Directory.Delete(work, true); } catch { /* best-effort */ }
     }

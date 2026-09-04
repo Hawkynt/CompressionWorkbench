@@ -289,6 +289,8 @@
     <Project Path="FileFormats/FileFormat.Sup/FileFormat.Sup.csproj" />
     <Project Path="FileFormats/FileFormat.VobSub/FileFormat.VobSub.csproj" />
     <Project Path="FileFormats/FileFormat.M3u8/FileFormat.M3u8.csproj" />
+    <Project Path="FileFormats/FileFormat.Flv/FileFormat.Flv.csproj" />
+    <Project Path="FileFormats/FileFormat.MpegPs/FileFormat.MpegPs.csproj" />
     <Project Path="FileFormats/FileFormat.MpegTs/FileFormat.MpegTs.csproj" />
     <Project Path="FileFormats/FileFormat.Pcapng/FileFormat.Pcapng.csproj" />
     <Project Path="FileFormats/FileFormat.Mz/FileFormat.Mz.csproj" />
