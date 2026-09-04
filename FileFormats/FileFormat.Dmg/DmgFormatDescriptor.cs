@@ -16,18 +16,8 @@ namespace FileFormat.Dmg;
 /// </list>
 /// </summary>
 public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-  IArchiveModifiable, IArchiveDefragmentable {
+  IArchiveModifiable {
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "DMG is an Apple disk image with mish blocks and a trailing block index; defragmentation is not exposed as a generic archive verb.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.

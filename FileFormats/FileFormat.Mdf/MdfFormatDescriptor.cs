@@ -13,18 +13,8 @@ namespace FileFormat.Mdf;
 ///   <item><description>No official specification — proprietary Alcohol Soft format, reverse-engineered</description></item>
 /// </list>
 /// </summary>
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "MDF/MDS is a raw CD-ROM sector image (Alcohol 120%) — defragmentation isn't meaningful.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.

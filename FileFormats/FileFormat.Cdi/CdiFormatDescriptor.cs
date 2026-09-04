@@ -13,18 +13,8 @@ namespace FileFormat.Cdi;
 ///   <item><description>CDIrip source — the DiscJuggler layout was reverse-engineered by the disc-preservation community; Padus never published a spec</description></item>
 /// </list>
 /// </summary>
-public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "CDI is a DiscJuggler disc image (sector-based ISO 9660 + footer) — defragmentation isn't meaningful.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.

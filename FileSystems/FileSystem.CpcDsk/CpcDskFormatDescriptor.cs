@@ -13,7 +13,7 @@ namespace FileSystem.CpcDsk;
 ///   <item><description>Amstrad AMSDOS documentation (SOFT 968 firmware guide era) — the filesystem stored inside the image</description></item>
 /// </list>
 /// </summary>
-public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -238,22 +238,6 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, fileSizeLookup);
   }
 
-  // ── IFilesystemBlockMover delegation ───────────────────────────────────
-
-  /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false) {
-    var mover = new CpcDskBlockMover();
-    mover.Init(image);
-    mover.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
-  }
-
-  /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length) {
-    var mover = new CpcDskBlockMover();
-    mover.Init(image);
-    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
-  }
-
   /// <summary>
   /// Performs the defragment operation.
   /// </summary>
@@ -267,12 +251,19 @@ public sealed class CpcDskFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
 
-    // Every mode lays the disk out again. A CP/M directory names a file by the
-    // allocation blocks it holds, and those blocks straddle the Track-Info blocks
-    // an image puts between its tracks -- so there is no run of bytes a planner
-    // could move that the directory could then describe. Laying it out again
+    // Every mode lays the disk out again, and there is no in-place path to fall
+    // back from. A planner moves runs of bytes and then has the filesystem write
+    // down where they went; on an AMSDOS disk the only place that can be written
+    // down is a directory entry's allocation list, which holds block numbers. A
+    // block is a kilobyte and a track of nine 512-byte sectors is four and a half
+    // of them, so blocks straddle track boundaries -- and in a DSK image a track
+    // boundary is a 256-byte Track-Info block sitting between the two halves. A
+    // block is therefore not a contiguous stretch of the file, so a run the
+    // planner can move is not a thing the directory can name. An earlier version
+    // papered over this by calling one sector one block, which made every run
+    // contiguous and every block number wrong. Laying the disk out again
     // reallocates the blocks in order, which is what defragmenting a CP/M disk
-    // is, and on 180 kilobytes it costs nothing. See CpcDskBlockMover.
+    // means anyway, and on 180 kilobytes it costs nothing.
     DefragmentWithRebuild(archive, options);
   }
 
