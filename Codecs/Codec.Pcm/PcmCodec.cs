@@ -116,6 +116,66 @@ public static class PcmCodec {
   }
 
   /// <summary>
+  /// Re-quantises interleaved integer PCM to another sample width.
+  /// </summary>
+  /// <remarks>
+  /// WAVE stores 8-bit samples unsigned and everything wider signed, so a width
+  /// change is also a sign change. Widening is exact; narrowing rounds toward zero
+  /// by discarding low bits, which is what a target that only accepts the narrower
+  /// width is asking for.
+  /// </remarks>
+  /// <param name="pcm">Interleaved little-endian integer PCM.</param>
+  /// <param name="fromBits">Source width: 8, 16, 24 or 32.</param>
+  /// <param name="toBits">Destination width: 8, 16, 24 or 32.</param>
+  public static byte[] Requantize(byte[] pcm, int fromBits, int toBits) {
+    ArgumentNullException.ThrowIfNull(pcm);
+    if (fromBits == toBits) return pcm;
+    if (fromBits is not (8 or 16 or 24 or 32) || toBits is not (8 or 16 or 24 or 32))
+      throw new ArgumentException("PCM re-quantisation supports 8, 16, 24 and 32 bits.");
+
+    var fromBytes = fromBits / 8;
+    var toBytes = toBits / 8;
+    if (pcm.Length % fromBytes != 0)
+      throw new ArgumentException("PCM length is not a multiple of the sample size.", nameof(pcm));
+
+    var samples = pcm.Length / fromBytes;
+    var result = new byte[samples * toBytes];
+    for (var i = 0; i < samples; ++i) {
+      // read as a signed value scaled to 32 bits, so every width compares alike
+      var offset = i * fromBytes;
+      int value = fromBits switch {
+        8 => (pcm[offset] - 128) << 24,
+        16 => (short)(pcm[offset] | (pcm[offset + 1] << 8)) << 16,
+        24 => (pcm[offset] << 8) | (pcm[offset + 1] << 16) | (sbyte)pcm[offset + 2] << 24,
+        _ => pcm[offset] | (pcm[offset + 1] << 8) | (pcm[offset + 2] << 16) | (sbyte)pcm[offset + 3] << 24,
+      };
+
+      var target = i * toBytes;
+      switch (toBits) {
+        case 8: result[target] = (byte)((value >> 24) + 128); break;
+        case 16:
+          var narrowed = (short)(value >> 16);
+          result[target] = (byte)(narrowed & 0xFF);
+          result[target + 1] = (byte)((narrowed >> 8) & 0xFF);
+          break;
+        case 24:
+          result[target] = (byte)((value >> 8) & 0xFF);
+          result[target + 1] = (byte)((value >> 16) & 0xFF);
+          result[target + 2] = (byte)((value >> 24) & 0xFF);
+          break;
+        default:
+          result[target] = (byte)(value & 0xFF);
+          result[target + 1] = (byte)((value >> 8) & 0xFF);
+          result[target + 2] = (byte)((value >> 16) & 0xFF);
+          result[target + 3] = (byte)((value >> 24) & 0xFF);
+          break;
+      }
+    }
+
+    return result;
+  }
+
+  /// <summary>
   /// Weaves per-channel mono PCM blobs back into one interleaved buffer — the inverse
   /// of <see cref="SplitInterleavedPcm"/>. All channels must share the same byte length
   /// (i.e. the same frame count at the given <paramref name="bitsPerSample"/>). Channels
