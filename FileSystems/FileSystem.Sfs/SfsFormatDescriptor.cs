@@ -7,11 +7,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Sfs;
 
 /// <summary>
-/// Read-only descriptor for Amiga Smart Filesystem (SFS) volume images. SFS is
-/// the OFS/FFS replacement used by AmigaOS 4 and AROS, with the complete spec
-/// at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed
-/// root block as a structured metadata bundle; per-file enumeration would
-/// require walking the object-container B+ tree.
+/// Descriptor for Amiga Smart Filesystem (SFS) volume images. SFS is the
+/// OFS/FFS replacement used by AmigaOS 4 and AROS, with the complete spec at
+/// http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed root
+/// block as a structured metadata bundle alongside the files the object
+/// containers name.
 ///
 /// References:
 /// <list type="bullet">
@@ -38,8 +38,16 @@ namespace FileSystem.Sfs;
 /// container for a flat root directory, one leaf of extents, one node
 /// container. Hash tables, soft links, sub-directories and multi-level trees
 /// are shapes the format has and this does not produce.</para>
+///
+/// <para>An existing volume is edited by reading its files out and laying the
+/// volume out again through the same writer, so an add or remove costs the whole
+/// volume rather than the bytes that changed.</para>
 /// </remarks>
-public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+
+  /// <summary>Entries that describe the volume rather than live in it.</summary>
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.Ordinal) { "FULL.sfs", "metadata.ini", "root_block.bin" };
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -57,7 +65,7 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
-    | FormatCapabilities.CanCreate;
+    | FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -175,15 +183,48 @@ public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    var writer = new SfsWriter();
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      writer.AddFile(input.ArchiveName, input.InMemoryContent ?? File.ReadAllBytes(input.FullPath));
-    }
-
-    var image = writer.Build();
+    var image = BuildImage(FilesOnly(inputs).ToList());
     output.Write(image, 0, image.Length);
     output.Flush();
+  }
+
+  /// <summary>
+  /// Adds or replaces files: the volume's files are read out, the inputs merged
+  /// in by name, and the volume laid out again.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage, StringComparer.Ordinal);
+  }
+
+  /// <summary>
+  /// Removes the named files and lays the volume out again without them, so
+  /// nothing of their bytes remains.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage, StringComparer.Ordinal);
+  }
+
+  /// <summary>The files a volume holds — never the entries that describe the volume.</summary>
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    var volume = new SfsVolume(stream);
+    if (!volume.Valid)
+      throw new InvalidDataException($"SFS: {volume.Status}.");
+    return volume.Files.Select(f => (f.Name, volume.Read(f))).ToList();
+  }
+
+  /// <summary>A fresh volume holding exactly the given files.</summary>
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var writer = new SfsWriter();
+    foreach (var (name, data) in files) {
+      if (SyntheticNames.Contains(Path.GetFileName(name))) continue;
+      writer.AddFile(name, data);
+    }
+    return writer.Build();
   }
 
   /// <inheritdoc />

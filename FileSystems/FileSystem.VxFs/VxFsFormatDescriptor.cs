@@ -7,11 +7,9 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.VxFs;
 
 /// <summary>
-/// Read-only descriptor for VxFS (Veritas File System), used by HP-UX,
-/// Solaris, and AIX (and a Linux read-only port). Walking the OLT (Object
-/// Location Table) → FSH (FileSet Header) → IAU (Inode Allocation Unit)
-/// chain to extract user files is explicitly out of scope (multi-week
-/// effort) — this descriptor surfaces:
+/// Descriptor for VxFS (Veritas File System), used by HP-UX, Solaris and AIX
+/// (and read by the Linux <c>freevxfs</c> port). Besides the files a volume
+/// holds it surfaces:
 /// <list type="bullet">
 ///   <item><description><c>FULL.vxfs</c> — the raw image bytes</description></item>
 ///   <item><description><c>metadata.ini</c> — parsed superblock fields</description></item>
@@ -22,9 +20,6 @@ namespace FileSystem.VxFs;
 /// stored in the natural endianness of the host that wrote the volume —
 /// little-endian on x86 / Linux, big-endian on HP-UX PA-RISC and Solaris
 /// SPARC. Both signature variants are registered.
-///
-/// Create / Modify / Defragment: <see cref="NotSupportedException"/> — the
-/// descriptor is read-only.
 ///
 /// References:
 /// <list type="bullet">
@@ -42,8 +37,13 @@ namespace FileSystem.VxFs;
 /// <para>What is written is the plainest shape the driver accepts — one fileset,
 /// direct extents only, a flat root directory. Immediate data, extent trees and
 /// subdirectories are shapes it reads and this does not write.</para>
+///
+/// <para>An existing volume is edited by reading its files out and laying the
+/// volume out again through the same writer, so an add or remove costs the whole
+/// volume rather than the bytes that changed; the result is the same shape the
+/// driver already mounts.</para>
 /// </remarks>
-public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
 
   /// <summary>Entries that describe the volume rather than live in it.</summary>
   private static readonly HashSet<string> SyntheticNames =
@@ -65,7 +65,7 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
-    | FormatCapabilities.CanCreate;
+    | FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -185,16 +185,48 @@ public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    var writer = new VxFsWriter();
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      var data = input.InMemoryContent ?? File.ReadAllBytes(input.FullPath);
-      writer.AddFile(input.ArchiveName, data);
-    }
-
-    var image = writer.Build();
+    var image = BuildImage(FilesOnly(inputs).Select(f => (f.Name, f.Data)).ToList());
     output.Write(image, 0, image.Length);
     output.Flush();
+  }
+
+  /// <summary>
+  /// Adds or replaces files: the volume's files are read out, the inputs merged
+  /// in by name, and the volume laid out again.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ModifyRebuilder.Add(archive, inputs, ReadEntries, BuildImage, StringComparer.Ordinal);
+  }
+
+  /// <summary>
+  /// Removes the named files and lays the volume out again without them, so
+  /// nothing of their bytes remains.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ModifyRebuilder.Remove(archive, entryNames, ReadEntries, BuildImage, StringComparer.Ordinal);
+  }
+
+  /// <summary>The files a volume holds — never the entries that describe the volume.</summary>
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    var volume = new VxFsVolume(stream);
+    if (!volume.Valid)
+      throw new InvalidDataException($"VxFS: {volume.Status}.");
+    return volume.Files.Select(f => (f.Name, volume.Read(f))).ToList();
+  }
+
+  /// <summary>A fresh volume holding exactly the given files.</summary>
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
+    var writer = new VxFsWriter();
+    foreach (var (name, data) in files) {
+      if (SyntheticNames.Contains(Path.GetFileName(name))) continue;
+      writer.AddFile(name, data);
+    }
+    return writer.Build();
   }
 
   /// <inheritdoc />

@@ -7010,7 +7010,7 @@ Reads a HAMMER volume's freemap and reports which bytes are in use. HAMMER alloc
 
 #### `HammerFormatDescriptor`
 
-Read-only descriptor for HAMMER (DragonFly BSD original) filesystem images. Surfaces the volume header at offset 0 plus a structured metadata bundle and the raw image. Walking the HAMMER B-tree (zone blockmap → cluster → inode → records) is explicitly out of scope (multi-week effort). Magic: 8-byte uint64 `vol_signature = 0xC8414D4DC5523031` ("HAMMER01") at offset 0, serialised LE on disk as `31 30 52 C5 4D 4D 41 C8`. Confidence 0.85: an 8-byte magic value at offset 0 is high-confidence but HAMMER lacks an additional sanity check at this stage of detection (the `vol_fstype` UUID at offset 64 is not validated against a well-known constant). References: `https://github.com/DragonFlyBSD/DragonFlyBSD/blob/master/sys/vfs/hammer/hammer_disk.h``https://www.dragonflybsd.org/hammer/`
+Descriptor for HAMMER (DragonFly BSD original) filesystem images. Walks the global B-Tree (zone blockmap → cluster → inode → records) for the files a volume holds, and writes single-volume images the DragonFly kernel mounts. A volume with no files surfaces the volume header at offset 0 plus a structured metadata bundle and the raw image instead. Magic: 8-byte uint64 `vol_signature = 0xC8414D4DC5523031` ("HAMMER01") at offset 0, serialised LE on disk as `31 30 52 C5 4D 4D 41 C8`. Confidence 0.85: an 8-byte magic value at offset 0 is high-confidence but HAMMER lacks an additional sanity check at this stage of detection (the `vol_fstype` UUID at offset 64 is not validated against a well-known constant). References: `https://github.com/DragonFlyBSD/DragonFlyBSD/blob/master/sys/vfs/hammer/hammer_disk.h``https://www.dragonflybsd.org/hammer/`
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
@@ -7030,12 +7030,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Sole tunable the HAMMER writer honours: the filesystem label (`newfs_hammer -L`), written into the volume header and the PFS#0 data and surfaced back as `vol_label`. Volume size is intentionally not exposed — the UNDO-FIFO floor pins it at ~1 GB regardless. An empty label falls back to the writer default ("hammer"). |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files by unpacking the volume to scratch, merging the inputs in by name and writing a fresh volume through `Create`. A HAMMER volume is a gigabyte at least, so nothing is held in memory. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh, mountable single-volume HAMMER image from `inputs`. HAMMER's UNDO FIFO floor forces a volume size of ~1 GB minimum; see `HammerWriter`. Each input becomes an inode + directory-entry + data record in the global B-Tree. The DragonFly kernel mounts the image and reads every file's contents byte-exact (validated via `mount_hammer` + `cksum`, including multi-block files spanning the large- and small-data zones); the image also passes `hammer show` and `hammer checkmap`. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the volume out again. A file's bytes live in data records whose B-tree elements carry the offset they start at, so a move is the copy, that field, and the checksum over the node the element lives in — cheaper than reading every file out and writing a fresh volume, which is what the inherited default did for the one mode it offered. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and writes a fresh volume without them, by the same route as `Add`. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zero-fills everything the freemap leaves unallocated: free big-blocks outright, and the tail of a partly-used one past its append point. |
 
 #### `HammerReader`
@@ -11993,9 +11995,9 @@ Describes an SFS volume block by block: what the volume needs to describe itself
 
 #### `SfsFormatDescriptor`
 
-Read-only descriptor for Amiga Smart Filesystem (SFS) volume images. SFS is the OFS/FFS replacement used by AmigaOS 4 and AROS, with the complete spec at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed root block as a structured metadata bundle; per-file enumeration would require walking the object-container B+ tree. References: `https://github.com/aros-development-team/AROS/tree/master/rom/filesys/SFS` — AROS SFS implementation — maintained open sourceJohn Hendrikx's original SFS specification (the xs4all.nl page cited above; now web-archived)`https://en.wikipedia.org/wiki/Smart_File_System` — Wikipedia article
+Descriptor for Amiga Smart Filesystem (SFS) volume images. SFS is the OFS/FFS replacement used by AmigaOS 4 and AROS, with the complete spec at http://www.xs4all.nl/~hjohn/SFS/ (Amiga SFS spec). Surfaces the parsed root block as a structured metadata bundle alongside the files the object containers name. References: `https://github.com/aros-development-team/AROS/tree/master/rom/filesys/SFS` — AROS SFS implementation — maintained open sourceJohn Hendrikx's original SFS specification (the xs4all.nl page cited above; now web-archived)`https://en.wikipedia.org/wiki/Smart_File_System` — Wikipedia article
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12012,12 +12014,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files: the volume's files are read out, the inputs merged in by name, and the volume laid out again. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume holding the given files. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves the blocks that are out of place and rewrites the extent tree. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and lays the volume out again without them, so nothing of their bytes remains. |
 
 #### `SfsVolume`
 
@@ -12119,9 +12123,9 @@ Describes where a SmartFS volume keeps its bytes, one sector at a time.
 
 #### `SmartFsFormatDescriptor`
 
-Read-only descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. Recognises the "SMRT" format signature near the start of the format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG). Sector-chain traversal + directory enumeration are out of scope; this descriptor surfaces the parsed format sector as metadata plus the raw image. References: `https://github.com/apache/nuttx/tree/master/fs/smartfs` — reference implementation (Apache NuttX)Apache NuttX "SmartFS" documentation and SmartFS Design Document (NuttX project wiki)
+Descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. Recognises the "SMRT" format signature near the start of the format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG), walks the root directory and each file's sector chain, and writes volumes in the state `mksmartfs` leaves behind. An existing volume is edited by reading its files out and laying it out again through the same writer. References: `https://github.com/apache/nuttx/tree/master/fs/smartfs` — reference implementation (Apache NuttX)Apache NuttX "SmartFS" documentation and SmartFS Design Document (NuttX project wiki)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12138,12 +12142,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files: the volume's files are read out, the inputs merged in by name, and the volume laid out again at its own sector size. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Lays a fresh volume out holding the inputs. Sector size is the caller's choice among the five SmartFS allows; the volume is sized to its contents unless a larger one is asked for. |
 | `Defragment` | `void Defragment(Stream archive)` | Rewrites the volume with every file's sectors consecutive. SmartFS chains its sectors rather than requiring them to be adjacent, so the gain is sequential reads rather than a structural repair — and the rebuild is what produces it, since a fresh layout is contiguous by construction. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Where the volume keeps its bytes: the format sector and the directory chain pinned, every sector a file's chain runs through as its own. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and lays the volume out again without them, so nothing of their bytes remains. |
 
 #### `SmartFsReader`
 
@@ -13839,9 +13845,9 @@ Describes a VxFS volume block by block: what the walk to the files needs, what e
 
 #### `VxFsFormatDescriptor`
 
-Read-only descriptor for VxFS (Veritas File System), used by HP-UX, Solaris, and AIX (and a Linux read-only port). Walking the OLT (Object Location Table) → FSH (FileSet Header) → IAU (Inode Allocation Unit) chain to extract user files is explicitly out of scope (multi-week effort) — this descriptor surfaces: `FULL.vxfs` — the raw image bytes`metadata.ini` — parsed superblock fields`superblock.bin` — 1 KB capture of the on-disk superblock Detection: 4-byte magic `0xA501FCF5` at offset 1024. The magic is stored in the natural endianness of the host that wrote the volume — little-endian on x86 / Linux, big-endian on HP-UX PA-RISC and Solaris SPARC. Both signature variants are registered. Create / Modify / Defragment: `NotSupportedException` — the descriptor is read-only. References: Linux kernel `fs/freevxfs/vxfs.h` + `vxfs_super.c`HP-UX "VxFS Administrator's Guide" (Veritas / Symantec)Wikipedia "Veritas File System"
+Descriptor for VxFS (Veritas File System), used by HP-UX, Solaris and AIX (and read by the Linux `freevxfs` port). Besides the files a volume holds it surfaces: `FULL.vxfs` — the raw image bytes`metadata.ini` — parsed superblock fields`superblock.bin` — 1 KB capture of the on-disk superblock Detection: 4-byte magic `0xA501FCF5` at offset 1024. The magic is stored in the natural endianness of the host that wrote the volume — little-endian on x86 / Linux, big-endian on HP-UX PA-RISC and Solaris SPARC. Both signature variants are registered. References: Linux kernel `fs/freevxfs/vxfs.h` + `vxfs_super.c`HP-UX "VxFS Administrator's Guide" (Veritas / Symantec)Wikipedia "Veritas File System"
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13858,12 +13864,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files: the volume's files are read out, the inputs merged in by name, and the volume laid out again. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume the Veritas driver mounts, holding the given files. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Moves the blocks that are out of place and repoints the inodes. |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and lays the volume out again without them, so nothing of their bytes remains. |
 
 #### `VxFsReader`
 

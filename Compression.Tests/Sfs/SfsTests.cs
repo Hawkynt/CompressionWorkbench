@@ -92,27 +92,45 @@ public class SfsTests {
   }
 
   /// <summary>
-  /// SFS can be written now, and the writer is what made the layout pass
-  /// possible — but it still must not claim to modify a volume in place.
+  /// SFS is written whole, and an existing volume is edited the same way: the
+  /// files are read out and the volume laid out again through the writer.
   /// </summary>
   /// <remarks>
-  /// Adding or removing a file means allocating against the bitmap, threading
-  /// the object node table and splitting the extent tree, none of which this
-  /// implements. Creating a volume outright needs none of that: it writes every
-  /// structure once, from nothing, which is why that one is claimed and the
-  /// other is not.
+  /// Adding or removing a file in place would mean allocating against the
+  /// bitmap, threading the object node table and splitting the extent tree,
+  /// none of which this implements. The rebuild costs the whole volume instead,
+  /// which is what the capability promises and what this checks: the edit is
+  /// offered, and what it produces reads back.
   /// </remarks>
   [Test, Category("HappyPath")]
-  public void Descriptor_ClaimsCreateButNotModify() {
+  public void Descriptor_EditsAVolumeByLayingItOutAgain() {
     var d = new FileSystem.Sfs.SfsFormatDescriptor();
-    Assert.That(d, Is.Not.InstanceOf<IArchiveModifiable>(),
-      "SFS must not advertise IArchiveModifiable until the bitmap, the node table and the " +
-      "extent tree can all be updated in place.");
-    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
-      "SFS writes whole volumes, so it says so.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.True);
+    Assert.That(d, Is.InstanceOf<IArchiveCreatable>(), "SFS writes whole volumes, so it says so.");
+    Assert.That(d, Is.InstanceOf<IArchiveModifiable>(), "SFS edits a volume by rebuilding it, so it says so.");
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+
+    var first = new byte[3000];
+    var second = new byte[700];
+    for (var i = 0; i < first.Length; ++i) first[i] = (byte)(i * 7);
+    for (var i = 0; i < second.Length; ++i) second[i] = (byte)(i * 13);
+
+    using var image = new MemoryStream();
+    d.Create(image, [new ArchiveInputInfo("", "first.bin", false, first)], new FormatCreateOptions());
+
+    d.Add(image, [new ArchiveInputInfo("", "second.bin", false, second)]);
+    image.Position = 0;
+    Assert.That(d.List(image, null).Select(e => e.Name), Is.SupersetOf(new[] { "first.bin", "second.bin" }));
+
+    d.Remove(image, ["first.bin"]);
+    image.Position = 0;
+    var names = d.List(image, null).Select(e => e.Name).ToList();
+    Assert.That(names, Does.Not.Contain("first.bin"));
+    Assert.That(names, Does.Contain("second.bin"));
+
+    image.Position = 0;
+    var volume = new FileSystem.Sfs.SfsVolume(image);
+    Assert.That(volume.Valid, Is.True, volume.Status);
+    Assert.That(volume.Read(volume.Files.Single(f => f.Name == "second.bin")), Is.EqualTo(second));
   }
 }
