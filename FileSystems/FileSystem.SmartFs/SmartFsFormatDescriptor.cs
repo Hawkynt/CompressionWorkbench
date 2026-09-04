@@ -6,9 +6,14 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.SmartFs;
 
 /// <summary>
-/// SmartFS descriptor for the wear-levelled raw-flash filesystem in Apache
-/// NuttX. The workbench reads and writes the logical sector-chain view; the
-/// running target's MTD layer is responsible for physical wear-level rotation.
+/// Descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache
+/// NuttX RTOS. Recognises the "SMRT" format signature near the start of the
+/// format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG), walks the root directory
+/// and each file's sector chain, and writes volumes in the state
+/// <c>mksmartfs</c> leaves behind. An existing volume is edited by reading its
+/// files out and laying it out again through the same writer. Only the logical
+/// sector-chain view is read and written here; physical wear-level rotation
+/// belongs to the running target's MTD layer.
 ///
 /// References:
 /// <list type="bullet">
@@ -49,6 +54,9 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries;
 
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".smartfs";
   public IReadOnlyList<string> Extensions => [".smartfs", ".smart"];
   public IReadOnlyList<string> CompoundExtensions => [];
@@ -117,20 +125,28 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
   // ── Existing-instance editing ────────────────────────────────────────
 
+  /// <summary>
+  /// Adds or replaces files: the volume's files are read out, the inputs merged
+  /// in by name, and the volume laid out again at its own sector size.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
     var sectorSize = ReadSectorSize(archive);
     ModifyRebuilder.Add(archive, inputs, ReadLiveFiles,
-      files => BuildImage(files, sectorSize));
+      files => BuildImage(files, sectorSize), StringComparer.Ordinal);
   }
 
+  /// <summary>
+  /// Removes the named files and lays the volume out again without them, so
+  /// nothing of their bytes remains.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
     var sectorSize = ReadSectorSize(archive);
     ModifyRebuilder.Remove(archive, entryNames, ReadLiveFiles,
-      files => BuildImage(files, sectorSize));
+      files => BuildImage(files, sectorSize), StringComparer.Ordinal);
   }
 
   /// <summary>
@@ -363,8 +379,13 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       int sectorSize,
       int totalSectors = 0) {
     var writer = new SmartFsWriter { SectorSize = sectorSize };
-    foreach (var (name, data) in files)
-      writer.AddFile(Path.GetFileName(name), data);
+    foreach (var (name, data) in files) {
+      var leaf = Path.GetFileName(name);
+      if (IsSynthetic(leaf))
+        continue;
+
+      writer.AddFile(leaf, data);
+    }
     return writer.Build(totalSectors);
   }
 

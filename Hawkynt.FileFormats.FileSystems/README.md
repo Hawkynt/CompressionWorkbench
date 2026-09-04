@@ -9,9 +9,9 @@
 > Pure-managed filesystem handling for .NET, without mounting anything through the host OS. The
 > package claims the WHOLE domain — every filesystem and disk-image container, modern, legacy,
 > virtual-machine, optical, forensic and retro-computing alike — not a selection of it. Where a
-> filesystem is missing, read-only, or write-without-mutation that is a tracked gap, recorded in the
-> support matrix below and in
-> [`docs/FILESYSTEM-VERIFICATION.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FILESYSTEM-VERIFICATION.md).
+> format is read-only, create-only or a deliberate subset, that is a tracked gap recorded in the
+> [support matrix](#-support-matrix) below, which is generated from the descriptors and checked by
+> the test suite.
 
 ## 📦 Installation
 
@@ -19,105 +19,212 @@
 dotnet add package Hawkynt.FileFormats.FileSystems
 ```
 
-The package bundles the filesystem and disk-image `FileSystem.*` / `FileFormat.*` assemblies while taking `Hawkynt.Compression.Core` as the shared NuGet dependency.
+The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat.*` assemblies, with `Hawkynt.Compression.Core` as its one NuGet dependency.
 
 ## ✨ Features
 
-- Inspect filesystems in-process without `libguestfs`, loop mounts, kernel drivers, or elevated privileges.
-- Cross-platform parsing: inspect NTFS from Linux, ext filesystems from Windows, HFS+ from either, and so on.
-- Fresh filesystem-image creation for many formats, with true modification semantics where implemented.
-- True in-place bcachefs add/replace/remove and purge for the supported single-device profile: unchanged file extents stay at the same physical sectors while allocation, freespace, backpointer and accounting metadata is committed in the reserved metadata zone.
-- Disk-image container support for VM, optical, forensic, firmware, and emulator workflows.
-- Layout/cluster/block-size optimization, defragmentation, and unused-space/slack wiping on supporting filesystems.
-- External conformance validation against real filesystem tools where the platform/test environment provides them.
+- Inspect filesystems in-process without `libguestfs`, loop mounts, kernel drivers or elevated privileges — NTFS from Linux, ext4 from Windows, HFS+ from either.
+- Create fresh images for every format marked WORM or R/W below, with real nested directory trees where the format has them.
+- Edit existing images for every format marked R/W: add, replace, remove, purge. Some formats edit blocks in place, some lay the volume out again; the matrix says which.
+- Defragment, wipe unused space, shrink and re-lay volumes at a chosen geometry on the formats whose descriptors offer it.
+- Open disk-image containers (VHD, VHDX, VMDK, VDI, QCOW2, DMG, EWF, optical and tape images, firmware volumes) and reach the filesystem inside.
+- Every writer is held against the format's own tools where one exists: a real kernel under QEMU, its `fsck`, or its canonical third-party utility.
 
 ## 🧩 Support matrix
 
 | State | Meaning |
 | --- | --- |
-| **R** | Open/read/walk only. |
-| **WORM** | Read plus create a fresh image; no supported mutation of an existing image. |
-| **R/W** | Read plus supported modification semantics. Some implementations rebuild rather than edit blocks in place. |
-| **⚠️** | Deliberate structural/profile subset. |
+| **R** | Open, list and extract only. For network, distributed and encrypted formats this is detection of the on-disk signature plus whatever metadata the object carries. |
+| **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
+| **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
-The descriptor's implemented interfaces and `FormatCapabilities` are authoritative for the exact state in a particular build. The tables below document the package surface without inferring capabilities from roadmap text.
+**Defrag** says whether a volume can be laid out again and how: *moving* relocates only the runs that are out of place through a block mover of the format's own, *rebuild* writes the volume out afresh. **Wipe** zeroes what no file holds, **Shrink** reduces a volume to what it needs, **Layout** re-lays it at a chosen cluster or block geometry. **Proof** is how the format is held against something outside this repository; "own reader + struct-parity tests" means no external tool for the format exists in any reachable environment, so the on-disk structures are checked field by field instead.
 
-### Disk-image / firmware containers
+The `Id`, `State` and verb columns are read off the descriptors by `FilesystemReadmeIsCurrentTests`; a row that disagrees with the code fails the build.
 
-| Container | State | Scope | Reference |
-| --- | :---: | --- | --- |
-| [VHD](https://en.wikipedia.org/wiki/VHD_(file_format)) | WORM | Fixed, dynamic, and differencing VHD paths | [Microsoft VHD overview](https://learn.microsoft.com/windows-server/virtualization/hyper-v/manage/manage-hyper-v-virtual-hard-disks) |
-| [VHDX](https://en.wikipedia.org/wiki/VHD_(file_format)#VHDX) | R | Hyper-V VHDX reader; current writer state follows its descriptor | [MS-VHDX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-vhdx/) |
-| [VMDK](https://en.wikipedia.org/wiki/VMDK) | WORM | VMware virtual disks | [VMware Virtual Disk API](https://developer.broadcom.com/xapis/virtual-disk-api/latest/) |
-| [VDI](https://en.wikipedia.org/wiki/VirtualBox#Virtual_disk_image) | WORM | VirtualBox disk images | [VirtualBox storage documentation](https://www.virtualbox.org/manual/ch05.html) |
-| [QCOW2](https://en.wikipedia.org/wiki/Qcow) | WORM | QEMU copy-on-write images | [QEMU QCOW2 specification](https://www.qemu.org/docs/master/interop/qcow2.html) |
-| [Apple DMG](https://en.wikipedia.org/wiki/Apple_Disk_Image) | WORM | Apple disk-image container | [Apple disk images](https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/SoftwareDistribution4/Concepts/sd_disk_images.html) |
-| [BIN/CUE](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) | WORM | Raw optical tracks + cue sheet | [CUE sheet background](https://wiki.hydrogenaud.io/index.php?title=Cue_sheet) |
-| [CSO](https://en.wikipedia.org/wiki/CSO_(file_format)) | R | Compressed ISO image | [CSO overview](https://en.wikipedia.org/wiki/CSO_(file_format)) |
-| [Expert Witness Format](https://en.wikipedia.org/wiki/EnCase#Expert_Witness_File_Format) | R | EWF/EnCase forensic images | [libewf documentation](https://github.com/libyal/libewf/tree/main/documentation) |
-| [UEFI Firmware Volume](https://en.wikipedia.org/wiki/UEFI) | R | Firmware volume / FFS-oriented inspection | [UEFI specification](https://uefi.org/specifications) |
-| [Device Tree Blob](https://en.wikipedia.org/wiki/Devicetree) | R | Flattened Device Tree property traversal | [Devicetree specification](https://www.devicetree.org/specifications/) |
-| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) / [S-record](https://en.wikipedia.org/wiki/SREC) | R | Firmware records normalized to payload + metadata | [Intel HEX description](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record manual](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
+<!-- SUPPORT:BEGIN generated by Compression.Tests/Documentation/FilesystemSupportMatrix.cs — Id, State, Defrag, Wipe, Shrink and Layout come from the descriptors; the other cells are kept as written -->
 
-### Microsoft / DOS filesystems
+### Disk-image and firmware containers
 
-| Filesystem | State | Scope | Reference |
-| --- | :---: | --- | --- |
-| [FAT12/16/32](https://en.wikipedia.org/wiki/File_Allocation_Table) | R/W | FAT variants + long filenames | [Microsoft FAT specification](https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc) |
-| [exFAT](https://en.wikipedia.org/wiki/ExFAT) | R/W | exFAT image creation/read/write | [Microsoft exFAT specification](https://learn.microsoft.com/windows/win32/fileio/exfat-specification) |
-| [NTFS](https://en.wikipedia.org/wiki/NTFS) | R/W | MFT/system metadata, supported compression and modification paths | [MS-FSCC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/) |
-| [ReFS](https://en.wikipedia.org/wiki/ReFS) | R ⚠️ | Header/boot-sector oriented subset | [Microsoft ReFS overview](https://learn.microsoft.com/windows-server/storage/refs/refs-overview) |
-| [HPFS](https://en.wikipedia.org/wiki/High_Performance_File_System) | R/W | Rebuild-based mutation/extent handling | [OS/2 Museum HPFS](https://www.os2museum.com/wp/the-hpfs-disk-layout/) |
-| [DriveSpace / DoubleSpace](https://en.wikipedia.org/wiki/DriveSpace) | R/W | Compressed-volume-file workflows | [DriveSpace overview](https://en.wikipedia.org/wiki/DriveSpace) |
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [Apple IPSW](https://en.wikipedia.org/wiki/IPSW) | `Ipsw` | R/W | — | ✅ | — | — | own reader + struct-parity tests | ZIP-based firmware archive | [IPSW](https://en.wikipedia.org/wiki/IPSW) |
+| [BIN/CUE](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) | `BinCue` | R/W | ✅ rebuild | ✅ | — | — | own reader + struct-parity tests | Sector-image editor | [CUE sheet](https://wiki.hydrogenaud.io/index.php?title=Cue_sheet) |
+| [CDI](https://en.wikipedia.org/wiki/DiscJuggler) | `Cdi` | R/W | ✅ rebuild | — | — | — | own reader + struct-parity tests | Sector-image editor | [DiscJuggler](https://en.wikipedia.org/wiki/DiscJuggler) |
+| [Commodore Lynx archive](https://en.wikipedia.org/wiki/Commodore_64) | `Lynx` | R/W | ✅ rebuild | ✅ | — | — | own reader + struct-parity tests | C64 Lynx archive | [Lynx](https://ist.uwaterloo.ca/~schepers/formats/LNX.TXT) |
+| [DMG](https://en.wikipedia.org/wiki/Apple_Disk_Image) | `Dmg` | R/W | ✅ rebuild | — | — | — | own reader + struct-parity tests | — | [Apple disk images](https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/SoftwareDistribution4/Concepts/sd_disk_images.html) |
+| [EnCase EWF (E01)](https://en.wikipedia.org/wiki/EnCase#Expert_Witness_File_Format) | `Ewf` | R/W | ✅ rebuild | ✅ | ✅ | ✅ | own reader + struct-parity tests | EnCase E01 segment chain | [libewf documentation](https://github.com/libyal/libewf/tree/main/documentation) |
+| [Flattened Device Tree Blob](https://en.wikipedia.org/wiki/Devicetree) | `Dtb` | R/W | — | — | — | — | own reader + struct-parity tests | Flattened Device Tree walked as a pseudo-archive | [Devicetree specification](https://www.devicetree.org/specifications/) |
+| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) | `IntelHex` | R | — | — | — | — | own reader + struct-parity tests | Intel HEX and Motorola S-record, normalised to `firmware.bin` + metadata | [Intel HEX](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
+| [MDF/MDS](https://en.wikipedia.org/wiki/Alcohol_120%25) | `Mdf` | R/W | ✅ rebuild | — | — | — | own reader + struct-parity tests | Sector-image editor | [Alcohol 120%](https://en.wikipedia.org/wiki/Alcohol_120%25) |
+| [Nintendo PartitionFS](https://en.wikipedia.org/wiki/Nintendo_Switch) | `Pfs0` | R/W | ✅ rebuild | ✅ | — | — | own reader + struct-parity tests | Nintendo Switch PartitionFS | [PFS0 (switchbrew)](https://switchbrew.org/wiki/NCA#PFS0) |
+| [NRG](https://en.wikipedia.org/wiki/Nero_Burning_ROM) | `Nrg` | R/W | ✅ rebuild | — | — | — | own reader + struct-parity tests | Sector-image editor | [Nero Burning ROM](https://en.wikipedia.org/wiki/Nero_Burning_ROM) |
+| [PSP CSO/ZSO](https://en.wikipedia.org/wiki/CSO_(file_format)) | `Cso` | R/W | — | — | — | — | own reader + struct-parity tests | Compressed ISO; edits re-pack the affected blocks | [CSO](https://en.wikipedia.org/wiki/CSO_(file_format)) |
+| [QCOW2](https://en.wikipedia.org/wiki/Qcow) | `Qcow2` | R/W | ✅ rebuild | ✅ | — | — | `qemu-img check` / `convert -O raw` / reverse `qemu-img create` | Edits go to the inner filesystem | [QCOW2 specification](https://www.qemu.org/docs/master/interop/qcow2.html) |
+| [T64](https://en.wikipedia.org/wiki/Commodore_64) | `T64` | R/W | ✅ moving | ✅ | — | — | own reader + struct-parity tests | C64 tape archive | [T64 (VICE)](https://vice-emu.sourceforge.io/vice_17.html) |
+| [TAP](https://en.wikipedia.org/wiki/ZX_Spectrum) | `Tap` | R/W | ✅ moving | ✅ | — | — | own reader + struct-parity tests | Sinclair / Commodore tape image | [TAP (World of Spectrum)](https://worldofspectrum.net/faq/reference/formats.htm) |
+| [TI-TXT (MSP430)](https://en.wikipedia.org/wiki/Texas_Instruments) | `TiTxt` | R | — | — | — | — | own reader + struct-parity tests | TI-TXT firmware dump | [TI-TXT](https://www.ti.com/lit/pdf/slau131) |
+| [U-Boot uImage](https://en.wikipedia.org/wiki/Das_U-Boot) | `UImage` | R | — | — | — | — | own reader + struct-parity tests | U-Boot legacy image header + payload | [U-Boot image format](https://docs.u-boot.org/en/latest/usage/fit/index.html) |
+| [UEFI Firmware Volume](https://en.wikipedia.org/wiki/UEFI) | `UefiFv` | R/W | — | — | — | — | own reader + struct-parity tests | Firmware volume / FFS | [UEFI specification](https://uefi.org/specifications) |
+| [VDI](https://en.wikipedia.org/wiki/VirtualBox#Virtual_disk_image) | `Vdi` | R/W | ✅ rebuild | ✅ | — | — | `qemu-img check` / `convert -O raw` / reverse `qemu-img create` | Edits go to the inner filesystem | [VirtualBox storage](https://www.virtualbox.org/manual/ch05.html) |
+| [VHD](https://en.wikipedia.org/wiki/VHD_(file_format)) | `Vhd` | R/W | ✅ rebuild | ✅ | — | — | `qemu-img check` / `convert -O raw` / reverse `qemu-img create` | Fixed, dynamic and differencing; edits go to the inner filesystem | [Microsoft VHD](https://learn.microsoft.com/windows-server/virtualization/hyper-v/manage/manage-hyper-v-virtual-hard-disks) |
+| [VHDX](https://en.wikipedia.org/wiki/VHD_(file_format)#VHDX) | `Vhdx` | R/W | ✅ rebuild | ✅ | — | — | `qemu-img` reader interoperability + reverse `qemu-img create` | Edits go to the inner filesystem | [MS-VHDX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-vhdx/) |
+| [VMDK](https://en.wikipedia.org/wiki/VMDK) | `Vmdk` | R/W | ✅ rebuild | ✅ | — | — | `qemu-img check` / `convert -O raw` / reverse `qemu-img create` | Edits go to the inner filesystem | [VMware Virtual Disk API](https://developer.broadcom.com/xapis/virtual-disk-api/latest/) |
 
-### Unix / Linux filesystems
+### Microsoft / DOS
 
-| Filesystem | State | Scope | Reference |
-| --- | :---: | --- | --- |
-| [ext2/ext3/ext4](https://en.wikipedia.org/wiki/Ext4) | R/W | Extended filesystem family | [Linux ext4 documentation](https://www.kernel.org/doc/html/latest/filesystems/ext4/) |
-| [Btrfs](https://en.wikipedia.org/wiki/Btrfs) | R/W | Tree/chunk-based filesystem paths | [Btrfs on-disk format](https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html) |
-| [XFS](https://en.wikipedia.org/wiki/XFS) | R/W | XFS v5-oriented image workflows | [XFS documentation](https://kernel.org/doc/html/latest/filesystems/xfs/index.html) |
-| [ReiserFS](https://en.wikipedia.org/wiki/ReiserFS) | R/W | ReiserFS 3.6; rebuild-based mutation | [Linux ReiserFS documentation](https://www.kernel.org/doc/html/latest/filesystems/reiserfs.html) |
-| [JFS](https://en.wikipedia.org/wiki/JFS_(file_system)) | R/W | IBM/Linux JFS paths | [JFS project](http://jfs.sourceforge.net/) |
-| [F2FS](https://en.wikipedia.org/wiki/F2FS) | R/W | Flash-Friendly File System | [Linux F2FS documentation](https://www.kernel.org/doc/html/latest/filesystems/f2fs.html) |
-| [ZFS](https://en.wikipedia.org/wiki/ZFS) | R/W | Supported OpenZFS-style structures; rebuild-based mutation where documented | [OpenZFS documentation](https://openzfs.github.io/openzfs-docs/) |
-| [JFFS2](https://en.wikipedia.org/wiki/JFFS2) | R/W | Log-structured flash filesystem | [Linux JFFS2 documentation](https://www.kernel.org/doc/html/latest/filesystems/jffs2.html) |
-| [UBIFS](https://en.wikipedia.org/wiki/UBIFS) | R | Read path only | [Linux UBIFS documentation](https://www.kernel.org/doc/html/latest/filesystems/ubifs.html) |
-| [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) | R/W ⚠️ | Native b-trees; true in-place add/replace/remove + purge; in-place defrag/optimize and wipe/clean; alloc/freespace/backpointer/accounting metadata kept consistent. Mutation is limited to the supported single-device regular-extent profile. | [bcachefs](https://bcachefs.org/) |
-| [AdvFS](https://en.wikipedia.org/wiki/AdvFS) | R/W | Tru64 UNIX Advanced File System; `.advfs` | [AdvFS technical overview](https://en.wikipedia.org/wiki/AdvFS) |
-| [MINIX V1](https://en.wikipedia.org/wiki/MINIX_file_system) | R/W | Original 14-character-name MINIX filesystem; `.minix1` | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
-| [MINIX V2](https://en.wikipedia.org/wiki/MINIX_file_system) | R/W | 30-character-name MINIX revision; `.minix2` | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
-| [NILFS2](https://en.wikipedia.org/wiki/NILFS) | R/W | Log-structured filesystem with continuous checkpoints; `.nilfs2` | [NILFS project](https://nilfs.sourceforge.io/) |
-| [Tux2](https://en.wikipedia.org/wiki/Tux2) | R/W | Phase-tree filesystem; `.tux2` | [Tux2 design notes](https://en.wikipedia.org/wiki/Tux2) |
-| [Tux3](https://en.wikipedia.org/wiki/Tux3) | R/W | Versioning filesystem successor to Tux2; `.tux3` | [Tux3 project](https://github.com/OGAWAHirofumi/tux3) |
-| [VxFS](https://en.wikipedia.org/wiki/Veritas_File_System) | WORM | Veritas File System; read and fresh create, no in-place mutation; `.vxfs` | [Veritas File System](https://en.wikipedia.org/wiki/Veritas_File_System) |
-| [SmartFS](https://nuttx.apache.org/docs/latest/components/filesystem.html) | WORM | NuttX flash filesystem; read and fresh create, no in-place mutation; `.smartfs` | [NuttX SmartFS](https://nuttx.apache.org/docs/latest/components/filesystem.html) |
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [DoubleSpace CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DoubleSpace` | R/W | ✅ moving | ✅ | ✅ | ✅ | MS-DOS 6.22 `DRVSPACE` driver under QEMU mounts, reads and writes; real driver CVFs read byte-exact | MSDBL6.0 CVF; stored clusters | [DoubleSpace](https://en.wikipedia.org/wiki/DriveSpace) |
+| [DriveSpace 3 CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DriveSpace3` | R/W | ✅ moving | ✅ | ✅ | ✅ | `dmsdos` mounts the genuine `GenuineDvr3Writer` output and reads byte-exact | Win95 DVR3 CVF; a Win95 guest oracle and the HiPack codec are still open | [DriveSpace 3 notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/FileSystems/FileSystem.DriveSpace3/FORMAT-NOTES.md) |
+| [DriveSpace CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DriveSpace` | R/W | ✅ moving | ✅ | ✅ | ✅ | MS-DOS 6.22 `DRVSPACE` driver under QEMU mounts, reads and writes; real driver CVFs read byte-exact | MSDSP6.0 CVF; stored clusters | [DriveSpace](https://en.wikipedia.org/wiki/DriveSpace) |
+| [exFAT](https://en.wikipedia.org/wiki/ExFAT) | `ExFat` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) r/w + `fsck.exfat` | — | [exFAT specification](https://learn.microsoft.com/windows/win32/fileio/exfat-specification) |
+| [FAT Filesystem Image](https://en.wikipedia.org/wiki/File_Allocation_Table) | `Fat` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) r/w + `fsck.fat` + `mtools` + reverse `mkfs.vfat` | FAT12/16/32 with long filenames; in-place `FatModifier` | [FAT specification](https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc) |
+| [FAT+ Filesystem Image (large-file extension)](https://en.wikipedia.org/wiki/File_Allocation_Table#FAT+) | `FatPlus` | R/W | ✅ rebuild | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (vfat) reads byte-exact | FAT+ large-file extension | [FAT+ draft](https://www.fdos.org/kernel/fatplus.txt) |
+| [FATX (Xbox)](https://en.wikipedia.org/wiki/FATX) | `Fatx` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Xbox FATX | [FATX (xboxdevwiki)](https://xboxdevwiki.net/FATX) |
+| [HPFS](https://en.wikipedia.org/wiki/High_Performance_File_System) | `Hpfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | OS/2 HPFS | [HPFS layout (OS/2 Museum)](https://www.os2museum.com/wp/the-hpfs-disk-layout/) |
+| [NEC PC-98 DOS](https://en.wikipedia.org/wiki/PC-98) | `Pc98` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | NEC IPL keeps the BPB at 0x80, so the Linux `msdos` driver rejects it | [PC-98 disk layout](https://www.pc98.org/) |
+| [NTFS](https://en.wikipedia.org/wiki/NTFS) | `Ntfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `ntfsls` / `ntfsinfo` / `ntfsfix` (ntfs-3g) + reverse `mkfs.ntfs` | Edits relayout the volume; `ntfs3` mounts it but lists an empty root (root `$I30` index pending) | [MS-FSCC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/) |
+| [ReFS](https://en.wikipedia.org/wiki/ReFS) | `Refs` | R/W | ✅ moving | ✅ | — | ✅ | own reader + struct-parity tests | ReFS 3.x; mutation is offline-quiescent only (see limitations) | [ReFS overview](https://learn.microsoft.com/windows-server/storage/refs/refs-overview) |
+| [Stacker CVF](https://en.wikipedia.org/wiki/Stac_Electronics#Stacker) | `Stacker` | WORM | ✅ rebuild | ✅ | ✅ | ✅ | `dmsdos` mounts the genuine `GenuineStackerWriter` output and reads byte-exact | STACVOL; edits rebuild through the writer, so `CanModify` is withheld; stored clusters | [Stacker notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/FileSystems/FileSystem.Stacker/FORMAT-NOTES.md) |
+| [Transactional FAT (TFAT)](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) | `TFat` | R/W | ✅ rebuild | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (vfat) reads byte-exact | Transaction-safe FAT (Windows CE) | [TFAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) |
 
-### Apple / optical / portable filesystems
+### Unix / Linux
 
-| Filesystem | State | Scope | Reference |
-| --- | :---: | --- | --- |
-| [HFS](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) | R/W | Classic Macintosh HFS | [Inside Macintosh: Files](https://developer.apple.com/library/archive/documentation/mac/Files/Files-2.html) |
-| [HFS+](https://en.wikipedia.org/wiki/HFS_Plus) | R/W | Catalog-tree and nested-directory support | [Apple TN1150](https://developer.apple.com/library/archive/technotes/tn/tn1150.html) |
-| [APFS](https://en.wikipedia.org/wiki/Apple_File_System) | R/W | Supported container/filesystem tree and modification paths | [Apple File System Reference](https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf) |
-| [ISO 9660](https://en.wikipedia.org/wiki/ISO_9660) | R/W | Optical-disc filesystem images | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
-| [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) | R/W | Universal Disk Format images | [OSTA UDF specifications](https://osta.org/specs/) |
-| [SquashFS](https://en.wikipedia.org/wiki/SquashFS) | R/W | Compressed filesystem image; mutation is rebuild-oriented | [SquashFS documentation](https://docs.kernel.org/filesystems/squashfs.html) |
-| [CramFS](https://en.wikipedia.org/wiki/Cramfs) | R/W | Compressed ROM filesystem; mutation is rebuild-oriented | [Linux cramfs documentation](https://www.kernel.org/doc/html/latest/filesystems/cramfs.html) |
-| [EROFS](https://en.wikipedia.org/wiki/EROFS) | WORM | Enhanced read-only filesystem images | [EROFS documentation](https://erofs.docs.kernel.org/) |
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [AdvFS (Tru64 UNIX)](https://en.wikipedia.org/wiki/AdvFS) | `AdvFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Tru64 UNIX | [AdvFS](https://en.wikipedia.org/wiki/AdvFS) |
+| [BcacheFS](https://en.wikipedia.org/wiki/Bcachefs) | `BcacheFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `bcachefs fsck -n` + `show-super`; alloc / freespace / backpointer / accounting witness tests | True in-place edits for the single-device, regular-extent profile; other profiles are refused for mutation | [bcachefs](https://bcachefs.org/) |
+| [BFS](https://en.wikipedia.org/wiki/Be_File_System) | `Bfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | BeFS; edits rebuild the volume | [Be File System](https://en.wikipedia.org/wiki/Be_File_System) |
+| [Btrfs Filesystem Image](https://en.wikipedia.org/wiki/Btrfs) | `Btrfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `btrfs check --readonly`, also after mutation | Edits relayout the volume | [Btrfs on-disk format](https://btrfs.readthedocs.io/en/latest/dev/On-disk-format.html) |
+| [Coherent FS](https://en.wikipedia.org/wiki/Coherent_(operating_system)) | `Coherent` | R/W | ✅ moving | ✅ | ✅ | — | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`sysv`, `detect_coherent`) reads byte-exact | PDP-endian | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
+| [EFS (SGI Extent File System)](https://en.wikipedia.org/wiki/Extent_File_System) | `Efs` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`efs`) reads byte-exact | SGI EFS | [EFS](https://en.wikipedia.org/wiki/Extent_File_System) |
+| [ext1](https://en.wikipedia.org/wiki/Extended_file_system) | `Ext1` | R/W | ✅ moving | ✅ | ✅ | ✅ | `dumpe2fs` accepts as ext2 | 1992 ext, magic `0xEF51`; no `mkfs.ext1` exists | [Extended file system](https://en.wikipedia.org/wiki/Extended_file_system) |
+| [ext2/3/4](https://en.wikipedia.org/wiki/Ext4) | `Ext` | R/W | ✅ moving | ✅ | ✅ | ✅ | `e2fsck -fn` / `dumpe2fs` / `debugfs` + reverse `mke2fs` | ext2 / ext3 / ext4 | [ext4 documentation](https://www.kernel.org/doc/html/latest/filesystems/ext4/) |
+| [F2FS](https://en.wikipedia.org/wiki/F2FS) | `F2fs` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) r/w + `fsck.f2fs` | — | [F2FS documentation](https://www.kernel.org/doc/html/latest/filesystems/f2fs.html) |
+| [GFS (Sistina/Red Hat, original)](https://en.wikipedia.org/wiki/GFS2) | `Gfs1` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests; the Linux `gfs2` driver rejects GFS1 | Sistina GFS | [GFS2](https://www.kernel.org/doc/html/latest/filesystems/gfs2.html) |
+| [GFS2 (Global File System 2)](https://en.wikipedia.org/wiki/GFS2) | `Gfs2` | WORM | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Creates an empty volume; the reader resolves inline (stuffed) files only, so no edit is offered | [GFS2](https://www.kernel.org/doc/html/latest/filesystems/gfs2.html) |
+| [HAMMER (DragonFly BSD)](https://en.wikipedia.org/wiki/HAMMER_(file_system)) | `Hammer` | R/W | ✅ moving | ✅ | ✅ | ✅ | DragonFly kernel mount r/w under QEMU + `hammer show` / `hammer checkmap` | Single volume, about 1 GB minimum; edits rebuild the volume | [HAMMER](https://www.dragonflybsd.org/hammer/) |
+| [HAMMER2 (DragonFly BSD)](https://en.wikipedia.org/wiki/HAMMER2) | `Hammer2` | R/W | ✅ moving | ✅ | ✅ | ✅ | DragonFly kernel mount r/w under QEMU | — | [HAMMER2](https://www.dragonflybsd.org/hammer/) |
+| [HTFS (SCO High Throughput File System)](https://en.wikipedia.org/wiki/High_Throughput_File_System) | `Htfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | SCO HTFS | [HTFS](https://en.wikipedia.org/wiki/High_Throughput_File_System) |
+| [JFS](https://en.wikipedia.org/wiki/JFS_(file_system)) | `Jfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) + `fsck.jfs` | JFS2 (Linux / AIX) | [JFS project](http://jfs.sourceforge.net/) |
+| [JFS1 (OS/2 original IBM JFS)](https://en.wikipedia.org/wiki/JFS_(file_system)) | `Jfs1` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests; the Linux `jfs` driver only knows JFS2 | OS/2 JFS1 | [JFS project](http://jfs.sourceforge.net/) |
+| [Minix FS](https://en.wikipedia.org/wiki/MINIX_file_system) | `MinixFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkfs.minix` round-trip | MINIX v1 / v2 / v3 superblock families | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| [Minix V1 FS](https://en.wikipedia.org/wiki/MINIX_file_system) | `MinixV1` | R/W | ✅ moving | ✅ | ✅ | ✅ | `fsck.minix` clean after in-place edit + host-kernel loop-mount reads the added file byte-exact | 14-character names | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| [Minix V2 FS](https://en.wikipedia.org/wiki/MINIX_file_system) | `MinixV2` | R/W | ✅ moving | ✅ | ✅ | ✅ | `fsck.minix` clean after in-place edit + host-kernel loop-mount reads the added file byte-exact | 30-character names | [MINIX filesystem](https://en.wikipedia.org/wiki/MINIX_file_system) |
+| [NILFS v1](https://en.wikipedia.org/wiki/NILFS) | `Nilfs1` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | NILFS v1 | [NILFS](https://nilfs.sourceforge.io/) |
+| [NILFS2](https://en.wikipedia.org/wiki/NILFS) | `Nilfs2` | R/W | ✅ moving | ✅ | ✅ | ✅ | host-kernel loop-mount reads the in-place-added file byte-exact; `mkfs.nilfs2` superblock re-validated | — | [NILFS](https://nilfs.sourceforge.io/) |
+| [OCFS2 (Oracle Cluster Filesystem 2)](https://en.wikipedia.org/wiki/OCFS2) | `Ocfs2` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkfs.ocfs2` + kernel-written image (QEMU) read by the package | Edits rebuild the volume | [OCFS2](https://www.kernel.org/doc/html/latest/filesystems/ocfs2.html) |
+| [QNX4 FS](https://en.wikipedia.org/wiki/QNX4FS) | `Qnx4` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [qnx4](https://www.kernel.org/doc/html/latest/filesystems/qnx4.html) |
+| [QNX6 Neutrino FS](https://en.wikipedia.org/wiki/QNX6FS) | `Qnx6` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [qnx6](https://www.kernel.org/doc/html/latest/filesystems/qnx6.html) |
+| [Reiser4](https://en.wikipedia.org/wiki/Reiser4) | `Reiser4` | WORM | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests; `reiser4progs` not installable here | Empty tree from `mkfs.reiser4` captures; files live in a payload area the reiser4 driver does not see, so the writer stays WORM | [Reiser4](https://reiser4.wiki.kernel.org/) |
+| [ReiserFS](https://en.wikipedia.org/wiki/ReiserFS) | `ReiserFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `reiserfsck`, also after mutation | ReiserFS 3.6; edits rebuild the tree | [ReiserFS documentation](https://www.kernel.org/doc/html/latest/filesystems/reiserfs.html) |
+| [TUX2](https://en.wikipedia.org/wiki/Tux2) | `Tux2` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Phase-tree filesystem | [Tux2](https://en.wikipedia.org/wiki/Tux2) |
+| [TUX3](https://en.wikipedia.org/wiki/Tux3) | `Tux3` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [Tux3](https://github.com/OGAWAHirofumi/tux3) |
+| [UFS](https://en.wikipedia.org/wiki/Unix_File_System) | `Ufs` | R/W | ✅ moving | ✅ | ✅ | ✅ | FreeBSD kernel mount r/w + `fsck_ffs` under QEMU | UFS1 / FFS | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) |
+| [UNIX System V FS](https://en.wikipedia.org/wiki/Unix_File_System) | `SysV` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`sysv`) reads byte-exact | System V filesystem | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
+| [VxFS (Veritas)](https://en.wikipedia.org/wiki/Veritas_File_System) | `VxFs` | R/W | ✅ moving | ✅ | — | — | Linux `freevxfs` driver mounts the written volume | One fileset, direct extents, flat root; edits rebuild the volume | [freevxfs](https://github.com/torvalds/linux/tree/master/fs/freevxfs) |
+| [Xenix FS](https://en.wikipedia.org/wiki/Xenix) | `Xenix` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`sysv`, `detect_xenix`) reads byte-exact | — | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
+| [XFS](https://en.wikipedia.org/wiki/XFS) | `Xfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) r/w + `xfs_repair -n` | XFS v5 | [XFS documentation](https://kernel.org/doc/html/latest/filesystems/xfs/index.html) |
+| [ZFS](https://en.wikipedia.org/wiki/ZFS) | `Zfs` | R/W | ✅ moving | — | ✅ | ✅ | `zdb -l` label path; own reader + struct-parity tests | OpenZFS v28 single-vdev profile; edits rebuild the pool | [OpenZFS documentation](https://openzfs.github.io/openzfs-docs/) |
 
-### Retro / emulator filesystems
+### Apple
 
-| Family | State | Examples | Reference |
-| --- | :---: | --- | --- |
-| [Commodore disk images](https://en.wikipedia.org/wiki/Commodore_DOS) | R/W | D64, D71, D81 and related media | [VICE disk image docs](https://vice-emu.sourceforge.io/vice_17.html) |
-| [Apple DOS / ProDOS](https://en.wikipedia.org/wiki/Apple_DOS) | R/W | Apple II disk filesystems | [ProDOS technical reference](https://prodos8.com/docs/techref/) |
-| [CP/M](https://en.wikipedia.org/wiki/CP/M) | R/W | Canonical CP/M 2.2 8-inch SSSD geometry; descriptor implements create/modify as well as read | [CP/M filesystem notes](https://www.seasip.info/Cpm/format22.html) |
-| [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) | WORM | ZX Spectrum disk images | [TR-DOS notes](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
-| [RT-11](https://en.wikipedia.org/wiki/RT-11) | R | DEC RT-11 filesystem images | [RT-11 documentation archive](https://bitsavers.org/pdf/dec/pdp11/rt11/) |
-| [DragonDOS](https://en.wikipedia.org/wiki/Dragon_32/64) | R/W | Dragon 32/64 disk filesystem; `.dfs` | [Dragon Data archive](https://en.wikipedia.org/wiki/Dragon_32/64) |
-| [PlayStation memory card](https://en.wikipedia.org/wiki/PlayStation_technical_specifications#Memory_Card) | R/W | PS1 save blocks; `.mcr` | [PS1 memory card format](https://www.psdevwiki.com/ps3/PS1_Memory_Card) |
-| [TFAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) | R/W | Transaction-safe FAT used by Windows CE; `.tfat` | [Transaction-Safe FAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) |
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [APFS](https://en.wikipedia.org/wiki/Apple_File_System) | `Apfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Single container / volume, unencrypted; edits rebuild the tree | [Apple File System Reference](https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf) |
+| [Apple DOS 3.3](https://en.wikipedia.org/wiki/Apple_DOS) | `AppleDos` | R/W | ✅ moving | ✅ | ✅ | ✅ | dos33fsprogs image read byte-exact | DOS 3.3, catalog at T17 S15 | [Apple DOS](https://en.wikipedia.org/wiki/Apple_DOS) |
+| [Apple IIgs GS/OS (2IMG)](https://en.wikipedia.org/wiki/Apple_IIGS) | `GsOs` | R/W | ✅ rebuild | — | ✅ | — | own reader + struct-parity tests | 2IMG wrapper delegating to the inner ProDOS / HFS / DOS 3.3 reader | [2IMG](https://apple2.org.za/gswv/a2zine/Docs/DiskImage_2MG_Info.txt) |
+| [Apple UCSD Pascal](https://en.wikipedia.org/wiki/UCSD_Pascal) | `ApplePascal` | R/W | ✅ moving | ✅ | ✅ | ✅ | AppleCommander image read byte-exact | UCSD Pascal volume | [UCSD p-System](https://en.wikipedia.org/wiki/UCSD_Pascal) |
+| [HFS (Classic)](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) | `Hfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `hmount` / `hls` (hfsutils) list the written files | Classic HFS; edits rebuild the catalog | [Inside Macintosh: Files](https://developer.apple.com/library/archive/documentation/mac/Files/Files-2.html) |
+| [HFS+](https://en.wikipedia.org/wiki/HFS_Plus) | `HfsPlus` | R/W | ✅ moving | ✅ | ✅ | ✅ | `fsck.hfsplus -fn` + hfsutils + reverse `mkfs.hfsplus` | Edits rebuild the catalog | [TN1150](https://developer.apple.com/library/archive/technotes/tn/tn1150.html) |
+| [MFS (Macintosh File System)](https://en.wikipedia.org/wiki/Macintosh_File_System) | `Mfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Macintosh File System (1984) | [MFS](https://en.wikipedia.org/wiki/Macintosh_File_System) |
+| [ProDOS](https://en.wikipedia.org/wiki/Apple_ProDOS) | `ProDos` | R/W | ✅ moving | ✅ | ✅ | ✅ | AppleCommander image read byte-exact | — | [ProDOS technical reference](https://prodos8.com/docs/techref/) |
+
+### Optical
+
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [ISO 9660](https://en.wikipedia.org/wiki/ISO_9660) | `Iso` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`iso9660`) + `isoinfo` / `xorriso` | ISO 9660 + Joliet; edits rebuild the image | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
+| [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) | `Udf` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`udf`) + `mkudffs` round-trip | Edits rebuild the image | [OSTA UDF](https://osta.org/specs/) |
+
+### Compressed, embedded and flash
+
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [CramFS](https://en.wikipedia.org/wiki/Cramfs) | `CramFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkfs.cramfs` image read byte-exact | Edits rebuild the image | [cramfs](https://www.kernel.org/doc/html/latest/filesystems/cramfs.html) |
+| [EROFS](https://en.wikipedia.org/wiki/EROFS) | `Erofs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkfs.erofs` image read byte-exact | Compact inodes, FLAT_PLAIN; edits rebuild the image | [EROFS](https://erofs.docs.kernel.org/) |
+| [JFFS2](https://en.wikipedia.org/wiki/JFFS2) | `Jffs2` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkfs.jffs2` image read byte-exact | Log-structured | [JFFS2](https://www.kernel.org/doc/html/latest/filesystems/jffs2.html) |
+| [LittleFS](https://github.com/littlefs-project/littlefs) | `LittleFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mklittlefs` (littlefs v2.11) image read byte-exact | — | [littlefs](https://github.com/littlefs-project/littlefs/blob/master/SPEC.md) |
+| [ROMFS](https://en.wikipedia.org/wiki/Romfs) | `RomFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | `genromfs` image read byte-exact | Edits rebuild the image | [romfs](https://www.kernel.org/doc/html/latest/filesystems/romfs.html) |
+| [SmartFS](https://nuttx.apache.org/docs/latest/components/filesystem/smartfs.html) | `SmartFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | NuttX; flat root; edits rebuild the volume | [NuttX SmartFS](https://github.com/apache/nuttx/tree/master/fs/smartfs) |
+| [SquashFS](https://en.wikipedia.org/wiki/SquashFS) | `SquashFs` | R/W | ✅ moving | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`squashfs`) + `unsquashfs` | Edits rebuild the image | [SquashFS](https://docs.kernel.org/filesystems/squashfs.html) |
+| [UBIFS](https://en.wikipedia.org/wiki/UBIFS) | `Ubifs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Log-structured; edits rebuild the image | [UBIFS](https://www.kernel.org/doc/html/latest/filesystems/ubifs.html) |
+| [YAFFS2](https://en.wikipedia.org/wiki/YAFFS) | `Yaffs2` | R/W | ✅ moving | ✅ | ✅ | ✅ | `mkyaffs2image` image read byte-exact | — | [YAFFS](https://yaffs.net/) |
+
+### Amiga, Atari, Acorn and other home computers
+
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [Acorn ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) | `Adfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests; the `adfs` module is absent from the QEMU guest | Acorn ADFS | [ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) |
+| [ADF](https://en.wikipedia.org/wiki/Amiga_Disk_File) | `Adf` | R/W | ✅ moving | ✅ | ✅ | ✅ | amitools `xdftool` image read byte-exact | OFS / FFS | [ADF (Clévy)](http://lclevy.free.fr/adflib/adf_info.html) |
+| [Amiga Professional FS](https://en.wikipedia.org/wiki/Professional_File_System) | `AmigaPfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [PFS3](https://github.com/tonioni/pfs3aio) |
+| [Amiga SFS](https://en.wikipedia.org/wiki/Smart_File_System) | `Sfs` | R/W | ✅ moving | ✅ | — | — | own reader + struct-parity tests; every block self-checksums | Flat root; edits rebuild the volume | [AROS SFS](https://github.com/aros-development-team/AROS/tree/master/rom/filesys/SFS) |
+| [ATR (Atari 8-bit)](https://en.wikipedia.org/wiki/Atari_DOS) | `Atari8` | R/W | ✅ moving | ✅ | ✅ | ✅ | atari-tools ATR (DOS 2.0s) read byte-exact | ATR, Atari DOS 2 VTOC | [Atari DOS](https://en.wikipedia.org/wiki/Atari_DOS) |
+| [BBC DFS](https://en.wikipedia.org/wiki/Disc_Filing_System) | `Bbc` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | BBC DFS | [DFS](https://en.wikipedia.org/wiki/Disc_Filing_System) |
+| [CP/M 2.2 (8" SSSD)](https://en.wikipedia.org/wiki/CP/M) | `Cpm` | R/W | ✅ moving | ✅ | ✅ | ✅ | cpmtools `mkfs.cpm` / `cpmcp` IBM-3740 image read byte-exact | CP/M 2.2, 8-inch SSSD | [CP/M format notes](https://www.seasip.info/Cpm/format22.html) |
+| [CPC DSK](https://en.wikipedia.org/wiki/Amstrad_CPC) | `CpcDsk` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests; cpmtools / libdsk expect a different EDSK geometry | MV - CPCEMU DSK | [DSK format](https://www.cpcwiki.eu/index.php/Format:DSK_disk_image_file_format) |
+| [Cromemco RDOS](https://en.wikipedia.org/wiki/Cromemco) | `Cromemco` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | RDOS | [Cromemco](https://en.wikipedia.org/wiki/Cromemco) |
+| [D64](https://en.wikipedia.org/wiki/Commodore_DOS) | `D64` | R/W | ✅ moving | ✅ | ✅ | ✅ | `cbmconvert` 1541 image read byte-exact | — | [VICE disk images](https://vice-emu.sourceforge.io/vice_17.html) |
+| [D71](https://en.wikipedia.org/wiki/Commodore_DOS) | `D71` | R/W | ✅ moving | ✅ | ✅ | ✅ | `cbmconvert` 1571 image read byte-exact | — | [VICE disk images](https://vice-emu.sourceforge.io/vice_17.html) |
+| [D81](https://en.wikipedia.org/wiki/Commodore_DOS) | `D81` | R/W | ✅ moving | ✅ | ✅ | ✅ | `cbmconvert` 1581 image read byte-exact | — | [VICE disk images](https://vice-emu.sourceforge.io/vice_17.html) |
+| [DragonFS](https://en.wikipedia.org/wiki/Dragon_32/64) | `DragonFs` | R/W | ✅ moving | ✅ | ✅ | — | own reader + struct-parity tests | DragonDOS | [DragonDOS](https://en.wikipedia.org/wiki/Dragon_32/64) |
+| [G64 (Commodore GCR)](https://en.wikipedia.org/wiki/Commodore_DOS) | `G64` | R/W | ✅ rebuild | ✅ | ✅ | — | own reader + struct-parity tests | Raw GCR tracks; the writer GCR-encodes a 1541 image | [G64 (VICE)](https://vice-emu.sourceforge.io/vice_17.html) |
+| [GEMDOS (Atari ST)](https://en.wikipedia.org/wiki/Atari_TOS) | `Gemdos` | R/W | ✅ rebuild | ✅ | ✅ | ✅ | Linux kernel mount under QEMU (`QemuLinuxMountTests`) (`msdos`) reads byte-exact | Atari ST FAT variant | [GEMDOS](https://en.wikipedia.org/wiki/Atari_TOS) |
+| [MFS-1 (Acorn Master File System v1)](https://en.wikipedia.org/wiki/BBC_Master) | `Mfs1` | WORM | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Acorn MFS-1; edits rebuild through the writer, so `CanModify` is withheld | [BBC Master](https://en.wikipedia.org/wiki/BBC_Master) |
+| [MSA (Magic Shadow Archiver)](https://en.wikipedia.org/wiki/Atari_ST) | `Msa` | R/W | ✅ rebuild | ✅ | ✅ | — | own reader + struct-parity tests | Magic Shadow Archive | [MSA (Atari ST)](https://info-coach.fr/atari/documents/_mydoc/FD_Image_Formats.pdf) |
+| [NIB (Commodore nibble dump)](https://en.wikipedia.org/wiki/Commodore_DOS) | `Nib` | R/W | ✅ rebuild | ✅ | — | — | own reader + struct-parity tests | Raw nibble tracks | [NIB](https://ist.uwaterloo.ca/~schepers/formats.html) |
+| [PlayStation Memory Card](https://en.wikipedia.org/wiki/PlayStation_technical_specifications#Memory_Card) | `Ps1MemoryCard` | R/W | ✅ rebuild | ✅ | ✅ | — | own reader + struct-parity tests | Deletion marks the directory frame; add / replace re-pack the blocks | [PS1 memory card](https://www.psdevwiki.com/ps3/PS1_Memory_Card) |
+| [SCL (ZX Spectrum)](https://en.wikipedia.org/wiki/TR-DOS) | `ZxScl` | R/W | ✅ moving | ✅ | ✅ | — | own reader + struct-parity tests | SCL, `SINCLAIR` magic + checksum | [SCL](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
+| [Sharp X68000 Human68k](https://en.wikipedia.org/wiki/Human68k) | `Human68k` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Sharp X68000 | [Human68k](https://en.wikipedia.org/wiki/Human68k) |
+| [TI-99/4A DSR](https://en.wikipedia.org/wiki/TI-99/4A) | `Ti99` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [TI-99/4A disk format](https://www.unige.ch/medecine/nouspikel/ti99/disks.htm) |
+| [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) | `TrDos` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | ZX Spectrum TRD | [TR-DOS](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
+| [TRSDOS / LDOS](https://en.wikipedia.org/wiki/TRSDOS) | `Trsdos` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [TRSDOS](https://en.wikipedia.org/wiki/TRSDOS) |
+| [VDFS](https://en.wikipedia.org/wiki/Gothic_(series)) | `Vdfs` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Gothic-engine VDFS | [VDFS](https://github.com/PhoenixTales/vdfs) |
+
+### Minicomputer and workstation
+
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [DEC RT-11 (RX01)](https://en.wikipedia.org/wiki/RT-11) | `Rt11` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | DEC RT-11 | [RT-11 documentation](https://bitsavers.org/pdf/dec/pdp11/rt11/) |
+| [HP LIF (Logical Interchange Format)](https://en.wikipedia.org/wiki/Logical_Interchange_Format) | `Lif` | R/W | ✅ moving | ✅ | ✅ | ✅ | lifutils volume read byte-exact | HP LIF, 256-byte sectors | [LIF](https://en.wikipedia.org/wiki/Logical_Interchange_Format) |
+| [Microware OS-9 RBF](https://en.wikipedia.org/wiki/OS-9) | `Os9Rbf` | R/W | ✅ moving | ✅ | ✅ | ✅ | toolshed `os9` RBF disk read byte-exact | Microware OS-9 RBF | [OS-9](https://en.wikipedia.org/wiki/OS-9) |
+| [ODS-1 (VAX/VMS Files-11 L1)](https://en.wikipedia.org/wiki/Files-11) | `Ods1` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Files-11 ODS-1 (RSX-11) | [Files-11](https://en.wikipedia.org/wiki/Files-11) |
+| [OpenVMS Files-11](https://en.wikipedia.org/wiki/Files-11) | `OpenVms` | R/W | ✅ moving | ✅ | ✅ | ✅ | own reader + struct-parity tests | Files-11 ODS-2 / ODS-5 | [Files-11](https://en.wikipedia.org/wiki/Files-11) |
+
+### Network, distributed and proprietary
+
+| Format | Id | State | Defrag | Wipe | Shrink | Layout | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | R | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [CephFS / RADOS](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R | — | — | — | — | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
+| [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | detection of the on-disk signature | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
+| [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R | — | — | — | — | detection of the on-disk signature | Payload is encrypted; plaintext needs the FEK | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
+| [GlusterFS](https://en.wikipedia.org/wiki/Gluster) | `GlusterFs` | R | — | — | — | — | detection of the on-disk signature | Brick metadata only | [GlusterFS](https://docs.gluster.org/) |
+| [IBM Spectrum Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
+| [JuiceFS](https://juicefs.com/) | `JuiceFs` | R | — | — | — | — | detection of the on-disk signature | Chunk objects only | [JuiceFS](https://juicefs.com/docs/community/introduction/) |
+| [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | — | — | — | — | detection of the on-disk signature | OST / MDT objects only | [Lustre](https://www.lustre.org/) |
+| [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | — | — | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
+| [NetApp WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) | `Wafl` | R | — | — | — | — | detection of the on-disk signature | NetApp WAFL | [WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) |
+| [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ moving | ✅ | — | — | anchor detection derived from real OES media; see the on-disk notes | Beast / B-tree layout undocumented; the writer emits a container under its own magic, not a pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |
+| [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R | — | — | — | — | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
+| [NWFS386 (Novell NetWare 386 raw)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R | — | — | — | — | detection of the on-disk signature | NetWare 386 raw-partition structures are proprietary | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
+| [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ rebuild | — | — | — | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
+| [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R | — | — | — | — | detection of the on-disk signature | SGI cluster XFS | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
+| [Tahoe-LAFS share](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R | — | — | — | — | detection of the on-disk signature | Shares are capability-encrypted; no read-cap, no plaintext | [Tahoe-LAFS](https://tahoe-lafs.org/) |
+| [TFS (BBN Trans-FS)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | detection of the on-disk signature | BBN Trans-FS; no public on-disk specification | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
+
+<!-- SUPPORT:END -->
 
 ## 🚀 Quick start
 
@@ -149,234 +256,17 @@ foreach (var partition in inner.Partitions) {
 }
 ```
 
-## 🧭 When to use this package
-
-Use it for forensic/archival inspection, cross-platform disk analysis, retro-computing media, cloud/VM image inspection, firmware/test-image construction, filesystem layout experiments, recovery, and conversions where mounting through the host OS is undesirable or impossible.
-
-It is not a replacement for `System.IO` when the volume is already mounted, and it is not a kernel filesystem driver with live concurrent journaling guarantees.
-
-Creatable filesystem implementations build real nested directory trees rather than flattening paths. Implementations that expose the relevant interfaces can also wipe unused space/cluster-tip slack, defragment extents, and participate in layout/cluster-size optimization. Those are per-descriptor capabilities, not assumptions applied to every format.
-
-## 📚 Complete disk-image container inventory
-
-| Descriptor | Details | Reference |
-| --- | --- | --- |
-| `FileFormat.Vhd` | Microsoft VHD v1; fixed/dynamic/differencing paths | [VHD](https://en.wikipedia.org/wiki/VHD_(file_format)) |
-| `FileFormat.Vhdx` | VHDX reader; exact writer capability follows the current descriptor | [MS-VHDX](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-vhdx/) |
-| `FileFormat.Vmdk` | VMware Virtual Machine Disk | [VMDK](https://en.wikipedia.org/wiki/VMDK) |
-| `FileFormat.Vdi` | Oracle VirtualBox Disk Image | [VirtualBox](https://en.wikipedia.org/wiki/VirtualBox) |
-| `FileFormat.Qcow2` | QEMU Copy-On-Write v2 | [QCOW](https://en.wikipedia.org/wiki/Qcow) |
-| `FileFormat.Dmg` | Apple Disk Image | [Apple Disk Image](https://en.wikipedia.org/wiki/Apple_Disk_Image) |
-| `FileFormat.Cso` | Compressed ISO, PSP/homebrew | [CSO](https://en.wikipedia.org/wiki/CSO_(file_format)) |
-| `FileFormat.BinCue` | CD/DVD raw optical tracks + cue sheet | [Cue sheet](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) |
-| `FileFormat.Mdf` | Alcohol 120% Media Disc Format | [Alcohol 120%](https://en.wikipedia.org/wiki/Alcohol_120%25) |
-| `FileFormat.Nrg` | Nero Burning ROM image | [Nero Burning ROM](https://en.wikipedia.org/wiki/Nero_Burning_ROM) |
-| `FileFormat.Cdi` | DiscJuggler image | [DiscJuggler](https://en.wikipedia.org/wiki/DiscJuggler) |
-| `FileFormat.Pfs0` | Nintendo Switch PartitionFS / firmware packaging |
-| `FileFormat.UImage` | U-Boot uImage | [Das U-Boot](https://en.wikipedia.org/wiki/Das_U-Boot) |
-| `FileFormat.UefiFv` | UEFI firmware volume | [UEFI](https://en.wikipedia.org/wiki/UEFI) |
-| `FileFormat.Ipsw` | Apple iOS/iPadOS firmware archive | [IPSW](https://en.wikipedia.org/wiki/IPSW) |
-| `FileFormat.Ewf` | Expert Witness Format / EnCase forensic image | [EnCase](https://en.wikipedia.org/wiki/EnCase) |
-| `FileFormat.T64` | Commodore 64 tape archive; modification is rebuild-oriented | [Commodore DOS](https://en.wikipedia.org/wiki/Commodore_DOS) |
-| `FileFormat.Tap` | Sinclair/Commodore tape image; modification is rebuild-oriented |
-| `FileFormat.Dtb` | Device Tree Blob / overlay; walks FDT properties as pseudo-archive | [Devicetree](https://en.wikipedia.org/wiki/Devicetree) |
-| `FileFormat.FirmwareHex` | Intel HEX, Motorola S-Record and TI-TXT normalized to `firmware.bin` + metadata | [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) |
-
-## 📚 Complete filesystem inventory
-
-The long-form table preserves the original implementation detail, but avoids freezing stale state letters for every row. For exact current R/W/WORM/R capability, inspect the descriptor's `FormatCapabilities`/implemented interfaces; where the state is material to a curated row above it is stated explicitly.
-
-### Microsoft / Windows
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.Fat` | FAT12/FAT16/FAT32, LFN, BPB, 0x55AA signature, FATGEN-oriented writer | [FAT](https://en.wikipedia.org/wiki/File_Allocation_Table) |
-| `FileSystem.ExFat` | exFAT VBR + boot-checksum handling | [exFAT](https://en.wikipedia.org/wiki/ExFAT) |
-| `FileSystem.Ntfs` | NTFS MFT/system metadata, USA fixup, LZNT1 paths | [NTFS](https://en.wikipedia.org/wiki/NTFS) |
-| `FileSystem.Refs` | ReFS header/boot-sector subset | [ReFS](https://en.wikipedia.org/wiki/ReFS) |
-| `FileSystem.Hpfs` | OS/2 HPFS, rebuild-based add/remove, defrag, extent map | [HPFS](https://en.wikipedia.org/wiki/High_Performance_File_System) |
-| `FileSystem.Htfs` | SCO HTFS: `s_magic=0x012FD15D`, S5-style superblock/inodes, 16-byte dirents, nested dirs, 512/1024/2048-byte blocks, defrag/purge/layout options | [HTFS](https://en.wikipedia.org/wiki/High_Throughput_File_System) |
-| `FileSystem.DoubleSpace` | DOS 6 DoubleSpace/DriveSpace CVF stored-run paths, rebuild-based modify | [DriveSpace](https://en.wikipedia.org/wiki/DriveSpace) |
-
-### Unix / Linux
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.Btrfs` | CRC-32C, chunk tree and SYSTEM/METADATA/DATA structures | [Btrfs](https://en.wikipedia.org/wiki/Btrfs) |
-| `FileSystem.Ext` | ext2/ext3/ext4 DYNAMIC_REV/FILETYPE-oriented writer | [ext4](https://en.wikipedia.org/wiki/Ext4) |
-| `FileSystem.Xfs` | XFS v5, AGF/AGI/AGFL and B-tree structures | [XFS](https://en.wikipedia.org/wiki/XFS) |
-| `FileSystem.Ext1` | 1992 ext1 magic `0xEF51`; rebuild-oriented modification; no current `mkfs.ext1` validator exists | [Extended FS](https://en.wikipedia.org/wiki/Extended_file_system) |
-| `FileSystem.ReiserFs` | ReiserFS 3.6, multi-leaf S+tree, R5-hashed keys, nested directories; rebuild mutation | [ReiserFS](https://en.wikipedia.org/wiki/ReiserFS) |
-| `FileSystem.Reiser4` | Empty-filesystem creation path based on reference blocks; full object-tree authoring is not implied | [Reiser4](https://en.wikipedia.org/wiki/Reiser4) |
-| `FileSystem.Jfs` | IBM JFS, nested dirs with external dtree B+ pages, secondary AIT/AIM handling | [JFS](https://en.wikipedia.org/wiki/JFS_(file_system)) |
-| `FileSystem.F2fs` | Superblock/checkpoint/SIT/NAT/SSA and hash-bucket directory blocks | [F2FS](https://en.wikipedia.org/wiki/F2FS) |
-| `FileSystem.Zfs` | fat-ZAP directories, Fletcher-4, big-endian XDR labels; rebuild-based supported mutation | [ZFS](https://en.wikipedia.org/wiki/ZFS) |
-| `FileSystem.Ufs` | BSD UFS reader, `fs_magic=0x011954` path | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) |
-| `FileSystem.BcacheFs` | Native b-tree reader/writer plus true in-place CRUD for the supported single-device regular-extent profile. Unchanged file data stays at its physical sectors; add/replace allocate free buckets; remove/purge zero released extents; alloc/freespace/backpointer/accounting trees are committed in the metadata reservation. In-place defrag/optimize and wipe/clean are supported. | [bcachefs](https://en.wikipedia.org/wiki/Bcachefs) |
-| `FileSystem.Ubifs` | UBIFS log-structured read path; LPT/TNC writer complexity is intentionally not guessed | [UBIFS](https://en.wikipedia.org/wiki/UBIFS) |
-| `FileSystem.Jffs2` | JFFS2 log-structured paths, rebuild-oriented mutation | [JFFS2](https://en.wikipedia.org/wiki/JFFS2) |
-| `FileSystem.Yaffs2` | YAFFS2 rebuild-oriented mutation + defrag paths | [YAFFS](https://en.wikipedia.org/wiki/YAFFS) |
-| `FileSystem.Bfs` | BeFS single-AG B+ tree, rebuild-oriented mutation | [Be File System](https://en.wikipedia.org/wiki/Be_File_System) |
-| `FileSystem.Hammer` | DragonFly HAMMER reader; validator requires DragonFly environment | [HAMMER](https://en.wikipedia.org/wiki/HAMMER_(file_system)) |
-| `FileSystem.Hammer2` | DragonFly HAMMER2 reader | [HAMMER2](https://en.wikipedia.org/wiki/HAMMER2) |
-| `FileSystem.Ocfs2` | OCFS2 paths, rebuild-oriented supported mutation | [OCFS2](https://en.wikipedia.org/wiki/OCFS2) |
-| `FileSystem.Nwfs` | Novell NetWare filesystem paths | [NSS](https://en.wikipedia.org/wiki/Novell_Storage_Services) |
-| `FileSystem.Efs` | SGI EFS: `fs_magic=0x00072959`, single-CG inode table, single-extent files, nested dirs, defrag/purge/layout options | [EFS](https://en.wikipedia.org/wiki/Extent_File_System) |
-| `FileSystem.Gfs1` | Sistina GFS pre-GFS2: multihost-format superblock, dinodes, lock protocol/table options | [GFS2](https://en.wikipedia.org/wiki/GFS2) |
-| `FileSystem.Jfs1` | OS/2 JFS1 discriminator (`JFS1`, version 1), 256-byte dinodes, configurable blocks, defrag/purge/layout options | [JFS](https://en.wikipedia.org/wiki/JFS_(file_system)) |
-
-### Apple / classic Mac
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.HfsPlus` | HFS+ catalog B-tree, TN1150 case-folding order, nested dirs; rebuild mutation | [HFS+](https://en.wikipedia.org/wiki/HFS_Plus) |
-| `FileSystem.Hfs` | Classic HFS catalog/extents trees; rebuild mutation | [HFS](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) |
-| `FileSystem.Apfs` | Single container/volume path with NXSB/APSB, object map and FS-tree B-tree; supported rebuild mutation | [APFS](https://en.wikipedia.org/wiki/Apple_File_System) |
-| `FileSystem.Mfs` | Macintosh File System (1984), `drSigWord=0xD2D7`; rebuild mutation | [MFS](https://en.wikipedia.org/wiki/Macintosh_File_System) |
-
-### Compressed / embedded / flash
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.SquashFs` | zlib/compressed SquashFS paths; supported mutation uses rebuild semantics | [SquashFS](https://en.wikipedia.org/wiki/SquashFS) |
-| `FileSystem.CramFs` | CramFS `0x28CD3D45`, CRC-32, zlib; rebuild mutation | [cramfs](https://en.wikipedia.org/wiki/Cramfs) |
-| `FileSystem.RomFs` | `-rom1fs-` big-endian ROMFS; rebuild mutation despite the on-disk format's read-only role | [romfs](https://en.wikipedia.org/wiki/Romfs) |
-| `FileSystem.MinixFs` | Minix v1/v2/v3 superblock families; rebuild mutation | [MINIX FS](https://en.wikipedia.org/wiki/MINIX_file_system) |
-| `FileSystem.Erofs` | EROFS compact-inode + FLAT_PLAIN creation path with nested directories | [EROFS](https://en.wikipedia.org/wiki/EROFS) |
-| `FileSystem.LittleFs` | LittleFS metadata-pair commit log, CTZ/inline files, nested directories, commit-walking reader | [littlefs](https://github.com/littlefs-project/littlefs) |
-
-### Optical
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.Iso` | ISO 9660 + Joliet, PVD/SVD, UCS-2 long names, multi-sector dirs, L/M path tables; supported mutation uses rebuild and wiping semantics | [ISO 9660](https://en.wikipedia.org/wiki/ISO_9660) |
-| `FileSystem.Udf` | ECMA-167/UDF, VRS@16-18, AVDP@256, CRC-16-XMODEM; rebuild mutation | [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) |
-| `FileSystem.Sfs` | Amiga Smart File System root-block surface; full object-container B+ tree/bitmap/hash-table support is not inferred | [SFS](https://en.wikipedia.org/wiki/Smart_File_System) |
-
-### Retro / vintage
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.D64` / `D71` / `D81` | Commodore 1541/1571/1581 directories and rebuild modification | [Commodore DOS](https://en.wikipedia.org/wiki/Commodore_DOS) |
-| `FileSystem.CbmNibble` | Raw G64/NIB, writer GCR-encodes a D64-built 1541 image | [Commodore DOS](https://en.wikipedia.org/wiki/Commodore_DOS) |
-| `FileSystem.AppleDos` | Apple DOS 3.3, catalog at T17S15; rebuild mutation | [Apple DOS](https://en.wikipedia.org/wiki/Apple_DOS) |
-| `FileSystem.ProDos` | ProDOS storage trees; rebuild mutation | [ProDOS](https://en.wikipedia.org/wiki/ProDOS) |
-| `FileSystem.Atari8` | Atari DOS 2 VTOC/sector model; rebuild mutation | [Atari DOS](https://en.wikipedia.org/wiki/Atari_DOS) |
-| `FileSystem.Bbc` | BBC DFS/ADFS paths; rebuild mutation | [DFS](https://en.wikipedia.org/wiki/Disk_Filing_System) |
-| `FileSystem.Cpm` | CP/M 2.2 canonical 8-inch SSSD geometry; current descriptor implements list/extract/create/modify/test and additional layout/defrag/wipe surfaces | [CP/M](https://en.wikipedia.org/wiki/CP/M) |
-| `FileSystem.CpcDsk` | Amstrad CPC DSK / `MV - CPCEMU Disk-File` |
-| `FileSystem.TrDos` | ZX Spectrum TR-DOS image | [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) |
-| `FileSystem.ZxScl` | Spectrum SCL, `SINCLAIR` magic + checksum; rebuild mutation | [TR-DOS](https://en.wikipedia.org/wiki/TR-DOS) |
-| `FileSystem.Adf` | Amiga Disk Format DOS\1, BSDsum checksums; rebuild mutation | [ADF](https://en.wikipedia.org/wiki/Amiga_Disk_File) |
-| `FileSystem.Msa` | Atari ST Magic Shadow Archive, BE magic 0x0E0F | [Atari ST](https://en.wikipedia.org/wiki/Atari_ST) |
-
-### Mainframe / minicomputer and other historical systems
-
-| Descriptor | Implementation detail | Reference |
-| --- | --- | --- |
-| `FileSystem.Lif` | HP Logical Interchange Format, 256-byte sectors | [LIF](https://en.wikipedia.org/wiki/Logical_Interchange_Format) |
-| `FileSystem.OpenVms` | OpenVMS Files-11 ODS-2/ODS-5 home-block path | [Files-11](https://en.wikipedia.org/wiki/Files-11) |
-| `FileSystem.Os9Rbf` | Microware OS-9 Random Block File | [OS-9](https://en.wikipedia.org/wiki/OS-9) |
-| `FileSystem.Rt11` | DEC RT-11 filesystem path | [RT-11](https://en.wikipedia.org/wiki/RT-11) |
-| `FileSystem.Vdfs` | Gothic-engine VDFS archive/filesystem surface | [Gothic](https://en.wikipedia.org/wiki/Gothic_(series)) |
-
-## 🕵️ Detection/header-only and opaque-payload tier
-
-These descriptors intentionally do not advertise creation/modification when the available evidence only supports detection, a header subset, or an opaque encrypted/distributed payload. This table preserves the reasons instead of inventing missing on-disk semantics.
-
-| Descriptor | Current documented scope | Why it stops there |
-| --- | --- | --- |
-| `FileSystem.Tfs` | Detection | BBN Trans-FS has no usable public on-disk spec in the repository evidence set. |
-| `FileSystem.Mfs1` | Detection | Acorn MFS-1 identification is heuristic/extension-led; deeper support needs period documentation. |
-| `FileSystem.Nwfs386` | Detection | NetWare 386 raw-partition structures are proprietary and not guessed. |
-| `FileSystem.Stacker` | Detection + SCB/opaque inner payload | Full upgrade needs Stacker LZS + inner FAT delegation. |
-| `FileSystem.DriveSpace3` | Detection + MDBPB/opaque compressed region | Full upgrade needs the actual DS compression/MDFAT structures. |
-| `FileSystem.GsOs` | Header/wrapper | Apple IIgs 2IMG wrapper can delegate to inner ProDOS/HFS/DOS 3.3 readers. |
-| `FileSystem.TahoeLafs` | Detection | Share payloads are capability-encrypted by design; no read-cap means no plaintext. |
-| `FileSystem.Ecryptfs` | Detection | Payload is encrypted; decryption requires actual key/passphrase/EFEK metadata. |
-| `FileSystem.OrangeFs` | Detection | A single PVFS/OrangeFS server object is insufficient to reconstruct a distributed filesystem without cluster config/striping state. |
-
-## 🧪 Filesystem validation matrix
-
-Selected writers/readers are tested against external filesystem utilities where available. Tool absence causes the corresponding external-interop test to skip rather than convert a missing host dependency into a false product failure. The exact current test suite is authoritative; this table retains the long-form verification context.
-
-| Filesystem | External validation | Expected/evidenced behavior |
-| --- | --- | --- |
-| ext4 | `fsck.ext4 -fnv` | Clean image path; reverse `mkfs.ext4` reader coverage also exists |
-| ext4 | `dumpe2fs -h` | Superblock/magic/UUID inspection |
-| FAT12/16/32 | `fsck.fat -n -V`, reverse `mkfs.vfat` | Forward and reverse interoperability paths |
-| FAT | FreeDOS `CHKDSK` under DOSBox-X (`[Explicit]`) | Optional historical-validator path |
-| exFAT | `fsck.exfat -n` | Clean forward validation path |
-| SquashFS | `unsquashfs -s` | Superblock accepted |
-| XFS v5 | `xfs_repair -n -f` | Repair-tool validation path |
-| Btrfs | `btrfs check --readonly` | Read-only checker path |
-| JFS | `fsck.jfs -n -f -v` | Gated on `jfsutils` |
-| NTFS | `ntfsfix --no-action`, `ntfsinfo`, `ntfsls`, reverse `mkfs.ntfs` | Gated on `ntfs-3g` |
-| HFS+ | `fsck.hfsplus -d -f -n`, reverse `mkfs.hfsplus` | Gated on `hfsprogs` |
-| HFS classic | `hmount` / `hls` | Historical notes record a malformed B-tree report against the writer; current tests/source decide present status |
-| ZFS | `zdb -l` | Label/NVList parsing path, gated on ZFS userland tools |
-| UFS1/FFS | Linux mount when kernel supports UFS; optional FreeBSD `fsck_ffs` under QEMU | Often unavailable on stock WSL kernels |
-| bcachefs | `bcachefs show-super`, `bcachefs fsck -n`, internal alloc/freespace/backpointer witness tests | Fresh images and supported in-place CRUD/defrag/purge metadata commits are checked for b-tree/allocation consistency; external bcachefs tools remain the authority where installed. |
-| Reiser4 | `fsck.reiser4` / `mkfs.reiser4` | Empty-FS/reference-block path, gated on `reiser4progs` |
-| DoubleSpace / DriveSpace | DOSBox-X + DOS utilities when legally staged | Optional historical-validator path |
-| HAMMER / HAMMER2 | DragonFly BSD | Linux lacks the canonical validator/mount stack |
-| ext1 | soft magic/rejection witness | No `mkfs.ext1` exists; internal/spec tests provide evidence instead |
-
-See [`docs/FILESYSTEM-VERIFICATION.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/FILESYSTEM-VERIFICATION.md) and the current `Compression.Tests` external-filesystem tests for the exact executable gates and assertions.
-
-## 🧪 Disk-image container validation
-
-`qemu-img` is used where suitable because it exercises QEMU's real disk-container parsers. The test environment may use the Windows binary or the WSL `qemu-utils` package.
-
-| Container | Forward check | Raw round-trip | Reverse image → package reader |
-| --- | --- | --- | --- |
-| VHD | `qemu-img check` path | `qemu-img convert -O raw` path | `qemu-img create` coverage |
-| VMDK | check path | raw conversion path | reverse-created image coverage |
-| QCOW2 | check path | raw conversion path | reverse-created image coverage |
-| VDI | check path | raw conversion path | reverse-created image coverage |
-| VHDX | Reader interoperability path | Depends on current writer capability | reverse-created image coverage |
-
-A forensic-style integration path builds an inner filesystem with known files, wraps it in a disk container, optionally validates the container externally, then walks it back through the package readers and compares extracted file bytes.
-
-## 🧯 Filesystem-aware recovery
-
-`FilesystemCarver` in `Compression.Analysis` scans raw images for known superblock signatures at canonical offsets, asks the matching reader to validate each candidate, and can then extract readable entries. This is useful when a partition table is lost but an inner filesystem superblock survives.
+### Edit an image through the registry
 
 ```csharp
-using var fs = File.OpenRead("sdcard.img");
-var hits = new FilesystemCarver().CarveStream(fs);
-foreach (var c in hits) {
-  var result = FilesystemExtractor.ExtractCarved(
-    fs,
-    c,
-    $"out/{c.FormatId}_0x{c.ByteOffset:X}");
-  Console.WriteLine($"{c.FormatId}: {result.FilesExtracted} files, {result.FilesFailed} failed");
-}
+using Compression.Registry;
+
+Compression.Lib.FormatRegistration.EnsureInitialized();
+var ops = (IArchiveModifiable)FormatRegistry.GetArchiveOps("Ext")!;
+using var image = File.Open("root.ext4", FileMode.Open, FileAccess.ReadWrite);
+ops.Add(image, [new ArchiveInputInfo("", "etc/motd", false, "hello\n"u8.ToArray())]);
+ops.Remove(image, ["var/log/old.log"]);
 ```
-
-CLI examples:
-
-```text
-cwb recover sdcard.img
-cwb recover raw.img --mode filesystems --out out/
-cwb recover raw.img --mode files --format Jpeg,Png
-```
-
-## 📚 Write-state model
-
-Filesystem “write support” is deliberately split by what the implementation actually promises.
-
-| State | Practical meaning |
-| --- | --- |
-| **WORM** | Build a new valid image from files/metadata; useful for tests, firmware, reproducible images, and conversion. |
-| **R/W** | Existing contents can be changed through the package's supported mutation model; some implementations extract/rebuild rather than journal blocks live. |
-| **R** | Inspection only. |
-
-This package is an image-manipulation toolkit, not a kernel filesystem driver. R/W does **not** imply concurrent mount semantics, crash-consistent journaling under arbitrary interruption, or drop-in replacement for the OS driver.
-
-## 🔖 Versioning
-
-The filesystem package is built against the repository's shared Core version. Release tooling determines concrete package versions; consume mutually compatible package versions rather than relying on a prose prediction.
 
 ## 📚 API reference
 
@@ -386,23 +276,59 @@ Every public and protected member of all 833 types, generated from the built ass
 
 <!-- API:END -->
 
+## 🧪 How the proofs run
+
+The **Proof** column is produced by these suites, all in `Compression.Tests`. External tools that are absent make the corresponding test skip rather than fail, so the matrix records what has been shown, not what a particular runner had installed.
+
+| Suite | What it shows |
+| --- | --- |
+| `QemuLinuxMountTests`, `QemuRunner` (BSD) | A headless Alpine, FreeBSD or DragonFly guest mounts the written image with the real kernel driver, reads a per-format content marker byte-exact and, for the r/w tier, writes files the package reader recovers. |
+| `KernelMount/InPlaceRwKernelMountTests` | On a Linux host whose kernel carries the module, the host loop-mounts the package's image directly and reads the in-place-added file (MinixV1, MinixV2, NILFS2). Skips without sudo, `losetup` or the module. |
+| `ExternalConformance*`, `ExternalFsInteropTests` (`Category("ExternalFsInterop")`) | `e2fsck`, `xfs_repair`, `btrfs check`, `fsck.f2fs`, `fsck.jfs`, `reiserfsck`, `fsck.minix`, `fsck.hfsplus`, hfsutils, ntfs-3g, `mkudffs`, `unsquashfs`, `mtools`, `qemu-img` accept what the package writes, and the package reads what they write. |
+| `ExternalRetroToolTests` | `xdftool` (amitools), `cbmconvert`, cpmtools and `mkfs.cramfs` write canonical images the package extracts byte-exact. |
+| DOS-era drivers under QEMU / `dmsdos` | MS-DOS 6.22 `DRVSPACE` mounts the DoubleSpace / DriveSpace CVFs; the `dmsdos` driver mounts the DriveSpace 3 and Stacker volumes. |
+| Struct-parity unit tests | For formats with no reachable external tool, each on-disk structure the writer emits is compared field by field against the specification and read back by the package's own reader. |
+
+Disk-image containers follow the same rule with `qemu-img`: forward `check`, raw round-trip via `convert -O raw`, and reverse — an image `qemu-img create` made is opened by the package reader. A forensic-style path builds an inner filesystem with known files, wraps it in a container, validates the container externally, then walks it back and compares bytes.
+
+## 🧯 Filesystem-aware recovery
+
+`FilesystemCarver` in `Compression.Analysis` scans raw images for known superblock signatures at canonical offsets, asks the matching reader to validate each candidate, and can then extract readable entries — useful when a partition table is lost but an inner superblock survives.
+
+```csharp
+using var fs = File.OpenRead("sdcard.img");
+var hits = new FilesystemCarver().CarveStream(fs);
+foreach (var c in hits) {
+  var result = FilesystemExtractor.ExtractCarved(fs, c, $"out/{c.FormatId}_0x{c.ByteOffset:X}");
+  Console.WriteLine($"{c.FormatId}: {result.FilesExtracted} files, {result.FilesFailed} failed");
+}
+```
+
+```text
+cwb recover sdcard.img
+cwb recover raw.img --mode filesystems --out out/
+cwb recover raw.img --mode files --format Jpeg,Png
+```
+
 ## 🔌 Dependencies
 
 | Dependency | Role |
 | --- | --- |
-| [`Hawkynt.Compression.Core`](https://www.nuget.org/packages/Hawkynt.Compression.Core/) | Compression, checksums, bit I/O, partition helpers, and shared registry primitives |
+| [`Hawkynt.Compression.Core`](https://www.nuget.org/packages/Hawkynt.Compression.Core/) | Compression, checksums, bit I/O, partition helpers and the shared registry primitives |
 | Host filesystem drivers / `libguestfs` | **Not required at runtime.** |
-| External `fsck`/repair/mkfs/qemu tools | Optional validation dependencies in tests, not runtime package dependencies |
+| External `fsck` / `mkfs` / `qemu` tools | Optional, used by the test suite only |
 
 ## ⚠️ Limitations
 
-- Some modern filesystems are intentionally partial; a readable superblock or WORM creator is not presented as full R/W support.
-- bcachefs mutation is deliberately profile-gated: the in-place writer currently owns single-device, generation-zero, regular pointer extents as emitted by this package. Foreign volumes with extra live b-trees, reused bucket generations, inline/reflink/compressed/other extent-key forms, or unsupported inode/dirent object types are refused for mutation rather than rewritten speculatively; read support remains broader.
-- R/W can be rebuild-based rather than live in-place journaling. Block placement, journals, snapshots, reflinks, quotas, encryption and crash consistency are format-specific capabilities. bcachefs' supported R/W profile is an explicit exception here: its CRUD and layout maintenance paths are true in-place operations.
-- Disk-image container support and inner-filesystem support are separate capabilities.
-- External-validator parity varies by platform and available tooling; tests are the current evidence source.
-- Historical deep-reference prose can become stale as capabilities improve. Descriptor interfaces/`FormatCapabilities`, code and tests take precedence over an older state label.
-- Unknown proprietary or encrypted structures are not inferred from names or roadmap intent.
+- This is an image-manipulation toolkit, not a kernel filesystem driver. R/W does not imply concurrent mount semantics, crash-consistent journaling under arbitrary interruption, or a drop-in replacement for the OS driver.
+- Where **Notes** says a format's edits *rebuild* the volume, an add or remove costs the whole image rather than the bytes that changed, and the block placement of untouched files may move.
+- **bcachefs** mutation is profile-gated: the in-place writer owns single-device, generation-zero, regular pointer extents as emitted by this package. Foreign volumes with extra live b-trees, reused bucket generations, inline / reflink / compressed extent keys, or unsupported inode and dirent types are refused for mutation rather than rewritten speculatively; read support is broader. How the accounting, backpointer and LRU keys were established is written up in [BCACHEFS-ACCOUNTING.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/BCACHEFS-ACCOUNTING.md).
+- **ReFS** edits are offline-quiescent: the image must not be mounted, and `RefsMutationMode.NativeCow` stays fail-closed. The reader walks ReFS 3.x containers, MSB+ trees, allocators, Block Refcount rows and MLog framing; the offline editor relocates data and metadata pages, replaces and removes regular files and empty directories through CoW B+ replacement and alternate-checkpoint publication. Still open before a mounted driver could use the same core: redo-payload codecs and replay for every opcode, every Schema Table key rule, the allocation-zone policies of the three allocators, container create / delete / move, Block Refcount row creation and clone semantics, hard links, sparse and integrity-stream mutation beyond 4 KiB clusters, snapshots, ADS, security descriptors, reparse points, USN, rename, truncate, a format path, locking and a Windows `chkdsk` corpus.
+- **Reiser4** and **GFS2** create volumes but do not edit them: Reiser4 keeps files in a payload area the reiser4 driver does not see, GFS2 creates an empty volume and reads inline files only.
+- **MFS-1** and **Stacker** rebuild through their writers but withhold `CanModify`, because each rejects an arbitrary edited member set.
+- **NSS** is detection only: Novell never published the format, and the writer deliberately emits a container under its own magic that no NetWare or OES release would take for a pool. What was learned from real media is in [NSS-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md).
+- Network, distributed and encrypted formats carry no self-contained image: a single server object, brick or share is recognised and its metadata surfaced, and nothing more is inferred.
+- Disk-image container support and inner-filesystem support are separate capabilities; a container marked R/W edits the filesystem inside it through that filesystem's own descriptor.
 
 ## ❤️ Support
 

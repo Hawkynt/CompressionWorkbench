@@ -11,9 +11,9 @@ is the coverage matrix.
 |-----------------|------------------------------------------------------|---------|
 | Defragment      | `IArchiveDefragmentable` (+ `IFilesystemBlockMover`) | Re-order entries/extents so every file is contiguous; outer size preserved; contents byte-identical. |
 | Shrink          | `IArchiveShrinkable`                                 | Keep the parameter set; minimise stored footprint (drop trailing free space / step to the smallest canonical size that still fits). |
-| Optimize        | `ILayoutOptimizable` / tunable `IFormatOptionsSchema` | Search executable layout/compression parameters and keep the smallest/best verified result. |
+| Optimize        | `ILayoutOptimizable`                                 | Find + apply the best layout parameters (cluster/block/inode size, geometry) via in-place patch or streaming rebuild; outer size preserved where possible. |
 | Wipe            | `IWipeEmpty`                                         | Overwrite **only unused** space (free clusters, cluster-tip slack, deleted dir entries, padding, trailing junk); live data untouched; size preserved. |
-| Purge           | `IArchivePurgeable`                                  | Erase all live user data, leaving a valid empty container/image; system metadata may be recreated as required by the format. |
+| Purge           | `IArchiveModifiable.Remove`-all / empty `Create`     | Erase **all live** data, leaving a valid empty container. No dedicated interface yet (see ARCHIVE-MODEL → Naming note). |
 | Metadata-reorder| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | Move metadata chunks to a canonical/optimal position (e.g. streamable layout). File-internal containers. |
 
 > **Composite verb:** **compact** is not in this matrix because it has no
@@ -31,18 +31,22 @@ byte-identical and keep the archive/image valid (the project's defrag
 invariant: total logical content unchanged, files byte-identical, output still
 round-trips and stays fsck-clean where a filesystem tool exists).
 
-## Totals (source capability contracts, all categories)
+## Totals (live registry, all categories)
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment        | 215 |
-| Wipe              | 226 |
-| Purge             | 224 |
-| Shrink            | 96 |
-| Optimize (layout) | 101 |
-| Metadata-reorder  | 9 |
+| Defragment       | 227 |
+| Wipe             | 181 |
+| Purge            | 154 |
+| Shrink           | 92  |
+| Optimize (layout)| 44  |
+| Metadata-reorder | 6   |
 
-(Counts are regenerated from the source capability contracts. Shared source files are scanned for every descriptor class, not just the first one. Explicit `NotSupportedException` verb stubs are excluded. "Wipe" includes the extent/layout-map fallback accepted by the wiper.)
+(Counts are `GetArchiveOps(id) is IXxx` over the registered descriptors — i.e.
+what the UI/CLI actually gate on. "Wipe" counts the direct `IWipeEmpty`
+implementers plus the `IFilesystemExtentMap` / `IArchiveLayoutMap` fallback the
+wiper accepts. "Purge" counts `IArchiveModifiable` (Remove-all).)
+
 ## Default-mechanism rollout
 
 Most maintenance verbs no longer require bespoke per-format code. The capability
@@ -54,10 +58,10 @@ extract → re-create engine (`Compression.Registry.RebuildVerb`):
   isn't smaller or fails).
 - **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild.
 - **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
-  `IArchivePurgeable.Purge` is the **purge** verb; `IArchiveModifiable` inherits it because full modification includes removing all live user files.
+  `Remove(all)` is the **purge** verb.
 
-A filesystem descriptor therefore gains shrink / defrag / purge by declaring
-the corresponding interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
+A filesystem descriptor therefore gains shrink / defrag / purge by simply declaring
+the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
 Bespoke in-place implementations still override the default for efficiency. Coverage
 is guarded by the registry-parametrised `Generic{Shrink,Defrag,Purge}RoundTripTests`
 under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
@@ -147,311 +151,146 @@ no unbacked flag). That the modify *works* (round-trips) is covered by the regis
 
 ## Filesystem descriptors
 
-Generated from the descriptor capability contracts in this tree. `☑` means the operation is exposed and is not an explicit `NotSupportedException` stub; `☐` means it is not exposed or is deliberately unsupported. **Compact** is the composite defrag → optimize → shrink action. A checked operation may be native/in-place or a verified offline rebuild; mounted-driver R/W readiness is tracked separately.
+Generated from the live registry (113 filesystem descriptors). **Compact** is the
+composite verb (defrag + optimize + shrink, or a `--minimal` geometry rebuild) and
+is available whenever any of defrag/shrink/create is — see [`ARCHIVE-MODEL.md`](ARCHIVE-MODEL.md).
+Wipe counts the `IWipeEmpty` implementers plus the extent/layout-map fallback;
+filesystems without an extent map cannot expose a true in-place forensic wipe.
 
 | Format | Compact | Defrag | Shrink | Purge | Wipe | Optimize |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: |
-| Adf | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Adfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| AdvFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| AmigaPfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Apfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| AppleDos | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| ApplePascal | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Atari8 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Bbc | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| BcacheFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| BeeGfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Bfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Btrfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| CephFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Coherent | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| CpcDsk | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Cpm | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| CramFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Cromemco | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Cxfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| D64 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| D71 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| D81 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| DoubleSpace | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| DragonFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| DriveSpace | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| DriveSpace3 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ecryptfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Efs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Erofs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| ExFat | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ext | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ext1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| F2fs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Fat | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| FatPlus | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Fatx | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| G64 | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Gemdos | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Gfs1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Gfs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| GlusterFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Gpfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| GsOs | ☑ | ☑ | ☑ | ☑ | ☐ | ☐ |
-| Hammer | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Hammer2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Hfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| HfsPlus | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Hpfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Htfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Human68k | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Iso | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Jffs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Jfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Jfs1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| JuiceFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Lif | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| LittleFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Lustre | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Mfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Mfs1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| MinixFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| MinixV1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| MinixV2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| MooseFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Msa | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Nib | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ |
-| Nilfs1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Nilfs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Nss | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ |
-| Ntfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Nwfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Nwfs386 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ocfs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ods1 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| OneFs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| OpenVms | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| OrangeFs | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ |
-| Os9Rbf | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Pc98 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| ProDos | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ps1MemoryCard | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Qnx4 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Qnx6 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Refs | ☑ | ☑ | ☐ | ☑ | ☑ | ☑ |
-| Reiser4 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| ReiserFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| RomFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Rt11 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Sfs | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ |
-| SmartFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| SquashFs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Stacker | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| SysV | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| TahoeLafs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| TFat | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Tfs | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Ti99 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| TrDos | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Trsdos | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Tux2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Tux3 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ubifs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Udf | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Ufs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Vdfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| VxFs | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ |
-| Wafl | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Xenix | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Xfs | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Yaffs2 | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ |
-| Zfs | ☑ | ☑ | ☑ | ☑ | ☐ | ☑ |
-| ZxScl | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
+|--------|:------:|:------:|:------:|:-----:|:----:|:--------:|
+| Adf | Y | Y | Y | Y | Y | Y |
+| Adfs | Y | Y | Y | Y | Y | Y |
+| AdvFs | Y | Y | Y | Y | Y | Y |
+| AmigaPfs | Y | Y | Y | Y | Y | Y |
+| Apfs | Y | Y | Y | Y | Y | Y |
+| AppleDos | Y | Y | Y | Y | Y | Y |
+| ApplePascal | Y | Y | Y | Y | Y | Y |
+| Atari8 | Y | Y | Y | Y | Y | Y |
+| Bbc | Y | Y | Y | Y | Y | Y |
+| BcacheFs | Y | Y | Y | Y | Y | Y |
+| BeeGfs | · | · | · | · | · | · |
+| Bfs | Y | Y | Y | Y | Y | Y |
+| Btrfs | Y | Y | Y | Y | Y | Y |
+| CephFs | · | · | · | · | · | · |
+| Coherent | Y | Y | Y | Y | Y | · |
+| CpcDsk | Y | Y | Y | Y | Y | Y |
+| Cpm | Y | Y | Y | Y | Y | Y |
+| CramFs | Y | Y | Y | Y | Y | Y |
+| Cromemco | Y | Y | Y | Y | Y | Y |
+| Cxfs | · | · | · | · | · | · |
+| D64 | Y | Y | Y | Y | Y | Y |
+| D71 | Y | Y | Y | Y | Y | Y |
+| D81 | Y | Y | Y | Y | Y | Y |
+| DoubleSpace | Y | Y | Y | Y | Y | Y |
+| DragonFs | Y | Y | Y | Y | Y | · |
+| DriveSpace | Y | Y | Y | Y | Y | Y |
+| DriveSpace3 | Y | Y | Y | Y | Y | Y |
+| Ecryptfs | · | · | · | · | · | · |
+| Efs | Y | Y | Y | Y | Y | Y |
+| Erofs | Y | Y | Y | Y | Y | Y |
+| ExFat | Y | Y | Y | Y | Y | Y |
+| Ext | Y | Y | Y | Y | Y | Y |
+| Ext1 | Y | Y | Y | Y | Y | Y |
+| F2fs | Y | Y | Y | Y | Y | Y |
+| Fat | Y | Y | Y | Y | Y | Y |
+| FatPlus | Y | Y | Y | Y | Y | Y |
+| Fatx | Y | Y | Y | Y | Y | Y |
+| G64 | Y | Y | Y | Y | Y | · |
+| Gemdos | Y | Y | Y | Y | Y | Y |
+| Gfs1 | Y | Y | Y | Y | Y | Y |
+| Gfs2 | Y | Y | Y | Y | Y | Y |
+| GlusterFs | · | · | · | · | · | · |
+| Gpfs | · | · | · | · | · | · |
+| GsOs | Y | Y | Y | Y | · | · |
+| Hammer | Y | Y | Y | Y | Y | Y |
+| Hammer2 | Y | Y | Y | Y | Y | Y |
+| Hfs | Y | Y | Y | Y | Y | Y |
+| HfsPlus | Y | Y | Y | Y | Y | Y |
+| Hpfs | Y | Y | Y | Y | Y | Y |
+| Htfs | Y | Y | Y | Y | Y | Y |
+| Human68k | Y | Y | Y | Y | Y | Y |
+| Iso | Y | Y | Y | Y | Y | Y |
+| Jffs2 | Y | Y | Y | Y | Y | Y |
+| Jfs | Y | Y | Y | Y | Y | Y |
+| Jfs1 | Y | Y | Y | Y | Y | Y |
+| JuiceFs | · | · | · | · | · | · |
+| Lif | Y | Y | Y | Y | Y | Y |
+| LittleFs | Y | Y | Y | Y | Y | Y |
+| Lustre | · | · | · | · | · | · |
+| Mfs | Y | Y | Y | Y | Y | Y |
+| Mfs1 | Y | Y | Y | Y | Y | Y |
+| MinixFs | Y | Y | Y | Y | Y | Y |
+| MinixV1 | Y | Y | Y | Y | Y | Y |
+| MinixV2 | Y | Y | Y | Y | Y | Y |
+| MooseFs | · | · | · | · | · | · |
+| Msa | Y | Y | Y | Y | Y | · |
+| Nib | Y | Y | · | Y | Y | · |
+| Nilfs1 | Y | Y | Y | Y | Y | Y |
+| Nilfs2 | Y | Y | Y | Y | Y | Y |
+| Nss | Y | Y | · | · | Y | · |
+| Ntfs | Y | Y | Y | Y | Y | Y |
+| Nwfs | · | · | · | · | · | · |
+| Nwfs386 | · | · | · | · | · | · |
+| Ocfs2 | Y | Y | Y | Y | Y | Y |
+| Ods1 | Y | Y | Y | Y | Y | Y |
+| OneFs | · | · | · | · | · | · |
+| OpenVms | Y | Y | Y | Y | Y | Y |
+| OrangeFs | Y | Y | · | Y | · | · |
+| Os9Rbf | Y | Y | Y | Y | Y | Y |
+| Pc98 | Y | Y | Y | Y | Y | Y |
+| ProDos | Y | Y | Y | Y | Y | Y |
+| Ps1MemoryCard | Y | Y | Y | Y | Y | · |
+| Qnx4 | Y | Y | Y | Y | Y | Y |
+| Qnx6 | Y | Y | Y | Y | Y | Y |
+| Refs | Y | Y | · | Y | Y | Y |
+| Reiser4 | Y | Y | Y | Y | Y | Y |
+| ReiserFs | Y | Y | Y | Y | Y | Y |
+| RomFs | Y | Y | Y | Y | Y | Y |
+| Rt11 | Y | Y | Y | Y | Y | Y |
+| Sfs | Y | Y | · | Y | Y | · |
+| SmartFs | Y | Y | Y | Y | Y | Y |
+| SquashFs | Y | Y | Y | Y | Y | Y |
+| Stacker | Y | Y | Y | Y | Y | Y |
+| SysV | Y | Y | Y | Y | Y | Y |
+| TahoeLafs | · | · | · | · | · | · |
+| TFat | Y | Y | Y | Y | Y | Y |
+| Tfs | · | · | · | · | · | · |
+| Ti99 | Y | Y | Y | Y | Y | Y |
+| TrDos | Y | Y | Y | Y | Y | Y |
+| Trsdos | Y | Y | Y | Y | Y | Y |
+| Tux2 | Y | Y | Y | Y | Y | Y |
+| Tux3 | Y | Y | Y | Y | Y | Y |
+| Ubifs | Y | Y | Y | Y | Y | Y |
+| Udf | Y | Y | Y | Y | Y | Y |
+| Ufs | Y | Y | Y | Y | Y | Y |
+| Vdfs | Y | Y | Y | Y | Y | Y |
+| VxFs | Y | Y | · | Y | Y | · |
+| Wafl | · | · | · | · | · | · |
+| Xenix | Y | Y | Y | Y | Y | Y |
+| Xfs | Y | Y | Y | Y | Y | Y |
+| Yaffs2 | Y | Y | Y | Y | Y | Y |
+| Zfs | Y | Y | Y | Y | · | Y |
+| ZxScl | Y | Y | Y | Y | Y | · |
 
 ## Archive / stream descriptors with at least one operation
 
-This table is exhaustive for descriptors that expose at least one executable maintenance operation according to the source capability contracts; explicit throw-only stubs are not counted. Archive **defrag** includes verified repack/relayout. **Optimize** includes layout tuning and finite compression/dictionary/solid-block parameter search; candidates only win after round-trip verification.
+| Format | Defrag | Shrink | Wipe | Optimize | MetaReorder |
+|--------|:------:|:------:|:----:|:--------:|:-----------:|
+| Zip | Y | **Y** | Y | N | N |
+| SevenZip (7z) | Y | N | **Y** | N | N |
+| Tar | Y | **Y** | **Y** | N | N |
+| Mp3 | Y | N | N | N | Y |
+| Mp4 | N | N | N | N | Y |
+| Avi | N | N | N | N | Y |
+| Matroska | N | N | N | N | Y |
+| Ogg | N | N | N | N | Y |
+| Wav | Y | N | N | N | Y |
+| Png / Tiff / Jpeg (Crush adapters) | N | N | N | N | Y |
 
-| Format | Compact | Defrag | Shrink | Purge | Wipe | Optimize | Meta reorder |
-| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Ace | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| AcronisTib | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Afs | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Akb | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| AlZip | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ampk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| AndroidBundle | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Aomei | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Apk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| ApkNativeLibs | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| AppleSingle | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Appx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Arc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Arj | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Avi | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Awb | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Ba2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Big | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| BinaryII | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| BinCue | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Bkf | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Brotli | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Bsa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Bzip2 | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Cab | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cb7 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cbr | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cbz | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cdi | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Chm | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| CompactPro | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Cpio | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Crx | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Cso | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Dcs | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Deb | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| DiskDoubler | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Dmg | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Dms | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Doc | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Docx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Dtb | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Dzip | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ear | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Egg | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Eml | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Epub | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Esd | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Ewf | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Fits | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Fla | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Flac | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| FreeArc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Gar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ghost | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Gif | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Gob | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| GodotPck | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Grp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Gzip | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Ha | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Hog | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Hpi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ico | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| IffCdaf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ipa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ipsw | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Jar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Kmz | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lbr | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lfd | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| LhF | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lrzip | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Lynx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lz4 | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Lzh | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Lzip | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Lzma | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| LzxAmiga | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Maff | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Mbox | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Mdf | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Mhk | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Mix | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Mkv | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Mp3 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Mp4 | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Mpq | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Msg | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Msi | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Msix | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Narc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Nds | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Npz | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Nrg | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Nsa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Nsis | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| NuFx | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ | ☐ |
-| NuPkg | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Odp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ods | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Odt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Ogg | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Ova | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| PackDisk | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| PackIt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Pak | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Paragon | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Pbp | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Pdf | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Pfs0 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Png | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Ppt | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Pptx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Psarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Qcow2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Rar | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Rarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Rgss | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Rpa | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Rpm | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Sar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Sarc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| SevenZip | ☑ | ☑ | ☐ | ☑ | ☑ | ☑ | ☐ |
-| Sfar | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Shar | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Sketch | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Slf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Spark | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Sparseimage | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Sqx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| StuffIt | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| StuffItX | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Swm | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| T64 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Tap | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Tar | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| TfRecord | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| ThumbsDb | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Tiff | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Tnef | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| U8 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| UefiFv | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Uharc | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Umx | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| UnityBundle | ☑ | ☑ | ☐ | ☑ | ☐ | ☑ | ☐ |
-| UnrealPak | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Vdi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vhd | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vhdx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vib | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Vmdk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vpk | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vpp | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| VppV2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Vsdx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Wacz | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wad | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Wad2 | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| War | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Warc | ☑ | ☑ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wav | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ | ☑ |
-| Wheel | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wim | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Wrapster | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Xar | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| xDisk | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Xls | ☐ | ☐ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Xlsx | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| xMash | ☑ | ☑ | ☐ | ☐ | ☐ | ☐ | ☐ |
-| Xpi | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Xps | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Xz | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Ypf | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Zap | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ | ☐ |
-| Zip | ☑ | ☑ | ☑ | ☑ | ☑ | ☑ | ☐ |
-| Zlib | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
-| Zoo | ☑ | ☑ | ☐ | ☑ | ☑ | ☐ | ☐ |
-| Zpaq | ☑ | ☑ | ☐ | ☑ | ☐ | ☐ | ☐ |
-| Zstd | ☑ | ☐ | ☐ | ☐ | ☐ | ☑ | ☐ |
+Bold cells were added in this wave. ~175 further archive descriptors implement
+Defragment only (via `DefragRebuilder`); they are counted in the totals but not
+listed individually here.
 
 ## N/A notes
 
