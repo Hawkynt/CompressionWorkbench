@@ -86,6 +86,12 @@ public static class AudioConversionOperation {
     if (TryPseudoArchiveBridge(input, source, output, target, options))
       return;
 
+    // A source that exposes no Channel entries — a mono file has nothing to split,
+    // and plenty of formats surface only their container — still has audio in it.
+    // Decode it and make the channels ourselves rather than refuse the conversion.
+    if (TryDecodedPcmToPseudoArchive(input, source, output, target, options))
+      return;
+
     throw new NotSupportedException(
       $"No audio conversion route exists from '{source.Id}' to '{target.Id}'. " +
       "The source must expose encoded packets or PCM/channels and the target must expose a compatible mux/encode/create capability.");
@@ -162,6 +168,57 @@ public static class AudioConversionOperation {
           : first.BitsPerSample == 8 ? AudioPcmEncoding.UnsignedInteger
           : AudioPcmEncoding.SignedInteger),
       interleaved);
+    return true;
+  }
+
+  /// <summary>
+  /// Builds the target from PCM we decoded ourselves, by splitting it into the same
+  /// per-channel mono WAVs a container would have surfaced.
+  /// </summary>
+  /// <remarks>
+  /// <see cref="TryPseudoArchiveBridge" /> only fires when the source already lists
+  /// Channel entries. A mono file never does — there is nothing to split — so every
+  /// create-only target was unreachable from mono input while the same conversion
+  /// worked from stereo.
+  /// </remarks>
+  private static bool TryDecodedPcmToPseudoArchive(
+    Stream input,
+    IFormatDescriptor source,
+    Stream output,
+    IFormatDescriptor target,
+    FormatCreateOptions options
+  ) {
+    if (AudioAdapterResolver.ResolvePseudoArchiveTarget(target) is not { } targetCreate)
+      return false;
+
+    AudioPcmBuffer? pcm = null;
+    if (AudioAdapterResolver.ResolvePcmSource(source) is { } pcmSource) {
+      Rewind(input);
+      pcm = pcmSource.DecodePcm(input);
+    } else if (TryDecodePseudoArchivePcm(input, source, out var bridged)) {
+      pcm = bridged;
+    }
+
+    if (pcm is null) return false;
+
+    // The split emits integer PCM WAVs; float PCM has its own splitter.
+    var channels = pcm.Format.Encoding == AudioPcmEncoding.IeeeFloat
+      ? PcmCodec.SplitInterleavedFloat(
+        pcm.InterleavedData, pcm.Format.Channels, pcm.Format.SampleRate, pcm.Format.BitsPerSample)
+      : PcmCodec.SplitInterleavedPcm(
+        pcm.InterleavedData, pcm.Format.Channels, pcm.Format.SampleRate, pcm.Format.BitsPerSample);
+
+    var inputs = channels
+      .Select(channel => ArchiveInputInfo.InMemory($"{channel.Name}.wav", channel.WavBlob))
+      .ToList();
+
+    if (target is IArchiveWriteConstraints constraints)
+      foreach (var archiveInput in inputs)
+        if (!constraints.CanAccept(archiveInput, out var reason))
+          throw new NotSupportedException(
+            $"{target.Id} rejected decoded channel '{archiveInput.ArchiveName}': {reason ?? "unsupported input"}.");
+
+    targetCreate.Create(output, inputs, options);
     return true;
   }
 
