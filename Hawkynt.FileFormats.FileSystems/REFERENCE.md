@@ -5140,27 +5140,25 @@ Represents an ecryptfs entry.
 
 Read-only descriptor for eCryptfs per-file encryption containers. eCryptfs (Linux) stacks on top of any underlying FS and stores each encrypted file with a 4-byte big-endian marker `0x3C81B7F5` at offset 0 followed by an 8-byte decrypted size, 4-byte flags, and 4-byte extent-size hint. Decryption requires the user's passphrase + EFEK packets — out of scope. The encrypted payload is surfaced as a single opaque entry along with the parsed header metadata. References: `https://docs.kernel.org/filesystems/ecryptfs.html` — Linux kernel eCryptfs documentation`https://github.com/torvalds/linux/tree/master/fs/ecryptfs` — mainline implementation (`ecryptfs_kernel.h` defines the file-header marker + packet layout)`https://en.wikipedia.org/wiki/ECryptfs` — Wikipedia overview
 
-Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EcryptfsFormatDescriptor` | `EcryptfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `EcryptfsReader`
 
@@ -12123,49 +12121,54 @@ Describes where a SmartFS volume keeps its bytes, one sector at a time.
 
 #### `SmartFsFormatDescriptor`
 
-Descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. Recognises the "SMRT" format signature near the start of the format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG), walks the root directory and each file's sector chain, and writes volumes in the state `mksmartfs` leaves behind. An existing volume is edited by reading its files out and laying it out again through the same writer. References: `https://github.com/apache/nuttx/tree/master/fs/smartfs` — reference implementation (Apache NuttX)Apache NuttX "SmartFS" documentation and SmartFS Design Document (NuttX project wiki)
+Descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. Recognises the "SMRT" format signature near the start of the format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG), walks the root directory and each file's sector chain, and writes volumes in the state `mksmartfs` leaves behind. An existing volume is edited by reading its files out and laying it out again through the same writer. Only the logical sector-chain view is read and written here; physical wear-level rotation belongs to the running target's MTD layer. References: `https://github.com/apache/nuttx/tree/master/fs/smartfs` — reference implementation (Apache-2.0)Apache NuttX SmartFS documentation — logical sectors are powers of two from 256 through 32768 bytes.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SmartFsFormatDescriptor` | `SmartFsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The format's one real geometry knob. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files: the volume's files are read out, the inputs merged in by name, and the volume laid out again at its own sector size. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Lays a fresh volume out holding the inputs. Sector size is the caller's choice among the five SmartFS allows; the volume is sized to its contents unless a larger one is asked for. |
-| `Defragment` | `void Defragment(Stream archive)` | Rewrites the volume with every file's sectors consecutive. SmartFS chains its sectors rather than requiring them to be adjacent, so the gain is sequential reads rather than a structural repair — and the rebuild is what produces it, since a fresh layout is contiguous by construction. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Where the volume keeps its bytes: the format sector and the directory chain pinned, every sector a file's chain runs through as its own. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Lays a fresh volume out holding the inputs. Sector size is the caller's choice among the eight values SmartFS can encode. ImageSize is an internal rebuild parameter; when omitted the volume is tight-sized to its contents. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Where the volume keeps its bytes. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Empties the volume without changing its outer size or logical sector size. This is deliberately not implemented as Remove(all): diagnostics such as FULL.smartfs and metadata.ini are synthetic archive-view entries rather than files on the volume and must continue to exist after purge. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named files and lays the volume out again without them, so nothing of their bytes remains. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds with the existing logical sector size and no surplus sectors. The source is copied through unchanged when rebuilding is not smaller or cannot be verified. |
 
 #### `SmartFsReader`
 
-Detection / metadata-surface reader for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. SmartFS uses a logical- to-physical sector map: sector 0 is the "format sector" carrying the partition signature, sector size, and number of root sectors. File data is stored in chains of sectors with a 5-byte logical header (logical sector number, sequence, CRC). Full chain traversal would require modeling the FAT-like sector mapping table plus directory entry walk. This reader surfaces the parsed format sector and image as metadata. Format sector header (selected, little-endian, at file offset 0): 0x00 5 bytes per-sector header (logical sector / status / crc) — exact layout depends on CONFIG_SMARTFS_NLOGSECS ... 0x0A 4 bytes Format signature = "SMRT" (NuttX CONFIG_SMARTFS_FORMAT_SIG) 0x0E 1 byte format version (typically 1 or 2) 0x0F 1 byte sector size code (0=256, 1=512, 2=1024, 3=2048, 4=4096) 0x10 2 bytes number of root directory sectors 0x12 1 byte reserved 0x13+ ...
+Reader for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX RTOS. SmartFS uses a logical-to-physical sector map: sector 0 is the format sector carrying the partition signature, sector size, and number of root sectors. File data is stored in chains of logical sectors. Format sector header (selected, little-endian, at file offset 0): 0x00 5 bytes per-sector header (logical sector / sequence / CRC / status) 0x0A 4 bytes format signature = "SMRT" 0x0E 1 byte format version 0x0F 1 byte sector size code (0..7 = 256..32768 bytes) 0x10 2 bytes number of root directory sectors
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SmartFsReader` | `SmartFsReader(Stream stream)` | Initializes a new instance of `SmartFsReader`. |
+| `SmartFsReader` | `SmartFsReader(Stream stream)` | Initializes a SmartFS reader. |
 | `FormatSignature` | `static readonly byte[] FormatSignature` | Provides the format signature value. |
 | `Entries` | `IReadOnlyList<SmartFsEntry> Entries { get; }` | Gets the entries. |
-| `FormatVersion` | `byte FormatVersion { get; }` | Gets or sets the format version. |
-| `RootSectorCount` | `ushort RootSectorCount { get; }` | Gets or sets the root sector count. |
-| `SectorSize` | `uint SectorSize { get; }` | Gets or sets the sector size. |
-| `ValidFormatSector` | `bool ValidFormatSector { get; }` | Gets a value indicating whether valid format sector. |
+| `FormatVersion` | `byte FormatVersion { get; }` | Gets the format version. |
+| `RootSectorCount` | `ushort RootSectorCount { get; }` | Gets the root-directory sector count. |
+| `SectorSize` | `uint SectorSize { get; }` | Gets the logical sector size. |
+| `ValidFormatSector` | `bool ValidFormatSector { get; }` | Gets whether a valid format sector was found. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Extract` | `byte[] Extract(SmartFsEntry entry)` | Decodes the supplied input. |
 
@@ -12661,7 +12664,7 @@ Represents a tahoe lafs entry.
 
 Read-only descriptor for Tahoe-LAFS share buckets — single on-disk share files emitted by a Tahoe-LAFS storage server. Each share holds capability-encrypted ciphertext (one of N Reed-Solomon shares; K needed to reconstruct). Detection by the 4-byte big-endian version prefix at offset 0 (0x00000001 immutable, 0x00000002 mutable). The share payload is surfaced as a single opaque ciphertext entry — decryption requires the read-cap and is out of scope. References: `https://github.com/tahoe-lafs/tahoe-lafs` — canonical implementation — share-file layout lives in the source docs`https://tahoe-lafs.org/` — project home`https://en.wikipedia.org/wiki/Tahoe-LAFS` — Wikipedia article
 
-Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12678,8 +12681,6 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescrip
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 

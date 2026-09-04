@@ -35,11 +35,11 @@ round-trips and stays fsck-clean where a filesystem tool exists).
 
 | Operation        | Descriptors |
 |------------------|-------------|
-| Defragment       | 229 |
+| Defragment       | 227 |
 | Wipe             | 181 |
 | Purge            | 154 |
-| Shrink           | 91  |
-| Optimize (layout)| 43  |
+| Shrink           | 92  |
+| Optimize (layout)| 44  |
 | Metadata-reorder | 6   |
 
 (Counts are `GetArchiveOps(id) is IXxx` over the registered descriptors — i.e.
@@ -186,7 +186,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | DragonFs | Y | Y | Y | Y | Y | · |
 | DriveSpace | Y | Y | Y | Y | Y | Y |
 | DriveSpace3 | Y | Y | Y | Y | Y | Y |
-| Ecryptfs | Y | Y | · | · | · | · |
+| Ecryptfs | · | · | · | · | · | · |
 | Efs | Y | Y | Y | Y | Y | Y |
 | Erofs | Y | Y | Y | Y | Y | Y |
 | ExFat | Y | Y | Y | Y | Y | Y |
@@ -249,11 +249,11 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | RomFs | Y | Y | Y | Y | Y | Y |
 | Rt11 | Y | Y | Y | Y | Y | Y |
 | Sfs | Y | Y | · | Y | Y | · |
-| SmartFs | Y | Y | · | Y | Y | · |
+| SmartFs | Y | Y | Y | Y | Y | Y |
 | SquashFs | Y | Y | Y | Y | Y | Y |
 | Stacker | Y | Y | Y | Y | Y | Y |
 | SysV | Y | Y | Y | Y | Y | Y |
-| TahoeLafs | Y | Y | · | · | · | · |
+| TahoeLafs | · | · | · | · | · | · |
 | TFat | Y | Y | Y | Y | Y | Y |
 | Tfs | · | · | · | · | · | · |
 | Ti99 | Y | Y | Y | Y | Y | Y |
