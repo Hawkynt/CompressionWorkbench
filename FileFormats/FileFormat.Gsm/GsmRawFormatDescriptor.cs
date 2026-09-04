@@ -22,14 +22,14 @@ namespace FileFormat.Gsm;
 /// <c>FULL.gsm</c> + metadata only.
 /// </para>
 /// <para>
-/// <see cref="Codec.Gsm610.Gsm610Codec"/> decodes raw 33-byte frames directly (it is
-/// not the WAV49 65-byte double-frame variant), so no extra unpacking is needed; the
-/// codec carries no encoder, hence this descriptor is read-only (no
-/// <c>IArchiveCreatable</c>).
+/// <see cref="Codec.Gsm610.Gsm610Codec"/> decodes and encodes raw 33-byte frames directly
+/// (it is not the WAV49 65-byte double-frame variant), so no extra unpacking is needed.
+/// Create either passes a provided <c>FULL.gsm</c> through verbatim or encodes a single
+/// mono 16-bit 8000 Hz WAV.
 /// </para>
 /// </summary>
 public sealed class GsmRawFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract {
+  IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable {
 
   /// <summary>Sample rate of GSM 06.10 full-rate speech.</summary>
   public const int SampleRate = 8000;
@@ -50,8 +50,8 @@ public sealed class GsmRawFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -107,6 +107,64 @@ public sealed class GsmRawFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
+  // ── IArchiveCreatable ─────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Writes a raw <c>.gsm</c> stream: a provided <c>FULL.gsm</c> verbatim, otherwise a single
+  /// mono 16-bit 8000 Hz WAV encoded to 33-byte GSM 06.10 frames.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    var fileList = FormatHelpers.FilesOnly(inputs).ToList();
+
+    var full = fileList.FirstOrDefault(static f =>
+      Path.GetFileName(f.Name).Equals("FULL.gsm", StringComparison.OrdinalIgnoreCase));
+    if (full.Data != null) {
+      output.Write(full.Data);
+      return;
+    }
+
+    var wav = fileList.FirstOrDefault(static f =>
+      Path.GetFileName(f.Name).EndsWith(".wav", StringComparison.OrdinalIgnoreCase));
+    if (wav.Data == null)
+      throw new InvalidOperationException("Raw GSM create needs either FULL.gsm or a single mono 16-bit WAV.");
+
+    var parsed = new FileFormat.Wav.WavReader().ReadCanonicalPcm(wav.Data);
+    if (parsed.NumChannels != 1)
+      throw new InvalidOperationException("Raw GSM 06.10 is mono; the source WAV must have exactly one channel.");
+    if (parsed.BitsPerSample != 16 || parsed.FormatCode != 1)
+      throw new InvalidOperationException("Raw GSM create expects a 16-bit integer PCM WAV.");
+    if (parsed.SampleRate != SampleRate)
+      throw new InvalidOperationException($"Raw GSM 06.10 is fixed at {SampleRate} Hz; the source WAV is {parsed.SampleRate} Hz.");
+
+    output.Write(Gsm610Codec.EncodeRaw(LePcmToShorts(parsed.InterleavedPcm)));
+  }
+
+  // ── IArchiveWriteConstraints ──────────────────────────────────────────────────
+
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+  public long? MaxTotalArchiveSize => null;
+
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+  public string AcceptedInputsDescription =>
+    "Raw GSM 06.10 archive accepts: FULL.gsm or a single mono 16-bit 8000 Hz WAV.";
+
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    var name = Path.GetFileName(input.ArchiveName).ToLowerInvariant();
+    if (name == "full.gsm" || name.EndsWith(".wav") || name == "metadata.ini") {
+      reason = null;
+      return true;
+    }
+    reason = $"not a raw GSM input (got {input.ArchiveName}); {this.AcceptedInputsDescription}";
+    return false;
+  }
+
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -147,5 +205,12 @@ public sealed class GsmRawFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     for (var i = 0; i < samples.Length; ++i)
       System.Buffers.Binary.BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), samples[i]);
     return pcm;
+  }
+
+  private static short[] LePcmToShorts(byte[] pcm) {
+    var samples = new short[pcm.Length / 2];
+    for (var i = 0; i < samples.Length; ++i)
+      samples[i] = System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(pcm.AsSpan(i * 2));
+    return samples;
   }
 }

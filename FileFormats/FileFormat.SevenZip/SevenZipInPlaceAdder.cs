@@ -199,27 +199,35 @@ public static class SevenZipInPlaceAdder {
     mergedFileInfos.AddRange(existingEmpty);
     mergedFileInfos.AddRange(newEmpty);
 
-    // ── Write the new packed block where the old header started ──
-    archive.Position = existingPackedEnd;
-    if (newFolder != null)
-      archive.Write(newPackBytes, 0, newPackBytes.Length);
-    var newHeaderStart = archive.Position;
-
-    // ── Serialize and write the merged descriptive header ──
+    // Serialize every replacement metadata structure before the first archive
+    // write. This makes NotSupported/serialization fallback transaction-safe
+    // without requiring a whole-archive snapshot in the caller.
+    var newHeaderStart = checked(existingPackedEnd + newPackBytes.LongLength);
     using var newHeaderStream = new MemoryStream();
     SevenZipHeaderCodec.WriteHeader(newHeaderStream, mergedPackInfo, mergedFolders,
       mergedSubStreams, mergedFileInfos);
     var newHeader = newHeaderStream.ToArray();
+
+    byte[] signatureHeader;
+    using (var signatureStream = new MemoryStream(SevenZipConstants.SignatureHeaderSize)) {
+      new SevenZipHeader {
+        MajorVersion = sig.MajorVersion,
+        MinorVersion = sig.MinorVersion,
+        NextHeaderOffset = newHeaderStart - SevenZipConstants.SignatureHeaderSize,
+        NextHeaderSize = newHeader.Length,
+        NextHeaderCrc = Crc32.Compute(newHeader),
+      }.Write(signatureStream);
+      signatureHeader = signatureStream.ToArray();
+    }
+
+    // ── Commit: new packed bytes replace the old header, followed by the new header ──
+    archive.Position = existingPackedEnd;
+    if (newFolder != null)
+      archive.Write(newPackBytes, 0, newPackBytes.Length);
     archive.Write(newHeader, 0, newHeader.Length);
 
-    // ── Rewrite the signature header ──
     archive.Position = 0;
-    new SevenZipHeader {
-      NextHeaderOffset = newHeaderStart - SevenZipConstants.SignatureHeaderSize,
-      NextHeaderSize = newHeader.Length,
-      NextHeaderCrc = Crc32.Compute(newHeader),
-    }.Write(archive);
-
+    archive.Write(signatureHeader, 0, signatureHeader.Length);
     archive.SetLength(newHeaderStart + newHeader.Length);
     archive.Flush();
   }
@@ -272,7 +280,6 @@ public static class SevenZipInPlaceAdder {
         return ms.ToArray();
       }
       default:
-        // Copy (store) — no compression.
         coder = new SevenZipCoder {
           CodecId = SevenZipConstants.CodecCopy.ToArray(),
           NumInStreams = 1, NumOutStreams = 1,
