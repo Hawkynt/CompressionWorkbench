@@ -1457,7 +1457,7 @@ Flag bits in the F register (low nibble is always zero on SM83).
 
 ### Namespace `Codec.Gsm610`
 
-[`Gsm610Codec`](#gsm610codec) · [`Gsm610EncoderOptions`](#gsm610encoderoptions)
+[`Gsm610Codec`](#gsm610codec) · [`Gsm610EncoderOptions`](#gsm610encoderoptions) · [`Gsm610Wav49`](#gsm610wav49)
 
 #### `Gsm610Codec`
 
@@ -1484,6 +1484,19 @@ Implements `IEquatable<Gsm610EncoderOptions>`.
 | `Gsm610EncoderOptions` | `Gsm610EncoderOptions(int Channels = 1, bool PadFinalFrame = true)` | Configuration for GSM 06.10 full-rate encoding. |
 | `Channels` | `int Channels { get; init; }` | Number of independently encoded interleaved PCM channels. |
 | `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete final 20 ms frame with the last available sample. |
+
+#### `Gsm610Wav49`
+
+Microsoft GSM 6.10 / WAV49 framing used by WAVE format tag `0x0031`. A WAV49 block stores two ordinary GSM 06.10 frames in 65 bytes: the 76 coded parameters from each frame are written field-by-field least-significant-bit first, without the raw `.gsm` frame's leading `0xD` marker nibble.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockBytes` | `const int BlockBytes` | Encoded size of one Microsoft GSM block. |
+| `SamplesPerBlock` | `const int SamplesPerBlock` | Decoded PCM sample count represented by one Microsoft GSM block. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> wav49)` | Decodes Microsoft GSM/WAV49 blocks to mono 8 kHz PCM16. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes mono 8 kHz PCM16 into Microsoft GSM/WAV49 blocks. An incomplete final 160-sample GSM frame is padded by the codec encoder; an unpaired final frame is followed by a valid silence frame so every WAVE block remains 65 bytes. |
+| `PackRawFrames` | `static byte[] PackRawFrames(ReadOnlySpan<byte> rawFrames)` | Re-packs an even number of ordinary 33-byte GSM frames into 65-byte WAV49 blocks. |
+| `UnpackToRawFrames` | `static byte[] UnpackToRawFrames(ReadOnlySpan<byte> wav49)` | Expands 65-byte WAV49 blocks into ordinary marker-prefixed 33-byte GSM frames. |
 
 ### Namespace `Codec.HuC6280`
 
@@ -9642,23 +9655,23 @@ Implements `IFileInternalChunkMover`.
 
 #### `WavReader`
 
-RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS ADPCM, TrueSpeech and GSM 06.10. Block-based codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so codec block padding never leaks into downstream transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
+RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, TrueSpeech and Microsoft GSM 06.10 WAV49. Block/bit-packed codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so padding never leaks into transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WavReader` | `WavReader()` |  |
-| `ReadCanonicalPcm` | `ParsedWav ReadCanonicalPcm(ReadOnlySpan<byte> data)` | Reads and, on top of `Read`, decodes the G.711 payloads that survive verbatim for remuxing, so callers wanting linear samples never have to know which codec carried them. |
-| `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+| `ReadCanonicalPcm` | `ParsedWav ReadCanonicalPcm(ReadOnlySpan<byte> data)` | Reads and, on top of `Read`, decodes G.711 payloads that survive verbatim for remuxing, so callers wanting linear samples never have to know which registration carried them. |
+| `Read` | `ParsedWav Read(ReadOnlySpan<byte> data)` | Reads the supplied WAVE payload. |
 
 #### `WavReader.ParsedWav`
 
-Represents a parsed wav.
+Represents a parsed WAVE stream.
 
 Implements `IEquatable<ParsedWav>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ParsedWav` | `ParsedWav(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks, uint? ChannelMask = null)` | Represents a parsed wav. |
+| `ParsedWav` | `ParsedWav(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks, uint? ChannelMask = null)` | Represents a parsed WAVE stream. |
 | `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
 | `ChannelMask` | `uint? ChannelMask { get; init; }` |  |
 | `FormatCode` | `int FormatCode { get; init; }` |  |

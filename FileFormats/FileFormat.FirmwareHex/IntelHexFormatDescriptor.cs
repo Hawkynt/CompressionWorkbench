@@ -17,7 +17,7 @@ namespace FileFormat.FirmwareHex;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Intel_HEX</c> — record types and checksum rules</description></item>
 /// </list>
 /// </summary>
-public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
@@ -35,7 +35,7 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -90,6 +90,17 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Writes a fresh Intel HEX file: the single payload input becomes the data
+  /// records, and a <c>metadata.ini</c> alongside it -- the one this descriptor's
+  /// own reader renders -- supplies the base and start addresses that a flat
+  /// binary cannot carry.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    FirmwareHexWriter.WriteIntelHex(output, FirmwareHexWriter.ImageFrom(inputs, "IntelHex"));
   }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {

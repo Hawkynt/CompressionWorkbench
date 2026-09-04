@@ -18,7 +18,7 @@ namespace FileFormat.FirmwareHex;
 ///   <item><description><c>https://srecord.sourceforge.net</c> — SRecord tool suite — documents and converts TI-TXT (srec_ti_txt)</description></item>
 /// </list>
 /// </summary>
-public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
@@ -36,7 +36,7 @@ public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -90,6 +90,16 @@ public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Writes a fresh TI-TXT file: the single payload input becomes the data lines
+  /// under an <c>@address</c> taken from a <c>metadata.ini</c> alongside it, and
+  /// the file ends with the <c>q</c> the format requires.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    FirmwareHexWriter.WriteTiTxt(output, FirmwareHexWriter.ImageFrom(inputs, "TiTxt"));
   }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {

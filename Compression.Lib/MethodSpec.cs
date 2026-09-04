@@ -5,9 +5,25 @@ namespace Compression.Lib;
 /// <summary>
 /// Parses a method string like "deflate", "deflate+", "lzma+", "store" into a
 /// normalized name and optimize flag. The "+" suffix selects the best available
-/// encoder for that codec while remaining fully decoder-compatible.
+/// encoder for that codec while remaining fully decoder-compatible, and a repeated
+/// one asks for more of it again.
 /// </summary>
+/// <remarks>
+/// Parsing agrees with <see cref="Compression.Registry.MethodNameParser"/>, which
+/// is what the writers on the far side of the registry boundary read the same
+/// string with. It used to strip exactly one trailing '+' where that parser strips
+/// all of them and counts, so the two read one input two ways: "ds-lz77++" reached
+/// the CVF writers as "ds-lz77+", and a caller who asked for the third effort tier
+/// silently got the second.
+/// </remarks>
 public readonly record struct MethodSpec(string Name, bool Optimize) {
+
+  /// <summary>
+  /// How many trailing '+' the method carried. <see cref="Optimize"/> is whether
+  /// there was one at all; this is how many, which is what a writer offering more
+  /// than one effort tier reads.
+  /// </summary>
+  public int PlusLevel { get; init; } = Optimize ? 1 : 0;
 
   public static MethodSpec Default => new("default", false);
 
@@ -16,15 +32,15 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
   /// <see cref="Compression.Registry.MethodNameParser.Parse" /> derives on the far side of the
   /// create boundary. That parser documents <c>deflate++</c> as "~100× effort"; stripping a single
   /// <c>+</c> here left the base name as <c>deflate+</c>, which is not a method any creator knows.
-  /// <see cref="Optimize" /> is a flag rather than a count, so a plus level above one is reported
-  /// as plain optimize rather than smuggled through in the name.
+  /// <see cref="Optimize" /> is a flag rather than a count, so how many were stripped is reported
+  /// by <see cref="PlusLevel" /> rather than smuggled through in the name.
   /// </remarks>
   public static MethodSpec Parse(string? input) {
     if (string.IsNullOrWhiteSpace(input)) return Default;
-    var trimmed = input.Trim();
-    var optimize = trimmed.EndsWith('+');
-    trimmed = trimmed.TrimEnd('+');
-    return new(trimmed.ToLowerInvariant(), optimize);
+    // Parsed by MethodNameParser itself rather than alongside it, so there is one
+    // reading of a method name and not two that have to be kept in step.
+    var (name, plus) = Compression.Registry.MethodNameParser.Parse(input);
+    return new(name.ToLowerInvariant(), plus > 0) { PlusLevel = plus };
   }
 
   /// <summary>Whether this is the default "no preference" spec.</summary>
@@ -47,7 +63,11 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
   /// </remarks>
   public string? EffectiveName => Name is null or "" or "default" ? null : Name;
 
-  public override string ToString() => Optimize ? $"{Name}+" : Name;
+  /// <remarks>
+  /// The whole run of <c>+</c> is printed, not one of them, because this is what a
+  /// writer that re-parses the name it was handed reads its effort tier out of.
+  /// </remarks>
+  public override string ToString() => PlusLevel > 0 ? Name + new string('+', PlusLevel) : Name;
 
   // ── ZIP method resolution ───────────────────────────────────────────
 

@@ -56,18 +56,18 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.ALaw` | PCM (companded) | R/W | `0x0006`, `0x0102` | ITU-T G.711 A-law encode + decode; IBM alias `0x0102` is not routed |
 | `Codec.MuLaw` | PCM (companded) | R/W | `0x0007` | ITU-T G.711 μ-law encode + decode |
 | `Codec.Midi` | Symbolic | R/W | — | SMF parsing + per-track re-emit (`BuildSingleTrackFile`) |
-| `Codec.ImaAdpcm` | ADPCM | R/W | `0x0011`, `0x0039` | IMA / Intel ADPCM + QuickTime `ima4` packet variant; vendor aliases beyond `0x0011` are not routed |
+| `Codec.ImaAdpcm` | ADPCM | R/W | `0x0011` | IMA / Intel ADPCM + QuickTime `ima4` packet variant. `0x0039` is Roland RDAC in the IANA registry, not an IMA alias |
 | `Codec.MsAdpcm` | ADPCM | R/W | `0x0002` | Microsoft ADPCM encode + decode |
-| `Codec.Gsm610` | Speech | R/W | `0x0031`, `0x0086`, `0x00A1`, `0x0155` | GSM 06.10 RPE-LTP, bit-exact with the ETSI reference in both directions; vendor aliases beyond `0x0031` are not routed |
-| `Codec.Mp3` | Lossy | R/W ⚠️ | `0x0050`, `0x0055`, `0x0700` | MPEG Audio decode plus an encoder; see implementation scope below |
+| `Codec.Gsm610` | Speech | R/W | `0x0031`, `0x0086`, `0x00A1`, `0x0155` | GSM 06.10 RPE-LTP, bit-exact with the ETSI reference in both directions. `0x0031` uses real Microsoft WAV49 65-byte blocks; the vendor aliases are identifier-only |
+| `Codec.Mp3` | Lossy | R/W ⚠️ | `0x0050`, `0x0055`, `0x0700` | Decoder covers Layers I/II/III; the checked-in encoder is Layer III. See implementation scope below |
 | `Codec.Aac` | Lossy | R/W ⚠️ | `0x00B0`, `0x00FF`, `0x0180`, `0x0AAC`, `0x4143`, `0x706D`, `0xA106`, `0x2006`, `0x2007` | AAC-LC path with advanced-profile limits; only the ADTS/ADIF entry points are routed |
 | `Codec.Vorbis` | Lossy | R/W | `0x564C`, `0x674F`, `0x6750`, `0x6751`, `0x676F`, `0x6770`, `0x6771` | Vorbis I encode + decode; the legacy ACM framings are not routed |
 | `Codec.Opus` | Lossy | R/W ⚠️ | — | Opus path with documented CELT/SILK/hybrid limits |
 | `Codec.Flac` | Lossless | R/W | `0xF1AC` | FLAC frame-level encode + decode; the WAVE tag is not routed; native `.flac` is |
-| `Codec.OkiAdpcm` | ADPCM | R/W | `0x0010`, `0x0017` | OKI / Dialogic VOX 4-bit ADPCM |
+| `Codec.OkiAdpcm` | ADPCM | R/W | `0x0010`, `0x0017` | OKI / Dialogic VOX 4-bit ADPCM; both registrations validated on the WAVE route |
 | `Codec.SpuAdpcm` | ADPCM | R/W | — | Sony PS1/PS2 SPU ADPCM |
 | `Codec.DspAdpcm` | ADPCM | R/W | — | Nintendo GC/Wii DSP-ADPCM + predictor-fit encoder |
-| `Codec.G72x` | ADPCM | R/W | `0x0040`, `0x0045`, `0x0064`, `0x0085`, `0x008B`, `0x0140`, `0x4243`, `0xA105`, `0xA107` | ITU-T G.726 16/24/32/40 kbit encode + decode |
+| `Codec.G72x` | ADPCM | R/W | `0x0040`, `0x0045`, `0x0064`, `0x0085`, `0x008B`, `0x0140`, `0x4243`, `0xA105`, `0xA107` | ITU-T G.726 16/24/32/40 kbit encode + decode, bit-exact with the ITU-T G.191 reference. `0x0040`, `0x0045` and `0x0064` are validated on the WAVE route; the vendor aliases are profile/framing work |
 | `Codec.Tta` | Lossless | R/W | — | True Audio TTA1 encode + decode |
 | `Codec.Shorten` | Lossless | R/W | — | Shorten v2 decode including best-effort QLPC + DIFF0-3 encoder |
 | `Codec.Alac` | Lossless | R/W | — | Apple Lossless 16/24-bit paths |
@@ -96,7 +96,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.Wma` | Lossy | R | `0x0160`, `0x0161` | WMA v1/v2; ASF carriage is read through `FileFormat.Asf` |
 | `Codec.Musepack` | Lossy | R | — | Musepack SV7/SV8 |
 | `Codec.WmaPro` | Lossy | R | `0x0162`, `0x0164` | WMA 9 Professional; the S/PDIF registration `0x0164` stays a separate profile |
-| `Codec.Sipr` | Speech | R ⚠️ | `0x0130`-`0x0135` | RealAudio ACELP.NET; unsupported mode boundaries documented in source |
+| `Codec.Sipr` | Speech | R ⚠️ | `0x0130`-`0x0132` | RealAudio ACELP.NET; unsupported mode boundaries documented in source |
 | `Codec.Speex` | Speech | R | `0xA109` | Speex narrowband + wideband paths; the ACM tag is not routed |
 | `Codec.G7231` | Speech | R | `0x0059`, `0x0093`, `0x00A3`, `0x0123`, `0x1C0C`, `0xA100` | ITU G.723.1 dual-rate; historical WAVE aliases are not routed |
 | `Codec.Dts` | Lossy | R/W | `0x0008`, `0x0190`, `0x2001` | DTS Coherent Acoustics core encode + decode; wrapper tags are not routed |
@@ -286,6 +286,8 @@ absence is stated rather than left to be inferred from a missing row.
 
 | Historical family | Representative tags |
 | --- | --- |
+| Roland RDAC | `0x0039` |
+| Kelvin | `0x0135` |
 | VSELP / Microsoft speech | `0x0004`, `0x0032`, `0x0066`, `0x0067`, `0x0082` |
 | Voxware speech/music family | `0x0062`, `0x0069`-`0x007B`, `0x0081`, `0x181C` |
 | Sonarc / PAC / proprietary music coders | `0x0021`, `0x0053`, `0x181E`, `0x1500` |
@@ -299,7 +301,8 @@ absence is stated rather than left to be inferred from a missing row.
 | Sonic Foundry / NCT lossless | `0x1971`, `0x1FC4` |
 | Reserved / development registrations | `0x0000`, `0x008D`, `0x0301`-`0x0308`, `0x2500` range, `0xE708`, `0xFFFF` |
 
-The G.729 family (`0x0044`, `0x0083`, `0x008C`, `0x0133`, `0x0134`, `0xA103`) is a gap rather
+The G.729 family (`0x0044`, `0x0083`, `0x008C`, `0x0133`, `0x0134`, `0xA103` — the last two were
+long mis-filed under SIPR) is a gap rather
 than a decision: the algorithm is published and implementable, there is simply no
 implementation here yet.
 
@@ -360,7 +363,7 @@ The audio package is built against the repository's shared Core version and shou
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 1257 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Audio/REFERENCE.md).
+Every public and protected member of all 1258 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Audio/REFERENCE.md).
 
 <!-- API:END -->
 

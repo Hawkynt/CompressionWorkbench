@@ -1,8 +1,12 @@
 using System.Buffers.Binary;
 using Codec.ALaw;
+using Codec.G72x;
+using Codec.G722;
+using Codec.Gsm610;
 using Codec.ImaAdpcm;
 using Codec.MsAdpcm;
 using Codec.MuLaw;
+using Codec.OkiAdpcm;
 using Compression.Registry;
 using FileFormat.Wav;
 
@@ -10,7 +14,13 @@ namespace Compression.Lib;
 
 /// <summary>Canonical PCM and compressed-audio writer adapter for RIFF/WAVE.</summary>
 internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
-  private static readonly string[] Codecs = ["pcm", "float", "alaw", "mulaw", "ima-adpcm", "ms-adpcm"];
+  private static readonly string[] Codecs = [
+    "pcm", "float", "alaw", "mulaw", "ima-adpcm", "ms-adpcm",
+    "oki-adpcm", "dialogic-oki-adpcm", "gsm610", "g721",
+    "g726-16", "g726-24", "g726-32", "g726-40",
+    "g726-apicom-16", "g726-apicom-24", "g726-apicom-32", "g726-apicom-40",
+    "g722", "g722-apicom",
+  ];
   private static readonly short[] MsAdpcmCoefficients = [256, 0, 512, -256, 0, 0, 192, 64, 240, 0, 460, -208, 392, -232];
 
   public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
@@ -44,32 +54,55 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       reason = "WAVE requires a positive sample rate and at least one channel";
       return false;
     }
+
     var codec = codecId.ToLowerInvariant();
-    if (codec is "alaw" or "mulaw" or "ima-adpcm" or "ms-adpcm") {
-      if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
-        reason = $"{codecId} WAVE encoding requires signed PCM16 input";
-        return false;
-      }
-      if (codec is "ima-adpcm" or "ms-adpcm" && format.Channels is < 1 or > 2) {
-        reason = $"{codecId} WAVE encoding supports mono or stereo";
-        return false;
-      }
-      reason = null;
-      return true;
-    }
     if (codec == "float") {
       reason = format.Encoding == AudioPcmEncoding.IeeeFloat && format.BitsPerSample is 32 or 64
         ? null : "IEEE-float WAVE requires 32- or 64-bit float PCM";
       return reason is null;
     }
-    if (format.Encoding == AudioPcmEncoding.IeeeFloat) {
-      reason = "floating-point input must select the 'float' WAVE codec";
+    if (codec == "pcm") {
+      if (format.Encoding == AudioPcmEncoding.IeeeFloat) {
+        reason = "floating-point input must select the 'float' WAVE codec";
+        return false;
+      }
+      if (format.BitsPerSample is not (8 or 16 or 24 or 32)) {
+        reason = "PCM WAVE supports 8/16/24/32-bit integer samples";
+        return false;
+      }
+      reason = null;
+      return true;
+    }
+
+    if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
+      reason = $"{codecId} WAVE encoding requires signed PCM16 input";
       return false;
     }
-    if (format.BitsPerSample is not (8 or 16 or 24 or 32)) {
-      reason = "PCM WAVE supports 8/16/24/32-bit integer samples";
+    if (codec is "ima-adpcm" or "ms-adpcm") {
+      reason = format.Channels is 1 or 2 ? null : $"{codecId} WAVE encoding supports mono or stereo";
+      return reason is null;
+    }
+    if (codec is "alaw" or "mulaw") {
+      reason = null;
+      return true;
+    }
+    if (format.Channels != 1) {
+      reason = $"{codecId} WAVE encoding currently supports mono only";
       return false;
     }
+    if (codec == "gsm610" && format.SampleRate != 8_000) {
+      reason = "Microsoft GSM 06.10 WAVE requires 8000 Hz PCM";
+      return false;
+    }
+    if ((codec == "g722" || codec == "g722-apicom") && format.SampleRate != 16_000) {
+      reason = "G.722 WAVE requires 16000 Hz PCM";
+      return false;
+    }
+    if ((codec == "g721" || codec.StartsWith("g726-", StringComparison.Ordinal)) && format.SampleRate != 8_000) {
+      reason = $"{codecId} WAVE encoding requires 8000 Hz PCM";
+      return false;
+    }
+
     reason = null;
     return true;
   }
@@ -108,6 +141,50 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
       case "ms-adpcm":
         WriteMsAdpcm(output, pcm, options);
         break;
+      case "oki-adpcm":
+        WriteOkiAdpcm(output, pcm, 0x0010);
+        break;
+      case "dialogic-oki-adpcm":
+        WriteOkiAdpcm(output, pcm, 0x0017);
+        break;
+      case "gsm610":
+        WriteGsm610(output, pcm);
+        break;
+      case "g721":
+        WriteG72x(output, pcm, 0x0040, 4, useG721EntryPoint: true);
+        break;
+      case "g726-16":
+        WriteG72x(output, pcm, 0x0045, 2);
+        break;
+      case "g726-24":
+        WriteG72x(output, pcm, 0x0045, 3);
+        break;
+      case "g726-32":
+        WriteG72x(output, pcm, 0x0045, 4);
+        break;
+      case "g726-40":
+        WriteG72x(output, pcm, 0x0045, 5);
+        break;
+      case "g726-apicom-16":
+        WriteG72x(output, pcm, 0x0064, 2);
+        break;
+      case "g726-apicom-24":
+        WriteG72x(output, pcm, 0x0064, 3);
+        break;
+      case "g726-apicom-32":
+        WriteG72x(output, pcm, 0x0064, 4);
+        break;
+      case "g726-apicom-40":
+        WriteG72x(output, pcm, 0x0064, 5);
+        break;
+      case "g722":
+        WriteG722(output, pcm, 0x028F);
+        break;
+      case "g722-apicom":
+        WriteG722(output, pcm, 0x0065);
+        break;
+      default:
+        throw new InvalidOperationException($"Unhandled WAVE codec '{codecId}'.");
     }
   }
 
@@ -155,6 +232,48 @@ internal sealed class WavAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     var average = checked((uint)((long)pcm.Format.SampleRate * blockAlign / samplesPerBlock));
     WriteWave(output, 0x0002, pcm.Format.Channels, pcm.Format.SampleRate, 4,
       checked((ushort)blockAlign), average, encoded, extra, checked((uint)pcm.FrameCount));
+  }
+
+  private static void WriteOkiAdpcm(Stream output, AudioPcmBuffer pcm, ushort formatTag) {
+    var encoded = OkiAdpcmCodec.Encode(ReadPcm16(pcm.InterleavedData));
+    var average = checked((uint)((pcm.Format.SampleRate + 1) / 2));
+    WriteWave(output, formatTag, 1, pcm.Format.SampleRate, 4, 1, average,
+      encoded, [0, 0], checked((uint)pcm.FrameCount));
+  }
+
+  private static void WriteGsm610(Stream output, AudioPcmBuffer pcm) {
+    var encoded = Gsm610Wav49.Encode(ReadPcm16(pcm.InterleavedData));
+    Span<byte> extra = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt16LittleEndian(extra, 2);
+    BinaryPrimitives.WriteUInt16LittleEndian(extra[2..], checked((ushort)Gsm610Wav49.SamplesPerBlock));
+    const uint averageBytesPerSecond = 1_625;
+    WriteWave(output, 0x0031, 1, 8_000, 0, checked((ushort)Gsm610Wav49.BlockBytes), averageBytesPerSecond,
+      encoded, extra.ToArray(), checked((uint)pcm.FrameCount));
+  }
+
+  private static void WriteG72x(Stream output, AudioPcmBuffer pcm, ushort formatTag, int bitsPerSample, bool useG721EntryPoint = false) {
+    var samples = ReadPcm16(pcm.InterleavedData);
+    var encoded = useG721EntryPoint ? G72xCodec.EncodeG721(samples) : G72xCodec.EncodeG726(samples, bitsPerSample);
+    var blockAlign = bitsPerSample is 3 or 5 ? bitsPerSample : 1;
+    var average = checked((uint)((long)pcm.Format.SampleRate * bitsPerSample / 8));
+    WriteWave(output, formatTag, 1, pcm.Format.SampleRate, bitsPerSample, checked((ushort)blockAlign), average,
+      encoded, [0, 0], checked((uint)pcm.FrameCount));
+  }
+
+  private static void WriteG722(Stream output, AudioPcmBuffer pcm, ushort formatTag) {
+    var samples = ReadPcm16(pcm.InterleavedData);
+    if ((samples.Length & 1) != 0) {
+      var padded = new short[samples.Length + 1];
+      samples.AsSpan().CopyTo(padded);
+      padded[^1] = samples[^1];
+      samples = padded;
+    }
+    var encoded = G722Codec.Encode(samples);
+    const int codedBitsPerPcmSample = 4;
+    const ushort blockAlign = 1;
+    const uint averageBytesPerSecond = 8_000;
+    WriteWave(output, formatTag, 1, 16_000, codedBitsPerPcmSample, blockAlign, averageBytesPerSecond,
+      encoded, [0, 0], checked((uint)pcm.FrameCount));
   }
 
   private static void WriteWave(Stream output, ushort formatTag, int channels, int sampleRate,

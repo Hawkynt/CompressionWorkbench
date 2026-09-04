@@ -9,13 +9,23 @@ not a to-do list, and what a unified identifier registry would have to carry.
 
 ## Where the identifiers come from
 
-- [GSpot v2.70a audio codecs](https://gspot.headbands.com/audiocodecs.htm) — 245 historical WAVE/ACM format tags and aliases.
-- [GSpot mirror](https://www.headbands.com/gspot/audiocodecs.htm) — the same catalogue where the subdomain is unavailable.
+- The [IANA WAVE/AVI codec registry](https://www.iana.org/assignments/wave-avi-codec-registry/wave-avi-codec-registry.xhtml)
+  and [RFC 2361](https://www.rfc-editor.org/rfc/rfc2361) are the primary registration sources.
+- [GSpot v2.70a audio codecs](https://gspot.headbands.com/audiocodecs.htm) and its
+  [mirror](https://www.headbands.com/gspot/audiocodecs.htm) are a historical alias catalogue of
+  245 tags, useful for what encoders in the wild actually stamped into headers.
+- Microsoft's WAVE documentation and the format-specific standards define framing and
+  extra-data semantics.
 
-GSpot is an alias and identification oracle, nothing more. Standards-body specifications and
-registered format documentation govern implementation behaviour; where the two disagree, the
-specification wins and GSpot is treated as a record of what encoders in the wild once stamped
-into a header.
+The order matters, because GSpot is an identification oracle and not a specification. Two
+mappings taken from it on trust turned out to be wrong: `0x0039` is Roland RDAC in the IANA
+registry rather than an IMA/DVI alias, and `0x0130`-`0x0135` is not one SIPR bucket —
+`0x0133` and `0x0134` are G.729 and G.729A registrations and `0x0135` is Kelvin.
+
+Independent implementations — FFmpeg, libgsm, spandsp, the ITU-T G.191 tools — are used as
+behavioural oracles. Where a licence does not permit adapting the code, only its observable
+bitstream behaviour is used, the implementation is written independently, and the result is
+pinned with the repository's own tests.
 
 ## 245 tags are not 245 codecs
 

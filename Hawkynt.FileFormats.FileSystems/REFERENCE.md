@@ -28,7 +28,7 @@ Represents a file or directory entry in a BIN/CUE disc image.
 
 BIN/CUE CD-ROM image — raw 2352-byte sector dump (.bin) described by a CDRWIN cue sheet (.cue). References: Golden Hawk Technology CDRWIN user manual — the defining cue-sheet documentation`https://en.wikipedia.org/wiki/Cue_sheet_(computing)` — cue-sheet syntax overviewECMA-130 — CD-ROM sector layout (mode 1 / mode 2 framing)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -47,8 +47,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region stays byte-identical. Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -125,7 +123,7 @@ Represents a file or directory entry in a DiscJuggler CDI disc image.
 
 DiscJuggler CDI disc image (Padus) — track data plus trailing session/track descriptor blocks. References: `https://en.wikipedia.org/wiki/DiscJuggler` — background on the creating toolCDIrip source — the DiscJuggler layout was reverse-engineered by the disc-preservation community; Padus never published a spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -144,8 +142,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region — including the 8-byte CDI footer — stays byte-identical (the footer migrates with the new EOF when the data area grows past the previous end). Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries and the trailing CDI footer are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
@@ -261,7 +257,7 @@ Represents a dmg entry.
 
 Apple disk image (DMG/UDIF) — "koly" trailer + XML plist block map (blkx) with zlib/bzip2/ADC-compressed chunks. References: `http://newosxbook.com/DMG.html` — Jonathan Levin's UDIF format write-up — the standard unofficial reference (Apple never published a spec)`https://github.com/darlinghq/darling-dmg` — darling-dmg — open-source DMG/UDIF implementation`https://en.wikipedia.org/wiki/Apple_Disk_Image` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -280,8 +276,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces partitions in the raw UDIF profile emitted by this writer. Existing partition payload offsets are preserved; new data occupies the old plist tail and only the blkx/plist + koly index are rewritten. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -530,7 +524,19 @@ Writer for EnCase Expert Witness Format (EWF / .E01) forensic images. Produces a
 
 ### Namespace `FileFormat.FirmwareHex`
 
-[`FirmwareImage`](#firmwareimage) · [`IntelHexFormatDescriptor`](#intelhexformatdescriptor) · [`IntelHexReader`](#intelhexreader) · [`SRecordReader`](#srecordreader) · [`TiTxtFormatDescriptor`](#titxtformatdescriptor) · [`TiTxtReader`](#titxtreader)
+[`FirmwareHexWriter`](#firmwarehexwriter) · [`FirmwareImage`](#firmwareimage) · [`IntelHexFormatDescriptor`](#intelhexformatdescriptor) · [`IntelHexReader`](#intelhexreader) · [`SRecordReader`](#srecordreader) · [`TiTxtFormatDescriptor`](#titxtformatdescriptor) · [`TiTxtReader`](#titxtreader)
+
+#### `FirmwareHexWriter`
+
+Writers for the two firmware text formats, and the shared step that turns a create/edit input list back into the `FirmwareImage` they encode.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MetadataName` | `const string MetadataName` | The name the reader gives the rendered summary. |
+| `PayloadName` | `const string PayloadName` | The name the reader gives the flat payload. |
+| `ImageFrom` | `static FirmwareImage ImageFrom(IReadOnlyList<ArchiveInputInfo> inputs, string sourceFormat)` | The image a create or edit describes: the single payload input as the bytes, and the addresses read out of `metadata.ini` when the caller passes the one the reader rendered. An input list with no payload describes an image with no data, which both formats can write. |
+| `WriteIntelHex` | `static void WriteIntelHex(Stream output, FirmwareImage image, int bytesPerRecord = 16)` | Writes `image` as Intel HEX: type-04 extended-linear-address records whenever the high half of the address changes, type-00 data records of at most `bytesPerRecord` bytes that never straddle a 64 KiB boundary, an optional type-05 start-linear-address record, and the type-01 end-of-file record every reader requires. |
+| `WriteTiTxt` | `static void WriteTiTxt(Stream output, FirmwareImage image, int bytesPerLine = 16)` | Writes `image` as TI-TXT: an `@AAAA` address line per segment, space-separated hex bytes at `bytesPerLine` a line, and the single `q` the format ends with. |
 
 #### `FirmwareImage`
 
@@ -554,7 +560,7 @@ Implements `IEquatable<FirmwareImage>`.
 
 Pseudo-archive descriptor for Intel HEX firmware files. Decodes the ASCII records into a flat binary (`firmware.bin`) and surfaces a `metadata.ini` with record count, declared start address, and gap count. References: Intel "Hexadecimal Object File Format Specification", Rev. A (1988) — the defining document`https://en.wikipedia.org/wiki/Intel_HEX` — record types and checksum rules
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -571,6 +577,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh Intel HEX file: the single payload input becomes the data records, and a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the base and start addresses that a flat binary cannot carry. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -596,7 +603,7 @@ Reader for Motorola S-Record files (`Stnn[aaaa|aaaaaa|aaaaaaaa]dd…cc`). Recogn
 
 Pseudo-archive descriptor for the TI-TXT firmware text format used by MSP430. Address lines (`@HHHH`) introduce contiguous byte runs; a single `q` terminates the file. Extension is intentionally empty — `.txt` is far too ambiguous — so detection relies on the first non-whitespace byte being `@`. References: Texas Instruments MSP430 programming/bootloader guides — define the TI-TXT format (@addr / data / q)`https://srecord.sourceforge.net` — SRecord tool suite — documents and converts TI-TXT (srec_ti_txt)
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -613,6 +620,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh TI-TXT file: the single payload input becomes the data lines under an `@address` taken from a `metadata.ini` alongside it, and the file ends with the `q` the format requires. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -724,7 +732,7 @@ Represents a file or directory entry in an MDF disc image.
 
 Alcohol 120% MDF/MDS disc image pair — raw sector data (.mdf) plus a session/track descriptor (.mds). References: `https://cdemu.sourceforge.io` — CDEmu / libMirage — its MDS/MDF parser is the de-facto format documentationNo official specification — proprietary Alcohol Soft format, reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -743,8 +751,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region stays byte-identical. Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. The accompanying `.mds` sidecar (if any) is not touched; the modifier only mutates the MDF byte stream. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
@@ -812,7 +818,7 @@ Represents a file or directory entry in a Nero NRG disc image.
 
 Nero Burning ROM NRG disc image — trailing NER5/NERO footer pointing at a chunked session/track descriptor area. References: `https://cdemu.sourceforge.io` — CDEmu / libMirage — its NRG parser is the de-facto format documentation`https://en.wikipedia.org/wiki/NRG_(file_format)` — WikipediaNo official specification — proprietary Nero format, reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -831,8 +837,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region — including the trailing NRG footer — stays byte-identical (the footer migrates with the new EOF when the data area grows past the previous end). Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries and the trailing NRG footer are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
@@ -1263,13 +1267,13 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.UImage`
 
-[`UImageFormatDescriptor`](#uimageformatdescriptor) · [`UImageReader`](#uimagereader) · [`UImageReader.UImage`](#uimagereaderuimage)
+[`UImageFormatDescriptor`](#uimageformatdescriptor) · [`UImageReader`](#uimagereader) · [`UImageReader.UImage`](#uimagereaderuimage) · [`UImageWriter`](#uimagewriter) · [`UImageWriter.Header`](#uimagewriterheader)
 
 #### `UImageFormatDescriptor`
 
 Pseudo-archive descriptor for U-Boot legacy uImage containers (`mkimage` output). Exposes `metadata.ini`, `header.bin` (the 64-byte legacy header) and `payload.bin` (the compressed body verbatim). When the body compression is `none` an additional `payload_decompressed.bin` is emitted; for gzip/bzip2/lzma/lzo/lz4/zstd the body is left compressed and the `metadata.ini` notes which scheme the caller needs to apply. References: `https://docs.u-boot.org/` — U-Boot documentation`https://github.com/u-boot/u-boot` — U-Boot sources — `include/image.h` defines the 64-byte legacy header
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1286,6 +1290,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh uImage: the single payload input becomes the body, a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the header fields, and both CRCs are computed the way `mkimage` computes them. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -1326,6 +1331,37 @@ Implements `IEquatable<UImage>`.
 | `Header` | `byte[] Header { get; init; }` |  |
 | `LoadAddress` | `uint LoadAddress { get; init; }` |  |
 | `Magic` | `uint Magic { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Os` | `byte Os { get; init; }` |  |
+| `Timestamp` | `uint Timestamp { get; init; }` |  |
+| `Type` | `byte Type { get; init; }` |  |
+
+#### `UImageWriter`
+
+Writer for the legacy U-Boot uImage container: the fixed 64-byte big-endian header defined by `include/image.h` followed by the body, with both CRCs computed the way `mkimage` computes them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecompressedName` | `const string DecompressedName` | The name the reader adds for an uncompressed body. |
+| `HeaderName` | `const string HeaderName` | The name the reader gives the header as stored. |
+| `MetadataName` | `const string MetadataName` | The name the reader gives the rendered summary. |
+| `PayloadName` | `const string PayloadName` | The name the reader gives the body as stored. |
+| `From` | `static ValueTuple<Header, byte[]> From(IReadOnlyList<ArchiveInputInfo> inputs)` | The body and header a create or edit describes: the single payload input as the body, and the header fields read out of `metadata.ini` when the caller passes the one the reader rendered. |
+| `Write` | `static void Write(Stream output, Header header, ReadOnlySpan<byte> body)` | Writes a uImage carrying `body` under `header`. |
+
+#### `UImageWriter.Header`
+
+The header fields that are not derived from the body.
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(uint Timestamp = 0, uint LoadAddress = 0, uint EntryPoint = 0, byte Os = 5, byte Architecture = 2, byte Type = 2, byte Compression = 0, string Name = "")` | The header fields that are not derived from the body. |
+| `Architecture` | `byte Architecture { get; init; }` |  |
+| `Compression` | `byte Compression { get; init; }` |  |
+| `EntryPoint` | `uint EntryPoint { get; init; }` |  |
+| `LoadAddress` | `uint LoadAddress { get; init; }` |  |
 | `Name` | `string Name { get; init; }` |  |
 | `Os` | `byte Os { get; init; }` |  |
 | `Timestamp` | `uint Timestamp { get; init; }` |  |
@@ -3740,25 +3776,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.CpcDsk`
 
-[`CpcDskBlockMover`](#cpcdskblockmover) · [`CpcDskEntry`](#cpcdskentry) · [`CpcDskExtentMap`](#cpcdskextentmap) · [`CpcDskFormatDescriptor`](#cpcdskformatdescriptor) · [`CpcDskModifier`](#cpcdskmodifier) · [`CpcDskReader`](#cpcdskreader) · [`CpcDskWriter`](#cpcdskwriter)
-
-#### `CpcDskBlockMover`
-
-Says why an AMSDOS disk is laid out again rather than shuffled in place.
-
-Implements `IFilesystemBlockMover`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `CpcDskBlockMover` | `CpcDskBlockMover()` |  |
-| `AllocationBlockSize` | `int AllocationBlockSize { get; }` |  |
-| `BlockSize` | `int BlockSize { get; }` | An allocation block: the unit any legal layout is expressed in. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | The first byte past the directory, which is where the files begin. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` |  |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` |  |
-| `Init` | `void Init(Stream image)` | Reads the geometry, and reports that the disk cannot be shuffled in place. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+[`CpcDskEntry`](#cpcdskentry) · [`CpcDskExtentMap`](#cpcdskextentmap) · [`CpcDskFormatDescriptor`](#cpcdskformatdescriptor) · [`CpcDskModifier`](#cpcdskmodifier) · [`CpcDskReader`](#cpcdskreader) · [`CpcDskWriter`](#cpcdskwriter)
 
 #### `CpcDskEntry`
 
@@ -3785,7 +3803,7 @@ Describes what occupies each stretch of a CPC DSK image: the container's own hea
 
 References: `https://www.cpcwiki.eu/index.php/Format:DSK_disk_image_file_format` — CPCWiki's DSK / Extended DSK image format specification`https://www.seasip.info/Unix/LibDsk/` — John Elliott's LibDsk, the maintained multi-format floppy-image library incl. CPC DSKAmstrad AMSDOS documentation (SOFT 968 firmware guide era) — the filesystem stored inside the image
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3811,10 +3829,8 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing CPC DSK image. Uses `CpcDskModifier` for O(touched bytes) random-access I/O — walks the directory on track 0, secure-wipes the file's data sectors, and marks the directory entry's user-number byte as 0xE5 (CP/M unused). |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a CPC DSK image: unallocated data sectors and the cluster-tip slack at the tail of each AMSDOS file's last sector. CP/M allocates whole sectors but tracks length only to 128-byte record granularity, so the bytes between a file's real length and its last allocated sector boundary are slack and get zero-filled when `wipeClusterTips` is set. Live file data and the AMSDOS directory / Track-Info metadata are preserved. |
 
 #### `CpcDskModifier`

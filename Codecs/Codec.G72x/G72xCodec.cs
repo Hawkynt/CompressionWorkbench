@@ -300,7 +300,7 @@ public static partial class G72xCodec {
     var anmant = (anmag == 0) ? 32 : ((anexp >= 0) ? (anmag >> anexp) : (anmag << -anexp));
     var wanexp = anexp + ((srn >> 6) & 0xF) - 13;
 
-    var wanmant = (anmant * (srn & 0x3F)) >> 4;
+    var wanmant = (anmant * (srn & 0x3F) + 0x30) >> 4;   // WAnMANT rounding term, G.726 §4.2.6
     var retval = (wanexp >= 0) ? ((wanmant << wanexp) & 0x7FFF) : (wanmant >> -wanexp);
 
     return ((an ^ srn) < 0) ? -retval : retval;

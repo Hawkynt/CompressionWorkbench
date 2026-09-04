@@ -102,6 +102,44 @@ public class SharedExtensionDisambiguationTests {
       $"{ext} resolved to {format}, which cannot create");
   }
 
+  // A shared extension the read side settles by a DELIBERATE rule -- ".img" is
+  // routed to FAT so that a create has a writable target, ".tar.gz" to the tar
+  // compound rather than to plain Gzip -- must keep that answer on create too.
+  // The capability preference is the tie-breaker for extensions nobody ruled on,
+  // not a replacement for the rules.
+
+  [TestCase(".img", "Fat")]
+  [TestCase(".tar.gz", "TarGz")]
+  [TestCase(".tgz", "TarGz")]
+  public void RuledExtension_ForCreate_KeepsTheRuledAnswer(string ext, string expected) {
+    Assert.That(Det.DetectByExtensionForCreate("volume" + ext).ToString(), Is.EqualTo(expected));
+  }
+
+  /// <summary>
+  /// Every extension whose read-side answer can already create is answered the
+  /// same way on create. Only an extension that resolves to a format which
+  /// CANNOT create may differ, and then only towards one that can.
+  /// </summary>
+  [Test]
+  public void ForCreate_OnlyDivergesFromTheReadSideWhereTheReadSideCannotWrite() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var divergent = new List<string>();
+    foreach (var descriptor in Compression.Registry.FormatRegistry.All)
+      foreach (var ext in descriptor.Extensions.Concat(descriptor.CompoundExtensions).Distinct()) {
+        if (string.IsNullOrEmpty(ext) || ext == ".exe" || ext == ".ar" || ext == ".a" || ext == ".deb") continue;
+        var path = "probe" + ext;
+        var read = Det.DetectByExtension(path);
+        if (read == Det.Format.Unknown) continue;
+        var readDesc = Compression.Registry.FormatRegistry.GetById(read.ToString());
+        if (readDesc == null || !readDesc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate)) continue;
+        var create = Det.DetectByExtensionForCreate(path);
+        if (create != read) divergent.Add($"{ext}: read={read} create={create}");
+      }
+    Assert.That(divergent, Is.Empty,
+      "The create-side lookup overrode an extension whose read-side answer can already create: "
+      + string.Join("; ", divergent));
+  }
+
   [Test]
   public void UnsharedExtension_ForCreate_MatchesTheReadSideLookup() {
     Assert.That(Det.DetectByExtensionForCreate("x.zip"), Is.EqualTo(Det.DetectByExtension("x.zip")));

@@ -128,13 +128,30 @@ public static class FilesystemSupportMatrix {
   private static string Defrag(IFormatDescriptor descriptor, IArchiveFormatOperations? ops) {
     if (ops is not IArchiveDefragmentable) return "—";
     if (ops is IFilesystemBlockMover) return "✅ moving";
+    return BlockMoverOf(descriptor) != null ? "✅ moving" : "✅ rebuild";
+  }
+
+  /// <summary>
+  /// The block mover a format's defrag drives, when the descriptor does not carry
+  /// the interface itself but its assembly holds the mover the planner uses. The
+  /// name is the convention: <c>FatFormatDescriptor</c> is served by
+  /// <c>FatBlockMover</c>.
+  /// </summary>
+  /// <remarks>
+  /// Exposed so that the verb-backing tests can probe the type this column claims
+  /// rather than trusting that a class of the right name does the right thing. A
+  /// mover whose every method refuses renders the same "moving" cell as one that
+  /// works, and that is how CPC DSK came to advertise an in-place defrag it had
+  /// written up its own reasons for not having.
+  /// </remarks>
+  public static Type? BlockMoverOf(IFormatDescriptor descriptor) {
+    ArgumentNullException.ThrowIfNull(descriptor);
     var family = descriptor.GetType().Name;
     foreach (var tail in new[] { "FormatDescriptor", "Descriptor" })
       if (family.EndsWith(tail, StringComparison.Ordinal)) { family = family[..^tail.Length]; break; }
-    var mover = descriptor.GetType().Assembly.GetTypes()
-      .Any(t => t.IsClass && !t.IsAbstract && typeof(IFilesystemBlockMover).IsAssignableFrom(t)
-             && t.Name.Equals(family + "BlockMover", StringComparison.Ordinal));
-    return mover ? "✅ moving" : "✅ rebuild";
+    return descriptor.GetType().Assembly.GetTypes()
+      .FirstOrDefault(t => t.IsClass && !t.IsAbstract && typeof(IFilesystemBlockMover).IsAssignableFrom(t)
+                        && t.Name.Equals(family + "BlockMover", StringComparison.Ordinal));
   }
 
   private static string Mark(bool offered) => offered ? "✅" : "—";
