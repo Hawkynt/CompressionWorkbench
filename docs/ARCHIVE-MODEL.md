@@ -86,6 +86,7 @@ and the outer container size is *not increased*.** Each verb says whether it may
 | **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
 | **purge**    | **Erase all live data** from within the container — empty the filesystem / drop every entry — leaving a valid empty container. | Preserved              | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` *(no dedicated `IArchivePurgeable` yet — see Naming note)* |
 | **wipe**     | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
+| **scramble** | **Scatter** every allocation block of every owner across the whole data area, dealt from a seed — fragmentation on purpose, so *defrag* has something real to work against. Content preserved exactly; only where it lives changes. The volume's own structures stay put. | Preserved              | `IFilesystemScrambleable` (needs a mover that can relink a scattered owner) |
 | **compact**  | **Composite**: run *defrag → optimize → shrink* in one pass to produce the smallest valid container that still holds the same contents. With `--minimal`, replace the trio with a single **minimal-geometry rebuild**. | Reduced | Any of `IArchiveDefragmentable` / `IArchiveCreatable` / `IArchiveShrinkable`; `--minimal` also needs `IArchiveCreatable` + `IFormatOptionsSchema` geometry knobs |
 
 **optimize vs. shrink:** *optimize* searches the parameter space (e.g. pick the
@@ -242,6 +243,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IArchiveModifiable`       | Add / Replace / Remove + **purge** (Remove-all). Advertise `CanModify` (R/W) when the format is a mutable container with a working modify — in place **or** relayout/rebuild (see §1); withhold it from read-only-by-design / create-only formats. |
 | `IArchiveDefragmentable`   | **defrag** (with optional `DefragOptions` modes) |
 | `IFilesystemBlockMover`    | true in-place defrag (extent moves, no rebuild) |
+| `IFilesystemScrambleable`  | **scramble** (seeded scatter; no rebuild fallback, refuses instead) |
 | `IArchiveShrinkable`       | **shrink** (smallest canonical size / tight-pack) |
 | `ILayoutOptimizable`       | **optimize** (parameter retune, in-place or streaming) |
 | `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
