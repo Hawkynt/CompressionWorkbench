@@ -10244,7 +10244,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing MPQ archive via the verified extract -> edit -> re-create rebuild. The auto-generated `(listfile)` is dropped from the extracted tree before re-creation (the writer regenerates it and refuses it as an explicit input), so entry names still round-trip without duplicating the listing. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files through the changed-byte MPQ v1 path when the hash and block tables are the contiguous physical trailer. Changed stored payloads overwrite the old table region, then only the encrypted tables and four mutable header fields are regenerated. Existing payload blocks — even compressed/encrypted or unnamed ones — retain their original offsets and bytes. Non-canonical layouts fall back to the verified rebuild. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the MPQ archive per the requested mode. The auto-generated `(listfile)` is excluded from the extracted set — the writer regenerates it and refuses it as an explicit input. |
@@ -10253,7 +10253,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single MPQ entry as a bounded read-only stream. The reader decodes per-entry compression/encryption; the decoded bytes are wrapped in a `BoundedEntryStream` sized to the entry's original (uncompressed) length. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries via the verified extract -> edit -> re-create rebuild, dropping the auto-generated `(listfile)` the same way `Add` does. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes names by tombstoning their hash slots, regenerating the listfile and trailing encrypted tables, and wiping a payload block only when no surviving hash entry still references it. Shared/aliased blocks therefore remain valid. Non-canonical table layouts use the verified rebuild fallback. |
 
 #### `MpqReader`
 
