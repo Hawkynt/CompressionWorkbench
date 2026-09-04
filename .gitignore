@@ -103,6 +103,8 @@ test-corpus/*
 
 ## Automated-agent artifacts (config, scratch dirs, worktrees, logs, session output)
 .claude/
+.mcp.json
+*_history
 CLAUDE.md
 .agents/
 .agent/

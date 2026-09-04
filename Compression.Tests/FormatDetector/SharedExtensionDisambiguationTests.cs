@@ -78,4 +78,32 @@ public class SharedExtensionDisambiguationTests {
       Assert.That(Det.Detect(p).ToString(), Is.EqualTo("Wad"));
     } finally { File.Delete(p); }
   }
+
+  // The create side has no bytes to disambiguate by, so a shared extension is settled by
+  // capability instead: the first claimant that can create wins. Without this, .bundle went to
+  // Mach-O and .vib to Veeam -- both read-only -- and two formats that advertise CanCreate were
+  // unreachable through their own default extension.
+
+  [TestCase(".bundle", "UnityBundle")]
+  [TestCase(".vib", "Vib")]
+  public void SharedExtension_ForCreate_PrefersTheClaimantThatCanCreate(string ext, string expected) {
+    var path = Path.Combine(Path.GetTempPath(), "never-written" + ext);
+    Assert.That(File.Exists(path), Is.False, "the create-side lookup must not need the file to exist");
+    Assert.That(Det.DetectByExtensionForCreate(path).ToString(), Is.EqualTo(expected));
+  }
+
+  [TestCase(".bundle")]
+  [TestCase(".vib")]
+  public void SharedExtension_ForCreate_ResolvesToSomethingCreatable(string ext) {
+    var format = Det.DetectByExtensionForCreate("x" + ext);
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var ops = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    Assert.That(ops, Is.InstanceOf<Compression.Registry.IArchiveCreatable>(),
+      $"{ext} resolved to {format}, which cannot create");
+  }
+
+  [Test]
+  public void UnsharedExtension_ForCreate_MatchesTheReadSideLookup() {
+    Assert.That(Det.DetectByExtensionForCreate("x.zip"), Is.EqualTo(Det.DetectByExtension("x.zip")));
+  }
 }

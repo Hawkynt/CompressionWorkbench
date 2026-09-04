@@ -1178,10 +1178,10 @@ Implements `IDisposable`, `IResampler`.
 | `Dispose` | `void Dispose()` |  |
 | `GetRateFraction` | `void GetRateFraction(out int ratio_num, out int ratio_den)` | Gets the current resampling ratio. This will be reduced to the least common denominator |
 | `GetRates` | `void GetRates(out int in_rate, out int out_rate)` | Get the current input/output sampling rates (integer value). |
-| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
-| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
-| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` |  |
-| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` |  |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Resamples an interleaved float32 array. The stride is automatically determined by the number of channels of the resampler. |
+| `ProcessInterleaved` | `void ProcessInterleaved(Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Resamples an interleaved int16 array. The stride is automatically determined by the number of channels of the resampler. |
+| `Process` | `void Process(int channel_index, Span<float> input, ref int in_len, Span<float> output, ref int out_len)` | Resample a float32 sample array. The input and output buffers must *not* overlap |
+| `Process` | `void Process(int channel_index, Span<short> input, ref int in_len, Span<short> output, ref int out_len)` | Resample an int16 sample array. The input and output buffers must *not* overlap |
 | `ResetMem` | `void ResetMem()` | Clears the resampler buffers so a new (unrelated) stream can be processed. |
 | `SetRateFraction` | `void SetRateFraction(int ratio_num, int ratio_den, int in_rate, int out_rate)` | Sets the input/output sampling rates and resampling ration (fractional values in Hz supported) |
 | `SetRates` | `void SetRates(int in_rate, int out_rate)` | Sets the input and output rates |
@@ -1281,7 +1281,7 @@ Implements `IDisposable`, `IOpusDecoder`.
 | --- | --- | --- |
 | `OpusDecoder` | `OpusDecoder(int Fs, int channels)` | Allocates and initializes a decoder state. Internally Opus stores data at 48000 Hz, so that should be the default value for Fs. However, the decoder can efficiently decode to buffers at 8, 12, 16, and 24 kHz so if for some reason the caller cannot use data at the full sample rate, or knows the compressed data doesn't use the full frequency range, it can request decoding at a reduced rate. Likewise, the decoder is capable of filling in either mono or interleaved stereo pcm buffers, at the caller's request. |
 | `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
-| `FinalRange` | `uint FinalRange { get; }` |  |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
 | `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
 | `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
 | `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this decoder decodes to. Always constant for the lifetime of the decoder. |
@@ -1292,7 +1292,7 @@ Implements `IDisposable`, `IOpusDecoder`.
 | `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet, putting the output data into a floating-point buffer. |
 | `Decode` | `int Decode(byte[] in_data, int in_data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec = false)` | Decodes an Opus packet. |
 | `Dispose` | `void Dispose()` |  |
-| `GetVersionString` | `string GetVersionString()` |  |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
 | `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
 
 #### `OpusEncoder`
@@ -1333,8 +1333,8 @@ Implements `IDisposable`, `IOpusEncoder`.
 | `Encode` | `int Encode(ReadOnlySpan<short> in_pcm, int frame_size, Span<byte> out_data, int max_data_bytes)` | Encodes an Opus frame. |
 | `Encode` | `int Encode(float[] in_pcm, int in_pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame using floating point input. |
 | `Encode` | `int Encode(short[] in_pcm, int pcm_offset, int frame_size, byte[] out_data, int out_data_offset, int max_data_bytes)` | Encodes an Opus frame. |
-| `GetVersionString` | `string GetVersionString()` |  |
-| `ResetState` | `void ResetState()` |  |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets the state of this encoder, usually to prepare it for processing a new audio stream without reallocating. |
 
 #### `OpusMSDecoder`
 
@@ -1345,20 +1345,20 @@ Implements `IDisposable`, `IOpusMultiStreamDecoder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OpusMSDecoder` | `OpusMSDecoder(int Fs, int channels, int streams, int coupled_streams, byte[] mapping)` | Creates a new multichannel decoder |
-| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` |  |
-| `FinalRange` | `uint FinalRange { get; }` |  |
-| `Gain` | `int Gain { get; set; }` |  |
-| `LastPacketDuration` | `int LastPacketDuration { get; }` |  |
-| `NumChannels` | `int NumChannels { get; }` |  |
-| `SampleRate` | `int SampleRate { get; }` |  |
-| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` |  |
-| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` |  |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; }` | Gets the encoded bandwidth of the last packet decoded. This may be lower than the actual decoding sample rate, and is only an indicator of the encoded audio's quality |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
+| `Gain` | `int Gain { get; set; }` | Gets or sets the gain (Q8) to use in decoding |
+| `LastPacketDuration` | `int LastPacketDuration { get; }` | Gets the duration of the last packet, in PCM samples per channel |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels of the input data. Always constant for the lifetime of the decoder |
+| `SampleRate` | `int SampleRate { get; }` | Gets the sample rate that this decoder decodes to. Always constant for the lifetime of the decoder |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<float> out_pcm, int frame_size, bool decode_fec)` | Decodes a multichannel Opus packet, putting the decoded audio into a floating-point buffer. |
+| `DecodeMultistream` | `int DecodeMultistream(ReadOnlySpan<byte> data, Span<short> out_pcm, int frame_size, bool decode_fec)` | Decodes a multichannel Opus packet, putting the decoded audio into an int16 buffer. |
 | `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, float[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
 | `DecodeMultistream` | `int DecodeMultistream(byte[] data, int data_offset, int len, short[] out_pcm, int out_pcm_offset, int frame_size, bool decode_fec)` |  |
 | `Dispose` | `void Dispose()` |  |
 | `GetMultistreamDecoderState` | `OpusDecoder GetMultistreamDecoderState(int streamId)` | Gets the internal decoder state of one of the multichannel stream's decoders, indicated by stream ID. |
-| `GetVersionString` | `string GetVersionString()` |  |
-| `ResetState` | `void ResetState()` |  |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets all buffers and prepares this decoder to process a fresh (unrelated) stream |
 
 #### `OpusMSEncoder`
 
@@ -1368,36 +1368,36 @@ Implements `IDisposable`, `IOpusMultiStreamEncoder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Application` | `OpusApplication Application { get; set; }` |  |
-| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` |  |
-| `Bitrate` | `int Bitrate { get; set; }` |  |
-| `Complexity` | `int Complexity { get; set; }` |  |
-| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` |  |
-| `FinalRange` | `uint FinalRange { get; }` |  |
+| `Application` | `OpusApplication Application { get; set; }` | Gets or sets the application (or signal type) of the input signal. This hints to the encoder what type of details we want to preserve in the encoding. This cannot be changed after the encoder has started |
+| `Bandwidth` | `OpusBandwidth Bandwidth { get; set; }` | Gets or sets the "preferred" encoded bandwidth. This does not affect the sample rate of the input audio, only the encoding cutoffs |
+| `Bitrate` | `int Bitrate { get; set; }` | Gets or sets the bitrate for encoder, in bits per second. Valid bitrates are between 6K (6144) and 510K (522240) |
+| `Complexity` | `int Complexity { get; set; }` | Gets or sets the encoder complexity, between 0 and 10 |
+| `ExpertFrameDuration` | `OpusFramesize ExpertFrameDuration { get; set; }` | Gets or sets a fixed length for each encoded frame. Typically, the encoder just chooses a frame duration based on the input length and the current internal mode. This can be used to enforce an exact length if it is required by your application (e.g. monotonous transmission) |
+| `FinalRange` | `uint FinalRange { get; }` | Returns the final range of the entropy coder. If you need this then I also assume you know what it's for. |
 | `ForceChannels` | `int ForceChannels { get; set; }` |  |
-| `ForceMode` | `OpusMode ForceMode { get; set; }` |  |
-| `LSBDepth` | `int LSBDepth { get; set; }` |  |
-| `Lookahead` | `int Lookahead { get; }` |  |
-| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` |  |
-| `NumChannels` | `int NumChannels { get; }` |  |
-| `PacketLossPercent` | `int PacketLossPercent { get; set; }` |  |
-| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` |  |
-| `SampleRate` | `int SampleRate { get; }` |  |
-| `SignalType` | `OpusSignal SignalType { get; set; }` |  |
-| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` |  |
-| `UseDTX` | `bool UseDTX { get; set; }` |  |
-| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` |  |
-| `UseVBR` | `bool UseVBR { get; set; }` |  |
+| `ForceMode` | `OpusMode ForceMode { get; set; }` | Gets or sets a user-forced mode for the encoder. There are three modes, SILK, HYBRID, and CELT. Silk can only encode below 40Kbit/s and is best suited for speech. Silk also has modes such as FEC which may be desirable. Celt sounds better at higher bandwidth and is comparable to AAC. It also performs somewhat faster. Hybrid is used to create a smooth transition between the two modes. Note that this value may not always be honored due to other factors such as frame size and bitrate. |
+| `LSBDepth` | `int LSBDepth { get; set; }` | Gets or sets the bit resolution of the input audio signal. Though the encoder always uses 16-bit internally, this can help it make better decisions about bandwidth and cutoff values |
+| `Lookahead` | `int Lookahead { get; }` | Gets the number of samples of audio that are being stored in a buffer and are therefore contributing to latency. |
+| `MaxBandwidth` | `OpusBandwidth MaxBandwidth { get; set; }` | Gets or sets the maximum bandwidth to be used by the encoder. This can be used if high-frequency audio is not important to your application (e.g. telephony) |
+| `NumChannels` | `int NumChannels { get; }` | Gets the number of channels that this encoder expects in its input. Always constant for the lifetime of the decoder. |
+| `PacketLossPercent` | `int PacketLossPercent { get; set; }` | Gets or sets the expected amount of packet loss in the transmission medium, from 0 to 100. Only applies if UseInbandFEC is also enabled, and the encoder is in SILK mode. |
+| `PredictionDisabled` | `bool PredictionDisabled { get; set; }` | Gets or sets a flag to disable prediction, which does... something with the SILK codec |
+| `SampleRate` | `int SampleRate { get; }` | Gets the encoder's input sample rate. This is fixed for the lifetime of the encoder. |
+| `SignalType` | `OpusSignal SignalType { get; set; }` | Gets or sets a hint to the encoder for what type of audio is being processed, voice or music. This is not set by the encoder itself i.e. it's not the result of any actual signal analysis. |
+| `UseConstrainedVBR` | `bool UseConstrainedVBR { get; set; }` | Gets or sets a flag to enable constrained VBR. This only applies when the encoder is in CELT mode (i.e. high bitrates) |
+| `UseDTX` | `bool UseDTX { get; set; }` | Gets or sets a flag to enable Discontinuous Transmission mode. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, the encoder detects silence and background noise and reduces the number of output packets, with up to 600ms in between separate packet transmissions. |
+| `UseInbandFEC` | `bool UseInbandFEC { get; set; }` | Gets or sets a flag to enable Forward Error Correction. This mode is only available in the SILK encoder (Bitrate < 40Kbit/s and/or ForceMode == SILK). When enabled, lost packets can be partially recovered by decoding data stored in the following packet. |
+| `UseVBR` | `bool UseVBR { get; set; }` | Gets or sets a flag to enable Variable Bitrate encoding. This is recommended as it generally improves audio quality with little impact on average bitrate |
 | `CreateSurround` | `static OpusMSEncoder CreateSurround(int Fs, int channels, int mapping_family, out int streams, out int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a multichannel Opus encoder using the "new API". This constructor allows you to use predefined Vorbis channel mappings, or specify your own. |
 | `Create` | `static OpusMSEncoder Create(int Fs, int channels, int streams, int coupled_streams, byte[] mapping, OpusApplication application)` | Creates a new multichannel Opus encoder using the "old API". |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
-| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` |  |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<float> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` | Encodes a multistream Opus frame. |
+| `EncodeMultistream` | `int EncodeMultistream(ReadOnlySpan<short> pcm, int frame_size, Span<byte> outputBuffer, int max_data_bytes)` | Encodes a multistream Opus frame. |
 | `EncodeMultistream` | `int EncodeMultistream(float[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
 | `EncodeMultistream` | `int EncodeMultistream(short[] pcm, int pcm_offset, int frame_size, byte[] outputBuffer, int outputBuffer_offset, int max_data_bytes)` |  |
 | `GetMultistreamEncoderState` | `OpusEncoder GetMultistreamEncoderState(int streamId)` | Gets the internal encoder state of one of the multichannel stream's enoders, indicated by stream ID. |
-| `GetVersionString` | `string GetVersionString()` |  |
-| `ResetState` | `void ResetState()` |  |
+| `GetVersionString` | `string GetVersionString()` | Gets the version string of the library backing this implementation. |
+| `ResetState` | `void ResetState()` | Resets the state of this encoder, usually to prepare it for processing a new audio stream without reallocating. |
 
 #### `OpusPacketInfo`
 
