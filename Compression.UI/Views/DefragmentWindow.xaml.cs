@@ -474,8 +474,10 @@ public partial class DefragmentWindow : Window {
           Name = e.Name,
           Size = e.OriginalSize,
           SizeDisplay = FormatSize(e.OriginalSize),
-          // Fragment-count display requires a per-FS extent walk that
-          // ArchiveEntryInfo doesn't expose today; show a placeholder.
+          // This map is synthesised from the listing: the format reported no
+          // layout, so the tiles are sizes laid end to end rather than where
+          // anything actually is. Counting runs off that would report one for
+          // everything, which is a figure nothing measured.
           // TODO: clicking a row should highlight that file's tile range
           // on the block map.
           FragmentsDisplay = "—",
@@ -613,14 +615,8 @@ public partial class DefragmentWindow : Window {
     BlockMap.ImageSize = imageSize;
 
     // File panel rows: include a fragment count derived from the extent map.
+    var fragCount = CountRunsByOwner(classified);
     if (entries != null) {
-      var fragCount = new Dictionary<string, int>(StringComparer.Ordinal);
-      foreach (var ex in classified)
-        if (ex.Kind == DefragBlockKind.Used && ex.FileName != null) {
-          fragCount.TryGetValue(ex.FileName, out var n);
-          fragCount[ex.FileName] = n + 1;
-        }
-
       var rows = new List<FileRow>(entries.Count);
       foreach (var e in entries) {
         if (e.IsDirectory) continue;
@@ -642,9 +638,7 @@ public partial class DefragmentWindow : Window {
     }
 
     if (LayoutStatusLbl != null) {
-      var fragmentedFiles = entries == null ? 0 :
-        classified.Where(ex => ex.Kind == DefragBlockKind.Used && ex.FileName != null)
-                  .GroupBy(ex => ex.FileName!).Count(g => g.Count() > 1);
+      var fragmentedFiles = entries == null ? 0 : fragCount.Values.Count(runs => runs > 1);
       LayoutStatusLbl.Text = fragmentedFiles > 0
         ? $"Real on-disk layout — {classified.Count(ex => ex.Kind == DefragBlockKind.Used):N0} extents, {fragmentedFiles:N0} fragmented file(s)"
         : $"Real on-disk layout — {classified.Count(ex => ex.Kind == DefragBlockKind.Used):N0} extents (no fragmentation detected)";
@@ -733,6 +727,9 @@ public partial class DefragmentWindow : Window {
 
     // File panel rows with Method column.
     if (entries != null) {
+      // Counted off the layout the container reported, not assumed to be one.
+      // An entry the map does not name is not one run — it is unmeasured.
+      var runsByName = CountRunsByOwner(classified);
       var rows = new List<FileRow>(entries.Count);
       foreach (var e in entries) {
         if (e.IsDirectory) continue;
@@ -741,7 +738,7 @@ public partial class DefragmentWindow : Window {
           Name = e.Name,
           Size = e.OriginalSize,
           SizeDisplay = FormatSize(e.OriginalSize),
-          FragmentsDisplay = "1",
+          FragmentsDisplay = runsByName.TryGetValue(e.Name, out var runs) ? runs.ToString("N0") : "—",
           MethodDisplay = e.Method ?? "",
           Modified = e.LastModified,
           ModifiedDisplay = e.LastModified is { } dt ? dt.ToString("yyyy-MM-dd HH:mm") : "",
@@ -801,14 +798,19 @@ public partial class DefragmentWindow : Window {
     BlockMap.BlockMap = filled;
     BlockMap.ImageSize = imageSize;
 
-    // File panel: show each chunk as a row.
+    // File panel: show each chunk as a row. A row here IS one stretch of the
+    // file, so the count belongs to the chunk's owner rather than the row, and
+    // is taken from the same layout the map was drawn from.
+    var chunkRuns = CountRunsByOwner(filled, onlyKind: null);
     var rows = new List<FileRow>(filled.Count);
     foreach (var ch in filled) {
       rows.Add(new FileRow {
         Name = ch.FileName ?? ch.Kind.ToString(),
         Size = ch.Length,
         SizeDisplay = FormatSize(ch.Length),
-        FragmentsDisplay = "1",
+        FragmentsDisplay = ch.FileName is { } owner && chunkRuns.TryGetValue(owner, out var runs)
+          ? runs.ToString("N0")
+          : "—",
         MethodDisplay = ch.Kind.ToString(),
         Class = ch.Classification?.ToString() ?? "—",
       });
@@ -968,11 +970,40 @@ public partial class DefragmentWindow : Window {
   }
 
   /// <summary>
+  /// How many separate stretches of the container each owner's data occupies.
+  /// </summary>
+  /// <remarks>
+  /// Counting the entries a map yields would measure the map rather than the
+  /// layout: some merge an owner's consecutive blocks into one entry and some
+  /// emit one entry per block, so a contiguous file and a scattered one report
+  /// the same figure. Stretches that end exactly where the next begins are one
+  /// run either way.
+  /// </remarks>
+  /// <param name="onlyKind">Restricts the count to one kind of region, or counts
+  /// every named region when null — which is what a file-internal layout wants,
+  /// since a container's own metadata chunks are owners there too.</param>
+  private static Dictionary<string, int> CountRunsByOwner(IEnumerable<DefragBlockInfo> extents,
+      DefragBlockKind? onlyKind = DefragBlockKind.Used) {
+    var runs = new Dictionary<string, int>(StringComparer.Ordinal);
+    var endOf = new Dictionary<string, long>(StringComparer.Ordinal);
+    foreach (var extent in extents) {
+      if (onlyKind is { } wanted && extent.Kind != wanted) continue;
+      if (extent.FileName is not { } owner) continue;
+      if (!endOf.TryGetValue(owner, out var previousEnd) || previousEnd != extent.Offset) {
+        runs.TryGetValue(owner, out var count);
+        runs[owner] = count + 1;
+      }
+      endOf[owner] = extent.Offset + extent.Length;
+    }
+    return runs;
+  }
+
+  /// <summary>
   /// Row model for the file-list panel. Mirrors what Defraggler/UltraDefrag
   /// show: name, size, fragment count, last-modified date and a hot/cold
-  /// classification. Fragment count is a placeholder for now — a real
-  /// per-FS extent walk would need to plumb new metadata through
-  /// <see cref="IArchiveFormatOperations"/>.
+  /// classification. The fragment count is counted off whatever layout the
+  /// format offered; formats that offer none show an em dash rather than a
+  /// figure nothing measured.
   /// </summary>
   private sealed class FileRow {
     public string Name { get; init; } = "";
