@@ -52,7 +52,6 @@ public static class SevenZipInPlaceRemover {
     if (remove.Count == 0)
       return;
 
-    // ── Parse the existing signature + descriptive header ──
     archive.Position = 0;
     var sig = SevenZipHeader.Read(archive);
 
@@ -68,7 +67,6 @@ public static class SevenZipInPlaceRemover {
     using var headerStream = new MemoryStream(headerData);
     var (packInfo, folders, subStreams, fileInfos) = SevenZipHeaderCodec.ReadHeader(headerStream);
 
-    // ── Verify the archive matches the byte-additive contract ──
     if (packInfo.PackPos != 0)
       throw new NotSupportedException("7z in-place remove requires PackPos == 0.");
 
@@ -84,14 +82,9 @@ public static class SevenZipInPlaceRemover {
         throw new NotSupportedException("7z in-place remove cannot re-emit a multi-pack-stream or encrypted folder.");
     }
 
-    // Each folder uses exactly one pack stream (guaranteed by CanReEmitVerbatim),
-    // so pack-stream index == folder index.
     if (packInfo.PackSizes.Length != folders.Count)
       throw new NotSupportedException("7z in-place remove requires one pack stream per folder.");
 
-    // ── Map file infos to folders so whole-folder removal can be detected ──
-    // FilesInfo lists with-stream entries first (in folder order, honoring each
-    // folder's NumUnpackStreams), then the empty-stream entries.
     var withStream = new List<SevenZipFileInfo>();
     var emptyEntries = new List<SevenZipFileInfo>();
     foreach (var f in fileInfos) {
@@ -101,7 +94,7 @@ public static class SevenZipInPlaceRemover {
         withStream.Add(f);
     }
 
-    var folderOfFile = new int[withStream.Count]; // folder index for each with-stream file
+    var folderOfFile = new int[withStream.Count];
     {
       var fileIdx = 0;
       for (var folderIdx = 0; folderIdx < folders.Count; ++folderIdx) {
@@ -118,7 +111,6 @@ public static class SevenZipInPlaceRemover {
         throw new NotSupportedException("7z in-place remove: substream/file count mismatch.");
     }
 
-    // Tally, per folder, how many of its files are being removed.
     var removedPerFolder = new int[folders.Count];
     var filesPerFolder = new int[folders.Count];
     var removedAnyWithStream = false;
@@ -132,10 +124,8 @@ public static class SevenZipInPlaceRemover {
 
     var removedAnyEmpty = emptyEntries.Any(f => remove.Contains(f.Name));
     if (!removedAnyWithStream && !removedAnyEmpty)
-      return; // nothing matched — caller's stream is already correct.
+      return;
 
-    // A folder is removable only when ALL of its files are removed. A proper
-    // subset would require recompressing the survivors → fall back to rebuild.
     var folderRemoved = new bool[folders.Count];
     for (var fi = 0; fi < folders.Count; ++fi) {
       if (removedPerFolder[fi] == 0)
@@ -146,15 +136,12 @@ public static class SevenZipInPlaceRemover {
       folderRemoved[fi] = true;
     }
 
-    // ── Build the surviving structures ──
     var keptFolders = new List<SevenZipFolder>();
     var keptPackSizes = new List<long>();
     var keptNumUnpack = new List<int>();
     var keptSubSizes = new List<long>();
     var keptDigests = new List<uint>();
 
-    // SubStreamsInfo lays out per-file sizes/digests in folder order; track the
-    // running index so we copy only the surviving folders' slices.
     var subIdx = 0;
     for (var fi = 0; fi < folders.Count; ++fi) {
       var n = fi < subStreams.NumUnpackStreams.Length ? subStreams.NumUnpackStreams[fi] : 1;
@@ -200,18 +187,36 @@ public static class SevenZipInPlaceRemover {
     keptFileInfos.AddRange(keptWithStream);
     keptFileInfos.AddRange(keptEmpty);
 
+    // Complete all metadata serialization before touching packed bytes. After
+    // this point the only possible failures are I/O failures, not a format/profile
+    // rejection that a caller could safely recover from by rebuilding.
+    var keptPackedSize = keptPackSizes.Sum();
+    var newPackedEnd = checked(SevenZipConstants.SignatureHeaderSize + keptPackedSize);
+    using var newHeaderStream = new MemoryStream();
+    SevenZipHeaderCodec.WriteHeader(newHeaderStream, keptPackInfo, keptFolders,
+      keptSubStreams, keptFileInfos);
+    var newHeader = newHeaderStream.ToArray();
+
+    byte[] signatureHeader;
+    using (var signatureStream = new MemoryStream(SevenZipConstants.SignatureHeaderSize)) {
+      new SevenZipHeader {
+        MajorVersion = sig.MajorVersion,
+        MinorVersion = sig.MinorVersion,
+        NextHeaderOffset = newPackedEnd - SevenZipConstants.SignatureHeaderSize,
+        NextHeaderSize = newHeader.Length,
+        NextHeaderCrc = Crc32.Compute(newHeader),
+      }.Write(signatureStream);
+      signatureHeader = signatureStream.ToArray();
+    }
+
     // ── Compact the packed region in place ──
-    // Each surviving folder's packed stream is copied (in order) to the position
-    // it occupies once earlier removed streams are excised. Streams before the
-    // first hole keep their exact offset; the copy moves only the bytes physically
-    // following a removed stream.
     var srcOffset = (long)SevenZipConstants.SignatureHeaderSize;
     var dstOffset = (long)SevenZipConstants.SignatureHeaderSize;
     var buffer = new byte[1 << 16];
     for (var fi = 0; fi < folders.Count; ++fi) {
       var size = packInfo.PackSizes[fi];
       if (folderRemoved[fi]) {
-        srcOffset += size; // skip the removed stream, leaving a hole to close
+        srcOffset += size;
         continue;
       }
       if (srcOffset != dstOffset)
@@ -220,25 +225,13 @@ public static class SevenZipInPlaceRemover {
       dstOffset += size;
     }
 
-    var newPackedEnd = dstOffset;
-
-    // ── Serialize and write the surviving descriptive header ──
-    using var newHeaderStream = new MemoryStream();
-    SevenZipHeaderCodec.WriteHeader(newHeaderStream, keptPackInfo, keptFolders,
-      keptSubStreams, keptFileInfos);
-    var newHeader = newHeaderStream.ToArray();
+    if (dstOffset != newPackedEnd)
+      throw new InvalidDataException("7z packed-stream compaction length does not match planned metadata.");
 
     archive.Position = newPackedEnd;
     archive.Write(newHeader, 0, newHeader.Length);
-
-    // ── Rewrite the signature header ──
     archive.Position = 0;
-    new SevenZipHeader {
-      NextHeaderOffset = newPackedEnd - SevenZipConstants.SignatureHeaderSize,
-      NextHeaderSize = newHeader.Length,
-      NextHeaderCrc = Crc32.Compute(newHeader),
-    }.Write(archive);
-
+    archive.Write(signatureHeader, 0, signatureHeader.Length);
     archive.SetLength(newPackedEnd + newHeader.Length);
     archive.Flush();
   }
@@ -262,11 +255,6 @@ public static class SevenZipInPlaceRemover {
     }
   }
 
-  /// <summary>
-  /// True when a folder's packed stream can be reproduced verbatim from PackInfo
-  /// alone — a simple linear coder chain fed by exactly one pack stream with no AES
-  /// or BCJ2 coder.
-  /// </summary>
   private static bool CanReEmitVerbatim(SevenZipFolder folder) {
     if (folder.Coders.Count == 0)
       return false;

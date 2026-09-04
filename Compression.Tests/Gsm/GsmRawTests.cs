@@ -26,6 +26,47 @@ public class GsmRawTests {
   }
 
   [Test]
+  public void Create_FromMonoWav_EncodesFramesThatDecodeBack() {
+    const int frames = 50;
+    var pcm = new short[frames * Gsm610Codec.FrameSamples];
+    for (var i = 0; i < pcm.Length; ++i)
+      pcm[i] = (short)(Math.Sin(2 * Math.PI * 440 * i / 8000.0) * 9000);
+    var le = new byte[pcm.Length * 2];
+    for (var i = 0; i < pcm.Length; ++i) BinaryPrimitives.WriteInt16LittleEndian(le.AsSpan(i * 2), pcm[i]);
+    var wav = Codec.Pcm.PcmCodec.ToWavBlob(le, channels: 1, GsmRawFormatDescriptor.SampleRate, bitsPerSample: 16);
+
+    var descriptor = new GsmRawFormatDescriptor();
+    Assert.That(descriptor.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+    using var output = new MemoryStream();
+    descriptor.Create(output, [Compression.Registry.ArchiveInputInfo.InMemory("MONO.wav", wav)], new Compression.Registry.FormatCreateOptions());
+    var raw = output.ToArray();
+
+    Assert.That(raw.Length, Is.EqualTo(frames * Gsm610Codec.FrameBytes));
+    Assert.That(Gsm610Codec.LooksLikeRawFrames(raw), Is.True);
+
+    using var input = new MemoryStream(raw);
+    var entries = descriptor.List(input, null);
+    Assert.That(entries.Select(e => e.Name), Does.Contain("MONO.wav"));
+    var decoded = Gsm610Codec.DecodeRaw(raw);
+    Assert.That(decoded, Has.Length.EqualTo(pcm.Length));
+    // Steady-state level after the first two frames of adaptation; RMS is phase-insensitive.
+    double source = 0, roundTrip = 0;
+    for (var i = 2 * Gsm610Codec.FrameSamples; i < pcm.Length; ++i) {
+      source += (double)pcm[i] * pcm[i];
+      roundTrip += (double)decoded[i] * decoded[i];
+    }
+    Assert.That(Math.Sqrt(roundTrip / source), Is.InRange(0.7, 1.3), "GSM round trip keeps the tone within 3 dB");
+  }
+
+  [Test]
+  public void Create_PassesFullGsmThroughVerbatim() {
+    var blob = MakeRawGsm(3);
+    using var output = new MemoryStream();
+    new GsmRawFormatDescriptor().Create(output, [Compression.Registry.ArchiveInputInfo.InMemory("FULL.gsm", blob)], new Compression.Registry.FormatCreateOptions());
+    Assert.That(output.ToArray(), Is.EqualTo(blob));
+  }
+
+  [Test]
   public void Descriptor_ListsFullMonoAndMetadata() {
     var blob = MakeRawGsm(4);
     using var ms = new MemoryStream(blob);

@@ -248,8 +248,8 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | ReiserFs | Y | Y | Y | Y | Y | Y |
 | RomFs | Y | Y | Y | Y | Y | Y |
 | Rt11 | Y | Y | Y | Y | Y | Y |
-| Sfs | Y | Y | · | · | Y | · |
-| SmartFs | Y | Y | · | · | Y | · |
+| Sfs | Y | Y | · | Y | Y | · |
+| SmartFs | Y | Y | · | Y | Y | · |
 | SquashFs | Y | Y | Y | Y | Y | Y |
 | Stacker | Y | Y | Y | Y | Y | Y |
 | SysV | Y | Y | Y | Y | Y | Y |
@@ -265,7 +265,7 @@ filesystems without an extent map cannot expose a true in-place forensic wipe.
 | Udf | Y | Y | Y | Y | Y | Y |
 | Ufs | Y | Y | Y | Y | Y | Y |
 | Vdfs | Y | Y | Y | Y | Y | Y |
-| VxFs | Y | Y | · | · | Y | · |
+| VxFs | Y | Y | · | Y | Y | · |
 | Wafl | · | · | · | · | · | · |
 | Xenix | Y | Y | Y | Y | Y | Y |
 | Xfs | Y | Y | Y | Y | Y | Y |
