@@ -149,7 +149,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 
 | Id | Format | State | Decode | Encode | Demux | Mux | Notes |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | --- |
-| `Aac` | AAC (ADTS) | WORM | ✅ | ✅ | ✅ | — | AAC ADTS route; codec profile limits apply |
+| `Aac` | AAC (ADTS) | WORM | ✅ | ✅ | ✅ | ✅ | AAC ADTS route; ADTS remux in both directions; codec profile limits apply |
 | `Ac3` | AC-3 / E-AC-3 | R | ✅ | ✅ | — | — | Raw AC-3/E-AC-3 independent substreams |
 | `Acm` | Interplay ACM (Fallout / Baldur's Gate audio) | R | — | — | — | — | Interplay ACM |
 | `Adx` | CRI ADX | WORM | — | — | — | — | CRI ADX/AHX paths |
