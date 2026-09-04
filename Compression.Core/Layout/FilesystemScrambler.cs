@@ -60,8 +60,11 @@ public static class FilesystemScrambler {
       return;
     }
 
+    // The layout goes with the plan: a scramble interleaves the moves of every
+    // owner, so the order they arrive in says nothing about the order an
+    // owner's blocks belong in. The extent map does.
     DefragPlannerExecutor.Execute(image, AsDefragOptions(options), mover, moves, imageSize,
-      reinitAfterMove);
+      reinitAfterMove, metadataMover: null, layout: extents);
 
     options.OnProgress?.Invoke(new DefragProgressEvent(
       "complete", 1, -1, -1, imageSize, null,
