@@ -368,17 +368,17 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
 | [ASF / WMV / WMA](https://en.wikipedia.org/wiki/Advanced_Systems_Format) | `Asf` | `.asf` `.wma` `.wmv` | ✅ | — | — | Header Object children and Data Object walked; no writer | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/wmformat/overview-of-the-asf-format) |
 | [AVI](https://en.wikipedia.org/wiki/Audio_Video_Interleave) | `Avi` | `.avi` | ✅ | — | ✅ | movi demux; header chunks can be relocated in place | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/directshow/avi-riff-file-reference) |
-| [Bink](https://en.wikipedia.org/wiki/Bink_Video) | `Bik` | `.bik` `.bk2` | ✅ | — | — |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Bink_Container) |
+| [Bink](https://en.wikipedia.org/wiki/Bink_Video) | `Bik` | `.bik` `.bk2` | ✅ | — | — | Reverse-engineered; audio and video tracks split out, no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Bink_Container) |
 | [FLV](https://en.wikipedia.org/wiki/Flash_Video) | `Flv` | `.flv` | ✅ | — | — | AVC re-framed as Annex-B, AAC as ADTS, MP3 raw; other codecs as concatenated frames | [rtmp.veriskope.com](https://rtmp.veriskope.com/pdf/video_file_format_spec_v10_1.pdf) |
-| [HLS M3U8](https://en.wikipedia.org/wiki/HTTP_Live_Streaming) | `M3u8` | `.m3u8` `.m3u` | ✅ | — | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc8216) |
+| [HLS M3U8](https://en.wikipedia.org/wiki/HTTP_Live_Streaming) | `M3u8` | `.m3u8` `.m3u` | ✅ | — | — | A manifest, not a container: it references segments it does not hold, so there is nothing to mux | [RFC](https://www.rfc-editor.org/rfc/rfc8216) |
 | [Matroska / WebM](https://en.wikipedia.org/wiki/Matroska) | `Mkv` | `.mkv` `.webm` `.mka` `.mks` | ✅ | — | ✅ | Tracks, attachments and chapters; Cues can be moved to the front in place | [matroska.org](https://www.matroska.org/technical/elements.html) |
 | [MP4 / MOV / 3GP](https://en.wikipedia.org/wiki/MP4_file_format) | `Mp4` | `.mp4` `.m4v` `.m4a` `.mov` … | ✅ | ✅ | ✅ | Track demux; audio-only mux from AAC/PCM inputs; fast-start relayout in place | [ISO](https://www.iso.org/standard/83102.html) |
 | [MPEG program stream / VOB](https://en.wikipedia.org/wiki/MPEG_program_stream) | `MpegPs` | `.mpg` `.mpeg` `.vob` `.m2p` … | ✅ | — | — | PES headers stripped; DVD private-stream-1 substreams (AC-3, DTS, LPCM, sub-picture) split | [ISO](https://www.iso.org/standard/75928.html) |
 | [MPEG transport stream](https://en.wikipedia.org/wiki/MPEG_transport_stream) | `MpegTs` | `.ts` `.m2ts` `.mts` | ✅ | — | — | Per-PID elementary streams as raw PES | [ISO](https://www.iso.org/standard/75928.html) |
-| [RealMedia](https://en.wikipedia.org/wiki/RealMedia) | `RealMedia` | `.rm` `.rmvb` `.ra` | ✅ | — | — |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/RealMedia) |
-| [Smacker](https://en.wikipedia.org/wiki/Smacker_video) | `Smk` | `.smk` | ✅ | — | — |  | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Smacker) |
-| [Blu-ray PGS (.sup)](https://en.wikipedia.org/wiki/Presentation_Graphic_Stream) | `Sup` | `.sup` | ✅ | — | — |  | [GitHub](https://github.com/mjuhasz/BDSup2Sub) |
-| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | — | — |  | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |
+| [RealMedia](https://en.wikipedia.org/wiki/RealMedia) | `RealMedia` | `.rm` `.rmvb` `.ra` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/RealMedia) |
+| [Smacker](https://en.wikipedia.org/wiki/Smacker_video) | `Smk` | `.smk` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Smacker) |
+| [Blu-ray PGS (.sup)](https://en.wikipedia.org/wiki/Presentation_Graphic_Stream) | `Sup` | `.sup` | ✅ | — | — | A single subtitle stream, not a multi-track container | [GitHub](https://github.com/mjuhasz/BDSup2Sub) |
+| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | — | — | Index plus one sub-picture stream, not a multi-track container | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |
 
 ### 🛡️ Executable packers (descriptors)
 
@@ -460,7 +460,7 @@ Measured against the [chesvectain/PackingData](https://github.com/chesvectain/Pa
 
 ### 🚧 Gaps
 
-- **Media containers.** ASF, Matroska, AVI, MPEG-TS, MPEG-PS, FLV, RealMedia, Smacker and Bink demux only; MP4 muxes audio tracks only. No container writer takes video elementary streams yet. ISO-BMFF brands are parsed generically, without a brand registry.
+- **Media containers.** ASF, Matroska, AVI, MPEG-TS, MPEG-PS, FLV, RealMedia, Smacker and Bink demux only; MP4 muxes audio tracks only. This is a limit of what demuxing preserves, not of the container specs. The demuxers hand back each track as a codec elementary stream — AVC re-framed as Annex-B, AAC as ADTS, per-PID PES — and per-frame timestamps, interleaving order and the index live in the container layer that is dropped on the way out. Muxing those entries back would mean inventing presentation timing rather than restoring it, so the writers are not there. Closing this needs a demux surface that carries timed packets, not another writer. Bink, Smacker, RealMedia and ASF are additionally reverse-engineered rather than specified. M3U8, PGS `.sup` and VobSub are not container muxes at all: a playlist is a manifest referencing segments it does not contain, and the two subtitle formats are single streams. ISO-BMFF brands are parsed generically, without a brand registry.
 - **Whole-image and typed-input writers** (Amiga disk archivers, DMS, sparse images, PBP, ICO/CUR/ANI, TTC, AppleSingle/AppleDouble, Wrapster, OVA) create only what their format can hold; arbitrary file trees are refused with a message rather than mangled.
 - **Reverse-engineered backup formats** (Acronis, AOMEI, EaseUS, Macrium, Paragon, Veeam) are decoded to the depth the evidence supports; unknown encrypted or index layers stay unknown.
 - **Executable packers** blocked at Locate are listed above with the reason; the manifest audit names the unmapped ones.
