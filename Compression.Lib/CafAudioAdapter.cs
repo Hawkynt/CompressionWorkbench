@@ -7,16 +7,122 @@ using FileFormat.Caf;
 
 namespace Compression.Lib;
 
-/// <summary>Canonical PCM/G.711/QuickTime-IMA adapter for Apple Core Audio Format.</summary>
-internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
+/// <summary>
+/// Canonical PCM/G.711/QuickTime-IMA adapter for Apple Core Audio Format. G.711 payloads are
+/// also exposed as packets so <c>alaw</c>/<c>ulaw</c> CAF remuxes to and from WAVE, AIFC and AU
+/// without a decode.
+/// </summary>
+internal sealed class CafAudioAdapter : IAudioPcmSource, IAudioPcmTarget, IAudioDemuxSource, IAudioMuxTarget {
   private const uint FlagIsFloat = 0x1;
   private const uint FlagIsSignedInteger = 0x4;
   private const uint FlagIsPacked = 0x8;
   private const int Ima4PacketBytesPerChannel = 34;
   private const int Ima4FramesPerPacket = 64;
   private static readonly string[] Codecs = ["lpcm", "pcm", "float", "mulaw", "alaw", "ima4"];
+  private static readonly string[] PacketCodecs = ["alaw", "mulaw"];
 
   public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
+
+  public IReadOnlyList<string> SupportedMuxCodecs => PacketCodecs;
+
+  public bool TryDemux(Stream input, out AudioEncodedStream? stream) {
+    ArgumentNullException.ThrowIfNull(input);
+    stream = null;
+    if (input.CanSeek) input.Position = 0;
+    using var memory = new MemoryStream();
+    input.CopyTo(memory);
+    if (!TryReadG711(memory.ToArray(), out var codec, out var sampleRate, out var channels, out var payload))
+      return false;
+    var frames = channels == 0 ? 0 : payload.LongLength / channels;
+    stream = new AudioEncodedStream(
+      new AudioStreamFormat(codec, sampleRate, channels, 8),
+      [new AudioPacket(payload, frames)]);
+    return true;
+  }
+
+  public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!PacketCodecs.Contains(stream.CodecId, StringComparer.OrdinalIgnoreCase)) {
+      reason = "CAF packet mux supports only G.711 A-law/μ-law";
+      return false;
+    }
+    if (stream.SampleRate <= 0 || stream.Channels <= 0) {
+      reason = "G.711 requires a positive sample rate and channel count";
+      return false;
+    }
+    reason = null;
+    return true;
+  }
+
+  public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!this.CanMux(stream.Format, options, out var reason))
+      throw new NotSupportedException(reason);
+
+    var length = stream.Packets.Where(static packet => !packet.IsHeader).Sum(static packet => (long)packet.Data.Length);
+    if (length > int.MaxValue) throw new NotSupportedException("G.711 remux payload exceeds the in-memory writer limit.");
+    var payload = new byte[(int)length];
+    var offset = 0;
+    foreach (var packet in stream.Packets) {
+      if (packet.IsHeader) continue;
+      packet.Data.CopyTo(payload, offset);
+      offset += packet.Data.Length;
+    }
+    if (payload.Length % stream.Format.Channels != 0)
+      throw new InvalidDataException("G.711 payload length is not divisible by the channel count.");
+
+    var aLaw = stream.Format.CodecId.Equals("alaw", StringComparison.OrdinalIgnoreCase);
+    WriteCaf(output, stream.Format.SampleRate, stream.Format.Channels, aLaw ? "alaw" : "ulaw", 0,
+      checked((uint)stream.Format.Channels), 1, 8, payload);
+  }
+
+  /// <summary>
+  /// Walks the CAF chunk list and returns the untouched G.711 payload of an <c>alaw</c>/<c>ulaw</c>
+  /// file. <see cref="CafReader"/> decodes those to PCM, which is the wrong shape for a remux.
+  /// </summary>
+  private static bool TryReadG711(byte[] data, out string codec, out int sampleRate, out int channels, out byte[] payload) {
+    codec = string.Empty;
+    sampleRate = 0;
+    channels = 0;
+    payload = [];
+    if (data.Length < 8 || !data.AsSpan(0, 4).SequenceEqual("caff"u8)) return false;
+
+    string? formatId = null;
+    byte[]? rawData = null;
+    var pos = 8;
+    while (pos + 12 <= data.Length) {
+      var type = System.Text.Encoding.ASCII.GetString(data, pos, 4);
+      var size = BinaryPrimitives.ReadInt64BigEndian(data.AsSpan(pos + 4, 8));
+      var bodyStart = pos + 12;
+      var effective = size < 0 || bodyStart + size > data.Length ? data.Length - bodyStart : size;
+      if (effective < 0) return false;
+      switch (type) {
+        case "desc":
+          if (effective < 32) return false;
+          sampleRate = checked((int)BinaryPrimitives.ReadDoubleBigEndian(data.AsSpan(bodyStart, 8)));
+          formatId = System.Text.Encoding.ASCII.GetString(data, bodyStart + 8, 4);
+          channels = checked((int)BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(bodyStart + 24, 4)));
+          break;
+        case "data":
+          if (effective < 4) return false;
+          rawData = data.AsSpan(bodyStart + 4, (int)effective - 4).ToArray();
+          break;
+      }
+      pos = checked(bodyStart + (int)effective);
+    }
+
+    codec = formatId switch {
+      "alaw" => "alaw",
+      "ulaw" => "mulaw",
+      _ => string.Empty,
+    };
+    if (codec.Length == 0 || rawData is null || channels < 1 || sampleRate < 1) return false;
+    payload = rawData;
+    return true;
+  }
 
   public AudioPcmBuffer DecodePcm(Stream input) {
     ArgumentNullException.ThrowIfNull(input);
