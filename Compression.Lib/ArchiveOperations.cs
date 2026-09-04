@@ -152,8 +152,9 @@ public static class ArchiveOperations {
       // FormatCreateOptions.MethodName spells that as null. Leaking the sentinel across the
       // boundary handed every creator a method called "default", which the lenient ones ignored
       // and the strict ones -- Binary II, EGG, Lynx, NuFX, VIB -- correctly refused as unknown.
-      MethodName = opts.Method.IsDefault ? null : opts.Method.Name,
+      MethodName = opts.Method.NamesNoMethod ? null : opts.Method.Name,
       Optimize = opts.Method.Optimize,
+      OptimizeLevel = opts.Method.PlusLevel,
       Level = opts.Level,
       DictSize = opts.DictSize,
       WordSize = opts.WordSize,

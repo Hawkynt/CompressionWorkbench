@@ -5,24 +5,48 @@ namespace Compression.Lib;
 /// <summary>
 /// Parses a method string like "deflate", "deflate+", "lzma+", "store" into a
 /// normalized name and optimize flag. The "+" suffix selects the best available
-/// encoder for that codec while remaining fully decoder-compatible.
+/// encoder for that codec while remaining fully decoder-compatible, and a repeated
+/// one asks for more of it again.
 /// </summary>
+/// <remarks>
+/// Parsing agrees with <see cref="Compression.Registry.MethodNameParser"/>, which
+/// is what the writers on the far side of the registry boundary read the same
+/// string with. It used to strip exactly one trailing '+' where that parser strips
+/// all of them and counts, so the two read one input two ways: "ds-lz77++" reached
+/// the CVF writers as "ds-lz77+", and a caller who asked for the third effort tier
+/// silently got the second.
+/// </remarks>
 public readonly record struct MethodSpec(string Name, bool Optimize) {
+
+  /// <summary>
+  /// How many trailing '+' the method carried. <see cref="Optimize"/> is whether
+  /// there was one at all; this is how many, which is what a writer offering more
+  /// than one effort tier reads.
+  /// </summary>
+  public int PlusLevel { get; init; } = Optimize ? 1 : 0;
 
   public static MethodSpec Default => new("default", false);
 
   public static MethodSpec Parse(string? input) {
     if (string.IsNullOrWhiteSpace(input)) return Default;
-    var trimmed = input.Trim();
-    if (trimmed.EndsWith('+'))
-      return new(trimmed[..^1].ToLowerInvariant(), true);
-    return new(trimmed.ToLowerInvariant(), false);
+    var (name, plus) = Compression.Registry.MethodNameParser.Parse(input);
+    return new(name.ToLowerInvariant(), plus > 0) { PlusLevel = plus };
   }
 
   /// <summary>Whether this is the default "no preference" spec.</summary>
   public bool IsDefault => Name == "default" && !Optimize;
 
-  public override string ToString() => Optimize ? $"{Name}+" : Name;
+  /// <summary>Whether this names no method at all, whatever effort it asks for.</summary>
+  /// <remarks>
+  /// "default" is this side's spelling of "no preference"; the far side spells it
+  /// null. Only the name settles that, because "default+" is still no preference
+  /// about the method -- it asks for more effort at whatever the writer picks --
+  /// and reading the '+' as part of the answer handed strict creators a codec
+  /// called "default" to look up and fail on.
+  /// </remarks>
+  public bool NamesNoMethod => Name == "default";
+
+  public override string ToString() => PlusLevel > 0 ? Name + new string('+', PlusLevel) : Name;
 
   // ── ZIP method resolution ───────────────────────────────────────────
 

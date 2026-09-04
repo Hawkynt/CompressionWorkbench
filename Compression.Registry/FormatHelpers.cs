@@ -50,4 +50,25 @@ public static class FormatHelpers {
   /// </summary>
   public static IEnumerable<(string Name, byte[] Data)> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)
     => inputs.Where(i => !i.IsDirectory).Select(i => (Path.GetFileName(i.ArchiveName), i.ReadContent()));
+
+  /// <summary>
+  /// The method name to hand a writer that reads its own effort tier out of the
+  /// name, with the "+" run the caller asked for restored.
+  /// </summary>
+  /// <remarks>
+  /// <see cref="FormatCreateOptions.MethodName"/> carries the base name because
+  /// that is what a writer switching on a codec name needs to match, and the "+"
+  /// run travels beside it in <see cref="FormatCreateOptions.OptimizeLevel"/>. A
+  /// writer that parses the name with <see cref="MethodNameParser"/> instead wants
+  /// them back together, and putting them back together here is what keeps the two
+  /// conventions from disagreeing about the same request.
+  /// </remarks>
+  public static string? MethodWithEffort(FormatCreateOptions options, string? method = null) {
+    ArgumentNullException.ThrowIfNull(options);
+    var requested = method ?? options.MethodName;
+    if (string.IsNullOrWhiteSpace(requested)) return requested;
+    var (baseMethod, plus) = MethodNameParser.Parse(requested);
+    var level = Math.Max(plus, options.OptimizeLevel);
+    return level > 0 ? baseMethod + new string('+', level) : baseMethod;
+  }
 }
