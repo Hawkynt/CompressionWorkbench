@@ -81,7 +81,10 @@ public class ResidueEntry
     public int Grouping { get; }
 
     /// <summary>
-    /// Performs the clone operation.
+    /// Performs the clone operation. The array members are copied: the setup templates are
+    /// process-wide singletons and <c>FillBooks</c> writes per-stream book ids into
+    /// <see cref="SecondStages"/> and <see cref="BookList"/>, so sharing the arrays would leak one
+    /// encoder's book numbering into the next stream that clones the same template.
     /// </summary>
     public ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)
         => new ResidueEntry(
@@ -91,9 +94,9 @@ public class ResidueEntry
             Partitions,
             PartitionValues,
             GroupBook,
-            SecondStages,
-            BookList,
-            ClassMetric1,
-            ClassMetric2,
+            (int[])SecondStages.Clone(),
+            (int[])BookList.Clone(),
+            (int[])ClassMetric1.Clone(),
+            (int[])ClassMetric2.Clone(),
             residueTypeOverride);
 }

@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Pcm\Codec.Pcm.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Gsm610\Codec.Gsm610.csproj" />
+    <ProjectReference Include="..\FileFormat.Wav\FileFormat.Wav.csproj" />
   </ItemGroup>
 
 </Project>

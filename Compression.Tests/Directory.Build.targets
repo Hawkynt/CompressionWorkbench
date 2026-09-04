@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Compression.Mounting\Compression.Mounting.csproj" />
     <ProjectReference Include="..\Compression.Mounting.Dokan\Compression.Mounting.Dokan.csproj" />
+    <ProjectReference Include="..\Compression.Mounting.Fuse\Compression.Mounting.Fuse.csproj" />
   </ItemGroup>
 </Project>

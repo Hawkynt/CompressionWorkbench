@@ -40,6 +40,22 @@ public class VorbisEncoderTests {
     Assert.That(b, Is.EqualTo(a));
   }
 
+  [Test]
+  public void Encode_SuccessiveStreamsWithDifferentSetups_DoNotShareTemplateState() {
+    // Each setup clones residue templates that are process-wide singletons; the book ids
+    // written into the clone must not leak into the next stream's clone of the same template.
+    var stereo = BuildSignal(4096, 2, 44100);
+    VorbisEncoder.Encode(stereo, new VorbisEncoderOptions(44100, 2, 0.9f));
+    VorbisEncoder.Encode(BuildSignal(4096, 1, 8000), new VorbisEncoderOptions(8000, 1, -0.1f));
+
+    var mono = BuildSignal(11025, 1, 44100);
+    var encoded = VorbisEncoder.Encode(mono, new VorbisEncoderOptions(44100, 1, 0.5f));
+    using var input = new MemoryStream(encoded, writable: false);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
+    Assert.That(output.Length, Is.GreaterThan(0));
+  }
+
   [TestCase(-0.11f)]
   [TestCase(1.01f)]
   public void Encode_RejectsUnsupportedQuality(float quality) {

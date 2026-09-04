@@ -214,6 +214,77 @@ public class VorbisCodecTests {
     Assert.That(output.ToArray(), Is.All.EqualTo((byte)0));
   }
 
+  // ── 4. floor1_inverse_dB_table pinned to Vorbis I §9.3 ───────────────────
+
+  [Test]
+  public void Floor1InverseDbTable_MatchesVorbisISpecification() {
+    var table = VorbisFloor.Floor1InverseDb;
+    Assert.That(table, Has.Length.EqualTo(256));
+    Assert.Multiple(() => {
+      // Anchors quoted from the specification table (first row, the 0x80 boundary, last row).
+      Assert.That(table[0], Is.EqualTo(1.0649863e-07f));
+      Assert.That(table[1], Is.EqualTo(1.1341951e-07f));
+      Assert.That(table[3], Is.EqualTo(1.2863978e-07f));
+      Assert.That(table[127], Is.EqualTo(0.00031622787f));
+      Assert.That(table[128], Is.EqualTo(0.00033677814f));
+      Assert.That(table[252], Is.EqualTo(0.82788260f));
+      Assert.That(table[254], Is.EqualTo(0.9389798f));
+      Assert.That(table[255], Is.EqualTo(1.0f));
+    });
+    // The table is a geometric series of ~0.54 dB steps: strictly increasing, no entry above unity.
+    for (var i = 1; i < table.Length; ++i) {
+      Assert.That(table[i], Is.GreaterThan(table[i - 1]), $"entry {i} must exceed entry {i - 1}");
+      Assert.That(table[i] / table[i - 1], Is.InRange(1.064, 1.066), $"step {i} is not ~0.54 dB");
+    }
+  }
+
+  // ── 5. Encoder → decoder round trip: amplitude fidelity ─────────────────
+
+  [TestCase(1)]
+  [TestCase(2)]
+  public void Decompress_VendoredEncoderOutput_RecoversAmplitudeAndTone(int channels) {
+    const int sampleRate = 44100;
+    const int frames = 44100 / 4;
+    const short amplitude = 12000;
+    const double frequency = 440.0;
+    var pcm = new short[frames * channels];
+    for (var frame = 0; frame < frames; ++frame)
+      for (var c = 0; c < channels; ++c)
+        pcm[frame * channels + c] = (short)(Math.Sin(2 * Math.PI * frequency * frame / sampleRate) * amplitude);
+
+    var encoded = VorbisEncoder.Encode(pcm, new VorbisEncoderOptions(sampleRate, channels, 0.5f, SerialNumber: 7));
+    using var input = new MemoryStream(encoded, writable: false);
+    using var output = new MemoryStream();
+    VorbisCodec.Decompress(input, output);
+    var decoded = output.ToArray();
+    Assert.That(decoded.Length / (2 * channels), Is.GreaterThan(frames * 9 / 10), "decoder must emit most of the encoded frames");
+
+    // Compare against the source over the steady middle of the signal; skip the first
+    // and last 2048 frames where encoder priming and end-of-stream trimming differ.
+    var decodedFrames = decoded.Length / (2 * channels);
+    var start = 2048;
+    var end = Math.Min(decodedFrames, frames) - 2048;
+    Assert.That(end - start, Is.GreaterThan(sampleRate / 16), "not enough overlap to compare");
+    double sumSquares = 0, sumRef = 0;
+    var peak = 0;
+    for (var frame = start; frame < end; ++frame)
+      for (var c = 0; c < channels; ++c) {
+        var index = (frame * channels + c) * 2;
+        int sample = BinaryPrimitives.ReadInt16LittleEndian(decoded.AsSpan(index, 2));
+        peak = Math.Max(peak, Math.Abs(sample));
+        sumSquares += (double)sample * sample;
+        var reference = pcm[frame * channels + c];
+        sumRef += (double)reference * reference;
+      }
+    var rmsDecoded = Math.Sqrt(sumSquares / ((end - start) * channels));
+    var rmsReference = Math.Sqrt(sumRef / ((end - start) * channels));
+    var gainDb = 20 * Math.Log10(rmsDecoded / rmsReference);
+    Assert.Multiple(() => {
+      Assert.That(gainDb, Is.InRange(-3.0, 3.0), $"decoded RMS is {gainDb:F1} dB from the source");
+      Assert.That(peak, Is.LessThan(amplitude * 2), "decoded peak must not clip far above the source");
+    });
+  }
+
   // The real .ogg-vector end-to-end test lives above under section 2; it stays
   // Inconclusive until a permissively-licensed sample is dropped into
   // test-corpus/, while the synthetic tests above give positive coverage.

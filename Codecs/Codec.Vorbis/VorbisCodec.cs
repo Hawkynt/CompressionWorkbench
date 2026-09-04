@@ -82,9 +82,18 @@ public static class VorbisCodec {
     var prevLeftEnd = 0;
     var prevRightStart = 0;
     float[][]? overlap = null; // overlap-add carry-over per channel
+    long emittedFrames = 0;
 
-    foreach (var packet in OggPageReader.ReadPackets(data)) {
+    var packets = OggPageReader.ReadPackets(data);
+    for (var index = 0; index < packets.Count; ++index) {
+      var packet = packets[index];
       if (packet.Data.Length == 0) continue;
+      // The granule position of the last page is the absolute frame count of the stream;
+      // the encoder pads its final block, so whatever the last packet yields beyond that
+      // position is padding and is trimmed (Vorbis I §A.2).
+      var frameLimit = index == packets.Count - 1 && packet.GranulePosition >= 0
+        ? Math.Max(0, packet.GranulePosition - emittedFrames)
+        : long.MaxValue;
       switch (packetIdx) {
         case 0:
           setup = VorbisSetup.ParseIdentification(packet.Data);
@@ -98,30 +107,32 @@ public static class VorbisCodec {
           for (var c = 0; c < setup.Channels; ++c) overlap[c] = [];
           break;
         default:
-          DecodeAudioPacket(packet.Data, setup, output, overlap!, ref prevBlockLong, ref hasPrev,
-            ref prevLeftEnd, ref prevRightStart);
+          emittedFrames += DecodeAudioPacket(packet.Data, setup, output, overlap!, frameLimit, ref prevBlockLong,
+            ref hasPrev, ref prevLeftEnd, ref prevRightStart);
           break;
       }
       packetIdx++;
     }
   }
 
-  private static void DecodeAudioPacket(
+  /// <summary>Decodes one audio packet and returns the number of PCM frames written.</summary>
+  private static int DecodeAudioPacket(
     byte[] packet,
     VorbisSetup setup,
     Stream output,
     float[][] overlap,
+    long frameLimit,
     ref bool prevBlockLong,
     ref bool hasPrev,
     ref int prevLeftEnd,
     ref int prevRightStart
   ) {
     var br = new VorbisBitReader(packet);
-    if (br.ReadBits(1) != 0) return; // packet type bit must be 0 for audio
+    if (br.ReadBits(1) != 0) return 0; // packet type bit must be 0 for audio
 
     var modeBits = IntegerBitsFor(setup.Modes.Length - 1);
     var modeIdx = (int)br.ReadBits(modeBits);
-    if (modeIdx < 0 || modeIdx >= setup.Modes.Length) return;
+    if (modeIdx < 0 || modeIdx >= setup.Modes.Length) return 0;
     var mode = setup.Modes[modeIdx];
     var blockLong = mode.BlockFlag;
     bool prevWindowLong = blockLong, nextWindowLong = blockLong;
@@ -211,13 +222,15 @@ public static class VorbisCodec {
       overlap[c] = tail;
     }
 
-    if (hasPrev && emitLength > 0)
-      WriteInterleaved(output, pcmOut, setup.Channels, emitLength);
+    var written = hasPrev ? (int)Math.Min(emitLength, frameLimit) : 0;
+    if (written > 0)
+      WriteInterleaved(output, pcmOut, setup.Channels, written);
 
     hasPrev = true;
     prevBlockLong = blockLong;
     prevLeftEnd = regions.LeftEnd;
     prevRightStart = regions.RightStart;
+    return written;
   }
 
   private static void WriteInterleaved(Stream output, float[][] pcm, int channels, int count) {
