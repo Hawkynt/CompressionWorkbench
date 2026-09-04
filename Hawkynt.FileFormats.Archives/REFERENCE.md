@@ -1029,13 +1029,13 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 ### Namespace `FileFormat.Afio`
 
-[`AfioFormatDescriptor`](#afioformatdescriptor)
+[`AfioFormatDescriptor`](#afioformatdescriptor) · [`AfioWriter`](#afiowriter)
 
 #### `AfioFormatDescriptor`
 
-afio archive — a derivative of the portable-ASCII (`odc`) cpio format. Each member begins with a 76-byte ASCII header: 6-char magic `"070707"`, then octal fields dev(6), ino(6), mode(6), uid(6), gid(6), nlink(6), rdev(6), mtime(11), namesize(6) and filesize(11). The NUL-terminated name follows, then the file data. The archive ends with a member named `TRAILER!!!`. afio extends cpio with optional per-file compression: a member's stored payload may be a gzip stream (RFC 1952), in which case the original size is recorded after the name. This reader detects a gzip member by its `1F 8B` signature and transparently inflates it on extraction, surfacing each member as an entry. Read-only (List / Extract); malformed input never throws — it stops at the last parseable member. References: `https://github.com/kholtman/afio` — canonical afio source (Koen Holtman); afio(1) documents the archive format`https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the portable-ASCII (odc, "070707") cpio header afio derives from`https://en.wikipedia.org/wiki/Cpio` — background on the cpio family
+afio archive — a derivative of the portable-ASCII (`odc`) cpio format. Each member begins with a 76-byte ASCII header: 6-char magic `"070707"`, then octal fields dev(6), ino(6), mode(6), uid(6), gid(6), nlink(6), rdev(6), mtime(11), namesize(6) and filesize(11). The NUL-terminated name follows, then the file data. The archive ends with a member named `TRAILER!!!`. afio extends cpio with optional per-file compression: a member's stored payload may be a gzip stream (RFC 1952), in which case the original size is recorded after the name. This reader detects a gzip member by its `1F 8B` signature and transparently inflates it on extraction, surfacing each member as an entry. Malformed input never throws — it stops at the last parseable member.Creation writes stored members only, via `AfioWriter`. The compressed-member extension is read but not written: afio records a member's original size after the name and this reader does not parse that record, so an emitted gzip member would be one real afio misreads. References: `https://github.com/kholtman/afio` — canonical afio source (Koen Holtman); afio(1) documents the archive format`https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the portable-ASCII (odc, "070707") cpio header afio derives from`https://en.wikipedia.org/wiki/Cpio` — background on the cpio family
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1052,8 +1052,21 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh afio archive: one stored member per input, directories included, terminated by the `TRAILER!!!` member. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AfioWriter`
+
+Writer for afio's portable-ASCII (`odc`) member format: a 76-byte all-octal ASCII header, the NUL-terminated name, then the payload, with no alignment padding anywhere. The archive ends with a zero-length member named `TRAILER!!!`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DirectoryMode` | `const uint DirectoryMode` | Directory, mode `0040755`. |
+| `RegularFileMode` | `const uint RegularFileMode` | Regular file, mode `0100644`. |
+| `WriteDirectory` | `static void WriteDirectory(Stream output, string name)` | Writes a directory member. Directories carry no payload. |
+| `WriteFile` | `static void WriteFile(Stream output, string name, ReadOnlySpan<byte> data)` | Writes a regular-file member. |
+| `WriteTrailer` | `static void WriteTrailer(Stream output)` | Writes the `TRAILER!!!` member that terminates the archive. |
 
 ### Namespace `FileFormat.Afs`
 
@@ -1958,7 +1971,7 @@ Implements `IDisposable`.
 
 Pseudo-archive descriptor for AppleDouble (RFC 1740) sidecar files — the resource fork + Finder metadata Macs leave alongside files when copied to non-HFS filesystems (commonly named `._foo`). Same on-disk layout as AppleSingle but the data fork lives in the sibling file rather than this one. References: `https://www.rfc-editor.org/rfc/rfc1740` — RFC 1740 — carries the AppleSingle/AppleDouble format description as an appendixApple "AppleSingle/AppleDouble Formats for Foreign Files Developer's Note" (1990) — the defining vendor document`https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats` — format overview
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1975,8 +1988,13 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by id) entries in an existing container, through the same in-place modifier AppleSingle uses. It rewrites only directory slots and payload ranges and never touches the leading magic, so an AppleDouble container stays an AppleDouble container. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh AppleDouble container. Identical to the AppleSingle body — the same entry-id namespace, header, directory and payload area — under the AppleDouble magic, because RFC 1740 defines the two as one layout with two headers. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one entry as a bounded stream. Delegated so AppleDouble gets the shared descriptor's native implementation rather than the interface default, which extracts the whole container into a temporary directory to read a single entry back. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing AppleSingle container. Routes through `AppleSingleInPlaceModifier` — payload bytes are zero-wiped and the 12-byte directory slot is compacted out. |
 
 #### `AppleSingleFormatDescriptor`
 
@@ -2064,6 +2082,7 @@ Writer for Apple's AppleSingle (RFC 1740) container format. Emits the canonical 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Build` | `static byte[] Build(IReadOnlyList<ValueTuple<uint, byte[]>> entries)` | Serializes the given entries into a single AppleSingle byte buffer. Entries appear in caller-supplied order, both in the directory and in the data area immediately after it. The 16-byte filler block is left zero (RFC 1740 v2 convention). |
+| `Build` | `static byte[] Build(IReadOnlyList<ValueTuple<uint, byte[]>> entries, uint magic)` | Serializes the given entries under an explicit container magic — `MagicSingle` or `MagicDouble`. |
 | `EntryIdForName` | `static uint EntryIdForName(string name)` | Maps a stable display name (the same one `EntryName` emits) back to the AppleSingle entry id. Unknown names following the `entry_NNNNN.bin` shape recover their numeric id; anything else throws. |
 
 ### Namespace `FileFormat.AppleSparse`
@@ -11762,7 +11781,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files through the changed-byte MPQ v1 path when the hash and block tables are the contiguous physical trailer. Changed stored payloads overwrite the old table region, then only the encrypted tables and four mutable header fields are regenerated. Existing payload blocks — even compressed/encrypted or unnamed ones — retain their original offsets and bytes. Non-canonical layouts fall back to the verified rebuild. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing MPQ archive via the verified extract -> edit -> re-create rebuild. The auto-generated `(listfile)` is dropped from the extracted tree before re-creation (the writer regenerates it and refuses it as an explicit input), so entry names still round-trip without duplicating the listing. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the MPQ archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the MPQ archive per the requested mode. The auto-generated `(listfile)` is excluded from the extracted set — the writer regenerates it and refuses it as an explicit input. |
@@ -11771,7 +11790,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single MPQ entry as a bounded read-only stream. The reader decodes per-entry compression/encryption; the decoded bytes are wrapped in a `BoundedEntryStream` sized to the entry's original (uncompressed) length. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes names by tombstoning their hash slots, regenerating the listfile and trailing encrypted tables, and wiping a payload block only when no surviving hash entry still references it. Shared/aliased blocks therefore remain valid. Non-canonical table layouts use the verified rebuild fallback. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries via the verified extract -> edit -> re-create rebuild, dropping the auto-generated `(listfile)` the same way `Add` does. |
 
 #### `MpqReader`
 
@@ -15944,7 +15963,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new names through the genuine changed-byte append path: new files are compressed into one fresh solid block at the old next-header position and only the trailing descriptive header plus 32-byte signature header are replaced. Same-name updates and unsupported archive profiles fall back to verified rebuild. The in-place writer completes all profile checks and replacement-header serialization before its first archive write, so no O(total bytes) rollback snapshot is required around a supported append. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or same-name updates) files in the 7z archive. Pure additions of new names are served as a genuine O(bytes-added) in-place append: the new files are compressed into one fresh solid block written at the old header's byte offset, leaving every existing solid block byte-identical at its original position (`SevenZipInPlaceAdder`). A same-name update is attempted as an in-place remove of the old entry (`SevenZipInPlaceRemover`, only when it removes a whole folder/solid block) followed by an in-place add of the new content — still O(bytes touched), no re-pack of the untouched blocks. Anything that cannot be served byte-additively — an encoded/encrypted header, a non-trivial packed layout (PackPos != 0, a gap, BCJ2 / AES folders), or an update whose old entry is a proper subset of a multi-file solid block — falls back to the verified extract → re-create rebuild. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a 7z archive from `inputs`. Plans solid blocks by extension similarity, segregates incompressible files, and per-block recommends BCJ x86 filter for executables. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the 7z archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the 7z archive per the requested mode. |
@@ -15953,7 +15972,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single 7z entry as a read-only `Stream` bounded to its uncompressed size. 7z is solid-block: the underlying reader must decompress the whole containing folder to extract any one entry — the existing in-memory path is preserved — but the returned view is a `BoundedEntryStream` sized to the single entry's logical bytes, so neighbouring entries within the same solid block are physically unreachable through it. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes complete solid folders and empty-stream entries directly. The remover validates the layout and serializes the replacement next-header/signature before compacting packed streams, so unsupported profiles can fall back before mutation without cloning the whole archive. Cost is metadata plus bytes that physically follow removed packed streams. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from the 7z archive. A removal that drops one or more entire folders (solid blocks), plus any empty-stream entries, is served as a genuine O(bytes-shifted) in-place remove: the removed folders' packed streams are excised and the packed region is compacted by the gap, so every surviving folder's packed stream stays byte-identical (the ones before a hole at their exact offset, the ones after shifted down) — no re-pack (`SevenZipInPlaceRemover`). A removal that targets a proper subset of a multi-file solid block (the survivors would have to be recompressed), or an archive with an encoded/encrypted header or a non-trivial packed layout, falls back to the verified extract → re-create rebuild. |
 | `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
 | `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |
 | `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` | Validates the supplied data. |
