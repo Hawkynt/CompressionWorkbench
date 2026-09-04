@@ -92,4 +92,53 @@ public class WsAdpcmCodecTests {
     Assert.That(pcm[3], Is.EqualTo((255 - 128) << 8));
     Assert.That(pcm[4], Is.EqualTo((0 - 128) << 8));
   }
+
+  // ──────────── Encoder round trips ────────────
+
+  /// <summary>
+  /// The WS chunk writer documents itself as lossless, so decoding what it produces must
+  /// return the input exactly — for hold runs, one-byte deltas, literal runs and the raw
+  /// fallback alike. The support matrix calls this codec R/W on the strength of this.
+  /// </summary>
+  [TestCase("hold runs", new byte[] { 128, 128, 128, 128, 128, 128, 128, 128 })]
+  [TestCase("small deltas", new byte[] { 128, 132, 140, 130, 118, 120, 121, 121 })]
+  [TestCase("literal jumps", new byte[] { 0, 255, 0, 255, 17, 200, 3, 250 })]
+  [TestCase("leading jump from the 0x80 predictor", new byte[] { 4, 4, 4, 200 })]
+  [TestCase("single sample", new byte[] { 7 })]
+  public void Encode_RoundTripsLosslessly(string because, byte[] pcm) {
+    var encoded = WsAdpcmCodec.Encode(pcm);
+
+    Assert.That(WsAdpcmCodec.Decode(encoded, pcm.Length), Is.EqualTo(pcm), because);
+  }
+
+  [Test]
+  public void Encode_RoundTripsALongRamp() {
+    var pcm = new byte[512];
+    for (var i = 0; i < pcm.Length; ++i)
+      pcm[i] = (byte)(i * 37 % 256);
+
+    var encoded = WsAdpcmCodec.Encode(pcm);
+
+    Assert.That(WsAdpcmCodec.Decode(encoded, pcm.Length), Is.EqualTo(pcm));
+  }
+
+  [Test]
+  public void Encode_OfEmptyInput_IsEmpty()
+    => Assert.That(WsAdpcmCodec.Encode([]), Is.Empty);
+
+  /// <summary>
+  /// PCM16 encoding drops to WS's native unsigned-8 domain, so a round trip is exact only
+  /// to that resolution. Decoding must land back on the same 8-bit ladder.
+  /// </summary>
+  [Test]
+  public void EncodePcm16_RoundTripsToTheEightBitLadder() {
+    var pcm16 = new short[256];
+    for (var i = 0; i < pcm16.Length; ++i)
+      pcm16[i] = (short)((i - 128) << 8);
+
+    var decoded = WsAdpcmCodec.ToPcm16(
+      WsAdpcmCodec.Decode(WsAdpcmCodec.EncodePcm16(pcm16), pcm16.Length));
+
+    Assert.That(decoded, Is.EqualTo(pcm16));
+  }
 }
