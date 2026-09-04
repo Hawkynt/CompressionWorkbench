@@ -69,11 +69,14 @@ public sealed class FuseFilesystemOperationsTests {
     Assert.That(this._sut.ReadFile(handleId, 2, middle, out var middleRead), Is.Zero);
     Assert.That(this._sut.ReadFile(handleId, 0, start, out var startRead), Is.Zero);
 
+    var middleText = Encoding.ASCII.GetString(middle);
+    var startText = Encoding.ASCII.GetString(start);
+
     Assert.Multiple(() => {
       Assert.That(middleRead, Is.EqualTo(3));
-      Assert.That(Encoding.ASCII.GetString(middle), Is.EqualTo("cde"));
+      Assert.That(middleText, Is.EqualTo("cde"));
       Assert.That(startRead, Is.EqualTo(2));
-      Assert.That(Encoding.ASCII.GetString(start), Is.EqualTo("ab"));
+      Assert.That(startText, Is.EqualTo("ab"));
     });
   }
 
