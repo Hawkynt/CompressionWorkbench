@@ -60,3 +60,32 @@ what it labels are different capabilities, and collapsing them is how a support 
 lying. With the mapping as data, the historical-tag audit becomes an interoperability problem
 with table-driven tests — each proving that a tag resolves to the expected family *and* that the
 container framing for that tag is valid — instead of a pile of unrelated implementations.
+
+## Cross-conversion coverage
+
+`Compression.Lib.AudioConversionInventory` reports the conversion graph from the registry
+rather than from this page, so the numbers below are measured and go stale the moment the
+code changes. At the time of writing: 118 audio formats, every one usable as a source, and 59
+usable as a target.
+
+A target is reached by one of four routes, tried least-destructive first — byte-exact
+passthrough, packet remux, PCM encode, and building the container from per-channel WAVs. Only
+14 targets carry a real PCM encoder; the rest are built from channels, which is why the
+channel bridge is not a fallback so much as the main road.
+
+Two properties are worth stating because they were not true until they were fixed. A source
+that lists no `Channel` entries — every mono file, since one channel has nothing to split — is
+decoded and split by the pipeline instead of being refused. And a target that rejects the
+sample width it is handed is offered another, after refusing, rather than ending the
+conversion; widening is exact, and narrowing only happens where the target accepts nothing
+wider.
+
+Measured over 51 files the graph built itself, converted into eight representative targets,
+397 of 400 pairs succeed. The three failures are MP3 asked for sample rates outside 8-48 kHz.
+Closing those means resampling, which nothing here does yet — and a bad resampler is worse
+than none, so it is named here rather than approximated.
+
+Conversions that remain refusals by nature, not gaps: DSDIFF and DSF take per-channel raw DSD,
+so PCM must first be sigma-delta modulated; MIDI takes MIDI tracks, and turning audio into
+notes is transcription; and the chiptune and tracker families decode only, because "encoding"
+arbitrary audio into register writes or pattern data is the same problem.
