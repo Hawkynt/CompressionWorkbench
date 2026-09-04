@@ -678,29 +678,45 @@ public static partial class FormatDetector {
   /// answer in place.
   /// </summary>
   /// <summary>
-  /// The extension lookup for a file that is about to be WRITTEN. Same registry, same compound
-  /// and single-extension handling as <see cref="DetectByExtension"/>, with one difference: a
-  /// shared extension is settled by capability rather than by content, because there is no
-  /// content yet. Of the descriptors claiming the extension, the first that can create wins.
+  /// The extension lookup for a file that is about to be WRITTEN. It is
+  /// <see cref="DetectByExtension"/> with one fallback added: when the read-side answer
+  /// cannot create, a shared extension is settled by capability rather than by content —
+  /// because on create there is no content — and the first claimant that can create wins.
   /// </summary>
   /// <remarks>
-  /// <c>.bundle</c> is claimed by Mach-O (read-only) and Unity asset bundles (creatable);
+  /// <para><c>.bundle</c> is claimed by Mach-O (read-only) and Unity asset bundles (creatable);
   /// <c>.vib</c> by Veeam backups (read-only) and VIB packages (creatable). The read-side lookup
   /// is first-claim-wins and enumerates the read-only one first, so creating a
   /// <c>roundtrip.bundle</c> asked Mach-O to write it and got "no creatable descriptor" — a
-  /// format that advertised <c>CanCreate</c> was unreachable through its own extension.
+  /// format that advertised <c>CanCreate</c> was unreachable through its own extension.</para>
+  ///
+  /// <para>The capability preference is a tie-breaker for extensions nobody ruled on, never a
+  /// replacement for the rules <see cref="DetectByExtension"/> applies first. Trying it before
+  /// delegating discarded every one of them: the compound-extension rule (<c>.tar.gz</c> is a
+  /// tar, not a gzip) and the hand-written per-extension rules, of which <c>.img</c> is the one
+  /// that mattered — it is routed to FAT precisely so that a create has a writable target, and
+  /// pre-empting it walked the twelve <c>.img</c> claimants in registration order and built a
+  /// Bfs volume instead.</para>
   /// </remarks>
   public static Format DetectByExtensionForCreate(string path) {
     EnsureRegistryMapped();
+
+    // The read-side answer stands wherever it can actually write the file.
+    var byExtension = DetectByExtension(path);
+    if (byExtension != Format.Unknown
+        && GetDesc(byExtension) is { } chosen
+        && chosen.Capabilities.HasFlag(FormatCapabilities.CanCreate))
+      return byExtension;
+
+    // It cannot, so settle the extension by capability instead of by content.
     var singleExt = Path.GetExtension(path.ToLowerInvariant());
     if (!string.IsNullOrEmpty(singleExt)
-        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants)
-        && claimants.Count > 1)
+        && FormatDetector._extToFormats!.TryGetValue(singleExt, out var claimants))
       foreach (var candidate in claimants)
         if (GetDesc(candidate) is { } desc && desc.Capabilities.HasFlag(FormatCapabilities.CanCreate))
           return candidate;
 
-    return DetectByExtension(path);
+    return byExtension;
   }
 
   private static Format ResolveSharedExtension(string path, List<Format> claimants) {
