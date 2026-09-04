@@ -214,6 +214,385 @@ Implements `IEquatable<AdtsHeader>`.
 | `SampleRateIndex` | `int SampleRateIndex { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 
+### Namespace `Codec.Ac3`
+
+[`Ac3Aht`](#ac3aht) · [`Ac3BitAllocation`](#ac3bitallocation) · [`Ac3BitAllocation.AllocParams`](#ac3bitallocationallocparams) · [`Ac3BitReader`](#ac3bitreader) · [`Ac3Codec`](#ac3codec) · [`Ac3EncoderOptions`](#ac3encoderoptions) · [`Ac3EnhancedBandStructure`](#ac3enhancedbandstructure) · [`Ac3EnhancedBandStructure.Result`](#ac3enhancedbandstructureresult) · [`Ac3EnhancedTables`](#ac3enhancedtables) · [`Ac3Exponents`](#ac3exponents) · [`Ac3Exponents.Strategy`](#ac3exponentsstrategy) · [`Ac3FrameHeader`](#ac3frameheader) · [`Ac3Imdct`](#ac3imdct) · [`Ac3Mantissas`](#ac3mantissas) · [`Ac3StreamInfo`](#ac3streaminfo)
+
+#### `Ac3Aht`
+
+Adaptive-Hybrid-Transform (AHT) arithmetic for E-AC-3 (ATSC A/52 Annex E §E.2.3.2). AHT codes the six audio blocks of a channel jointly: each transform bin carries six pre-mantissas — decoded by vector quantization (small hebap) or gain-adaptive quantization (GAQ, large hebap) — that are then run through a 6-point inverse DCT to recover the per-block mantissa. This type isolates the two numeric kernels (`Idct6` and `GaqDequant`) so they can be cross-checked in isolation against the FFmpeg reference (`eac3dec.c`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GaqDequant` | `static int GaqDequant(Ac3BitReader r, int hebap, int logGain)` | Gain-adaptive-quantization (GAQ) pre-mantissa reconstruction for a single block (FFmpeg `ff_eac3_decode_transform_coeffs_aht_ch`, the `hebap >= 8` branch). `r` supplies the coded mantissa(s); `hebap` selects the quantizer and `logGain` the GAQ gain (0 = none). Returns the 24-bit fixed-point pre-mantissa. |
+| `Idct6` | `static void Idct6(int[] pm)` | In-place 6-point inverse DCT of the six per-block pre-mantissas (FFmpeg `idct6`). A pure DC input (only index 0 non-zero) spreads the constant across all six outputs. |
+
+#### `Ac3BitAllocation`
+
+AC-3 parametric bit-allocation model (ATSC A/52 §7.2.2). Given a channel's decoded exponents and the frame's allocation parameters (decay / gain / floor / snroffset / delta) it computes a power-spectral-density (PSD) envelope, integrates it into a masking curve and derives the bit-allocation pointer (bap) per mantissa. The algorithm and constants follow the A/52 reference pseudo-code (§7.2.2.1–§7.2.2.7) and FFmpeg's `ff_ac3_bit_alloc_calc_mask` / `ff_ac3_bit_alloc_calc_bap`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BapTab` | `static readonly byte[] BapTab` | bap lookup table (A/52 Table 7.21 / FFmpeg `ff_ac3_bap_tab`). Indexed by the clamped (psd-mask)/32 address (0..63) → bit-allocation pointer 0..15. |
+| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, ValueTuple<int, int>[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one channel over bins `start`..`end`-1. `exp` holds the decoded exponents; `bap` (length ≥ end) receives the per-bin bap. `fgain` is the channel fast gain, `snrOffset` the combined coarse/fine SNR offset, `fscod` the sample-rate code (for the hearing threshold). `deltas` applies optional delta bit allocation (deltbae/deltba) as (lengthInBands, gainCode); pass null for none. Coupling channels start the leak integrators from `cplFastLeak`/`cplSlowLeak`. |
+| `Resolve` | `static AllocParams Resolve(int sdcycod, int fdcycod, int sgaincod, int dbpbcod, int floorcod)` | Resolves the coded allocation parameters (sdcycod/fdcycod/sgaincod/dbpbcod/floorcod) to their table values. |
+
+#### `Ac3BitAllocation.AllocParams`
+
+Parameters that drive the masking curve, shared by every channel in a block.
+
+Implements `IEquatable<AllocParams>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AllocParams` | `AllocParams(int SlowDecay, int FastDecay, int SlowGain, int DbPerBit, int Floor)` | Parameters that drive the masking curve, shared by every channel in a block. |
+| `DbPerBit` | `int DbPerBit { get; init; }` |  |
+| `FastDecay` | `int FastDecay { get; init; }` |  |
+| `Floor` | `int Floor { get; init; }` |  |
+| `SlowDecay` | `int SlowDecay { get; init; }` |  |
+| `SlowGain` | `int SlowGain { get; init; }` |  |
+
+#### `Ac3BitReader`
+
+MSB-first big-endian bit reader over a byte buffer, used to walk an AC-3 (ATSC A/52) sync frame. Bits are consumed from the most significant bit of each byte downwards, which matches the bit packing the A/52 specification uses throughout syncinfo / BSI / audblk.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3BitReader` | `Ac3BitReader(byte[] data, int offset, int length)` | Initializes a new instance of `Ac3BitReader`. |
+| `BitsRemaining` | `long BitsRemaining { get; }` | Total bits remaining in the buffer. |
+| `ReadBits` | `uint ReadBits(int count)` | Reads `count` bits (0..32) MSB-first, returning them right-aligned. |
+| `ReadFlag` | `bool ReadFlag()` | Reads a single bit as a bool. |
+| `ReadSigned` | `int ReadSigned(int count)` | Reads `count` bits as a signed value (two's complement of width `count`). |
+| `SkipBits` | `void SkipBits(int count)` | Skips `count` bits (may exceed 32). |
+
+#### `Ac3Codec`
+
+Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companion partial source file. Decoding supports legacy AC-3 sync frames (bsid ≤ 10) plus independent E-AC-3 substreams (bsid 11..16) to interleaved little-endian signed 16-bit PCM at the native channel count, with LFE last when present.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EncoderDelaySamples` | `const int EncoderDelaySamples` | Long-block AC-3 analysis delay in samples per channel. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in acmod order with LFE last. AC-3 (bsid ≤ 10) and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent substreams (frame type 1) are skipped. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, Ac3EncoderOptions options = null)` | Encodes interleaved PCM16 as legacy AC-3 (bsid 8). The implementation is a managed adaptation of FFmpeg's LGPL `ac3enc.c`: long-block MDCT analysis, D45 exponent grouping/reuse, standards-defined parametric bit allocation, coarse/fine SNR rate control, grouped and linear mantissa quantizers, 44.1-kHz alternating frame sizes, and both A/52 CRC fields. Coupling, rematrixing and short-block switching are deliberately disabled so the core path remains deterministic and every channel is coded independently. |
+| `ReadStreamInfo` | `static Ac3StreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first sync frame. |
+
+#### `Ac3EncoderOptions`
+
+Controls legacy ATSC A/52 AC-3 encoding.
+
+Implements `IEquatable<Ac3EncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3EncoderOptions` | `Ac3EncoderOptions(int SampleRate = 48000, int Bitrate = 192000, int Acmod = 2, bool LowFrequencyEffects = false, int DialNorm = -31, int Cutoff = 0, bool PadFinalFrame = true)` | Controls legacy ATSC A/52 AC-3 encoding. |
+| `Acmod` | `int Acmod { get; init; }` | A/52 audio coding mode 1..7. The input channel order follows that mode. |
+| `Bitrate` | `int Bitrate { get; init; }` | One of the standard AC-3 bitrates from 32 to 640 kbit/s. |
+| `Cutoff` | `int Cutoff { get; init; }` | Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value. |
+| `DialNorm` | `int DialNorm { get; init; }` | Dialogue normalization metadata in dB, -31..-1. |
+| `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` | When true, the final interleaved input channel is encoded as LFE. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete 1536-sample final frame with its last sample. |
+| `SampleRate` | `int SampleRate { get; init; }` | 32000, 44100 or 48000 Hz. |
+
+#### `Ac3EnhancedBandStructure`
+
+E-AC-3 coupling / spectral-extension band-structure decode (ATSC A/52 Annex E §E.1.3.1.3, FFmpeg `decode_band_structure`). A run of 12-sample sub-bands is grouped into coding bands: a per-boundary "merge" bit (or the default banding) joins a sub-band to the previous band. The result is the number of bands and each band's size (a multiple of 12), plus the sub-band → band index map used to look up coupling coordinates.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static Result Decode(int numSubbands, ReadOnlySpan<byte> mergeBits)` | Decodes the band structure for `numSubbands` sub-bands given the explicit merge bits in `mergeBits` (length ≥ numSubbands-1). `mergeBits[i]` set joins sub-band `i+1` into the current band; cleared starts a new band. Sub-band size is 12 transform bins (mirrors FFmpeg `decode_band_structure` with `ecpl=0`). |
+
+#### `Ac3EnhancedBandStructure.Result`
+
+The decoded banding: band count, per-band sizes and the sub-band → band index map.
+
+Implements `IEquatable<Result>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Result` | `Result(int NumBands, int[] BandSizes, int[] SubbandToBand)` | The decoded banding: band count, per-band sizes and the sub-band → band index map. |
+| `BandSizes` | `int[] BandSizes { get; init; }` |  |
+| `NumBands` | `int NumBands { get; init; }` |  |
+| `SubbandToBand` | `int[] SubbandToBand { get; init; }` |  |
+
+#### `Ac3EnhancedTables`
+
+Constant tables specific to E-AC-3 (ATSC A/52 Annex E) decoding, ported faithfully from the public spec and the FFmpeg reference (`eac3_data.c`, `ac3dec_data.c`, `ac3tab.c`); names mirror the FFmpeg identifiers so the port can be cross-checked. They cover the frame-level exponent-strategy lookup (`ff_eac3_frm_expstr`), the adaptive-hybrid-transform (AHT) machinery — the high-efficiency bit-allocation pointer map (`ff_eac3_hebap_tab`), the bits-per-hebap table, the GAQ remap scale factors and the vector-quantized pre-mantissa codebook (`ff_eac3_mantissa_vq`) — and the default coupling / spectral-extension band structures.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitsVsHebap` | `static readonly byte[] BitsVsHebap` | Number of bits read per hebap value (FFmpeg `ff_eac3_bits_vs_hebap`). |
+| `DefaultCplBandStruct` | `static readonly byte[] DefaultCplBandStruct` | Default coupling band structure (FFmpeg `ff_eac3_default_cpl_band_struct`). |
+| `DefaultSpxBandStruct` | `static readonly byte[] DefaultSpxBandStruct` | Default spectral-extension band structure (FFmpeg `ff_eac3_default_spx_band_struct`). |
+| `FrameExpStrategy` | `static readonly byte[][] FrameExpStrategy` | Frame exponent-strategy combination LUT (A/52 Table E2.14, FFmpeg `ff_eac3_frm_expstr`). Indexed by the 5-bit per-channel `frmchexpstr` code; each row gives the per-block exponent strategy for the six blocks (0 reuse, 1 D15, 2 D25, 3 D45). |
+| `GaqRemap1` | `static readonly short[] GaqRemap1` | GAQ Gk=1 inverse-quantization remap scale factors (FFmpeg `ff_eac3_gaq_remap_1`, indexed by hebap-8). |
+| `GaqRemap24A` | `static readonly short[][] GaqRemap24A` | GAQ Gk=2/4 large-mantissa scale factors (FFmpeg `ff_eac3_gaq_remap_2_4_a`, [hebap-8][log_gain-1]). |
+| `GaqRemap24B` | `static readonly short[][] GaqRemap24B` | GAQ Gk=2/4 large-mantissa offsets (FFmpeg `ff_eac3_gaq_remap_2_4_b`, [hebap-8][log_gain-1]). |
+| `HebapTab` | `static readonly byte[] HebapTab` | AHT high-efficiency bap map (FFmpeg `ff_eac3_hebap_tab`). Replaces `ff_ac3_bap_tab` when a channel uses AHT: maps the clamped (psd-mask)/32 address (0..63) → hebap 0..19. |
+| `MantissaVq` | `static readonly short[][][] MantissaVq` | Vector-quantized pre-mantissa codebook (FFmpeg `ff_eac3_mantissa_vq`). Indexed by hebap (1..7); each entry is a codeword → six block pre-mantissas. hebap 0 has no codebook (dither). |
+| `Ungroup3In5` | `static readonly byte[][] Ungroup3In5` | Ungroup-3-in-5-bits table (FFmpeg `ff_ac3_ungroup_3_in_5_bits_tab`) used for GAQ 1.67-bit gains. |
+
+#### `Ac3Exponents`
+
+AC-3 exponent coding (ATSC A/52 §7.1.3). Exponents are differentially coded: an absolute first exponent followed by grouped delta exponents. Three grouping granularities are selected by the exponent strategy — D15 (1 mantissa per exponent), D25 (2 per exponent), D45 (4 per exponent). Each grouped 7-bit word packs three delta exponents, each in the range -2..+2 (coded 0..4).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static int Decode(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy)` | Decodes `nGroups` grouped delta-exponent words from `r` into the exponent array `exp` starting at bin `start`, given the already-read absolute first exponent `absExp` and the grouping `strategy`. Returns the exclusive end bin. The result is the full per-bin exponent array (each group of mantissas shares the group exponent). |
+| `GroupCount` | `static int GroupCount(int nExp, Strategy strategy)` | Computes the number of grouped exponent words for a channel covering `nExp` mantissa exponents under `strategy`: one absolute exponent then `ceil((nExp - 1) / (3 * step))` grouped 7-bit words (A/52 §7.1.3). |
+| `GroupSize` | `static int GroupSize(Strategy s)` | Mantissas-per-exponent group step for a strategy: D15→1, D25→2, D45→4. |
+
+#### `Ac3Exponents.Strategy`
+
+Exponent strategy codes (A/52 §5.4.2.4).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Reuse` | `0` |  |
+| `D15` | `1` |  |
+| `D25` | `2` |  |
+| `D45` | `3` |  |
+
+#### `Ac3FrameHeader`
+
+Parsed syncinfo + BSI (bit-stream information) of one AC-3 / E-AC-3 sync frame per ATSC A/52. The 0x0B77 sync word is followed by crc1, fscod, frmsizecod (AC-3) — or strmtyp/frmsiz/fscod (E-AC-3) — and then the BSI. `Bsid` ≤ 10 selects the legacy AC-3 layout; `Bsid` 11..16 selects the E-AC-3 (Annex E) header. This is the single shared parser used by both the decoder and the read-only stream-info path.
+
+Implements `IEquatable<Ac3FrameHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3FrameHeader` | `Ac3FrameHeader(bool IsEnhanced, int FrameSize, int SampleRate, int FsCod, int Bitrate, int Acmod, bool LowFrequencyEffects, int DialNorm, int Bsid, int StreamType = 0, int SubstreamId = 0, int NumBlocks = 6, int FsCod2 = -1)` | Parsed syncinfo + BSI (bit-stream information) of one AC-3 / E-AC-3 sync frame per ATSC A/52. The 0x0B77 sync word is followed by crc1, fscod, frmsizecod (AC-3) — or strmtyp/frmsiz/fscod (E-AC-3) — and then the BSI. `Bsid` ≤ 10 selects the legacy AC-3 layout; `Bsid` 11..16 selects the E-AC-3 (Annex E) header. This is the single shared parser used by both the decoder and the read-only stream-info path. |
+| `SyncWord` | `static readonly byte[] SyncWord` | The 16-bit big-endian AC-3 sync word (0x0B77). |
+| `Acmod` | `int Acmod { get; init; }` |  |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `Bsid` | `int Bsid { get; init; }` |  |
+| `DialNorm` | `int DialNorm { get; init; }` |  |
+| `FrameSize` | `int FrameSize { get; init; }` |  |
+| `FsCod2` | `int FsCod2 { get; init; }` |  |
+| `FsCod` | `int FsCod { get; init; }` |  |
+| `IsDependentSubstream` | `bool IsDependentSubstream { get; }` | E-AC-3 frame type 1 = dependent substream (extends an earlier independent one). |
+| `IsEnhanced` | `bool IsEnhanced { get; init; }` |  |
+| `IsIndependentSubstream` | `bool IsIndependentSubstream { get; }` | E-AC-3 frame type 0 = independent substream (decodable on its own). |
+| `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` |  |
+| `NumBlocks` | `int NumBlocks { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `StreamType` | `int StreamType { get; init; }` |  |
+| `SubstreamId` | `int SubstreamId { get; init; }` |  |
+| `AcmodChannelCount` | `static int AcmodChannelCount(int acmod)` | Number of full-bandwidth channels implied by acmod (excludes LFE). |
+| `AcmodName` | `static string AcmodName(int acmod)` | acmod → human-readable channel arrangement (before the optional LFE channel). |
+| `LayoutName` | `static string LayoutName(int acmod, bool lfe)` | Friendly layout name including the LFE channel (e.g. "3/2 + LFE (5.1)"). |
+| `TryParse` | `static Ac3FrameHeader? TryParse(ReadOnlySpan<byte> data, int offset)` | Parses an AC-3 / E-AC-3 sync frame header at `offset` (which must point at the 0x0B77 sync word). Returns `null` on insufficient data, a wrong sync word, or a reserved sample-rate / frame-size code. |
+
+#### `Ac3Imdct`
+
+Inverse modified discrete cosine transform for AC-3 (ATSC A/52 §7.9). Each audio block carries 256 frequency coefficients per channel. With `blksw=0` a single 512-point IMDCT is applied; with `blksw=1` the 256 coefficients split into two interleaved 256-point IMDCTs. The transform output is windowed with the A/52 window and overlap-added against the previous block's tail to yield 256 PCM time samples per block per channel. This implementation uses the direct O(N²) summation form of the IMDCT, which is exact and matches the spec equations; performance is not a concern for the per-channel extraction use case.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Long` | `static void Long(float[] coeffs, float[] delay, float[] output)` | Long-block (512-point) IMDCT + window + overlap-add. `coeffs` holds the 256 transform coefficients; `delay` is the 256-sample overlap memory (updated in place); the 256 reconstructed PCM samples are written to `output`. |
+| `Short` | `static void Short(float[] coeffs, float[] delay, float[] output)` | Short-block (dual 256-point) IMDCT + window + overlap-add. The 256 coefficients are de-interleaved into two 128-coefficient sub-blocks; each drives a 256-point IMDCT. The two 256-sample windowed outputs are concatenated and overlap-added with `delay`. |
+
+#### `Ac3Mantissas`
+
+AC-3 mantissa dequantization (ATSC A/52 §7.3). For each transform bin a bit-allocation pointer (bap) selects the quantizer. baps 1, 2 and 4 group several mantissas into one bitstream word (3-in-a-5-bit word, 3-in-a-7-bit word, 2-in-a-7-bit word respectively); baps 3 and 5 read a small fixed-width index directly; baps 6..15 are linear two's-complement values. bap 0 is "no bits": the bin is zero, or filled with deterministic dither (LFSR) when dithering is on.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3Mantissas` | `Ac3Mantissas(Ac3BitReader r)` | Initializes a new instance of `Ac3Mantissas`. |
+| `Next` | `float Next(int bap, bool dither)` | Returns the next dequantized mantissa for a bin with the given `bap`. `dither` enables LFSR dither for bap 0. The returned value is the normalized (±1-range) mantissa before exponent scaling. |
+
+#### `Ac3StreamInfo`
+
+Stream-level metadata extracted from an AC-3 / E-AC-3 stream's first sync frame.
+
+Implements `IEquatable<Ac3StreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3StreamInfo` | `Ac3StreamInfo(int SampleRate, int Channels, int Bitrate, int Acmod, bool Lfe, bool IsEnhanced, long DurationSamples)` | Stream-level metadata extracted from an AC-3 / E-AC-3 stream's first sync frame. |
+| `Acmod` | `int Acmod { get; init; }` |  |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `DurationSamples` | `long DurationSamples { get; init; }` |  |
+| `IsEnhanced` | `bool IsEnhanced { get; init; }` |  |
+| `Lfe` | `bool Lfe { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `Codec.AdpcmX`
+
+[`Derf`](#derf) · [`EaR`](#ear) · [`EaR.Revision`](#earrevision) · [`FourXm`](#fourxm) · [`Gremlin`](#gremlin) · [`ImaDk3`](#imadk3) · [`ImaDk4`](#imadk4) · [`ImaEa`](#imaea) · [`InterplayDpcm`](#interplaydpcm) · [`Sdx2`](#sdx2) · [`Swf`](#swf) · [`Thp`](#thp) · [`XanDpcm`](#xandpcm)
+
+#### `Derf`
+
+DERF DPCM (ffmpeg `derf_dpcm` in `libavcodec/dpcm.c`, the audio in Xilam DERF `.adp` streams). Each payload byte splits into a sign bit (0x80) and a 7-bit magnitude that indexes a 96-entry step table (clamped to 95); the signed step is added to the running per-channel predictor. Channels are interleaved byte-by-byte.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Steps` | `static readonly int[] Steps` | The 96-entry step table (ffmpeg `derf_steps`), ported verbatim. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes a DERF payload into interleaved PCM16. `channels` is 1 or 2; each channel keeps its own predictor and they are interleaved byte-by-byte. |
+
+#### `EaR`
+
+The Electronic Arts "revision" ADPCM family (ffmpeg `adpcm_ea_r1` / `adpcm_ea_r2` / `adpcm_ea_r3`). All three decode the same per-channel chunk math; they differ only in container framing: R1 — channel data laid out back-to-back, each channel chunk prefixed by its two 16-bit little-endian start samples (current, previous).R2 — like R1 but the start samples persist in decoder state across chunks (the chunk has no in-band seed; the caller supplies it).R3 — big-endian framing (the offsets and raw escape samples are big-endian). The per-frame body is a 1-byte header: high nibble = coefficient index into the EA-XA coefficient set (`CoefK0`/`CoefK1`), low nibble selects the shift as `shift = 20 - (header & 0x0F)`. Each subsequent nibble `n` yields `sample = clamp16(((n << shift) + hist1*K0 + hist2*K1) >> 8)`. A header byte of `0xEE` instead introduces a run of 28 raw 16-bit samples. The coefficient tables are the canonical EA-XA pairs (the same four entries used by `Codec.EaXa`); they are duplicated here so this codec stays dependency-free, with the extended R1/R2/R3 indices that ffmpeg's `ea_adpcm_table` exposes beyond the first four.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RawFrameMarker` | `const byte RawFrameMarker` | Header byte flagging a run of 28 raw 16-bit samples. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Samples emitted by one compressed EA-R frame. |
+| `DecodeChannel` | `static short[] DecodeChannel(ReadOnlySpan<byte> channelData, Revision revision, int sampleCount, int seedHist1 = 0, int seedHist2 = 0)` | Decodes a single channel's R1/R2/R3 chunk into PCM16. For R1 the two start samples are read from the front of `channelData`; for R2/R3 they are taken from `seedHist1`/`seedHist2`. `sampleCount` caps output (the final partial frame is truncated). |
+
+#### `EaR.Revision`
+
+EA revision selector.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `R1` | `0` |  |
+| `R2` | `1` |  |
+| `R3` | `2` |  |
+
+#### `FourXm`
+
+4X Technologies ADPCM (ffmpeg `adpcm_4xm`, the audio in `.4xm` movies). It is plain IMA with a per-block, per-channel header and the channels stored as separate contiguous runs (not nibble-interleaved). Each block begins with one little-endian 16-bit start predictor per channel followed by one little-endian 16-bit start step index per channel (the index is clamped to 0..88). The remaining bytes are split evenly between the channels; within a channel's run the LOW nibble of each byte is decoded first. Expands use the 4XM shift of 4.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> block, int channels)` | Decodes one 4XM block into interleaved PCM16. `channels` is 1 or 2; the payload after the header is divided equally between the channels. |
+
+#### `Gremlin`
+
+Gremlin DPCM (ffmpeg `gremlin_dpcm` in `libavcodec/dpcm.c`, the audio in Gremlin Interactive game streams). Each payload byte indexes a 256-entry signed delta table that is added to the running per-channel predictor; channels are interleaved byte-by-byte. The table is generated procedurally (the same loop ffmpeg uses) rather than stored literally: odd indices hold the growing positive delta and even indices its negation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DeltaTable` | `static readonly short[] DeltaTable` | The 256-entry delta table, built by the ffmpeg generator (`delta += code >> 5; code += step; step += 2`; positive at odd indices, negated at even). Entry 0 is zero and entry 255 carries the final extrapolated delta. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes a Gremlin DPCM payload into interleaved PCM16. `channels` is 1 or 2; each channel keeps its own predictor and they are interleaved byte-by-byte. |
+
+#### `ImaDk3`
+
+Duck DK3 IMA ADPCM (ffmpeg `adpcm_ima_dk3`, the audio inside Duck/On2 AVI clips). The stream is always stereo but is carried as two coupled IMA channels — a "sum" and a "diff" predictor — interleaved nibble-by-nibble. The left/right output is recovered as `(sum + diff)` / `(sum - diff)`. Each block begins with a 16-byte header: a 10-byte preamble (skipped), then the two little-endian 16-bit start predictors (sum, diff) and the two step indices (sum, diff). The remaining bytes are decoded a nibble at a time, low nibble of a byte first. The pattern is: sum-nibble, diff-nibble (emit one stereo pair), sum-nibble (emit a second pair reusing the previous diff), repeat. All expands use the DK shift of 3.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Bytes of per-block header before the nibble payload. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> block)` | Decodes one DK3 block (header + nibbles) into interleaved stereo PCM16 (L,R,L,R…). `block` must include the 16-byte header. A trailing odd nibble is ignored. |
+
+#### `ImaDk4`
+
+Duck DK4 IMA ADPCM (ffmpeg `adpcm_ima_dk4`). Unlike DK3 the channels are plain IMA; each block opens with a 4-byte header per channel — a little-endian 16-bit start predictor and a little-endian 16-bit start step index — and that start predictor is also emitted as the block's first sample for that channel. The remaining bytes are nibble pairs: the high nibble feeds channel 0, the low nibble feeds the last channel (so for mono both nibbles feed channel 0, for stereo high→L, low→R). All expands use the DK shift of 3.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> block, int channels)` | Decodes one DK4 block into interleaved PCM16. `channels` is 1 or 2. The per-channel start predictors are emitted as the leading samples (matching ffmpeg). |
+
+#### `ImaEa`
+
+The two Electronic Arts IMA nibble variants from ffmpeg `libavcodec/adpcm.c`. Both walk plain IMA channels but differ in their headers and in which nibble of a byte is consumed first: `DecodeEacs` — `adpcm_ima_eacs`: a per-channel header of a little-endian 32-bit step index followed (for all channels) by a little-endian 32-bit start predictor, then nibble bytes with the HIGH nibble feeding channel 0 and the LOW nibble the last channel. Shift 3.`DecodeSead` — `adpcm_ima_sead`: no header (the caller supplies the start predictors/indices), same HIGH-then-LOW nibble order, but shift 6.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeEacs` | `static short[] DecodeEacs(ReadOnlySpan<byte> data, int channels)` | Decodes an EACS block: per-channel 32-bit LE step indices, then per-channel 32-bit LE predictors, then the nibble payload (HIGH nibble → ch0, LOW nibble → last channel). |
+| `DecodeSead` | `static short[] DecodeSead(ReadOnlySpan<byte> data, int channels, ReadOnlySpan<int> startPredictors, ReadOnlySpan<int> startIndices)` | Decodes a SEAD nibble payload. `startPredictors`/`startIndices` seed the channels (SEAD carries no in-band header). HIGH nibble → ch0, LOW → last channel, shift 6. |
+
+#### `InterplayDpcm`
+
+Interplay MVE DPCM (ffmpeg `interplay_dpcm` in `libavcodec/dpcm.c`, the audio inside Interplay `.mve` movies). This is the table-based MVE codec and is distinct from the Interplay ACM codec (`Codec.InterplayAcm`). Each payload byte indexes a 256-entry signed delta table that is added to the running per-channel predictor; channels are interleaved byte-by-byte. The stream carries its initial predictor(s) out of band.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DeltaTable` | `static readonly short[] DeltaTable` | The 256-entry signed delta table (ffmpeg `interplay_delta_table`), ported verbatim. A payload byte selects the delta directly; the table is finer near zero and spans the full 16-bit range, with the irregular mid-table run preserved exactly as upstream. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels, ReadOnlySpan<int> startPredictors)` | Decodes an Interplay MVE DPCM payload into interleaved PCM16. `channels` is 1 or 2; `startPredictors` seeds each channel (the container carries the initial 16-bit predictors before the byte payload). |
+
+#### `Sdx2`
+
+SDX2 DPCM (ffmpeg `sdx2_dpcm` in `libavcodec/dpcm.c`, the "square 2" coding in some SDX/3DO streams). Each payload byte is a signed value `n`: the magnitude is squared and doubled (sign preserved) to form a delta. The low bit of the byte is also a reset flag — when it is clear the running predictor is zeroed before the delta is applied (an absolute, rather than differential, sample). Channels are interleaved byte-by-byte.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquareTable` | `static readonly short[] SquareTable` | The 256-entry square-double delta table (ffmpeg builds it as `square = i*i*2`, negated for negative `i`). Index by the signed byte value plus 128. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes an SDX2 payload into interleaved PCM16. `channels` is 1 or 2; channels are interleaved byte-by-byte and each carries its own predictor. |
+
+#### `Swf`
+
+Adobe Flash SWF ADPCM (ffmpeg `adpcm_swf`). The bitstream opens with a 2-bit field giving the code width minus 2, so codes are 2..5 bits wide (ffmpeg also tolerates the documented 6/7 widths). Samples are grouped into blocks of 4096: each block restarts with a per-channel 16-bit initial sample (emitted as the block's first sample) and a 6-bit step index, after which every channel contributes one `codeWidth`-bit code per sample. A code's top bit is the sign; the remaining bits drive the usual IMA `vpdiff` accumulation (`vpdiff = step >> (codeWidth-1)`, then for each remaining bit `k` add `step >> k` when that bit is set). The signed `vpdiff` updates the predictor and the magnitude bits index `IndexTables` to walk the step index.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IndexTables` | `static readonly int[][] IndexTables` | Step-index adjustment tables keyed by `codeWidth-2` (so [0]=2-bit … [3]=5-bit). Ported verbatim from ffmpeg `swf_index_tables`; the magnitude bits of a code index the matching row. |
+| `SamplesPerBlock` | `const int SamplesPerBlock` | Samples per SWF block (per channel) before the header repeats. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes a complete SWF ADPCM stream into interleaved PCM16. `channels` is 1 or 2. Decoding stops when the bitstream is exhausted; a trailing partial block is honoured for as many samples as the remaining bits allow. |
+
+#### `Thp`
+
+Nintendo GameCube THP ADPCM (ffmpeg `adpcm_thp` / `adpcm_thp_le`) and the closely related fixed-table AFC variant (ffmpeg `adpcm_afc`). Both reconstruct a sample as `out = clip16(((c1*hist1 + c2*hist2) >> 11) + (signNibble << exp))`: the second-order predictor contribution is the only term shifted right by 11, the scaled residual is added on top, and the two histories shift forward. This is the canonical Nintendo DSP family (the same predictor pairs as `Codec.DspAdpcm`) — the variants differ only in frame layout and where the coefficient pairs come from. THP — 8-byte frame (1 header + 7 data = 14 samples). Header high nibble (& 7) selects a predictor pair from the per-channel `short[16]` table supplied by the container, low nibble is the scale exponent. THP_LE only changes how the container's coefficients are byte-ordered, so once decoded to `short[]` the math is identical.AFC — 9-byte frame (1 header + 8 data = 16 samples). Header high nibble is the scale exponent, low nibble (0..15) indexes the fixed 16-pair `AfcCoefs` table; there is no per-stream table.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AfcBytesPerFrame` | `const int AfcBytesPerFrame` | Bytes per AFC frame (1 header + 8 data = 16 samples). |
+| `AfcCoefs` | `static readonly short[] AfcCoefs` | The fixed AFC predictor coefficient table (ffmpeg `afc_coeffs[2][16]`) flattened into the DSP `short[16*2]` layout: `AfcCoefs[2*i]` = factor1, `AfcCoefs[2*i+1]` = factor2 for index `i` (0..15). ffmpeg stores two parallel rows of sixteen; the rows are interleaved here so the AFC index selects an adjacent pair. |
+| `AfcSamplesPerFrame` | `const int AfcSamplesPerFrame` | Samples per AFC frame. |
+| `ThpBytesPerFrame` | `const int ThpBytesPerFrame` | Bytes per THP frame (1 header + 7 data = 14 samples). |
+| `ThpSamplesPerFrame` | `const int ThpSamplesPerFrame` | Samples per THP frame. |
+| `DecodeAfc` | `static short[] DecodeAfc(ReadOnlySpan<byte> adpcm, int sampleCount)` | Decodes an AFC channel using the fixed `AfcCoefs` table. The header's low nibble (0..15) indexes the table; the high nibble is the scale exponent. |
+| `DecodeThp` | `static short[] DecodeThp(ReadOnlySpan<byte> adpcm, ReadOnlySpan<short> coefs, int sampleCount)` | Decodes a THP channel using the per-channel coefficient table supplied by the container (already byte-ordered into native `short[16]`, so this serves both THP and THP_LE). The header's high nibble (masked to 0..7) selects the predictor pair, the low nibble the exponent. |
+
+#### `XanDpcm`
+
+Xan DPCM (ffmpeg `xan_dpcm` in `libavcodec/dpcm.c`, the audio in Wing Commander III/IV `.xan` movies). It is a shift-based differential scheme with a per-channel adaptive shift that starts at 4. Each payload byte is one delta for the current channel: the low two bits `n` adjust the shift (`n == 3` increments it, otherwise it decreases by `2*n`, clamped to an unsigned 5-bit range), and the byte's upper bits — sign-extended after being shifted left by 8 — are arithmetically shifted right by the (post-adjust) shift to form the delta added to the running predictor. Channels are interleaved byte-by-byte.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels, ReadOnlySpan<int> startPredictors)` | Decodes a Xan DPCM payload into interleaved PCM16. `channels` is 1 or 2; `startPredictors` seeds each channel's predictor (the container carries the initial samples out of band). |
+
+### Namespace `Codec.AicaAdpcm`
+
+[`AicaAdpcmCodec`](#aicaadpcmcodec)
+
+#### `AicaAdpcmCodec`
+
+Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip; the same quantiser as the YM2608 ADPCM-B family). A purely differential codec of the OKI / Dialogic lineage: every 4-bit nibble carries a 3-bit delta magnitude plus a sign bit (bit 3), and a per-sample quantiser `step` walks a multiplicative adaptation table rather than the 49-entry index table OKI uses. Per nibble the decoder computes `diff = ((nibble & 7) * 2 + 1) * step / 8` (an integer right-shift by 3), adds or subtracts it from a full 16-bit predictor (sign bit 3), clamps the predictor to `[-32768, 32767]`, then advances the step by `step = step * rate[nibble & 7] / 256`, clamped to `[127, 24576]`. The bitstream packs two samples per byte, LOW nibble first then the HIGH nibble — the AICA / ADPCM-B convention. Decoding begins from predictor 0 and step 127.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two samples (low nibble first), so the output holds `data.Length * 2` samples. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit PCM to a mono AICA ADPCM byte stream using the same state machine as `Decode`, so round-tripping reproduces the waveform within the codec's lossy tolerance. Two samples pack into each byte (low nibble first); an odd trailing sample is paired with a zero (silence) high nibble. |
+
+### Namespace `Codec.Alac`
+
+[`AlacCodec`](#alaccodec) · [`AlacCookie`](#alaccookie)
+
+#### `AlacCodec`
+
+ALAC (Apple Lossless) codec — encoder and decoder ported from Apple's open-sourced reference (`ALACDecoder.cpp`/`ALACEncoder.cpp` with the `dp_*` dynamic predictor, `ag_*` adaptive Golomb/Rice coder and `matrix_*` inter-channel decorrelation). A coded ALAC stream is a sequence of self-delimiting frames; each frame is a little chain of audio elements (a single channel element `SCE`, a channel-pair element `CPE`, fill/data elements that are skipped, terminated by an `END` tag) packed MSB-first big-endian. The decoder reconstructs interleaved little-endian PCM. The encoder emits spec-shaped frames — always non-escape, a fixed predictor order with the reference's default coefficient seed and the standard adaptive coder — so its output round-trips losslessly through this decoder for 16- and 24-bit mono and stereo. Hand-built uncompressed (escape) frames decode too, proving the header parsing is independent of the encoder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> frames, AlacCookie cookie)` | Decodes a concatenation of ALAC `frames` against `cookie` into interleaved little-endian PCM. Each frame holds `cookie.FrameLength` samples except possibly the last (which carries an explicit sample count). Frames are decoded in order until the input is exhausted. |
+| `Encode` | `static ValueTuple<byte[], AlacCookie> Encode(ReadOnlySpan<byte> pcmInterleaved, int channels, int sampleRate, int bitsPerSample, int frameLength = 4096)` | Encodes interleaved little-endian PCM into a concatenation of ALAC frames plus the matching magic cookie. Mono and stereo, 16- and 24-bit, are supported. |
+
+#### `AlacCookie`
+
+The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file). All multi-byte fields are big-endian. `Parse` tolerates an optional leading 4-byte version/flags prefix that some QuickTime writers prepend; `Write` emits the bare 24-byte config.
+
+Implements `IEquatable<AlacCookie>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AlacCookie` | `AlacCookie(uint FrameLength, byte CompatibleVersion, byte BitDepth, byte Pb, byte Mb, byte Kb, byte NumChannels, ushort MaxRun, uint MaxFrameBytes, uint AvgBitRate, uint SampleRate)` | The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file). All multi-byte fields are big-endian. `Parse` tolerates an optional leading 4-byte version/flags prefix that some QuickTime writers prepend; `Write` emits the bare 24-byte config. |
+| `Size` | `const int Size` | Size in bytes of the bare config (no version/flags prefix). |
+| `AvgBitRate` | `uint AvgBitRate { get; init; }` |  |
+| `BitDepth` | `byte BitDepth { get; init; }` |  |
+| `CompatibleVersion` | `byte CompatibleVersion { get; init; }` |  |
+| `FrameLength` | `uint FrameLength { get; init; }` |  |
+| `Kb` | `byte Kb { get; init; }` |  |
+| `MaxFrameBytes` | `uint MaxFrameBytes { get; init; }` |  |
+| `MaxRun` | `ushort MaxRun { get; init; }` |  |
+| `Mb` | `byte Mb { get; init; }` |  |
+| `NumChannels` | `byte NumChannels { get; init; }` |  |
+| `Pb` | `byte Pb { get; init; }` |  |
+| `SampleRate` | `uint SampleRate { get; init; }` |  |
+| `Parse` | `static AlacCookie Parse(ReadOnlySpan<byte> cookie)` | Parses a magic cookie. A leading 4-byte version/flags prefix is auto-detected and skipped when present. |
+| `Write` | `byte[] Write()` | Serialises the bare 24-byte config (big-endian). |
+
 ### Namespace `Codec.AmrNb`
 
 [`AmrNbCodec`](#amrnbcodec) · [`AmrNbCodec.FrameInfo`](#amrnbcodecframeinfo) · [`AmrNbEncoderOptions`](#amrnbencoderoptions) · [`AmrNbMode`](#amrnbmode)
@@ -340,6 +719,93 @@ AMR wideband (G.722.2 / 3GPP TS 26.190) coding modes. Nine active ACELP modes pl
 | `SpeechLost` | `14` | Speech lost. |
 | `NoData` | `15` | No data / untransmitted. |
 
+### Namespace `Codec.Atrac1`
+
+[`Atrac1Codec`](#atrac1codec)
+
+#### `Atrac1Codec`
+
+Sony ATRAC1 (Adaptive TRansform Acoustic Coding) decoder — a faithful, decode-only port of FFmpeg's `libavcodec/atrac1.c` together with the shared ATRAC routines in `libavcodec/atrac.c`. ATRAC1 is the MiniDisc codec; a stream is a sequence of 212-byte sound units, one per channel, each decoding to exactly 512 samples per channel at 44100 Hz. Per sound unit the bitstream carries a block-size-mode byte (long/short windows per QMF band), then a BFU count, word-length and scale-factor indices per block-floating-unit and the quantised mantissas. Each of the three QMF bands (low/mid via a shared 48-tap inverse QMF, then the high band) reconstructs its MDCT spectrum, runs a half-length inverse MDCT per block, applies the sine overlap-add window, and the bands are recombined by a two-stage inverse QMF synthesis chain.Decode-only — there is no encoder. Per-channel state (MDCT overlap spectra, the three QMF delay lines) is carried across sound units exactly as the reference does, so a buffer of concatenated frames decodes identically to feeding the frames one at a time.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Atrac1Codec` | `Atrac1Codec(int channels)` | Constructs a decoder for `channels` (1–8) channels at 44100 Hz. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Samples produced per channel per frame (512). |
+| `SoundUnitSize` | `const int SoundUnitSize` | Bytes per channel sound unit (212). |
+| `Channels` | `int Channels { get; }` | Channel count (1–8). |
+| `FrameSize` | `int FrameSize { get; }` | Coded bytes per frame across all channels (`212 × channels`). |
+| `DecodeStream` | `short[] DecodeStream(ReadOnlySpan<byte> payload)` | Decodes a stream of back-to-back frames. A ragged tail shorter than one frame is ignored. Output is `(payload.Length / FrameSize) × 512 × channels` interleaved int16 samples. |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> frame)` | Decodes one frame (`FrameSize` bytes) to interleaved signed-16-bit PCM, `512 × channels` samples. State is carried for subsequent calls. |
+
+### Namespace `Codec.Atrac3`
+
+[`Atrac3Codec`](#atrac3codec)
+
+#### `Atrac3Codec`
+
+Sony ATRAC3 (Adaptive TRansform Acoustic Coding 3) decoder — a faithful, decode-only port of FFmpeg's `libavcodec/atrac3.c` together with the shared ATRAC routines in `libavcodec/atrac.c`. ATRAC3 is the codec behind Sony OpenMG (.oma/.aa3/.at3) with codec id 0 and RealAudio 8 ("atrc") streams. Each coded frame holds `block_align/channels` bytes per channel and always decodes to exactly 1024 samples per channel. A channel sound unit carries gain-control envelopes, tonal components, and band spectra (mantissas via canonical Huffman / constant length coding at SNR-derived word lengths, scaled by the ATRAC scale-factor table). Each of the four QMF bands runs a 512-point inverse MDCT, is windowed and gain-compensated against the previous frame, and the bands are recombined by a three-stage inverse QMF. Joint-stereo frames additionally reverse the per-band M/S matrixing and apply channel weighting.Decode-only — there is no encoder. Per-stream state (QMF delay buffers, previous frame overlap, joint-stereo matrix/weighting history) is carried across frames exactly as the reference does, so feeding a buffer of concatenated frames decodes identically to feeding the frames one at a time.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Atrac3Codec` | `Atrac3Codec(int sampleRate, int channels, int blockAlign, int codingMode, bool scrambled)` | Constructs a decoder. `codingMode` must be `0x12` (joint stereo) or `0x2` (single/independent). `blockAlign` is the total coded bytes per frame across all channels and must satisfy `blockAlign / channels ∈ {96, 152, 192}` for a WAV/OMA stream. |
+| `BlockAlign` | `int BlockAlign { get; }` | Total coded bytes per frame across all channels (block align). |
+| `Channels` | `int Channels { get; }` | Channel count (1–8). |
+| `IsJointStereo` | `bool IsJointStereo { get; }` | Coding mode = JOINT_STEREO (channel coupling) vs SINGLE (independent channels). |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate carried by the container (informational; does not change decoding). |
+| `Scrambled` | `bool Scrambled { get; }` | Whether the input is RM-scrambled (RealMedia "atrc") and needs descrambling. |
+| `DecodeOmaParams` | `static ValueTuple<int, bool, int> DecodeOmaParams(int codingParams)` | Decodes the OMA codec-parameters u24 (codec id 0) into block align, joint-stereo flag and sample rate exactly as FFmpeg's `libavformat/omadec.c`: the field packs (from MSB) a 3-bit sample-rate index at bits 13–15 (`ff_oma_srate_tab × 100`), the joint-stereo flag at bit 17, and a 10-bit frame size at bits 0–9 measured in 8-byte words (`block_align = (params & 0x3FF) * 8`). Exposed for tests so the mapping is self-documenting. |
+| `DecodeStream` | `short[] DecodeStream(ReadOnlySpan<byte> payload)` | Decodes a stream of back-to-back frames. A ragged tail shorter than one frame is ignored. Output is `(payload.Length / BlockAlign) * 1024 * channels` interleaved int16 samples. |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> frame)` | Decodes `frame` (at least `BlockAlign` bytes) to interleaved signed-16-bit PCM, `1024 × channels` samples. State is carried for subsequent calls. |
+| `FromOmaCodingParams` | `static Atrac3Codec FromOmaCodingParams(int codingParams)` | Derives an `Atrac3Codec` from a Sony OpenMG (OMA) EA3 header's 24-bit coding-parameters field (codec id 0). OMA ATRAC3 is always two-channel; the decoded block align is the full stereo frame size. |
+
+### Namespace `Codec.Ay8910`
+
+[`Ay8910Chip`](#ay8910chip) · [`Ay8910Chip.StereoMode`](#ay8910chipstereomode)
+
+#### `Ay8910Chip`
+
+A General Instrument AY-3-8910 / Yamaha YM2149 (PSG) synthesis core. The chip carries three square-wave tone channels, one noise generator and one hardware envelope generator, all programmed through 16 registers: R0-R5 — the three 12-bit tone periods (fine + coarse). The channel toggles every `period` steps of the clock/16 prescaler, so the tone frequency is `clock / (16 * period)` (a period of 0 behaves as 1).R6 — the 5-bit noise period; the noise generator runs a 17-bit LFSR clocked at `clock / (16 * period)`.R7 — the mixer: bits 0-2 disable tone A/B/C, bits 3-5 disable noise A/B/C (a set bit DISABLES — active-low). Bits 6-7 are the I/O port directions and are ignored here.R8-R10 — the per-channel amplitude: bits 0-3 a fixed 4-bit level, bit 4 selects the hardware envelope instead.R11-R12 — the 16-bit envelope period; the envelope steps at `clock / (256 * period)`.R13 — the envelope shape (continue/attack/alternate/hold), giving the ten documented shapes.The 4-bit fixed levels and the 5-bit envelope levels both index a logarithmic DAC table where each step is roughly 1.41× (≈ +3 dB / 2 in amplitude) the previous one — the documented AY/YM volume curve. The two tables are derived from the same normalised curve.`RenderSamples` emits interleaved 16-bit stereo at 44.1 kHz. The default panning is the ZX-Spectrum "ABC" layout (channel A → left, B → centre, C → right); pass a different `StereoMode` to the constructor for mono or the "ACB" variant.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ay8910Chip` | `Ay8910Chip(double clock = 1773400, StereoMode stereo = 1)` | Initializes a new instance of `Ay8910Chip`. |
+| `MsxClock` | `const double MsxClock` | Defines the msx clock constant value. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Output sample rate of `RenderSamples`. |
+| `ZxSpectrumClock` | `const double ZxSpectrumClock` | Common PSG input clocks. |
+| `EnvelopeTable` | `static IReadOnlyList<double> EnvelopeTable { get; }` | The 5-bit envelope DAC curve (normalised 0..1). |
+| `VolumeTable` | `static IReadOnlyList<double> VolumeTable { get; }` | The 4-bit fixed-volume DAC curve (normalised 0..1). |
+| `MixMonoLinear` | `double MixMonoLinear()` | The current mono output as the linear sum of the three channels' DAC levels, each in the normalised 0..1 range (so the full-scale sum is 0..3). Hosts that mix the PSG against other chips at a documented relative level use this instead of the stereo `Mix`. |
+| `ReadReg` | `byte ReadReg(int reg)` | Reads back a register (0..15); registers above 13 read as last-written. |
+| `RenderSamples` | `void RenderSamples(Span<short> buffer, int count)` | Renders `count` interleaved stereo frames (left, right) into `buffer` at `OutputSampleRate`. The buffer must hold at least `2 * count` samples. |
+| `StepPrescaler` | `void StepPrescaler()` | Advances the generators by one clock/16 prescaler tick. Exposed for hosts (e.g. the Sunsoft 5B expansion in an NSF player) that drive the PSG from their own master clock rather than the built-in `RenderSamples` resampler. |
+| `WriteReg` | `void WriteReg(int reg, byte value)` | Writes one PSG register (`reg` 0..15). |
+
+#### `Ay8910Chip.StereoMode`
+
+Stereo panning layouts.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mono` | `0` | All channels centred (mono duplicated to both speakers). |
+| `Abc` | `1` | A→left, B→centre, C→right (the ZX-Spectrum default). |
+| `Acb` | `2` | A→left, C→centre, B→right. |
+
+### Namespace `Codec.BinkAudio`
+
+[`BinkAudioCodec`](#binkaudiocodec)
+
+#### `BinkAudioCodec`
+
+Decode-only port of FFmpeg's Bink Audio decoder (`libavcodec/binkaudio.c`), covering both flavours: `BINKAUDIO_RDFT` ('RDFT', the default) and `BINKAUDIO_DCT` ('DCT '). A stream is a sequence of packets; each packet begins with a 4-byte reported size that is skipped, after which one or more transform blocks are decoded. Coefficients are read variable-width from an LSB-first bitstream (`BinkAudioBitReader`), dequantized per critical band, run-length zeroed, transformed (inverse RDFT or DCT-III, `BinkAudioTransforms`) and overlap-added with the previous block. The float output is converted to interleaved signed 16-bit PCM. For the RDFT flavour the reference treats the (possibly stereo) signal as a single interleaved channel at a multiplied sample rate, so `DecodeStream` returns interleaved samples directly. For the DCT flavour each channel is transformed separately; up to `MAX_CHANNELS = 2` channels are decoded per block and the per-channel outputs are interleaved here.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BinkAudioCodec` | `BinkAudioCodec(int sampleRate, int channels, bool useDct, bool versionB)` | Builds a decoder. `sampleRate` and `channels` are the values declared in the container's audio-track header; `useDct` selects the DCT flavour (otherwise RDFT). `versionB` reflects the Bink revision 'b' (extradata[3] == 'b'), which changes float coefficient framing and the run parser. Mirrors binkaudio.c `decode_init`. |
+| `OutputChannels` | `int OutputChannels { get; }` | Number of output channels (the demuxer's declared channel count). |
+| `SampleRate` | `int SampleRate { get; }` | Output sample rate (the demuxer's declared rate, unmultiplied). |
+| `DecodePacket` | `void DecodePacket(byte[] packet, List<short> pcm)` | Decodes a single packet, appending interleaved 16-bit samples to `pcm`. |
+| `DecodeStream` | `short[] DecodeStream(IReadOnlyList<byte[]> packets)` | Decodes a whole audio stream (the concatenation of every packet for one track) into interleaved signed-16-bit PCM. Each packet's leading 4-byte reported size is honoured per binkaudio.c (`skip_bits_long(gb, 32)`). Returns an empty array if nothing could be decoded. |
+
 ### Namespace `Codec.Bonk`
 
 [`BonkCodec`](#bonkcodec) · [`BonkCodec.BonkStreamInfo`](#bonkcodecbonkstreaminfo)
@@ -373,6 +839,174 @@ Implements `IEquatable<BonkStreamInfo>`.
 | `SamplesPerChannel` | `long SamplesPerChannel { get; init; }` |  |
 | `SamplesPerPacket` | `int SamplesPerPacket { get; init; }` |  |
 
+### Namespace `Codec.Brr`
+
+[`BrrCodec`](#brrcodec)
+
+#### `BrrCodec`
+
+Nintendo SNES S-DSP BRR (Bit Rate Reduction) encoder and decoder. The S-DSP plays audio in fixed 9-byte blocks, each yielding 16 mono 16-bit samples: byte 0 — header: high nibble = `range` (shift amount, valid 0..12), bits 2..3 = `filter` (0..3), bit 1 = loop flag, bit 0 = end flag.bytes 1..8 — 16 signed 4-bit nibbles, HIGH nibble of each byte first. Each nibble `n` is sign-extended to -8..7. For a valid `range <= 12` the scaled value is `v = (s << range) >> 1`; for the invalid ranges 13..15 the hardware effectively discards the shift and contributes `v = s >> 4` (so a negative nibble yields -1, everything else 0). A second-order predictor based on the two previous reconstructed samples is then added (integer math, arithmetic-shift floor): filter 0: + 0filter 1: + h1 * 15 / 16filter 2: + h1 * 61 / 32 − h2 * 15 / 16filter 3: + h1 * 115 / 64 − h2 * 13 / 16 The result is clamped to 16 bits and then wrapped to 15 bits exactly as the S-DSP does (`sample = (short)(v << 1) >> 1`), so a value that overflows the 15-bit range folds rather than saturates. The wrapped sample feeds the history for the next nibble.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `const int BlockSize` | Size in bytes of one BRR block (1 header byte + 8 data bytes). |
+| `MaxRange` | `const int MaxRange` | Highest legal range (shift) value; 13..15 are treated as the invalid case. |
+| `SamplesPerBlock` | `const int SamplesPerBlock` | Number of PCM samples carried by one BRR block. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> blocks)` | Decodes a BRR stream to 16-bit PCM. Decoding stops after the first block whose end flag is set, or when the input runs out of whole 9-byte blocks (a trailing partial block is ignored). The predictor history starts at zero. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes mono 16-bit PCM into BRR blocks. Each group of `SamplesPerBlock` samples is encoded by brute-forcing every filter (0..3) and every legal range (0..12) and keeping the combination with the lowest reconstruction error, exactly tracking the decoder's history so playback matches. The final sample group is zero-padded to a full block; the last emitted block carries the end flag (and the loop flag is left clear). |
+
+### Namespace `Codec.Cook`
+
+[`CookCodec`](#cookcodec) · [`CookCodec.StreamInfo`](#cookcodecstreaminfo) · [`CookDeinterleaver`](#cookdeinterleaver)
+
+#### `CookCodec`
+
+Cook / RealAudio G2 ("cook" FOURCC) decoder — a faithful, decode-only port of FFmpeg's `libavcodec/cook.c` (float path). Cook is a modulated-lapped-transform audio coder derived from G.722.1: each subpacket carries a gain envelope, a per-subband category / bit-allocation, scalar-quantised MLT coefficients (with dithered noise filling), an inverse MLT with 50% overlap-add and a gain profile, plus optional joint-stereo decoupling for the higher subbands. Construct with the extradata that follows the RA header in the RealMedia MDPR blob (cookversion, samples-per-frame, subbands, and — for joint stereo / multichannel — the joint-stereo subband start and VLC bits / channel mask) together with the RA framing parameters. `Decode` turns one `block_align`-sized coded frame into interleaved 16-bit PCM; `DecodeStream` walks a concatenation of frames.Like the reference, the first two decoded frames carry no valid audio (the MLT overlap is not yet primed) and are discarded.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CookCodec` | `CookCodec(StreamInfo info)` | Builds a decoder from a parsed `StreamInfo`. Throws `NotSupportedException` for cook variants outside the supported set (mono / stereo / joint-stereo / single-pair multichannel, samples-per-channel in {256, 512, 1024}) — the caller catches this to fall back to a blob-only view. |
+| `Channels` | `int Channels { get; }` | Channels in the decoded output. |
+| `SamplesPerChannel` | `int SamplesPerChannel { get; }` | Samples produced per channel per coded frame. |
+| `DecodeStream` | `short[] DecodeStream(ReadOnlySpan<byte> framesConcat)` | Decodes a concatenation of `Decode` frames (already deinterleaved into the codec's per-frame coded layout) to interleaved 16-bit PCM. Frames shorter than a full `block_align` at the tail are still padded and decoded (matching the reference's zero-padded over-read tolerance). |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> frame)` | Decodes one `block_align`-sized coded frame to interleaved 16-bit PCM. The first two frames return an all-zero buffer (the reference discards them while the MLT overlap primes). Returns `SamplesPerChannel` × `Channels` samples on every call so a stream walk has an exact, predictable length. |
+
+#### `CookCodec.StreamInfo`
+
+Parsed RA framing + cook extradata describing one cook stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamInfo` | `StreamInfo()` |  |
+| `BlockAlign` | `int BlockAlign` | Provides the block align value. |
+| `Channels` | `int Channels` | Provides the channels value. |
+| `Extradata` | `byte[] Extradata` | Provides the extradata value. |
+| `SampleRate` | `int SampleRate` | Provides the sample rate value. |
+
+#### `CookDeinterleaver`
+
+Reorders carried RealAudio audio packets into the codec's coded-frame byte order, a port of the audio descrambling in FFmpeg's `libavformat/rmdec.c`. RealMedia stores cook (and sipr/atrac) subpackets interleaved across a group of `sub_packet_h` container packets; the decoder must see them re-stitched. Three interleavers are supported here: `Int0` — no reorder; each packet is already a coded frame.`Int4` — `dst[x*2*w + y*cfs] = src[x*cfs]` for x in [0, h/2).`genr` — `dst[sps*(h*x + ((h+1)/2)*(y&1) + (y>>1))] = src[x*sps]` for x in [0, w/sps). where w = audio_framesize, h = sub_packet_h, sps = sub_packet_size, cfs = coded_framesize, and y is the packet index within the group. Any other id or inconsistent framing yields an empty result so the caller can fall back to a blob-only view.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Genr` | `const uint Genr` | 'genr' deinterleaver id (little-endian FOURCC). |
+| `Int0` | `const uint Int0` | 'Int0' deinterleaver id (little-endian FOURCC). |
+| `Int4` | `const uint Int4` | 'Int4' deinterleaver id (little-endian FOURCC). |
+| `Reorder` | `static byte[] Reorder(IReadOnlyList<byte[]> packets, uint deintId, int subPacketH, int audioFrameSize, int subPacketSize, int codedFrameSize)` | Reorders `packets` per the given interleaver and framing. Packets are processed in groups of `subPacketH`; a trailing partial group is dropped. Returns the concatenated coded frames, or an empty array on an unsupported interleaver / inconsistent framing. |
+
+### Namespace `Codec.CriAdx`
+
+[`AdxCodec`](#adxcodec) · [`AdxCodec.AdxInfo`](#adxcodecadxinfo)
+
+#### `AdxCodec`
+
+CRI ADX ADPCM encoder and decoder. ADX is a fixed-block ADPCM stream used by many console games (CRI Middleware). The container is a big-endian header followed by interleaved per-channel frames: Header: `u16 magic 0x8000 | u16 copyrightOffset` — coded sample data starts at `copyrightOffset + 4`, and the six bytes ending at `copyrightOffset - 2` hold the ASCII string `"(c)CRI"`.`u8 encodingType` (3 = standard ADX, the only type decoded here), `u8 blockSize` (18), `u8 bitDepth` (4), `u8 channelCount`, `u32 sampleRate`, `u32 totalSamples`, `u16 highpassFrequency`, `u8 version` (3 or 4), `u8 flags` (0x08 = encrypted). Each 18-byte frame carries a big-endian `u16` scale followed by 32 signed 4-bit nibbles (high nibble first), one per sample. A sample is reconstructed as `predicted + signExtend4(nibble) * scale`, where `predicted = (coef1 * hist1 + coef2 * hist2) >> 12` and the two predictor coefficients are derived once from the high-pass cutoff. A scale word of `0x8001` marks an end-of-stream padding frame.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BitDepth` | `const byte BitDepth` | ADPCM nibble bit depth. |
+| `EncodingTypeAhx11` | `const byte EncodingTypeAhx11` | AHX encoding type (MPEG-2 Layer II payload), version 11 — decoded by the MP3 path, not this codec. |
+| `EncodingTypeAhx` | `const byte EncodingTypeAhx` | AHX encoding type (MPEG-2 Layer II payload), version 10 — decoded by the MP3 path, not this codec. |
+| `EncodingTypeStandard` | `const byte EncodingTypeStandard` | Standard ADX ADPCM encoding type (the only type this codec encodes/decodes). |
+| `EndMarkerScale` | `const ushort EndMarkerScale` | End-of-stream marker carried in a frame's scale word. |
+| `FrameSize` | `const int FrameSize` | Bytes per ADX frame (1 channel): a 2-byte scale plus 32 4-bit nibbles. |
+| `Magic` | `const ushort Magic` | ADX header magic word (big-endian): high bit set, low 15 bits = copyright offset. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | PCM samples carried by one 18-byte frame. |
+| `Decode` | `static ValueTuple<short[], int, int> Decode(ReadOnlySpan<byte> file)` | Decodes a complete standard ADX file to interleaved 16-bit PCM. Throws `NotSupportedException` for encrypted streams or non-standard encoding types, which the container layer treats as a FULL-only fallback. |
+| `DeriveCoefficients` | `static ValueTuple<int, int> DeriveCoefficients(int highpassFrequency, int sampleRate)` | Derives the two fixed-point predictor coefficients from a high-pass cutoff and sample rate. The prediction term is `(coef1*h1 + coef2*h2) >> 12`, so the coefficients use the standard 8192 / 4096 fixed-point scaling. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int sampleRate)` | Encodes interleaved 16-bit PCM into a complete standard ADX file (version 3, encoding type 3, high-pass 500 Hz). The encoder reconstructs each sample exactly as `Decode` will, so the two stay bit-exact for the chosen scale convention. |
+| `ReadInfo` | `static AdxInfo ReadInfo(ReadOnlySpan<byte> file)` | Reads and validates an ADX header from the start of `file`. |
+
+#### `AdxCodec.AdxInfo`
+
+Parsed ADX header fields plus where the coded sample data begins.
+
+Implements `IEquatable<AdxInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset)` | Parsed ADX header fields plus where the coded sample data begins. |
+| `BitDepth` | `int BitDepth { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `EncodingType` | `byte EncodingType { get; init; }` |  |
+| `Flags` | `byte Flags { get; init; }` |  |
+| `HighpassFrequency` | `int HighpassFrequency { get; init; }` |  |
+| `IsAhx` | `bool IsAhx { get; }` | True for AHX streams (encoding type 0x10 / 0x11): the payload after the header is an MPEG-2 Layer II (22.05 kHz mono) elementary stream rather than ADX ADPCM. AHX is decoded via the MP3 codec at the container layer, not by `AdxCodec`. |
+| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the stream is flagged encrypted (flag bit 0x08) — not decodable here. |
+| `IsStandard` | `bool IsStandard { get; }` | True for standard ADX ADPCM (encoding type 3) — the only decodable form. |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `TotalSamples` | `int TotalSamples { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+### Namespace `Codec.CriHca`
+
+[`HcaCodec`](#hcacodec) · [`HcaCodec.HcaHeader`](#hcacodechcaheader)
+
+#### `HcaCodec`
+
+CRI HCA (High Compression Audio) decoder — a faithful, decode-only port of FFmpeg's `libavcodec/hcadec.c` together with its `hca_data.h` tables (cross-checked against CRI's reference `clHCA` / vgmstream / VGAudio). HCA is the modern CRI Middleware game-audio codec: an MDCT transform coder carrying base bands, optional intensity-coupled stereo bands, and high-frequency-reconstruction (HFR) groups. The container is a CRC-checked header (`"HCA\0"`, optionally masked with `0x7F` per byte when the stream is keyed) whose chunks declare channel/rate/ frame counts (`fmt`), the compression parameters (`comp` / `dec`), the ATH curve (`ath`), the cipher (`ciph`) and optional `vbr`, `loop`, `rva`, `comm` metadata. Frames are fixed-size, each carrying 8 sub-frames of 128 samples per channel (1024 samples/frame/channel) and prefixed with a CRC-16 over the frame body.Cipher type 0 (none) and type 1 (keyless static table) are supported; type 56 (56-bit keyed) decryption is recognised but not performed — callers fall back to a header-only view. MS-stereo streams (a rare v3.0 feature) are likewise recognised but not decoded, matching the reference libraries.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Samples produced per frame per channel (8 sub-frames × 128). |
+| `SamplesPerSubframe` | `const int SamplesPerSubframe` | Samples in one sub-frame / spectral coefficients per channel. |
+| `CipherInit` | `static byte[] CipherInit(int type)` | Builds the 256-byte cipher substitution table. Type 0 is the identity; type 1 is the keyless static table (multiplicative generator, `mul=13, add=11`). Type 56 (keyed) returns the identity here — the decoder treats keyed streams as unsupported. |
+| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | HCA's CRC-16 (IBM/ANSI, poly 0x8005, no reflection); a valid block sums to 0. |
+| `Decode` | `static ValueTuple<short[], int, int, HcaHeader> Decode(ReadOnlySpan<byte> file)` | Decodes the full HCA `file` to interleaved 16-bit PCM. Throws `NotSupportedException` for keyed (type 56) or MS-stereo streams so the container layer can degrade to a header-only view. |
+| `LooksLikeHca` | `static bool LooksLikeHca(ReadOnlySpan<byte> data)` | True when `data` starts with a (possibly masked) HCA magic. |
+| `ReadHeader` | `static ValueTuple<HcaHeader, byte[]> ReadHeader(ReadOnlySpan<byte> data)` | Parses and validates the HCA header (all chunks). Throws `InvalidDataException` for malformed headers (bad magic, CRC failure, unsupported version, illegal bands). |
+
+#### `HcaCodec.HcaHeader`
+
+Parsed HCA header fields and decode parameters.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HcaHeader` | `HcaHeader()` |  |
+| `AthType` | `int AthType` | Provides the ath type value. |
+| `BandsPerHfrGroup` | `int BandsPerHfrGroup` | Provides the bands per hfr group value. |
+| `BaseBandCount` | `int BaseBandCount` | Provides the base band count value. |
+| `ChannelConfig` | `int ChannelConfig` | Provides the channel config value. |
+| `Channels` | `int Channels` | Provides the channels value. |
+| `CipherType` | `int CipherType` | Provides the cipher type value. |
+| `Comment` | `string Comment` | Provides the comment value. |
+| `EncoderDelay` | `int EncoderDelay` | Provides the encoder delay value. |
+| `EncoderPadding` | `int EncoderPadding` | Provides the encoder padding value. |
+| `FrameCount` | `int FrameCount` | Provides the frame count value. |
+| `FrameSize` | `int FrameSize` | Provides the frame size value. |
+| `HasLoop` | `bool HasLoop` | Provides the has loop value. |
+| `HeaderSize` | `int HeaderSize` | Provides the header size value. |
+| `HfrGroupCount` | `int HfrGroupCount` | Provides the hfr group count value. |
+| `LoopEndFrame` | `int LoopEndFrame` | Provides the loop end frame value. |
+| `LoopStartFrame` | `int LoopStartFrame` | Provides the loop start frame value. |
+| `MaxResolution` | `int MaxResolution` | Provides the max resolution value. |
+| `MinResolution` | `int MinResolution` | Provides the min resolution value. |
+| `MsStereo` | `int MsStereo` | Provides the ms stereo value. |
+| `RvaVolume` | `float RvaVolume` | Provides the rva volume value. |
+| `SampleRate` | `int SampleRate` | Provides the sample rate value. |
+| `StereoBandCount` | `int StereoBandCount` | Provides the stereo band count value. |
+| `TotalBandCount` | `int TotalBandCount` | Provides the total band count value. |
+| `TrackCount` | `int TrackCount` | Provides the track count value. |
+| `Version` | `int Version` | Provides the version value. |
+| `IsKeyedCipher` | `bool IsKeyedCipher { get; }` | True for the 56-bit keyed cipher, which this decoder cannot decrypt. |
+| `IsMsStereo` | `bool IsMsStereo { get; }` | True for MS-stereo streams, which the reference libraries do not decode. |
+| `TotalSamples` | `long TotalSamples { get; }` | Total decoded samples (frames × 1024), before delay/padding trimming. |
+
+### Namespace `Codec.Cvsd`
+
+[`CvsdCodec`](#cvsdcodec)
+
+#### `CvsdCodec`
+
+Continuously-variable-slope delta modulation (CVSD), the Bluetooth SCO / MIL-STD-188-113 style 1-bit-per-sample voice codec. Each sample is encoded as a single bit: a delta-sigma comparator emits 1 when the input rises above the local reconstruction and 0 otherwise. The slope (step size) is syllabically companded: when the last `RunLength` output bits are all equal — i.e. the modulator is in slope overload, unable to keep up — the step grows by `StepDecay` toward `MaxStep`; otherwise it decays geometrically toward `MinStep`. The reconstruction integrator leaks by a factor of 1023/1024 each sample and accumulates ±step, clamped to the 16-bit range. The decoder runs the identical integrator/step machine; the encoder reuses it as its local feedback path, so encode→decode reconstructs the slowly-varying envelope of the signal. The bit-rate convention is 64 kbit/s (Bluetooth SCO), i.e. one bit per 64 kHz sample.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, bool msbFirst = true)` | Decodes a CVSD bitstream to 16-bit linear PCM, one sample per bit. Bits are read MSB-first within each byte when `msbFirst` is `true` (the common convention), LSB-first otherwise. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, bool msbFirst = true)` | Encodes 16-bit linear PCM to a CVSD bitstream, one bit per sample, packed MSB-first within each byte when `msbFirst` is `true`. The final byte is zero-padded in its unused low (or high) bits. The comparator decides each bit by comparing the input against the local reconstruction, which is updated identically to `Decode`. |
+
 ### Namespace `Codec.Dfpwm`
 
 [`DfpwmCodec`](#dfpwmcodec)
@@ -386,6 +1020,228 @@ DFPWM1a (Dynamic Filter Pulse Width Modulation, "1a" variant) codec — the 1-bi
 | `DefaultSampleRate` | `const int DefaultSampleRate` | Default sample rate for raw DFPWM (ComputerCraft convention). |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> pcmU8)` | Encodes unsigned 8-bit PCM to DFPWM1a (8 samples → one byte). Mirrors ffmpeg's `dfpwm_enc`: the same predictive integrator with the anti-jerk handling, emitting one bit per sample LSB-first. A trailing partial byte is zero-padded. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> dfpwm)` | Decodes raw DFPWM1a bytes to unsigned 8-bit PCM (one byte → 8 samples). The state machine matches ffmpeg's `au_decompress` exactly. |
+
+### Namespace `Codec.DspAdpcm`
+
+[`DspAdpcmCodec`](#dspadpcmcodec)
+
+#### `DspAdpcmCodec`
+
+Nintendo GameCube/Wii DSP ADPCM (4-bit) codec. This is the canonical scheme used by `.dsp`, `.brstm`, `.bcstm` and the rest of Nintendo's audio containers. Each channel carries its own table of eight predictor coefficient pairs (`short[16]`) supplied by the container; the codec itself only walks frames. Data is a stream of 8-byte frames. Byte 0 is the frame header: the high nibble is the predictor index (0..7, selecting `coefs[2*p]`/`coefs[2*p+1]`) and the low nibble is the scale/shift. Bytes 1..7 hold 14 signed 4-bit samples, HIGH nibble first. Each sample is reconstructed as `out = (((nibble << shift) << 11) + coefs[2*p]*hist1 + coefs[2*p+1]*hist2 + 1024) >> 11`, clamped to `Int16`, then fed back as history.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BytesPerFrame` | `const int BytesPerFrame` | Bytes per encoded frame (1 header + 7 data bytes = 14 samples). |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Decoded samples carried by one frame. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> adpcm, ReadOnlySpan<short> coefs, int sampleCount)` | Decodes DSP ADPCM to PCM16. `coefs` is the channel's eight predictor pairs (`short[16]`). At most `sampleCount` samples are returned; the final partial frame is truncated rather than padded. |
+| `Encode` | `static ValueTuple<byte[], short[]> Encode(ReadOnlySpan<short> pcm)` | Encodes PCM16 to DSP ADPCM. The encoder derives ONE predictor pair from the signal via the standard normal-equation fit of a second-order predictor, zeroes the remaining seven pairs, and brute-forces the per-frame scale (and nibbles) that minimise reconstruction error while staying numerically consistent with `Decode` (it decodes with the same history feedback so the returned buffer round-trips through this codec exactly). This is intentionally lossy — closeness, not bit-parity with Nintendo's encoder, is the bar. |
+
+### Namespace `Codec.Dts`
+
+[`DtsBitAllocBook`](#dtsbitallocbook) · [`DtsBitReader`](#dtsbitreader) · [`DtsBlockCode`](#dtsblockcode) · [`DtsCodec`](#dtscodec) · [`DtsEncoderOptions`](#dtsencoderoptions) · [`DtsFrameHeader`](#dtsframeheader) · [`DtsHuffmanTables`](#dtshuffmantables) · [`DtsQmf`](#dtsqmf) · [`DtsStreamInfo`](#dtsstreaminfo) · [`DtsTables`](#dtstables) · [`DtsVlc`](#dtsvlc)
+
+#### `DtsBitAllocBook`
+
+A DCA "BitAlloc" code-book group as defined in FFmpeg's `dcadec.c`: a set of selectable `Vlc` tables sharing a fixed `Offset` that is added to the decoded symbol index (e.g. the scale-factor books bias by -64, the bit-allocation index books by +1).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsBitAllocBook` | `DtsBitAllocBook(int offset, DtsVlc[] vlc)` | Initializes a new instance of `DtsBitAllocBook`. |
+| `Offset` | `int Offset { get; }` | Gets the offset. |
+| `Vlc` | `DtsVlc[] Vlc { get; }` | Gets the vlc. |
+| `Get` | `int Get(DtsBitReader reader, int sel)` | Decodes a symbol from selector `sel`'s table and applies the book offset. |
+
+#### `DtsBitReader`
+
+MSB-first big-endian bit reader over a byte buffer, used to walk a DTS Coherent Acoustics (DCA) core frame. Bits are consumed from the most significant bit of each byte downwards, which matches the 16-bit big-endian framing the DCA core bitstream uses throughout the frame header, the primary audio coding header and the sub(sub)frame data. This mirrors the reader FFmpeg's `get_bits`/`get_sbits` drives over the 16-bit-BE-converted core payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsBitReader` | `DtsBitReader(byte[] data, int offset, int length)` | Initializes a new instance of `DtsBitReader`. |
+| `BitPosition` | `long BitPosition { get; }` | Current absolute bit position from the start of the underlying buffer. |
+| `BitsRemaining` | `long BitsRemaining { get; }` | Total bits remaining in the buffer. |
+| `PeekBits` | `uint PeekBits(int count)` | Peeks the next `count` bits (0..32) without advancing the read position. |
+| `ReadBits` | `uint ReadBits(int count)` | Reads `count` bits (0..32) MSB-first, returning them right-aligned. |
+| `ReadFlag` | `bool ReadFlag()` | Reads a single bit as a bool. |
+| `ReadSigned` | `int ReadSigned(int count)` | Reads `count` bits as a signed value (two's complement of width `count`). |
+| `SkipBits` | `void SkipBits(int count)` | Skips `count` bits (may exceed 32). |
+
+#### `DtsBlockCode`
+
+DCA "block code" sample unpacking for low bit-allocation indexes (abits 1..7 where no Huffman table applies). A faithful port of FFmpeg's `decode_blockcode` / `decode_blockcodes`: each transmitted code packs four samples as a mixed-radix number in `levels`, recovered by repeated division with a mid-tread offset of `(levels-1)/2`. Two codes together yield the eight samples of one subband/sub-subframe. A non-zero return signals a corrupt (out-of-range) code, exactly as the reference's residual check does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Levels` | `static readonly int[] Levels` | abits 1..7 → number of quantization levels (FFmpeg `abits_levels`). |
+| `Sizes` | `static readonly int[] Sizes` | abits 1..7 → bits per transmitted block code (FFmpeg `abits_sizes`). |
+| `DecodeBlockCode` | `static int DecodeBlockCode(int code, int levels, int[] dst, int dstStart)` | Unpacks one code into four samples at `dst`[`dstStart`..+4); returns the residual. |
+| `DecodeBlockCodes` | `static int DecodeBlockCodes(int code1, int code2, int levels, int[] dst, int dstStart)` | Unpacks two codes into eight samples at `dst`[`dstStart`..+8); returns the combined residual (0 = valid). |
+
+#### `DtsCodec`
+
+Clean-room DTS Coherent Acoustics (DCA) core codec. The decoder is a faithful managed port of the FFmpeg reference decoder (`libavcodec/dcadec.c` + `dcadata.c` + `dcahuff.h`) and the encoder lives in the companion partial source file. The core decoder emits interleaved little-endian signed 16-bit PCM at the stream's native channel count (the AMODE full-bandwidth channels in document order, with the LFE channel last when present). Scope: only the standard 16-bit big-endian framing (sync 0x7FFE8001) is decoded; the 14-bit and byte-swapped framings throw `NotSupportedException`. DTS-HD extension substreams (XCH / XXCH / X96 / XBR / XLL and EXSS) are not decoded; an embedded core remains decodable.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a DTS stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in AMODE document order with LFE last. Throws `NotSupportedException` for the unsupported 14-bit / LE framings. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, DtsEncoderOptions options = null)` | Encodes interleaved PCM16 to standard 16-bit-big-endian DTS Coherent Acoustics core frames. This is a managed adaptation of FFmpeg's LGPL `dcaenc.c` core path: 512 PCM samples per frame, 32-band cosine analysis, direct bit allocation and scale-factor transmission, the no-Huffman quantizer selector, two sub-subframes and the mandatory 0xFFFF DSYNC marker. Prediction, high-frequency VQ and LFE coding are intentionally left off so every coded subband remains independently decodable and the generated core is deterministic. |
+| `ReadStreamInfo` | `static DtsStreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first core frame. |
+
+#### `DtsEncoderOptions`
+
+Managed DTS core encoder controls.
+
+Implements `IEquatable<DtsEncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsEncoderOptions` | `DtsEncoderOptions(int SampleRate = 48000, int Channels = 2, int Bitrate = 768000, int ActiveSubbands = 16, bool PadFinalFrame = true)` | Managed DTS core encoder controls. |
+| `ActiveSubbands` | `int ActiveSubbands { get; init; }` | Number of coded QMF subbands (2..32). More bands preserve more bandwidth at higher bitrates. |
+| `Bitrate` | `int Bitrate { get; init; }` | DTS core transmission bitrate in bit/s. Must be one of the core bitrate table entries. |
+| `Channels` | `int Channels { get; init; }` | Full-bandwidth channel count: mono, stereo, quad or 5.0. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete 512-sample-per-channel final frame with its last sample. |
+| `SampleRate` | `int SampleRate { get; init; }` | Core sample rate. The classic DTS rates from 8 to 48 kHz are supported. |
+
+#### `DtsFrameHeader`
+
+Parsed fields of a DTS Coherent Acoustics (DCA) core frame header. The header that follows the 32-bit 0x7FFE8001 sync word carries the frame byte size (FSIZE), the sample-block count (NBLKS), the channel arrangement (AMODE), the sample-rate code (SFREQ), the transmission-bitrate code (RATE), the subframe count and the LFE flag. This is the single canonical core-header parser shared by the decoder and the read-only stream-info path; the field order follows the DTS Coherent Acoustics bitstream specification and FFmpeg's `dca_parse_frame_header`. Only the standard 16-bit big-endian framing (sync 0x7FFE8001) is supported. The 14-bit packed (0x1FFFE800) and the byte-swapped little-endian (0xFE7F0180 / 0xFF1F00E8) framings are out of scope and surface as an unparseable header.
+
+Implements `IEquatable<DtsFrameHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsFrameHeader` | `DtsFrameHeader(int FrameType, int SampleBlocks, int FrameSize, int Amode, int SampleRate, int SampleRateCode, int BitRate, int BitRateIndex, bool CrcPresent, bool Aspf, int Lfe, bool PredictorHistory, int Subframes, int HeaderBitLength)` | Parsed fields of a DTS Coherent Acoustics (DCA) core frame header. The header that follows the 32-bit 0x7FFE8001 sync word carries the frame byte size (FSIZE), the sample-block count (NBLKS), the channel arrangement (AMODE), the sample-rate code (SFREQ), the transmission-bitrate code (RATE), the subframe count and the LFE flag. This is the single canonical core-header parser shared by the decoder and the read-only stream-info path; the field order follows the DTS Coherent Acoustics bitstream specification and FFmpeg's `dca_parse_frame_header`. Only the standard 16-bit big-endian framing (sync 0x7FFE8001) is supported. The 14-bit packed (0x1FFFE800) and the byte-swapped little-endian (0xFE7F0180 / 0xFF1F00E8) framings are out of scope and surface as an unparseable header. |
+| `SyncWord` | `static readonly byte[] SyncWord` | The 32-bit big-endian DTS core sync word (0x7FFE8001). |
+| `Amode` | `int Amode { get; init; }` |  |
+| `Aspf` | `bool Aspf { get; init; }` |  |
+| `BitRateIndex` | `int BitRateIndex { get; init; }` |  |
+| `BitRate` | `int BitRate { get; init; }` |  |
+| `CrcPresent` | `bool CrcPresent { get; init; }` |  |
+| `FrameSize` | `int FrameSize { get; init; }` |  |
+| `FrameType` | `int FrameType { get; init; }` |  |
+| `HeaderBitLength` | `int HeaderBitLength { get; init; }` |  |
+| `Lfe` | `int Lfe { get; init; }` |  |
+| `PredictorHistory` | `bool PredictorHistory { get; init; }` |  |
+| `SampleBlocks` | `int SampleBlocks { get; init; }` |  |
+| `SampleRateCode` | `int SampleRateCode { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Subframes` | `int Subframes { get; init; }` |  |
+| `AmodeChannelCount` | `static int AmodeChannelCount(int amode)` | Channel count implied by an AMODE code (excluding the LFE channel). |
+| `AmodeName` | `static string AmodeName(int amode)` | AMODE → human-readable channel arrangement (before the optional LFE channel). The codes follow the DTS core "audio channel arrangement" table. |
+| `TryParse` | `static DtsFrameHeader? TryParse(ReadOnlySpan<byte> data, int offset)` | Parses a DTS core header from `data` at `offset`, which must point at the 0x7FFE8001 sync word. Returns `null` if there is not enough data, the sync word is wrong, the sample rate is reserved, or the bitrate is invalid. |
+
+#### `DtsHuffmanTables`
+
+DCA Huffman code tables ported verbatim from the FFmpeg reference decoder (`libavcodec/dcahuff.h`). Each pair of arrays holds the right-aligned canonical codes and their bit lengths for one selectable code book; the names mirror the FFmpeg identifiers (`tmode`, `bitalloc_12`, `scales`, and the per-level sample books `bitalloc_3`..`bitalloc_129`) so the port can be cross-checked.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bitalloc129Bits` | `static readonly byte[][] Bitalloc129Bits` | Provides the bitalloc 129 bits value. |
+| `Bitalloc129Codes` | `static readonly ushort[][] Bitalloc129Codes` | Provides the bitalloc 129 codes value. |
+| `Bitalloc12Bits` | `static readonly byte[][] Bitalloc12Bits` | Provides the bitalloc 12 bits value. |
+| `Bitalloc12Codes` | `static readonly ushort[][] Bitalloc12Codes` | Provides the bitalloc 12 codes value. |
+| `Bitalloc13Bits` | `static readonly byte[][] Bitalloc13Bits` | Provides the bitalloc 13 bits value. |
+| `Bitalloc13Codes` | `static readonly ushort[][] Bitalloc13Codes` | Provides the bitalloc 13 codes value. |
+| `Bitalloc17Bits` | `static readonly byte[][] Bitalloc17Bits` | Provides the bitalloc 17 bits value. |
+| `Bitalloc17Codes` | `static readonly ushort[][] Bitalloc17Codes` | Provides the bitalloc 17 codes value. |
+| `Bitalloc25Bits` | `static readonly byte[][] Bitalloc25Bits` | Provides the bitalloc 25 bits value. |
+| `Bitalloc25Codes` | `static readonly ushort[][] Bitalloc25Codes` | Provides the bitalloc 25 codes value. |
+| `Bitalloc33Bits` | `static readonly byte[][] Bitalloc33Bits` | Provides the bitalloc 33 bits value. |
+| `Bitalloc33Codes` | `static readonly ushort[][] Bitalloc33Codes` | Provides the bitalloc 33 codes value. |
+| `Bitalloc3Bits` | `static readonly byte[][] Bitalloc3Bits` | Provides the bitalloc 3 bits value. |
+| `Bitalloc3Codes` | `static readonly ushort[][] Bitalloc3Codes` | Provides the bitalloc 3 codes value. |
+| `Bitalloc5Bits` | `static readonly byte[][] Bitalloc5Bits` | Provides the bitalloc 5 bits value. |
+| `Bitalloc5Codes` | `static readonly ushort[][] Bitalloc5Codes` | Provides the bitalloc 5 codes value. |
+| `Bitalloc65Bits` | `static readonly byte[][] Bitalloc65Bits` | Provides the bitalloc 65 bits value. |
+| `Bitalloc65Codes` | `static readonly ushort[][] Bitalloc65Codes` | Provides the bitalloc 65 codes value. |
+| `Bitalloc7Bits` | `static readonly byte[][] Bitalloc7Bits` | Provides the bitalloc 7 bits value. |
+| `Bitalloc7Codes` | `static readonly ushort[][] Bitalloc7Codes` | Provides the bitalloc 7 codes value. |
+| `Bitalloc9Bits` | `static readonly byte[][] Bitalloc9Bits` | Provides the bitalloc 9 bits value. |
+| `Bitalloc9Codes` | `static readonly ushort[][] Bitalloc9Codes` | Provides the bitalloc 9 codes value. |
+| `BitallocOffsets` | `static readonly sbyte[] BitallocOffsets` | Provides the bitalloc offsets value. |
+| `BitallocSizes` | `static readonly byte[] BitallocSizes` | Provides the bitalloc sizes value. |
+| `ScalesBits` | `static readonly byte[][] ScalesBits` | Provides the scales bits value. |
+| `ScalesCodes` | `static readonly ushort[][] ScalesCodes` | Provides the scales codes value. |
+| `TmodeBits` | `static readonly byte[][] TmodeBits` | Provides the tmode bits value. |
+| `TmodeCodes` | `static readonly ushort[][] TmodeCodes` | Provides the tmode codes value. |
+
+#### `DtsQmf`
+
+32-band cosine-modulated QMF synthesis filterbank for the DCA core, reconstructing 256 PCM samples per channel per block from 8 sub-subframe vectors of 32 subband samples each. This is a faithful port of FFmpeg's `dca_qmf_32_subbands` + `synth_filter_float` (`libavcodec/dcadsp.c`, `synth_filter.c`): the per-subband sign flip `((i-1)&2)`, a direct (matrix-multiply) 64→32 `imdct_half`, and the 512-tap polyphase window/overlap stage driven by the perfect- or non-perfect-reconstruction prototype (`Fir32Perfect` / `Fir32NonPerfect`). The direct IMDCT replaces FFmpeg's FFT path; the task permits a direct matrix multiply for the transform.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsQmf` | `DtsQmf()` |  |
+| `Process` | `void Process(float[][] samplesIn, int subbandActivity, float[] output, int outStart, bool perfectReconstruction, float scale)` | Synthesises one block (8 sub-subframes × 32 subbands → 256 samples) for one channel into `output` starting at `outStart`. `samplesIn` is indexed [subband][subindex]; `subbandActivity` bounds the active subbands. |
+
+#### `DtsStreamInfo`
+
+Stream-level metadata extracted from a DTS (Coherent Acoustics) stream's first core frame.
+
+Implements `IEquatable<DtsStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsStreamInfo` | `DtsStreamInfo(int SampleRate, int Channels, int Bitrate, int Amode, bool Lfe, long DurationSamples)` | Stream-level metadata extracted from a DTS (Coherent Acoustics) stream's first core frame. |
+| `Amode` | `int Amode { get; init; }` |  |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `DurationSamples` | `long DurationSamples { get; init; }` |  |
+| `Lfe` | `bool Lfe { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `DtsTables`
+
+Constant numeric tables for the DCA core decoder, ported faithfully from the FFmpeg reference (`libavcodec/dcadata.c`, `dca.c`); names mirror the FFmpeg identifiers. Covers the sample-rate / bit-rate maps, the channel-count / LFE-index / channel-reorder tables, the ADPCM prediction VQ (`adpcm_vb`), the 6/7-bit scale-factor quant tables, the lossy/lossless quantization step tables, the high-frequency VQ codebook, the 32-band QMF prototype filters (perfect / non-perfect reconstruction) and the 64/128 LFE interpolation FIRs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdpcmVbFlat` | `static readonly short[] AdpcmVbFlat` | Provides the adpcm vb flat value. |
+| `BitRates` | `static readonly int[] BitRates` | Provides the bit rates value. |
+| `ChannelReorderLfe` | `static readonly sbyte[][] ChannelReorderLfe` | Provides the channel reorder lfe value. |
+| `ChannelReorderNoLfe` | `static readonly sbyte[][] ChannelReorderNoLfe` | Provides the channel reorder no lfe value. |
+| `Channels` | `static readonly int[] Channels` | Provides the channels value. |
+| `Fir32NonPerfect` | `static readonly float[] Fir32NonPerfect` | Provides the fir 32 non perfect value. |
+| `Fir32Perfect` | `static readonly float[] Fir32Perfect` | Provides the fir 32 perfect value. |
+| `HighFreqVqFlat` | `static readonly sbyte[] HighFreqVqFlat` | Provides the high freq vq flat value. |
+| `LfeFir128` | `static readonly float[] LfeFir128` | Provides the lfe fir 128 value. |
+| `LfeFir64` | `static readonly float[] LfeFir64` | Provides the lfe fir 64 value. |
+| `LfeIndex` | `static readonly int[] LfeIndex` | Provides the lfe index value. |
+| `LosslessQuant` | `static readonly float[] LosslessQuant` | Provides the lossless quant value. |
+| `LossyQuant` | `static readonly float[] LossyQuant` | Provides the lossy quant value. |
+| `SampleRates` | `static readonly int[] SampleRates` | Provides the sample rates value. |
+| `ScaleFactorQuant6` | `static readonly uint[] ScaleFactorQuant6` | Provides the scale factor quant 6 value. |
+| `ScaleFactorQuant7` | `static readonly uint[] ScaleFactorQuant7` | Provides the scale factor quant 7 value. |
+| `AdpcmVb` | `static short[][] AdpcmVb { get; }` | Gets the adpcm vb. |
+| `HighFreqVq` | `static sbyte[][] HighFreqVq { get; }` | Gets the high freq vq. |
+
+#### `DtsVlc`
+
+A single DCA variable-length code table: parallel arrays of right-aligned `Codes` and their bit `Lengths`, ported verbatim from FFmpeg's `dcahuff.h` (`*_codes` / `*_bits`). Decoding reads bits MSB-first and matches the accumulated prefix against each entry — FFmpeg builds an `init_vlc` look-up table from the same data, so this exhaustive matcher is functionally identical for the (small) DCA alphabets while being trivially verifiable against the source tables.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsVlc` | `DtsVlc(ushort[] codes, byte[] lengths)` | Initializes a new instance of `DtsVlc`. |
+| `Codes` | `ushort[] Codes { get; }` | Gets the codes. |
+| `Lengths` | `byte[] Lengths { get; }` | Gets the lengths. |
+| `MaxBits` | `int MaxBits { get; }` | Gets the max bits. |
+| `Decode` | `int Decode(DtsBitReader reader)` | Decodes one symbol: peeks `MaxBits` bits, then matches every entry's right-aligned code against the matching-length prefix. Returns the symbol index, or -1 when no code matches (corrupt stream). On success the reader is advanced by the matched length. |
+
+### Namespace `Codec.EaXa`
+
+[`EaXaCodec`](#eaxacodec)
+
+#### `EaXaCodec`
+
+Electronic Arts EA-XA ADPCM (the "EA XA" / XAS-style block scheme carried by EA SCHl streams) encoder and decoder. Audio is stored as fixed 15-byte frames, one per channel, interleaved frame-by-frame (channel 0's frame, channel 1's frame, …). Each frame yields `SamplesPerFrame` samples for its channel: byte 0 — header: high nibble = `coefIndex` (0..3), low nibble = `shift` (0..12). The reserved header value `0xEE` marks an uncompressed frame.bytes 1..14 — 28 signed 4-bit nibbles, HIGH nibble of each byte first. Each sample is reconstructed as `prediction = (hist1*K0[coef] + hist2*K1[coef]) >> 8`, then `s = clamp16(prediction + (signExtend4(nibble) << (12 - shift)))`, and the two histories shift forward. An `0xEE` frame instead carries 14 bytes that begin a run of raw 16-bit big-endian samples; on decode the histories track the last two raw samples.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameSize` | `const int FrameSize` | Size in bytes of one EA-XA frame. |
+| `RawFrameMarker` | `const byte RawFrameMarker` | Header value flagging an uncompressed (raw 16-bit BE) frame. |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Number of PCM samples carried by one 15-byte EA-XA frame. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes an EA-XA stream (channel-interleaved 15-byte frames) into interleaved 16-bit PCM. Frames are consumed channel-by-channel: for `channels` = 2 the layout is [ch0 frame][ch1 frame][ch0 frame]… and the output weaves the per-channel samples back together (L,R,L,R…). A trailing partial group of frames is ignored. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels)` | Encodes interleaved 16-bit PCM into channel-interleaved EA-XA frames. Each channel's 28-sample frame is encoded by brute-forcing every coefficient index and every legal shift and keeping the combination with the lowest reconstruction error (mirroring the decoder's prediction exactly, so the histories stay in lockstep). The final group is zero-padded to a whole frame per channel. |
 
 ### Namespace `Codec.Flac`
 
@@ -458,6 +1314,147 @@ Specifies flac subframe mode values.
 | `Fixed3` | `5` | Specifies the fixed 3 option. |
 | `Fixed4` | `6` | Specifies the fixed 4 option. |
 
+### Namespace `Codec.G722`
+
+[`G722Codec`](#g722codec)
+
+#### `G722Codec`
+
+ITU-T G.722 64 kbit/s sub-band ADPCM. A faithful port of the ITU / SpanDSP reference (the CMU single-channel core): a 24-tap quadrature mirror filter (QMF) splits the 16 kHz input into two 8 kHz sub-bands; the lower band is coded with 6-bit ADPCM and the higher band with 2-bit ADPCM (operating mode 1 — the full 64 kbit/s rate). The decoder mirrors this, running the two band ADPCM decoders and recombining the bands through the QMF synthesis filter. One octet carries one combined codeword (2 high-band bits in the top nibble's two MSBs, 6 low-band bits below): each octet represents two output samples (one QMF frame). The public API therefore consumes / produces ordinary 16-bit linear PCM at 16 kHz, with the encoder emitting one byte per two input samples.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a G.722 (64 kbit/s) octet stream to 16-bit linear PCM at 16 kHz, producing two samples per input byte. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit linear PCM at 16 kHz to a G.722 (64 kbit/s) octet stream, one byte per two input samples. An odd trailing sample is ignored (a full QMF frame needs two). |
+
+### Namespace `Codec.G7231`
+
+[`G7231Codec`](#g7231codec) · [`G7231Codec.FrameInfo`](#g7231codecframeinfo) · [`G7231FrameType`](#g7231frametype)
+
+#### `G7231Codec`
+
+ITU-T G.723.1 dual-rate (5.3 / 6.3 kbit/s) speech decoder, a faithful fixed-point port of FFmpeg's `libavcodec/g723_1dec.c` + `g723_1.c`. G.723.1 has no encoder here (FFmpeg ships none either), so this type only synthesizes 16-bit linear PCM at 8000 Hz mono. The coded stream is a sequence of frames; the low two bits of each frame's first byte select the frame type and therefore its size (`FrameSize`): 0 — 24-byte active frame, 6.3 kbit/s MP-MLQ excitation.1 — 20-byte active frame, 5.3 kbit/s ACELP algebraic codebook.2 — 4-byte SID (Silence Insertion Descriptor) frame → comfort noise.3 — 1-byte untransmitted frame → comfort noise continuation. Every frame decodes to exactly `FrameLen` (240) samples. Pipeline (all faithful to the reference, fixed-point bit-exact where the reference is): frame unpack → LSP inverse-quantization (DC + 3-band VQ, predictive add-back, stability ordering) → LSP→LPC interpolation over the four subframes (the reference `lsp2lpc`) → adaptive-codebook excitation (fractional pitch via the residual-gain codebooks) + fixed-codebook excitation (MP-MLQ pulses/grid/dirac-train at 6.3k, the ACELP algebraic codebook + harmonic enhancement at 5.3k) → LP synthesis filter → pitch + formant postfilter with adaptive gain control. Frame erasure (a forbidden code) is concealed by LSP freezing and residual interpolation; SID and untransmitted frames drive the comfort-noise generator (CNG). The postfilter is enabled by default, matching FFmpeg's default option.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | Decoded samples produced by every frame (240 @ 8000 Hz = 30 ms). |
+| `CountFrames` | `static int CountFrames(ReadOnlySpan<byte> frames)` | Counts the fully-present frames in `frames` (a trailing truncated frame is not counted). The decoded sample count is `count × 240`. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> frames)` | Decodes a G.723.1 bitstream (one or more concatenated frames, auto-detecting each frame's size from its 2-bit selector) to 16-bit linear PCM at 8000 Hz mono. The output length is `frameCount × 240` samples. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> frames, bool postfilter)` | Decodes as `Decode`, with control over the postfilter chain (pitch + formant postfilter and adaptive gain). Disabling it matches FFmpeg's `-postfilter 0` path (output is simply scaled by 2). |
+| `ReadInfo` | `static IReadOnlyList<FrameInfo> ReadInfo(ReadOnlySpan<byte> frames)` | Walks `frames` dispatching each frame by its 2-bit selector, returning one `FrameInfo` per fully-present frame. A trailing fragment too short for its declared size is ignored (truncation tolerance). |
+
+#### `G7231Codec.FrameInfo`
+
+Per-frame walk result: the frame type and its byte size.
+
+Implements `IEquatable<FrameInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameInfo` | `FrameInfo(int Index, G7231FrameType Type, int SizeBytes)` | Per-frame walk result: the frame type and its byte size. |
+| `Index` | `int Index { get; init; }` |  |
+| `SizeBytes` | `int SizeBytes { get; init; }` |  |
+| `Type` | `G7231FrameType Type { get; init; }` |  |
+
+#### `G7231FrameType`
+
+G.723.1 frame type, matching the 2-bit frame selector.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Active` | `0` | Active speech (6.3k if 0-rate bit, 5.3k otherwise). |
+| `Active5300` | `1` | 5.3 kbit/s active speech (selector value 1). |
+| `Sid` | `2` | Silence Insertion Descriptor frame. |
+| `Untransmitted` | `3` | Untransmitted frame (comfort-noise continuation). |
+
+### Namespace `Codec.G72x`
+
+[`G72xCodec`](#g72xcodec)
+
+#### `G72xCodec`
+
+ITU-T G.726 ADPCM at the 16, 24 and 40 kbit/s rates (2-, 3- and 5-bit codewords), extending the shared `g72x.c` predictor / quantiser core that already backs the 32 kbit/s (G.721) layer in `G72xCodec`. The three additional rates are a faithful port of the CCITT / Sun reference (`g723_16.c`, `g723_24.c`, `g723_40.c`): they reuse the identical predictor, scale-factor adaptation and fixed-point arithmetic, differing only in the per-rate quantiser decision / reconstruction / adaptation tables and the codeword width. Codewords are packed MSB-first, the most significant codeword bit aligned to the most significant free bit of the stream, consistent with the existing G.721 nibble packing. The 3- and 5-bit codes cross byte boundaries, so packing uses a small big-endian bit writer / reader. The 4-bit rate delegates to the existing G.721 core.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeG721` | `static short[] DecodeG721(ReadOnlySpan<byte> data)` | Decodes G.721 (G.726 @ 32 kbit/s) 4-bit codewords to 16-bit linear PCM. `.au` packs the high nibble first within each byte (MSB-aligned). |
+| `DecodeG726` | `static short[] DecodeG726(ReadOnlySpan<byte> data, int bitsPerSample)` | Decodes a G.726 bitstream at the given codeword width to 16-bit linear PCM. Valid `bitsPerSample` values are 2, 3, 4 and 5 (16/24/32/40 kbit/s); the 4-bit rate delegates to `DecodeG721`. Codewords are unpacked MSB-first. |
+| `EncodeG721` | `static byte[] EncodeG721(ReadOnlySpan<short> pcm)` | Encodes 16-bit linear PCM to G.721 (G.726 @ 32 kbit/s) 4-bit codewords, packing two codewords per byte high-nibble first to match `DecodeG721`. An odd trailing sample re-uses the previous codeword in the low nibble. |
+| `EncodeG726` | `static byte[] EncodeG726(ReadOnlySpan<short> pcm, int bitsPerSample)` | Encodes 16-bit linear PCM to a G.726 bitstream at the given codeword width. Valid `bitsPerSample` values are 2, 3, 4 and 5 (16/24/32/40 kbit/s); the 4-bit rate delegates to `EncodeG721`. Codewords are packed MSB-first; the final byte is zero-padded in its least-significant bits. |
+
+### Namespace `Codec.GameBoyApu`
+
+[`GameBoyApu`](#gameboyapu) · [`GbsPlayer`](#gbsplayer) · [`ISm83Bus`](#ism83bus) · [`Sm83Cpu`](#sm83cpu) · [`Sm83Cpu.Flags`](#sm83cpuflags)
+
+#### `GameBoyApu`
+
+A register-level Game Boy (DMG) APU emulator. Driven by `Write` calls into the sound register window $FF10-$FF3F (the four channels' control registers, the master NR50/NR51/NR52, and the 16-byte wave RAM at $FF30-$FF3F), it synthesises the two square channels (CH1 with sweep, CH2), the 4-bit wave channel (CH3) and the LFSR noise channel (CH4), runs them off the 512 Hz frame sequencer (length 256 Hz, envelope 64 Hz, sweep 128 Hz) and mixes them through the per-channel L/R routing of NR51 and the master volumes of NR50 into a stereo signal. The chip steps internally at the 4.194304 MHz Game Boy clock and decimates to the requested output rate (default 44100 Hz) by averaging every internal step within an output sample window — a cheap anti-aliasing measure rather than a designed decimation filter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GameBoyApu` | `GameBoyApu(int outputRate = 44100)` | Initializes a new instance of `GameBoyApu`. |
+| `ClockHz` | `const double ClockHz` | The Game Boy master clock in Hz. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `Read` | `byte Read(ushort addr)` | Reads back an APU register at absolute address `addr` ($FF10-$FF3F). |
+| `RenderSamples` | `void RenderSamples(Span<short> stereoInterleaved, int frames)` | Renders `frames` stereo frames into `stereoInterleaved` (which must hold `frames * 2` shorts). For each output frame the chip is stepped the fractional number of master cycles that one output sample spans, averaging every internal sample over that window before emitting the 16-bit pair. |
+| `Write` | `void Write(ushort addr, byte value)` | Writes an APU register at absolute address `addr` ($FF10-$FF3F). |
+
+#### `GbsPlayer`
+
+A GBS (Game Boy Sound) tune player. It maps the tune's program image into a 64 KB Game Boy address space, runs the tune's init routine for a chosen song, then repeatedly calls the play routine at the tune's frame rate, rendering Game Boy APU samples between frames. Memory map: the GBS data is exposed as banked ROM — the bytes from `loadAddr` onward form a series of 16 KB banks. Bank 0 sits at $0000-$3FFF and the currently selected bank sits at $4000-$7FFF. The selected bank is changed by a write to $2000-$3FFF (the MBC ROM-bank-select region); bank 0 maps to bank 1 (a quirk of MBC1, matching the GBS spec). Work RAM $A000-$DFFF and high RAM $FF80-$FFFE are read/write. The sound register window $FF10-$FF3F is captured into the `GameBoyApu`. The timer registers $FF04-$FF07 are honoured to derive the play rate when the tune requests timer-driven playback.The play rate is resolved from the header timer control: when bit 2 of `timerControl` is set the rate is timer-driven — `baseFreq / (256 - timerModulo)` with the base selected by the low two bits of `timerControl` from {4096, 262144, 65536, 16384} Hz — otherwise the ~59.7 Hz VBlank rate is used. As in the SID player, APU register writes take effect immediately when the CPU performs them; cycle-accurate ordering of writes against sample rendering is not modelled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GbsPlayer` | `GbsPlayer(byte[] file, int song = 0, int outputRate = 44100)` | Builds a player from the full GBS file bytes. The header (0x70 bytes) is parsed here. `song` is 0-based (the GBS init convention passes the song number in the A register); pass `header.firstSong - 1` to start at the tune's default song. |
+| `FrameRateHz` | `double FrameRateHz { get; }` | The resolved play rate (calls per second) for this tune. |
+| `OutputSampleRate` | `int OutputSampleRate { get; }` | The output sample rate of the rendered audio. |
+| `Render` | `short[] Render(double seconds)` | Renders `seconds` of audio as interleaved 16-bit stereo PCM. |
+
+#### `ISm83Bus`
+
+The memory abstraction the `Sm83Cpu` core talks to. Every fetch, read and write the CPU performs is routed through this 16-bit address bus, so a host can model ROM, RAM, HRAM and memory-mapped I/O (the APU register window, timer registers,…) however it likes. Mirrors `IBus6502` in spirit.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `byte Read(ushort addr)` | Reads one byte from `addr`. |
+| `Write` | `void Write(ushort addr, byte value)` | Writes `value` to `addr`. |
+
+#### `Sm83Cpu`
+
+A cycle-counting Sharp SM83 (LR35902) CPU core — the Game Boy's processor. It is an 8080/Z80-derived design with its own instruction set: it has no IX/IY, no shadow registers, and a reduced/reshuffled opcode map (notably `$08 LD (a16),SP`, `$E0/$F0 LDH`, `$E2/$F2 LD (C),A`, `$E8 ADD SP,r8`, `$F8 LD HL,SP+r8`, and `$22/$32/$2A/$3A` HL-increment/decrement loads). The full official opcode set is implemented including the `CB`-prefixed rotate/shift/bit/set/res group and the decimal-adjust `DAA`. Cycle counts are returned in T-states (machine clocks at 4.194304 MHz), matching the canonical Game Boy timing tables.`HALT` is modelled as a NOP that consumes 4 cycles: a music player's init/play routines either never execute it or expect it to simply pause until the next play tick, and since this core is driven a play-call at a time there is no interrupt source to wait for. `STOP` is likewise a 4-cycle NOP. `EI`/`DI` toggle the interrupt-master flag (tracked but otherwise inert, as no interrupts are delivered during a player's subroutine call). The eight illegal opcodes (`$D3 $DB $DD $E3 $E4 $EB $EC $ED $F4 $FC $FD`) are decoded as 4-cycle no-ops. Memory is accessed exclusively through `ISm83Bus`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Sm83Cpu` | `Sm83Cpu(ISm83Bus bus)` | Initializes a new instance of `Sm83Cpu`. |
+| `A` | `byte A` | Provides the a value. |
+| `B` | `byte B` | Provides the b value. |
+| `C` | `byte C` | Provides the c value. |
+| `D` | `byte D` | Provides the d value. |
+| `E` | `byte E` | Provides the e value. |
+| `F` | `byte F` | Provides the f value. |
+| `H` | `byte H` | Provides the h value. |
+| `Ime` | `bool Ime` | Interrupt-master-enable latch. Tracked for fidelity; no interrupts are delivered. |
+| `L` | `byte L` | Provides the l value. |
+| `PC` | `ushort PC` | Provides the pc value. |
+| `SP` | `ushort SP` | Provides the sp value. |
+| `AF` | `ushort AF { get; set; }` | Gets or sets the af. |
+| `BC` | `ushort BC { get; set; }` | Gets or sets the bc. |
+| `DE` | `ushort DE { get; set; }` | Gets or sets the de. |
+| `HL` | `ushort HL { get; set; }` | Gets or sets the hl. |
+| `RunUntilRet` | `long RunUntilRet(ushort address, long maxCycles)` | Calls into a subroutine at `address` using the player convention: a sentinel return address is pushed so the matching `RET` lands on a known PC, at which point execution stops. Returns the cycles consumed (capped). The GBS player uses this to invoke the tune's init and play routines. |
+| `Step` | `long Step()` | Executes one instruction and returns the number of T-state clock cycles it consumed, including conditional-branch penalties. |
+
+#### `Sm83Cpu.Flags`
+
+Flag bits in the F register (low nibble is always zero on SM83).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Carry` | `16` | Specifies the carry option. |
+| `HalfCarry` | `32` | Specifies the half carry option. |
+| `Subtract` | `64` | Specifies the subtract option. |
+| `Zero` | `128` | Specifies the zero option. |
+
 ### Namespace `Codec.Gsm610`
 
 [`Gsm610Codec`](#gsm610codec) · [`Gsm610EncoderOptions`](#gsm610encoderoptions)
@@ -488,6 +1485,71 @@ Implements `IEquatable<Gsm610EncoderOptions>`.
 | `Channels` | `int Channels { get; init; }` | Number of independently encoded interleaved PCM channels. |
 | `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete final 20 ms frame with the last available sample. |
 
+### Namespace `Codec.HuC6280`
+
+[`CpuHuC6280`](#cpuhuc6280) · [`CpuHuC6280.Status`](#cpuhuc6280status) · [`HesPlayer`](#hesplayer) · [`PcePsg`](#pcepsg)
+
+#### `CpuHuC6280`
+
+A cycle-counting Hudson HuC6280 CPU core — the processor at the heart of the NEC PC Engine / TurboGrafx-16. The HuC6280 is a superset of the WDC 65C02 (itself a cleaned-up 6502): it adds the CMOS 65C02 opcodes (the `(zp)` addressing family, `STZ`, `BIT` immediate, `TRB/TSB`, `PHX/PHY/PLX/PLY`, `BRA`, the bit-test branches `BBR/BBS` and the bit set/reset `RMB/SMB`, and the fixed-up `JMP (abs,X)`/decimal-correct ADC/SBC) and then a pile of Hudson-specific instructions on top: the seven-cycle-per-byte block-transfer moves `TII $73, TDD $C3, TIN $D3, TIA $E3, TAI $F3` (source/destination/length read from three operand words; they consume the registers' worth of state and run to completion);the T-flag (bit 5 of P) and `SET ($F4)` immediate, which redirect the next ALU op's accumulator operand through a zero-page memory cell (the "memory operation" mode);`TST ($83/$A3/$93/$B3)` test-against-immediate (sets Z/N/V without altering the operand);the bank mapper accessors `TAM ($53)` / `TMA ($43)` that load/store the eight MPR (memory-paging) registers selected by a bitmask;the speed switch `CSL ($54)` / `CSH ($D4)` (1.79 MHz vs 7.16 MHz);the I/O port writes `ST0 ($03)` / `ST1 ($13)` / `ST2 ($23)` that latch the VDC address and the PSG/VDC data ports;register swaps `SXY ($02)`, `SAX ($22)`, `SAY ($42)`, plus `CLA/CLX/CLY` ($62/$82/$C2) and the long branch `BSR ($44)`.Opcode semantics and cycle counts follow the documented HuC6280 reverse-engineering tables (the "HuC6280 CPU" opcode reference and Charles MacDonald's PC Engine notes) and the Mednafen `huc6280.cpp` core. Memory is accessed exclusively through `IBus6502`; the host bus is responsible for routing the 21-bit physical address that the MPR mapper would otherwise produce — this core exposes the MPR registers (`Mpr`) so the bus can map the logical 16-bit address through them.Approximations: per-byte/-cycle bus timing is not pipelined (each instruction returns a total cycle count); the block-transfer "alternate" source/destination pattern of TIA/TAI is modelled by toggling which pointer increments, matching the documented behaviour. CSL/CSH are tracked as a `HighSpeed` flag that the host may use to scale its clock; the core itself does not change cycle counts.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CpuHuC6280` | `CpuHuC6280(IBus6502 bus)` | Initializes a new instance of `CpuHuC6280`. |
+| `A` | `byte A` | Provides the a value. |
+| `HighSpeed` | `bool HighSpeed` | True after `CSH`, false after `CSL`. The host may scale its clock by this (7.16 MHz vs 1.79 MHz); the core's cycle counts are speed-independent. |
+| `Mpr` | `readonly byte[] Mpr` | The eight MPR (memory-paging) registers — TAM/TMA load/store these; the host bus maps the logical address through them (logical bits 13-15 select the MPR, its value is the 8 KiB physical page). |
+| `PC` | `ushort PC` | Provides the pc value. |
+| `P` | `Status P` | Provides the p value. |
+| `SP` | `byte SP` | Provides the sp value. |
+| `X` | `byte X` | Provides the x value. |
+| `Y` | `byte Y` | Provides the y value. |
+| `Reset` | `void Reset()` | Power-on/reset: stack to $FF, interrupt-disable set, decimal clear, MPR cleared, PC loaded from the reset vector at $FFFE/$FFFF (the HuC6280's reset vector). |
+| `RunUntilRts` | `long RunUntilRts(ushort address, long maxCycles)` | Calls into a subroutine at `address` using the player convention: a sentinel return address is pushed so the matching `RTS` lands on a known PC, at which point execution stops. Returns the cycles consumed (capped). Used by the HES player to invoke the tune's init and play routines. |
+| `Step` | `long Step()` | Executes one instruction and returns the clock cycles it consumed. |
+
+#### `CpuHuC6280.Status`
+
+Processor status flag bits. Bit 5 is the HuC6280 T (memory-operation) flag.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Carry` | `1` | Specifies the carry option. |
+| `Zero` | `2` | Specifies the zero option. |
+| `Interrupt` | `4` | Specifies the interrupt option. |
+| `Decimal` | `8` | Specifies the decimal option. |
+| `Break` | `16` | Specifies the break option. |
+| `Memory` | `32` | Specifies the memory option. |
+| `Overflow` | `64` | Specifies the overflow option. |
+| `Negative` | `128` | Specifies the negative option. |
+
+#### `HesPlayer`
+
+A HES (PC Engine / TurboGrafx-16 music) tune player. It builds the HuC6280's banked physical memory from the file's DATA blocks, installs RAM and the integrated PSG into the I/O bank, programs the eight MPR (memory-paging) registers from the header, runs the tune's init routine for a chosen song, then repeatedly calls the play routine at the NTSC frame rate (60 Hz), rendering `PcePsg` stereo samples between frames. Memory model: the HuC6280 sees a 16-bit logical address; its top three bits select one of eight MPR registers, whose 8-bit value is the 8 KiB physical page (so the physical address is 21-bit: `page<<13 | (logical & 0x1FFF)`). Physical page $F8 is the 8 KiB of work RAM; page $FF is the hardware I/O page, where the PSG occupies $0800-$0809 and the VDC the low addresses. DATA blocks load at a physical address (`loadAddr`); their bytes populate the corresponding physical ROM pages. The header's eight MPR bytes give the initial logical→ physical mapping the tune expects on entry.As in the SID/NSF/GBS players, PSG register writes take effect immediately when the CPU performs them; cycle-accurate ordering of writes against sample rendering is not modelled. The CPU's own MPR registers (set by the tune via TAM) are honoured — the bus reads them every access so a tune that re-banks mid-play is followed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HesPlayer` | `HesPlayer(byte[] file, int song = 0, int outputRate = 44100)` | Builds a player from the full HES file bytes. `song` is the (0-based) song number passed in the A register at init — pass `header.firstSong` (HES start-song is already 0-based in most rips; the descriptor decides). |
+| `NtscFrameRateHz` | `const double NtscFrameRateHz` | NTSC frame (play-call) rate. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `FrameRateHz` | `double FrameRateHz { get; }` | The resolved frame (play-call) rate for this tune. |
+| `OutputRate` | `int OutputRate { get; }` | The output sample rate of the rendered audio. |
+| `Psg` | `PcePsg Psg { get; }` | The PSG instance driving synthesis. |
+| `RenderStereo` | `short[] RenderStereo(double seconds)` | Renders `seconds` of audio as interleaved 16-bit stereo PCM at `OutputRate`. |
+
+#### `PcePsg`
+
+A register-level emulation of the PC Engine / TurboGrafx-16 PSG — the six-channel wavetable sound generator integrated into the HuC6280. Each channel carries a 32-step, 5-bit signed waveform table that the program writes one sample at a time (the write index auto-increments), a 12-bit frequency period, a 5-bit overall (master) volume and independent 4-bit left/right channel volumes for stereo panning. Channels also support a Direct-D/A (DDA) mode that pushes the written byte straight to the output, and channels 5 and 6 (indices 4 and 5) support extra modes: channel 5 a noise generator (5-bit LFSR), and channel 5 acting as a low-frequency oscillator (LFO) that modulates channel 4's frequency. A global left/right master volume (the "MML"/balance register at port $0801) scales the final mix. The chip is driven by writing its register file through `WriteRegister`: port $0800 selects the active channel (0-5), $0801 is the global L/R balance, $0802/$0803 set the active channel's frequency low/high, $0804 the channel control (enable, DDA, overall volume), $0805 the channel L/R volume, $0806 the waveform-table data (DDA sample), and $0807/$0808 the noise enable/frequency and LFO frequency/control. The waveform step counter advances at the documented PSG clock of 3.579545 MHz / 32, and the host pulls 16-bit stereo samples through `RenderSamples`, which decimates to the requested output rate by averaging the channel mix across each output-sample window.Faithful to Mednafen `pce_psg.cpp` and the ChregPSG/Charles MacDonald PSG notes. Approximations: the per-channel low-pass and the analog volume taper of the real DAC are not modelled (volumes use the documented 1.5 dB-per-step exponential table); the LFO depth/trigger edge cases and the precise noise LFSR tap of channel 5 follow Mednafen but the LFO is applied as a simple additive period modulation of channel 4.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PcePsg` | `PcePsg(int outputRate = 44100)` | Initializes a new instance of `PcePsg`. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `PsgClockHz` | `const double PsgClockHz` | PSG master clock (≈ NTSC PC Engine system clock / 2). |
+| `RenderSamples` | `void RenderSamples(Span<short> output, int count)` | Renders `count` interleaved 16-bit stereo samples. |
+| `WritePort` | `void WritePort(ushort address, byte value)` | Writes a PSG register addressed by its full I/O address ($0800-$0809). |
+| `WriteRegister` | `void WriteRegister(int port, byte value)` | Writes one PSG register. `port` is the low byte of the I/O address ($0800-$0808 → 0x00-0x08); `WritePort` accepts the full address. |
+
 ### Namespace `Codec.ImaAdpcm`
 
 [`ImaAdpcmCodec`](#imaadpcmcodec)
@@ -504,6 +1566,62 @@ IMA ADPCM (Interactive Multimedia Association Adaptive Differential PCM) codec. 
 | `EncodeQuickTime` | `static byte[] EncodeQuickTime(ReadOnlySpan<short> interleaved, int channels)` | Encodes interleaved 16-bit PCM into Apple/QuickTime `ima4` packets. Packets contain 64 samples for one channel and are emitted round-robin by channel. A short final packet is padded with the last reconstructed sample. |
 | `Encode` | `static byte[] Encode(IReadOnlyList<short[]> pcm, int blockAlign)` | Encodes one or two equal-length PCM16 channel buffers to Microsoft/Intel IMA ADPCM WAV blocks. The final block is padded with the last reconstructed sample so the raw coded stream remains block-aligned; a container can retain the exact source sample count in its own metadata. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int blockAlign)` | Encodes interleaved 16-bit PCM into Microsoft/IMA WAV ADPCM blocks. The output always consists of whole `blockAlign` byte blocks; a short final block is padded with the last reconstructed sample. |
+
+### Namespace `Codec.InterplayAcm`
+
+[`InterplayAcmCodec`](#interplayacmcodec) · [`InterplayAcmCodec.Header`](#interplayacmcodecheader)
+
+#### `InterplayAcmCodec`
+
+Interplay ACM decoder — the lossy sub-band audio codec used by Interplay games (Fallout, Baldur's Gate, …), commonly carried in `.acm` files and inside `.bif` archives. This is a faithful port of FFmpeg's `libavcodec/interplayacm.c` (decode-only; there is no published encoder). The bitstream is a sequence of blocks of `rows × cols` samples, where `cols = 1 << level`. Each block reads a per-block amplitude codebook (a power-of-two `count` and a step `val` that build the symmetric `midbuf` lookup), then fills every column via a 5-bit filler-function index (the 32-entry `FillerKind` dispatch: zero / linear / the k-coders and the t15/t27/t37 packed coders), and finally applies the recursive sub-band "juggle" transform. Output samples are `block[i] >> level`. Ported verbatim: the filler dispatch table, the `map_1bit/2bit_near/2bit_far/3bit` amplitude maps, the `mul_3x3/3x5/2x11` packed-triplet/pair tables, the `juggle` lifting steps and the `juggle_block` driver. The header layout follows the standalone `.acm` container (magic, total samples, channels, sample rate, then the level/rows word) which is FFmpeg's extradata block.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Magic` | `const uint Magic` | The little-endian magic word that opens an Interplay ACM file. |
+| `Decode` | `static ValueTuple<short[], int, int> Decode(ReadOnlySpan<byte> file)` | Decodes a complete Interplay ACM file to interleaved 16-bit signed PCM. The returned channel count is the header value as-is (many Interplay assets report 1 even for interleaved stereo); callers may re-interpret it. Decoding stops at the header's total-sample count, or when the bitstream is exhausted (truncated files decode as far as they can). |
+| `ParseHeader` | `static Header ParseHeader(ReadOnlySpan<byte> file)` | Parses the 14-byte Interplay ACM header: magic (u32 LE) \| total samples (u32 LE) \| channels (u16 LE) \| sample rate (u16 LE) \| a u16 word carrying level in the low 4 bits and rows in the upper 12 bits. |
+
+#### `InterplayAcmCodec.Header`
+
+Parsed Interplay ACM header (the standalone `.acm` container layout).
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(uint Magic, uint TotalSamples, int Channels, int SampleRate, int Level, int Rows)` | Parsed Interplay ACM header (the standalone `.acm` container layout). |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Level` | `int Level { get; init; }` |  |
+| `Magic` | `uint Magic { get; init; }` |  |
+| `Rows` | `int Rows { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `TotalSamples` | `uint TotalSamples { get; init; }` |  |
+
+### Namespace `Codec.Lpc10`
+
+[`Lpc10Codec`](#lpc10codec)
+
+#### `Lpc10Codec`
+
+FS-1015 (LPC-10e) 2400 bit/s military speech vocoder — analysis (encode) and synthesis (decode) for round-trip testing. The codec models speech as an all-pole vocal-tract filter (order 10) excited either by a periodic pulse train (voiced) or white noise (unvoiced). One frame is `FrameSamples` (180) samples at `SampleRate` (8 kHz) coded into `FrameBits` (54) bits, packed into `FrameBytes` (7) bytes (the low two bits of the last byte are padding) → 44.4 frames/s × 54 bits = 2400 bit/s. Pipeline, with the reference-faithful vs. simplified stages called out: Pre-emphasis / de-emphasis (faithful): a first-order high-pass on encode, matching low-pass on decode.Pitch & voicing (SIMPLIFIED): the reference uses the Gold–Rabiner pitch tracker with onset detection and a dynamic-programming voicing smoother. Here pitch is estimated with the Average Magnitude Difference Function (AMDF) over the LPC-residual, and voicing from the AMDF contrast plus low-band energy. This preserves pitch periodicity and the voiced/unvoiced decision, but is not the bit-exact reference tracker.LPC / reflection coefficients (faithful in structure): autocorrelation → Levinson–Durbin recursion yields the ten reflection coefficients, quantized with the LPC-10 per-coefficient bit allocation (`ReflectionCoefficientBits`).RMS energy (faithful in structure): log-quantized in 5 bits.Synthesis (faithful): pulse-train / noise excitation scaled to the decoded RMS, run through the lattice synthesis filter built from the decoded reflection coefficients, then de-emphasized.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes packed LPC-10 frames back to 16-bit linear PCM. Each 7-byte frame yields `FrameSamples` (180) samples, so the output length is `frames × 180`. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit linear PCM (8 kHz mono) to packed LPC-10 frames. The PCM is processed in 180-sample frames; a trailing partial frame is zero-padded. The result is `frames × 7` bytes. |
+
+### Namespace `Codec.Mace`
+
+[`MaceCodec`](#macecodec)
+
+#### `MaceCodec`
+
+MACE (Macintosh Audio Compression/Expansion) decoder — the lossy ADPCM-style scheme used by classic Mac OS sampled-sound resources. Two ratios exist: `MACE 3:1` — two packed bytes per channel expand to six 16-bit samples (each byte carries three 3-bit indices, decoded via `chomp3`).`MACE 6:1` — one packed byte per channel expands to six 16-bit samples (three indices, each producing two samples via `chomp6`). There is no sane encoder (MACE is a fixed-rate lossy scheme with a proprietary analysis stage), so this is decode-only. The decoder maintains per-channel predictor state (running index into the step tables plus level/factor history) and is a faithful port of the well-known reference implementation, including the historical 16-bit clip quirk and the high-byte sample replication.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeMace3` | `static short[] DecodeMace3(ReadOnlySpan<byte> data, int channels)` | Decodes MACE 3:1 data to interleaved 16-bit signed PCM. With `channels` equal to one the input is consumed two bytes at a time, each yielding three samples (so `n` bytes → `n * 3` samples). Stereo data interleaves the two channels at the byte level (two bytes per channel per frame) and is returned interleaved. |
+| `DecodeMace6` | `static short[] DecodeMace6(ReadOnlySpan<byte> data, int channels)` | Decodes MACE 6:1 data to interleaved 16-bit signed PCM. With `channels` equal to one the input is consumed one byte at a time, each yielding six samples (so `n` bytes → `n * 6` samples). Stereo data interleaves one byte per channel per frame and is returned interleaved. |
 
 ### Namespace `Codec.Midi`
 
@@ -568,6 +1686,86 @@ Standard MIDI File emitter for already-encoded `MTrk` payloads.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BuildFile` | `static byte[] BuildFile(IReadOnlyList<byte[]> trackBodies, int division, int format = 1)` | Builds an SMF from raw `MTrk` payloads. Format 0 requires exactly one track; formats 1 and 2 may contain multiple tracks. Event bytes are preserved verbatim. |
+
+### Namespace `Codec.MonkeysAudio`
+
+[`MonkeysAudioCodec`](#monkeysaudiocodec) · [`MonkeysAudioCodec.MonkeysAudioStreamInfo`](#monkeysaudiocodecmonkeysaudiostreaminfo)
+
+#### `MonkeysAudioCodec`
+
+Monkey's Audio (.ape) lossless codec — a reference-faithful encoder and decoder for the version 3.99 (v3990) container and bitstream. The on-disk layout is the v3.98+ `APE_DESCRIPTOR` + 24-byte `APE_HEADER` + u32-per-frame seek table + range-coded frame data, exactly as the reference SDK writes it. PCM in and out is raw interleaved little-endian signed integers. The decode path is a byte-exact port of the reference SDK's `CUnBitArray` range coder, `DecodeValueRange` entropy stage (v3990), the order-4 dual cross-channel predictor (`CPredictorDecompress3950toCurrent`) and the level-dependent `CNNFilter` cascade, plus the X/Y → L/R decorrelation and 8/16/24-bit sample reconstruction (`CPrepare::Unprepare`) and the per-frame CRC32 / special-frame (silence, pseudo-stereo) handling. It is the same machinery ffmpeg's `libavcodec/apedec.c` implements, so it decodes real reference- or ffmpeg-produced files of compression levels 1000–5000 (verified byte-exact against ffmpeg). The container parser requires the v3.98+ `APE_DESCRIPTOR` layout, so files older than v3980 are rejected even though the bitstream port itself covers the v3.95+ predictor. The encode path is the exact forward inverse — the SDK's `CBitArray` range coder, `EncodeValue`, `CPredictorCompressNormal` and `CPrepare` — so a stream this codec writes is the byte-stream the reference encoder would produce for the same input at the same level and round-trips losslessly through the reference decoder (this one or ffmpeg). The encoder emits levels 1000–4000 (the level-5000 "insane" filter cascade decodes but is not used for encoding). Pre-3.95 (< 3950) files use older entropy/predictor variants this port does not implement and are rejected with `NotSupportedException` so container descriptors fall back gracefully.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressionExtraHigh` | `const int CompressionExtraHigh` | Defines the compression extra high constant value. |
+| `CompressionFast` | `const int CompressionFast` | Defines the compression fast constant value. |
+| `CompressionHigh` | `const int CompressionHigh` | Defines the compression high constant value. |
+| `CompressionInsane` | `const int CompressionInsane` | Defines the compression insane constant value. |
+| `CompressionNormal` | `const int CompressionNormal` | Defines the compression normal constant value. |
+| `Compress` | `static void Compress(Stream pcmIn, Stream apeOut, int channels, int sampleRate, int bitsPerSample, int compressionLevel = 1000)` | Encodes raw interleaved little-endian PCM to a Monkey's Audio stream at the given compression level (default `CompressionFast`). |
+| `Decompress` | `static void Decompress(Stream apeIn, Stream pcmOut)` | Decodes a Monkey's Audio v3.95+ stream to raw interleaved little-endian PCM. |
+| `ReadStreamInfo` | `static MonkeysAudioStreamInfo ReadStreamInfo(Stream input)` | Reads the descriptor + header to report channel count, rate, depth, sample count, compression level and version without decoding the audio. |
+
+#### `MonkeysAudioCodec.MonkeysAudioStreamInfo`
+
+Stream geometry callers need to build PCM headers / split channels.
+
+Implements `IEquatable<MonkeysAudioStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MonkeysAudioStreamInfo` | `MonkeysAudioStreamInfo(int Channels, int SampleRate, int BitsPerSample, long TotalSamples, int CompressionLevel, int Version)` | Stream geometry callers need to build PCM headers / split channels. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `CompressionLevel` | `int CompressionLevel { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `TotalSamples` | `long TotalSamples { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+### Namespace `Codec.Mos6502`
+
+[`Cpu6502`](#cpu6502) · [`Cpu6502.Status`](#cpu6502status) · [`IBus6502`](#ibus6502)
+
+#### `Cpu6502`
+
+A cycle-counting NMOS 6502 / 6510 CPU core. The instruction decode covers every official opcode plus the stable illegal opcodes that SID/NSF players are known to rely on: `LAX, SAX, DCP, ISC, SLO, RLA, SRE, RRA, ANC, ALR, ARR, AXS` and the undocumented `NOP`/`SKB`/`SKW` family. Decimal mode (BCD) is implemented for `ADC`/`SBC` because C64 tunes use it. Behaviours intentionally omitted (they are unstable on real silicon and not used by music players): the highly analog/unstable illegals `ANE/XAA ($8B)`, `LXA/LAX#imm ($AB)`, `TAS/SHS ($9B)`, `SHA/AHX ($9F/$93)`, `SHX ($9E)`, `SHY ($9C)` and the `KIL/JAM` halts are decoded as no-ops/best-effort and flagged. The undocumented decimal flags of ADC/SBC (N,V,Z in BCD mode) follow the NMOS results. Memory is accessed exclusively through `IBus6502`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Cpu6502` | `Cpu6502(IBus6502 bus)` | Initializes a new instance of `Cpu6502`. |
+| `A` | `byte A` | Provides the a value. |
+| `PC` | `ushort PC` | Provides the pc value. |
+| `P` | `Status P` | Provides the p value. |
+| `SP` | `byte SP` | Provides the sp value. |
+| `X` | `byte X` | Provides the x value. |
+| `Y` | `byte Y` | Provides the y value. |
+| `Reset` | `void Reset()` | Power-on/reset: stack pointer to $FD, interrupt-disable set, PC loaded from the reset vector at $FFFC/$FFFD. |
+| `RunUntilRts` | `long RunUntilRts(ushort address, long maxCycles)` | Calls into a subroutine at `address` using the player convention: a sentinel return address is pushed so the matching `RTS` lands on a known PC, at which point execution stops. Returns the cycles consumed (capped). Used by SID/NSF players to invoke the tune's init and play routines. |
+| `Step` | `long Step()` | Executes one instruction and returns the number of clock cycles it consumed, including page-cross and branch-taken penalties. |
+
+#### `Cpu6502.Status`
+
+Processor status flag bits.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Carry` | `1` | Specifies the carry option. |
+| `Zero` | `2` | Specifies the zero option. |
+| `Interrupt` | `4` | Specifies the interrupt option. |
+| `Decimal` | `8` | Specifies the decimal option. |
+| `Break` | `16` | Specifies the break option. |
+| `Unused` | `32` | Specifies the unused option. |
+| `Overflow` | `64` | Specifies the overflow option. |
+| `Negative` | `128` | Specifies the negative option. |
+
+#### `IBus6502`
+
+The memory abstraction the `Cpu6502` core talks to. Every fetch, read and write the CPU performs is routed through this 16-bit address bus, so a host can model RAM, ROM, and memory-mapped I/O (e.g. a SID register window) however it likes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `byte Read(ushort addr)` | Reads one byte from `addr`. |
+| `Write` | `void Write(ushort addr, byte value)` | Writes `value` to `addr`. |
 
 ### Namespace `Codec.Mp3`
 
@@ -694,6 +1892,131 @@ G.711 μ-law codec: 8-bit logarithmic samples decoded to 16-bit linear PCM. The 
 | `Decode` | `static short[] Decode(ReadOnlySpan<byte> mulaw)` | Decodes a full μ-law byte buffer to 16-bit linear PCM. |
 | `EncodeSample` | `static byte EncodeSample(short pcm)` | Encodes one 16-bit signed linear sample to a μ-law byte (used for test round-trip). |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes a 16-bit linear PCM buffer to μ-law bytes (used for tests). |
+
+### Namespace `Codec.Musepack`
+
+[`MusepackCodec`](#musepackcodec) · [`MusepackStreamInfo`](#musepackstreaminfo)
+
+#### `MusepackCodec`
+
+Clean-room Musepack decoder — an MPEG-1 Layer II-derived subband codec with 1152-sample frames over 32 subbands and the same 32-band polyphase synthesis filterbank as MP2. Ported faithfully from FFmpeg's `libavcodec/mpc7.c` + `mpc8.c` + `mpc.c` and `libavformat/mpc.c` + `mpc8.c` (LGPL 2.1, © Konstantin Shishkov). Output is interleaved little-endian signed 16-bit PCM. Supported: SV8 (`MPCK`) mono and stereo, and SV7 (`MP+`) stereo. Multichannel SV8 (>2) raises `NotSupportedException` with a clear message so callers can fall back to a metadata-only view.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a Musepack SV8 stream into interleaved little-endian 16-bit PCM. |
+| `ReadStreamInfo` | `static MusepackStreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info from the SV8 stream header. |
+
+#### `MusepackStreamInfo`
+
+Stream-level metadata for a Musepack stream.
+
+Implements `IEquatable<MusepackStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MusepackStreamInfo` | `MusepackStreamInfo(int Channels, int SampleRate, long SampleCount, int Version, int MaxBand, bool MidSideUsed)` | Stream-level metadata for a Musepack stream. |
+| `Channels` | `int Channels { get; init; }` | Decoded channel count (1 or 2). |
+| `MaxBand` | `int MaxBand { get; init; }` | Highest coded subband + 1. |
+| `MidSideUsed` | `bool MidSideUsed { get; init; }` | Whether mid/side stereo coding is enabled. |
+| `SampleCount` | `long SampleCount { get; init; }` | Total decoded samples per channel (-1 if unknown). |
+| `SampleRate` | `int SampleRate { get; init; }` | Output sample rate in Hz. |
+| `Version` | `int Version { get; init; }` | Stream version (8 for SV8). |
+
+### Namespace `Codec.Nellymoser`
+
+[`NellymoserCodec`](#nellymosercodec)
+
+#### `NellymoserCodec`
+
+Nellymoser "Asao" decoder — the fixed mono speech/music codec used by Flash (FLV) audio. Faithful port of FFmpeg's `libavcodec/nellymoserdec.c` plus the shared tables and bit-allocation in `libavcodec/nellymoser.c` (decode-only). Each 64-byte block decodes to 256 mono samples via two 128-point inverse-MDCT half-windows with 50% (64-sample) sine-window overlap-add. Per block: a 6-bit index into `nelly_init_table` seeds the band gain, then 22 5-bit deltas via `nelly_delta_table` spread across the 23 bands (`nelly_band_sizes_table`); the power budget is distributed by the verbatim `ff_nelly_get_sample_bits` allocator; each spectral line is dequantised through `nelly_dequantization_table` (or noise-filled with a randomised sign when it gets no bits). Ported verbatim: all four tables, the `headroom`/`sum_bits`/ `get_sample_bits` allocator, the lagged-Fibonacci RNG seeding the noise sign, and the per-block gain/dequant walk. The IMDCT is a direct O(n²) evaluation of FFmpeg's MDCT phase (size-256 transform, `imdct_half` middle slice), which is numerically equivalent to the reference FFT-based transform for these 128 points.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> blocks, int sampleRate)` | Decodes a raw Nellymoser block stream (a whole number of 64-byte blocks) to mono 16-bit signed PCM. Each block yields 256 samples. A ragged tail (length not a multiple of 64) is rejected by returning the samples decoded from the whole blocks only. `sampleRate` only labels the output and does not affect decoding. |
+
+### Namespace `Codec.Nes2a03`
+
+[`Apu2a03`](#apu2a03) · [`NsfPlayer`](#nsfplayer)
+
+#### `Apu2a03`
+
+A register-level emulation of the NES 2A03 audio processing unit (APU). Driven by `Write` calls into the $4000-$4017 register window, it synthesises the five channels — two pulses, triangle, noise and DMC — applies the frame counter that clocks envelopes, linear and length counters, and emits 16-bit mono samples via `RenderSamples`. The chip steps internally at the CPU clock rate (NTSC 1.789773 MHz, PAL 1.662607 MHz) and decimates to the requested output rate (default 44100 Hz) by averaging the per-step nonlinear mix across each output-sample window — a cheap anti-aliasing measure rather than a designed decimation filter. The DMC reads its samples through the supplied `IBus6502`.Timing approximations: the APU normally runs every other CPU cycle, but here each channel timer is clocked once per CPU step and the frame counter fires its quarter/half events at the documented per-step rates (≈3729 steps between events at NTSC). The frame IRQ is not generated — NSF playback is play-call driven, not interrupt driven.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Apu2a03` | `Apu2a03(IBus6502 bus, double clockHz = 1789773, int outputRate = 44100)` | Initializes a new instance of `Apu2a03`. |
+| `NtscClockHz` | `const double NtscClockHz` | NTSC CPU/APU master clock. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `PalClockHz` | `const double PalClockHz` | PAL CPU/APU master clock. |
+| `ClockHz` | `double ClockHz { get; }` | The master clock rate (Hz) the APU and any expansion chips step at. |
+| `Read4015` | `byte Read4015()` | Reads the $4015 status: bit per channel whose length (or DMC bytes) is active. |
+| `RenderSamples` | `void RenderSamples(Span<short> output, int count)` | Renders `count` mono 16-bit samples into `output`. |
+| `Write` | `void Write(ushort addr, byte value)` | Writes an APU register (`addr` in the $4000-$4017 window). |
+
+#### `NsfPlayer`
+
+An NSF (NES Sound Format) tune player. It maps the tune's 6502 program into a 64 KB bus, runs the tune's init routine for a chosen song, then repeatedly calls the play routine at the tune's frame rate, rendering 2A03 APU samples between calls. The bus is RAM at $0000-$07FF (mirrored through $1FFF), the APU register window $4000-$4017 (writes captured into the `Apu2a03`, $4015 readable), the bankswitch registers $5FF8-$5FFF (active only on bankswitched tunes), WRAM $6000-$7FFF and the program area $8000-$FFFF. On a non-bankswitched tune the program is loaded straight at `loadAddr`; on a bankswitched tune the NSF data is sliced into 4 KB banks mapped at $8000-$FFFF, with the eight bank registers initialised from the header's bankswitch bytes.The base 2A03 plus the six Famicom expansion sound chips are emulated. The header's expansion flag byte (offset 0x7B) selects which to instantiate — bit 0 VRC6, bit 1 VRC7 (an OPLL core reusing `Codec.Ym2413` with the VRC7 patch ROM), bit 2 FDS, bit 3 MMC5, bit 4 Namco 163, bit 5 Sunsoft 5B (a YM2149 reusing `Codec.Ay8910`). Each chip captures its own register window on the 6502 bus, is clocked alongside the APU and sums into the mix. NSFE containers are not parsed here — construct from the parsed NESM fields instead.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsfPlayer` | `NsfPlayer(byte[] programData, ushort loadAddr, ushort initAddr, ushort playAddr, int startSong, byte extraChips, bool useNtsc, int playSpeedMicros, ReadOnlySpan<byte> bankswitchBytes)` | Builds a player from the parsed NESM fields plus the program data (the bytes after the 0x80-byte NESM header). `useNtsc` selects the region (clock and the init X register). `playSpeedMicros` is the per-frame interval in microseconds from the header (NTSC or PAL speed word); a zero or unset value falls back to the region's vertical-blank rate. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `Apu` | `Apu2a03 Apu { get; }` | The 2A03 APU instance driving synthesis. |
+| `ExpansionChipNames` | `string ExpansionChipNames { get; }` | Human-readable list of the enabled expansion chips ("none" when base 2A03 only). |
+| `ExpansionChips` | `byte ExpansionChips { get; }` | The NSF expansion-chip flag byte (header offset 0x7B) this player is driving. |
+| `FrameRateHz` | `double FrameRateHz { get; }` | The resolved frame rate (play calls per second) for this tune. |
+| `FromNesm` | `static NsfPlayer FromNesm(byte[] file)` | Builds a player directly from full NESM file bytes (0x80 header + program). |
+| `FromNesm` | `static NsfPlayer FromNesm(byte[] file, int song)` | Builds a player from full NESM file bytes (0x80 header + program) for an explicit 1-based `song`, overriding the header's start-song field. Used to render each subtune of a multi-song tune. |
+| `Render` | `short[] Render(double seconds, int outputRate = 44100)` | Renders `seconds` of audio as mono 16-bit PCM at `outputRate`. |
+
+### Namespace `Codec.OkiAdpcm`
+
+[`OkiAdpcmCodec`](#okiadpcmcodec)
+
+#### `OkiAdpcmCodec`
+
+OKI / Dialogic VOX 4-bit ADPCM (MSM6258 / MSM6585 family). A purely differential codec: each 4-bit nibble carries the sign + magnitude of the delta to the next sample, with the quantiser step walking a 49-entry table. Unlike IMA ADPCM the predictor is a 12-bit value clamped to `[-2048, 2047]`; samples are scaled to 16-bit on output by shifting left 4 bits. The bitstream packs two samples per byte, HIGH nibble first then the LOW nibble — the convention used by Dialogic `.vox` files. The delta is derived from the canonical OKI accumulation: `e = step/8; if(b2) e += step/4; if(b1) e += step/2; if(b0) e += step`, added to or subtracted from the predictor by the sign bit (b3). Equivalent to `e = step * ((nibble&7)*2 + 1) / 8`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a mono VOX ADPCM byte stream to 16-bit PCM. Each input byte yields two samples (high nibble first), so the output holds `data.Length * 2` samples. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit PCM to a mono VOX ADPCM byte stream using the same state machine as `Decode`, so round-tripping reproduces the waveform within the codec's lossy tolerance. Two samples pack into each byte (high nibble first); an odd trailing sample is paired with a zero (silence) low nibble. |
+
+### Namespace `Codec.Opl`
+
+[`OplCodec`](#oplcodec) · [`OplCodec.Chip`](#oplcodecchip)
+
+#### `OplCodec`
+
+Yamaha OPL FM synthesis family: the YM3526 (OPL), YM3812 (OPL2), YMF262 (OPL3) and the Y8950 MSX-Audio (an OPL core with an extra DELTA-T ADPCM channel). The OPL is a two-operator FM chip with nine channels (eighteen on OPL3); OPL3 additionally provides four-operator channel pairing, stereo L/R panning, and eight operator waveforms (against OPL2's four and the plain sine of the original OPL). References. The operator/envelope/phase/waveform and rhythm logic is ported from `Nuked-OPL3` (Alexey Khokholov, "Nuke.YKT") — the cycle-accurate reverse-engineered YMF262 — and cross-checked against MAME's `ymfm` and the Yamaha YMF262 / YM3812 application manuals for the register map. The log-sine and exponential operator ROMs are the genuine die constants shared with the OPN/OPL family (see `OplTables`).Registers are written through `WriteRegister` (bank, address, value); bank 1 is the OPL3 high register set (addresses 0x100..0x1FF). `RenderSample` produces one stereo frame at the chip's native rate (`NativeSampleRate`); OPL and OPL2 are mono and emit the same value on both sides.Y8950 ADPCM. The DELTA-T ADPCM channel (registers 0x07..0x12) is decoded only when its ROM/RAM sample memory is supplied via `LoadAdpcmMemory`; VGM does not carry that data in the common case, so without it the ADPCM channel is gated off and only the FM part is voiced (see `AdpcmActive`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OplCodec` | `OplCodec(Chip chip = 1, double clock = 3579545)` | Initializes a new instance of `OplCodec`. |
+| `Prescale` | `const int Prescale` | FM sample-rate divisor: the OPL family emits one frame per clock/72 tick. |
+| `AdpcmActive` | `bool AdpcmActive { get; }` | True when the Y8950 ADPCM channel has sample memory loaded and is therefore voiced. |
+| `ExpRom` | `static IReadOnlyList<ushort> ExpRom { get; }` | The genuine die-extracted exponential ROM (256 entries; OR'd with 0x400 in use). |
+| `LogSinRom` | `static IReadOnlyList<ushort> LogSinRom { get; }` | The genuine die-extracted log-sine ROM (256 entries, 1/256 dB). |
+| `NativeSampleRate` | `double NativeSampleRate { get; }` | The chip's native output sample rate (clock / 72). |
+| `Opl3Enabled` | `bool Opl3Enabled { get; }` | True when OPL3 extended (18-channel/4-op/stereo) mode is enabled (reg 0x105 bit0). |
+| `RhythmMode` | `bool RhythmMode { get; }` | True when rhythm mode (reg 0xBD bit5) is engaged. |
+| `Variant` | `Chip Variant { get; }` | The OPL variant this instance emulates. |
+| `LoadAdpcmMemory` | `void LoadAdpcmMemory(byte[] memory)` | Loads Y8950 ADPCM sample memory (the VGM 0x82/0x88 data blocks). Without it the ADPCM channel is gated off; the FM part always renders regardless. |
+| `RenderSample` | `short RenderSample()` | Renders one mono frame (left+right averaged) for callers wanting a single value. |
+| `RenderSample` | `void RenderSample(out short left, out short right)` | Renders one stereo frame at the chip's native rate; values are signed 16-bit. |
+| `WriteRegister` | `void WriteRegister(int address, int value)` | Convenience single-bank write (YM3526/YM3812/Y8950). |
+| `WriteRegister` | `void WriteRegister(int bank, int address, int value)` | Writes one OPL register. `bank` 0 is the base register set; bank 1 (OPL3) is the high set (the VGM 0x5F command / addresses 0x100..0x1FF). The Y8950/YM3812/YM3526 single-bank commands use bank 0. |
+
+#### `OplCodec.Chip`
+
+The OPL variant being emulated.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Opl` | `0` |  |
+| `Opl2` | `1` |  |
+| `Opl3` | `2` |  |
+| `Y8950` | `3` |  |
 
 ### Namespace `Codec.Opus`
 
@@ -952,6 +2275,917 @@ Implements `IEquatable<QoaStreamInfo>`.
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 | `SamplesPerChannel` | `long SamplesPerChannel { get; init; }` |  |
 
+### Namespace `Codec.Ra144`
+
+[`Ra144Codec`](#ra144codec)
+
+#### `Ra144Codec`
+
+RealAudio 1.0 "14_4"/lpcJ decoder — a faithful port of FFmpeg's `libavcodec/ra144.c` + `ra144dec.c`. The codec is a 14.4 kbit/s CELP-style speech coder: every 20-byte block decodes to 160 signed 16-bit samples at 8000 Hz mono. Per block the bitstream carries ten LPC reflection-coefficient indices (bit widths {6,5,5,4,4,3,3,3,3,2}), a 5-bit frame energy, then four subframes of {7-bit adaptive-codebook lag, 8-bit gain, 7-bit fixed-codebook-1 index, 7-bit fixed-codebook-2 index}. Synthesis interpolates the LPC coefficients across the four subframes, builds an excitation from the adaptive codebook plus the two fixed codebooks scaled by the gain/energy tables, then runs the LPC synthesis filter.Decode-only — there is no encoder. State (adaptive codebook, previous-frame LPC coefficients, previous energy) is carried across blocks exactly as the reference does, so a multi-block buffer decodes identically to feeding the blocks one at a time.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> blocks)` | Decodes back-to-back 20-byte lpcJ blocks to interleaved (mono) 16-bit PCM. A ragged tail shorter than a full block is ignored. Output length is `(input.Length / 20) * 160` samples. |
+
+### Namespace `Codec.Ra288`
+
+[`Ra288Codec`](#ra288codec)
+
+#### `Ra288Codec`
+
+RealAudio 2.0 (28.8K) "28_8" decoder — a faithful, decode-only port of FFmpeg's `libavcodec/ra288.c` together with the shared G.728 hybrid-window helper (`g728_template.c`), the Levinson-Durbin recursion (`lpc_functions.h`) and the CELP LPC synthesis filter (`celp_filters.c`). It is a G.728-derived backward-adaptive LD-CELP speech coder: every 38-byte frame decodes to 160 samples (32 sub-blocks × 5 samples) of 8000 Hz mono audio. Per sub-block the (little-endian) bitstream carries a 3-bit gain index and a 6/7-bit codebook index; the excitation is gain-compensated against a backward-adapted log-gain LPC, then run through a 36th-order speech LPC synthesis filter. Both the 36-tap speech LPC and the 10-tap gain LPC are re-estimated every eight sub-blocks from the signal history via the G.728 hybrid window + Levinson-Durbin, with bandwidth broadening applied.Decode-only — there is no encoder. All filter history (speech / gain history, the recursive autocorrelation parts, the current LPC coefficients) is carried across frames exactly as the reference does, so a multi-frame buffer decodes identically to feeding the frames one at a time.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ra288Codec` | `Ra288Codec()` |  |
+| `CodedFrameSize` | `const int CodedFrameSize` | Coded bytes per frame (38). |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> frames)` | Decodes back-to-back 38-byte frames to mono 8000 Hz signed-16-bit PCM. A ragged tail shorter than a full frame is ignored. Output length is `(input.Length / 38) × 160` samples. |
+
+### Namespace `Codec.Ralf`
+
+[`RalfCodec`](#ralfcodec)
+
+#### `RalfCodec`
+
+RealAudio Lossless ("ralf") decoder — a faithful, decode-only port of FFmpeg's `libavcodec/ralf.c` with the canonical Huffman tables from `ralfdata.h`. RALF stores 16-bit (mono or stereo) audio losslessly: each packet carries a block-size table followed by coded blocks; each block carries, per channel, a length, an adaptive LPC filter (Rice/Golomb coded coefficients of up to 63 taps), Golomb-coded residuals and a per-channel bias, then an inter-channel decorrelation mode that recombines the two channels. Construct from the 24-byte "LSD:" extradata (version 0x103, channel count, sample rate, max frame size). Decode-only — there is no encoder; the decoder is stateless across packets (each packet is independently decodable), matching the reference for the non-split stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RalfCodec` | `RalfCodec(ReadOnlySpan<byte> extradata)` | Constructs a decoder from RALF "LSD:" extradata: `"LSD:"` (4) \| be16 version \| be16 reserved \| be16 channels \| be16 reserved \| be32 sample_rate \| be32 max_frame_size. |
+| `Channels` | `int Channels { get; }` | Channel count (1 or 2). |
+| `MaxFrameSize` | `int MaxFrameSize { get; }` | Maximum decoded samples per channel per packet. |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate in Hz. |
+| `Version` | `int Version { get; }` | Extradata format version (only 0x103 is supported). |
+| `DecodeStream` | `short[] DecodeStream(IReadOnlyList<byte[]> packets)` | Decodes a sequence of independently-coded RALF packets and concatenates the result. |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> packet)` | Decodes one RALF packet to interleaved signed-16-bit PCM. Returns `samples × channels` interleaved samples (samples = decoded length for this packet). |
+
+### Namespace `Codec.RoqDpcm`
+
+[`RoqDpcmCodec`](#roqdpcmcodec)
+
+#### `RoqDpcmCodec`
+
+RoQ DPCM, the audio coding inside id Software's RoQ video container (Quake III, the `.roq` cinematics). It is a square-table differential PCM: each payload byte is a signed delta whose magnitude is squared before being added to the running predictor. The decode table is `table[b] = (b < 128) ? b*b : -((b - 128) * (b - 128))`, i.e. the low 7 bits give the magnitude root and bit 7 the sign, so a one-byte code spans the full ±16129 delta range with finer resolution near zero. RoQ sound chunks carry the initial predictor in the chunk's 16-bit argument. Mono chunks initialise the single predictor from the whole argument; stereo chunks split it — the high byte seeds the left predictor (`arg & 0xFF00`) and the low byte the right (`(arg & 0xFF) << 8`) — and the payload bytes then alternate L, R. Streams are 22050 Hz. The encoder picks, for each sample, the table entry whose resulting predictor is nearest the target, so a round-trip is near-lossless for slowly varying signals.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SampleRate` | `const int SampleRate` | Sample rate of RoQ audio chunks. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> payload, ushort initialArg, bool stereo)` | Decodes a RoQ sound-chunk payload into interleaved signed 16-bit PCM. `initialArg` is the chunk's 16-bit argument carrying the initial predictor(s); `stereo` selects the mono (id 0x1020) or stereo (id 0x1021) layout. |
+| `Encode` | `static ValueTuple<byte[], ushort> Encode(ReadOnlySpan<short> pcm, bool stereo)` | Encodes interleaved signed 16-bit PCM into a RoQ sound-chunk payload, returning the payload bytes and the initial 16-bit argument to store in the chunk header. The initial predictor(s) are taken from the first sample(s) and quantised to the byte granularity the header can hold; subsequent bytes are chosen greedily. |
+
+### Namespace `Codec.S302M`
+
+[`S302MCodec`](#s302mcodec) · [`S302MCodec.Aes3Header`](#s302mcodecaes3header)
+
+#### `S302MCodec`
+
+SMPTE 302M decoder — linear PCM carried as AES3 (AES/EBU) subframes inside an MPEG-2 transport stream PES payload. A faithful port of FFmpeg's `libavcodec/s302m.c`. Each S302M packet starts with a 4-byte AES3 header (big-endian): a 16-bit audio packet size, a 2-bit channel-count field (`n × 2 + 2` channels, so 2/4/6/8), an 8-bit channel id, a 2-bit bits-per-sample field (`n × 4 + 16`, so 16/20/24) and 4 alignment bits. The payload is a packed stream of AES3 subframe words whose audio bits are stored in bit-reversed order (LSB-first within each byte), two samples at a time. Decoding reverses each byte (`Reverse`, FFmpeg's `ff_reverse`) and re-assembles the left-justified PCM words exactly as the reference does for the 16-, 20- and 24-bit cases. S302M has no encoder in FFmpeg; `Encode` here is the exact inverse of the decoder's bit packing (used to build round-trip test vectors), not a general-purpose muxer.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Aes3HeaderLength` | `const int Aes3HeaderLength` | Length of the AES3 header that precedes the packed PCM payload. |
+| `SampleRate` | `const int SampleRate` | The fixed S302M sample rate (48 kHz). |
+| `DecodeInterleaved` | `static int[] DecodeInterleaved(ReadOnlySpan<byte> data)` | Decodes an S302M packet to interleaved signed PCM samples (left-justified into a signed 32-bit container at the stream's bit depth, AES3 channel order). The reference packs two samples per iteration; the final fractional group beyond the per-depth stride is left undecoded exactly as in FFmpeg (the loop condition stops with a few payload bytes remaining). |
+| `DecodeToChannels` | `static int[][] DecodeToChannels(ReadOnlySpan<byte> data, out int sampleRate, out int channels, out int bitsPerSample)` | Decodes an S302M packet to per-channel signed PCM samples, normalised to a signed 32-bit value left-justified to `bitsPerSample` (i.e. the raw left-justified word the reference produces, interpreted as a two's-complement sample). The interleaving is the AES3 channel-pair order. Returns an empty array on an invalid header. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<int> interleaved, int channels, int bitsPerSample)` | Builds an S302M packet from interleaved signed PCM samples — the exact inverse of `DecodeInterleaved`. `channels` must be 2/4/6/8 and `bitsPerSample` 16/20/24; the sample count must be a multiple of `channels × 2` (the reference packs sample pairs). Used to construct byte-exact round-trip test vectors. |
+| `ReadHeader` | `static Aes3Header? ReadHeader(ReadOnlySpan<byte> data)` | Parses the 4-byte AES3 header at the start of `data`. Returns `null` when the buffer is too short, the declared frame size does not match the payload length, or the bits-per-sample exceed 24 — matching the reference's validation. |
+
+#### `S302MCodec.Aes3Header`
+
+Parsed AES3 header fields.
+
+Implements `IEquatable<Aes3Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Aes3Header` | `Aes3Header(int FrameSizeBytes, int Channels, int BitsPerSample)` | Parsed AES3 header fields. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `FrameSizeBytes` | `int FrameSizeBytes { get; init; }` |  |
+
+### Namespace `Codec.Sbc`
+
+[`SbcCodec`](#sbccodec) · [`SbcCodec.Allocation`](#sbccodecallocation) · [`SbcCodec.ChannelMode`](#sbccodecchannelmode) · [`SbcCodec.FrameHeader`](#sbccodecframeheader)
+
+#### `SbcCodec`
+
+Bluetooth low-complexity subband codec (SBC), including the mSBC (modified SBC) wide-band-speech variant. A faithful fixed-point port of FFmpeg's `libavcodec/sbcdec.c` + `sbc.c` (tables in `SbcTables` from `sbcdec_data.h`). SBC has no encoder here (FFmpeg's SBC encoder lives elsewhere and is not ported); this type only synthesises 16-bit linear PCM. An SBC stream is a sequence of self-describing frames. Each frame begins with a syncword — `0x9C` for ordinary A2DP SBC, `0xAD` for mSBC — followed by a packed header carrying the sampling frequency, block count, channel mode, bit-allocation method, subband count and bitpool, then a CRC-8 over the header and scale factors. mSBC fixes those parameters: 16 kHz, 15 blocks, loudness allocation, mono, 8 subbands, bitpool 26. Decode pipeline (bit-exact with the reference): parse header → validate CRC-8 → derive the per-subband bit allocation (`ff_sbc_calculate_bits`, loudness or SNR) → read scale factors and quantised samples, reconstructing each subband sample with the reference's `(((audio << 1) | 1) << shift) / levels - (1 << shift)` formula → undo joint stereo → run the 4- or 8-subband polyphase synthesis filter (prototype filter + synthesis matrix, circular V buffer) → clip to 16 bit. Each frame yields `blocks × subbands` samples per channel.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MsbcSyncword` | `const byte MsbcSyncword` | mSBC syncword (first byte of a modified-SBC wide-band-speech frame). |
+| `SbcSyncword` | `const byte SbcSyncword` | SBC A2DP syncword (first byte of an ordinary SBC frame). |
+| `Crc8` | `static byte Crc8(ReadOnlySpan<byte> data, int bitLength)` | CRC-8 of the first `bitLength` bits of `data`, matching FFmpeg's `ff_sbc_crc8`: whole bytes through the AV_CRC_8_EBU table (start value 0x0F), then any trailing partial byte bit-by-bit with polynomial 0x1D. |
+| `DecodeToChannels` | `static short[][] DecodeToChannels(ReadOnlySpan<byte> data, out int sampleRate, out int channels)` | Decodes an SBC/mSBC stream to one 16-bit linear-PCM short array per channel. The number of channels and the sample rate are taken from the first frame; a stream that mixes channel counts is decoded up to the first frame whose channel count differs. Returns an empty array when nothing decodes. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, out int sampleRate, out int channels)` | Decodes an SBC/mSBC stream to interleaved 16-bit linear PCM (channels woven sample-by-sample). Convenience wrapper over `DecodeToChannels`. |
+| `Probe` | `static FrameHeader? Probe(ReadOnlySpan<byte> data)` | Returns the parameters of the first valid frame in `data`, or `null` when the stream does not begin with a valid SBC/mSBC frame. |
+| `ReadFrames` | `static IReadOnlyList<FrameHeader> ReadFrames(ReadOnlySpan<byte> data)` | Walks `data` as a sequence of self-describing SBC frames, returning one `FrameHeader` per fully-present frame. The header is structurally validated (syncword, bitpool bounds, declared length present); the CRC is not checked here. Walking stops at the first byte that is not a valid frame header or at a trailing truncated frame. |
+| `ReadHeader` | `static FrameHeader? ReadHeader(ReadOnlySpan<byte> data)` | Parses the frame header at the start of `data` without decoding samples, returning `null` when the syncword, bitpool or available length is invalid. Used both by the decoder and by structural stream validation. |
+
+#### `SbcCodec.Allocation`
+
+Bit-allocation method (libavcodec/sbc.h).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Loudness` | `0` |  |
+| `Snr` | `1` |  |
+
+#### `SbcCodec.ChannelMode`
+
+SBC channel mode (libavcodec/sbc.h).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mono` | `0` |  |
+| `DualChannel` | `1` |  |
+| `Stereo` | `2` |  |
+| `JointStereo` | `3` |  |
+
+#### `SbcCodec.FrameHeader`
+
+Parsed parameters of a single SBC frame plus its byte length on the wire.
+
+Implements `IEquatable<FrameHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameHeader` | `FrameHeader(int FrequencyCode, int SampleRate, int Blocks, ChannelMode Mode, int Channels, Allocation AllocationMethod, int Subbands, int Bitpool, int FrameLengthBytes, bool IsMsbc)` | Parsed parameters of a single SBC frame plus its byte length on the wire. |
+| `AllocationMethod` | `Allocation AllocationMethod { get; init; }` |  |
+| `Bitpool` | `int Bitpool { get; init; }` |  |
+| `Blocks` | `int Blocks { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `FrameLengthBytes` | `int FrameLengthBytes { get; init; }` |  |
+| `FrequencyCode` | `int FrequencyCode { get; init; }` |  |
+| `IsMsbc` | `bool IsMsbc { get; init; }` |  |
+| `Mode` | `ChannelMode Mode { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Subbands` | `int Subbands { get; init; }` |  |
+
+### Namespace `Codec.Shorten`
+
+[`ShortenCodec`](#shortencodec) · [`ShortenCodec.ShortenStreamInfo`](#shortencodecshortenstreaminfo)
+
+#### `ShortenCodec`
+
+Shorten (`.shn`) lossless audio codec — both encoder and decoder, so PCM round-trips can be verified. Decodes the classic SoftSound bitstream (magic `ajkg`, version 2) into canonical interleaved little-endian PCM and encodes interleaved PCM back into a version-2 stream. Exact-spec behaviour (matches shorten 3.6.x / ffmpeg `shorten.c`): the bit packing, the `uvar`/`ulong`/`var` entropy primitives, the version-2 header (`ftype, nchan, blocksize, maxnlpc, nmean, nskip` + skip bytes), the polynomial fixed predictors `FN_DIFF0..FN_DIFF3`, `FN_ZERO`, `FN_BLOCKSIZE`, `FN_BITSHIFT`, `FN_VERBATIM`, `FN_QUIT`, the per-block residual energy parameter, the round-robin per-channel block interleave, and the running channel-mean offset when `nmean > 0`. `FN_QLPC` (quantised LPC) is decoded on a best-effort basis following shorten's layout (order via `ulong_get`, then per-coefficient `var_get(LPCQUANT)`); this codec's own encoder never emits `FN_QLPC` — it selects the best fixed predictor per block like FLAC's fixed-order search — so the QLPC path is exercised only against third-party streams. The Shorten container carries no sample-rate field; the `sampleRate` parameter on `Compress` is accepted for caller convenience but not stored, and `ReadStreamInfo` reports a sample rate of 0 (unknown).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream pcmInput, Stream shnOutput, int channels, int sampleRate, int bitsPerSample)` | Encodes interleaved little-endian PCM on `pcmInput` into a version-2 Shorten stream on `shnOutput`. The encoder selects the best polynomial predictor (DIFF0..DIFF3) per block, like FLAC's fixed-order search. `sampleRate` is accepted for caller convenience; the Shorten container has no sample-rate field, so it is not stored. |
+| `Decompress` | `static void Decompress(Stream shnInput, Stream pcmOutput)` | Decodes a Shorten stream on `shnInput` into raw interleaved little-endian PCM on `pcmOutput`. |
+| `ReadStreamInfo` | `static ShortenStreamInfo ReadStreamInfo(Stream input)` | Reads the Shorten header (magic, version and the version-2 header commands) without decoding audio. Sample rate is unknown to the format and reported as 0. |
+
+#### `ShortenCodec.ShortenStreamInfo`
+
+Header facts a caller needs to drive channel-splitting / PCM framing.
+
+Implements `IEquatable<ShortenStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ShortenStreamInfo` | `ShortenStreamInfo(int Channels, int BitsPerSample, int FileType, int SampleRate)` | Header facts a caller needs to drive channel-splitting / PCM framing. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` | Decoded PCM width in bits (8 or 16). |
+| `Channels` | `int Channels { get; init; }` | Channel count. |
+| `FileType` | `int FileType { get; init; }` | Raw shorten file-type code (2 = u8, 3 = s8, 5 = s16 LE). |
+| `SampleRate` | `int SampleRate { get; init; }` | Always 0 — Shorten stores no sample rate. |
+
+### Namespace `Codec.Sid`
+
+[`PsidPlayer`](#psidplayer) · [`SidChip`](#sidchip) · [`SidChipConfig`](#sidchipconfig) · [`SidEnvelope`](#sidenvelope) · [`SidFilter`](#sidfilter) · [`SidModel`](#sidmodel) · [`SidModelExtensions`](#sidmodelextensions) · [`SidVoice`](#sidvoice)
+
+#### `PsidPlayer`
+
+A PSID tune player. It loads the C64 program into a 64 KB RAM image, runs the tune's init routine for a chosen song, then repeatedly calls the play routine at the tune's frame rate, rendering SID samples between frames. The memory bus is RAM everywhere except the SID register windows (writes are captured into the matching `SidChip`) and the CIA #1 timer-A registers $DC04/$DC05 (captured to derive the CIA frame rate). SID register writes are applied immediately when the CPU performs them; cycle-accurate ordering of writes against sample rendering is NOT modelled — all writes for a frame take effect before that frame's samples are produced. This is adequate for the steady playback of non-sampled tunes.Multi-SID: a 2SID/3SID tune declares its extra chips through the PSID v3/v4 secondSIDAddress/thirdSIDAddress header bytes. SID #1 always lives at $D400; each extra chip occupies its own 32-byte register window inside $D400-$DFFF, and the bus routes a write to whichever chip owns the address. Writes to $D400-$DFFF that fall outside any configured chip's window are ignored by the SID side (still stored to RAM).RSID files, and PSID v2+ tunes flagged as needing the C64 BASIC/KERNAL environment, are rejected with `NotSupportedException`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsidPlayer` | `PsidPlayer(byte[] file, IReadOnlyList<SidChipConfig> chips, double clockHz, int? songOverride = null)` | Builds a multi-SID player from explicit per-chip configurations. The first config is SID #1 (its base is forced to $D400 regardless of what is supplied). Each config carries the chip's register-window base address and its resolved model. When `songOverride` is supplied it is the 1-based subtune to initialise instead of the header's start-song field, letting a caller render any of a multi-song tune's subtunes. |
+| `PsidPlayer` | `PsidPlayer(byte[] file, SidModel model, double clockHz)` | Builds a single-SID player. The caller supplies the `model` and `clockHz` already decoded from the descriptor, falling back to 6581/PAL when unknown. |
+| `FrameRateHz` | `double FrameRateHz { get; }` | The resolved frame rate (calls per second) for this tune. |
+| `Model` | `SidModel Model { get; }` | The model in use by SID #1. |
+| `SidCount` | `int SidCount { get; }` | The number of SID chips this player drives (1 = mono, 2 = stereo, 3 = 3SID). |
+| `ModelOf` | `SidModel ModelOf(int chip)` | The model in use by the chip at the given index (0 = SID #1). |
+| `RenderPerChip` | `short[][] RenderPerChip(double seconds, int outputRate = 44100)` | Renders `seconds` of audio, returning one mono 16-bit PCM buffer per SID chip (index 0 = SID #1). All chips are driven by the same program run; only their captured register writes differ. |
+| `Render` | `short[] Render(double seconds, int outputRate = 44100)` | Renders `seconds` of audio as interleaved mono 16-bit PCM at `outputRate` from SID #1 (back-compatible single-chip output). |
+
+#### `SidChip`
+
+A register-level MOS 6581/8580 SID emulator. Driven by `Write` calls into the 25 control registers ($D400-$D418 relative), it synthesises three voices, applies the per-voice ADSR envelopes, routes voices through the multimode filter per the FILT bits, and emits 16-bit mono samples through `RenderSamples`. The chip steps internally at the SID clock rate and decimates to the requested output rate (default 44100 Hz) by averaging every internal step within an output sample window — a cheap anti-aliasing measure rather than a designed decimation filter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidChip` | `SidChip(SidModel model, double clockHz, int outputRate = 44100)` | Initializes a new instance of `SidChip`. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Default render rate. |
+| `Model` | `SidModel Model { get; }` | The electrically distinct model this chip behaves as (aliases collapsed; 6582 → 8580). |
+| `RenderSamples` | `void RenderSamples(Span<short> output, int count)` | Renders `count` mono 16-bit samples into `output`. |
+| `Write` | `void Write(int reg, byte value)` | Writes a SID control register (`reg` 0..0x1C relative to $D400). |
+
+#### `SidChipConfig`
+
+One SID chip's placement and model for a multi-SID `PsidPlayer`.
+
+Implements `IEquatable<SidChipConfig>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidChipConfig` | `SidChipConfig(ushort BaseAddress, SidModel Model)` | One SID chip's placement and model for a multi-SID `PsidPlayer`. |
+| `BaseAddress` | `ushort BaseAddress { get; init; }` | The 32-byte register window base ($D400 for SID #1, $Dxx0 for extras). |
+| `Model` | `SidModel Model { get; init; }` | The resolved model this chip emulates. |
+
+#### `SidEnvelope`
+
+The SID per-voice ADSR envelope generator, modelled on the reSID-documented behaviour: an 8-bit envelope counter clocked by a 15-bit rate counter whose period comes from the datasheet attack/decay/release rate table, plus an exponential segment table that slows the decay/release as the level falls (the analog capacitor discharge curve). The segments break at envelope levels 255/93/54/26/14/6, where the rate-counter divisor steps 1 → 2 → 4 → 8 → 16 → 30. The rate table is the datasheet 2 ms..8 s set referenced to the 1 MHz-class SID clock. The generator is stepped once per SID clock cycle.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidEnvelope` | `SidEnvelope()` |  |
+| `Level` | `byte Level { get; }` | The current envelope level, 0..255. |
+| `Clock` | `void Clock()` | Advances the envelope by one SID clock cycle. |
+| `Gate` | `void Gate(bool on)` | Gate bit (bit 0 of the control register). A rising edge starts the attack; a falling edge starts the release. |
+| `WriteAttackDecay` | `void WriteAttackDecay(byte value)` | ATDC register write: high nibble = attack rate, low nibble = decay rate. |
+| `WriteSustainRelease` | `void WriteSustainRelease(byte value)` | SURE register write: high nibble = sustain level, low nibble = release rate. |
+
+#### `SidFilter`
+
+The SID multimode filter: a state-variable 2-pole filter producing low-pass, band-pass and high-pass outputs that are summed according to the mode bits ($D418 high nibble and the FC/RES registers). The 11-bit cutoff register maps to a corner frequency through a model-specific curve: 6581: a nonlinear, S-shaped curve with a DC offset — approximated here with a base offset plus a tanh-shaped mapping (constants documented inline). This is an approximation of the documented 6581 curve, not a per-chip measurement.8580: a near-linear curve. Resonance maps the register's high nibble to a Q value (model-dependent range).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidFilter` | `SidFilter(SidModel model, double clockHz)` | Initializes a new instance of `SidFilter`. |
+| `Process` | `double Process(double input)` | Runs one filter step on `input` and returns the summed selected outputs. |
+| `SetCutoff` | `void SetCutoff(int fc11)` | Sets the filter cutoff from the 11-bit FC register value (0..2047). |
+| `SetMode` | `void SetMode(bool lowPass, bool bandPass, bool highPass)` | Selects which filter outputs are summed (low nibble of mode = HP/BP/LP bits). |
+| `SetResonance` | `void SetResonance(int res4)` | Sets resonance from the RES register high nibble (0..15). |
+
+#### `SidModel`
+
+The SID revisions, which differ chiefly in their filter cutoff curve.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mos6581` | `0` | The original MOS 6581: nonlinear, S-shaped filter cutoff curve and a DC distortion offset. |
+| `Mos8580` | `1` | The later MOS 8580: near-linear filter cutoff curve. |
+| `Mos6582` | `2` | The MOS 6582. Electrically and sonically it is an 8580 (it shares the 8580 die and filter behaviour); it is named here so a real-world chip set can be reported faithfully, but it is treated identically to `Mos8580` for synthesis. See `Resolve`. |
+
+#### `SidModelExtensions`
+
+Helpers for collapsing SID model aliases onto the two electrically distinct behaviours.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Resolve` | `static SidModel Resolve(this SidModel model)` | Resolves a model to the electrically distinct behaviour the emulator implements: every alias of the 8580 (including the `Mos6582`) maps to `Mos8580`; otherwise `Mos6581`. |
+
+#### `SidVoice`
+
+One SID voice: a 24-bit phase accumulator (frequency = freg * clock / 2^24) feeding the four waveform generators — triangle (optionally ring-modulated by the previous voice), sawtooth, pulse (12-bit pulse width), and noise (a 23-bit LFSR with taps at bits 22 and 17, shifted when accumulator bit 19 rises). Hard sync resets this accumulator when the previous voice's accumulator MSB rises. Combined waveforms (more than one waveform bit set) are approximated by ANDing the selected 12-bit waveform outputs. This is the standard non-sampled emulation shortcut; the real chip's combined outputs are an analog function of the bit pattern and differ in detail. Documented here as an approximation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidVoice` | `SidVoice()` |  |
+| `Envelope` | `readonly SidEnvelope Envelope` | Provides the envelope value. |
+| `Accumulator` | `uint Accumulator { get; }` | Gets the accumulator. |
+| `RingMod` | `bool RingMod { get; }` | Gets a value indicating whether ring mod. |
+| `SyncEnabled` | `bool SyncEnabled { get; }` | Gets a value indicating whether sync enabled. |
+| `TestBit` | `bool TestBit { get; }` | Gets a value indicating whether test bit. |
+| `Clock` | `void Clock(SidVoice syncSource)` | Advances the accumulator one SID clock cycle and clocks the noise LFSR / sync. |
+| `MsbRose` | `bool MsbRose()` | True if the accumulator's MSB (bit 23) rose this cycle. Used as a sync source. |
+| `Output` | `int Output(SidVoice ringSource)` | The 12-bit waveform output (0..4095), with the previous voice supplied for ring modulation of the triangle. Returns 2048 (mid-scale) when no waveform is selected. |
+| `WriteControl` | `void WriteControl(byte value)` | Writes the control to the supplied output. |
+| `WriteFreqHi` | `void WriteFreqHi(byte value)` | Writes the freq hi to the supplied output. |
+| `WriteFreqLo` | `void WriteFreqLo(byte value)` | Writes the freq lo to the supplied output. |
+| `WritePwHi` | `void WritePwHi(byte value)` | Writes the pw hi to the supplied output. |
+| `WritePwLo` | `void WritePwLo(byte value)` | Writes the pw lo to the supplied output. |
+
+### Namespace `Codec.Sipr`
+
+[`SiprCodec`](#siprcodec) · [`SiprCodec.SiprMode`](#siprcodecsiprmode) · [`SiprReorder`](#siprreorder)
+
+#### `SiprCodec`
+
+SIPR / ACELP.NET ("sipr" FOURCC) speech decoder — a faithful, decode-only port of FFmpeg's `libavcodec/sipr.c` (plus the ACELP / LSP / CELP helpers it relies on from `acelp_vectors.c`, `acelp_filters.c`, `acelp_pitch_delay.c`, `celp_filters.c` and `lsp.c`). SIPR is a CELP-style mono speech coder carried in RealAudio: each coded frame holds an LSF vector quantisation, then per subframe an adaptive (pitch) codebook contribution interpolated at 1/3-sample resolution, a mode-specific sparse fixed codebook, VQ-coded gains with MA prediction, and an LPC synthesis filter, followed by an order-2 high-pass output filter (and for 5k0 an extra AMR-style postfilter with adaptive gain control). The codec mode is selected from the RealAudio coded-frame size (block_align): 19 → 8k5, 29 → 6k5, 37 → 5k0, 20 → 16k. The three 8 kbit/s sampling modes (8k5, 6k5, 5k0) are fully decoded to 8000 Hz mono 16-bit PCM. The 16k mode requires the separate `sipr16k.c` table set and is surfaced as `NotSupportedException`.Decode-only — there is no encoder. State (excitation history, LSF/LSP history, gain memory, postfilter memories) is carried across frames exactly as the reference does, so a concatenated multi-frame buffer decodes identically to feeding frames one at a time.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SiprCodec` | `SiprCodec(SiprMode mode)` | Constructs a decoder for the given mode. `Mode16k` is not yet supported and throws `NotSupportedException`. |
+| `FrameBytes` | `int FrameBytes { get; }` | Coded-frame size in bytes (`bits_per_frame / 8`). |
+| `Mode` | `SiprMode Mode { get; }` | The active decode mode. |
+| `SamplesPerFrame` | `int SamplesPerFrame { get; }` | Number of PCM samples this codec emits per coded frame (mono). |
+| `DecodeStream` | `short[] DecodeStream(ReadOnlySpan<byte> data)` | Decodes a concatenation of coded frames. A ragged tail shorter than a full coded frame is zero-padded and decoded (matching the reference's tolerance of a short final packet). |
+| `Decode` | `short[] Decode(ReadOnlySpan<byte> frame)` | Decodes one coded frame (`FrameBytes` bytes; a shorter span is tolerated and treated as zero-padded) into `SamplesPerFrame` mono 16-bit samples. |
+| `ModeFromBlockAlign` | `static SiprMode? ModeFromBlockAlign(int blockAlign)` | Maps a RealAudio coded-frame size (block_align) to a SIPR mode, exactly as `sipr_decoder_init` does: 20 → 16k, 19 → 8k5, 29 → 6k5, 37 → 5k0. Returns `null` for any other size. |
+
+#### `SiprCodec.SiprMode`
+
+SIPR decode modes (mirrors `SiprMode` in sipr.h).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mode16k` | `0` | Specifies the mode 16k option. |
+| `Mode8k5` | `1` | Specifies the mode 8k 5 option. |
+| `Mode6k5` | `2` | Specifies the mode 6k 5 option. |
+| `Mode5k0` | `3` | Specifies the mode 5k 0 option. |
+
+#### `SiprReorder`
+
+In-place RealMedia SIPR superblock descrambler — a port of `ff_rm_reorder_sipr_data` (FFmpeg's `libavformat/rmsipr.c`). RealMedia carries SIPR with the `DEINT_ID_SIPR` interleaver: a whole superblock of `sub_packet_h * frame_size` bytes has 38 pairs of equal-length nibble runs swapped (the `sipr_swaps` table). The run length is `bs = sub_packet_h * frame_size * 2 / 96` nibbles; each swap exchanges nibble run `bs * sipr_swaps[n][0]` with run `bs * sipr_swaps[n][1]`. After descrambling the superblock is a back-to-back sequence of coded frames for the decoder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Sipr` | `const uint Sipr` | 'sipr' deinterleaver id (little-endian FOURCC), for descriptor wiring. |
+| `ReorderInPlace` | `static void ReorderInPlace(byte[] buf, int subPacketH, int frameSize)` | In-place variant of `Reorder`. |
+| `Reorder` | `static byte[] Reorder(ReadOnlySpan<byte> superblock, int subPacketH, int frameSize)` | Returns a descrambled copy of one `superblock` of `subPacketH * frameSize` bytes. The input is not modified. If the framing is degenerate (non-positive sizes, `bs == 0`, or a size that does not cover the swap targets) the input is returned unchanged so callers can fall back gracefully. |
+
+### Namespace `Codec.Siren`
+
+[`SirenCodec`](#sirencodec) · [`SirenCodec.Decoder`](#sirencodecdecoder)
+
+#### `SirenCodec`
+
+Siren / ITU-T G.722.1 (Siren7) audio decoder, a faithful port of FFmpeg's `libavcodec/siren.c` (the `siren` decoder path; the MSN-Siren variant is not exposed). Siren7 is a 16 kHz wide-band transform codec: each frame carries `FrameSize` = 320 MLT (modulated lapped transform) coefficients grouped into 14 regions of 20 coefficients. Decode pipeline, matching the reference exactly: Envelope — an absolute power index for region 0 then a differential Huffman walk (`differential_decoder_tree`) for the rest, mapping to per-region standard deviations.Categorisation — the 16-candidate rate-control search (`categorize_regions`) assigning each region one of 8 quantiser categories plus a category-balance list, refined by the 4-bit `rate_control` value.Vector decode — per-region SQVH (scalar-quantised vector Huffman) using the seven `decoder_tree` tables and `mlt_quant` dequantisation, with deterministic noise-fill (the `get_dw` PRNG) for the high categories 5/6/7.IMLT — a length-320 DCT-IV (the MLT core, scaled by `1/(22·32768)`) followed by the sine-window 50% overlap-add with the previous frame (the reference's `vector_fmul_window`), yielding 320 float PCM samples per frame. A frame whose bit budget over/underflows or whose envelope is out of range is concealed by reusing the previous frame's coefficients, exactly as the reference does. Scope: this is Siren7 / G.722.1 (16 kHz, 14 regions). G.722.1 Annex C (Siren14, 32 kHz, 28 regions) is not implemented — FFmpeg's `siren.c` has no 32 kHz / 28-region path to port, and the ITU Annex C IMLT differs in size and window; see `DecodeFrame`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameSize` | `const int FrameSize` | MLT coefficients per Siren7 frame (also the IMLT/DCT-IV length). |
+| `NumberOfRegions` | `const int NumberOfRegions` | Regions per Siren7 frame. |
+| `RegionSize` | `const int RegionSize` | Coefficients per region. |
+| `SampleRate` | `const int SampleRate` | Siren7 sample rate (16 kHz, mono). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int frameBytes)` | Decodes a raw Siren7 stream — a concatenation of fixed-size frames of `frameBytes` each — to 16-bit linear PCM at 16 kHz mono. A trailing fragment shorter than one frame is ignored. The float IMLT output is scaled by 32768 and clipped to 16-bit, the conventional float→PCM conversion. |
+
+#### `SirenCodec.Decoder`
+
+Streaming Siren7 decoder state: the per-frame deviation/category scratch, the noise-fill PRNG registers and the IMLT overlap-add history. One instance decodes a whole stream frame by frame.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decoder` | `Decoder()` | Initializes a new instance of `Decoder`. |
+| `DecodeFrame` | `bool DecodeFrame(ReadOnlySpan<byte> frame, Span<float> output)` | Decodes one Siren7 frame from `frame` into `output` (`FrameSize` float samples, roughly in [-1, 1]). Returns `false` when the packet is too short to initialise the bit reader; concealment of an internally-detected bad frame still returns `true` (the previous frame is reused). |
+| `Flush` | `void Flush()` | Resets the overlap-add history and concealment state (FFmpeg `siren_flush`). |
+
+### Namespace `Codec.SmackerAudio`
+
+[`SmackerAudioCodec`](#smackeraudiocodec)
+
+#### `SmackerAudioCodec`
+
+Decode-only port of FFmpeg's Smacker audio decoder (`libavcodec/smacker.c`, the `smka_decode_frame` path, codec tag 'SMKA'). Each audio chunk is prefixed by a 4-byte little-endian unpacked-byte count, followed by an LSB-first bitstream (`SmackerBitReader`). The bitstream carries a "data present" flag, a stereo flag and a bit-depth flag, then `1 << (bits + stereo)` Huffman trees (`SmackerHuffman`); samples are reconstructed by adding Huffman-coded deltas to per-channel predictors seeded from initial base values. 16-bit predictors are seeded from byte-swapped 16-bit base values and the deltas combine a low and a high byte tree; 8-bit predictors use one (mono) or two (stereo) trees directly. Output is interleaved native PCM: signed 16-bit for the 16-bit format, unsigned 8-bit for the 8-bit format. The codec relies on wraparound rather than clipping (the reference comment), so predictor arithmetic is done in `ushort`/`byte`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmackerAudioCodec` | `SmackerAudioCodec(int sampleRate, int channels, int bitsPerSample)` | Builds a decoder from the container's declared track parameters. `channels` must be 1 or 2; `bitsPerSample` 8 or 16. |
+| `BitsPerSample` | `int BitsPerSample { get; }` | Coded bit depth declared by the container (8 or 16). |
+| `Channels` | `int Channels { get; }` | Channel count declared by the container audio-track header (1 or 2). |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate declared by the container audio-track header. |
+| `DecodeChunk` | `byte[] DecodeChunk(byte[] chunk)` | Decodes one audio chunk (4-byte LE unpacked size + bitstream) to interleaved native PCM bytes. Returns an empty array on malformed input (mirrors the reference's `AVERROR_INVALIDDATA` bail-outs and "no data" early return). |
+| `DecodeStream` | `byte[] DecodeStream(IReadOnlyList<byte[]> chunks)` | Decodes the concatenation of every audio chunk for one track into interleaved native PCM bytes (little-endian signed 16-bit, or unsigned 8-bit). Each chunk must carry its own 4-byte length prefix. A chunk that fails to decode is skipped so the rest of the stream still surfaces. |
+
+### Namespace `Codec.Sn76489`
+
+[`Sn76489Codec`](#sn76489codec)
+
+#### `Sn76489Codec`
+
+TI SN76489 / SEGA VDP PSG synthesis core. The chip carries three square-wave tone channels and one noise channel, each with a 4-bit attenuator. Registers are programmed through a one-byte bus protocol: A latch/data byte (bit 7 set) selects a register — bits 6-5 the channel (0..3), bit 4 the type (0 = tone/period, 1 = volume) — and carries the low 4 data bits in bits 3-0.A data byte (bit 7 clear) carries 6 more data bits (bits 5-0) for the most recently latched register; for a tone period these become the high 6 bits of the 10-bit value, for volume the low 4 bits are used.Each tone channel toggles its output every `period` input clocks after the internal /16 divide, so the output frequency is `clock / (32 * period)`. A period register of 0 is treated as 0x400 on the SEGA VDP variant (so the divider never collapses to a DC short); this core follows that variant.The noise channel is driven by a 16-bit linear-feedback shift register. On the SEGA VDP variant the white-noise tap mask is `0x0009` (bits 0 and 3 XOR-fed back) and periodic noise feeds back bit 0 alone. The shift rate comes from the control register's low two bits: 0x10/0x20/0x40 of the clock, or — for value 3 — the tone-2 period ("tone2" mode). Bit 2 selects white (1) vs periodic (0) feedback.Attenuation is a 4-bit value in 2 dB steps; 0xF mutes. The volume table is `32767 * 10^(-attenuation * 0.1)` (i.e. -2 dB per step).Game Gear stereo (the second PSG port, `0x4F` in VGM) is supported optionally via `WriteStereo`; by default every channel plays to both speakers and the mono mix is duplicated to left and right.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Sn76489Codec` | `Sn76489Codec(double clock = 3579545)` | Initializes a new instance of `Sn76489Codec`. |
+| `OutputSampleRate` | `const int OutputSampleRate` | Output sample rate of `RenderSamples`. |
+| `Volumes` | `static IReadOnlyList<short> Volumes { get; }` | The 4-bit attenuation → amplitude table (index 0xF = mute). |
+| `RenderSamples` | `void RenderSamples(Span<short> buffer, int count)` | Renders `count` interleaved stereo frames (left, right) into `buffer` at `OutputSampleRate`. The buffer must hold at least `2 * count` samples. Without a Game Gear stereo write every channel feeds both speakers, so left and right carry the same mono mix. |
+| `WriteStereo` | `void WriteStereo(byte value)` | Programs the Game Gear stereo register (VGM command `0x4F`): bits 0-3 enable the right speaker for tone0-2/noise, bits 4-7 the left speaker. |
+| `Write` | `void Write(byte value)` | Programs the chip through one PSG bus byte (the VGM 0x50 / GYM 0x03 payload). |
+
+### Namespace `Codec.SolDpcm`
+
+[`SolDpcmCodec`](#soldpcmcodec) · [`SolDpcmCodec.Mode`](#soldpcmcodecmode)
+
+#### `SolDpcmCodec`
+
+Sierra SOL DPCM, the differential coding used by Sierra's `.sol` sound effects. Two 8-bit variants exist — an "old" and a "new" delta table, ported from FFmpeg's `dpcm.c` — plus a 16-bit mode that simply integrates signed byte deltas. Each nibble (low nibble first) indexes the table; bit 3 of the nibble is the sign and bits 0–2 the magnitude. The running predictor is an 8-bit accumulator (wrapped) in the 8-bit modes, surfaced to 16-bit by mapping the unsigned-8 sample as `(sample - 128) << 8`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodePcm8` | `static short[] DecodePcm8(ReadOnlySpan<byte> data)` | Decodes raw 8-bit unsigned PCM (no DPCM) to signed 16-bit. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, Mode mode)` | Decodes a SOL DPCM byte stream into signed 16-bit PCM. In the 8-bit modes each byte yields two samples (low nibble first); in 16-bit mode each byte yields one sample. |
+
+#### `SolDpcmCodec.Mode`
+
+Which SOL DPCM variant to decode.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Old8` | `0` | 8-bit DPCM with the legacy ("old") delta table. |
+| `New8` | `1` | 8-bit DPCM with the revised ("new") delta table. |
+| `Sixteen` | `2` | 16-bit DPCM: each input byte is a signed delta added to a 16-bit accumulator. |
+
+### Namespace `Codec.Spc700`
+
+[`Apu`](#apu) · [`SDsp`](#sdsp) · [`Spc700Cpu`](#spc700cpu) · [`SpcPlayer`](#spcplayer)
+
+#### `Apu`
+
+The SNES APU memory map and hardware registers as seen by the `Spc700Cpu`. Owns the 64 KB ARAM, the three hardware timers, the CONTROL register and the bridge to the `SDsp`. Reads and writes to the special page at `$00F0-$00FF` are trapped here; everything else is plain ARAM. I/O ports ($F4-$F7). On real hardware these are the bidirectional mailbox to the main CPU (the SNES 5A22). A standalone SPC player has no 5A22, so a read returns the last value the SPC700 wrote to the same port (loopback). This matches the common practice for offline SPC rendering: drivers that poll a port for a host handshake simply see their own last write, and music playback (which is timer/DSP-driven) is unaffected.IPL ROM ($FFC0-$FFFF). When CONTROL bit 7 is set the top 64 bytes read from the canonical SPC700 boot loader image (see `IplRom`); the underlying ARAM is preserved and re-exposed when the bit is cleared. Writes always hit ARAM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Apu` | `Apu()` | Initializes a new instance of `Apu`. |
+| `Dsp` | `readonly SDsp Dsp` | Provides the dsp value. |
+| `IplRom` | `static readonly byte[] IplRom` | The 64-byte SPC700 boot-loader ROM mapped at `$FFC0-$FFFF`. This is the well-known, fixed boot program burned into every SNES APU; the bytes are public and identical across all units. Reproduced here so a tune that re-enables the IPL ROM (CONTROL bit 7) sees the real boot code rather than stale ARAM. |
+| `RamSize` | `const int RamSize` | Defines the ram size constant value. |
+| `Ram` | `readonly byte[] Ram` | The 64 KB audio RAM; also the DSP's sample memory. |
+| `InitializeFromRam` | `void InitializeFromRam()` | Seeds the timer targets and the IPL-ROM mapping bit straight from a loaded ARAM image (the SPC save state already contains the last values written to $FA-$FC and $F1). |
+| `Read` | `byte Read(ushort address)` | Reads the value from the supplied input. |
+| `StepTimers` | `void StepTimers(int cycles)` | Advances the three hardware timers by `cycles` master cycles. |
+| `Write` | `void Write(ushort address, byte value)` | Writes the value to the supplied output. |
+
+#### `SDsp`
+
+The SNES S-DSP synthesizer: eight BRR voices, gaussian interpolation, ADSR/GAIN envelopes, per-voice noise and pitch modulation, the 8-tap FIR echo, and the stereo main/echo mix. One `Tick` produces a single 32 kHz stereo output frame. The per-voice BRR decode uses exactly the math in `Codec.Brr.BrrCodec` (the filters 0..3, the 16-bit clamp and 15-bit wrap) applied incrementally block-by-block, so a voice decodes a BRR chain identically to that codec.Approximations relative to silicon (documented): the 5-sample KON delay is collapsed to an immediate key-on; ENVX/OUTX register read-back is best-effort; the noise generator uses the documented 15-bit LFSR; gaussian interpolation is exact (verbatim table).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SDsp` | `SDsp(byte[] ram)` | Initializes a new instance of `SDsp`. |
+| `Address` | `byte Address` | Provides the address value. |
+| `LoadRegisters` | `void LoadRegisters(ReadOnlySpan<byte> registers)` | Bulk-loads the 128-register file from an SPC save state's DSP block. |
+| `Read` | `byte Read()` | Reads the value from the supplied input. |
+| `Tick` | `ValueTuple<short, short> Tick()` | Produces one stereo output frame; values are signed 16-bit (already clamped). |
+| `Write` | `void Write(byte value)` | Writes the value to the supplied output. |
+
+#### `Spc700Cpu`
+
+A cycle-counting interpreter for the Sony SPC700 (the SNES APU's 8-bit CPU). The core owns the 64 KB `Apu` address space and executes one instruction per `Step` call, returning the number of master cycles consumed (the SPC700 runs at ~1.024 MHz). Registers are the standard SPC700 set: `PC`, `A`, `X`, `Y`, `SP` (stack lives in page 1, `$0100-$01FF`) and the processor status word `PSW`. Memory side effects (DSP register access, timers, the CONTROL register, I/O ports and the IPL ROM) are delegated to `Apu`; the CPU only deals with bytes. The instruction timings follow the documented per-opcode cycle counts (Anomie's SPC700 reference); a handful of rarely used opcodes share the canonical timing of their family.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Spc700Cpu` | `Spc700Cpu(Apu apu)` | Initializes a new instance of `Spc700Cpu`. |
+| `A` | `byte A` | Provides the a value. |
+| `Pc` | `ushort Pc` | Provides the pc value. |
+| `Psw` | `byte Psw` | Provides the psw value. |
+| `Sp` | `byte Sp` | Provides the sp value. |
+| `X` | `byte X` | Provides the x value. |
+| `Y` | `byte Y` | Provides the y value. |
+| `Step` | `int Step()` | Decodes and executes a single instruction at `Pc`, advancing the program counter and registers, and returns the master-cycle cost of that instruction. |
+
+#### `SpcPlayer`
+
+Renders an SPC700 save state (`.spc`) to stereo 32 kHz PCM by booting the `Spc700Cpu` from the snapshot's register/ARAM/DSP state and stepping it in lock with the `SDsp`: 32 CPU master cycles per 32 kHz output frame (1.024 MHz / 32 kHz), with the hardware timers advancing by the cycles actually consumed each step. The duration follows the ID666 song-length tag (text format, three ASCII digits at offset `0xA9`) capped to 300 s; absent or unparsable, a 30 s default is rendered.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpcPlayer` | `SpcPlayer(ReadOnlySpan<byte> spc)` | Builds a player from a complete SPC blob (must be at least `0x10180` bytes). Loads the ARAM, the CPU registers and the DSP register file, and seeds the timer targets. |
+| `SampleRate` | `const int SampleRate` | Defines the sample rate constant value. |
+| `DurationFromTag` | `bool DurationFromTag { get; }` | True when the duration came from the file's ID666 song-length tag. |
+| `DurationSeconds` | `int DurationSeconds { get; }` | Rendered duration in seconds (resolved from the ID666 tag or the default). |
+| `RenderInterleavedPcm` | `byte[] RenderInterleavedPcm()` | Renders the full tune to interleaved signed 16-bit stereo PCM (L,R,L,R…) at 32 kHz. |
+| `RenderStereoChannels` | `ValueTuple<byte[], byte[]> RenderStereoChannels()` | Renders the tune and splits it into the two mono channels as signed 16-bit LE PCM, ready to be wrapped as `LEFT.wav` / `RIGHT.wav`. |
+
+### Namespace `Codec.Speex`
+
+[`OggSpeexReader`](#oggspeexreader) · [`SpeexCodec`](#speexcodec) · [`SpeexDecoder`](#speexdecoder) · [`SpeexHeader`](#speexheader) · [`SpeexStreamInfo`](#speexstreaminfo)
+
+#### `OggSpeexReader`
+
+Minimal Ogg page walker for Speex logical streams (RFC 3533). Reassembles logical packets across page boundaries using the segment-table lacing mechanism, exactly like the sibling Ogg-Opus reader. The first packet is the Speex header, the second is the Vorbis-comment block, and the remainder are audio packets.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OggSpeexReader` | `OggSpeexReader(Stream stream)` | Initializes a new instance of `OggSpeexReader`. |
+| `ReadHeader` | `SpeexHeader ReadHeader()` | Reads and parses the first packet as the Speex header. |
+| `TryReadComments` | `byte[] TryReadComments()` | Reads the comment packet (the one following the header) if present, returning its raw bytes (a Vorbis-comment block); null when the stream has no further packet. |
+| `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` | Attempts to read the packet from the supplied input. |
+
+#### `SpeexCodec`
+
+Speex decoder facade. Input is an Ogg Speex stream (the "Speex " identification header packet, a Vorbis-comment packet, then audio packets each carrying `FramesPerPacket` frames). Output is interleaved little-endian signed 16-bit PCM at the header's declared sample rate. Ported from: FFmpeg `libavcodec/speexdec.c` + `speexdata.h` (Xiph.org / Jean-Marc Valin et al., BSD-3) — the self-contained native Speex decoder. Narrowband (mode 0), wideband (mode 1) and ultra-wideband (mode 2) layers plus in-band intensity stereo are implemented; see `SpeexDecoder`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeStream` | `static short[] DecodeStream(SpeexHeader header, IEnumerable<byte[]> audioPackets)` | Decodes a sequence of Speex audio packets (header already parsed) into one contiguous interleaved 16-bit PCM array. Helper for callers that have already demuxed the Ogg container. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Ogg Speex stream from `input` into interleaved little-endian signed 16-bit PCM on `output`. |
+| `ReadStreamInfo` | `static SpeexStreamInfo ReadStreamInfo(Stream input)` | Reads the Ogg Speex identification header without decoding audio. |
+
+#### `SpeexDecoder`
+
+Faithful clean-room port of FFmpeg's native Speex decoder (libavcodec `speexdec.c`, itself derived from the Xiph reference libspeex). Decodes the narrowband (mode 0) and wideband (mode 1) / ultra-wideband (mode 2) layers to floating-point PCM, scaled to signed 16-bit on the public surface. Narrowband is the CELP core: per-subframe LSP-VQ unquantisation, 3-tap pitch (long-term predictor) from the gain codebooks, split-shape innovation codebooks, excitation build, the comb-filter enhancer (`multicomb`), LSP→LPC synthesis, IIR filtering and the high-pass. Wideband layers (modes 1/2) add the QMF split + high-band SB-CELP via `sb_decode`, reusing the narrowband core for the low band. Tables (codebooks, QMF filter `h0`, gain bounds) are transcribed verbatim in `SpeexTables`. State (excitation history, LSPs, filter memory, RNG seed) is carried across frames exactly as the reference does.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpeexDecoder` | `SpeexDecoder(SpeexHeader header)` | Initializes a new instance of `SpeexDecoder`. |
+| `Channels` | `int Channels { get; }` | Channel count (1 or 2). |
+| `FrameSize` | `int FrameSize { get; }` | Output frame size in samples per channel (the full-band size). |
+| `FramesPerPacket` | `int FramesPerPacket { get; }` | Frames carried per Ogg packet. |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate declared in the header. |
+| `DecodePacket` | `short[] DecodePacket(ReadOnlySpan<byte> packet)` | Decodes one Speex packet (which carries `FramesPerPacket` frames) into interleaved signed 16-bit PCM. Truncated / terminator-flagged packets are tolerated: fewer frames are produced and the remainder is silence-padded so the returned length is always `FramesPerPacket * FrameSize * Channels`. |
+
+#### `SpeexHeader`
+
+Parsed Speex identification header (the first Ogg packet of a Speex stream, also usable as raw extradata). Layout mirrors `parse_speex_extradata` in FFmpeg's `speexdec.c`: the eight-byte magic `"Speex "`, a 20-byte version string, then little-endian 32-bit fields.
+
+Implements `IEquatable<SpeexHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpeexHeader` | `SpeexHeader(int VersionId, int Rate, int Mode, int BitstreamVersion, int NbChannels, int Bitrate, int FrameSize, int Vbr, int FramesPerPacket, int ExtraHeaders)` | Parsed Speex identification header (the first Ogg packet of a Speex stream, also usable as raw extradata). Layout mirrors `parse_speex_extradata` in FFmpeg's `speexdec.c`: the eight-byte magic `"Speex "`, a 20-byte version string, then little-endian 32-bit fields. |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `BitstreamVersion` | `int BitstreamVersion { get; init; }` |  |
+| `ExtraHeaders` | `int ExtraHeaders { get; init; }` |  |
+| `FrameSize` | `int FrameSize { get; init; }` |  |
+| `FramesPerPacket` | `int FramesPerPacket { get; init; }` |  |
+| `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The eight-byte identification magic. |
+| `Mode` | `int Mode { get; init; }` |  |
+| `NbChannels` | `int NbChannels { get; init; }` |  |
+| `Rate` | `int Rate { get; init; }` |  |
+| `Vbr` | `int Vbr { get; init; }` |  |
+| `VersionId` | `int VersionId { get; init; }` |  |
+| `Parse` | `static SpeexHeader Parse(ReadOnlySpan<byte> packet)` | Parses a Speex header from `packet`. The magic may sit at the start (the usual Ogg case) or be located within the buffer (FFmpeg's `av_strnstr` behaviour for extradata). |
+| `ReadVersionString` | `static string ReadVersionString(ReadOnlySpan<byte> packet)` | The version string carried in bytes 8..28 (best-effort ASCII). |
+
+#### `SpeexStreamInfo`
+
+Speex stream identification info extracted from the header packet.
+
+Implements `IEquatable<SpeexStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpeexStreamInfo` | `SpeexStreamInfo(int SampleRate, int Channels, int Mode, int FrameSize, int FramesPerPacket)` | Speex stream identification info extracted from the header packet. |
+| `Channels` | `int Channels { get; init; }` |  |
+| `FrameSize` | `int FrameSize { get; init; }` |  |
+| `FramesPerPacket` | `int FramesPerPacket { get; init; }` |  |
+| `Mode` | `int Mode { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `Codec.SpuAdpcm`
+
+[`SpuAdpcmCodec`](#spuadpcmcodec)
+
+#### `SpuAdpcmCodec`
+
+Sony PlayStation SPU ADPCM (a.k.a. VAG / XA ADPCM) encoder and decoder. The PS1/PS2 Sound Processing Unit decodes audio in fixed 16-byte blocks, each yielding 28 mono samples: byte 0 — header: low nibble = `shift` (0..12), high nibble = `filter` (0..4).byte 1 — flags (loop start / loop end / end markers); decoding processes every block.bytes 2..15 — 28 signed 4-bit nibbles, low nibble of each byte first. Each sample is reconstructed as `s = (signExtend4(nibble) << 12) >> shift`, then a second-order predictor is applied: `s += (hist1*K1[filter] + hist2*K2[filter] + 32) >> 6`, clamped to `Int16`. The two histories then shift forward.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockSize` | `const int BlockSize` | Size in bytes of one SPU ADPCM block. |
+| `SamplesPerBlock` | `const int SamplesPerBlock` | Number of PCM samples carried by one 16-byte SPU ADPCM block. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a mono SPU ADPCM stream (a whole number of 16-byte blocks) to 16-bit PCM. Each full block yields `SamplesPerBlock` samples. A trailing partial block (shorter than `BlockSize`) is ignored. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes mono 16-bit PCM into SPU ADPCM blocks. Each group of `SamplesPerBlock` samples is encoded by brute-forcing every filter and every legal shift and keeping the combination with the lowest reconstruction error (the standard VAG encoder strategy). The final sample group is zero-padded to a full block; the last emitted block carries flags byte `0x01` (end marker), all others `0x00`. |
+
+### Namespace `Codec.Tracker`
+
+[`ModModule`](#modmodule) · [`S3mModule`](#s3mmodule)
+
+#### `ModModule`
+
+Parses a ProTracker / SoundTracker MOD into the shared `TrackerSong` model and renders it. Supports 4..32 channels via the M.K. / xCHN / xxCH magics, 31-instrument modules, the standard 64-row pattern layout and signed 8-bit PCM samples (converted to 16-bit). Channel detection mirrors the descriptor.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SampleC2Rate` | `const int SampleC2Rate` | Standard PAL replay rate at C-2 (period 428) used to tag exported sample WAVs. |
+| `DecodeSamples` | `static IReadOnlyList<ValueTuple<short[], int>?> DecodeSamples(byte[] blob)` | Returns the decoded mono samples (1-based instrument index → 16-bit PCM and rate), or null when unparseable. Index 0 is null (samples are 1-based in the format). |
+| `EstimateSeconds` | `static double? EstimateSeconds(byte[] blob)` | Deterministic song length in seconds, or null if unparseable. |
+| `Render` | `static ValueTuple<byte[], double>? Render(byte[] blob, int outputRate, double maxSeconds)` | Renders the MOD to interleaved stereo 16-bit PCM at `outputRate`, returning the PCM plus its duration, or null if the blob is not a usable MOD. |
+
+#### `S3mModule`
+
+Parses a Scream Tracker 3 (S3M) module into the shared `TrackerSong` model and renders it. Handles the packed pattern stream, PCM (type 1) instruments with their C2SPD, the channel-settings table (muted/disabled channels), default 0x3/0xC panning and the optional 32-byte pan section.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeSamples` | `static IReadOnlyList<ValueTuple<short[], int>?> DecodeSamples(byte[] blob)` | Decoded mono samples (1-based instrument index → 16-bit PCM and C2SPD), or null. |
+| `EstimateSeconds` | `static double? EstimateSeconds(byte[] blob)` | Performs the estimate seconds operation. |
+| `Render` | `static ValueTuple<byte[], double>? Render(byte[] blob, int outputRate, double maxSeconds)` | Renders the S3M to interleaved stereo 16-bit PCM at `outputRate`, or null if the blob is not a usable S3M. |
+
+### Namespace `Codec.TrackerXmIt`
+
+[`ItCell`](#itcell) · [`ItEnvelope`](#itenvelope) · [`ItFilter`](#itfilter) · [`ItInstrument`](#itinstrument) · [`ItModule`](#itmodule) · [`ItPattern`](#itpattern) · [`ItPlayer`](#itplayer) · [`ItSample`](#itsample) · [`ItSampleDecompressor`](#itsampledecompressor) · [`TrackerRender`](#trackerrender) · [`XmCell`](#xmcell) · [`XmEnvelope`](#xmenvelope) · [`XmInstrument`](#xminstrument) · [`XmModule`](#xmmodule) · [`XmPattern`](#xmpattern) · [`XmPlayer`](#xmplayer) · [`XmSample`](#xmsample)
+
+#### `ItCell`
+
+One IT pattern cell. Note 255 = note off, 254 = note cut, 246..253 = note fade range.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Command` | `byte Command` | Provides the command value. |
+| `HasCommand` | `bool HasCommand` | Provides the has note and has instrument and has volume and has command value. |
+| `HasInstrument` | `bool HasInstrument` | Provides the has note and has instrument and has volume and has command value. |
+| `HasNote` | `bool HasNote` | Provides the has note and has instrument and has volume and has command value. |
+| `HasVolume` | `bool HasVolume` | Provides the has note and has instrument and has volume and has command value. |
+| `Instrument` | `byte Instrument` | Provides the instrument value. |
+| `Note` | `byte Note` | Provides the note value. |
+| `Param` | `byte Param` | Provides the param value. |
+| `Volume` | `byte Volume` | Provides the volume value. |
+
+#### `ItEnvelope`
+
+An IT envelope (volume, panning, or pitch/filter) with node ticks and y-values.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItEnvelope` | `ItEnvelope()` |  |
+| `Enabled` | `bool Enabled` | Provides the enabled value. |
+| `IsFilter` | `bool IsFilter` | Provides the is filter value. |
+| `LoopEnd` | `int LoopEnd` | Provides the loop end value. |
+| `LoopStart` | `int LoopStart` | Provides the loop start value. |
+| `Loop` | `bool Loop` | Provides the loop value. |
+| `Nodes` | `ValueTuple<int, int>[] Nodes` | Provides the nodes value. |
+| `SustainEnd` | `int SustainEnd` | Provides the sustain end value. |
+| `SustainStart` | `int SustainStart` | Provides the sustain start value. |
+| `Sustain` | `bool Sustain` | Provides the sustain value. |
+
+#### `ItFilter`
+
+Impulse Tracker resonant low-pass filter (effect `Zxx` / filter envelopes), implemented as the two-pole IIR used by Impulse Tracker and OpenMPT.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItFilter` | `ItFilter()` |  |
+| `Active` | `bool Active { get; }` | Gets a value indicating whether active. |
+| `Coefficients` | `ValueTuple<double, double, double, double, double> Coefficients { get; }` | Exposes normalised biquad coefficients for verification/testing (b0,b1,b2,a1,a2). |
+| `Process` | `float Process(float x)` | Processes a single sample through the active filter; returns input unchanged when inactive. |
+| `Reset` | `void Reset()` | Resets the filter delay line (called on new note). |
+| `Set` | `void Set(int cutoff, int resonance, int sampleRate)` | Recomputes the filter coefficients for the given cutoff/resonance (each 0..127) at the output sample rate. Cutoff 127 with resonance 0 is effectively a pass-through. |
+
+#### `ItInstrument`
+
+A parsed IT instrument (new IMPI format; NNA, DCT/DCA, envelopes, sample map).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItInstrument` | `ItInstrument()` |  |
+| `DefaultPan` | `int DefaultPan` | Provides the default pan value. |
+| `DuplicateCheckAction` | `int DuplicateCheckAction` | Provides the duplicate check action value. |
+| `DuplicateCheckType` | `int DuplicateCheckType` | Provides the duplicate check type value. |
+| `Fadeout` | `int Fadeout` | Provides the fadeout value. |
+| `GlobalVolume` | `int GlobalVolume` | Provides the global volume value. |
+| `InitialFilterCutoff` | `int InitialFilterCutoff` | Provides the initial filter cutoff value. |
+| `InitialFilterResonance` | `int InitialFilterResonance` | Provides the initial filter resonance value. |
+| `Name` | `string Name` | Provides the name value. |
+| `NewNoteAction` | `int NewNoteAction` | Provides the new note action value. |
+| `NoteMap` | `byte[] NoteMap` | Provides the note map value. |
+| `NoteSampleMap` | `byte[] NoteSampleMap` | Provides the note sample map value. |
+| `PanningEnvelope` | `ItEnvelope PanningEnvelope` | Provides the panning envelope value. |
+| `PitchEnvelope` | `ItEnvelope PitchEnvelope` | Provides the pitch envelope value. |
+| `PitchPanCenter` | `int PitchPanCenter` | Provides the pitch pan center value. |
+| `PitchPanSeparation` | `int PitchPanSeparation` | Provides the pitch pan separation value. |
+| `UsePan` | `bool UsePan` | Provides the use pan value. |
+| `VolumeEnvelope` | `ItEnvelope VolumeEnvelope` | Provides the volume envelope value. |
+| `Parse` | `static ItInstrument Parse(byte[] blob, int off, int cmwt)` | Parses the value from the supplied data. |
+
+#### `ItModule`
+
+Parsed Impulse Tracker module structure (header, orders, instruments, samples, patterns), per ITTECH.TXT (Jeffrey Lim). Compressed samples are decompressed via `ItSampleDecompressor` at parse time so the engine sees absolute PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItModule` | `ItModule()` |  |
+| `ChannelPan` | `byte[] ChannelPan` | Provides the channel pan value. |
+| `ChannelVolume` | `byte[] ChannelVolume` | Provides the channel volume value. |
+| `CompatibleVersion` | `int CompatibleVersion` | Provides the compatible version value. |
+| `Flags` | `int Flags` | Provides the flags value. |
+| `GlobalVolume` | `int GlobalVolume` | Provides the global volume value. |
+| `InitialSpeed` | `int InitialSpeed` | Provides the initial speed value. |
+| `InitialTempo` | `int InitialTempo` | Provides the initial tempo value. |
+| `InstrumentCount` | `int InstrumentCount` | Provides the instrument count value. |
+| `InstrumentMode` | `bool InstrumentMode` | Provides the instrument mode value. |
+| `Instruments` | `ItInstrument[] Instruments` | Provides the instruments value. |
+| `LinearSlides` | `bool LinearSlides` | Provides the linear slides value. |
+| `LinkGEffect` | `bool LinkGEffect` | Provides the link g effect value. |
+| `MixVolume` | `int MixVolume` | Provides the mix volume value. |
+| `OldEffects` | `bool OldEffects` | Provides the old effects value. |
+| `OrderCount` | `int OrderCount` | Provides the order count value. |
+| `Order` | `byte[] Order` | Provides the order value. |
+| `PatternCount` | `int PatternCount` | Provides the pattern count value. |
+| `Patterns` | `ItPattern[] Patterns` | Provides the patterns value. |
+| `SampleCount` | `int SampleCount` | Provides the sample count value. |
+| `Samples` | `ItSample[] Samples` | Provides the samples value. |
+| `Separation` | `int Separation` | Provides the separation value. |
+| `SongName` | `string SongName` | Provides the song name value. |
+| `Special` | `int Special` | Provides the special value. |
+| `Parse` | `static ItModule Parse(byte[] blob)` | Parses the value from the supplied data. |
+
+#### `ItPattern`
+
+A decoded IT pattern: rows × 64 channels of `ItCell` (per ITTECH.TXT).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItPattern` | `ItPattern()` |  |
+| `Cells` | `ItCell[] Cells` | Provides the cells value. |
+| `MaxChannels` | `const int MaxChannels` | Defines the max channels constant value. |
+| `Rows` | `int Rows` | Provides the rows value. |
+| `Cell` | `ItCell Cell(int row, int channel)` | Performs the cell operation. |
+| `Empty` | `static ItPattern Empty()` | Performs the empty operation. |
+| `Parse` | `static ItPattern Parse(byte[] blob, int off)` | Decodes IT's RLE-ish packed pattern format. Each row is a stream of cells; a leading channel byte's high bit (0x80) signals a "mask" byte follows, selecting which of note/instrument/volume/command+param are present, with last-value memory per channel. |
+
+#### `ItPlayer`
+
+A software player for Impulse Tracker (`.it`) modules that renders the song to interleaved stereo 16-bit PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Module` | `ItModule Module { get; }` | Gets the module. |
+| `EstimateSeconds` | `double EstimateSeconds()` | Performs the estimate seconds operation. |
+| `Load` | `static ItPlayer Load(byte[] blob, int sampleRate = 44100)` | Performs the load operation. |
+| `Render` | `byte[] Render(double maxSeconds = 600)` | Performs the render operation. |
+
+#### `ItSample`
+
+A parsed IT sample (IMPS header) with its PCM expanded to signed 16-bit. Handles 8/16-bit, signed/unsigned, and IT214/IT215 compression via `ItSampleDecompressor`. Stereo samples (flag 0x04) are downmixed to mono for the engine (documented limitation).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItSample` | `ItSample()` |  |
+| `C5Speed` | `int C5Speed` | Provides the c 5 speed value. |
+| `DefaultPan` | `int DefaultPan` | Provides the default pan value. |
+| `DefaultVolume` | `int DefaultVolume` | Provides the default volume value. |
+| `GlobalVolume` | `int GlobalVolume` | Provides the global volume value. |
+| `LoopEnd` | `int LoopEnd` | Provides the loop end value. |
+| `LoopStart` | `int LoopStart` | Provides the loop start value. |
+| `Loop` | `bool Loop` | Provides the loop value. |
+| `Name` | `string Name` | Provides the name value. |
+| `Pcm` | `short[] Pcm` | Provides the pcm value. |
+| `PingPong` | `bool PingPong` | Provides the ping pong value. |
+| `SustainEnd` | `int SustainEnd` | Provides the sustain end value. |
+| `SustainLoop` | `bool SustainLoop` | Provides the sustain loop value. |
+| `SustainPingPong` | `bool SustainPingPong` | Provides the sustain ping pong value. |
+| `SustainStart` | `int SustainStart` | Provides the sustain start value. |
+| `UsePan` | `bool UsePan` | Provides the use pan value. |
+| `VibratoDepth` | `int VibratoDepth` | Provides the vibrato speed and vibrato depth and vibrato rate and vibrato type value. |
+| `VibratoRate` | `int VibratoRate` | Provides the vibrato speed and vibrato depth and vibrato rate and vibrato type value. |
+| `VibratoSpeed` | `int VibratoSpeed` | Provides the vibrato speed and vibrato depth and vibrato rate and vibrato type value. |
+| `VibratoType` | `int VibratoType` | Provides the vibrato speed and vibrato depth and vibrato rate and vibrato type value. |
+| `Parse` | `static ItSample Parse(byte[] blob, int off)` | Parses the value from the supplied data. |
+
+#### `ItSampleDecompressor`
+
+Decodes Impulse Tracker compressed sample data (IT214 / IT215) into raw signed PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress16` | `static short[] Decompress16(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes a 16-bit IT-compressed sample to signed 16-bit samples. |
+| `Decompress8` | `static sbyte[] Decompress8(ReadOnlySpan<byte> compressed, int lengthSamples, bool it215)` | Decodes an 8-bit IT-compressed sample to signed bytes. |
+
+#### `TrackerRender`
+
+Shared rendering conventions for the XM and IT software players: output format, virtual channel cap, and the deterministic song-length cap used by order traversal.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxSeconds` | `const double MaxSeconds` | Hard cap on rendered duration (seconds). Order traversal also stops on a detected loop; this is the absolute deterministic ceiling so a pathological module still terminates. |
+| `OutputBits` | `const int OutputBits` | Output bits per sample. |
+| `OutputChannels` | `const int OutputChannels` | Output channel count (stereo). |
+| `OutputSampleRate` | `const int OutputSampleRate` | Output sample rate of the rendered SONG.wav (Hz). |
+
+#### `XmCell`
+
+One XM pattern cell. Note 97 = key-off; 0 = none.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Effect` | `byte Effect` | Provides the effect value. |
+| `Instrument` | `byte Instrument` | Provides the instrument value. |
+| `Note` | `byte Note` | Provides the note value. |
+| `Param` | `byte Param` | Provides the param value. |
+| `Volume` | `byte Volume` | Provides the volume value. |
+
+#### `XmEnvelope`
+
+A decoded XM envelope (volume or panning).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmEnvelope` | `XmEnvelope()` |  |
+| `Enabled` | `bool Enabled` | Provides the enabled value. |
+| `LoopEnd` | `int LoopEnd` | Provides the loop end value. |
+| `LoopStart` | `int LoopStart` | Provides the loop start value. |
+| `Loop` | `bool Loop` | Provides the loop value. |
+| `Points` | `ValueTuple<int, int>[] Points` | Provides the points value. |
+| `SustainPoint` | `int SustainPoint` | Provides the sustain point value. |
+| `Sustain` | `bool Sustain` | Provides the sustain value. |
+
+#### `XmInstrument`
+
+A decoded XM instrument.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmInstrument` | `XmInstrument()` |  |
+| `Fadeout` | `int Fadeout` | Provides the fadeout value. |
+| `Name` | `string Name` | Provides the name value. |
+| `PanningEnvelope` | `XmEnvelope PanningEnvelope` | Provides the panning envelope value. |
+| `SampleMap` | `byte[] SampleMap` | Provides the sample map value. |
+| `Samples` | `XmSample[] Samples` | Provides the samples value. |
+| `VibratoDepth` | `int VibratoDepth` | Provides the vibrato depth value. |
+| `VibratoRate` | `int VibratoRate` | Provides the vibrato rate value. |
+| `VibratoSweep` | `int VibratoSweep` | Provides the vibrato sweep value. |
+| `VibratoType` | `int VibratoType` | Provides the vibrato type value. |
+| `VolumeEnvelope` | `XmEnvelope VolumeEnvelope` | Provides the volume envelope value. |
+
+#### `XmModule`
+
+Parsed XM module structure.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmModule` | `XmModule()` |  |
+| `ChannelCount` | `int ChannelCount` | Provides the channel count value. |
+| `DefaultBpm` | `int DefaultBpm` | Provides the default bpm value. |
+| `DefaultTempo` | `int DefaultTempo` | Provides the default tempo value. |
+| `Instruments` | `XmInstrument[] Instruments` | Provides the instruments value. |
+| `LinearFrequency` | `bool LinearFrequency` | Provides the linear frequency value. |
+| `Order` | `byte[] Order` | Provides the order value. |
+| `Patterns` | `XmPattern[] Patterns` | Provides the patterns value. |
+| `RestartPosition` | `int RestartPosition` | Provides the restart position value. |
+| `SongLength` | `int SongLength` | Provides the song length value. |
+| `SongName` | `string SongName` | Provides the song name value. |
+| `TrackerName` | `string TrackerName` | Provides the tracker name value. |
+| `Parse` | `static XmModule Parse(byte[] blob)` | Parses the XM header, patterns and instruments. Throws on malformed input. |
+
+#### `XmPattern`
+
+A decoded XM pattern: a rows × channels grid of `XmCell`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmPattern` | `XmPattern()` |  |
+| `Cells` | `XmCell[] Cells` | Provides the cells value. |
+| `Channels` | `int Channels` | Provides the channels value. |
+| `Rows` | `int Rows` | Provides the rows value. |
+| `Cell` | `XmCell Cell(int row, int channel)` | Performs the cell operation. |
+| `Empty` | `static XmPattern Empty(int channels)` | Performs the empty operation. |
+| `Unpack` | `static XmPattern Unpack(byte[] data, int rows, int channels)` | Unpacks XM packed pattern data per XM.TXT. Each cell either begins with a control byte (high bit set) whose low bits flag which of note/instrument/volume/effect/param follow, or is a full uncompressed 5-byte cell. |
+
+#### `XmPlayer`
+
+A software player for FastTracker II Extended Module (`.xm`) files that renders the song to interleaved stereo 16-bit PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Module` | `XmModule Module { get; }` | The parsed module (song name, channel count, etc.). |
+| `EstimateSeconds` | `double EstimateSeconds()` | Deterministic song length in seconds: walks the order list playing each row, detecting a revisited (order, row) to stop, capped at `MaxSeconds`. |
+| `Load` | `static XmPlayer Load(byte[] blob, int sampleRate = 44100)` | Parses an XM module from its raw bytes. Throws on malformed input. |
+| `Render` | `byte[] Render(double maxSeconds = 600)` | Renders the song to interleaved stereo 16-bit PCM (LE), stopping at a detected order loop or the deterministic cap (whichever comes first). |
+
+#### `XmSample`
+
+A decoded XM sample with its PCM expanded to signed 16-bit (delta-decoded).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmSample` | `XmSample()` |  |
+| `Finetune` | `sbyte Finetune` | Provides the finetune value. |
+| `Is16Bit` | `bool Is16Bit` | Provides the is 16 bit value. |
+| `LoopLength` | `int LoopLength` | Provides the loop length value. |
+| `LoopStart` | `int LoopStart` | Provides the loop start value. |
+| `LoopType` | `int LoopType` | Provides the loop type value. |
+| `Name` | `string Name` | Provides the name value. |
+| `Panning` | `byte Panning` | Provides the panning value. |
+| `Pcm` | `short[] Pcm` | Provides the pcm value. |
+| `RelativeNote` | `sbyte RelativeNote` | Provides the relative note value. |
+| `Volume` | `int Volume` | Provides the volume value. |
+| `SetData` | `void SetData(byte[] raw, bool is16)` | Stores raw delta-coded XM sample bytes, expanding to absolute signed 16-bit PCM. |
+
+### Namespace `Codec.TrueSpeech`
+
+[`TrueSpeechCodec`](#truespeechcodec)
+
+#### `TrueSpeechCodec`
+
+DSP Group TrueSpeech (8.5 kbit/s) decoder — a faithful port of FFmpeg's `libavcodec/truespeech.c`. TrueSpeech is a mono 8000 Hz speech codec: every 32-byte frame decodes to 240 signed 16-bit samples (four 60-sample subframes). Each frame is bit-unpacked (after a per-32-bit-word byte swap, as the reference does) into an 8-element input vector (codebook-indexed at 5/5/4/4/4/3/3/3 bits), four 7-bit two-point-filter offsets, four 27-bit pulse-position fields with 4-bit pulse offsets and 14-bit pulse-value fields, plus a 1-bit filter-merge flag. Synthesis runs the correlation filter, merges with the previous frame's filter, applies the two-point adaptive filter, places the excitation pulses and runs the three-stage output filter.Decode-only — there is no encoder. Inter-frame filter state is carried exactly as the reference does, so multi-frame buffers decode identically to single-frame feeds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> frames)` | Decodes back-to-back 32-byte TrueSpeech frames to mono 16-bit PCM. A ragged tail shorter than a full frame is ignored. Output length is `(input.Length / 32) * 240` samples. |
+
+### Namespace `Codec.Tta`
+
+[`TtaCodec`](#ttacodec) · [`TtaCodec.TtaStreamInfo`](#ttacodecttastreaminfo)
+
+#### `TtaCodec`
+
+True Audio (TTA1) lossless codec — both encoder and decoder. Reads and writes the on-disk TTA1 layout faithfully: an 18-byte little-endian header (`"TTA1"` | format | channels | bits | sample-rate | data-length) guarded by a CRC-32, a seek table of per-frame byte sizes guarded by its own CRC-32, and a sequence of independent frames. Each frame interleaves the channels through TTA's order-8 adaptive hybrid filter (`TtaFilter`), a fixed-order integer predictor, inter-channel decorrelation and the two-state adaptive Rice coder (`TtaRice`), then appends a CRC-32 of the coded bytes. PCM in and out is raw interleaved little-endian signed integers (8-bit is stored unsigned, matching WAV). The frame length is `(sampleRate * 256) / 245` samples (the 1.04489795918367 s FRAME_TIME of the reference), with a shorter trailing frame. The bitstream algorithms (filter, predictor, decorrelation, Rice adaptation, CRC polynomial) are ported verbatim from the reference / ffmpeg `libavcodec/tta.c`, so a stream this codec writes is structurally a genuine TTA1 file and round-trips losslessly.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream pcmInput, Stream ttaOutput, int channels, int sampleRate, int bitsPerSample)` | Encodes raw interleaved little-endian PCM (`pcmInput`) to a TTA1 stream on `ttaOutput`. |
+| `Decompress` | `static void Decompress(Stream ttaInput, Stream pcmOutput)` | Decodes a TTA1 stream to raw interleaved little-endian PCM. |
+| `ReadStreamInfo` | `static TtaStreamInfo ReadStreamInfo(Stream input)` | Reads the TTA1 header without decoding the audio. |
+
+#### `TtaCodec.TtaStreamInfo`
+
+Stream geometry callers need to build PCM headers / split channels.
+
+Implements `IEquatable<TtaStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TtaStreamInfo` | `TtaStreamInfo(int Channels, int SampleRate, int BitsPerSample, long SampleCount)` | Stream geometry callers need to build PCM headers / split channels. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `SampleCount` | `long SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
 ### Namespace `Codec.Vorbis`
 
 [`VorbisCodec`](#vorbiscodec) · [`VorbisEncoder`](#vorbisencoder) · [`VorbisEncoderOptions`](#vorbisencoderoptions) · [`VorbisStreamInfo`](#vorbisstreaminfo)
@@ -1002,6 +3236,433 @@ Implements `IEquatable<VorbisStreamInfo>`.
 | `NominalBitrate` | `int NominalBitrate { get; init; }` | Nominal bitrate in bits/second (0 if absent). |
 | `SampleRate` | `int SampleRate { get; init; }` | Sample rate in Hz, from the identification packet. |
 | `Vendor` | `string Vendor { get; init; }` | Encoder vendor string (from the comment packet). |
+
+### Namespace `Codec.WavArc`
+
+[`WavArcCodec`](#wavarccodec) · [`WavArcCodec.WavArcStreamInfo`](#wavarccodecwavarcstreaminfo)
+
+#### `WavArcCodec`
+
+WavArc (`.wa`) decoder, ported from ffmpeg `libavcodec/wavarc.c` and the container layout from `libavformat/wavarc.c`. WavArc stores PCM under one of six methods identified by a 4-character tag: `0CPY` (raw copy), `1DIF` (fixed-order difference predictors with Rice-coded residuals), `2SLP`/`3NLP`/`4ALP` (adaptive linear prediction) and `5ELP` (extended adaptive prediction). The `0CPY` and `1DIF` paths are fully ported and byte-exact; the adaptive-LPC paths are ported from the reference but, where their determinism cannot be independently verified, they degrade by surfacing the raw container rather than emitting wrong PCM. File layout: a length-prefixed original filename, a NUL byte, the 4-char codec tag, a 36-byte block carrying an embedded RIFF/WAVE `fmt` descriptor and the format-chunk length, the format chunk itself (channels at extradata+38, sample-rate at +40, bits-per-sample at +50), then RIFF chunks up to the `data` tag (whose 4-byte size is skipped) and finally the coded bitstream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> file)` | Decodes a WavArc file to raw interleaved little-endian PCM (8- or 16-bit). |
+| `ReadStreamInfo` | `static WavArcStreamInfo ReadStreamInfo(ReadOnlySpan<byte> file, out int dataOffset)` | Parses the `.wa` header, returning geometry and the offset of the coded bitstream. |
+
+#### `WavArcCodec.WavArcStreamInfo`
+
+Decoded stream geometry plus the coding method.
+
+Implements `IEquatable<WavArcStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WavArcStreamInfo` | `WavArcStreamInfo(string Method, int Channels, int SampleRate, int BitsPerSample, string OriginalFileName)` | Decoded stream geometry plus the coding method. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Method` | `string Method { get; init; }` |  |
+| `OriginalFileName` | `string OriginalFileName { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `Codec.WavPack`
+
+[`WavPackCodec`](#wavpackcodec) · [`WavPackCodec.WavPackStreamInfo`](#wavpackcodecwavpackstreaminfo)
+
+#### `WavPackCodec`
+
+WavPack version-4/5 LOSSLESS codec — both encoder and decoder. Reads and writes the on-disk block layout faithfully: a 32-byte little-endian block header (`"wvpk"` | block-size | version | 40-bit sample counters | block-sample count | flags | crc) followed by a chain of metadata sub-blocks (id | size | payload). The audio words live in the `0x0a` bitstream sub-block, coded by the adaptive median word coder (`WavPackWords`) after the decorrelation passes described by the `0x02`/`0x03`/`0x04` sub-blocks and the inter-channel (joint-stereo) transform. The entropy coder, the median adaptation, the truncated-binary tail, the cross-word `holding_one`/`holding_zero` state machine and the all-zero `zeros_acc` run coding are ported faithfully from the reference `read_words.c`/`write_words.c`, so this decoder reads streams written by reference WavPack encoders and the encoder writes a structurally byte-compatible stream. On decode the reference decorrelation is honoured: terms (0x02), restored weights (0x03, `restore_weight`), seeded samples (0x04, `wp_exp2s` per term type incl. negative cross terms), and entropy medians (0x05, `wp_exp2s`). Joint stereo, the magnitude/shift fields and extended 32-bit integer handling follow `unpack.c`. Hybrid/lossy, DSD and float blocks are rejected with `NotSupportedException` / `InvalidDataException` so container descriptors can fall back gracefully. They are still parsed past safely (the block framing is honoured).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream pcmInput, Stream wvOutput, int channels, int sampleRate, int bitsPerSample, bool isFloat = false)` | Encodes raw interleaved little-endian PCM to a lossless WavPack stream. Mono and stereo are written as a single block per stream; more than two channels are written as a chain of stereo (and a trailing mono) blocks, the final one carrying `FINAL_BLOCK`. |
+| `Decompress` | `static void Decompress(Stream wvInput, Stream pcmOutput)` | Decodes a WavPack lossless stream to raw interleaved little-endian PCM. |
+| `ReadStreamInfo` | `static WavPackStreamInfo ReadStreamInfo(Stream input)` | Reads the first block's header (plus a scan of the initial block group) to report channel count, rate, depth and total samples without decoding the audio. |
+
+#### `WavPackCodec.WavPackStreamInfo`
+
+Stream geometry callers need to build PCM headers / split channels. `IsFloat` is true for IEEE-754 32-bit float streams (the `FLOAT_DATA` flag), in which case the decoded PCM is raw little-endian 32-bit floats rather than signed integers.
+
+Implements `IEquatable<WavPackStreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WavPackStreamInfo` | `WavPackStreamInfo(int Channels, int SampleRate, int BitsPerSample, long SampleCount, bool IsFloat = false)` | Stream geometry callers need to build PCM headers / split channels. `IsFloat` is true for IEEE-754 32-bit float streams (the `FLOAT_DATA` flag), in which case the decoded PCM is raw little-endian 32-bit floats rather than signed integers. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `IsFloat` | `bool IsFloat { get; init; }` |  |
+| `SampleCount` | `long SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `Codec.Wma`
+
+[`WmaCodec`](#wmacodec)
+
+#### `WmaCodec`
+
+Microsoft Windows Media Audio v1/v2 decoder (WAVEFORMATEX tags `0x160` / `0x161`). A faithful port of FFmpeg's `libavcodec/wma.c`, `wmadec.c`, `wma_common.c` and `wmadata.h`; the large VLC / LSP / exponent-band tables live in `WmaTables` and were transcribed from the same upstream source. Decode-only. The codec is constructed from the stream's WAVEFORMATEX fields plus the codec-private extradata (4 bytes for v1, 6 for v2) that carries the feature flags (VLC vs LSP exponents, bit-reservoir use, variable block length). Each ASF media-object payload is one coded superframe; `DecodeSuperframe` turns it into interleaved signed 16-bit PCM. Per the reference, with a bit reservoir a superframe holds several frames whose first frame spills bits into the previous superframe, so decoder state (the reservoir buffer, MDCT overlap, block lengths) is carried across calls. Features covered: VLC and LSP exponent coding, mid/side stereo, variable block lengths, the bit reservoir / superframe framing, perceptual noise coding for high bands and VBR streams. WMA Pro / Lossless (tags `0x162`/`0x163`) are a different bitstream and are not handled.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WmaCodec` | `WmaCodec(int version, int channels, int sampleRate, long bitrate, int blockAlign, ReadOnlySpan<byte> extradata)` | Constructs a decoder from the stream parameters. `version` is 1 (tag 0x160) or 2 (tag 0x161). `extradata` is the WAVEFORMATEX codec-private tail (≥4 bytes for v1, ≥6 for v2); shorter data is tolerated with the feature flags defaulting to off. |
+| `BlockSizeCount` | `int BlockSizeCount { get; }` | Number of distinct block sizes used by the variable-block-length scheme. |
+| `Channels` | `int Channels { get; }` | Channel count carried by the stream. |
+| `FrameLengthBits` | `int FrameLengthBits { get; }` | log2 of the frame length in samples. |
+| `FrameLength` | `int FrameLength { get; }` | Number of output samples per decoded frame (one frame per superframe without a bit reservoir). |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate in Hz. |
+| `UsesBitReservoir` | `bool UsesBitReservoir { get; }` | True when the bit-reservoir / multi-frame superframe framing is in use. |
+| `UsesExponentVlc` | `bool UsesExponentVlc { get; }` | True when VLC exponent coding is in use; false for LSP exponent coding. |
+| `UsesNoiseCoding` | `bool UsesNoiseCoding { get; }` | True when perceptual noise coding is active for this rate/bitrate. |
+| `UsesVariableBlockLength` | `bool UsesVariableBlockLength { get; }` | True when variable (split) block lengths are in use. |
+| `DecodeSuperframe` | `short[] DecodeSuperframe(ReadOnlySpan<byte> payload)` | Decodes one coded superframe (one ASF media-object payload, padded/truncated to `block_align`) to interleaved signed 16-bit PCM. Returns an empty array when the superframe only fills the bit reservoir (no output yet) and throws `InvalidDataException` on a corrupt superframe. |
+
+### Namespace `Codec.WmaLossless`
+
+[`WmaLosslessCodec`](#wmalosslesscodec)
+
+#### `WmaLosslessCodec`
+
+Clean-room Windows Media Audio Lossless (WAVEFORMATEX tag `0x0163`) decoder, a faithful port of FFmpeg's `libavcodec/wmalosslessdec.c` (LGPL 2.1) and the integer scalar-product kernels from `libavcodec/lossless_audiodsp.c`. WMA Lossless shares WMA Pro's ASF packet / bit-reservoir framing (sequence number, frame-spanning `num_bits_prev_frame`, length-prefixed frames) but replaces the MDCT path with an exactly-reversible integer residue pipeline: per-channel CDLMS adaptive filters, optional MCLMS inter-channel prediction, an autocorrelation filter, inter-channel decorrelation and a raw-PCM bypass mode. Output is interleaved little-endian signed 16-bit PCM (24-bit input is decoded into 32-bit intermediates and emitted as 16-bit by the surfacing layer). Reconstruction is bit-exact for the supported modes; arithmetic coding and the (reference-incomplete) inverse-LPC path are rejected, matching FFmpeg's `avpriv_request_sample` behaviour so callers can fall back gracefully.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WmaLosslessCodec` | `WmaLosslessCodec(int channels, int sampleRate, int blockAlign, ReadOnlySpan<byte> extradata)` | Initializes a new instance of `WmaLosslessCodec`. |
+| `BitsPerSample` | `int BitsPerSample { get; }` | Output bit depth declared by the extradata (16 or 24). |
+| `Channels` | `int Channels { get; }` | Decoded channel count taken from the extradata channel mask (falls back to nChannels). |
+| `DecodeFlags` | `uint DecodeFlags { get; }` | Decode flags parsed from extradata bytes 14..15. |
+| `SamplesPerFrame` | `int SamplesPerFrame { get; }` | Samples per frame derived from the sample rate and decode flags. |
+| `UsesLengthPrefix` | `bool UsesLengthPrefix { get; }` | Whether frames carry a length prefix (decode_flags & 0x40). |
+| `DecodePacket` | `short[] DecodePacket(ReadOnlySpan<byte> packet)` | Decodes one WMA Lossless ASF packet and returns interleaved signed-16-bit PCM for whatever frames completed in that packet. Decoder state (reservoir, filters, block lengths) carries across calls. Returns an empty array when the packet only fed the reservoir or only the (skipped) first frame decoded. |
+
+### Namespace `Codec.WmaPro`
+
+[`WmaProCodec`](#wmaprocodec)
+
+#### `WmaProCodec`
+
+Microsoft Windows Media Audio 9 Professional decoder (WAVEFORMATEX tag `0x0162`). A faithful port of FFmpeg's `libavcodec/wmaprodec.c` (the WMAPRO code paths only; the XMA1/XMA2 variants are not handled) plus the shared helpers from `libavcodec/wma.c` / `wma_common.c`; the large Huffman / decorrelation tables live in `WmaProTables` and were transcribed from `libavcodec/wmaprodata.h`. WMA Pro is an MDCT codec comparable to AAC: the compressed bitstream is split into packets that each carry one or more variable-length frames (frames may cross packet boundaries via a bit reservoir). Every frame holds a fixed number of samples per channel and is split into a variable number of subframes (2^N time-domain samples, N in 6..13). Subframes of different channels with matching offset/length can be grouped and share channel transforms (M/S for two channels; generalized rotation / default decorrelation matrices for more). Coefficients are vector-Huffman coded (4/2/1 elements per symbol with escapes) with a run-level fallback, then rescaled by per-band scale factors and a per-channel quantization step, decorrelated, IMDCT'd and overlap-added with a sine window. Features covered: 1–8 channels (the generic decorrelation path; LFE handled as a plain channel with its subwoofer cutoff applied), 16/24-bit source depth (the IMDCT scale tracks `bits_per_sample`; output is signed 16-bit PCM), variable block lengths / tile configuration, the bit reservoir and cross-packet frame fetch, and VBR streams (no constant-bitrate assumption is made — framing is driven entirely by the length-prefix / reservoir fields). Decode-only.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WmaProCodec` | `WmaProCodec(int channels, int sampleRate, int bitsPerSample, int blockAlign, long avgBytesPerSec, ReadOnlySpan<byte> extradata)` | Constructs a decoder from the stream parameters. `extradata` is the WAVEFORMATEX codec-private tail; WMA Pro requires at least 18 bytes (bits-per-sample at +0, channel mask at +2, decode flags at +14, all little-endian). |
+| `BitsPerSample` | `int BitsPerSample { get; }` | Integer sample bit depth declared in the extradata (1..32). |
+| `Channels` | `int Channels { get; }` | Channel count carried by the stream. |
+| `DecodeFlags` | `uint DecodeFlags { get; }` | The raw 32-bit decode-flags word read from the extradata. |
+| `LfeChannel` | `int LfeChannel { get; }` | The LFE channel index, or -1 when the stream has no LFE. |
+| `Log2FrameSize` | `int Log2FrameSize { get; }` | log2 of the compressed frame-size field width. |
+| `MaxNumSubframes` | `int MaxNumSubframes { get; }` | Maximum number of subframes a channel may be split into for this stream. |
+| `SampleRate` | `int SampleRate { get; }` | Sample rate in Hz. |
+| `SamplesPerFrame` | `int SamplesPerFrame { get; }` | Number of output samples per decoded frame. |
+| `UsesDynamicRangeCompression` | `bool UsesDynamicRangeCompression { get; }` | True when frames carry dynamic range compression data (decode_flags bit 0x80). |
+| `UsesLengthPrefix` | `bool UsesLengthPrefix { get; }` | True when each frame is prefixed with its compressed length (decode_flags bit 0x40). |
+| `DecodePacket` | `short[] DecodePacket(ReadOnlySpan<byte> packet)` | Decodes one WMA Pro packet (one reassembled ASF media object of `block_align` bytes) and returns the interleaved signed-16-bit PCM for whatever frames completed in that packet (frames spanning packet boundaries are emitted once their trailing half arrives). Returns an empty array when the packet only fed the bit reservoir. Decoder state (the reservoir, MDCT overlap, block lengths) is carried across calls. |
+| `DecodeSuperframe` | `short[] DecodeSuperframe(ReadOnlySpan<byte> packet)` | Alias for `DecodePacket`; WMA Pro packets carry one or more frames (no separate superframe layer). |
+| `NumScaleFactorBands` | `int NumScaleFactorBands(int tableIdx)` | Number of scale factor bands for the given table index (0 = full-length subframe). |
+
+### Namespace `Codec.WsAdpcm`
+
+[`StandardImaCodec`](#standardimacodec) · [`StandardImaCodec.State`](#standardimacodecstate) · [`WsAdpcmCodec`](#wsadpcmcodec)
+
+#### `StandardImaCodec`
+
+Standard IMA ADPCM with a single, continuous predictor/step-index state — the form used by Westwood `.aud` (codec id 99) and CRYO `.apc` streams, where the adaptive state runs across the whole stream rather than resetting per WAV block. Nibbles are read low nibble first within each byte, matching both formats. This complements `Codec.ImaAdpcm.ImaAdpcmCodec`, whose public surface only covers the block-structured WAV and QuickTime packet layouts. The encoder mirrors the decoder's state machine exactly so a decode→encode→decode round-trip reproduces the waveform within IMA's lossy tolerance. It lives here, alongside the other classic-game audio codecs, so both `FileFormat.Aud` and `FileFormat.Apc` can share one streaming IMA implementation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeOneNibble` | `static short DecodeOneNibble(byte nibble, ref State state)` | Decodes a single IMA nibble against `state`, returning the new 16-bit sample. Exposed for stereo streams that interleave nibbles per channel (e.g. CRYO APC: low nibble left, high nibble right) and so need per-nibble control. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, ref State state)` | Decodes a continuous IMA byte stream (two nibbles per byte, low nibble first) into signed 16-bit PCM, advancing `state` across the whole buffer. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, ref State state)` | Encodes signed 16-bit PCM into a continuous IMA byte stream (low nibble first), advancing `state`. An odd trailing sample is paired with a zero high nibble. |
+
+#### `StandardImaCodec.State`
+
+Mutable IMA decoder/encoder state (predictor + step index).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `State` | `State(int predictor, int stepIndex)` | Initializes a new instance of `State`. |
+| `Predictor` | `int Predictor` | Provides the predictor value. |
+| `StepIndex` | `int StepIndex` | Provides the step index value. |
+
+#### `WsAdpcmCodec`
+
+Westwood Studios "WS" ADPCM (a.k.a. SND1), the compression carried by Westwood `.aud` streams in Command & Conquer-era games. The codec operates in the unsigned 8-bit sample domain and supports both command-coded and raw chunks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(ReadOnlySpan<byte> chunkPayload, int expectedOut)` | Decodes one WS-ADPCM chunk payload into `expectedOut` bytes of 8-bit unsigned PCM. When payload length equals output length the chunk is raw. |
+| `EncodePcm16` | `static byte[] EncodePcm16(ReadOnlySpan<short> pcm16)` | Encodes signed PCM16 after reducing it to WS's native unsigned-8 domain. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> pcmU8)` | Encodes unsigned 8-bit PCM as a lossless WS chunk. The writer uses hold commands for repeated predictor values, one-byte signed-delta commands for changes in [-16,+15], and literal runs for everything else. If commands do not beat the raw representation, the raw bytes are returned because raw chunks are part of the format. |
+| `ShortsToLePcm` | `static byte[] ShortsToLePcm(ReadOnlySpan<short> samples)` | Packs signed 16-bit samples into a little-endian byte buffer. |
+| `ToPcm16` | `static short[] ToPcm16(ReadOnlySpan<byte> unsigned8)` | Converts a buffer of decoded 8-bit unsigned WS samples to signed 16-bit PCM via `(sample - 128) << 8`. |
+
+### Namespace `Codec.WwiseIma`
+
+[`WwiseImaCodec`](#wwiseimacodec)
+
+#### `WwiseImaCodec`
+
+Audiokinetic Wwise IMA ADPCM (the `imaw`-style variant carried by .wem media). The step/index tables are the standard IMA ones; the block layout follows Microsoft IMA's interleave: The stream is a sequence of fixed `blockAlign`-byte blocks. `blockAlign` is the size of one block across all channels (a common Wwise value is `0x24` per channel).Each block starts with one 4-byte header per channel — int16 LE predictor, u8 step index, 1 reserved byte — laid out channel after channel.The remaining bytes are 4-byte nibble groups that round-robin through the channels (ch0's 4 bytes, ch1's 4 bytes, …); within each byte the LOW nibble is decoded first. Each 4-byte group yields 8 samples for its channel. The header predictor is emitted as the block's first sample for each channel.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GroupBytes` | `const int GroupBytes` | Bytes of nibble data per channel per interleave group (one 4-byte group → 8 samples). |
+| `HeaderBytes` | `const int HeaderBytes` | Per-channel block header size (int16 predictor + u8 step index + 1 reserved). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels, int blockAlign)` | Decodes Wwise IMA ADPCM into interleaved 16-bit PCM. Each block contributes `((blockAlign/channels) - 4) * 2 + 1` samples per channel. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int blockAlign)` | Encodes interleaved 16-bit PCM into Wwise IMA ADPCM blocks of `blockAlign` bytes. The first sample of each block per channel is stored verbatim as the header predictor; the rest are quantised with the standard IMA step walk. The final block is padded with the last reconstructed sample so it stays a whole block. |
+
+### Namespace `Codec.XaAdpcm`
+
+[`XaAdpcmCodec`](#xaadpcmcodec) · [`XaAdpcmCodec.History`](#xaadpcmcodechistory)
+
+#### `XaAdpcmCodec`
+
+CD-ROM XA / PlayStation streaming ADPCM (Green-Book / PSX XA-ADPCM) encoder and decoder. XA audio is carried in fixed 128-byte sound groups: 16 header bytes — the per-unit sound parameters, stored twice redundantly. Bytes 0–3 repeat params 0–3, bytes 4–7 hold params 0–3, bytes 8–11 hold params 4–7, bytes 12–15 repeat params 4–7. The canonical read takes bytes 4..11 → the parameter for sound units 0..7.112 data bytes — 28 four-byte columns. In 4-bit mode each column carries one nibble for each of the 8 units (two units per byte); in 8-bit mode each column carries one byte for each of 4 units. A parameter byte holds `shift` in its low nibble (0..12) and `filter` in bits 4–5 (0..3). The predictor shares the SPU/VAG heritage but uses only the first four filters: `K0 = {0, 60, 115, 98}`, `K1 = {0, 0, -52, -55}` (scaled by 1/64). Each sample is reconstructed as `s = (signExtend(code) << 12) >> shift`, then `s += (h1*K0[f] + h2*K1[f] + 32) >> 6`, clamped to `Int16`; the two per-channel histories then shift forward. Stereo content interleaves channels by unit parity: even units feed the LEFT channel, odd units the RIGHT (each with its own predictor history). Mono content plays all units sequentially.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderSize` | `const int HeaderSize` | Header bytes preceding the 112 data bytes in a sound group. |
+| `SamplesPerUnit` | `const int SamplesPerUnit` | Decoded PCM samples produced by each sound unit. |
+| `SoundGroupSize` | `const int SoundGroupSize` | Size in bytes of one XA sound group. |
+| `UnitsPerGroup4Bit` | `const int UnitsPerGroup4Bit` | Sound units per group in 4-bit mode. |
+| `UnitsPerGroup8Bit` | `const int UnitsPerGroup8Bit` | Sound units per group in 8-bit mode. |
+| `Decode8Bit` | `static short[] Decode8Bit(ReadOnlySpan<byte> groups, bool stereo)` | Decodes an 8-bit XA-ADPCM stream of whole 128-byte sound groups to interleaved 16-bit PCM. 8-bit groups carry four sound units of 28 eight-bit codes each. Stereo routes even→left, odd→right; mono plays units sequentially. |
+| `DecodeGroup` | `static int DecodeGroup(ReadOnlySpan<byte> group, bool stereo, ref History left, ref History right, Span<short> output)` | Decodes one 128-byte sound group in 4-bit mode into `output`, advancing the per-channel histories. When `stereo` is set the output is interleaved L/R and the eight units route even→`left`, odd→`right`; otherwise all eight units feed `left` and are written sequentially. Returns the number of PCM samples written (`8*28` mono = 224; stereo writes the same count split as 4 units per channel × 2 interleaved). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> groups, bool stereo)` | Decodes a 4-bit XA-ADPCM stream of whole 128-byte sound groups to interleaved 16-bit PCM. A trailing partial group (shorter than 128 bytes) is ignored. Stereo output is L/R interleaved; mono output is sequential. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, bool stereo)` | Encodes interleaved 16-bit PCM into 4-bit XA-ADPCM sound groups. Each group packs 8 sound units of 28 samples; stereo de-interleaves the input and routes the four left units to even slots and the four right units to odd slots (each with its own predictor history), mono fills all eight units sequentially. Every unit is encoded by brute-forcing all four filters and every legal shift and keeping the lowest reconstruction error. The final group is zero-padded. The redundant parameter bytes are written in both copies so the output round-trips through any conformant reader. |
+
+#### `XaAdpcmCodec.History`
+
+Per-channel predictor state carried across sound units.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `H1` | `int H1` | Provides the h 1 value. |
+| `H2` | `int H2` | Provides the h 2 value. |
+
+### Namespace `Codec.Xma`
+
+[`XmaCodec`](#xmacodec) · [`XmaPacket`](#xmapacket) · [`XmaPacket.Header`](#xmapacketheader) · [`XmaPacket.StreamConfig`](#xmapacketstreamconfig)
+
+#### `XmaCodec`
+
+Microsoft XMA1/XMA2 decoder orchestrator. XMA is a thin multiplexing layer over WMA Pro: the audio is carried as `NumStreams`-many WMA Pro elementary streams (1 or 2 channels each), interleaved as fixed-size packets (`PacketSize` bytes). This class parses the XMA framing (`XmaPacket`), routes each packet to its owning per-stream `WmaProCodec` following the packet-skip interleave, and re-interleaves the decoded streams into one multi-channel signal. A faithful structural port of FFmpeg's `xma_decode_packet` orchestration (LGPL 2.1). The per-stream WMA Pro frame decode reuses the existing `WmaProCodec` verbatim. Where a stream's packet framing cannot be driven through that codec's ASF packet entry point (e.g. frames that span XMA packet boundaries), the decode degrades gracefully: `TryDecode` returns `false` and the caller surfaces the raw XMA blob instead of partial PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmaCodec` | `XmaCodec(ReadOnlySpan<byte> extradata, bool isXma2, int sampleRate, int declaredChannels)` | Initializes a new instance of `XmaCodec`. |
+| `Channels` | `int Channels { get; }` | Total output channels across all streams. |
+| `Config` | `StreamConfig Config { get; }` | Decoded XMA stream layout (number of streams + per-stream channel counts). |
+| `SampleRate` | `int SampleRate { get; }` | Output sample rate in Hz. |
+| `TryDecode` | `bool TryDecode(ReadOnlySpan<byte> data, out short[] pcm)` | Attempts to decode the XMA bitstream `data` into interleaved signed-16-bit PCM. Returns `true` with the PCM in `pcm` on success; returns `false` (PCM empty) when the stream uses framing this orchestrator cannot drive through `WmaProCodec`, so callers fall back to the raw blob. State is not retained between calls — each call decodes a whole blob. |
+
+#### `XmaPacket`
+
+Parsers for the Microsoft XMA1/XMA2 container framing, ported from FFmpeg's `libavcodec/wmaprodec.c` (the XMA paths of `decode_packet` and `decode_init`, LGPL 2.1). XMA carries one or more WMA Pro elementary streams (1 or 2 channels each) split into fixed-size packets — 2048 bytes by convention — whose WMA Pro frames are bit-packed and may span packet boundaries. Each packet opens with a small header; this type exposes the header fields and the XMA1/XMA2 extradata layout (number of streams + per-stream channel count) needed to drive a per-stream WMA Pro decode and interleave the streams back into one output.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodeFlags` | `const int DecodeFlags` | The fixed WMA Pro decode flags every XMA stream uses (XMA2WAVEFORMAT/XMA1). |
+| `PacketSize` | `const int PacketSize` | Conventional XMA packet size (also the per-stream WMA Pro block_align). |
+| `SamplesPerFrame` | `const int SamplesPerFrame` | WMA Pro frame length for XMA streams is always 512 samples. |
+| `ParseHeader` | `static Header ParseHeader(ReadOnlySpan<byte> packet, bool isXma2, int blockAlign)` | Parses the leading header of one XMA packet. The 2-byte `block_align` determines `log2_frame_size = log2(block_align) + 4`, the width of the `num_bits_prev_frame` field. XMA2 packets open with a 6-bit frame count; XMA1 packets open with a 4-bit sequence number + 2 reserved bits. Both then carry the previous-frame bit count, 3 reserved bits and an 8-bit packet-skip count. |
+| `ParseStreamConfig` | `static StreamConfig ParseStreamConfig(ReadOnlySpan<byte> extradata, bool isXma2, int declaredChannels)` | Decodes the stream layout from XMA extradata, mirroring FFmpeg's `decode_init` XMA branches: XMA2WAVEFORMATEX (34-byte extradata): channels split 2ch+2ch+…+1/2ch across `declaredChannels`.XMA2WAVEFORMAT: `num_streams` at `extradata[1]` (when `extradata[0]==3`) or `extradata[9]`; per-stream channels at `extradata[32 + (extradata[0]==3?0:8) + 4*n]`.XMA1WAVEFORMAT: per-stream channels at `extradata[8 + 20*n + 17]`. |
+
+#### `XmaPacket.Header`
+
+One parsed XMA packet header.
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(int NumFrames, int NumBitsPrevFrame, int SkipPackets, int HeaderBits)` | One parsed XMA packet header. |
+| `HeaderBits` | `int HeaderBits { get; init; }` | Total header size in bits (where the frame payload begins). |
+| `NumBitsPrevFrame` | `int NumBitsPrevFrame { get; init; }` | Bits belonging to the previous packet's trailing frame. |
+| `NumFrames` | `int NumFrames { get; init; }` | XMA2: number of frames opening in this packet (6 bits). XMA1: not present (0). |
+| `SkipPackets` | `int SkipPackets { get; init; }` | Packets to skip before this stream's next packet (interleave control). |
+
+#### `XmaPacket.StreamConfig`
+
+XMA1/XMA2 stream configuration decoded from the codec extradata.
+
+Implements `IEquatable<StreamConfig>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamConfig` | `StreamConfig(bool IsXma2, int NumStreams, int[] StreamChannels, int TotalChannels)` | XMA1/XMA2 stream configuration decoded from the codec extradata. |
+| `IsXma2` | `bool IsXma2 { get; init; }` | True for XMA2, false for XMA1. |
+| `NumStreams` | `int NumStreams { get; init; }` | Number of WMA Pro elementary streams. |
+| `StreamChannels` | `int[] StreamChannels { get; init; }` | Channel count (1 or 2) per stream. |
+| `TotalChannels` | `int TotalChannels { get; init; }` | Sum of all per-stream channel counts. |
+
+### Namespace `Codec.Ym2151`
+
+[`Ym2151Codec`](#ym2151codec)
+
+#### `Ym2151Codec`
+
+Yamaha YM2151 (OPM) FM synthesis core: eight channels of four operators each, eight algorithms, per-operator feedback, the OPM key-code/key-fraction phase generator with DT1/DT2 detune and frequency multiple, an envelope generator with key-scaling, a global LFO (AM/PM with selectable saw/square/triangle/noise waveforms and PMD/AMD depth), a noise generator that can replace operator 4 of channel 8, and per-channel stereo L/R routing. The operator core is the genuine die-extracted OPM/OPN log-sine and exponential ROMs — the OPM and OPN families share the same operator — so the two ROM tables are taken from `LogSinRom` / `ExpRom` rather than duplicated. Registers are written through `WriteRegister`; `RenderSample` produces one stereo frame at the chip's native rate (`clock / 64`, ≈ 62.5 kHz at the canonical 4 MHz OPM clock). The host resamples to its output rate.References: MAME ymfm (Aaron Giles) — the authoritative OPM implementation — for the LFO/noise and the key-code phase tables; Nuked-OPM for cross-checking the phase generator; and the YM2151 application manual for the register map.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ym2151Codec` | `Ym2151Codec(double clock = 3579545)` | Initializes a new instance of `Ym2151Codec`. |
+| `Prescale` | `const int Prescale` | Native output rate divisor: the OPM emits one sample every `clock / 64`. |
+| `NativeSampleRate` | `double NativeSampleRate { get; }` | The chip's native output sample rate (`clock / 64`). |
+| `RenderSample` | `void RenderSample(out short left, out short right)` | Renders one stereo frame at the chip's native rate; the eight channels are summed. |
+| `WriteRegister` | `void WriteRegister(int address, int value)` | Writes one OPM register (`address` 0x00-0xFF, `value` a byte). |
+
+### Namespace `Codec.Ym2203`
+
+[`Ym2203Codec`](#ym2203codec)
+
+#### `Ym2203Codec`
+
+Yamaha YM2203 (OPN) synthesis core: three four-operator FM channels plus a YM2149/AY-3-8910 compatible SSG (three square waves, noise and a hardware envelope). The FM section is the classic OPN block — the same die-extracted log-sine / exponential operator, eight algorithms, per-operator feedback, DT/MUL phase generation and channel-3 per-operator "special" mode that the YM2612 (OPN2) inherited; this implementation therefore reuses `Ym2612Codec` driven through its port-0 register bus (channels 1-3) for the FM voices, and `Ay8910Chip` for the SSG. Unlike OPN2 the YM2203 has no DAC, no stereo L/R routing and no second port — the chip is monaural. Register map: `$00-$0F` are the AY-compatible SSG registers and `$20-$B6` are the FM registers (an exact subset of the OPN2 port-0 map). The FM section runs at `clock / 72` and the SSG at `clock / 16`; both are mixed to a single mono channel.References: MAME ymfm (Aaron Giles) and the YM2203 application manual for the register map and the OPN/SSG clock prescalers.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ym2203Codec` | `Ym2203Codec(double clock = 3993600)` | Initializes a new instance of `Ym2203Codec`. |
+| `FmPrescale` | `const int FmPrescale` | FM sample-rate divisor: the OPN FM section runs at `clock / 72`. |
+| `SsgPrescale` | `const int SsgPrescale` | SSG prescaler: the AY-compatible SSG runs at `clock / 16`. |
+| `FmSampleRate` | `double FmSampleRate { get; }` | The FM section's native output sample rate (`clock / 72`). |
+| `SsgSampleRate` | `static int SsgSampleRate { get; }` | The SSG render rate (fixed 44.1 kHz, matching `Ay8910Chip`). |
+| `RenderFmSample` | `short RenderFmSample()` | Renders one FM frame at the FM native rate and returns its mono level. |
+| `RenderSsgSamples` | `void RenderSsgSamples(Span<short> buffer, int count)` | Renders `count` mono SSG samples into `buffer`. |
+| `Write` | `void Write(int address, int value)` | Writes one register. `$00-$0F` address the SSG (the low nibble of the value of the even "address latch" write selects the register); `$20-$B6` address the FM section. The VGM command supplies the register number and value together. |
+
+### Namespace `Codec.Ym2413`
+
+[`Ym2413Codec`](#ym2413codec)
+
+#### `Ym2413Codec`
+
+Yamaha YM2413 (OPLL) FM synthesis core: nine two-operator channels, or six channels plus five rhythm instruments (Bass Drum, Snare Drum, Tom-Tom, Top-Cymbal, High-Hat). The OPLL is the cost-reduced OPL relative: one user-definable patch plus fifteen ROM patches replace the OPL's free register set, each channel has a modulator feeding a carrier, and the chip emits one channel per internal slot so the output sample rate is `clock / 72`. References. The register map and frequency/envelope arithmetic follow the official Yamaha YM2413 Application Manual. The instrument patch ROM and the rhythm generation, KSL/multiple tables and envelope behaviour are transcribed from `emu2413` (Mitsutaka Okazaki, v1.5.9) and cross-checked against the andete OPLL die analysis and Nuked-OPLL. The log-sine / exponential operator ROMs are the genuine die constants shared with the OPN2 (see `Ym2413Tables`, replicated from the sibling `Codec.Ym2612` whose copies are `internal`).Registers are written through `WriteRegister` (address, value), matching the VGM `0x51 aa dd` command. `RenderSample` produces one mono frame at the chip's native rate (`NativeSampleRate`); the host resamples to its output rate.Fidelity notes. The fifteen ROM patches, the user patch, the per-channel F-num/block/key-on/sustain registers, the modulator-feedback path, total-level on the modulator and 4-bit volume on the carrier, KSL/KSR rate scaling, the AM (tremolo, ~3.7 Hz) and PM (vibrato, ~6.4 Hz) LFOs, the half-sine waveform select, and rhythm mode's five instruments with their fixed phase/noise interactions are all modelled. The envelope DAC is the OPLL's 23-step log-domain generator. Sub-sample channel-slot phasing on the real die is collapsed to per-frame channel iteration; this does not affect register-log playback.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ym2413Codec` | `Ym2413Codec(double clock = 3579545)` | Initializes a new instance of `Ym2413Codec`. |
+| `Ym2413Codec` | `Ym2413Codec(double clock, byte[][] instrumentRom)` | Constructs the OPLL core with an optional substitute instrument patch ROM. The Konami VRC7 is an OPLL die fused with a different 15-voice patch table; passing that table here (19 rows of 8 bytes — same layout as `DefaultInstruments`, with rows 16..18 unused since the VRC7 has no rhythm mode) reuses the entire operator/envelope core. When `instrumentRom` is `null` the genuine YM2413 set is used. |
+| `Prescale` | `const int Prescale` | Native FM sample-rate divisor: the OPLL emits one slot per clock/72 tick. |
+| `ExpRom` | `static IReadOnlyList<ushort> ExpRom { get; }` | The genuine die-extracted exponential ROM (256 entries; OR'd with 0x400 in use). |
+| `InstrumentRom` | `static IReadOnlyList<IReadOnlyList<byte>> InstrumentRom { get; }` | The built-in instrument patch ROM (rows 0..18); see `Ym2413Tables`. |
+| `LogSinRom` | `static IReadOnlyList<ushort> LogSinRom { get; }` | The genuine die-extracted quarter-period log-sine ROM (256 entries, 1/256 dB). |
+| `NativeSampleRate` | `double NativeSampleRate { get; }` | The chip's native output sample rate (clock / 72). |
+| `RhythmMode` | `bool RhythmMode { get; }` | True when rhythm mode (reg 0x0E bit 5) is engaged. |
+| `RenderSample` | `short RenderSample()` | Renders one mono frame at the chip's native rate; the value is signed 16-bit. |
+| `RenderSample` | `void RenderSample(out short mono)` | Renders one mono frame (overload matching the stereo sibling's signature). |
+| `WriteRegister` | `void WriteRegister(int address, int value)` | Writes one OPLL register. `address` 0x00..0x07 program the user patch, 0x0E is the rhythm-mode/key control, 0x10-0x18 the per-channel F-num low byte, 0x20-0x28 the F-num high bit + block + key-on + sustain, and 0x30-0x38 the instrument/volume pair. |
+
+### Namespace `Codec.Ym2608`
+
+[`Ym2608Codec`](#ym2608codec)
+
+#### `Ym2608Codec`
+
+Yamaha YM2608 (OPNA) synthesis core: six four-operator FM channels with stereo per-channel L/R routing, a YM2149/AY-3-8910 compatible SSG, a built-in six-voice rhythm (ADPCM-A) section and a single ADPCM-B "delta-T" channel. The FM block is the OPNA superset of the OPN block — architecturally identical to the OPN2 (YM2612) FM section: the same die-extracted log-sine / exponential operator, eight algorithms, feedback, DT/MUL phase generation, LFO and per-channel L/R enables. This implementation reuses `Ym2612Codec` for the six FM channels (port 0 = channels 1-3, port 1 = channels 4-6, exactly the OPN2 layout) and `Ay8910Chip` for the SSG. The OPNA FM section runs at `clock / 144` (six channels share a 24-slot operator pipeline, the same divisor as OPN2) and the SSG at `clock / 32`. FM is stereo; the SSG is summed into both channels.Gaps: the rhythm (ADPCM-A) drum voices require the chip's internal sample ROM and the ADPCM-B channel requires a streamed sample (a VGM data block). When neither is supplied those sections stay silent and the caller can surface a note. The register writes are still accepted so the FM/SSG mix is unaffected.References: MAME ymfm (Aaron Giles) and the YM2608 application manual for the register map, the prescalers and the rhythm/ADPCM-B layout.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ym2608Codec` | `Ym2608Codec(double clock = 7987200)` | Initializes a new instance of `Ym2608Codec`. |
+| `FmPrescale` | `const int FmPrescale` | FM sample-rate divisor: the OPNA FM section runs at `clock / 144`. |
+| `SsgPrescale` | `const int SsgPrescale` | SSG prescaler: the OPNA SSG runs at `clock / 32`. |
+| `AdpcmBRequested` | `bool AdpcmBRequested { get; }` | True once an ADPCM-B start was requested (no streamed sample is modelled). |
+| `FmSampleRate` | `double FmSampleRate { get; }` | The FM section's native output sample rate (`clock / 144`). |
+| `RhythmRequested` | `bool RhythmRequested { get; }` | True once a rhythm key-on was requested (the rhythm ROM is not modelled). |
+| `SsgSampleRate` | `static int SsgSampleRate { get; }` | The SSG render rate (fixed 44.1 kHz, matching `Ay8910Chip`). |
+| `RenderFmSample` | `void RenderFmSample(out short left, out short right)` | Renders one stereo FM frame at the FM native rate. |
+| `RenderSsgSamples` | `void RenderSsgSamples(Span<short> buffer, int count)` | Renders `count` mono SSG samples into `buffer`. |
+| `Write` | `void Write(int port, int address, int value)` | Writes one register on the given port. Port 0 carries the SSG (`$00-$0F`), the rhythm section (`$10-$1F`) and FM channels 1-3 (`$20-$B6`); port 1 carries the ADPCM-B registers (`$00-$1F`) and FM channels 4-6 (`$30-$B6`). |
+
+### Namespace `Codec.Ym2612`
+
+[`Ym2612Codec`](#ym2612codec)
+
+#### `Ym2612Codec`
+
+Yamaha YM2612 (OPN2) FM synthesis core: six channels of four operators each, eight algorithms, per-operator envelopes, channel-6 DAC mode, LFO (AM/PM), and stereo L/R enables. The operator is built on the genuine die-extracted log-sine and exponential ROMs (see `Ym2612Tables`); the phase and envelope generators follow the established sample-accurate OPN2 pipeline. Registers are written through `Write` (port 0 = channels 1-3, port 1 = channels 4-6). `RenderSample` produces one stereo frame at the chip's native rate (clock / 144 ≈ 53.27 kHz for the 7.67 MHz Mega Drive clock); the host resamples to 44100 by simple ratio stepping.Fidelity notes: the log-sine/exp operator, the 8 algorithms, op-1 feedback, TL attenuation, detune+multiple phase generation, channel-3 special (per-operator F-num) mode, the LFO AM/PM sensitivity tables, channel-6 DAC, and L/R routing are all modelled. SSG-EG is parsed and its hold/alternate behaviour is approximated in the envelope generator. Timers, IRQ, CSM and the busy flag are intentionally omitted — register logs never depend on them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ym2612Codec` | `Ym2612Codec(double clock = 7670454)` | Initializes a new instance of `Ym2612Codec`. |
+| `Prescale` | `const int Prescale` | Native FM sample rate divisor: the chip runs at `clock / 144`. |
+| `DacEnabled` | `bool DacEnabled { get; }` | True when channel-6 DAC mode is engaged (reg 0x2B bit 7). |
+| `ExpRom` | `static IReadOnlyList<ushort> ExpRom { get; }` | The genuine die-extracted exponential ROM (256 entries; OR'd with 0x400 in use). |
+| `LogSinRom` | `static IReadOnlyList<ushort> LogSinRom { get; }` | The genuine die-extracted quarter-period log-sine ROM (256 entries, 1/256 dB). |
+| `NativeSampleRate` | `double NativeSampleRate { get; }` | The chip's native output sample rate (clock / 144). |
+| `RenderSample` | `void RenderSample(out short left, out short right)` | Renders one stereo frame at the chip's native rate. `left` and `right` are signed 16-bit; the six channels are summed and clamped. |
+| `Write` | `void Write(int port, int address, int value)` | Writes one register. `port` 0 addresses the global registers and channels 1-3; port 1 addresses channels 4-6. `address` is the register number, `value` the data byte. |
+
+### Namespace `Codec.Z80`
+
+[`Cpu`](#cpu) · [`Cpu.Flags`](#cpuflags) · [`IBusZ80`](#ibusz80)
+
+#### `Cpu`
+
+Arithmetic-logic primitives shared across the opcode pages. Each updates the F register per the documented Z80 semantics (S, Z, H, P/V, N, C) and copies the undocumented Y/X bits from the result.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Cpu` | `Cpu(IBusZ80 bus)` | Initializes a new instance of `Cpu`. |
+| `A2` | `byte A2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `A` | `byte A` | Provides the a and f and b and c and d and e and h and l value. |
+| `B2` | `byte B2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `B` | `byte B` | Provides the a and f and b and c and d and e and h and l value. |
+| `C2` | `byte C2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `C` | `byte C` | Provides the a and f and b and c and d and e and h and l value. |
+| `D2` | `byte D2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `D` | `byte D` | Provides the a and f and b and c and d and e and h and l value. |
+| `E2` | `byte E2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `E` | `byte E` | Provides the a and f and b and c and d and e and h and l value. |
+| `F2` | `byte F2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `F` | `byte F` | Provides the a and f and b and c and d and e and h and l value. |
+| `H2` | `byte H2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `H` | `byte H` | Provides the a and f and b and c and d and e and h and l value. |
+| `Halted` | `bool Halted` | Provides the halted value. |
+| `IFF1` | `bool IFF1` | Provides the iff 1 and iff 2 value. |
+| `IFF2` | `bool IFF2` | Provides the iff 1 and iff 2 value. |
+| `IX` | `ushort IX` | Provides the ix and iy and sp and pc value. |
+| `IY` | `ushort IY` | Provides the ix and iy and sp and pc value. |
+| `I` | `byte I` | Provides the i and r value. |
+| `InterruptMode` | `int InterruptMode` | Provides the interrupt mode value. |
+| `L2` | `byte L2` | Provides the a 2 and f 2 and b 2 and c 2 and d 2 and e 2 and h 2 and l 2 value. |
+| `L` | `byte L` | Provides the a and f and b and c and d and e and h and l value. |
+| `PC` | `ushort PC` | Provides the ix and iy and sp and pc value. |
+| `R` | `byte R` | Provides the i and r value. |
+| `SP` | `ushort SP` | Provides the ix and iy and sp and pc value. |
+| `AF` | `ushort AF { get; set; }` | Gets or sets the af. |
+| `BC` | `ushort BC { get; set; }` | Gets or sets the bc. |
+| `DE` | `ushort DE { get; set; }` | Gets or sets the de. |
+| `HL` | `ushort HL { get; set; }` | Gets or sets the hl. |
+| `RaiseIrq` | `long RaiseIrq(byte busValue)` | Injects a maskable interrupt if interrupts are enabled (`IFF1`). The `busValue` is the byte the interrupting device places on the data bus (used by IM 0 as the opcode to execute — typically an `RST` — and by IM 2 as the low byte of the vector-table pointer). IM 1 ignores it and vectors to `$0038`. Returns the T-states the acknowledge sequence consumed, or 0 when masked. IM 0 here supports only the common single-byte `RST` form (e.g. `0xFF` = `RST 38`); multi-byte IM 0 opcodes are not modelled. |
+| `Reset` | `void Reset()` | Power-on/reset: PC=0, SP=0xFFFF, interrupts disabled, IM 0, AF=0xFFFF. |
+| `RunUntilRet` | `long RunUntilRet(ushort address, long maxCycles)` | Calls the routine at `address` using the music-player convention: a sentinel return address is pushed, execution jumps to the routine, and stepping stops once the routine's `RET` pops the sentinel back (PC == sentinel and SP restored) or `maxCycles` is exhausted. Returns the T-states consumed. |
+| `Step` | `long Step()` | Executes one full instruction (including any prefix bytes) and returns the number of T-states it consumed. A pending maskable interrupt is not auto-serviced here; use `RaiseIrq` at frame boundaries. |
+
+#### `Cpu.Flags`
+
+Status-register flag bits (the F register layout).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `C` | `1` | Specifies the c option. |
+| `N` | `2` | Specifies the n option. |
+| `PV` | `4` | Specifies the pv option. |
+| `X` | `8` | Specifies the x option. |
+| `H` | `16` | Specifies the h option. |
+| `Y` | `32` | Specifies the y option. |
+| `Z` | `64` | Specifies the z option. |
+| `S` | `128` | Specifies the s option. |
+
+#### `IBusZ80`
+
+The memory and I/O abstraction the `Cpu` core talks to. Every memory fetch, read and write goes through the 16-bit address bus; every port access goes through the I/O bus. The Z80 places the 16-bit BC pair on the address lines during `IN/OUT (C)` and the accumulator on the high byte during `IN/OUT (n)`, so the port address is a full `UInt16` here and a host may decode it as narrowly (8-bit) or as widely (16-bit) as the modelled machine requires.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadIo` | `byte ReadIo(ushort port)` | Reads one byte from the I/O port at `port`. |
+| `ReadMem` | `byte ReadMem(ushort addr)` | Reads one byte from memory at `addr`. |
+| `WriteIo` | `void WriteIo(ushort port, byte value)` | Writes `value` to the I/O port at `port`. |
+| `WriteMem` | `void WriteMem(ushort addr, byte value)` | Writes `value` to memory at `addr`. |
 
 ### Namespace `Concentus`
 
@@ -1440,6 +4101,250 @@ Represents an opus repacketizer.
 | `UnpadMultistreamPacket` | `static int UnpadMultistreamPacket(byte[] data, int data_offset, int len, int nb_streams)` | Performs the unpad multistream packet operation. |
 | `UnpadPacket` | `static int UnpadPacket(byte[] data, int data_offset, int len)` | Performs the unpad packet operation. |
 
+### Namespace `FileFormat.Aac`
+
+[`AacFormatDescriptor`](#aacformatdescriptor)
+
+#### `AacFormatDescriptor`
+
+AAC-LC in ADTS framing. Besides the pseudo-archive view this descriptor exposes canonical PCM encode/decode and raw AAC access units for packet-preserving remux.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AacFormatDescriptor` | `AacFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
+### Namespace `FileFormat.Ac3`
+
+[`Ac3FormatDescriptor`](#ac3formatdescriptor) · [`Ac3SyncFrame`](#ac3syncframe)
+
+#### `Ac3FormatDescriptor`
+
+AC-3 / E-AC-3 (Dolby Digital / Dolby Digital Plus) elementary stream surfaced as a pseudo-archive. The descriptor parses the sync-frame headers (syncinfo + BSI: sample rate, frame size, channel arrangement via acmod, LFE, dialnorm) for `metadata.ini` and distinguishes AC-3 (bsid ≤ 10) from E-AC-3 (bsid = 16). The byte-exact `FULL.ac3` (Kind `Container`) always round-trips the stream unchanged. For both AC-3 and E-AC-3 the descriptor additionally decodes the stream (via `Codec.Ac3`) and surfaces one mono `<CHANNEL>.wav` per decoded channel, named via the acmod speaker layout (L/C/R → FRONT_LEFT/CENTER/FRONT_RIGHT, surrounds → BACK_*/SIDE_*, plus LFE last). For E-AC-3 only the primary independent substream (id 0) is decoded; dependent substreams are skipped (noted in `metadata.ini`). When the decoder can't handle the input (enhanced coupling, malformed, truncated) it falls back to the info-only layout (`FULL.ac3` + `metadata.ini`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3FormatDescriptor` | `Ac3FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `Ac3SyncFrame`
+
+Parsed header fields of one AC-3 / E-AC-3 sync frame. The 0x0B77 sync word is followed by syncinfo + BSI (bit-stream information). `bsid` ≤ 10 selects the legacy AC-3 header layout (ATSC A/52); `bsid` = 16 selects the E-AC-3 (Annex E) header. This is a thin descriptor-side view over the shared `Ac3FrameHeader` parser in `Codec.Ac3`, so the syncinfo / BSI tables live in one place and stay consistent between the decoder and the stream-info path.
+
+Implements `IEquatable<Ac3SyncFrame>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Ac3SyncFrame` | `Ac3SyncFrame(bool IsEnhanced, int FrameSize, int SampleRate, int Bitrate, int Acmod, bool LowFrequencyEffects, int DialNorm, int Bsid)` | Parsed header fields of one AC-3 / E-AC-3 sync frame. The 0x0B77 sync word is followed by syncinfo + BSI (bit-stream information). `bsid` ≤ 10 selects the legacy AC-3 header layout (ATSC A/52); `bsid` = 16 selects the E-AC-3 (Annex E) header. This is a thin descriptor-side view over the shared `Ac3FrameHeader` parser in `Codec.Ac3`, so the syncinfo / BSI tables live in one place and stay consistent between the decoder and the stream-info path. |
+| `SyncWord` | `static readonly byte[] SyncWord` | The 16-bit big-endian AC-3 sync word (0x0B77). |
+| `Acmod` | `int Acmod { get; init; }` |  |
+| `Bitrate` | `int Bitrate { get; init; }` |  |
+| `Bsid` | `int Bsid { get; init; }` |  |
+| `DialNorm` | `int DialNorm { get; init; }` |  |
+| `FrameSize` | `int FrameSize { get; init; }` |  |
+| `IsEnhanced` | `bool IsEnhanced { get; init; }` |  |
+| `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `AcmodChannelCount` | `static int AcmodChannelCount(int acmod)` | Number of full-bandwidth channels implied by acmod (excludes LFE). |
+| `AcmodName` | `static string AcmodName(int acmod)` | acmod → human-readable channel arrangement (before the optional LFE channel). |
+| `LayoutName` | `static string LayoutName(int acmod, bool lfe)` | Friendly layout name including the LFE channel (e.g. "3/2 + LFE (5.1)"). |
+| `TryParse` | `static Ac3SyncFrame? TryParse(ReadOnlySpan<byte> data, int offset)` | Parses an AC-3 / E-AC-3 sync frame header at `offset` (which must point at the 0x0B77 sync word). Returns `null` on insufficient data, a wrong sync word, or a reserved sample-rate / frame-size code. |
+
+### Namespace `FileFormat.Acm`
+
+[`AcmFormatDescriptor`](#acmformatdescriptor)
+
+#### `AcmFormatDescriptor`
+
+Surfaces an Interplay ACM file (Fallout, Baldur's Gate, … — magic `0x01032897`) as a pseudo-archive: the byte-exact `FULL.acm` container, one decoded mono `<CHANNEL>.wav` per channel (via `InterplayAcmCodec`), and a `metadata.ini` carrying the parsed header. The format is read-only (there is no published ACM encoder). Interplay assets are quirky: the header's channel field is often `1` even for material that ships interleaved as stereo (and many ACMs are wrapped inside `.bif` archives). The descriptor surfaces the raw header value verbatim in `metadata.ini` and splits exactly that many channels — callers that know an asset is really stereo can re-interpret the single decoded stream. Inputs the decoder can't handle fall back to `FULL.acm` + metadata only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcmFormatDescriptor` | `AcmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Adx`
+
+[`AdxFormatDescriptor`](#adxformatdescriptor)
+
+#### `AdxFormatDescriptor`
+
+Archive-shaped view of a CRI ADX file (`.adx`, big-endian `0x8000` magic): a byte-exact `FULL.adx` container plus one decoded mono PCM WAV per channel (named per `ChannelLayout`) and a `metadata.ini` carrying the stream's sample rate, channel count, version and high-pass cutoff. Decoding goes through the in-repo `AdxCodec`; when the codec cannot handle the input (encrypted streams, AHX/non-standard encoding types, malformed headers) the view degrades gracefully to `FULL.adx` only.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdxFormatDescriptor` | `AdxFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Aea`
+
+[`AeaFormatDescriptor`](#aeaformatdescriptor)
+
+#### `AeaFormatDescriptor`
+
+Exposes a Sony MD STUDIO / MiniDisc ATRAC1 file (`.aea`) as a pseudo-archive: the byte-exact original is `FULL.aea` (Kind `Container`), every decoded speaker is a mono 44100 Hz PCM `<CHANNEL>.wav` (Kind `Channel`) via `Codec.Atrac1`, and the 2048-byte header's title + channel count become `metadata.ini` (Kind `Tag`). The AEA header carries no strong magic — it begins with the little-endian marker `00 08 00 00` (matching FFmpeg's demuxer probe), a 256-byte title, a block count and the channel count at offset 264. Detection is therefore structural (LE 0x800 marker + channel count 1/2 + the payload being a whole number of 212-byte-per-channel sound units) and extension-based. Read-only; decode failures degrade to the `FULL.aea` view via try/catch.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AeaFormatDescriptor` | `AeaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `LooksLikeAea` | `static bool LooksLikeAea(ReadOnlySpan<byte> b)` | Structural validation mirroring FFmpeg's `aea_read_probe`: the four-byte LE marker is 0x800, the channel count at offset 264 is 1 or 2, and the payload after the 2048-byte header is a whole number of `212 × channels`-byte sound units. Exposed so detection / tests can confirm a file is plausibly AEA without decoding it. |
+
+### Namespace `FileFormat.Ahx`
+
+[`AhxFormatDescriptor`](#ahxformatdescriptor)
+
+#### `AhxFormatDescriptor`
+
+Exposes an Amiga AHX / THX synth-tracker module as a read-only pseudo-archive of `FULL.ahx`, `metadata.ini` and the raw position/track/instrument blocks. The big-endian, offset-based AHX layout was recovered through binary inspection of the documented THX file format and the OpenMPT loader. No synth is emulated; every offset read is clamped, and a malformed module surfaces FULL + metadata(parse_status=partial) instead of throwing.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AhxFormatDescriptor` | `AhxFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Aica`
+
+[`AicaFormatDescriptor`](#aicaformatdescriptor)
+
+#### `AicaFormatDescriptor`
+
+Exposes a raw Yamaha AICA ADPCM (`.aica`) file as an archive of `FULL.aica` (the byte-exact container), `MONO.wav` (the decoded 16-bit PCM at the assumed sample rate) and `metadata.ini` recording the assumptions. The AICA raw stream is headerless — the file is nothing but packed AICA ADPCM nibbles, so there is no magic signature to match on (`MagicSignatures` is empty and dispatch is by `.aica` extension only, the same approach `VoxFormatDescriptor` uses for its headerless raw container). With no header the stream carries no rate or channel-count metadata, so the Dreamcast streaming default of mono, 22050 Hz is assumed and surfaced in `metadata.ini`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AicaFormatDescriptor` | `AicaFormatDescriptor()` |  |
+| `AssumedSampleRate` | `const int AssumedSampleRate` | Assumed sample rate for headerless AICA ADPCM (the Dreamcast streaming default). |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Aiff`
 
 [`AiffFormatDescriptor`](#aiffformatdescriptor) · [`AiffReader`](#aiffreader) · [`AiffReader.ParsedAiff`](#aiffreaderparsedaiff) · [`AiffWriter`](#aiffwriter)
@@ -1629,6 +4534,64 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Amf`
+
+[`AmfFormatDescriptor`](#amfformatdescriptor)
+
+#### `AmfFormatDescriptor`
+
+Exposes a DSMI Advanced Module Format (`.amf`) file as a read-only pseudo-archive of `FULL.amf` (byte-exact original), `metadata.ini` and one playable mono WAV per sample under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmfFormatDescriptor` | `AmfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Amr`
+
+[`AmrFormatDescriptor`](#amrformatdescriptor)
+
+#### `AmrFormatDescriptor`
+
+3GPP AMR storage container (the `.amr` / `.awb` file format, RFC 4867 storage mode). The leading magic selects the variant: `#!AMR\n` — AMR narrowband, mono 8 kHz.`#!AMR-WB\n` — AMR wideband, mono 16 kHz.`#!AMR_MC1.0\n` + a 4-byte little-endian channel count — multi-channel NB.`#!AMR-WB_MC1.0\n` + a 4-byte channel count — multi-channel WB. After the header the body is a sequence of frames; each frame's first byte carries the mode in bits 3..6, which sizes the frame (NB payload bytes {12,13,15,17,19,20,26,31}; WB {17,23,32,36,40,46,50,58,60}). For a multi-channel file the per-channel frames are interleaved frame-by-frame, matching the ffmpeg AMR demuxer. The archive view surfaces `FULL.amr`/`FULL.awb` (byte-exact stream, Kind `Container`), a decoded `MONO.wav` (or one WAV per channel for MC files, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Read-only: AMR has no encoder here.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AmrFormatDescriptor` | `AmrFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.AmrNb`
 
 [`AmrNbFormatDescriptor`](#amrnbformatdescriptor)
@@ -1697,6 +4660,35 @@ Implements `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAu
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
+### Namespace `FileFormat.Apc`
+
+[`ApcFormatDescriptor`](#apcformatdescriptor)
+
+#### `ApcFormatDescriptor`
+
+CRYO APC (`.apc`) audio — the IMA-ADPCM voice/effect format of CRYO Interactive titles. The little-endian header is `"CRYO_APC" (8) | version (4, e.g. "1.20") | u32 sampleCount | u32 sampleRate | u32 leftInitialSample | u32 rightInitialSample | u32 stereoFlag`, followed by raw IMA nibbles (low nibble first). The two "initial sample" fields seed the IMA predictor(s) (step index starts at 0); for stereo, nibbles interleave per channel — low nibble left, high nibble right — each driving its own continuous predictor. Surfaced as a read-only pseudo-archive: `FULL.apc` (Container), one mono `MONO.wav` or `LEFT.wav`/`RIGHT.wav` (Channel) and `metadata.ini` (Tag). Decoding uses the continuous IMA state machine in `StandardImaCodec`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApcFormatDescriptor` | `ApcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Ape`
 
 [`ApeFormatDescriptor`](#apeformatdescriptor)
@@ -1725,6 +4717,117 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Asf`
+
+[`AsfFormatDescriptor`](#asfformatdescriptor)
+
+#### `AsfFormatDescriptor`
+
+Surfaces a Microsoft Advanced Systems Format container (`.asf`/`.wma`/ `.wmv`) as an archive of the byte-exact original (`FULL.asf`, Kind `Container`) plus rich metadata and a description of each carried stream. The Data Object packets are depayloaded into per-stream elementary bitstreams (`streams/stream_NN.bin`, Kind `Stream`) and each stream is described in `streams/stream_NN.info.txt` (Kind `Tag`) carrying its codec / bitrate. WMA v1/v2 audio streams (WAVEFORMATEX tags `0x160`/`0x161`) are decoded via `Codec.Wma` and WMA 9 Professional streams (tag `0x162`) via `Codec.WmaPro`, and WMA Lossless streams (tag `0x163`) bit-exactly via `Codec.WmaLossless`, into one mono `<CHANNEL>.wav` per channel (Kind `Channel`); streams the decoders can't handle (an unsupported WMA Pro / Lossless profile, corrupt data) fall back to just the `stream_NN.bin` blob. File properties and the content description land in `metadata.ini`; the Extended Content Description tags land in `metadata/tags.ini`. Read-only; parsing stops gracefully on a malformed object, keeping whatever was read.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsfFormatDescriptor` | `AsfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Ast`
+
+[`AstFormatDescriptor`](#astformatdescriptor) · [`AstReader`](#astreader) · [`AstReader.Header`](#astreaderheader) · [`AstReader.ParsedAst`](#astreaderparsedast) · [`AstWriter`](#astwriter)
+
+#### `AstFormatDescriptor`
+
+Exposes a GameCube/Wii `.ast` (STRM stream) as an archive of `FULL.ast` plus, for both the PCM16BE (codec 1) and AFC-ADPCM (codec 0) codings, one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini`. Unparseable input falls back gracefully to `FULL.ast` only.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AstFormatDescriptor` | `AstFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AstReader`
+
+Parses a big-endian GameCube/Wii `.ast` (STRM) stream into its header and per-channel PCM. The 64-byte header is `"STRM"` | `u32 dataSize` | `u16 codec` (`0` = ADPCM-AFC, `1` = PCM16 big-endian) | `u16 bitDepth` | `u16 channels` | `u16 loopFlag` | `u32 sampleRate` | `u32 sampleCount` | `u32 loopStart` | `u32 loopEnd` | `u32 firstBlockSize` | reserved. The audio follows as a sequence of `"BLCK"` blocks: `"BLCK"` | `u32 blockSize` (per channel) | 24 reserved bytes | then each channel's `blockSize` bytes back-to-back (channel-interleaved at block granularity). Codec 1 (PCM16BE) is decoded fully to little-endian PCM. Codec 0 (AFC ADPCM) is decoded via `DecodeAfc`: each channel's BLCK bytes are concatenated and run through the fixed-table AFC decoder (9-byte frames → 16 samples each), capped at the header's sample count.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AstReader` | `AstReader()` |  |
+| `Read` | `ParsedAst Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `AstReader.Header`
+
+Represents a header.
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(int Codec, int BitDepth, int NumChannels, bool Loop, int SampleRate, int SampleCount, int LoopStart, int LoopEnd)` | Represents a header. |
+| `BitDepth` | `int BitDepth { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `LoopEnd` | `int LoopEnd { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleCount` | `int SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `AstReader.ParsedAst`
+
+Represents a parsed ast.
+
+Implements `IEquatable<ParsedAst>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedAst` | `ParsedAst(Header Info, short[][] Pcm)` | Represents a parsed ast. |
+| `Info` | `Header Info { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+
+#### `AstWriter`
+
+Writes a big-endian GameCube/Wii `.ast` (STRM) carrying PCM16 big-endian audio (codec 1), laid out per the public AST specification so it round-trips through `AstReader`. Audio is split into `"BLCK"` blocks of `BlockSize` bytes per channel (the final block holds whatever remains, unpadded). PCM16 is bit-exact (lossless).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AstWriter` | `AstWriter()` |  |
+| `BlockSize` | `const int BlockSize` | Per-channel block size in bytes. |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool loop = false, int loopStart = 0, int loopEnd = 0)` | Serialises per-channel mono PCM16 into a PCM16BE AST. All channels must share the same sample count. |
 
 ### Namespace `FileFormat.Au`
 
@@ -1791,6 +4894,225 @@ Sun / NeXT `.au` writer: the 24-byte big-endian header followed by big-endian li
 | --- | --- | --- |
 | `AuWriter` | `AuWriter()` |  |
 | `Write` | `byte[] Write(byte[] bigEndianInterleaved, int channels, int sampleRate, int bitsPerSample)` | Builds a linear-PCM `.au` from already big-endian interleaved samples. The encoding field is derived from `bitsPerSample` (8→2, 16→3, 24→4, 32→5). |
+
+### Namespace `FileFormat.Aud`
+
+[`AudFormatDescriptor`](#audformatdescriptor)
+
+#### `AudFormatDescriptor`
+
+Westwood Studios `.aud` audio (Command & Conquer-era games). The format has no reliable magic, so detection rests on header-field validation. The little-endian header is `u16 sampleRate | u32 dataSize | u32 outputSize | u8 flags | u8 codec`: `flags` bit 0 = stereo, bit 1 = 16-bit;`codec` 1 = Westwood WS-ADPCM, 99 = standard IMA-ADPCM. The body is a sequence of chunks, each `u16 inSize | u16 outSize | u32 magic 0x0000DEAF | payload[inSize]`. WS-ADPCM chunks decode through `WsAdpcmCodec`; IMA chunks run a single continuous predictor across all chunks via `StandardImaCodec` (low nibble first). Surfaced as a pseudo-archive: `FULL.aud` (Container), one mono `MONO.wav` or `LEFT.wav`/`RIGHT.wav` (Channel) and `metadata.ini` (Tag). Authoring writes IMA chunks (codec 99) with the 0xDEAF magic, round-tripping back through this reader within IMA's lossy tolerance.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatValidator`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudFormatDescriptor` | `AudFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
+| `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |
+| `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` | Validates the supplied data. |
+
+### Namespace `FileFormat.Avi`
+
+[`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack)
+
+#### `AviFormatDescriptor`
+
+Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AviFormatDescriptor` | `AviFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+
+#### `AviLayoutMap`
+
+Walks an AVI (RIFF) file's top-level chunk structure and emits `DefragBlockInfo` tiles. The RIFF header is MetadataReserved, hdrl is MetadataReserved, each chunk in movi is Used (named by stream type), and idx1 is MetadataReserved.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
+
+#### `AviOptimizer`
+
+AVI optimizer that moves the idx1 (index) chunk before the movi (data) list, enabling faster seeking. Patches idx1 offsets to account for the positional change. Analogous to MP4 fast-start (moov before mdat).
+
+Implements `IFileInternalChunkMover`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AviOptimizer` | `AviOptimizer()` |  |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+
+#### `AviReader`
+
+RIFF/AVI container demuxer. Walks the tree — `RIFF` → `AVI ` → both `LIST/hdrl` (`avih` + one `LIST/strl` per stream) and `LIST/movi` (the actual chunk data, 4-char stream-id prefixed). Tracks are returned with their FourCC, BITMAPINFOHEADER / WAVEFORMATEX payload, and a concatenation of sample bytes plus individual frame chunks in `Chunks`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AviReader` | `AviReader()` |  |
+| `Read` | `ParsedAvi Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `AviReader.ChunkEntry`
+
+One movi chunk belonging to a track (a single video frame or audio packet).
+
+Implements `IEquatable<ChunkEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChunkEntry` | `ChunkEntry(string ChunkId, byte[] Data)` | One movi chunk belonging to a track (a single video frame or audio packet). |
+| `ChunkId` | `string ChunkId { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+
+#### `AviReader.ParsedAvi`
+
+Represents a parsed avi.
+
+Implements `IEquatable<ParsedAvi>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedAvi` | `ParsedAvi(int Width, int Height, uint MicroSecPerFrame, uint TotalFrames, IReadOnlyList<Track> Tracks)` | Represents a parsed avi. |
+| `Height` | `int Height { get; init; }` |  |
+| `MicroSecPerFrame` | `uint MicroSecPerFrame { get; init; }` |  |
+| `TotalFrames` | `uint TotalFrames { get; init; }` |  |
+| `Tracks` | `IReadOnlyList<Track> Tracks { get; init; }` |  |
+| `Width` | `int Width { get; init; }` |  |
+
+#### `AviReader.Track`
+
+Represents a track.
+
+Implements `IEquatable<Track>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Track` | `Track(int Index, string StreamType, uint Handler, byte[] Format, int Width, int Height, int AudioChannels, int AudioSampleRate, int AudioBitsPerSample, int AudioFormatTag, int AudioBlockAlign, byte[] Data, IReadOnlyList<ChunkEntry> Chunks)` | Represents a track. |
+| `AudioBitsPerSample` | `int AudioBitsPerSample { get; init; }` |  |
+| `AudioBlockAlign` | `int AudioBlockAlign { get; init; }` |  |
+| `AudioChannels` | `int AudioChannels { get; init; }` |  |
+| `AudioFormatTag` | `int AudioFormatTag { get; init; }` |  |
+| `AudioSampleRate` | `int AudioSampleRate { get; init; }` |  |
+| `Chunks` | `IReadOnlyList<ChunkEntry> Chunks { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Format` | `byte[] Format { get; init; }` |  |
+| `Handler` | `uint Handler { get; init; }` |  |
+| `Height` | `int Height { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `StreamType` | `string StreamType { get; init; }` |  |
+| `Width` | `int Width { get; init; }` |  |
+
+### Namespace `FileFormat.Avr`
+
+[`AvrFormatDescriptor`](#avrformatdescriptor) · [`AvrReader`](#avrreader) · [`AvrReader.ParsedAvr`](#avrreaderparsedavr) · [`AvrWriter`](#avrwriter)
+
+#### `AvrFormatDescriptor`
+
+Exposes an AVR (Audio Visual Research) file as an archive of `FULL.avr` plus one mono WAV per channel and a `metadata.ini`. The on-disk samples are normalised to canonical PCM (16-bit big-endian → little-endian; sign-converted so the WAV is 8-bit unsigned / 16-bit signed). Mono surfaces as `MONO.wav`; stereo as `LEFT.wav` / `RIGHT.wav`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvrFormatDescriptor` | `AvrFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AvrReader`
+
+AVR (Audio Visual Research, Atari ST / Mac) parser. A fixed 128-byte big-endian header precedes the sample data: 4-byte magic `2BIT`.char[8] sample name.uint16 mono flag (0 = mono, 0xFFFF = stereo).uint16 resolution (8 or 16 bits).uint16 sign (0 = unsigned, 0xFFFF = signed).uint16 loop, uint16 midi.uint32 rate — only the low 24 bits are the sample rate; the high byte is a flags byte.uint32 size in samples, uint32 loop begin, uint32 loop end.char[26] reserved, char[64] user comment. Sample data follows (interleaved when stereo, big-endian when 16-bit).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvrReader` | `AvrReader()` |  |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `Read` | `ParsedAvr Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `AvrReader.ParsedAvr`
+
+Represents a parsed avr.
+
+Implements `IEquatable<ParsedAvr>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedAvr` | `ParsedAvr(string Name, int NumChannels, int BitsPerSample, bool Signed, int SampleRate, uint SizeInSamples, uint LoopBegin, uint LoopEnd, string User, byte[] SampleData)` | Represents a parsed avr. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `LoopBegin` | `uint LoopBegin { get; init; }` |  |
+| `LoopEnd` | `uint LoopEnd { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleData` | `byte[] SampleData { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Signed` | `bool Signed { get; init; }` |  |
+| `SizeInSamples` | `uint SizeInSamples { get; init; }` |  |
+| `User` | `string User { get; init; }` |  |
+
+#### `AvrWriter`
+
+Writes a 16-bit signed big-endian AVR: the fixed 128-byte header followed by interleaved big-endian samples. Used by `AvrFormatDescriptor` to assemble a file from per-channel mono WAVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AvrWriter` | `AvrWriter()` |  |
+| `Write` | `byte[] Write(byte[] bigEndianInterleaved, int channels, int sampleRate, string name)` | Builds an AVR from interleaved 16-bit signed big-endian PCM. |
 
 ### Namespace `FileFormat.Awb`
 
@@ -1872,6 +5194,252 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the AFS2 container and finalizes the stream. |
 
+### Namespace `FileFormat.Ay`
+
+[`AyFormatDescriptor`](#ayformatdescriptor) · [`AyPlayer`](#ayplayer)
+
+#### `AyFormatDescriptor`
+
+Surfaces a ZX Spectrum / Amstrad CPC AY music file (`.ay`) as a metadata-rich pseudo-archive. An AY file carries Z80 memory blocks that an AY-3-8910/12 player drives; there is no audio to decode, so each song's loaded memory blocks are surfaced verbatim as Kind `Stream` blobs. The header (magic `ZXAYEMUL`) is big-endian and pointer-chased: every 16-bit pointer is a signed self-relative offset measured from the byte position of the pointer field itself. Strings are NUL-terminated at the pointed location. The header points to an author string, a misc string and a song table; each song entry points to a song-name string and a song-data structure; the song-data structure points to a memory-block list whose entries are (u16 address, u16 length, u16 self-relative data offset), terminated by a zero address.Every pointer dereference is bounds-checked against the file; an out-of-range pointer is skipped rather than throwing, so a truncated or corrupt file degrades gracefully to whatever could be parsed (down to FULL-only). Per song, memory blocks are surfaced as `songs/NN_<name>.bin`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AyFormatDescriptor` | `AyFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `AyPlayer`
+
+A ZXAYEMUL (`.ay`) tune player. It builds a 64 KB Z80 RAM image, loads the chosen song's memory blocks, runs the song's init routine and then calls the interrupt routine once per 50 Hz frame, capturing the player's `OUT` writes to the AY register-select (`$FFFD`) and data (`$BFFD`) ports into an `Ay8910Chip`, from which it renders stereo PCM. The song structure is pointer-chased exactly as `AyFormatDescriptor` parses it: the song-data structure at `pData` carries (at +10) a self-relative pointer to a points block `{ stack, init, interrupt }` and (at +12) a self-relative pointer to the memory-block list. The player sets `SP` from the points block, calls init via `RunUntilRet`, and per frame either calls the interrupt routine (when non-zero) or — when the interrupt address is zero — re-invokes init as a pragmatic stand-in (most zero-interrupt tunes are driven entirely from init plus an IM-driven RST 38 handler that lives in the loaded RAM; calling init each frame keeps the registers fed).The ZX beeper (port `$FE` bit 4) is intentionally ignored — this player only models the AY PSG. Multi-AY "TurboSound" tunes drive only the first chip.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AyPlayer` | `AyPlayer(byte[] blob, int songIndex = 0, double clockHz = 1773400, StereoMode stereo = 1)` | Builds a player for `songIndex` of the AY file `blob`. Throws `NotSupportedException` when the file can't be parsed into a runnable song (no init address, malformed pointers). |
+| `SongCount` | `int SongCount { get; }` | The number of songs the file declares. |
+| `Render` | `short[] Render(double seconds, int outputRate = 44100)` | Renders `seconds` of interleaved stereo 16-bit PCM at 44.1 kHz. |
+
+### Namespace `FileFormat.Bcstm`
+
+[`BcstmFormatDescriptor`](#bcstmformatdescriptor) · [`BcstmReader`](#bcstmreader) · [`BcstmReader.ParsedStream`](#bcstmreaderparsedstream) · [`BcstmReader.StreamInfo`](#bcstmreaderstreaminfo) · [`BcstmWriter`](#bcstmwriter)
+
+#### `BcstmFormatDescriptor`
+
+Exposes a 3DS `.bcstm` (CSTM stream) as an archive of `FULL.bcstm` plus one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini` describing sample rate, channels, coding type and loop points. DSP-ADPCM (coding 2), PCM16 (1) and PCM8 (0) are decoded; anything the reader cannot parse falls back gracefully to `FULL.bcstm` only.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BcstmFormatDescriptor` | `BcstmFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `BcstmReader`
+
+Parses a little-endian 3DS `.bcstm` (CSTM) stream into its stream-info, per-channel DSP-ADPCM coefficient tables and the channel-interleaved block data, following the public CSTM/CWAV specification (the layout documented by VGAudio / 3dbrew). The file header is `"CSTM"` + BOM `0xFEFF` (little-endian) + header size + version + file size + block count, followed by per-block `(u16 sectionId, u16 pad, u32 offset, u32 size)` table entries (`0x4000` = INFO, `0x4001` = SEEK, `0x4002` = DATA). The INFO block carries a stream-info structure (codec / loop / channel count / sample rate / sample count / block sizes) plus a per-channel ADPCM coefficient table; the DATA block holds channel-interleaved coded blocks exactly like BRSTM. SIMPLIFICATION: real C/FSTM INFO blocks reach the per-channel coefficient structs through a chain of relative reference offsets. To keep the reader robust the channel coefficient table is read from a fixed, documented layout (a flat per-channel `0x2E`-byte block right after the stream-info body) that `BcstmWriter` emits; the documented section/field layout of the header, block table, stream-info and DATA block is otherwise honoured faithfully. The reader is verified against the writer for round-tripping.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BcstmReader` | `BcstmReader()` |  |
+| `Read` | `ParsedStream Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `BcstmReader.ParsedStream`
+
+Represents a parsed stream.
+
+Implements `IEquatable<ParsedStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedStream` | `ParsedStream(StreamInfo Info, short[][] Coefs, short[][] Pcm)` | Represents a parsed stream. |
+| `Coefs` | `short[][] Coefs { get; init; }` |  |
+| `Info` | `StreamInfo Info { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+
+#### `BcstmReader.StreamInfo`
+
+Represents a stream info.
+
+Implements `IEquatable<StreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamInfo` | `StreamInfo(int Codec, bool Loop, int NumChannels, int SampleRate, int LoopStart, int TotalSamples, int DataOffset, int NumBlocks, int BlockSize, int SamplesPerBlock, int FinalBlockSize, int FinalBlockSamples, int FinalBlockSizePadded, bool BigEndian)` | Represents a stream info. |
+| `BigEndian` | `bool BigEndian { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `FinalBlockSamples` | `int FinalBlockSamples { get; init; }` |  |
+| `FinalBlockSizePadded` | `int FinalBlockSizePadded { get; init; }` |  |
+| `FinalBlockSize` | `int FinalBlockSize { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `NumBlocks` | `int NumBlocks { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerBlock` | `int SamplesPerBlock { get; init; }` |  |
+| `TotalSamples` | `int TotalSamples { get; init; }` |  |
+
+#### `BcstmWriter`
+
+Writes a little-endian 3DS `.bcstm` (CSTM) carrying DSP-ADPCM, laid out per the public CSTM specification so it round-trips through `BcstmReader`. Channels are DSP-ADPCM encoded independently (see `Codec.DspAdpcm`); audio is written as channel-interleaved blocks of `BlockSize` bytes per channel (final block padded to a 0x20 boundary). SIMPLIFICATION (see `BcstmReader`): the per-channel coefficient structs are written as a flat `0x2E`-byte table right after the stream-info body instead of through C/FSTM's reference-offset indirection. The header, block table, INFO/DATA section structure and stream-info field layout otherwise follow the documented format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BcstmWriter` | `BcstmWriter()` |  |
+| `BlockSize` | `const int BlockSize` | Per-channel block size in bytes (Nintendo's canonical 0x2000). |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool loop = false, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete CSTM/FSTM. All channels must share the same sample count. |
+
+### Namespace `FileFormat.Bfstm`
+
+[`BfstmFormatDescriptor`](#bfstmformatdescriptor) · [`BfstmReader`](#bfstmreader) · [`BfstmReader.ParsedStream`](#bfstmreaderparsedstream) · [`BfstmReader.StreamInfo`](#bfstmreaderstreaminfo) · [`BfstmWriter`](#bfstmwriter)
+
+#### `BfstmFormatDescriptor`
+
+Exposes a WiiU/Switch `.bfstm` (FSTM stream) as an archive of `FULL.bfstm` plus one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini` describing sample rate, channels, coding type, endianness and loop points. Both byte orders (WiiU big-endian, Switch little-endian) are read; DSP-ADPCM (coding 2), PCM16 (1) and PCM8 (0) are decoded; anything the reader cannot parse falls back gracefully to `FULL.bfstm` only. New streams created from per-channel WAVs are written big-endian (the WiiU default).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BfstmFormatDescriptor` | `BfstmFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `BfstmReader`
+
+Parses a WiiU/Switch `.bfstm` (FSTM) stream into its stream-info, per-channel DSP-ADPCM coefficient tables and the channel-interleaved block data. FSTM is structurally identical to the 3DS CSTM container; the only difference is the magic (`"FSTM"`) and that the byte-order mark selects endianness — WiiU files are big-endian, Switch files little-endian. Both are honoured by reading the BOM at `0x04`. The header is `"FSTM"` + BOM `0xFEFF` + header size + version + file size + block count, followed by per-block `(u16 sectionId, u16 pad, u32 offset, u32 size)` entries (`0x4000` = INFO, `0x4001` = SEEK, `0x4002` = DATA). The INFO block carries the stream-info structure plus per-channel coefficient tables; DATA holds channel-interleaved blocks. SIMPLIFICATION: as with the CSTM reader, the per-channel coefficient structs are read from a flat, documented per-channel `0x2E`-byte layout that `BfstmWriter` emits, rather than chasing C/FSTM's reference-offset indirection. The reader round-trips against the writer.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BfstmReader` | `BfstmReader()` |  |
+| `Read` | `ParsedStream Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `BfstmReader.ParsedStream`
+
+Represents a parsed stream.
+
+Implements `IEquatable<ParsedStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedStream` | `ParsedStream(StreamInfo Info, short[][] Coefs, short[][] Pcm)` | Represents a parsed stream. |
+| `Coefs` | `short[][] Coefs { get; init; }` |  |
+| `Info` | `StreamInfo Info { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+
+#### `BfstmReader.StreamInfo`
+
+Represents a stream info.
+
+Implements `IEquatable<StreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamInfo` | `StreamInfo(int Codec, bool Loop, int NumChannels, int SampleRate, int LoopStart, int TotalSamples, int DataOffset, int NumBlocks, int BlockSize, int SamplesPerBlock, int FinalBlockSize, int FinalBlockSamples, int FinalBlockSizePadded, bool BigEndian)` | Represents a stream info. |
+| `BigEndian` | `bool BigEndian { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `FinalBlockSamples` | `int FinalBlockSamples { get; init; }` |  |
+| `FinalBlockSizePadded` | `int FinalBlockSizePadded { get; init; }` |  |
+| `FinalBlockSize` | `int FinalBlockSize { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `NumBlocks` | `int NumBlocks { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerBlock` | `int SamplesPerBlock { get; init; }` |  |
+| `TotalSamples` | `int TotalSamples { get; init; }` |  |
+
+#### `BfstmWriter`
+
+Writes a WiiU/Switch `.bfstm` (FSTM) carrying DSP-ADPCM, laid out per the public FSTM specification so it round-trips through `BfstmReader`. The container endianness is caller-selectable (`Write`'s `bigEndian` flag) — WiiU files are big-endian, Switch files little-endian — and the BOM is written accordingly. SIMPLIFICATION (see `BfstmReader`): per-channel coefficient structs are written as a flat `0x2E`-byte table after the stream-info body rather than through C/FSTM's reference-offset indirection. Header, block table, INFO/DATA section structure and stream-info fields otherwise follow the documented format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BfstmWriter` | `BfstmWriter()` |  |
+| `BlockSize` | `const int BlockSize` | Per-channel block size in bytes (Nintendo's canonical 0x2000). |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool bigEndian, bool loop = false, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete FSTM in the requested endianness. WiiU uses `bigEndian` = `true`; Switch uses `false`. All channels must share the same sample count. |
+
+### Namespace `FileFormat.Bik`
+
+[`BikFormatDescriptor`](#bikformatdescriptor)
+
+#### `BikFormatDescriptor`
+
+Surfaces a Bink video container (`.bik`, Bink 1 'BIK?' and Bink 2 'KB2?') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.bik` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each audio track's concatenated packets are surfaced as `TRACKn.bin` (Kind `Stream`, Method = the Bink Audio flavour) and, for Bink 1, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.BinkAudio` — both RDFT and DCT flavours — with a graceful fallback to the raw blob on any decode failure. Bink 2 audio is not decoded and remains blob-only. Read-only; parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BikFormatDescriptor` | `BikFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Bonk`
 
 [`BonkFormatDescriptor`](#bonkformatdescriptor)
@@ -1905,6 +5473,425 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Brr`
+
+[`BrrFormatDescriptor`](#brrformatdescriptor)
+
+#### `BrrFormatDescriptor`
+
+Exposes a raw SNES `.brr` sample (S-DSP Bit Rate Reduction) as a pseudo-archive: `FULL.brr` (the byte-exact file), one decoded mono `MONO.wav` (32000 Hz by default — the S-DSP's nominal playback rate), and a `metadata.ini` summary. BRR is headerless 9-byte blocks, so there is no magic signature to key on. Some tools prepend a 2-byte little-endian loop-point header; that variant is detected by `fileLength % 9 == 2`, the two bytes are skipped before decoding, and the loop point is reported in the metadata.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrrFormatDescriptor` | `BrrFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Brstm`
+
+[`BrstmFormatDescriptor`](#brstmformatdescriptor) · [`BrstmReader`](#brstmreader) · [`BrstmReader.ParsedBrstm`](#brstmreaderparsedbrstm) · [`BrstmReader.StreamInfo`](#brstmreaderstreaminfo) · [`BrstmWriter`](#brstmwriter)
+
+#### `BrstmFormatDescriptor`
+
+Exposes a Wii `.brstm` (RSTM stream) as an archive of `FULL.brstm` plus one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini` describing sample rate, channels, coding type and loop points. DSP-ADPCM (coding 2), PCM16BE (1) and PCM8 (0) are decoded; anything the reader cannot parse falls back gracefully to `FULL.brstm` only.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrstmFormatDescriptor` | `BrstmFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `BrstmReader`
+
+Parses a big-endian Wii `.brstm` (RSTM) stream into its stream-info, per-channel DSP-ADPCM coefficient tables and the channel-interleaved block data, following the public BRSTM specification (the layout documented by smashboards/VGAudio/brawllib). Only big-endian RSTM (BOM `0xFEFF`, the Wii standard) is supported. Three coding types are recognised: `0` = PCM8, `1` = PCM16 big-endian, `2` = DSP-ADPCM. The reader is structured per the spec and is verified against `BrstmWriter`'s output for round-tripping.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrstmReader` | `BrstmReader()` |  |
+| `Read` | `ParsedBrstm Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `BrstmReader.ParsedBrstm`
+
+Represents a parsed brstm.
+
+Implements `IEquatable<ParsedBrstm>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedBrstm` | `ParsedBrstm(StreamInfo Info, short[][] Coefs, short[][] Pcm)` | Represents a parsed brstm. |
+| `Coefs` | `short[][] Coefs { get; init; }` |  |
+| `Info` | `StreamInfo Info { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+
+#### `BrstmReader.StreamInfo`
+
+Represents a stream info.
+
+Implements `IEquatable<StreamInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamInfo` | `StreamInfo(int Codec, bool Loop, int NumChannels, int SampleRate, int LoopStart, int TotalSamples, int DataOffset, int NumBlocks, int BlockSize, int SamplesPerBlock, int FinalBlockSize, int FinalBlockSamples, int FinalBlockSizePadded)` | Represents a stream info. |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `FinalBlockSamples` | `int FinalBlockSamples { get; init; }` |  |
+| `FinalBlockSizePadded` | `int FinalBlockSizePadded { get; init; }` |  |
+| `FinalBlockSize` | `int FinalBlockSize { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `NumBlocks` | `int NumBlocks { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerBlock` | `int SamplesPerBlock { get; init; }` |  |
+| `TotalSamples` | `int TotalSamples { get; init; }` |  |
+
+#### `BrstmWriter`
+
+Writes a big-endian Wii `.brstm` (RSTM) carrying DSP-ADPCM, laid out per the public BRSTM specification so it round-trips through `BrstmReader`. Channels are DSP-ADPCM encoded independently (see `Codec.DspAdpcm`); the audio is written as channel-interleaved blocks of `BlockSize` bytes per channel (the final block padded to a 0x20 boundary, as Nintendo does).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BrstmWriter` | `BrstmWriter()` |  |
+| `BlockSize` | `const int BlockSize` | Per-channel block size in bytes (Nintendo's canonical 0x2000). |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool loop = false, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete BE BRSTM. All channels must share the same sample count. |
+
+### Namespace `FileFormat.Bwav`
+
+[`BwavFormatDescriptor`](#bwavformatdescriptor) · [`BwavReader`](#bwavreader) · [`BwavReader.ChannelInfo`](#bwavreaderchannelinfo) · [`BwavReader.ParsedBwav`](#bwavreaderparsedbwav) · [`BwavWriter`](#bwavwriter)
+
+#### `BwavFormatDescriptor`
+
+Exposes a Nintendo Switch `.bwav` stream as a pseudo-archive: `FULL.bwav` (the byte-exact file), one decoded mono WAV per channel (named per `ChannelLayout`) and a `metadata.ini` describing codec, sample rate, channels and loop. DSP-ADPCM (codec 1) and PCM16 (codec 0) decode; anything else falls back to `FULL.bwav` only. Creatable from per-channel mono WAVs (DSP-encoded into a valid BWAV that round-trips this reader; the header CRC is written as `0`) or a `FULL.bwav` passthrough.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BwavFormatDescriptor` | `BwavFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `BwavReader`
+
+Parses a Nintendo Switch `.bwav` stream into per-channel decoded PCM16. The file is little-endian: a fixed header (magic, BOM, version, crc, prefetch flag, channel count) is followed by one 0x4C-byte channel-info block per channel. Each channel's coded data is stored contiguously (NOT interleaved) at its `absoluteStart` offset. Two codecs are recognised: `0` = PCM16 little-endian, `1` = DSP-ADPCM (decoded with the channel's 16 coefficients).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BwavReader` | `BwavReader()` |  |
+| `Read` | `ParsedBwav Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `BwavReader.ChannelInfo`
+
+Represents a channel info.
+
+Implements `IEquatable<ChannelInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChannelInfo` | `ChannelInfo(int Codec, int ChannelPan, int SampleRate, int SampleCount, short[] Coefs, int AbsoluteStart, bool IsLooping, int LoopEnd, int LoopStart, int InitialPredictorScale, short Hist1, short Hist2)` | Represents a channel info. |
+| `AbsoluteStart` | `int AbsoluteStart { get; init; }` |  |
+| `ChannelPan` | `int ChannelPan { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `Coefs` | `short[] Coefs { get; init; }` |  |
+| `Hist1` | `short Hist1 { get; init; }` |  |
+| `Hist2` | `short Hist2 { get; init; }` |  |
+| `InitialPredictorScale` | `int InitialPredictorScale { get; init; }` |  |
+| `IsLooping` | `bool IsLooping { get; init; }` |  |
+| `LoopEnd` | `int LoopEnd { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `SampleCount` | `int SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `BwavReader.ParsedBwav`
+
+Represents a parsed bwav.
+
+Implements `IEquatable<ParsedBwav>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedBwav` | `ParsedBwav(int Version, uint Crc, int ChannelCount, IReadOnlyList<ChannelInfo> Channels, short[][] Pcm)` | Represents a parsed bwav. |
+| `ChannelCount` | `int ChannelCount { get; init; }` |  |
+| `Channels` | `IReadOnlyList<ChannelInfo> Channels { get; init; }` |  |
+| `Crc` | `uint Crc { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+#### `BwavWriter`
+
+Builds a Nintendo Switch `.bwav` from one or more mono PCM16 channels, DSP-ADPCM-encoding each channel independently and laying its coded data out contiguously (non-interleaved) after the channel-info table. The header CRC is written as `0` (the field is informational for playback) — see the metadata note surfaced by the descriptor. The result round-trips through `BwavReader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BwavWriter` | `BwavWriter()` |  |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate)` | Writes a non-looping DSP-ADPCM BWAV from the given mono channels. |
+
+### Namespace `FileFormat.Caf`
+
+[`CafFormatDescriptor`](#cafformatdescriptor) · [`CafReader`](#cafreader) · [`CafReader.ParsedCaf`](#cafreaderparsedcaf)
+
+#### `CafFormatDescriptor`
+
+Exposes an Apple Core Audio Format (`.caf`) file as a pseudo-archive and creates fresh LPCM CAF files from canonical per-channel WAV inputs.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CafFormatDescriptor` | `CafFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `CafReader`
+
+Apple Core Audio Format (`.caf`) parser. All container integers are big-endian, and so are LPCM samples unless the ASBD little-endian flag says otherwise; either way callers get canonical little-endian PCM back. G.711 and QuickTime IMA4 are decoded to canonical PCM16.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CafReader` | `CafReader()` |  |
+| `Read` | `ParsedCaf Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `CafReader.ParsedCaf`
+
+Represents a parsed caf.
+
+Implements `IEquatable<ParsedCaf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedCaf` | `ParsedCaf(int NumChannels, int SampleRate, int BitsPerSample, uint FormatFlags, bool IsFloat, string FormatId, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> OtherChunks, uint? ChannelMask = null, long? ValidFrames = null)` | Represents a parsed caf. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `ChannelMask` | `uint? ChannelMask { get; init; }` |  |
+| `FormatFlags` | `uint FormatFlags { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `InterleavedPcm` | `byte[] InterleavedPcm { get; init; }` |  |
+| `IsFloat` | `bool IsFloat { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `OtherChunks` | `IReadOnlyList<ValueTuple<string, byte[]>> OtherChunks { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `ValidFrames` | `long? ValidFrames { get; init; }` |  |
+
+### Namespace `FileFormat.Cmf`
+
+[`CmfFormatDescriptor`](#cmfformatdescriptor)
+
+#### `CmfFormatDescriptor`
+
+Surfaces a Creative Music File (`.cmf`, OPL) as a read-only pseudo-archive: `FULL.cmf` (the byte-exact file), `metadata.ini` (title, composer, remarks, tempi), one 16-byte OPL register patch per instrument under `instruments/NN.bin`, and `music.mid` — the CMF music event stream wrapped in a Standard MIDI File (format 0). Falls back to FULL-only on a malformed header. The CMF header is little-endian: u16 version, then byte offsets to the instrument block, music block, and three optional NUL-terminated strings, plus the OPL timing fields and instrument count.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CmfFormatDescriptor` | `CmfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Cvsd`
+
+[`CvsdFormatDescriptor`](#cvsdformatdescriptor)
+
+#### `CvsdFormatDescriptor`
+
+Raw CVSD container: a headerless stream of continuously-variable-slope delta-modulation bits (one bit per sample). Like raw G.711 (see `G711FormatDescriptorBase`) there is no magic and no embedded sample rate or channel count, so dispatch is extension-only. By the Bluetooth SCO convention the stream is assumed mono at 64000 Hz; that assumption is documented in the surfaced `metadata.ini`. The archive view surfaces `FULL.cvsd` (the byte-exact CVSD stream, Kind `Container`), `MONO.wav` (the whole payload decoded to 16-bit LE PCM @ 64000 Hz, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Create either passes a provided `FULL.cvsd` through verbatim or re-encodes a single mono 16-bit WAV back to the CVSD bitstream.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CvsdFormatDescriptor` | `CvsdFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Dbm`
+
+[`DbmFormatDescriptor`](#dbmformatdescriptor)
+
+#### `DbmFormatDescriptor`
+
+Exposes a DigiBooster Pro (DBM0) module as a read-only pseudo-archive. The big-endian IFF-like container (NAME, INFO, SONG, PATT, INST, SMPL, VENV chunks) is walked and surfaced under `chunks/<TAG>.bin`, with PATT patterns and SMPL samples additionally decomposed. The layout was recovered through binary inspection of the documented DigiBooster Pro file format and the OpenMPT loader. Every chunk read is clamped; a malformed module surfaces FULL + metadata(parse_status=partial) instead of throwing.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DbmFormatDescriptor` | `DbmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Dff`
+
+[`DffFormatDescriptor`](#dffformatdescriptor) · [`DffReader`](#dffreader) · [`DffReader.ParsedDff`](#dffreaderparseddff)
+
+#### `DffFormatDescriptor`
+
+Exposes a Philips DSDIFF (`.dff`/`.dsdiff`) file as an archive of `FULL.dff` plus, per channel, the raw 1-bit DSD bitstream (`<NAME>.dsd`) and a playable decimated 16-bit mono PCM WAV at `sampleRate / 64` (`<NAME>.wav`), plus an `metadata.ini` summary. DSD bits are MSB-first within each byte. DST-compressed streams cannot be de-interleaved, so those files surface as `FULL.dff` + `metadata.ini` only. PCM is produced by `DsdDecimator` (an inspection-grade approximation, not a fidelity-preserving FIR decimator).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DffFormatDescriptor` | `DffFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `DffReader`
+
+Philips DSDIFF (`.dff`/`.dsdiff`) parser. The container is IFF-like with big-endian unsigned 64-bit chunk sizes; chunk bodies pad to an even byte boundary. Layout: Top form: `FRM8` | u64 size | formType `DSD ` | sub-chunks.`FVER` — u32 version.`PROP` with property type `SND ` containing: `FS ` (u32 sample rate), `CHNL` (u16 numChannels + numChannels × 4-char channel IDs), `CMPR` (4-char compression type + pascal-string name; `DSD ` = uncompressed, `DST ` = DST-compressed).`DSD ` data chunk — sample data interleaved by byte round-robin across channels (one byte ch0, one byte ch1, …), bits MSB-first within each byte.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DffReader` | `DffReader()` |  |
+| `Read` | `ParsedDff Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `DffReader.ParsedDff`
+
+Represents a parsed dff.
+
+Implements `IEquatable<ParsedDff>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedDff` | `ParsedDff(int SampleRate, int NumChannels, IReadOnlyList<string> ChannelIds, string Compression, byte[][] ChannelDsd, long BytesPerChannel)` | Represents a parsed dff. |
+| `BytesPerChannel` | `long BytesPerChannel { get; init; }` |  |
+| `ChannelDsd` | `byte[][] ChannelDsd { get; init; }` |  |
+| `ChannelIds` | `IReadOnlyList<string> ChannelIds { get; init; }` |  |
+| `Compression` | `string Compression { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
 ### Namespace `FileFormat.Dfpwm`
 
 [`DfpwmFormatDescriptor`](#dfpwmformatdescriptor)
@@ -1934,6 +5921,304 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Dls`
+
+[`DlsFormatDescriptor`](#dlsformatdescriptor)
+
+#### `DlsFormatDescriptor`
+
+Exposes a Downloadable Sounds (DLS level-1/2, `RIFF/DLS `) collection as a pseudo-archive: `FULL.dls` (byte-exact) plus one standalone WAV per wave pool entry (`samples/NNN_<name>.wav`) and the INFO sub-chunks as `metadata/<id>.txt` tags. Each wave pool entry is a `LIST wave` carrying a `fmt ` + `data` pair (and optional per-wave INFO); they are rewrapped into independent RIFF/WAVE blobs. Read-only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DlsFormatDescriptor` | `DlsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Dsf`
+
+[`DsdDecimator`](#dsddecimator) · [`DsfFormatDescriptor`](#dsfformatdescriptor) · [`DsfReader`](#dsfreader) · [`DsfReader.ParsedDsf`](#dsfreaderparseddsf)
+
+#### `DsdDecimator`
+
+Crude DSD (1-bit, ~2.8224 MHz) → 16-bit LE PCM decimator shared by the DSF and DSDIFF channel pseudo-archives. It is a plain windowed accumulator, NOT a proper anti-aliasing FIR: for every output sample it sums the next 64 input bits mapped to ±1 (a 1-bit equals +1, a 0-bit equals −1), giving a running value in the range −64..+64, then scales that by 512 (clamped to the 16-bit range) to fill a recognizable portion of the PCM dynamic range. The result is a heavily aliased but audible/inspectable mono signal at `fs / 64`. This is deliberately an approximation suitable for channel inspection only; high-fidelity playback would require a multi-tap low-pass decimation FIR.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecimationFactor` | `const int DecimationFactor` | The DSD-to-PCM decimation ratio (one PCM sample per 64 DSD bits). |
+| `DecimateToPcm16` | `static byte[] DecimateToPcm16(ReadOnlySpan<byte> dsdBytes, bool lsbFirst, long bitCount = -1)` | Decimates one channel's raw DSD bitstream into 16-bit little-endian PCM. Bits are read from `dsdBytes` in `lsbFirst` order within each byte (DSF uses LSB-first; DSDIFF uses MSB-first). At most `bitCount` bits are consumed; if it is negative the whole buffer is used. Only whole windows of 64 bits produce output, so a partial trailing window is dropped. |
+
+#### `DsfFormatDescriptor`
+
+Exposes a Sony DSD Stream File (`.dsf`) as an archive of `FULL.dsf` plus, per channel, the raw 1-bit DSD bitstream (`<NAME>.dsd`) and a playable decimated 16-bit mono PCM WAV at `samplingFrequency / 64` (`<NAME>.wav`), plus an `metadata.ini` summary and any trailing ID3v2 tag as `metadata/id3.bin`. The WAV is produced by `DsdDecimator`, a crude windowed accumulator (documented there as an inspection-grade approximation, not a fidelity-preserving FIR decimator).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DsfFormatDescriptor` | `DsfFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `DsfReader`
+
+Sony DSD Stream File (`.dsf`) parser. All integers are little-endian and chunk/file sizes are unsigned 64-bit. Layout: `DSD ` header chunk (28 bytes): magic | u64 chunkSize(=28) | u64 totalFileSize | u64 metadataPointer (0, or the file offset of a trailing ID3v2 tag).`fmt ` chunk (52 bytes): magic | u64 size(=52) | u32 formatVersion(=1) | u32 formatId(=0 raw DSD) | u32 channelType | u32 channelNum | u32 samplingFrequency | u32 bitsPerSample (1 or 8) | u64 sampleCount (per channel, in bits) | u32 blockSizePerChannel(=4096) | u32 reserved.`data` chunk: magic | u64 size | payload of per-channel blocks interleaved round-robin (blockSize bytes ch0, blockSize bytes ch1, …, repeating). For `bitsPerSample==1` the bits within a byte are LSB-first; for `==8` they are treated MSB-first. Only `sampleCount` bits per channel are significant.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DsfReader` | `DsfReader()` |  |
+| `Read` | `ParsedDsf Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `DsfReader.ParsedDsf`
+
+Represents a parsed dsf.
+
+Implements `IEquatable<ParsedDsf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedDsf` | `ParsedDsf(int ChannelType, int ChannelNum, int SampleRate, int BitsPerSample, long SampleCount, int BlockSize, byte[][] ChannelDsd, byte[] Id3)` | Represents a parsed dsf. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `ChannelDsd` | `byte[][] ChannelDsd { get; init; }` |  |
+| `ChannelNum` | `int ChannelNum { get; init; }` |  |
+| `ChannelType` | `int ChannelType { get; init; }` |  |
+| `Id3` | `byte[] Id3 { get; init; }` |  |
+| `SampleCount` | `long SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `FileFormat.Dts`
+
+[`DtsFormatDescriptor`](#dtsformatdescriptor)
+
+#### `DtsFormatDescriptor`
+
+DTS (Coherent Acoustics) elementary stream surfaced as a pseudo-archive. The descriptor parses the core frame headers (AMODE channel arrangement, SFREQ sample rate, RATE bitrate, LFE flag) for `metadata.ini` and walks the stream by each frame's FSIZE to count frames and estimate duration. The byte-exact `FULL.dts` (Kind `Container`) always round-trips the stream unchanged. The presence of a DTS-HD substream extension (the "DTSHDHDR" chunk or the 0x64582025 extension sync) is reported in the metadata. In addition the descriptor decodes the DTS core sub-stream (via `Codec.Dts`) and surfaces one mono `<CHANNEL>.wav` per decoded channel, named via the AMODE speaker layout (document order, with LFE last). DTS-HD extension substreams (XCH / XXCH / X96 / XBR / XLL) are not decoded — only the embedded core is. When the decoder can't handle the input (unsupported framing, malformed, truncated) it falls back to the info-only layout (`FULL.dts` + `metadata.ini`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DtsFormatDescriptor` | `DtsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.EaSchl`
+
+[`EaSchlFormatDescriptor`](#easchlformatdescriptor) · [`EaSchlReader`](#easchlreader) · [`EaSchlWriter`](#easchlwriter)
+
+#### `EaSchlFormatDescriptor`
+
+Exposes an Electronic Arts SCHl audio stream as a pseudo-archive of `FULL.eam`, one decoded mono PCM WAV per channel (named per `ChannelLayout`), and a `metadata.ini` with the channel count, sample rate and compression type. When the carried audio uses a compression this build can't decode, only `FULL` plus metadata are surfaced. The `.asf`/`.str` extensions real EA files use are avoided here because they clash with Microsoft ASF and generic stream containers; detection leans on the `SCHl` magic plus the `.eam`/`.sng` extensions.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaSchlFormatDescriptor` | `EaSchlFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `EaSchlReader`
+
+Parses an Electronic Arts SCHl audio stream. The stream is a chain of blocks, each `4CC + u32 LE blockSize` where `blockSize` counts the 8-byte block header too: `SCHl` — header. Carries a PT (patch table) describing the audio: this reader scans the block body for the PT marker byte `0xFD` and walks its TLV entries — `0x82` channels, `0x84` sample rate, `0x85` total samples, `0xA0` compression (`0x07`/`0x00` = EA-XA, `0x14` = 16-bit PCM). When the PT cannot be parsed it defaults to mono / 22050 Hz / EA-XA.`SCCl` — block count (informational; skipped).`SCDl` — data. The body after the 8-byte header begins with a u32 LE sample count, after which the bytes are channel-interleaved EA-XA frames (or interleaved 16-bit PCM for the PCM compression type).`SCEl` — end of stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EaSchlReader` | `EaSchlReader(ReadOnlySpan<byte> data)` | Initializes a new instance of `EaSchlReader`. |
+| `CompressionEaXaAlt` | `const int CompressionEaXaAlt` | Defines the compression ea xa alt constant value. |
+| `CompressionEaXa` | `const int CompressionEaXa` | EA-XA / EA-ADPCM compression types as encoded by the PT `0xA0` field. |
+| `CompressionPcm16` | `const int CompressionPcm16` | Defines the compression pcm 16 constant value. |
+| `Channels` | `int Channels { get; }` | Gets or sets the channels. |
+| `CodedData` | `byte[] CodedData { get; }` | Concatenated coded audio bytes from every SCDl block (header stripped). |
+| `Compression` | `int Compression { get; }` | Gets or sets the compression. |
+| `SampleRate` | `int SampleRate { get; }` | Gets or sets the sample rate. |
+| `TotalSamples` | `long TotalSamples { get; }` | Gets or sets the total samples. |
+| `DecodeInterleaved` | `short[] DecodeInterleaved()` | Decodes the carried audio into interleaved 16-bit PCM, or null if unsupported. |
+
+#### `EaSchlWriter`
+
+Writes a minimal SCHl / SCDl / SCEl stream that round-trips through `EaSchlReader`. The output is deliberately simplified relative to real EA files: the SCHl header carries a compact PT (patch table) with just the channels, sample-rate, total-sample and compression fields this reader understands;all audio is emitted in a single SCDl block (real EA files chunk audio into many interleaved-but-bounded blocks);only the EA-XA compression type is produced.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static byte[] Write(ReadOnlySpan<short> interleaved, int channels, int sampleRate)` | Builds a SCHl stream from interleaved 16-bit PCM, encoding the audio with EA-XA. |
+
+### Namespace `FileFormat.EspsSd`
+
+[`EspsSdFormatDescriptor`](#espssdformatdescriptor) · [`EspsSdReader`](#espssdreader) · [`EspsSdReader.ParsedEsps`](#espssdreaderparsedesps)
+
+#### `EspsSdFormatDescriptor`
+
+Exposes an Entropic ESPS sampled-data (`.sd`) file as an archive of `FULL.sd`, `MONO.wav` and `metadata.ini`. The single-channel 16-bit case is decoded: the byte order comes from the `0x00006A1A` check code at offset 16, the sample data starts at the header-declared data offset, and the sample rate is taken from the `record_freq` generic header item (default 16000 Hz). READ-ONLY.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EspsSdFormatDescriptor` | `EspsSdFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `EspsSdReader`
+
+Parser for the common single-channel 16-bit Entropic ESPS sampled-data (`.sd`) file. ESPS headers are self-describing, but a small fixed preamble pins the byte order and the offset of the sample data: A 4-byte check code`0x00006A1A` sits at offset 16. Reading it big-endian vs little-endian reveals the file's byte order (it is the magic and the endianness oracle in one).The data offset (header size in bytes) is a 32-bit field at offset 8, in the detected byte order. The sample rate is stored as a named generic header item; we scan the header region for the ASCII tag `record_freq` and read the following IEEE-754 double in the file's byte order, defaulting to 16000 Hz when the tag is absent. Sample data is the 16-bit integers from the data offset to end-of-file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EspsSdReader` | `EspsSdReader()` |  |
+| `CheckCode` | `const uint CheckCode` | Defines the check code constant value. |
+| `CheckOffset` | `const int CheckOffset` | Defines the check offset constant value. |
+| `Read` | `ParsedEsps Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `EspsSdReader.ParsedEsps`
+
+Represents a parsed esps.
+
+Implements `IEquatable<ParsedEsps>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedEsps` | `ParsedEsps(bool BigEndian, int DataOffset, int SampleRate, bool RateFromHeader, byte[] SampleData)` | Represents a parsed esps. |
+| `BigEndian` | `bool BigEndian { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `RateFromHeader` | `bool RateFromHeader { get; init; }` |  |
+| `SampleData` | `byte[] SampleData { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `FileFormat.F669`
+
+[`F669FormatDescriptor`](#f669formatdescriptor)
+
+#### `F669FormatDescriptor`
+
+Exposes a Composer 669 module as a pseudo-archive of `FULL.669` (Kind `Container`), a `metadata.ini` (Kind `Tag`), `patterns/pattern_NN.bin` (Kind `Pattern`) and one playable WAV per sample (Kind `Sample`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `F669FormatDescriptor` | `F669FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Far`
+
+[`FarFormatDescriptor`](#farformatdescriptor)
+
+#### `FarFormatDescriptor`
+
+Exposes a Farandole Composer (`.far`) module as a read-only pseudo-archive of `FULL.far` (byte-exact original), `metadata.ini`, the song message text as `message.txt` and one playable mono WAV per present sample under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FarFormatDescriptor` | `FarFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2072,6 +6357,462 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single FSB entry as a bounded read-only stream. The `BuildEntries` parser produces decoded byte buffers per entry; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so adjacent samples cannot leak. |
 
+### Namespace `FileFormat.G711`
+
+[`G711AlawFormatDescriptor`](#g711alawformatdescriptor) · [`G711FormatDescriptorBase`](#g711formatdescriptorbase) · [`G711UlawFormatDescriptor`](#g711ulawformatdescriptor)
+
+#### `G711AlawFormatDescriptor`
+
+Raw A-law (G.711) container: a headerless stream of A-law bytes. Decoded to 16-bit LE PCM via `Codec.ALaw`; see `G711FormatDescriptorBase`.
+
+Inherits `G711FormatDescriptorBase`. Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `G711AlawFormatDescriptor` | `G711AlawFormatDescriptor()` |  |
+| `DefaultExtension` | `override string DefaultExtension { get; }` | Gets the default extension. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Id` | `override string Id { get; }` | Gets the id. |
+| `Variant` | `protected override string Variant { get; }` | Gets the variant. |
+| `Decode` | `protected override short[] Decode(byte[] companded)` | Decodes the supplied input. |
+| `Encode` | `protected override byte[] Encode(short[] linear)` | Encodes the supplied input. |
+
+#### `G711FormatDescriptorBase`
+
+Shared plumbing for the two raw G.711 containers (A-law and µ-law). A raw G.711 stream is headerless — there is no magic and no embedded sample rate or channel count — so dispatch is extension-only (precedent: `FlacArchiveDescriptor`). By the G.711 convention the stream is assumed mono at 8000 Hz; that assumption is documented in the surfaced `metadata.ini`. The archive view surfaces `FULL.<ext>` (the byte-exact companded stream, Kind `Container`), `MONO.wav` (the whole payload decoded to 16-bit LE PCM @ 8000 Hz, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Create either passes a provided `FULL.<ext>` through verbatim or re-encodes a single mono 16-bit WAV back to the companded stream.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `G711FormatDescriptorBase` | `protected G711FormatDescriptorBase()` |  |
+| `DefaultSampleRate` | `protected const int DefaultSampleRate` | The G.711 default sample rate (8 kHz, narrowband telephony). |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `abstract string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `abstract string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `abstract IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `abstract string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Variant` | `protected abstract string Variant { get; }` | Human label for this variant, e.g. `A-law` / `µ-law`. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Decode` | `protected abstract short[] Decode(byte[] companded)` | Decodes the whole companded payload to 16-bit linear samples. |
+| `Encode` | `protected abstract byte[] Encode(short[] linear)` | Encodes 16-bit linear samples back to the companded representation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `G711UlawFormatDescriptor`
+
+Raw µ-law (G.711) container: a headerless stream of µ-law bytes. Decoded to 16-bit LE PCM via `Codec.MuLaw`; see `G711FormatDescriptorBase`.
+
+Inherits `G711FormatDescriptorBase`. Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `G711UlawFormatDescriptor` | `G711UlawFormatDescriptor()` |  |
+| `DefaultExtension` | `override string DefaultExtension { get; }` | Gets the default extension. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Id` | `override string Id { get; }` | Gets the id. |
+| `Variant` | `protected override string Variant { get; }` | Gets the variant. |
+| `Decode` | `protected override short[] Decode(byte[] companded)` | Decodes the supplied input. |
+| `Encode` | `protected override byte[] Encode(short[] linear)` | Encodes the supplied input. |
+
+### Namespace `FileFormat.G7231`
+
+[`G7231FormatDescriptor`](#g7231formatdescriptor)
+
+#### `G7231FormatDescriptor`
+
+Raw ITU-T G.723.1 (dual-rate 5.3 / 6.3 kbit/s) speech container: a headerless stream of variable-size frames whose first byte's low two bits select the frame type and size (24 / 20 / 4 / 1 bytes). Like raw LPC-10, CVSD and G.711 there is no magic and no embedded sample rate or channel count, so dispatch is extension-only. G.723.1 is defined at mono 8000 Hz; that assumption is documented in the surfaced `metadata.ini`. The archive view surfaces `FULL.g723` (the byte-exact coded stream, Kind `Container`), `MONO.wav` (the whole payload decoded to 16-bit LE PCM @ 8000 Hz, Kind `Channel`) and `metadata.ini` (per-type frame counts and duration, Kind `Tag`). The format is read-only: G.723.1 has no encoder (neither does FFmpeg), so there is no create path.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `G7231FormatDescriptor` | `G7231FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Gbs`
+
+[`GbsDecomposer`](#gbsdecomposer) · [`GbsDecomposer.Entry`](#gbsdecomposerentry) · [`GbsDecomposer.EntryKinds`](#gbsdecomposerentrykinds) · [`GbsFormatDescriptor`](#gbsformatdescriptor)
+
+#### `GbsDecomposer`
+
+Surfaces a GBS (Game Boy Sound) file as a read-only pseudo-archive: the verbatim file, parsed header metadata — name, author, copyright, song count and the load/init/play/stack/timer addresses — plus the raw code+data blob. It never emulates the Game Boy CPU or sound hardware and never throws from listing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompose` | `static List<Entry> Decompose(byte[] file)` | Performs the decompose operation. |
+
+#### `GbsDecomposer.Entry`
+
+Represents an entry.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data, string Kind)` | Represents an entry. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `string Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+#### `GbsDecomposer.EntryKinds`
+
+Represents an entry kinds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tag` | `const string Tag` | Defines the tag constant value. |
+| `Track` | `const string Track` | Defines the track constant value. |
+
+#### `GbsFormatDescriptor`
+
+Surfaces a Game Boy Sound file (`.gbs`) as a metadata-rich pseudo-archive. GBS carries a Game Boy CPU (LR35902/SM83) program that drives the DMG sound hardware. The program image is surfaced verbatim as a Kind `Stream` blob, and the first song is emulated (SM83 core + register-level Game Boy APU synthesis) and rendered to playable per-side `LEFT.wav` / `RIGHT.wav` (44100 Hz, 16-bit), honouring the header's timer-driven or VBlank play rate. Layout: a 0x70-byte header (magic `GBS` + version 1, song counts, the load/init/play vectors, stack pointer, timer modulo/control bytes, and three 32-byte title/author/copyright strings) followed by the program loaded at `loadAddr`. The program is surfaced as `program.bin`. Read-only; parsing degrades to header/program-only on malformed input or unsupported tunes.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GbsFormatDescriptor` | `GbsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Gsm`
+
+[`GsmRawFormatDescriptor`](#gsmrawformatdescriptor)
+
+#### `GsmRawFormatDescriptor`
+
+Exposes a raw `.gsm` file — a bare concatenation of 33-byte GSM 06.10 full-rate frames (the "toast"/libgsm on-disk layout), 8000 Hz mono, 160 samples per frame — as an archive of `FULL.gsm` (byte-exact container), `MONO.wav` (decoded 16-bit PCM) and `metadata.ini`. The format is headerless: there is no whole-byte magic. Only the high nibble of each frame's first byte is fixed (`0xD`, so the byte ranges over `0xD0..0xDF`) — too weak to register as a `MagicSignature` (it would clash with any payload byte sharing that nibble), so dispatch is by the `.gsm` extension only and `MagicSignatures` is empty. When the frame stream doesn't structurally validate, the archive gracefully degrades to `FULL.gsm` + metadata only. `Gsm610Codec` decodes and encodes raw 33-byte frames directly (it is not the WAV49 65-byte double-frame variant), so no extra unpacking is needed. Create either passes a provided `FULL.gsm` through verbatim or encodes a single mono 16-bit 8000 Hz WAV.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GsmRawFormatDescriptor` | `GsmRawFormatDescriptor()` |  |
+| `SampleRate` | `const int SampleRate` | Sample rate of GSM 06.10 full-rate speech. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a raw `.gsm` stream: a provided `FULL.gsm` verbatim, otherwise a single mono 16-bit 8000 Hz WAV encoded to 33-byte GSM 06.10 frames. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Gym`
+
+[`GymFormatDescriptor`](#gymformatdescriptor)
+
+#### `GymFormatDescriptor`
+
+Surfaces a Genesis/Mega Drive GYM register-log file (`.gym`) as a metadata-rich pseudo-archive. A GYM file is a recording of writes to the YM2612 FM chip and SN76489 PSG; there is no synthesised audio to decode, so the command log is surfaced verbatim as a Kind `Stream` blob. The `GYMX` header carries five 32-byte song/game/copyright/emulator/dumper strings, a 256-byte comment, a u32 loopStart frame and a u32 packedSize. When `packedSize != 0` the log is zlib-compressed and surfaced as `log.z`; otherwise the raw log is surfaced as `log.bin`. The log is a stream of command bytes where `0x00` is a 1/60-second frame wait; counting those markers yields an approximate duration that is reported in the metadata.The log is also synthesised over the YM2612 + SN76489 cores (the chips a Genesis GYM records) and surfaced as `LEFT.wav`/`RIGHT.wav` (stereo 44100 Hz, capped at 600 s). The command grammar is `0x00` wait one 1/60 s frame, `0x01 aa dd` YM2612 port-0 write, `0x02 aa dd` YM2612 port-1 write, `0x03 dd` PSG write. Packed logs are first inflated through `ZLibStream`. Read-only; parsing degrades to FULL-only on malformed input.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GymFormatDescriptor` | `GymFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Hca`
+
+[`HcaFormatDescriptor`](#hcaformatdescriptor)
+
+#### `HcaFormatDescriptor`
+
+Archive-shaped view of a CRI HCA file (`.hca`, modern CRI Middleware game audio): a byte-exact `FULL.hca` container plus one decoded mono PCM WAV per channel (named per `ChannelLayout`) and a `metadata.ini` carrying the stream's sample rate, channel count, frame count, loop and cipher info. Decoding goes through the in-repo `HcaCodec`; when the codec cannot handle the input (keyed/56-bit cipher, MS-stereo, malformed or CRC-failing headers) the view degrades gracefully to `FULL.hca` plus a `metadata.ini` note. READ-ONLY.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HcaFormatDescriptor` | `HcaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Hcom`
+
+[`HcomFormatDescriptor`](#hcomformatdescriptor)
+
+#### `HcomFormatDescriptor`
+
+Exposes a Macintosh HCOM sound (`.hcom`) as a pseudo-archive: `FULL.hcom` (the byte-exact file) plus the decoded mono channel (`MONO.wav`) and a `metadata.ini` summary. HCOM stores 8-bit unsigned samples Huffman-compressed over their (delta) values; this implementation reproduces sox's `hcom.c` container faithfully: it locates the `HCOM` data fork (raw, or inside a 128-byte MacBinary header whose `FSSD` sits at offset 65), reads the big-endian header and the `dictsize` Huffman tree entries, then walks the 32-bit-word bitstream MSB-first, accumulating deltas. Create emits the same container (single mono WAV → delta Huffman bitstream) so round-trips are testable.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HcomFormatDescriptor` | `HcomFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Hes`
+
+[`HesFormatDescriptor`](#hesformatdescriptor)
+
+#### `HesFormatDescriptor`
+
+Surfaces a PC Engine (TurboGrafx-16) HES music file (`.hes`) as a metadata-rich pseudo-archive. HES carries a HuC6280 program plus data that drive the PC Engine's integrated 6-channel wavetable PSG. The loaded data blocks are surfaced verbatim as Kind `Stream` blobs, and the start song is emulated (HuC6280 core + register-level PSG synthesis) and rendered to playable per-side `LEFT.wav` / `RIGHT.wav` (44100 Hz, 16-bit). Any per-subtune render is surfaced lazily as a `TRACK_nn_LEFT/RIGHT.wav` pair. Layout: a 0x10-byte header — magic `HESM`, u8 version, u8 firstSong, u16 initAddr (request address), and an 8-byte initial MPR (memory-paging) table — followed by one or more data blocks. Each data block begins with its own 0x10-byte block header: a `DATA` tag, u32 length, u32 loadAddr, then padding to 0x10, after which `length` bytes of program data follow. Blocks are surfaced as `blocks/NN_<hex-loadaddr>.bin`; if no `DATA` block header is found the remainder after the file header is surfaced whole as `program.bin`.Interpretation note: the HES data-block layout is loosely specified across rippers; we chase contiguous `DATA` blocks (length + loadAddr from the block header) and fall back to a single `program.bin` when the structured walk yields nothing. Read-only; parsing degrades to FULL-only on malformed input.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HesFormatDescriptor` | `HesFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Hps`
+
+[`HpsFormatDescriptor`](#hpsformatdescriptor) · [`HpsReader`](#hpsreader) · [`HpsReader.Header`](#hpsreaderheader) · [`HpsReader.ParsedHps`](#hpsreaderparsedhps) · [`HpsWriter`](#hpswriter)
+
+#### `HpsFormatDescriptor`
+
+Exposes a GameCube `.hps` (HAL HALPST stream) as an archive of `FULL.hps` plus one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini` describing sample rate, channels and sample count. DSP-ADPCM is decoded with continuous per-channel history across blocks; anything the reader cannot parse falls back gracefully to `FULL.hps` only.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HpsFormatDescriptor` | `HpsFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `HpsReader`
+
+Parses a big-endian GameCube `.hps` (HAL HALPST) stream into its header, per-channel DSP-ADPCM coefficient tables and decoded PCM. Layout: the 8-byte magic `" HALPST\0"` | `u32 sampleRate` | `u32 channelCount`, followed by a `0x38`-byte channel header per channel: `u32 maxBlockSize` | `u32 loopStart` | `u32 endAddress` | `u32 curAddress` | 16 `s16` coefficients | `u16 gain` | `u16 initialPs` | `s16 hist1` | `s16 hist2` | `u16 pad`. The audio is then a linked list of blocks, each: `u32 dspDataLength` (coded bytes PER CHANNEL) | `u32 pad` | `u32 nextBlockOffset` (file-relative; `0xFFFFFFFF` = end) | per channel an 8-byte decoder-state record (`u16 ps` | `s16 hist1` | `s16 hist2` | `u16 pad`) | then per channel `dspDataLength` coded bytes back-to-back. SIMPLIFICATION: `dspDataLength` is treated as the per-channel coded length and the writer's block layout (state records for every channel, then all channels' coded payloads) is the round-trip bar; the documented header/block structure is otherwise followed. DSP-ADPCM history runs continuously across blocks per channel.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HpsReader` | `HpsReader()` |  |
+| `Read` | `ParsedHps Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `HpsReader.Header`
+
+Represents a header.
+
+Implements `IEquatable<Header>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Header` | `Header(int SampleRate, int NumChannels, int SampleCount)` | Represents a header. |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleCount` | `int SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `HpsReader.ParsedHps`
+
+Represents a parsed hps.
+
+Implements `IEquatable<ParsedHps>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedHps` | `ParsedHps(Header Info, short[][] Coefs, short[][] Pcm)` | Represents a parsed hps. |
+| `Coefs` | `short[][] Coefs { get; init; }` |  |
+| `Info` | `Header Info { get; init; }` |  |
+| `Pcm` | `short[][] Pcm { get; init; }` |  |
+
+#### `HpsWriter`
+
+Writes a big-endian GameCube `.hps` (HAL HALPST) carrying DSP-ADPCM, laid out per the public HALPST specification so it round-trips through `HpsReader`. Channels are DSP-ADPCM encoded independently (see `Codec.DspAdpcm`); the coded data is emitted as a single block whose `nextBlockOffset` is `0xFFFFFFFF` (end of list). Per-channel decoder-state records are zeroed (the encoder starts each channel from silence, matching the decoder's initial history). SIMPLIFICATION (see `HpsReader`): `dspDataLength` is written as the per-channel coded length and the whole stream is a single block. The header, channel-header and block-record layout otherwise follow the documented format; `endAddress` encodes the sample count so the reader recovers it exactly.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HpsWriter` | `HpsWriter()` |  |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, int loopStart = 0)` | Encodes per-channel mono PCM16 to DSP-ADPCM and serialises a complete HPS. All channels must share the same sample count. |
+
+### Namespace `FileFormat.Ircam`
+
+[`IrcamFormatDescriptor`](#ircamformatdescriptor) · [`IrcamReader`](#ircamreader) · [`IrcamReader.ParsedIrcam`](#ircamreaderparsedircam) · [`IrcamWriter`](#ircamwriter)
+
+#### `IrcamFormatDescriptor`
+
+Exposes an IRCAM / BICSF (`.sf`) sound file as an archive of `FULL.sf`, one mono WAV per channel (16-bit/8-bit linear PCM byte-swapped to little-endian, or 32-bit IEEE-float channels wrapped as float WAVs) and a `metadata.ini` carrying sample rate, channels, format and endianness. Unsupported sample formats are surfaced as `FULL.sf` only — no channel entries, no throw.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IrcamFormatDescriptor` | `IrcamFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `IrcamReader`
+
+IRCAM / BICSF (`.sf`) sound-file header parser. The first four bytes are a magic that fixes byte order: a leading `0x64` marks a little-endian (VAX) file, a trailing `0x64` a big-endian (Sun) file. Canonical magics are `64 A3 01 00` / `00 01 A3 64`, with machine variants `…02…`/`…03…`/`…04…`. The header (in file byte order) carries an f32 sample rate, u32 channel count and u32 sample format (1 = 8-bit linear, 2 = 16-bit linear PCM, 4 = 32-bit IEEE float). Sample data begins at the fixed offset 1024 in file byte order.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IrcamReader` | `IrcamReader()` |  |
+| `Read` | `ParsedIrcam Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `IrcamReader.ParsedIrcam`
+
+Represents a parsed ircam.
+
+Implements `IEquatable<ParsedIrcam>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedIrcam` | `ParsedIrcam(int SampleRate, int Channels, uint SampleFormat, bool LittleEndian, byte[] SampleData)` | Represents a parsed ircam. |
+| `Channels` | `int Channels { get; init; }` |  |
+| `LittleEndian` | `bool LittleEndian { get; init; }` |  |
+| `SampleData` | `byte[] SampleData { get; init; }` |  |
+| `SampleFormat` | `uint SampleFormat { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `IrcamWriter`
+
+Writes a little-endian (VAX, magic `64 A3 01 00`) IRCAM/BICSF file: the 1024-byte header carrying the f32 sample rate, u32 channel count and u32 sample format (2 = 16-bit linear PCM), followed by the interleaved little-endian samples. The output round-trips through `IrcamReader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IrcamWriter` | `IrcamWriter()` |  |
+| `Write` | `byte[] Write(byte[] interleavedLe, int channels, int sampleRate)` | Writes the value to the supplied output. |
+
 ### Namespace `FileFormat.It`
 
 [`ItFormatDescriptor`](#itformatdescriptor)
@@ -2085,6 +6826,481 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ItFormatDescriptor` | `ItFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Iti`
+
+[`ItiFormatDescriptor`](#itiformatdescriptor)
+
+#### `ItiFormatDescriptor`
+
+Exposes an Impulse Tracker instrument (`.iti`, an `IMPI` instrument header followed by its embedded `IMPS` samples) as a pseudo-archive of `FULL.iti` (Kind `Container`), a `metadata.ini` (Kind `Tag`) and one playable WAV per embedded sample (Kind `Sample`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItiFormatDescriptor` | `ItiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Its`
+
+[`ItsFormatDescriptor`](#itsformatdescriptor) · [`ItsSampleDecoder`](#itssampledecoder) · [`ItsSampleDecoder.ParsedSample`](#itssampledecoderparsedsample)
+
+#### `ItsFormatDescriptor`
+
+Exposes a standalone Impulse Tracker sample (`.its`, 80-byte `IMPS` header) as a pseudo-archive of `FULL.its` (Kind `Container`), a `metadata.ini` (Kind `Tag`) and the single decoded sample as a playable WAV (Kind `Sample`) at the header's C5 speed. IT215-compressed samples (flags bit 3) are not decoded; the view falls back to FULL-only with a metadata note.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ItsFormatDescriptor` | `ItsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `ItsSampleDecoder`
+
+Decodes an Impulse Tracker 80-byte `IMPS` sample header (the same structure used both for standalone `.its` files and embedded inside `.it` / `.iti`) into a playable mono WAV. Shared by `ItsFormatDescriptor` and the ITI instrument descriptor (which scans for `IMPS` blocks).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FallbackSampleRate` | `const int FallbackSampleRate` | Defines the fallback sample rate constant value. |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `BuildWav` | `static byte[] BuildWav(byte[] blob, in ParsedSample s)` | Builds a playable mono WAV from a parsed IMPS sample. 8-bit samples are rebiased to WAV's unsigned 8-bit (signed-8 → +128, already-unsigned → pass through); 16-bit signed is passed through, 16-bit unsigned is rebiased to signed. IT214/IT215-compressed samples are decompressed via `ItSampleDecompressor` (the decoded values are always signed, so the `cvt` signed flag is ignored for compressed data). Returns null when there is no usable data or decompression fails. |
+| `ReadAsciiTrim` | `static string ReadAsciiTrim(byte[] blob, int offset, int length)` | Reads the ascii trim from the supplied input. |
+| `SanitizeFileName` | `static string SanitizeFileName(string name)` | Performs the sanitize file name operation. |
+| `TryParse` | `static bool TryParse(byte[] blob, int headerOff, out ParsedSample result)` | Reads the IMPS header at `headerOff`. The sample pointer is treated as a file-absolute offset (the .it / .its convention); a zero / out-of-range pointer leaves `ByteLength` at 0. Returns false when there is no valid header. |
+
+#### `ItsSampleDecoder.ParsedSample`
+
+Parsed header fields plus the resolved on-disk PCM data range.
+
+Implements `IEquatable<ParsedSample>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSample` | `ParsedSample(string Name, string DosName, int SampleRate, int Bits, bool Signed, bool Compressed, int DataOffset, int ByteLength, int LengthSamples, bool It215)` | Parsed header fields plus the resolved on-disk PCM data range. |
+| `Bits` | `int Bits { get; init; }` |  |
+| `ByteLength` | `int ByteLength { get; init; }` |  |
+| `Compressed` | `bool Compressed { get; init; }` |  |
+| `DataOffset` | `int DataOffset { get; init; }` |  |
+| `DosName` | `string DosName { get; init; }` |  |
+| `It215` | `bool It215 { get; init; }` |  |
+| `LengthSamples` | `int LengthSamples { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Signed` | `bool Signed { get; init; }` |  |
+
+### Namespace `FileFormat.Kss`
+
+[`KssFormatDescriptor`](#kssformatdescriptor) · [`KssPlayer`](#kssplayer)
+
+#### `KssFormatDescriptor`
+
+Surfaces a KSS music file (`.kss`) as a metadata-rich pseudo-archive. KSS carries a Z80 program plus sound-chip data for MSX/SG-1000/Master System hardware; there is no audio to decode, so the data image is surfaced verbatim as a Kind `Stream` blob. Two magic variants exist. The classic `KSCC` header is 0x10 bytes: u16 loadAddr, u16 dataLen, u16 initAddr, u16 playAddr, u8 startBank, u8 extraBanks, u8 reserved/extraHeader, u8 deviceFlags. The `KSSX` variant uses the same 0x10-byte core but the `reserved/extraHeader` byte (offset 0x0E) declares an extra header length; when it is 0x10 a second 0x10-byte block follows at 0x10 carrying chip-extra flags and the firstSong/songCount words. The Z80 data begins immediately after the (combined) header. The data is surfaced as `program.bin`.Interpretation note (KSSX extension is sparsely documented): we treat offset 0x0E as the extra-header length. When it is non-zero and the bytes are present, the extension block is parsed for the deviceFlags-extra byte plus the u16 firstSong / u16 songCount words and the payload offset advances past it; otherwise we fall back to the plain 0x10-byte layout. Read-only; parsing degrades to FULL-only on malformed input.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KssFormatDescriptor` | `KssFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `KssPlayer`
+
+A KSS (`KSCC`/`KSSX`) tune player. It builds a 64 KB Z80 RAM image, loads the tune's data at its load address, calls the init routine (with `A` = song number) and then calls the play routine once per 60 Hz frame, capturing the player's writes to the MSX PSG ports — `$A0` (register latch) and `$A1` (data) — into an `Ay8910Chip`, from which it renders stereo PCM. Only the AY/YM PSG is synthesised. When the header's device-flags byte enables an extra chip (FMPAC/MSX-MUSIC, SCC, MSX-AUDIO) those writes are decoded to no-ops, so the rendered audio carries the PSG voices only; the caller surfaces a metadata note. The SCC wavetable channels are not synthesised. Banked KSSX images are handled as a flat load (the start bank is loaded; bank-switch port writes are ignored), which covers unbanked and simple single-bank tunes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `KssPlayer` | `KssPlayer(byte[] blob, int songIndex = 0, double clockHz = 1789772.5, StereoMode stereo = 0)` | Builds a player from KSS file bytes for `songIndex`. Throws `NotSupportedException` when the header is too short or carries no init. |
+| `HasUnsupportedDevices` | `bool HasUnsupportedDevices { get; }` | True when the header requests a sound chip this player does not synthesise. |
+| `Render` | `short[] Render(double seconds, int outputRate = 44100)` | Renders `seconds` of interleaved stereo 16-bit PCM at 44.1 kHz. |
+
+### Namespace `FileFormat.Lpc10`
+
+[`Lpc10FormatDescriptor`](#lpc10formatdescriptor)
+
+#### `Lpc10FormatDescriptor`
+
+Raw FS-1015 (LPC-10e, 2400 bit/s) container: a headerless stream of packed 54-bit LPC-10 frames (7 bytes each). Like raw CVSD and raw G.711 there is no magic and no embedded sample rate or channel count, so dispatch is extension-only. The FS-1015 vocoder is defined at mono 8000 Hz; that assumption is documented in the surfaced `metadata.ini`. The archive view surfaces `FULL.lpc10` (the byte-exact coded stream, Kind `Container`), `MONO.wav` (the whole payload synthesized to 16-bit LE PCM @ 8000 Hz, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Create either passes a provided `FULL.lpc10` through verbatim or analysis-encodes a single mono 16-bit WAV into the LPC-10 bitstream.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Lpc10FormatDescriptor` | `Lpc10FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.MacSnd`
+
+[`MacSndFormatDescriptor`](#macsndformatdescriptor) · [`MacSndReader`](#macsndreader) · [`MacSndReader.ParsedSnd`](#macsndreaderparsedsnd)
+
+#### `MacSndFormatDescriptor`
+
+Exposes a classic Mac OS `'snd '` sampled-sound resource (carried as a data fork) as an archive of `FULL.snd` plus one mono WAV per channel and a `metadata.ini`. Standard (8-bit unsigned), extended (8/16-bit, mono/stereo) and MACE-compressed (3:1 / 6:1, decoded via `Codec.Mace`) sound headers are supported; unsupported compression IDs surface only `FULL.snd` + metadata. The `.snd` extension is shared with Sun/NeXT `.au`, so this format registers no file extension and is reached by magic (format-1 sampled resource) or explicit lookup. READ-ONLY.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacSndFormatDescriptor` | `MacSndFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MacSndReader`
+
+Parser for the classic Mac OS `'snd '` sampled-sound resource carried as a data fork. All fields are big-endian. Two resource formats exist: Format 1 — `u16 format(1)`, `u16 nDataFormats`, then per data format a `u16 id` + `u32 initOption`, then `u16 nCommands` and that many 8-byte commands (`u16 cmd | u16 param1 | u32 param2`). The sampled data is reached through a `bufferCmd` (0x8051) or `soundCmd` (0x8050) whose `param2` is the offset (from the start of the resource) of a `SoundHeader`.Format 2 — `u16 format(2)`, `u16 refCount`, then `u16 nCommands` and the commands, same as format 1 from there on. The `SoundHeader` (big-endian) is: `u32 samplePtr | u32 length | u32 sampleRate(16.16 fixed) | u32 loopStart | u32 loopEnd | u8 encode | u8 baseFrequency` followed by the data. The `encode` byte selects the variant: `0x00` standard 8-bit unsigned PCM, `0xFF` extended (numChannels/numFrames/sampleSize), `0xFE` compressed (a `compressionID` selecting MACE 3:1 / 6:1).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MacSndReader` | `MacSndReader()` |  |
+| `CompressedHeader` | `const byte CompressedHeader` | Defines the compressed header constant value. |
+| `CompressionMace3` | `const short CompressionMace3` | Defines the compression mace 3 constant value. |
+| `CompressionMace6` | `const short CompressionMace6` | Defines the compression mace 6 constant value. |
+| `CompressionNotCompressed` | `const short CompressionNotCompressed` | Defines the compression not compressed constant value. |
+| `ExtendedHeader` | `const byte ExtendedHeader` | Defines the extended header constant value. |
+| `StandardHeader` | `const byte StandardHeader` | Defines the standard header constant value. |
+| `Fixed1616ToInt` | `static int Fixed1616ToInt(uint fixed1616)` | Mac 16.16 unsigned fixed-point sample rate → integer hertz. |
+| `Read` | `ParsedSnd Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `MacSndReader.ParsedSnd`
+
+Represents a parsed snd.
+
+Implements `IEquatable<ParsedSnd>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSnd` | `ParsedSnd(int Format, byte Encode, int NumChannels, int BitsPerSample, int SampleRate, uint NumFrames, short CompressionId, byte[] SampleData)` | Represents a parsed snd. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `CompressionId` | `short CompressionId { get; init; }` |  |
+| `Encode` | `byte Encode { get; init; }` |  |
+| `Format` | `int Format { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `NumFrames` | `uint NumFrames { get; init; }` |  |
+| `SampleData` | `byte[] SampleData { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `FileFormat.Matroska`
+
+[`EbmlReader`](#ebmlreader) · [`EbmlReader.Element`](#ebmlreaderelement) · [`MkvCuesFrontOptimizer`](#mkvcuesfrontoptimizer) · [`MkvDemuxer`](#mkvdemuxer) · [`MkvDemuxer.Attachment`](#mkvdemuxerattachment) · [`MkvDemuxer.DemuxResult`](#mkvdemuxerdemuxresult) · [`MkvDemuxer.FrameEntry`](#mkvdemuxerframeentry) · [`MkvDemuxer.Track`](#mkvdemuxertrack) · [`MkvFormatDescriptor`](#mkvformatdescriptor) · [`MkvLayoutMap`](#mkvlayoutmap)
+
+#### `EbmlReader`
+
+Raw EBML (Extensible Binary Meta Language) element reader. IDs and size fields are variable-width unsigned integers with a leading-bit marker; the body is opaque bytes or a nested sequence of EBML elements depending on the schema.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EbmlReader` | `EbmlReader(byte[] data)` | Initializes a new instance of `EbmlReader`. |
+| `Body` | `ReadOnlySpan<byte> Body(Element el)` | Performs the body operation. |
+| `Children` | `IEnumerable<Element> Children(Element master)` | Iterates direct child elements of a master element body. |
+| `ReadBinary` | `byte[] ReadBinary(Element el)` | Reads the binary from the supplied input. |
+| `ReadSigned` | `long ReadSigned(Element el)` | Reads the signed from the supplied input. |
+| `ReadString` | `string ReadString(Element el)` | Reads the string from the supplied input. |
+| `ReadUnsigned` | `ulong ReadUnsigned(Element el)` | Reads the unsigned from the supplied input. |
+| `Read` | `Element? Read(ref long pos)` | Reads one element at `pos`, advancing it past the element. |
+
+#### `EbmlReader.Element`
+
+Represents an element.
+
+Implements `IEquatable<Element>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Element` | `Element(ulong Id, long BodyOffset, long BodyLength)` | Represents an element. |
+| `BodyLength` | `long BodyLength { get; init; }` |  |
+| `BodyOffset` | `long BodyOffset { get; init; }` |  |
+| `Id` | `ulong Id { get; init; }` |  |
+
+#### `MkvCuesFrontOptimizer`
+
+MKV/WebM optimizer that moves the Cues element (seek index) to the front of the Segment, before the first Cluster. This enables fast seeking without downloading the entire file, analogous to MP4 fast-start (moov before mdat).
+
+Implements `IFileInternalChunkMover`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MkvCuesFrontOptimizer` | `MkvCuesFrontOptimizer()` |  |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+
+#### `MkvDemuxer`
+
+Walks a Matroska/WebM file and produces per-track raw elementary-stream blobs, plus attachments and chapters as addressable entries. Video tracks known to be H.264/HEVC get Annex-B start-codes prepended, with SPS/PPS extracted from `CodecPrivate`; other codecs pass through as concatenated frame bytes. Compression (header-stripping, zlib, bzlib) per track's ContentEncoding is intentionally not decoded — in practice the frame-compression codepath is extremely rare in real-world MKVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MkvDemuxer` | `MkvDemuxer()` |  |
+| `Demux` | `DemuxResult Demux(byte[] file)` | Performs the demux operation. |
+
+#### `MkvDemuxer.Attachment`
+
+Represents an attachment.
+
+Implements `IEquatable<Attachment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Attachment` | `Attachment(string FileName, string MimeType, byte[] Data)` | Represents an attachment. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` |  |
+| `MimeType` | `string MimeType { get; init; }` |  |
+
+#### `MkvDemuxer.DemuxResult`
+
+Represents a demux result.
+
+Implements `IEquatable<DemuxResult>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DemuxResult` | `DemuxResult(IReadOnlyList<Track> Tracks, IReadOnlyList<Attachment> Attachments, byte[] ChaptersXml)` | Represents a demux result. |
+| `Attachments` | `IReadOnlyList<Attachment> Attachments { get; init; }` |  |
+| `ChaptersXml` | `byte[] ChaptersXml { get; init; }` |  |
+| `Tracks` | `IReadOnlyList<Track> Tracks { get; init; }` |  |
+
+#### `MkvDemuxer.FrameEntry`
+
+A single block (frame) from a track.
+
+Implements `IEquatable<FrameEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FrameEntry` | `FrameEntry(byte[] Data)` | A single block (frame) from a track. |
+| `Data` | `byte[] Data { get; init; }` |  |
+
+#### `MkvDemuxer.Track`
+
+Represents a track.
+
+Implements `IEquatable<Track>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Track` | `Track(int Number, string TrackType, string CodecId, string Language, byte[] CodecPrivate, byte[] FrameBytes, IReadOnlyList<FrameEntry> Frames, int AudioChannels = 0, int AudioSampleRate = 0, int AudioBitDepth = 0)` | Represents a track. |
+| `AudioBitDepth` | `int AudioBitDepth { get; init; }` |  |
+| `AudioChannels` | `int AudioChannels { get; init; }` |  |
+| `AudioSampleRate` | `int AudioSampleRate { get; init; }` |  |
+| `CodecId` | `string CodecId { get; init; }` |  |
+| `CodecPrivate` | `byte[] CodecPrivate { get; init; }` |  |
+| `FrameBytes` | `byte[] FrameBytes { get; init; }` |  |
+| `Frames` | `IReadOnlyList<FrameEntry> Frames { get; init; }` |  |
+| `Language` | `string Language { get; init; }` |  |
+| `Number` | `int Number { get; init; }` |  |
+| `TrackType` | `string TrackType { get; init; }` |  |
+
+#### `MkvFormatDescriptor`
+
+Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MkvFormatDescriptor` | `MkvFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+
+#### `MkvLayoutMap`
+
+Walks the top-level and first-level EBML elements of a Matroska/WebM file and emits `DefragBlockInfo` tiles. SeekHead/Info/Tracks/Cues are classified as MetadataReserved; each Cluster is classified as Used.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream file)` | Enumerates the value. |
+
+### Namespace `FileFormat.Maud`
+
+[`MaudFormatDescriptor`](#maudformatdescriptor) · [`MaudReader`](#maudreader) · [`MaudReader.ParsedMaud`](#maudreaderparsedmaud) · [`MaudWriter`](#maudwriter)
+
+#### `MaudFormatDescriptor`
+
+Exposes an IFF / MAUD file as an archive of `FULL.maud` plus one mono WAV per channel (16-bit big-endian PCM is byte-swapped to little-endian; A-law / μ-law data is decoded to 16-bit linear via `Codec.ALaw` / `Codec.MuLaw`), plus a `metadata.ini`. Mono surfaces as `MONO.wav`; stereo as `LEFT.wav` / `RIGHT.wav` by de-interleaving the sample data.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaudFormatDescriptor` | `MaudFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MaudReader`
+
+IFF / MAUD ("MacroSystem audio") parser. The file is a big-endian IFF container — `FORM` | uint32 size | `MAUD` | chunks — where each chunk is a 4-byte id, a uint32 big-endian body length, the body and a pad byte when the length is odd. Recognised chunks: `MHDR` — MaudHeader (32 bytes): sample count, the compressed and uncompressed bit widths, the sample rate as a source/divide fraction, the channel layout, the channel count and the compression mode.`MDAT` — sample data (signed PCM, 16-bit big-endian when 16-bit, or A-law / μ-law bytes when the header marks it compressed).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaudReader` | `MaudReader()` |  |
+| `ChannelInfoMono` | `const int ChannelInfoMono` | Defines the channel info mono constant value. |
+| `ChannelInfoStereo` | `const int ChannelInfoStereo` | Defines the channel info stereo constant value. |
+| `CompressionALaw` | `const int CompressionALaw` | Defines the compression a law constant value. |
+| `CompressionNone` | `const int CompressionNone` | Defines the compression none constant value. |
+| `CompressionULaw` | `const int CompressionULaw` | Defines the compression u law constant value. |
+| `Read` | `ParsedMaud Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `MaudReader.ParsedMaud`
+
+Represents a parsed maud.
+
+Implements `IEquatable<ParsedMaud>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedMaud` | `ParsedMaud(uint SampleCount, int BitsCompressed, int BitsUncompressed, int SampleRate, int ChannelInfo, int NumChannels, int Compression, byte[] Data)` | Represents a parsed maud. |
+| `BitsCompressed` | `int BitsCompressed { get; init; }` |  |
+| `BitsUncompressed` | `int BitsUncompressed { get; init; }` |  |
+| `ChannelInfo` | `int ChannelInfo { get; init; }` |  |
+| `Compression` | `int Compression { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleCount` | `uint SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `MaudWriter`
+
+Writes an uncompressed IFF / MAUD file: a `FORM` wrapper around an `MHDR` header and an `MDAT` body of signed 16-bit big-endian PCM. The supplied sample buffer is already interleaved in MAUD's big-endian sample order. Used by `MaudFormatDescriptor` to assemble a file from per-channel mono WAVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaudWriter` | `MaudWriter()` |  |
+| `Write` | `byte[] Write(byte[] interleavedBe, int numChannels, int sampleRate)` | Builds an uncompressed 16-bit MAUD. `interleavedBe` holds the interleaved signed 16-bit big-endian samples; `numChannels` is 1 (mono) or 2 (stereo, interleaved). |
+
+### Namespace `FileFormat.Med`
+
+[`MedFormatDescriptor`](#medformatdescriptor)
+
+#### `MedFormatDescriptor`
+
+Exposes an OctaMED MMD0 / MMD1 module (big-endian Amiga) as a pseudo-archive of `FULL.<ext>` (Kind `Container`), a `metadata.ini` (Kind `Tag`) noting the MMD version, and one playable WAV per instrument sample (Kind `Sample`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MedFormatDescriptor` | `MedFormatDescriptor()` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -2281,6 +7497,347 @@ Compacts oversized ID3v2 padding in an MP3 file. If the ID3v2 tag has more than 
 | `Optimize` | `static void Optimize(Stream file)` | Optimizes the MP3 file in `file` by compacting ID3v2 padding. The stream must be readable, writable, and seekable. If no ID3v2 tag exists or padding is already <= 256 bytes, this is a no-op. |
 | `Optimize` | `static void Optimize(Stream file, MetadataPlacementProfile profile)` | Optimizes the MP3 file with an optional metadata placement profile. The MP3 format requires ID3v2 at the start per spec, so the profile does not affect ID3v2 tag position — only the padding compaction is performed. |
 
+### Namespace `FileFormat.Mp4`
+
+[`BoxParser`](#boxparser) · [`BoxParser.Box`](#boxparserbox) · [`Mp4Demuxer`](#mp4demuxer) · [`Mp4Demuxer.SampleEntry`](#mp4demuxersampleentry) · [`Mp4Demuxer.Track`](#mp4demuxertrack) · [`Mp4FastStart`](#mp4faststart) · [`Mp4FastStart.AtomInfo`](#mp4faststartatominfo) · [`Mp4FormatDescriptor`](#mp4formatdescriptor) · [`Mp4LayoutMap`](#mp4layoutmap)
+
+#### `BoxParser`
+
+ISO Base Media File Format (ISO/IEC 14496-12) box walker. An MP4/MOV/3GP file is a tree of boxes, each with a 32-bit size, 4-char type, optional 64-bit largesize, and a body. Compound boxes (moov, trak, mdia, minf, …) contain child boxes; leaf boxes (mdat, tkhd, hdlr, …) carry payload bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BoxParser` | `BoxParser()` |  |
+| `FindAll` | `static IEnumerable<Box> FindAll(IEnumerable<Box> boxes, string type)` | Performs the find all operation. |
+| `Find` | `static Box Find(IEnumerable<Box> boxes, string type)` | Performs the find operation. |
+| `Parse` | `List<Box> Parse(ReadOnlySpan<byte> data)` | Parses the value from the supplied data. |
+
+#### `BoxParser.Box`
+
+Represents a box.
+
+Implements `IEquatable<Box>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Box` | `Box(string Type, long Offset, long Size, long BodyOffset, long BodyLength, List<Box> Children)` | Represents a box. |
+| `BodyLength` | `long BodyLength { get; init; }` |  |
+| `BodyOffset` | `long BodyOffset { get; init; }` |  |
+| `Children` | `List<Box> Children { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Type` | `string Type { get; init; }` |  |
+
+#### `Mp4Demuxer`
+
+Demuxes an MP4/MOV file to raw per-track elementary streams. This is not a full decoder: video tracks become Annex-B NALU streams (for H.264/HEVC, SPS/PPS extracted from `avcC`/`hvcC` and prepended); audio tracks get the raw sample data in track order; all other track types are written as the flat concatenation of their samples, which is useful for triage even when the codec is obscure.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp4Demuxer` | `Mp4Demuxer()` |  |
+| `Demux` | `IReadOnlyList<Track> Demux(byte[] file)` | Performs the demux operation. |
+
+#### `Mp4Demuxer.SampleEntry`
+
+A single sample (video frame or audio packet).
+
+Implements `IEquatable<SampleEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SampleEntry` | `SampleEntry(byte[] Data)` | A single sample (video frame or audio packet). |
+| `Data` | `byte[] Data { get; init; }` |  |
+
+#### `Mp4Demuxer.Track`
+
+Represents a track.
+
+Implements `IEquatable<Track>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Track` | `Track(int Id, string HandlerType, string CodecFourCc, byte[] Data, long DurationTicks, int Timescale, IReadOnlyList<SampleEntry> Samples)` | Represents a track. |
+| `CodecFourCc` | `string CodecFourCc { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `DurationTicks` | `long DurationTicks { get; init; }` |  |
+| `HandlerType` | `string HandlerType { get; init; }` |  |
+| `Id` | `int Id { get; init; }` |  |
+| `Samples` | `IReadOnlyList<SampleEntry> Samples { get; init; }` |  |
+| `Timescale` | `int Timescale { get; init; }` |  |
+
+#### `Mp4FastStart`
+
+MP4 fast-start optimizer. Moves the `moov` atom before `mdat` so browsers and players can begin playback immediately without downloading the entire file. Patches `stco` and `co64` chunk-offset tables inside `moov` to account for the position shift.
+
+Implements `IFileInternalChunkMover`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp4FastStart` | `Mp4FastStart()` |  |
+| `Optimize` | `void Optimize(Stream file)` |  |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `PatchChunkOffsets` | `static void PatchChunkOffsets(byte[] data, int start, int end, long delta)` | Recursively patches stco and co64 atoms inside moov. Walks the atom tree looking for compound containers and leaf offset tables. |
+| `WalkTopLevelAtoms` | `static List<AtomInfo> WalkTopLevelAtoms(Stream file)` | Walks top-level atoms in the stream and returns their positions. |
+
+#### `Mp4FastStart.AtomInfo`
+
+Represents an atom info.
+
+Implements `IEquatable<AtomInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AtomInfo` | `AtomInfo(string Type, long Offset, long Size, int HeaderSize)` | Represents an atom info. |
+| `HeaderSize` | `int HeaderSize { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Type` | `string Type { get; init; }` |  |
+
+#### `Mp4FormatDescriptor`
+
+MP4/MOV demux surface plus an audio-only M4A write path. The writer accepts AAC-LC access units, MPEG-1/2 Layer II/III frames, or canonical PCM16 that can be encoded to AAC-LC.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioMuxTarget`, `IAudioPcmTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp4FormatDescriptor` | `Mp4FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the chunks. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `Optimize` | `void Optimize(Stream file)` | Performs the optimize operation. |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs the optimize operation. |
+
+#### `Mp4LayoutMap`
+
+Walks the top-level atoms of an MP4/MOV file and exposes each as a `DefragBlockInfo` for block-chart visualization.
+
+Implements `IFileInternalLayoutMap`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Mp4LayoutMap` | `Mp4LayoutMap()` |  |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
+
+### Namespace `FileFormat.Mpc`
+
+[`MpcFormatDescriptor`](#mpcformatdescriptor)
+
+#### `MpcFormatDescriptor`
+
+Exposes a Musepack (`.mpc`/`.mpp`/`.mp+`) file as a pseudo-archive of `FULL.mpc` (Kind `Container`) plus, when the bitstream decodes, one mono WAV per channel (Kind `Channel`, named via `ChannelLayout`) and a `metadata.ini` (Kind `Tag`). The decoder targets SV8 (`MPCK`) mono/stereo and SV7 (`MP+`) stereo; any undecodable input degrades gracefully to a FULL + metadata-only listing. READ-ONLY (no Musepack encoder).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MpcFormatDescriptor` | `MpcFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Mtm`
+
+[`MtmFormatDescriptor`](#mtmformatdescriptor)
+
+#### `MtmFormatDescriptor`
+
+Exposes a MultiTracker (`.mtm`) module as a read-only pseudo-archive of `FULL.mtm` (byte-exact original), `metadata.ini`, the packed track blocks as `patterns/track_NN.bin` (each a 64-row × 3-byte track) and one playable mono WAV per sample under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MtmFormatDescriptor` | `MtmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Mus`
+
+[`MusFormatDescriptor`](#musformatdescriptor) · [`MusToMidiConverter`](#mustomidiconverter) · [`MusToMidiConverter.Result`](#mustomidiconverterresult)
+
+#### `MusFormatDescriptor`
+
+Surfaces a DMX/Doom MUS score as a read-only pseudo-archive: `FULL.mus` (the byte-exact score), `metadata.ini` (channel and instrument counts), and `converted.mid` — a Standard MIDI File (format 0) produced by the classic MUS→MIDI mapping. Falls back to FULL-only when the score cannot be converted.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MusFormatDescriptor` | `MusFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `MusToMidiConverter`
+
+Converts a DMX/Doom MUS score into a Standard MIDI File (format 0). MUS is a compact, single-track sequencer format used by id's DMX sound library. Each event byte packs: bit 7 = last-event-in-group (a delay varint follows the group), bits 4–6 = event type, bits 0–3 = MUS channel. MUS channel 15 is percussion and maps to MIDI channel 9; the remaining channels 0–14 map to MIDI 0–8 and 10–15, skipping 9.Timing convention: MUS runs at 140 Hz. The emitted SMF keeps MUS ticks 1:1 as MIDI delta ticks and declares a division of 70 ticks/quarter with a tempo of 681818 µs/quarter, which yields 70 / (681818e-6) ≈ 140 ticks per second.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Division` | `const int Division` | Defines the division constant value. |
+| `TempoMicrosPerQuarter` | `const int TempoMicrosPerQuarter` | Defines the tempo micros per quarter constant value. |
+| `Convert` | `static Result Convert(ReadOnlySpan<byte> data)` | Parses the MUS header and event stream and returns a format-0 SMF blob. Throws `InvalidDataException` on a malformed header. |
+
+#### `MusToMidiConverter.Result`
+
+Represents a result.
+
+Implements `IEquatable<Result>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Result` | `Result(byte[] Midi, int EventCount)` | Represents a result. |
+| `EventCount` | `int EventCount { get; init; }` |  |
+| `Midi` | `byte[] Midi { get; init; }` |  |
+
+### Namespace `FileFormat.Nelly`
+
+[`NellyFormatDescriptor`](#nellyformatdescriptor)
+
+#### `NellyFormatDescriptor`
+
+Surfaces a raw Nellymoser "Asao" block stream (as dumped from FLV audio tags) as a pseudo-archive: the byte-exact `FULL.nelly` container, the single decoded mono `MONO.wav` (Nellymoser is fixed mono — 64-byte blocks → 256 samples each, via `NellymoserCodec`), and a `metadata.ini`. Read-only; there is no published encoder. The stream is headerless and identified by extension only. There is no embedded sample rate, so a default of 22050 Hz is assumed (the common Flash speech rate) and recorded in `metadata.ini`. A ragged stream whose length is not a multiple of the 64-byte block falls back to `FULL.nelly` + metadata only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NellyFormatDescriptor` | `NellyFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Nsf`
+
+[`NsfDecomposer`](#nsfdecomposer) · [`NsfDecomposer.Entry`](#nsfdecomposerentry) · [`NsfDecomposer.EntryKinds`](#nsfdecomposerentrykinds) · [`NsfFormatDescriptor`](#nsfformatdescriptor)
+
+#### `NsfDecomposer`
+
+Surfaces an NSF (NES Sound Format) file as a read-only pseudo-archive: the verbatim file, parsed header metadata — name, artist, copyright, song count, region and expansion sound chips — plus the raw 6502 program/data blob. It never emulates the 6502 or any expansion chip and never throws from listing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompose` | `static List<Entry> Decompose(byte[] file)` | Performs the decompose operation. |
+
+#### `NsfDecomposer.Entry`
+
+Represents an entry.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data, string Kind)` | Represents an entry. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `string Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+#### `NsfDecomposer.EntryKinds`
+
+Represents an entry kinds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tag` | `const string Tag` | Defines the tag constant value. |
+| `Track` | `const string Track` | Defines the track constant value. |
+
+#### `NsfFormatDescriptor`
+
+Surfaces an NES Sound Format file as a metadata-rich pseudo-archive. NSF carries a 6502 program that drives the NES APU (plus optional expansion sound chips); the program image is surfaced verbatim as a Kind `Stream` blob alongside the parsed header, and — for base 2A03 NESM tunes — including those using the Famicom expansion sound chips (VRC6/VRC7/FDS/MMC5/N163/S5B) — the start song is emulated (6502 core + register-level APU synthesis with the enabled expansion chips) and rendered to a playable `MONO.wav` (44100 Hz, 16-bit, 30 s cap). Malformed input degrades to header/program-only. Two on-disk variants are handled:NESM (magic `NESM\x1A`): a fixed 0x80-byte header followed by the 6502 program loaded at `loadAddr`. The header carries song counts, the load/init/play vectors, NTSC/PAL speed words, an 8-byte bankswitch table, a PAL/NTSC flag byte and the expansion-chip flag byte (VRC6/VRC7/FDS/MMC5/N163/S5B). The program is surfaced as `program.bin`.NSFE (magic `NSFE`): a chunked container (4CC + u32 LE size). The `INFO` chunk holds the load/init/play vectors and chip flags, `DATA` is the program (surfaced as `program.bin`), `auth` carries NUL-separated title/artist/copyright/ripper strings, and every other chunk is surfaced verbatim as `metadata/<id>.bin`. Read-only; parsing degrades to FULL-only on malformed input.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NsfFormatDescriptor` | `NsfFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Ogg`
 
 [`OggFormatDescriptor`](#oggformatdescriptor) · [`OggLayoutMap`](#ogglayoutmap) · [`OggPageParser`](#oggpageparser) · [`OggPageParser.Page`](#oggpageparserpage) · [`VorbisCommentReader`](#vorbiscommentreader) · [`VorbisCommentReader.Parsed`](#vorbiscommentreaderparsed)
@@ -2370,6 +7927,188 @@ Implements `IEquatable<Parsed>`.
 | `Parsed` | `Parsed(string Vendor, IReadOnlyList<ValueTuple<string, string>> Comments)` | Represents a parsed. |
 | `Comments` | `IReadOnlyList<ValueTuple<string, string>> Comments { get; init; }` |  |
 | `Vendor` | `string Vendor { get; init; }` |  |
+
+### Namespace `FileFormat.Okt`
+
+[`OktFormatDescriptor`](#oktformatdescriptor)
+
+#### `OktFormatDescriptor`
+
+Exposes an Oktalyzer (OKTASONG) module as a pseudo-archive of `FULL.okt` (Kind `Container`), a `metadata.ini` (Kind `Tag`), `patterns/pattern_NN.bin` from each `PBOD` chunk (Kind `Pattern`), and one playable WAV per `SBOD` sample body (Kind `Sample`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OktFormatDescriptor` | `OktFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Oma`
+
+[`OmaFormatDescriptor`](#omaformatdescriptor) · [`OmaHeader`](#omaheader)
+
+#### `OmaFormatDescriptor`
+
+Read-only stream-info view of a Sony OpenMG (.oma / .aa3 / .at3) file. There is no ATRAC decoder (out of scope); the descriptor parses the leading "ea3" ID3v2-style tag (TIT2 / TPE1 / TALB … text frames) and the 96-byte binary "EA3" header (codec id + coding parameters), then slices out the coded audio payload. The archive view surfaces the byte-exact `FULL.oma` (Kind `Container`), the coded `stream.bin` payload (Kind `Stream`, Method = the carried codec name) and `metadata.ini` (Kind `Tag`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OmaFormatDescriptor` | `OmaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `OmaHeader`
+
+Parsed layout of a Sony OpenMG (.oma / .aa3 / .at3) file. The file starts with an ID3v2-style tag whose identifier is "ea3" (rather than "ID3"); after that tag comes a 96-byte binary "EA3" header that carries the codec id and coding parameters; the coded audio payload follows. This parser reads the syncsafe tag size, extracts a few common text frames, then reads the EA3 header's codec id and packed coding parameters.
+
+Implements `IEquatable<OmaHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OmaHeader` | `OmaHeader(int TagSize, int Ea3HeaderOffset, int PayloadOffset, int CodecId, string CodecName, int CodingParams, int SampleRate, IReadOnlyList<ValueTuple<string, string>> Tags)` | Parsed layout of a Sony OpenMG (.oma / .aa3 / .at3) file. The file starts with an ID3v2-style tag whose identifier is "ea3" (rather than "ID3"); after that tag comes a 96-byte binary "EA3" header that carries the codec id and coding parameters; the coded audio payload follows. This parser reads the syncsafe tag size, extracts a few common text frames, then reads the EA3 header's codec id and packed coding parameters. |
+| `HeaderMagic` | `static readonly byte[] HeaderMagic` | The binary header identifier ("EA3"). |
+| `TagMagic` | `static readonly byte[] TagMagic` | The ID3v2-style tag identifier used by OpenMG ("ea3"). |
+| `CodecId` | `int CodecId { get; init; }` |  |
+| `CodecName` | `string CodecName { get; init; }` |  |
+| `CodingParams` | `int CodingParams { get; init; }` |  |
+| `Ea3HeaderOffset` | `int Ea3HeaderOffset { get; init; }` |  |
+| `PayloadOffset` | `int PayloadOffset { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `TagSize` | `int TagSize { get; init; }` |  |
+| `Tags` | `IReadOnlyList<ValueTuple<string, string>> Tags { get; init; }` |  |
+| `CodecName_` | `static string CodecName_(int id)` | Codec id (EA3 header byte 32) → human-readable codec name. |
+| `TryParse` | `static OmaHeader TryParse(ReadOnlySpan<byte> data)` | Parses the OpenMG layout from `data`, or returns `null` if the leading "ea3" tag or the post-tag "EA3" header is missing / truncated. |
+
+### Namespace `FileFormat.Opus`
+
+[`OpusFormatDescriptor`](#opusformatdescriptor)
+
+#### `OpusFormatDescriptor`
+
+Archive-shaped view of an Opus file (`.opus`, Ogg-encapsulated, RFC 7845): a `FULL.opus` blob plus one mono WAV per decoded channel (`LEFT.wav`/`RIGHT.wav`/... or `MONO.wav`) so multi-channel Opus files can be decomposed in the archive browser. Decoding goes through the in-repo `OpusCodec`; when that codec cannot handle the input (e.g. hybrid-mode configs, which throw `NotSupportedException`, or a malformed stream), the view degrades gracefully to `FULL.opus` only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpusFormatDescriptor` | `OpusFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Paf`
+
+[`PafFormatDescriptor`](#pafformatdescriptor) · [`PafReader`](#pafreader) · [`PafReader.ParsedPaf`](#pafreaderparsedpaf) · [`PafWriter`](#pafwriter)
+
+#### `PafFormatDescriptor`
+
+Exposes an Ensoniq PARIS Audio File (.paf) as an archive of `FULL.paf` plus one mono WAV per channel and a `metadata.ini`. Samples are normalised to little-endian WAV PCM (big-endian files are byte-swapped; 24-bit packed 3-byte samples surface as 24-bit WAVs). Mono surfaces as `MONO.wav`; multi-channel files split into per-speaker WAVs.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PafFormatDescriptor` | `PafFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `PafReader`
+
+Ensoniq PARIS Audio File (.paf) parser. The 24-byte header is stored in the file's own byte order, which the four-byte magic announces: `" paf"` marks a big-endian file, `"fap "` a little-endian one. Header fields: uint32 magic, uint32 version.uint32 endianness (0 = big, 1 = little — informational; the magic is authoritative).uint32 sample rate.uint32 format (0 = 16-bit PCM, 1 = 24-bit PCM packed 3-byte LSB-first).uint32 channel count. Sample data begins at offset 2048, interleaved, in the file's byte order.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PafReader` | `PafReader()` |  |
+| `DataOffset` | `const int DataOffset` | Defines the data offset constant value. |
+| `FormatPcm16` | `const int FormatPcm16` | Defines the format pcm 16 constant value. |
+| `FormatPcm24` | `const int FormatPcm24` | Defines the format pcm 24 constant value. |
+| `Read` | `ParsedPaf Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `PafReader.ParsedPaf`
+
+Represents a parsed paf.
+
+Implements `IEquatable<ParsedPaf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedPaf` | `ParsedPaf(bool LittleEndian, uint Version, int SampleRate, int Format, int NumChannels, byte[] Data)` | Represents a parsed paf. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Format` | `int Format { get; init; }` |  |
+| `LittleEndian` | `bool LittleEndian { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Version` | `uint Version { get; init; }` |  |
+
+#### `PafWriter`
+
+Writes an Ensoniq PARIS Audio File (.paf): the 24-byte little-endian header marked `"fap "`, zero-padded to the 2048-byte data offset, followed by interleaved signed 16-bit little-endian PCM. Used by `PafFormatDescriptor` to assemble a file from per-channel mono WAVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PafWriter` | `PafWriter()` |  |
+| `Write` | `byte[] Write(byte[] interleavedLe, int numChannels, int sampleRate)` | Builds a 16-bit little-endian PAF from `interleavedLe` at `sampleRate` Hz with `numChannels` channels. |
 
 ### Namespace `FileFormat.Psf`
 
@@ -2472,6 +8211,130 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Serializes all fields to the underlying stream. Idempotent. |
 
+### Namespace `FileFormat.Psm`
+
+[`PsmFormatDescriptor`](#psmformatdescriptor)
+
+#### `PsmFormatDescriptor`
+
+Exposes an Epic MegaGames MASI (`.psm`, new chunked format) module as a read-only pseudo-archive of `FULL.psm` (byte-exact original), `metadata.ini`, the title text (`title.txt`), every pattern body (`PBOD`) as `patterns/pattern_NN.bin` and one playable mono WAV per sample (`DSMP`) under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PsmFormatDescriptor` | `PsmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Ptm`
+
+[`PtmFormatDescriptor`](#ptmformatdescriptor)
+
+#### `PtmFormatDescriptor`
+
+Exposes a PolyTracker (`.ptm`) module as a read-only pseudo-archive of `FULL.ptm` (byte-exact original), `metadata.ini` and one playable mono WAV per instrument that carries sample data under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PtmFormatDescriptor` | `PtmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Pvf`
+
+[`PvfFormatDescriptor`](#pvfformatdescriptor) · [`PvfReader`](#pvfreader) · [`PvfReader.ParsedPvf`](#pvfreaderparsedpvf) · [`PvfWriter`](#pvfwriter)
+
+#### `PvfFormatDescriptor`
+
+Exposes an mgetty Portable Voice Format (.pvf) file as an archive of `FULL.pvf` plus one mono WAV per channel and a `metadata.ini`. The container's arbitrary-width samples are shifted to canonical 16-bit signed little-endian PCM (widths > 16 shift down, < 16 shift up). Mono surfaces as `MONO.wav`; multi-channel (interleaved) files split into per-speaker WAVs.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PvfFormatDescriptor` | `PvfFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `PvfReader`
+
+mgetty Portable Voice Format (.pvf) parser. The file opens with two ASCII header lines: line 1 — the magic `"PVF1"` (binary samples) or `"PVF2"` (ASCII samples).line 2 — three space-separated decimal integers: channel count, sample rate and bits per sample. PVF1 sample data is one big-endian signed 32-bit integer per sample, of which only the low `bits` are significant. PVF2 sample data is whitespace-separated ASCII decimal integers. Both are decoded here to 32-bit integer samples (still significant in their original `bits` width); `PvfFormatDescriptor` shifts them to 16-bit.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PvfReader` | `PvfReader()` |  |
+| `Read` | `ParsedPvf Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `PvfReader.ParsedPvf`
+
+Represents a parsed pvf.
+
+Implements `IEquatable<ParsedPvf>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedPvf` | `ParsedPvf(bool Ascii, int NumChannels, int SampleRate, int Bits, int[] Samples)` | Represents a parsed pvf. |
+| `Ascii` | `bool Ascii { get; init; }` |  |
+| `Bits` | `int Bits { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Samples` | `int[] Samples { get; init; }` |  |
+
+#### `PvfWriter`
+
+Writes a binary mgetty Portable Voice Format (.pvf) file: the `"PVF1\n"` magic line, a `"<channels> <rate> <bits>\n"` header line and one big-endian signed 32-bit integer per sample, sign-extended from the 16-bit source. Used by `PvfFormatDescriptor` to assemble a file from per-channel mono WAVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PvfWriter` | `PvfWriter()` |  |
+| `Write` | `byte[] Write(short[] samples, int numChannels, int sampleRate)` | Builds a PVF1 file (bits = 16) from 16-bit interleaved `samples` at `sampleRate` Hz with `numChannels` channels. |
+
 ### Namespace `FileFormat.Qoa`
 
 [`QoaFormatDescriptor`](#qoaformatdescriptor)
@@ -2485,6 +8348,135 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `QoaFormatDescriptor` | `QoaFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.RealMedia`
+
+[`RealMediaFormatDescriptor`](#realmediaformatdescriptor)
+
+#### `RealMediaFormatDescriptor`
+
+Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on failure and parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RealMediaFormatDescriptor` | `RealMediaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Rf64`
+
+[`Rf64FormatDescriptor`](#rf64formatdescriptor) · [`Rf64Reader`](#rf64reader) · [`Rf64Reader.ParsedRf64`](#rf64readerparsedrf64) · [`Rf64Writer`](#rf64writer)
+
+#### `Rf64FormatDescriptor`
+
+Exposes an RF64 / BWF (EBU 3306, Broadcast Wave) file as a channel-extractable pseudo-archive: a `FULL.rf64` blob (Kind `Track`), one mono WAV per decoded channel (Kind `Channel`), and any ancillary chunks such as `bext` or `LIST`/`INFO` (Kind `Tag`). Targets the `RF64` magic only — plain `RIFF` WAV is owned by the Wav descriptor.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rf64FormatDescriptor` | `Rf64FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `Rf64Reader`
+
+Parses an RF64 / BWF (EBU 3306, Broadcast Wave) container into its `fmt ` geometry, interleaved little-endian PCM `data` body, and any ancillary chunks (e.g. `bext`, `LIST`/`INFO`). RF64 is a RIFF variant for files larger than 4 GiB: the top-level magic is `RF64` and a per-chunk 32-bit size of `0xFFFFFFFF` is a sentinel meaning "the real 64-bit size lives in the `ds64` chunk".
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Rf64Reader` | `Rf64Reader()` |  |
+| `Read` | `ParsedRf64 Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `Rf64Reader.ParsedRf64`
+
+Represents a parsed rf 64.
+
+Implements `IEquatable<ParsedRf64>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedRf64` | `ParsedRf64(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks, uint? ChannelMask = null)` | Represents a parsed rf 64. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `ChannelMask` | `uint? ChannelMask { get; init; }` |  |
+| `FormatCode` | `int FormatCode { get; init; }` |  |
+| `InterleavedPcm` | `byte[] InterleavedPcm { get; init; }` |  |
+| `MetadataChunks` | `IReadOnlyList<ValueTuple<string, byte[]>> MetadataChunks { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `Rf64Writer`
+
+Assembles a valid RF64 / BWF container from interleaved little-endian PCM. The written file always carries a leading `ds64` chunk holding the real 64-bit `riffSize`/`dataSize`, and uses the `0xFFFFFFFF` sentinel in both the top-level `RF64` size and the `data` chunk size so the result is a conformant RF64 image that round-trips through `Rf64Reader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Build` | `static byte[] Build(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode, byte[] bext)` | Builds an RF64 blob. `formatCode` is the WAVE format tag (1 = integer PCM, 3 = IEEE float). When `bext` is non-null it is written verbatim as a `bext` chunk (Broadcast Audio Extension). |
+
+### Namespace `FileFormat.Roq`
+
+[`RoqFormatDescriptor`](#roqformatdescriptor)
+
+#### `RoqFormatDescriptor`
+
+id Software RoQ (`.roq`) multimedia container — the cinematics format of Quake III and the id Tech 3 engine. A RoQ file is a stream of chunks, each a `u16 id | u32 size | u16 arg` header followed by `size` payload bytes. Audio lives in two chunk types: `0x1020` (mono) and `0x1021` (stereo), both RoQ square-table DPCM at 22050 Hz, with the initial predictor(s) carried in `arg`. Video chunks (`0x1001` info, `0x1002` codebook, `0x1011` VQ frame) are counted but not decoded here. Surfaced as a pseudo-archive: `FULL.roq` (Container), the concatenated decoded sound as `MONO.wav` or `LEFT.wav`/`RIGHT.wav` (Channel) and a `metadata.ini` (Tag) reporting the chunk inventory. Authoring encodes a WAV to one RoQ sound chunk via `RoqDpcmCodec`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RoqFormatDescriptor` | `RoqFormatDescriptor()` |  |
 | `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
@@ -2530,6 +8522,1050 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sbc`
+
+[`SbcFormatDescriptor`](#sbcformatdescriptor)
+
+#### `SbcFormatDescriptor`
+
+Raw Bluetooth SBC / mSBC container surfaced as a pseudo-archive. An SBC file is a bare concatenation of self-describing frames, each starting with a syncword — `0x9C` for ordinary A2DP SBC, `0xAD` for mSBC (wide-band speech). There is no file-level header and no embedded sample-rate beyond what each frame carries. Detection: a single syncword byte is far too weak to register as a confident magic, so the descriptor declares `0x9C` at offset 0 with low confidence and the registry's structural validation confirms it by walking several consecutive valid frame headers (`ReadFrames`). The `.sbc` / `.msbc` extensions provide the primary, reliable dispatch. The archive view surfaces `FULL.sbc` (the byte-exact stream, Kind `Container`), one decoded mono PCM WAV per channel (Kind `Channel`, named per the speaker layout) and `metadata.ini` (Kind `Tag`) describing the first frame's parameters and the frame count. The format is read-only: there is no SBC encoder here.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SbcFormatDescriptor` | `SbcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sdat`
+
+[`SdatFormatDescriptor`](#sdatformatdescriptor) · [`SdatReader`](#sdatreader) · [`SdatReader.FileEntry`](#sdatreaderfileentry) · [`SdatReader.ParsedSdat`](#sdatreaderparsedsdat)
+
+#### `SdatFormatDescriptor`
+
+Exposes a Nintendo DS sound archive (`.sdat`) as a pseudo-archive: `FULL.sdat` (the byte-exact archive), a `metadata.ini` summary, and every carried file surfaced by its own magic. `SWAV` samples are embedded raw (`files/NNN.swav`, Kind `Sample`) and also decoded to `files/NNN.wav`; `SWAR` wave archives have each contained wave decoded as a sample; `SSEQ`/`SBNK`/`STRM` and other carried files are surfaced raw (`files/NNN.<type>`, Kind `Stream`). Names are taken from FAT indices. Read-only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SdatFormatDescriptor` | `SdatFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SdatReader`
+
+Parses a Nintendo DS sound archive (`.sdat`, magic `SDAT`, little-endian) into the list of files it carries. The NDS binary header is followed by four (u32 offset, u32 size) block references — SYMB (optional, may be absent → offset 0), INFO, FAT and FILE. The FAT block (`"FAT "` + size + count + count × (offset, size, u64 pad)) gives the absolute offset and length of every embedded file inside the FILE block. Each carried file is detected by its own 4-byte magic (`SWAV`, `SWAR`, `SSEQ`, `SBNK`, `STRM`, …).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SdatReader` | `SdatReader()` |  |
+| `Read` | `ParsedSdat Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `SdatReader.FileEntry`
+
+Represents a file entry.
+
+Implements `IEquatable<FileEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FileEntry` | `FileEntry(int Index, int Offset, int Size, string Magic, byte[] Data)` | Represents a file entry. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Magic` | `string Magic { get; init; }` |  |
+| `Offset` | `int Offset { get; init; }` |  |
+| `Size` | `int Size { get; init; }` |  |
+
+#### `SdatReader.ParsedSdat`
+
+Represents a parsed sdat.
+
+Implements `IEquatable<ParsedSdat>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSdat` | `ParsedSdat(int Version, IReadOnlyList<FileEntry> Files)` | Represents a parsed sdat. |
+| `Files` | `IReadOnlyList<FileEntry> Files { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
+
+### Namespace `FileFormat.Sds`
+
+[`SdsFormatDescriptor`](#sdsformatdescriptor)
+
+#### `SdsFormatDescriptor`
+
+Exposes a MIDI Sample Dump Standard file (`.sds`) as a pseudo-archive: `FULL.sds` (the byte-exact SysEx dump) plus the decoded mono sample (`samples/000.wav`) and a `metadata.ini` summary. The dump-header packet describes word size, sample rate (1e9 / period) and length; data packets carry the samples packed MSB-first as septets (7 bits per byte, bit 6 first), which are reassembled, normalised to 16-bit and surfaced as a playable WAV. Read-only; trailing/truncated data packets are tolerated.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SdsFormatDescriptor` | `SdsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sf2`
+
+[`Sf2FormatDescriptor`](#sf2formatdescriptor)
+
+#### `Sf2FormatDescriptor`
+
+Exposes a SoundFont 2 bank (`.sf2`) as a pseudo-archive: `FULL.sf2` (the byte-exact bank) plus one playable 16-bit mono WAV per sample header (`samples/NNN_<name>.wav`, each at its own sample rate), an INI summary (`metadata.ini`) and the INFO sub-chunks as `metadata/<id>.txt` tags. ROM samples and the terminal `EOS` sentinel header are skipped. Read-only — rebuilding a valid bank requires the full `pdta` generator chain.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Sf2FormatDescriptor` | `Sf2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Shn`
+
+[`ShnFormatDescriptor`](#shnformatdescriptor)
+
+#### `ShnFormatDescriptor`
+
+Exposes a Shorten (`.shn`) file as a pseudo-archive of `FULL.shn` (the byte-exact container) plus one decoded mono PCM WAV per channel, named per `ChannelLayout` (mono → `MONO.wav`, stereo → `LEFT.wav`/`RIGHT.wav`). A `metadata.ini` records the decoded properties and notes that the Shorten container carries no sample rate — the surfaced WAVs assume 44100 Hz. If the stream cannot be decoded (e.g. an unsupported file type or a QLPC-encoded stream this codec cannot reconstruct), the descriptor degrades gracefully to a `FULL.shn`-only view rather than failing the listing.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ShnFormatDescriptor` | `ShnFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sid`
+
+[`SidDecomposer`](#siddecomposer) · [`SidDecomposer.Entry`](#siddecomposerentry) · [`SidDecomposer.EntryKinds`](#siddecomposerentrykinds) · [`SidFormatDescriptor`](#sidformatdescriptor)
+
+#### `SidDecomposer`
+
+Surfaces a C64 PSID/RSID tune as a read-only pseudo-archive: the verbatim file, parsed (big-endian) header metadata — name, author, copyright, song count, version and the SID chip model decoded from the v2+ flags — plus the raw C64 program data blob. It never emulates the 6502 or the SID chip and never throws from listing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompose` | `static List<Entry> Decompose(byte[] file)` | Performs the decompose operation. |
+
+#### `SidDecomposer.Entry`
+
+Represents an entry.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data, string Kind)` | Represents an entry. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `string Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+#### `SidDecomposer.EntryKinds`
+
+Represents an entry kinds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tag` | `const string Tag` | Defines the tag constant value. |
+| `Track` | `const string Track` | Defines the track constant value. |
+
+#### `SidFormatDescriptor`
+
+Surfaces a Commodore 64 SID tune (`.sid`) as a metadata-rich pseudo-archive. A SID file carries a 6510 program that drives the C64's MOS 6581/8580 SID chip(s). The C64 program image is surfaced verbatim as a Kind `Stream` blob, and — for PSID tunes — the start song is emulated (6510 core + register-level SID synthesis) and rendered to playable WAVs (44100 Hz, 16-bit), respecting the header's per-chip SID models (6581 / 8580 / 6582-as-8580) and clock (PAL/NTSC). Stereo matrix. A 2SID/3SID tune declares extra chips via the v3/v4 secondSIDAddress/thirdSIDAddress bytes ($Dxx0; validated even and in $42-$7E or $E0-$FE). 1 SID → `MONO.wav`; 2 SID → `LEFT.wav` (SID #1) + `RIGHT.wav` (SID #2); 3 SID → adds `CENTER.wav` (SID #3). Each WAV is one decoded chip (a player mixes CENTER 0.5/0.5). Per-chip models come from flag bits 4-5 (SID #1), 6-7 (SID #2), 8-9 (SID #3); a secondary chip's 00 means "like SID #1". When SID #1's model flag is 00 (unknown) or 11 (either) the set is rendered twice with `_6581`/`_8580` suffixes (e.g. `MONO_6581.wav` + `MONO_8580.wav`), each capped at 20 s; a single specified-model render runs 30 s. RSID and BASIC tunes degrade to header/program-only. The header is big-endian and exists in two magic variants — `PSID` (BASIC/KERNAL-assisted) and `RSID` (real C64 environment). Fields: u16 version (1-4), u16 dataOffset, u16 loadAddr, u16 initAddr, u16 playAddr, u16 songs, u16 startSong, u32 speed, then three 32-byte name/author/released strings. Version 2+ adds a u16 flags word (decoded into clock PAL/NTSC and SID model 6581/8580), plus startPage / pageLength and the second/third SID chip addresses. The C64 program begins at `dataOffset`; when `loadAddr == 0` the real load address is the first two (little-endian) bytes of that program. The program is surfaced as `program.bin`. Read-only; parsing degrades to FULL-only on malformed input.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SidFormatDescriptor` | `SidFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Siren`
+
+[`SirenFormatDescriptor`](#sirenformatdescriptor)
+
+#### `SirenFormatDescriptor`
+
+Raw Siren7 / ITU-T G.722.1 container surfaced as a pseudo-archive. Siren7 is a headerless stream of fixed-size frames (each frame decodes to `FrameSize` = 320 samples at 16 kHz mono); the frame size in bytes is set by the encoder's bitrate and is not stored in the stream. Raw `.sir` / `.g7221` files are uncommon and carry no magic, so dispatch is extension-only and detection is low-confidence structural (the byte length must be a whole multiple of the assumed frame size). The default assumed frame size is `DefaultFrameBytes` (60 bytes ≙ 24 kbit/s at the 50 frame/s Siren7 rate). The archive view surfaces `FULL.g7221` (the byte-exact stream, Kind `Container`), `MONO.wav` (the decoded 16-bit PCM, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Read-only: G.722.1 has no encoder here. Scope: only Siren7 / G.722.1 (16 kHz, 14 regions) is decoded; G.722.1 Annex C (Siren14, 32 kHz) is not supported by the underlying codec.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SirenFormatDescriptor` | `SirenFormatDescriptor()` |  |
+| `DefaultFrameBytes` | `const int DefaultFrameBytes` | Assumed bytes per Siren7 frame (24 kbit/s at 50 frame/s ⇒ 60 bytes). |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Smk`
+
+[`SmkFormatDescriptor`](#smkformatdescriptor)
+
+#### `SmkFormatDescriptor`
+
+Surfaces a Smacker container (`.smk`, 'SMK2'/'SMK4') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.smk` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each present audio track's concatenated chunks are surfaced as `TRACKn.bin` (Kind `Stream`) and, for compressed Smacker audio (SMKA) or uncompressed PCM, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.SmackerAudio` / PCM, with a graceful fallback to the raw blob on any decode failure. Bink-audio-in-Smacker tracks remain blob-only. Read-only; parsing degrades gracefully.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmkFormatDescriptor` | `SmkFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Smp`
+
+[`SmpFormatDescriptor`](#smpformatdescriptor) · [`SmpReader`](#smpreader) · [`SmpReader.ParsedSmp`](#smpreaderparsedsmp) · [`SmpWriter`](#smpwriter)
+
+#### `SmpFormatDescriptor`
+
+Exposes a Turtle Beach SampleVision (.smp) file as an archive of `FULL.smp` plus a single mono WAV (the signed 16-bit little-endian samples surface verbatim as `MONO.wav`) and a `metadata.ini`. SampleVision is a mono-only format.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmpFormatDescriptor` | `SmpFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SmpReader`
+
+Turtle Beach SampleVision (.smp) parser. A little-endian, mono-only sample format: char[18] magic `"SOUND SAMPLE DATA "`.char[4] version (e.g. `"2.1 "`).char[60] comment, char[30] name.uint32 sample count, then that many signed 16-bit little-endian samples.trailer: 8 loop records (uint32 start, uint32 end, byte type, uint16 count), 8 markers (char[10] name + uint32 position), byte MIDI unity note, uint32 sample rate in Hz.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmpReader` | `SmpReader()` |  |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `LoopCount` | `const int LoopCount` | Defines the loop count constant value. |
+| `LoopRecordSize` | `const int LoopRecordSize` | Defines the loop record size constant value. |
+| `MagicLength` | `const int MagicLength` | Defines the magic length constant value. |
+| `Magic` | `const string Magic` | Defines the magic constant value. |
+| `MarkerCount` | `const int MarkerCount` | Defines the marker count constant value. |
+| `MarkerRecordSize` | `const int MarkerRecordSize` | Defines the marker record size constant value. |
+| `TrailerSize` | `const int TrailerSize` | Defines the trailer size constant value. |
+| `Read` | `ParsedSmp Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `SmpReader.ParsedSmp`
+
+Represents a parsed smp.
+
+Implements `IEquatable<ParsedSmp>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSmp` | `ParsedSmp(string Version, string Comment, string Name, uint SampleCount, int SampleRate, int MidiUnity, byte[] SamplesLe)` | Represents a parsed smp. |
+| `Comment` | `string Comment { get; init; }` |  |
+| `MidiUnity` | `int MidiUnity { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `SampleCount` | `uint SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesLe` | `byte[] SamplesLe { get; init; }` |  |
+| `Version` | `string Version { get; init; }` |  |
+
+#### `SmpWriter`
+
+Writes a Turtle Beach SampleVision (.smp) file: the 112-byte header, the uint32 sample count, the signed 16-bit little-endian samples and a zeroed loop / marker trailer terminated by the MIDI unity note and the sample rate. Mono only. Used by `SmpFormatDescriptor` to assemble a file from a mono WAV.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SmpWriter` | `SmpWriter()` |  |
+| `Write` | `byte[] Write(byte[] samplesLe, int sampleRate, string name = "", string comment = "", int midiUnity = 60)` | Builds a SampleVision file from interleaved-but-mono signed 16-bit little-endian `samplesLe` at `sampleRate` Hz. |
+
+### Namespace `FileFormat.Sndr`
+
+[`SndrFormatDescriptor`](#sndrformatdescriptor)
+
+#### `SndrFormatDescriptor`
+
+Exposes a PC "Sounder" `.sndr` file as an archive of `FULL.sndr`, `MONO.wav` and `metadata.ini`, and assembles one back from a mono 8-bit WAV. Sounder is a minimal mono 8-bit-unsigned format with an 8-byte little-endian header: `u16` mode/format word (0).`u16` sample rate in hertz.`u16` volume / playback flag (not surfaced as audio).`u16` reserved. The 8-bit unsigned sample data follows. The format carries no magic, so it is reached by its `.sndr` extension or explicit lookup.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SndrFormatDescriptor` | `SndrFormatDescriptor()` |  |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sndt`
+
+[`SndtFormatDescriptor`](#sndtformatdescriptor)
+
+#### `SndtFormatDescriptor`
+
+Exposes a "SoundTool" `.sndt` file as an archive of `FULL.sndt`, `MONO.wav` and `metadata.ini`, and assembles one back from a mono 8-bit WAV. SoundTool is a mono 8-bit-unsigned format identified by the ASCII magic `SOUND` followed by the 0x1A (EOF) byte. The 18-byte little-endian header is: `char[5]` magic `"SOUND"`.`u8` 0x1A terminator.`u16` reserved / padding.`u32` sample-data length in bytes (at offset 8).`u32` sample rate in hertz (at offset 12, sanity-clamped to 4000..96000; otherwise the default 8000 Hz is assumed).`u16` bits-per-sample hint (at offset 16; only 8-bit data is decoded). The 8-bit unsigned sample data follows the header.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SndtFormatDescriptor` | `SndtFormatDescriptor()` |  |
+| `HeaderSize` | `const int HeaderSize` | Defines the header size constant value. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sol`
+
+[`SolFormatDescriptor`](#solformatdescriptor)
+
+#### `SolFormatDescriptor`
+
+Sierra SOL (`.sol`) sound effects, as parsed by FFmpeg's `sol.c`. The little-endian header is `u32 magic | u16 sampleRate | u8 type`, where the magic is one of `0x0B8D`, `0x0C0D`, `0x0C8D` and the `type` byte's low bits are flags: bit 0 = 16-bit, bit 1 = stereo, bit 2 = DPCM. The payload is therefore one of: 8-bit unsigned PCM (no flags),16-bit signed LE PCM (bit 0),SOL DPCM (bit 2) — 8-bit old/new table or 16-bit integrate, decoded via `SolDpcmCodec`. Surfaced as a pseudo-archive: `FULL.sol` (Container), one mono `MONO.wav` or `LEFT.wav`/`RIGHT.wav` (Channel) and `metadata.ini` (Tag). Authoring writes the 16-bit PCM variant (magic `0x0C8D`, type bit 0 set), symmetric with the reader.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SolFormatDescriptor` | `SolFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Spc`
+
+[`SpcFormatDescriptor`](#spcformatdescriptor)
+
+#### `SpcFormatDescriptor`
+
+Exposes an SPC700 sound-file save-state (`.spc`) as a pseudo-archive: `FULL.spc` (the byte-exact save state), the ID666 tag block as `metadata.ini`, one decoded mono WAV per extractable BRR sample (`samples/NN.wav`, 32000 Hz), and — when the tune can be emulated — the rendered stereo song as `LEFT.wav` / `RIGHT.wav` (32000 Hz). The render boots the SPC700 CPU and S-DSP from the snapshot (see `Codec.Spc700`). An SPC file is a 0x10180-byte snapshot of the SNES audio subsystem: a 33-byte signature, an ID666 tag block at `0x2E`, the 64 KB APU RAM (ARAM) at `0x100`, and the 128 S-DSP registers at `0x10100`. Samples are located via the S-DSP `DIR` register (`0x5D`): the sample directory lives at `ARAM[DIR × 0x100]` as up to 256 four-byte entries (u16 LE start address, u16 LE loop address). Each referenced BRR chain is walked to its end-flagged block and decoded. Read-only — reconstructing a playable save state requires a full APU snapshot.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SpcFormatDescriptor` | `SpcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Sphere`
+
+[`SphereFormatDescriptor`](#sphereformatdescriptor) · [`SphereReader`](#spherereader) · [`SphereReader.ParsedSphere`](#spherereaderparsedsphere) · [`SphereWriter`](#spherewriter)
+
+#### `SphereFormatDescriptor`
+
+Exposes a NIST SPHERE (`.sph`) speech file as an archive of `FULL.sph`, one mono WAV per channel (after decoding μ-law or byte-swapping big-endian linear PCM), and a `metadata.ini` carrying every parsed header field. Compressed codings (`embedded-shorten`, `embedded-wavpack`) and any unrecognised coding are surfaced as `FULL.sph` only — no channel entries, no throw.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SphereFormatDescriptor` | `SphereFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SphereReader`
+
+NIST SPHERE (`.sph`) header parser. The file opens with the fixed magic line `NIST_1A\n` followed by a line giving the total header size in ASCII decimal (canonically `" 1024\n"`). The remaining header is a sequence of `name -type value` object lines terminated by a line reading `end_head`; sample data starts at the declared header offset. The header fields relevant to decoding are `channel_count`, `sample_rate`, `sample_n_bytes`, `sample_byte_format` (`01` = little-endian, `10` = big-endian) and `sample_coding` (`pcm`, `ulaw` or a compressed variant such as `pcm,embedded-shorten-…`).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SphereReader` | `SphereReader()` |  |
+| `Read` | `ParsedSphere Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `SphereReader.ParsedSphere`
+
+Represents a parsed sphere.
+
+Implements `IEquatable<ParsedSphere>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSphere` | `ParsedSphere(int ChannelCount, int SampleRate, int SampleNBytes, string SampleByteFormat, string SampleCoding, byte[] SampleData, IReadOnlyList<ValueTuple<string, string>> Fields)` | Represents a parsed sphere. |
+| `ChannelCount` | `int ChannelCount { get; init; }` |  |
+| `Fields` | `IReadOnlyList<ValueTuple<string, string>> Fields { get; init; }` |  |
+| `SampleByteFormat` | `string SampleByteFormat { get; init; }` |  |
+| `SampleCoding` | `string SampleCoding { get; init; }` |  |
+| `SampleData` | `byte[] SampleData { get; init; }` |  |
+| `SampleNBytes` | `int SampleNBytes { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `SphereWriter`
+
+Writes a minimal little-endian linear-PCM NIST SPHERE file: the fixed `NIST_1A` magic, a 1024-byte header carrying `channel_count`, `sample_rate`, `sample_n_bytes` (2), `sample_byte_format` (`01` = little-endian), `sample_coding` (`pcm`) and `sample_count`, padded to the header size, followed by the interleaved little-endian samples. The output round-trips through `SphereReader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SphereWriter` | `SphereWriter()` |  |
+| `Write` | `byte[] Write(byte[] interleavedLe, int channels, int sampleRate, int bitsPerSample)` | Writes the value to the supplied output. |
+
+### Namespace `FileFormat.Stm`
+
+[`StmFormatDescriptor`](#stmformatdescriptor)
+
+#### `StmFormatDescriptor`
+
+Exposes a Scream Tracker 2 (`.stm`) module as a read-only pseudo-archive of `FULL.stm` (byte-exact original), `metadata.ini`, the packed pattern blocks as `patterns/pattern_NN.bin` (each 1024 bytes) and one playable mono WAV per instrument that carries sample data under `samples/NN_{name}.wav`.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StmFormatDescriptor` | `StmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Svx`
+
+[`Svx8FormatDescriptor`](#svx8formatdescriptor) · [`SvxReader`](#svxreader) · [`SvxReader.ParsedSvx`](#svxreaderparsedsvx) · [`SvxWriter`](#svxwriter)
+
+#### `Svx8FormatDescriptor`
+
+Exposes an Amiga IFF / 8SVX file as an archive of `FULL.8svx` plus one mono WAV per channel (the 8-bit signed PCM is decoded — Fibonacci-delta when needed — and rebiased to WAV's unsigned 8-bit), plus a `metadata.ini` and any text chunks (`NAME`, `ANNO`, …). Mono surfaces as `MONO.wav`; stereo surfaces as `LEFT.wav` / `RIGHT.wav` by de-planarising the BODY halves.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Svx8FormatDescriptor` | `Svx8FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SvxReader`
+
+IFF / 8SVX (Amiga "8-bit sampled voice") parser. The file is a big-endian IFF container — `FORM` | uint32 size | `8SVX` | chunks — where each chunk is a 4-byte id, a uint32 big-endian body length, the body, and a pad byte when the length is odd. Recognised chunks: `VHDR` — Voice8Header: one-shot / repeat sample counts, samples per high-octave cycle, sample rate, octave count, compression mode and volume.`CHAN` — channel allocation: 2 = left, 4 = right, 6 = stereo. For stereo the body stores all left samples then all right samples (planar halves) of octave 0.`BODY` — 8-bit signed PCM, or Fibonacci-delta compressed bytes when `VHDR.sCompression` is 1.`NAME` / `ANNO` / `AUTH` / `(c) ` — text metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SvxReader` | `SvxReader()` |  |
+| `ChannelLeft` | `const int ChannelLeft` | Defines the channel left constant value. |
+| `ChannelRight` | `const int ChannelRight` | Defines the channel right constant value. |
+| `ChannelStereo` | `const int ChannelStereo` | Defines the channel stereo constant value. |
+| `CompressionFibonacci` | `const int CompressionFibonacci` | Defines the compression fibonacci constant value. |
+| `CompressionNone` | `const int CompressionNone` | Defines the compression none constant value. |
+| `DecodeFibonacciDelta` | `static byte[] DecodeFibonacciDelta(ReadOnlySpan<byte> compressed)` | Decodes Fibonacci-delta compressed sample bytes. The stream begins with one pad byte and one initial sample value; every subsequent byte holds two 4-bit codes (high nibble first) that index `_codeToDelta`. Each output sample is the previous sample plus the delta, wrapped to a signed byte. The decoded length is `2 * (compressed.Length - 2)`. |
+| `Read` | `ParsedSvx Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `SvxReader.ParsedSvx`
+
+Represents a parsed svx.
+
+Implements `IEquatable<ParsedSvx>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSvx` | `ParsedSvx(uint OneShotHiSamples, uint RepeatHiSamples, uint SamplesPerHiCycle, int SampleRate, int Octaves, int Compression, int Channels, byte[] Body, IReadOnlyList<ValueTuple<string, string>> Tags)` | Represents a parsed svx. |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Compression` | `int Compression { get; init; }` |  |
+| `Octaves` | `int Octaves { get; init; }` |  |
+| `OneShotHiSamples` | `uint OneShotHiSamples { get; init; }` |  |
+| `RepeatHiSamples` | `uint RepeatHiSamples { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `SamplesPerHiCycle` | `uint SamplesPerHiCycle { get; init; }` |  |
+| `Tags` | `IReadOnlyList<ValueTuple<string, string>> Tags { get; init; }` |  |
+
+#### `SvxWriter`
+
+Writes an uncompressed IFF / 8SVX file: `FORM` wrapper around a `VHDR`, optional `CHAN` and a `BODY` of 8-bit signed PCM. For stereo the left samples are written first, then the right samples (the planar layout 8SVX uses for a stereo voice at octave 0). Used by `Svx8FormatDescriptor` to assemble a file from per-channel mono WAVs.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SvxWriter` | `SvxWriter()` |  |
+| `Write` | `byte[] Write(IReadOnlyList<byte[]> signedHalves, int sampleRate)` | Builds an uncompressed 8SVX. `signedHalves` holds one entry for mono, or two (left then right) for stereo; each is signed 8-bit PCM with the same length. |
+
+### Namespace `FileFormat.Swav`
+
+[`SwarReader`](#swarreader) · [`SwavFormatDescriptor`](#swavformatdescriptor) · [`SwavReader`](#swavreader) · [`SwavReader.ParsedSwav`](#swavreaderparsedswav) · [`SwavWriter`](#swavwriter)
+
+#### `SwarReader`
+
+Parses a Nintendo DS wave archive (`SWAR`): an NDS header identical in shape to a SWAV's (magic, BOM, version, fileSize, headerSize, numBlocks) followed by a `DATA` block that holds a record count and an offset table. Each table offset points at a SWAVINFO record (12-byte info header + sample data) which `ReadRecord` decodes. The last record runs to the start of the next record (or to end-of-archive for the final entry).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SwarReader` | `SwarReader()` |  |
+| `Read` | `IReadOnlyList<ParsedSwav> Read(ReadOnlySpan<byte> data)` | Decodes every wave contained in a SWAR archive. |
+
+#### `SwavFormatDescriptor`
+
+Exposes a Nintendo DS `.swav` sample as a pseudo-archive: `FULL.swav` (the byte-exact file), a decoded `MONO.wav` (16-bit mono at the sample's rate) and a `metadata.ini` describing wave type, rate and loop. PCM8, PCM16 and IMA-ADPCM wave types decode; anything the reader cannot handle falls back to `FULL.swav` only. Creatable from a single mono WAV (encoded losslessly as PCM16) or a `FULL.swav` passthrough.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SwavFormatDescriptor` | `SwavFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `SwavReader`
+
+Parses a Nintendo DS `.swav` sample (and the equivalent SWAVINFO + data record carried inside an `SWAR` wave archive) into decoded 16-bit mono PCM. Three wave types are recognised: `0` = signed PCM8, `1` = PCM16 (little-endian), `2` = IMA-ADPCM. The NDS IMA-ADPCM variant is the standard IMA scheme: the data record opens with a 4-byte state header (u16 initial predictor, u16 initial step index) followed by nibble pairs, LOW nibble first. The standard 89-entry step table and index-adjust table apply, seeded with the header's initial predictor/index.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SwavReader` | `SwavReader()` |  |
+| `ReadRecord` | `ParsedSwav ReadRecord(ReadOnlySpan<byte> data, int infoOffset, int recordEnd)` | Decodes a single SWAVINFO record (12-byte info header + sample data) located at `infoOffset` and ending at `recordEnd` (exclusive). Used for stand-alone `.swav` files and for each record contained in an `SWAR` archive. |
+| `Read` | `ParsedSwav Read(ReadOnlySpan<byte> data)` | Decodes a complete `.swav` file (NDS header + `DATA` block). |
+| `ShortsToLe` | `static byte[] ShortsToLe(short[] samples)` | Serialises PCM16 samples to little-endian bytes (the WAV sample order). |
+
+#### `SwavReader.ParsedSwav`
+
+Represents a parsed swav.
+
+Implements `IEquatable<ParsedSwav>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedSwav` | `ParsedSwav(int WaveType, bool Loop, int SampleRate, int Time, int LoopOffset, int NonLoopLength, short[] Pcm)` | Represents a parsed swav. |
+| `LoopOffset` | `int LoopOffset { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `NonLoopLength` | `int NonLoopLength { get; init; }` |  |
+| `Pcm` | `short[] Pcm { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Time` | `int Time { get; init; }` |  |
+| `WaveType` | `int WaveType { get; init; }` |  |
+
+#### `SwavWriter`
+
+Builds a Nintendo DS `.swav` sample from mono PCM16. Only the lossless PCM16 wave type (`1`) is written, so the result round-trips exactly through `SwavReader`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SwavWriter` | `SwavWriter()` |  |
+| `Write` | `byte[] Write(short[] pcm, int sampleRate)` | Writes a non-looping PCM16 SWAV at `sampleRate`. |
+
+### Namespace `FileFormat.Tta`
+
+[`TtaFormatDescriptor`](#ttaformatdescriptor)
+
+#### `TtaFormatDescriptor`
+
+Exposes a True Audio (`.tta`) file as a pseudo-archive of `FULL.tta` (Kind `Container`) plus, when the bitstream decodes, one mono WAV per channel (Kind `Channel`, named via `ChannelLayout`) and a `metadata.ini` (Kind `Tag`). Decode failures degrade gracefully to a FULL-only listing. The descriptor is also creatable (WORM): it assembles a fresh `.tta` either by passing through a supplied `FULL.tta` or by interleaving per-channel mono WAVs and encoding them with `TtaCodec`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TtaFormatDescriptor` | `TtaFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Txw`
+
+[`TxwFormatDescriptor`](#txwformatdescriptor)
+
+#### `TxwFormatDescriptor`
+
+Exposes a Yamaha TX16W wave file (`.txw`) as a pseudo-archive: `FULL.txw` (the byte-exact wave) plus the decoded mono channel (`MONO.wav`) and a `metadata.ini` summary. TX16W stores 12-bit samples packed three bytes per two samples; they are unpacked, sign-extended and shifted to 16-bit PCM. The header rate code selects the playback rate (33333 / 50000 / 16667, default 16949). Create re-packs a single mono WAV back to 12-bit (lossy: the low 4 bits are truncated).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TxwFormatDescriptor` | `TxwFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `CodeFromRate` | `static byte CodeFromRate(int rate)` | Performs the code from rate operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Decode12Bit` | `static byte[] Decode12Bit(ReadOnlySpan<byte> packed)` | Unpacks 12-bit packed TXW data (3 bytes → 2 samples) into 16-bit signed LE PCM. |
+| `Encode12Bit` | `static byte[] Encode12Bit(ReadOnlySpan<byte> pcm16)` | Packs 16-bit signed LE PCM into 12-bit TXW data (lossy: low 4 bits dropped). |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `RateFromCode` | `static int RateFromCode(byte code)` | Performs the rate from code operation. |
+
+### Namespace `FileFormat.Ult`
+
+[`UltFormatDescriptor`](#ultformatdescriptor)
+
+#### `UltFormatDescriptor`
+
+Exposes an UltraTracker (MAS_UTrack) module as a pseudo-archive of `FULL.ult` (Kind `Container`), a `metadata.ini` (Kind `Tag`) and one playable WAV per sample (Kind `Sample`).
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UltFormatDescriptor` | `UltFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Vag`
+
+[`VagFormatDescriptor`](#vagformatdescriptor)
+
+#### `VagFormatDescriptor`
+
+Exposes a Sony `.vag` file (PS1/PS2 SPU-ADPCM, "VAGp" container) as an archive of `FULL.vag`, one decoded mono PCM `MONO.wav`, and a `metadata.ini` carrying the stream name, sample rate and version. VAG is a mono container — stereo content is distributed as two files or interleaved variants and is treated here as a single mono stream. The header is BIG-endian: `magic "VAGp" | u32 version | u32 reserved | u32 dataSize | u32 sampleRate | 12 reserved bytes | char name[16] @0x20 | data @0x30`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VagFormatDescriptor` | `VagFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Vgm`
+
+[`VgmDecomposer`](#vgmdecomposer) · [`VgmDecomposer.Entry`](#vgmdecomposerentry) · [`VgmDecomposer.EntryKinds`](#vgmdecomposerentrykinds) · [`VgmFormatDescriptor`](#vgmformatdescriptor)
+
+#### `VgmDecomposer`
+
+Surfaces a VGM (Video Game Music) register-dump as a read-only pseudo-archive: the verbatim file, parsed header metadata (version, active chips, sample counts, loop), the GD3 tag (title/author/game/system in EN+JP) and the raw command stream blob. Transparently gunzips the .vgz (gzip-wrapped) variant to read the header while keeping FULL as the original (possibly gzipped) bytes. It never emulates any sound chip and never throws from listing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decompose` | `static List<Entry> Decompose(byte[] file)` | Performs the decompose operation. |
+
+#### `VgmDecomposer.Entry`
+
+Represents an entry.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, byte[] Data, string Kind)` | Represents an entry. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `string Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+
+#### `VgmDecomposer.EntryKinds`
+
+Represents an entry kinds.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tag` | `const string Tag` | Defines the tag constant value. |
+| `Track` | `const string Track` | Defines the track constant value. |
+
+#### `VgmFormatDescriptor`
+
+Surfaces a Video Game Music log (`.vgm` / gzip-compressed `.vgz`) as a read-only pseudo-archive: `FULL.vgm` (the byte-exact, decompressed log), `metadata.ini` (version, duration, and every populated chip clock), the `commands.bin` command stream, and — when a GD3 tag block is present — its eleven UTF-16LE fields as `metadata/gd3.ini`. The VGM header is little-endian. Versions below 1.50 use a fixed 0x40-byte header; from 1.50 the data offset at `0x34` (relative to `0x34`) gives the start of the command log. GD3 lives at the relative offset stored at `0x14`.When every nonzero chip clock in the header is one this workbench can synthesise (currently SN76489 and/or YM2612), the command stream is executed and the rendered tune is surfaced as `LEFT.wav` / `RIGHT.wav` (stereo 44100 Hz, single pass — the loop point is not expanded — capped at 600 s). VGMs that also use unsupported chips keep the metadata-only view and note which chip blocked rendering. Read-only — there is no synthesis back to a playable log.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VgmFormatDescriptor` | `VgmFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Voc`
+
+[`VocFormatDescriptor`](#vocformatdescriptor) · [`VocReader`](#vocreader) · [`VocReader.ParsedVoc`](#vocreaderparsedvoc)
+
+#### `VocFormatDescriptor`
+
+Exposes a Creative Voice File (`.voc`) as an archive of `FULL.voc` (Kind `Track`), one mono `<CHANNEL>.wav` per decoded channel (Kind `Channel`), a `metadata.ini` with the stream geometry/codec and a `metadata/text.txt` for any embedded ASCII text blocks. Creation assembles a fresh VOC from per-channel mono WAV inputs (or passes through a supplied `FULL.voc`).
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VocFormatDescriptor` | `VocFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `VocReader`
+
+Creative Voice File (`.voc`) parser. The 26-byte header is `"Creative Voice File\x1A"` (19 ASCII chars + byte `0x1A`), a little-endian uint16 data-block offset (`0x001A`), a uint16 version and a uint16 checksum. After the header comes a sequence of data blocks, each `uint8 type | uint24 (3-byte LE) length | body[length]`, except the terminator block (type 0) which is a single byte with no length field. Consecutive sound blocks (types 1/2/9) are concatenated into one PCM stream. Codec 0 (8-bit unsigned PCM), the three Creative ADPCM variants — codec 1 (4-bit), codec 2 (2.6-bit) and codec 3 (2-bit), all decoded to 16-bit signed LE PCM — and codec 4 (16-bit signed LE PCM) of the legacy type-1 block, and the modern type-9 block (PCM at the stated bit depth and channel count), are decoded into `InterleavedPcm` as little-endian integer samples. The A-law (codec 6) and u-law (codec 7) variants remain undecoded, so the descriptor surfaces the FULL file only for those.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VocReader` | `VocReader()` |  |
+| `Read` | `ParsedVoc Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `VocReader.ParsedVoc`
+
+Parsed VOC: stream geometry, decoded interleaved LE PCM (or null) and any text blocks.
+
+Implements `IEquatable<ParsedVoc>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedVoc` | `ParsedVoc(int NumChannels, int SampleRate, int BitsPerSample, int Codec, byte[] InterleavedPcm, IReadOnlyList<string> TextBlocks)` | Parsed VOC: stream geometry, decoded interleaved LE PCM (or null) and any text blocks. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Codec` | `int Codec { get; init; }` |  |
+| `InterleavedPcm` | `byte[] InterleavedPcm { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `TextBlocks` | `IReadOnlyList<string> TextBlocks { get; init; }` |  |
+
+### Namespace `FileFormat.Vox`
+
+[`VoxFormatDescriptor`](#voxformatdescriptor)
+
+#### `VoxFormatDescriptor`
+
+Exposes a Dialogic `.vox` (OKI / Dialogic 4-bit ADPCM) file as an archive of `FULL.vox` (the byte-exact container), `MONO.wav` (the decoded 16-bit PCM at the assumed sample rate) and `metadata.ini` recording the assumptions. VOX is headerless — the raw file is nothing but packed ADPCM nibbles, so there is no magic signature to match on (`MagicSignatures` is empty and dispatch is by `.vox` extension only, the same approach `FlacArchiveDescriptor` uses for its headerless archive view). With no header the stream carries no rate or channel-count metadata, so the Dialogic default of mono, 8000 Hz is assumed and surfaced in `metadata.ini`.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `VoxFormatDescriptor` | `VoxFormatDescriptor()` |  |
+| `AssumedSampleRate` | `const int AssumedSampleRate` | Assumed sample rate for headerless Dialogic VOX (the Dialogic default). |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -2628,6 +9664,35 @@ Implements `IEquatable<ParsedWav>`.
 | `NumChannels` | `int NumChannels { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 
+### Namespace `FileFormat.WavArc`
+
+[`WavArcFormatDescriptor`](#wavarcformatdescriptor)
+
+#### `WavArcFormatDescriptor`
+
+Exposes a WavArc (`.wa`) file as a pseudo-archive of `FULL.wa` (Kind `Container`) plus, when the bitstream decodes, one mono WAV per channel (Kind `Channel`, named via `ChannelLayout`) and a `metadata.ini` (Kind `Tag`). The `0CPY` (raw copy) and `1DIF` (fixed-difference) methods decode byte-exact; the adaptive-LPC methods (`2SLP`/`3NLP`/`4ALP`/`5ELP`) are not yet verified and fall back to a FULL-only listing rather than emit wrong PCM. The WavArc header places its codec tag after a variable-length filename, so detection is by the `.wa` extension.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WavArcFormatDescriptor` | `WavArcFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.WavPack`
 
 [`WavPackFormatDescriptor`](#wavpackformatdescriptor)
@@ -2656,6 +9721,114 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Wave64`
+
+[`Wave64FormatDescriptor`](#wave64formatdescriptor) · [`Wave64Reader`](#wave64reader) · [`Wave64Reader.ParsedWave64`](#wave64readerparsedwave64)
+
+#### `Wave64FormatDescriptor`
+
+Exposes a Sony Wave64 (.w64) file as an archive of `FULL.w64` plus one mono WAV per channel plus any ancillary chunks. Mirrors `WavFormatDescriptor`; Wave64 is a RIFF-like container with 16-byte GUIDs and 64-bit little-endian sizes.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Wave64FormatDescriptor` | `Wave64FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `Wave64Reader`
+
+Sony Wave64 (.w64) header + per-channel PCM extraction. Wave64 is structurally a RIFF/WAVE file but uses 16-byte GUID chunk identifiers and 64-bit little-endian sizes (so it can exceed the 4 GiB RIFF ceiling). The on-disk layout is `<riff-guid> <int64 fileSize> <wave-guid>` followed by chunks, each `<chunk-guid> <int64 chunkSize> <body> <pad to 8>`. The `chunkSize` field counts the 16-byte guid and the 8-byte size field itself, so the body length is `chunkSize - 24`. Padding zero-fills the chunk up to an 8-byte boundary and is not counted in `chunkSize`.The `fmt` body is a standard `WAVEFORMATEX` (identical to WAV), and the `data` body is interleaved little-endian PCM. Reads only the `fmt` and `data` chunks; other chunks remain addressable via `OtherChunks` keyed by their 16-byte GUID.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Wave64Reader` | `Wave64Reader()` |  |
+| `DataGuid` | `static readonly byte[] DataGuid` | Provides the data guid value. |
+| `FmtGuid` | `static readonly byte[] FmtGuid` | Provides the fmt guid value. |
+| `RiffGuid` | `static readonly byte[] RiffGuid` | The standard Wave64 GUIDs. The first four bytes are the ASCII 4CC in little-endian; the trailing 12 bytes are the fixed Wave64 tail (the riff guid uses a distinct tail). |
+| `WaveGuid` | `static readonly byte[] WaveGuid` | Provides the wave guid value. |
+| `Read` | `ParsedWave64 Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `Wave64Reader.ParsedWave64`
+
+Represents a parsed wave 64.
+
+Implements `IEquatable<ParsedWave64>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedWave64` | `ParsedWave64(int NumChannels, int SampleRate, int BitsPerSample, int FormatCode, byte[] InterleavedPcm, IReadOnlyList<ValueTuple<byte[], byte[]>> OtherChunks, uint? ChannelMask = null)` | Represents a parsed wave 64. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `ChannelMask` | `uint? ChannelMask { get; init; }` |  |
+| `FormatCode` | `int FormatCode { get; init; }` |  |
+| `InterleavedPcm` | `byte[] InterleavedPcm { get; init; }` |  |
+| `NumChannels` | `int NumChannels { get; init; }` |  |
+| `OtherChunks` | `IReadOnlyList<ValueTuple<byte[], byte[]>> OtherChunks { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+### Namespace `FileFormat.Wem`
+
+[`WemFormatDescriptor`](#wemformatdescriptor) · [`WemReader`](#wemreader)
+
+#### `WemFormatDescriptor`
+
+Exposes an Audiokinetic Wwise `.wem` file as a read-only pseudo-archive of `FULL.wem`, one decoded mono PCM WAV per channel (named per `ChannelLayout`), a `metadata.ini` (format tag, sample rate, channels), and any auxiliary chunks (`akd `, `cue `, …) as `metadata/<id>.bin`. WEM shares WAV's `RIFF…WAVE` magic, so this descriptor registers no magic signature (mirroring `FlacArchiveDescriptor`): WAV keeps the magic and WEM is reached by its `.wem` extension or explicit registry lookup.Decoding dispatches on the `fmt ` tag: `0x0002` (Wwise IMA) → `WwiseImaCodec`; `0x0001`/`0xFFFE` (PCM) → channel split; everything else (e.g. `0xFFFF` Wwise Vorbis) surfaces FULL plus a metadata note only.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WemFormatDescriptor` | `WemFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `WemReader`
+
+Parses an Audiokinetic Wwise encoded-media `.wem` file. WEM reuses the RIFF/WAVE container (`RIFF…WAVE`) with Wwise-specific `fmt ` contents and extra chunks (`data`, `akd `, `cue `, …). This reader walks the chunk list, captures the `fmt ` fields and the `data` region, and keeps every other chunk addressable as a raw blob.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WemReader` | `WemReader(ReadOnlySpan<byte> data)` | Initializes a new instance of `WemReader`. |
+| `BitsPerSample` | `int BitsPerSample { get; }` | Gets or sets the bits per sample. |
+| `BlockAlign` | `int BlockAlign { get; }` | Gets or sets the block align. |
+| `ChannelMask` | `ulong ChannelMask { get; }` | Gets or sets the channel mask. |
+| `Channels` | `int Channels { get; }` | Gets or sets the channels. |
+| `Data` | `byte[] Data { get; }` | Gets or sets the data. |
+| `ExtraChunks` | `IReadOnlyList<ValueTuple<string, byte[]>> ExtraChunks { get; }` | Every non-fmt/non-data chunk, in file order: (4CC id, raw body bytes). |
+| `FormatTag` | `int FormatTag { get; }` | Gets or sets the format tag. |
+| `SampleRate` | `int SampleRate { get; }` | Gets or sets the sample rate. |
 
 ### Namespace `FileFormat.WwiseBnk`
 
@@ -2728,6 +9901,70 @@ Parses a Wwise SoundBank (.bnk) file as a sequence of RIFF-style 4CC+uint32-size
 | `ExtractChunk` | `byte[] ExtractChunk(string tag)` | Reads a top-level chunk's raw body bytes by its 4CC tag. |
 | `ExtractWem` | `byte[] ExtractWem(WemEntry e)` | Performs the extract wem operation. |
 
+### Namespace `FileFormat.Xa`
+
+[`XaFormatDescriptor`](#xaformatdescriptor)
+
+#### `XaFormatDescriptor`
+
+Exposes a CD-ROM XA / PlayStation streaming-ADPCM audio file (`.xa`) as a pseudo-archive of `FULL.xa` (the byte-exact container, Kind `Container`) plus one decoded mono `MONO.wav` or stereo `LEFT.wav`/`RIGHT.wav` (Kind `Channel`) at the coding-info sample rate, plus a `metadata.ini` (Kind `Tag`) carrying rate, channel layout, file/channel ids and sector count. Two on-disk layouts are recognised: RIFF/CDXA: `"RIFF" | u32 size | "CDXA"`, an `fmt ` chunk and a `data` chunk of raw 2352-byte CD sectors.raw sectors: bare 2352-byte Mode-2 sectors (12-byte sync `00 FF×10 00` + 3-byte address + mode + 8-byte subheader) or 2336-byte Mode-2 sectors that begin directly with the 8-byte subheader. Only sectors whose XA submode marks them as AUDIO carry sound; the descriptor concatenates every audio sector belonging to the FIRST (file#, channel#) stream it encounters and notes any other streams in the metadata. Inputs the decoder can't handle gracefully degrade to a FULL-only listing.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XaFormatDescriptor` | `XaFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Xi`
+
+[`XiFormatDescriptor`](#xiformatdescriptor)
+
+#### `XiFormatDescriptor`
+
+Exposes a FastTracker II instrument (`.xi`) as a pseudo-archive: `FULL.xi` (the byte-exact instrument) plus one playable WAV per sample (`samples/NN_<name>.wav`) and a `metadata.ini` summary. Sample data is stored FT2 delta-encoded (the same running-sum scheme XM uses); it is decoded here and surfaced as canonical PCM (8-bit → WAV unsigned 8-bit; 16-bit → signed). Each sample's WAV rate is the C-4 playback rate derived from its relative note and finetune. Read-only — rebuilding a valid instrument requires the full envelope chain.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XiFormatDescriptor` | `XiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `DecodeDelta16` | `static byte[] DecodeDelta16(ReadOnlySpan<byte> delta)` | FT2 16-bit delta decode: each stored s16 LE value is a delta; output is the running sum (s16 LE). |
+| `DecodeDelta8` | `static byte[] DecodeDelta8(ReadOnlySpan<byte> delta)` | FT2 8-bit delta decode: each stored byte is a signed delta; output is the running sum. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
 ### Namespace `FileFormat.Xm`
 
 [`XmFormatDescriptor`](#xmformatdescriptor)
@@ -2756,6 +9993,145 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileFormat.Xmi`
+
+[`XmiFormatDescriptor`](#xmiformatdescriptor) · [`XmiToMidiConverter`](#xmitomidiconverter) · [`XmiToMidiConverter.Song`](#xmitomidiconvertersong)
+
+#### `XmiFormatDescriptor`
+
+Surfaces a Miles XMIDI (`.xmi`) file as a read-only pseudo-archive: `FULL.xmi` (the byte-exact IFF file), `metadata.ini` (song count and per-song timbre lists), and one converted Standard MIDI File per song under `songs/NN.mid`. Falls back to FULL-only when no song can be converted.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XmiFormatDescriptor` | `XmiFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `XmiToMidiConverter`
+
+Converts a Miles XMIDI (`.xmi`) song into a Standard MIDI File (format 0). XMIDI is an IFF-based format. The interesting part is the `EVNT` chunk: it carries near-MIDI events with two key differences — note-on events carry an explicit varint duration (there are no note-off events; the off must be scheduled at `t + duration`), and inter-event delays are encoded as runs of bytes whose value is < 0x80 (each such byte adds its full value to the delay, with 0x7F chaining into the next byte).Timing convention: XMIDI ticks run at 120 Hz. The emitted SMF keeps those ticks 1:1 as MIDI delta ticks, declaring a division of 60 ticks/quarter with the default tempo of 500000 µs/quarter, giving 60 / 0.5 = 120 ticks per second.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Division` | `const int Division` | Defines the division constant value. |
+| `TempoMicrosPerQuarter` | `const int TempoMicrosPerQuarter` | Defines the tempo micros per quarter constant value. |
+| `Convert` | `static IReadOnlyList<Song> Convert(ReadOnlySpan<byte> data)` | Parses the IFF wrapper and returns one converted SMF per XMID song. Throws `InvalidDataException` when the IFF structure is invalid. |
+
+#### `XmiToMidiConverter.Song`
+
+Represents a song.
+
+Implements `IEquatable<Song>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Song` | `Song(byte[] Midi, IReadOnlyList<byte> Timbres)` | Represents a song. |
+| `Midi` | `byte[] Midi { get; init; }` |  |
+| `Timbres` | `IReadOnlyList<byte> Timbres { get; init; }` |  |
+
+### Namespace `FileFormat.Xwb`
+
+[`XwbFormatDescriptor`](#xwbformatdescriptor) · [`XwbReader`](#xwbreader) · [`XwbReader.BankInfo`](#xwbreaderbankinfo) · [`XwbReader.EntryInfo`](#xwbreaderentryinfo) · [`XwbReader.ParsedXwb`](#xwbreaderparsedxwb)
+
+#### `XwbFormatDescriptor`
+
+Exposes a Microsoft XACT Wave Bank (`.xwb`) as a pseudo-archive: `FULL.xwb` (the byte-exact bank), a `metadata.ini` summary, and one playable WAV per decodable entry (`samples/NNN_<name>.wav`, names taken from ENTRYNAMES when present, Kind `Sample`). PCM (8/16-bit) and MS-ADPCM entries decode; XMA entries decode best-effort (graceful fallback); WMA entries are skipped with a metadata note. Read-only — rebuilding a bank requires the full XACT toolchain.
+
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XwbFormatDescriptor` | `XwbFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+#### `XwbReader`
+
+Parses a Microsoft XACT Wave Bank (`.xwb`, magic `WBND`, little-endian) into its bank metadata and per-entry decoded PCM. The v43+ layout is targeted: a "WBND" + version header is followed by a five-entry segment table (BANKDATA, ENTRYMETADATA, SEEKTABLES, ENTRYNAMES, ENTRYWAVEDATA), each a (u32 offset, u32 length) pair. Two compact-format wave codecs decode — PCM (8/16-bit) and MS-ADPCM (via `MsAdpcmCodec`) always decode; XMA entries decode best-effort via the WMA-Pro-derived `XmaCodec` with a graceful fallback to the raw blob; WMA entries are reported but skipped (no PCM is produced for them).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `XwbReader` | `XwbReader()` |  |
+| `Read` | `ParsedXwb Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+
+#### `XwbReader.BankInfo`
+
+Represents a bank info.
+
+Implements `IEquatable<BankInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BankInfo` | `BankInfo(uint Flags, int EntryCount, string BankName, int EntryMetaDataElementSize, int EntryNameElementSize, uint Alignment)` | Represents a bank info. |
+| `Alignment` | `uint Alignment { get; init; }` |  |
+| `BankName` | `string BankName { get; init; }` |  |
+| `EntryCount` | `int EntryCount { get; init; }` |  |
+| `EntryMetaDataElementSize` | `int EntryMetaDataElementSize { get; init; }` |  |
+| `EntryNameElementSize` | `int EntryNameElementSize { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+
+#### `XwbReader.EntryInfo`
+
+Represents an entry info.
+
+Implements `IEquatable<EntryInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EntryInfo` | `EntryInfo(int Index, string Name, int FormatTag, int Channels, int SampleRate, int BlockAlign, int BitsPerSample, int PlayRegionOffset, int PlayRegionLength, bool Decodable, short[] Pcm)` | Represents an entry info. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `BlockAlign` | `int BlockAlign { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Decodable` | `bool Decodable { get; init; }` |  |
+| `FormatTag` | `int FormatTag { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Pcm` | `short[] Pcm { get; init; }` |  |
+| `PlayRegionLength` | `int PlayRegionLength { get; init; }` |  |
+| `PlayRegionOffset` | `int PlayRegionOffset { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `XwbReader.ParsedXwb`
+
+Represents a parsed xwb.
+
+Implements `IEquatable<ParsedXwb>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ParsedXwb` | `ParsedXwb(int Version, BankInfo Bank, IReadOnlyList<EntryInfo> Entries)` | Represents a parsed xwb. |
+| `Bank` | `BankInfo Bank { get; init; }` |  |
+| `Entries` | `IReadOnlyList<EntryInfo> Entries { get; init; }` |  |
+| `Version` | `int Version { get; init; }` |  |
 
 ### Namespace `GroovyCodecs.Mp3`
 
@@ -3549,7 +10925,7 @@ Represents a residue entry.
 | `Partitions` | `int Partitions { get; }` | Gets the partitions. |
 | `ResidueType` | `ResidueType ResidueType { get; }` | Gets the residue type. |
 | `SecondStages` | `int[] SecondStages { get; }` | Gets the second stages. |
-| `Clone` | `ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)` | Performs the clone operation. |
+| `Clone` | `ResidueEntry Clone(ResidueType residueTypeOverride, int groupingOverride)` | Performs the clone operation. The array members are copied: the setup templates are process-wide singletons and `FillBooks` writes per-stream book ids into `SecondStages` and `BookList`, so sharing the arrays would leak one encoder's book numbering into the next stream that clones the same template. |
 
 #### `ResidueLimitType`
 
