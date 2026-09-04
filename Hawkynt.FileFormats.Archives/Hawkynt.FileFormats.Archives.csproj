@@ -236,6 +236,8 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Flv\FileFormat.Flv.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.MpegPs\FileFormat.MpegPs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.MpegTs\FileFormat.MpegTs.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Sup\FileFormat.Sup.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.VobSub\FileFormat.VobSub.csproj" PrivateAssets="all" />

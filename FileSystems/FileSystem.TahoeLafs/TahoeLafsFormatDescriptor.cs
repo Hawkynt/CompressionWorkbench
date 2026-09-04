@@ -20,7 +20,7 @@ namespace FileSystem.TahoeLafs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tahoe-LAFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
-public sealed class TahoeLafsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveDefragmentable {
+public sealed class TahoeLafsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -95,16 +95,4 @@ public sealed class TahoeLafsFormatDescriptor : IFormatDescriptor, IArchiveForma
       WriteFile(outputDir, e.Name, r.Extract(e));
     }
   }
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException("TahoeLafs read-only — defragmentation requires a writer.");
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options)
-    => throw new NotSupportedException("TahoeLafs read-only — defragmentation requires a writer.");
 }

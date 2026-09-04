@@ -95,6 +95,31 @@ public sealed class FormatCreateOptions {
     return result;
   }
 
+  /// <summary>
+  /// A field-for-field copy, with <see cref="FormatSpecific"/> re-materialised under the
+  /// case-insensitive comparer the property initializer uses.
+  /// </summary>
+  /// <remarks>
+  /// Conversion paths that rebuilt this object by hand forwarded only <see cref="FormatSpecific"/>
+  /// and silently dropped the password, method, level and every other knob the caller had set.
+  /// Copying keeps the whole option set on the far side of the boundary.
+  /// </remarks>
+  public FormatCreateOptions Copy() => new() {
+    MethodName = this.MethodName,
+    Password = this.Password,
+    Optimize = this.Optimize,
+    Level = this.Level,
+    DictSize = this.DictSize,
+    WordSize = this.WordSize,
+    Threads = this.Threads,
+    SolidSize = this.SolidSize,
+    ForceCompress = this.ForceCompress,
+    EncryptFilenames = this.EncryptFilenames,
+    EncryptionMethod = this.EncryptionMethod,
+    IncompressiblePaths = this.IncompressiblePaths,
+    FormatSpecific = FormatSpecificFrom(this.FormatSpecific),
+  };
+
   /// <summary>True when the caller explicitly supplied a non-empty value for <paramref name="key"/>.</summary>
   public bool HasOption(string key)
     => this.FormatSpecific.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value);

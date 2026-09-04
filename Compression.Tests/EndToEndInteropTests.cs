@@ -379,7 +379,8 @@ public class EndToEndInteropTests {
     ".ani",
     // AppleSingle entry IDs come from a documented namespace; arbitrary names map to a
     // synthetic high-range id whose reverse-mapping doesn't survive Extract verbatim.
-    ".as",
+    // AppleDouble shares that namespace and rejects the same generic names.
+    ".as", ".appledouble",
     // Flattened Device Tree: writer wants a property-tree shaped input, not loose files.
     ".dtb",
     // MS-SHLLINK shortcut: writer emits one target — multi-input round-trip drops every

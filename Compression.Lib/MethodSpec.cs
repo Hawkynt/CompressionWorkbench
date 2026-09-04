@@ -27,8 +27,18 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
 
   public static MethodSpec Default => new("default", false);
 
+  /// <remarks>
+  /// Every trailing <c>+</c> is stripped, not just the last one, so the base name matches what
+  /// <see cref="Compression.Registry.MethodNameParser.Parse" /> derives on the far side of the
+  /// create boundary. That parser documents <c>deflate++</c> as "~100× effort"; stripping a single
+  /// <c>+</c> here left the base name as <c>deflate+</c>, which is not a method any creator knows.
+  /// <see cref="Optimize" /> is a flag rather than a count, so how many were stripped is reported
+  /// by <see cref="PlusLevel" /> rather than smuggled through in the name.
+  /// </remarks>
   public static MethodSpec Parse(string? input) {
     if (string.IsNullOrWhiteSpace(input)) return Default;
+    // Parsed by MethodNameParser itself rather than alongside it, so there is one
+    // reading of a method name and not two that have to be kept in step.
     var (name, plus) = Compression.Registry.MethodNameParser.Parse(input);
     return new(name.ToLowerInvariant(), plus > 0) { PlusLevel = plus };
   }
@@ -36,16 +46,27 @@ public readonly record struct MethodSpec(string Name, bool Optimize) {
   /// <summary>Whether this is the default "no preference" spec.</summary>
   public bool IsDefault => Name == "default" && !Optimize;
 
-  /// <summary>Whether this names no method at all, whatever effort it asks for.</summary>
+  /// <summary>
+  /// The method name as the registry boundary spells it: <see langword="null" /> when the spec
+  /// carries no method preference at all.
+  /// </summary>
   /// <remarks>
-  /// "default" is this side's spelling of "no preference"; the far side spells it
-  /// null. Only the name settles that, because "default+" is still no preference
-  /// about the method -- it asks for more effort at whatever the writer picks --
-  /// and reading the '+' as part of the answer handed strict creators a codec
-  /// called "default" to look up and fail on.
+  /// <see cref="Compression.Registry.FormatCreateOptions.MethodName" /> uses <see langword="null" />
+  /// for "no preference"; this side spells the same thing as the literal <c>"default"</c>. Three
+  /// further spellings mean it too and must not reach a creator either: a bare <c>"+"</c> parses to
+  /// an empty base name, <c>default(MethodSpec)</c> leaves the name null, and <c>"default+"</c>
+  /// keeps the sentinel while setting <see cref="Optimize" />. <see cref="IsDefault" /> answers
+  /// false for that last one — it also requires <c>!Optimize</c>, which is right for the tier
+  /// decision in <c>ArchiveOperations.ConvertCore</c> but wrong for the boundary, where a
+  /// <c>-m default+</c> then handed every creator a method literally named "default": the lenient
+  /// ones ignored it and the strict ones correctly refused it as unknown.
   /// </remarks>
-  public bool NamesNoMethod => Name == "default";
+  public string? EffectiveName => Name is null or "" or "default" ? null : Name;
 
+  /// <remarks>
+  /// The whole run of <c>+</c> is printed, not one of them, because this is what a
+  /// writer that re-parses the name it was handed reads its effort tier out of.
+  /// </remarks>
   public override string ToString() => PlusLevel > 0 ? Name + new string('+', PlusLevel) : Name;
 
   // ── ZIP method resolution ───────────────────────────────────────────

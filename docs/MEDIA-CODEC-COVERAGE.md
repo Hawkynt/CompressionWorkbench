@@ -4,7 +4,7 @@ CompressionWorkbench deliberately separates **containers**, **audio codecs**, an
 
 The detailed ledgers are now split accordingly:
 
-- [Media containers and ISO-BMFF brands](MEDIA-CONTAINER-COVERAGE.md)
+- [Media containers](../Hawkynt.FileFormats.Archives/README.md) — *Media containers* table in the archive package README
 - [Audio codecs and WAVE/ACM identifiers](AUDIO-CODEC-COVERAGE.md)
 - [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
 
