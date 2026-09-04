@@ -304,9 +304,26 @@
          A WrapPanel rather than one row: the row already filled the window at its minimum width,
          and adding to it pushed "Minimal geometry" off the left edge, because a right-aligned
          StackPanel overflows leftwards and clips silently. Each group wraps as a unit instead.
-         Scramble sits next to Defragment because it is the thing Defragment undoes. -->
-    <WrapPanel Grid.Row="6" HorizontalAlignment="Right">
-      <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+
+         The panel flows right-to-left so a wrapped group stays against the right edge like the row
+         it came from rather than jumping to the left; the groups themselves flow the normal way,
+         and are listed here rightmost-first for that reason. Scramble sits next to Defragment
+         because it is the thing Defragment undoes. -->
+    <WrapPanel Grid.Row="6" HorizontalAlignment="Right" FlowDirection="RightToLeft">
+      <StackPanel Orientation="Horizontal" Margin="0,4,0,0" FlowDirection="LeftToRight">
+        <TextBlock Text="Seed" VerticalAlignment="Center" Margin="0,0,4,0"
+                   ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+        <TextBox x:Name="ScrambleSeedBox" Text="1" Width="60" Padding="2" Margin="0,0,8,0"
+                 VerticalContentAlignment="Center" IsEnabled="False"
+                 ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+        <Button x:Name="ScrambleBtn" Content="Scramble" Width="100" Padding="4" Margin="0,0,8,0"
+                Click="OnScramble" IsEnabled="False"
+                ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content is preserved; only the layout changes. Asks first." />
+        <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
+                Click="OnRun" IsDefault="True" IsEnabled="False" />
+        <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,4,8,0" FlowDirection="LeftToRight">
         <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
                   Margin="0,0,8,0" IsEnabled="False"
                   ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
@@ -319,22 +336,9 @@
         <Button x:Name="WipeEmptyBtn" Content="Wipe Empty" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnWipeEmpty" IsEnabled="False"
                 ToolTip="Zero-fill all unused space: free clusters, cluster-tip slack, dead bytes. Forensic cleanliness tool." />
-        <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4" Margin="0,0,8,0"
+        <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4"
                 Click="OnShrink" IsEnabled="False"
                 ToolTip="Defragment + truncate trailing free space to minimize image size." />
-      </StackPanel>
-      <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-        <TextBlock Text="Seed" VerticalAlignment="Center" Margin="0,0,4,0"
-                   ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
-        <TextBox x:Name="ScrambleSeedBox" Text="1" Width="60" Padding="2" Margin="0,0,8,0"
-                 VerticalContentAlignment="Center" IsEnabled="False"
-                 ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
-        <Button x:Name="ScrambleBtn" Content="Scramble" Width="100" Padding="4" Margin="0,0,8,0"
-                Click="OnScramble" IsEnabled="False"
-                ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content is preserved; only the layout changes. Asks first." />
-        <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
-                Click="OnRun" IsDefault="True" IsEnabled="False" />
-        <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
       </StackPanel>
     </WrapPanel>
   </Grid>
