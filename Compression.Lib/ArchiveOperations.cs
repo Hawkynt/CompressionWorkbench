@@ -488,14 +488,41 @@ public static class ArchiveOperations {
     return inputs;
   }
 
-  public static bool Test(string path, string? password) {
+  /// <summary>
+  /// Verifies an archive's integrity. <see langword="true" /> only when the archive is intact;
+  /// <see langword="false" /> for a corrupt archive <em>and</em> for a healthy file this library
+  /// cannot test. Callers that need to tell those apart should use <see cref="TestDetailed" />.
+  /// </summary>
+  public static bool Test(string path, string? password)
+    => TestDetailed(path, password) == ArchiveTestResult.Ok;
+
+  /// <summary>
+  /// Verifies an archive's integrity, separating "this is broken" from "this is not something I
+  /// can check".
+  /// </summary>
+  /// <remarks>
+  /// The single-bool answer conflated the two: a healthy text file, or an archive in a format with
+  /// no registered descriptor, came back false and was reported as a failed integrity check. That
+  /// is the wrong answer to a different question — nothing is wrong with the file, the library
+  /// simply has no verifier for it.
+  /// </remarks>
+  public static ArchiveTestResult TestDetailed(string path, string? password) {
+    var format = FormatDetector.Detect(path);
+    if (format == F.Unknown) return ArchiveTestResult.NotTestable;
+
+    FormatRegistration.EnsureInitialized();
+    var isStream = FormatDetector.IsStreamFormat(format);
+    if (!isStream
+        && Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString()) == null
+        && Compression.Registry.FormatRegistry.GetStreamOps(format.ToString()) == null)
+      return ArchiveTestResult.NotTestable;
+
     try {
-      var format = FormatDetector.Detect(path);
       using var fs = File.OpenRead(path);
 
-      if (FormatDetector.IsStreamFormat(format)) {
+      if (isStream) {
         DecompressToNull(fs, format);
-        return true;
+        return ArchiveTestResult.Ok;
       }
 
       // Try extracting each entry to verify integrity
@@ -508,10 +535,15 @@ public static class ArchiveOperations {
           try { Extract(path, tempDir, password, null); } finally { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); }
           break;
       }
-      return true;
+      return ArchiveTestResult.Ok;
+    }
+    catch (NotSupportedException) {
+      // The format is registered but this particular container is beyond the reader -- an
+      // unsupported codec or variant, not damage.
+      return ArchiveTestResult.NotTestable;
     }
     catch {
-      return false;
+      return ArchiveTestResult.Corrupt;
     }
   }
 
