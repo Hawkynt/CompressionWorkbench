@@ -30,6 +30,23 @@ public sealed class FormatCreateOptions {
   /// <summary>Whether "+" optimization was requested.</summary>
   public bool Optimize { get; init; }
 
+  /// <summary>
+  /// How many "+" were requested: 0 for none, 1 for "+", 2 for "++", and so on.
+  /// Defaults to what <see cref="Optimize"/> says when nobody set it, so a caller
+  /// that only knows about the flag still reads back a consistent level.
+  /// </summary>
+  /// <remarks>
+  /// A writer offering more than one effort tier -- the DoubleSpace / DriveSpace
+  /// CVF codecs declare "ds-lz77", "ds-lz77+" and "ds-lz77++" -- cannot tell the
+  /// second tier from the third through a bool.
+  /// </remarks>
+  public int OptimizeLevel {
+    get => this._optimizeLevel > 0 ? this._optimizeLevel : this.Optimize ? 1 : 0;
+    init => this._optimizeLevel = value;
+  }
+
+  private readonly int _optimizeLevel;
+
   /// <summary>Compression level (0-9), or null for format default.</summary>
   public int? Level { get; init; }
 

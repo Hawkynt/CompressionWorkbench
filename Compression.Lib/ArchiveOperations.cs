@@ -138,6 +138,7 @@ public static class ArchiveOperations {
       // "+" forms that IsDefault answers false for because they set Optimize.
       MethodName = opts.Method.EffectiveName,
       Optimize = opts.Method.Optimize,
+      OptimizeLevel = opts.Method.PlusLevel,
       Level = opts.Level,
       DictSize = opts.DictSize,
       WordSize = opts.WordSize,

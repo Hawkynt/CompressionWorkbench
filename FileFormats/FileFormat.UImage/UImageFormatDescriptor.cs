@@ -20,7 +20,7 @@ namespace FileFormat.UImage;
 ///   <item><description><c>https://github.com/u-boot/u-boot</c> — U-Boot sources — <c>include/image.h</c> defines the 64-byte legacy header</description></item>
 /// </list>
 /// </summary>
-public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
@@ -38,7 +38,7 @@ public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -98,6 +98,18 @@ public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       if (files != null && files.Length > 0 && !MatchesFilter(e.Name, files)) continue;
       WriteFile(outputDir, e.Name, e.Data);
     }
+  }
+
+  /// <summary>
+  /// Writes a fresh uImage: the single payload input becomes the body, a
+  /// <c>metadata.ini</c> alongside it -- the one this descriptor's own reader
+  /// renders -- supplies the header fields, and both CRCs are computed the way
+  /// <c>mkimage</c> computes them.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    var (header, body) = UImageWriter.From(inputs);
+    UImageWriter.Write(output, header, body);
   }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {

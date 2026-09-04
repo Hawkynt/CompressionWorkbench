@@ -220,7 +220,7 @@ public sealed class DoubleSpaceFormatDescriptor : IFormatDescriptor, IArchiveFor
 
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DoubleSpace60,
-      MethodName = options.MethodName,
+      MethodName = MethodWithEffort(options),
     };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);

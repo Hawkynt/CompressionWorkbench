@@ -14,18 +14,8 @@ namespace FileFormat.Nrg;
 ///   <item><description>No official specification — proprietary Nero format, reverse-engineered</description></item>
 /// </list>
 /// </summary>
-public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
+public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "NRG is a Nero disc image (raw ISO 9660 sectors + footer) — defragmentation isn't meaningful.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 
   /// <summary>
   /// Gets the id.

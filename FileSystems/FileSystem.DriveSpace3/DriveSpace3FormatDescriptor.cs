@@ -219,7 +219,7 @@ public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFor
 
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DriveSpace3,
-      MethodName = options.MethodName,
+      MethodName = MethodWithEffort(options),
     };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);

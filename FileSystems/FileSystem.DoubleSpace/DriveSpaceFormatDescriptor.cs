@@ -128,7 +128,7 @@ public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveForm
     var method = options.HasOption("Method") ? options.GetOption("Method", "ds-lz77") : options.MethodName;
     var w = new DoubleSpaceWriter {
       Variant = CvfVariant.DriveSpace62,
-      MethodName = method,
+      MethodName = MethodWithEffort(options, method),
     };
     foreach (var (name, data) in FlatFiles(inputs))
       w.AddFile(name, data);
