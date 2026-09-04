@@ -305,6 +305,14 @@
       <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
                 Margin="0,0,8,0" IsEnabled="False"
                 ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
+      <TextBlock Text="Seed" VerticalAlignment="Center" Margin="0,0,4,0"
+                 ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+      <TextBox x:Name="ScrambleSeedBox" Text="1" Width="64" Padding="2" Margin="0,0,8,0"
+               VerticalContentAlignment="Center" IsEnabled="False"
+               ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+      <Button x:Name="ScrambleBtn" Content="Scramble" Width="100" Padding="4" Margin="0,0,8,0"
+              Click="OnScramble" IsEnabled="False"
+              ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content is preserved; only the layout changes. Asks first." />
       <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
               Click="OnCompact" IsEnabled="False"
               ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />

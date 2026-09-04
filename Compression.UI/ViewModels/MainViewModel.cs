@@ -88,6 +88,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand PurgeEntryCommand { get; }
   public ICommand WipeEntryCommand { get; }
   public ICommand CompactEntryCommand { get; }
+  public ICommand ScrambleEntryCommand { get; }
   public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
 
@@ -147,6 +148,7 @@ internal sealed class MainViewModel : ViewModelBase {
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.WipeEmpty), _ => CanMaintain(Views.MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compact), _ => CanMaintain(Views.MaintenanceVerb.Compact));
+    ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Scramble), _ => CanMaintain(Views.MaintenanceVerb.Scramble));
     ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
   }
@@ -353,6 +355,7 @@ internal sealed class MainViewModel : ViewModelBase {
       Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
       Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
+      Views.MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
       _ => false,
     };
   }

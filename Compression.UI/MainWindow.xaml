@@ -243,6 +243,8 @@
             </MenuItem>
             <MenuItem Header="_Wipe Empty..." Command="{Binding WipeEntryCommand}"
                       ToolTip="Overwrite only unused space (free clusters, slack, deleted entries). Live data untouched." />
+            <MenuItem Header="Scra_mble..." Command="{Binding ScrambleEntryCommand}"
+                      ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content preserved; asks first." />
           </MenuItem>
           <MenuItem Header="Con_vert Archive..." Click="OnConvertArchive"
                     ToolTip="Convert the selected file (or the open archive) to another format" />

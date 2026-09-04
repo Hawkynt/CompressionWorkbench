@@ -1423,6 +1423,76 @@ defragCmd.SetAction((ParseResult ctx) => {
   return totalFail > 0 && totalOk == 0 ? 1 : 0;
 });
 
+// ── scramble ──────────────────────────────────────────────────────────
+
+var scrambleImageArg = new Argument<string>("image") { Description = "Filesystem image to scatter in place" };
+var scrambleSeedOpt = new Option<int>("--seed") {
+  Description = "Seeds the shuffle; the same seed deals the same layout every run",
+  DefaultValueFactory = _ => 1,
+};
+var scrambleYesOpt = new Option<bool>("--yes") {
+  Description = "Confirm that this image is meant to be fragmented",
+};
+var scrambleCmd = new Command("scramble", """
+  Scatter every allocation block of every file across the whole data area, so a
+  volume that was laid out tidily comes back fragmented. The reverse of
+  defragment, and the reason it exists: a defragmenter pointed only at volumes
+  that were already in order has not been tested.
+
+  Content is preserved exactly -- only where it lives changes. The volume's own
+  structures (reserved area, allocation tables, bitmaps, a fixed root, bad
+  blocks) are left where they are, since they are what finds everything else.
+
+  --seed fixes the layout: the same seed over the same volume deals the same
+  result on every machine, which is what makes a scrambled image usable as a
+  fixture or a screenshot.
+
+  Examples:
+    cwb scramble disk.img --seed 20250904 --yes
+    cwb defragment disk.img --mode pack-start   Put it back
+
+  Only descriptors that implement IFilesystemScrambleable accept this command,
+  and there is no rebuild fallback: a rebuild lays a volume out contiguously, so
+  a scramble that fell back to one would report success having done the
+  opposite. Currently: FAT12 / FAT16 / FAT32, FATX and ext.
+  """) { scrambleImageArg, scrambleSeedOpt, scrambleYesOpt };
+scrambleCmd.SetAction((ParseResult ctx) => {
+  var imageArg = ctx.GetValue(scrambleImageArg)!;
+  var seed = ctx.GetValue(scrambleSeedOpt);
+
+  // Nothing wants a real image fragmented, so saying so is the price of entry.
+  // Without this the verb is one mistyped word away from defragment.
+  if (!ctx.GetValue(scrambleYesOpt)) {
+    Console.Error.WriteLine(
+      "scramble fragments the image in place and is meant for exercising a defragmenter. "
+      + "Pass --yes to confirm.");
+    return 1;
+  }
+
+  if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(imageArg);
+  var ops = FormatRegistry.GetById(format.ToString());
+  if (ops is not IFilesystemScrambleable scrambler) {
+    Console.Error.WriteLine($"{format} cannot be scattered in place.");
+    return 1;
+  }
+
+  try {
+    Console.Write($"Scrambling {Path.GetFileName(imageArg)} ({format}, seed={seed})...");
+    var sw = Stopwatch.StartNew();
+    using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+    scrambler.Scramble(stream, new ScrambleOptions { Seed = seed });
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+});
+
 // ── shrink ────────────────────────────────────────────────────────────
 
 var shrinkImageArg = new Argument<string>("image") { Description = "Filesystem image or VHD to shrink" };
@@ -2530,6 +2600,7 @@ var root = new RootCommand("""
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
     cwb defragment disk.img --mode pack-end   Repack files at end of image
+    cwb scramble disk.img --seed 7 --yes     Fragment on purpose (testing tool)
     cwb shrink disk.img                      Defrag + truncate trailing free space
     cwb shrink disk.vhd --compact            Also compact container (VHD sparse)
     cwb wipe-empty disk.img                  Zero all unused space in image
@@ -2546,7 +2617,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();

@@ -27,6 +27,12 @@ public enum MaintenanceVerb {
   WipeEmpty,
   /// <summary>Composite defrag → optimize → shrink: smallest valid container holding the same contents.</summary>
   Compact,
+  /// <summary>
+  /// Scatter every allocation block across the volume — fragmentation on
+  /// purpose, so <see cref="Defragment" /> has something real to undo. Content
+  /// is preserved; only where it lives changes.
+  /// </summary>
+  Scramble,
 }
 
 /// <summary>
@@ -178,6 +184,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Purge => "Purge",
       MaintenanceVerb.WipeEmpty => "Wipe Empty",
       MaintenanceVerb.Compact => "Compact",
+      MaintenanceVerb.Scramble => "Scramble",
       _ => "Maintenance",
     };
     var target = verb switch {
@@ -185,6 +192,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Purge => PurgeBtn,
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
       MaintenanceVerb.Compact => CompactBtn,
+      MaintenanceVerb.Scramble => ScrambleBtn,
       _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
@@ -312,6 +320,15 @@ public partial class DefragmentWindow : Window {
       CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
     if (MinimalGeometryCheck != null)
       MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
+
+    // Scramble is only offered by descriptors that can scatter a volume in
+    // place. There is no fallback to fall back to: a rebuild would pack the
+    // volume, which is the opposite of what the button says.
+    var canScramble = ops is IFilesystemScrambleable;
+    if (ScrambleBtn != null)
+      ScrambleBtn.IsEnabled = canScramble;
+    if (ScrambleSeedBox != null)
+      ScrambleSeedBox.IsEnabled = canScramble;
 
     var fi = new FileInfo(path);
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
@@ -1709,6 +1726,92 @@ public partial class DefragmentWindow : Window {
           Append($"OK ({sw.ElapsedMilliseconds} ms) — {liveNames.Length} file(s) erased");
           Append($"Container size: {origSize:N0} -> {newSize:N0} bytes (Δ {newSize - origSize:+#,#;-#,#;0})");
         }
+        Append("");
+        PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
+      });
+    });
+  }
+
+  /// <summary>
+  /// Scatters every allocation block of every file across the volume, so the
+  /// block map shows the interleaving the window exists to fix and Defragment
+  /// has something real to undo.
+  /// </summary>
+  /// <remarks>
+  /// It asks first, and it names the file. Every other button here either
+  /// improves the image or leaves it as it was; this one deliberately makes it
+  /// worse, and only a test wants that done to a real image.
+  /// </remarks>
+  private void OnScramble(object sender, RoutedEventArgs e) {
+    if (this._imagePath == null) return;
+    var path = this._imagePath;
+    var formatStr = FormatLbl.Text;
+    if (FormatRegistry.GetArchiveOps(formatStr) is not IFilesystemScrambleable scrambler) {
+      Append($"Scramble not supported: {formatStr} cannot scatter a volume in place.");
+      Append("");
+      return;
+    }
+
+    if (!int.TryParse(ScrambleSeedBox.Text, out var seed)) {
+      Append($"Scramble aborted — '{ScrambleSeedBox.Text}' is not a seed.");
+      Append("");
+      return;
+    }
+
+    var confirm = MessageBox.Show(this,
+      $"Fragment {Path.GetFileName(path)} on purpose?\n\n"
+      + "Every file's blocks are scattered across the volume. The contents are preserved "
+      + "exactly -- only the layout changes, and Defragment undoes it -- but this is a "
+      + "testing tool, not a repair.",
+      "Confirm Scramble", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+    if (confirm != MessageBoxResult.Yes) return;
+
+    Append($"=== {DateTime.Now:HH:mm:ss}  Scrambling {Path.GetFileName(path)} (seed {seed}) ===");
+
+    // Everything else is locked out while the layout is being rewritten, and
+    // put back exactly as it was — which buttons applied to this image is a
+    // property of the format, not of what was just run on it.
+    var others = new[] { CompactBtn, PurgeBtn, WipeEmptyBtn, ShrinkBtn, RunBtn };
+    var wasEnabled = others.Select(button => button.IsEnabled).ToArray();
+    foreach (var button in others) button.IsEnabled = false;
+    ScrambleBtn.IsEnabled = false;
+    ScrambleSeedBox.IsEnabled = false;
+    Progress.IsIndeterminate = true;
+
+    Task.Run(() => {
+      var sw = Stopwatch.StartNew();
+      Exception? err = null;
+
+      // Same bridge the defragment run uses: the map animates the scattering as
+      // it happens rather than jumping to the finished layout.
+      void OnProgress(DefragProgressEvent ev) => Dispatcher.BeginInvoke(() => {
+        if (ev.BlockMap != null) {
+          BlockMap.BlockMap = ev.BlockMap;
+          BlockMap.ImageSize = ev.ImageSize;
+        }
+        BlockMap.ReadHead = ev.CurrentReadOffset;
+        BlockMap.WriteHead = ev.CurrentWriteOffset;
+        if (ev.Fraction >= 0) Progress.Value = Math.Clamp(ev.Fraction, 0, 1) * 100;
+      });
+
+      try {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
+        scrambler.Scramble(stream, new ScrambleOptions { Seed = seed, OnProgress = OnProgress });
+      } catch (Exception ex) {
+        err = ex;
+      }
+      sw.Stop();
+
+      Dispatcher.Invoke(() => {
+        Progress.IsIndeterminate = false;
+        Progress.Value = 100;
+        for (var i = 0; i < others.Length; ++i) others[i].IsEnabled = wasEnabled[i];
+        ScrambleBtn.IsEnabled = true;
+        ScrambleSeedBox.IsEnabled = true;
+        if (err != null)
+          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err.GetType().Name}: {err.Message}");
+        else
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — the volume is fragmented; Defragment puts it back");
         Append("");
         PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
       });
