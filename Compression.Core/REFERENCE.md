@@ -118,13 +118,13 @@ Implements `IBitOrder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` |  |
-| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` |  |
-| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` |  |
-| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` |  |
-| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` |  |
-| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` |  |
-| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` |  |
+| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` | Accumulates a decoded bit into `result` at position `index`. |
+| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` | Drops `count` bits from the accumulator. |
+| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` | Extracts a single bit from the read byte-buffer and advances. |
+| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` | Inserts a byte into the read accumulator. |
+| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` | Peeks `count` bits from the accumulator without consuming. |
+| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` | Places a single bit into the write byte-buffer. |
+| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` | Returns the bit shift for the `index`-th bit during multi-bit write of `count` bits. |
 
 #### `MsbBitOrder`
 
@@ -134,13 +134,13 @@ Implements `IBitOrder`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` |  |
-| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` |  |
-| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` |  |
-| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` |  |
-| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` |  |
-| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` |  |
-| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` |  |
+| `AccumulateBits` | `static uint AccumulateBits(uint result, int bit, int index)` | Accumulates a decoded bit into `result` at position `index`. |
+| `Drop` | `static ulong Drop(ulong buffer, int bitsInBuffer, int count)` | Drops `count` bits from the accumulator. |
+| `ExtractBit` | `static ValueTuple<int, int> ExtractBit(int buffer)` | Extracts a single bit from the read byte-buffer and advances. |
+| `InsertByte` | `static ulong InsertByte(ulong buffer, int bitsInBuffer, int b)` | Inserts a byte into the read accumulator. |
+| `Peek` | `static uint Peek(ulong buffer, int bitsInBuffer, int count)` | Peeks `count` bits from the accumulator without consuming. |
+| `PlaceBit` | `static int PlaceBit(int buffer, int bitsInBuffer, int bit)` | Places a single bit into the write byte-buffer. |
+| `WriteBitIndex` | `static int WriteBitIndex(int count, int index)` | Returns the bit shift for the `index`-th bit during multi-bit write of `count` bits. |
 
 ### Namespace `Compression.Core.BuildingBlocks`
 
@@ -2347,7 +2347,7 @@ Implements `IMatchFinder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BinaryTreeMatchFinder` | `BinaryTreeMatchFinder(int windowSize)` | Initializes a new `BinaryTreeMatchFinder`. |
-| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` |  |
+| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` | Finds the best match for data at the specified position. |
 | `InsertPosition` | `void InsertPosition(ReadOnlySpan<byte> data, int position)` | Inserts a position into the tree without searching for a match. |
 
 #### `HashChainMatchFinder`
@@ -2359,7 +2359,7 @@ Implements `IMatchFinder`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `HashChainMatchFinder` | `HashChainMatchFinder(int windowSize, int maxChainDepth = 128)` | Initializes a new `HashChainMatchFinder`. |
-| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` |  |
+| `FindMatch` | `Match FindMatch(ReadOnlySpan<byte> data, int position, int maxDistance, int maxLength, int minLength = 3)` | Finds the best match for data at the specified position. |
 | `InsertPosition` | `void InsertPosition(ReadOnlySpan<byte> data, int position)` | Inserts a position into the hash chain without searching for a match. Call this for positions that are skipped (e.g., inside a matched region). |
 
 #### `IMatchFinder`
@@ -2549,8 +2549,8 @@ Implements `ILzCostModel`.
 | --- | --- | --- |
 | `DefaultLzCostModel` | `DefaultLzCostModel(double literalBits = 9, double matchTokenBits = 9)` | Creates a cost model. |
 | `Instance` | `static DefaultLzCostModel Instance { get; }` | A shared instance using the default parameters. |
-| `LiteralCost` | `double LiteralCost(byte value)` |  |
-| `MatchCost` | `double MatchCost(int length, int distance)` |  |
+| `LiteralCost` | `double LiteralCost(byte value)` | Estimated bit-cost of emitting a single literal byte. |
+| `MatchCost` | `double MatchCost(int length, int distance)` | Estimated bit-cost of emitting a (length, distance) match. |
 
 #### `FixedLzCostModel`
 
@@ -2561,8 +2561,8 @@ Implements `ILzCostModel`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FixedLzCostModel` | `FixedLzCostModel(double literalBits, double matchBits)` | Creates a flat cost model. |
-| `LiteralCost` | `double LiteralCost(byte value)` |  |
-| `MatchCost` | `double MatchCost(int length, int distance)` |  |
+| `LiteralCost` | `double LiteralCost(byte value)` | Estimated bit-cost of emitting a single literal byte. |
+| `MatchCost` | `double MatchCost(int length, int distance)` | Estimated bit-cost of emitting a (length, distance) match. |
 
 #### `ILzCostModel`
 
@@ -4957,7 +4957,7 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelH` | `PpmdModelH(int order)` | Initializes a new PPMd Model H with the specified order and default memory. |
 | `PpmdModelH` | `PpmdModelH(int order, int memorySize)` | Initializes a new PPMd Model H with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` |  |
+| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
 
 #### `PpmdModelI`
 
@@ -4969,7 +4969,7 @@ Inherits `PpmdModelBase`.
 | --- | --- | --- |
 | `PpmdModelI` | `PpmdModelI(int order)` | Initializes a new PPMd Model I with the specified order and default memory. |
 | `PpmdModelI` | `PpmdModelI(int order, int memorySize)` | Initializes a new PPMd Model I with the specified order and memory budget. |
-| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` |  |
+| `GetRescaleThreshold` | `protected override int GetRescaleThreshold()` | Gets the total frequency threshold at which a context should be rescaled. |
 
 #### `PpmdRangeDecoder`
 
@@ -7841,18 +7841,18 @@ Implements `IEquatable<FilterFileContext>`, `IFilterFileContext`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `FilterFileContext` | `FilterFileContext()` |  |
-| `AllCreatedTimes` | `IReadOnlyList<DateTime> AllCreatedTimes { get; init; }` |  |
-| `AllLastAccessedTimes` | `IReadOnlyList<DateTime> AllLastAccessedTimes { get; init; }` |  |
-| `AllLastModifiedTimes` | `IReadOnlyList<DateTime> AllLastModifiedTimes { get; init; }` |  |
-| `AllSizes` | `IReadOnlyList<long> AllSizes { get; init; }` |  |
-| `Attributes` | `uint Attributes { get; init; }` |  |
-| `Created` | `DateTime? Created { get; init; }` |  |
-| `Extension` | `string Extension { get; init; }` |  |
-| `LastAccessed` | `DateTime? LastAccessed { get; init; }` |  |
-| `LastModified` | `DateTime? LastModified { get; init; }` |  |
-| `Name` | `string Name { get; init; }` |  |
-| `Path` | `string Path { get; init; }` |  |
-| `Size` | `long Size { get; init; }` |  |
+| `AllCreatedTimes` | `IReadOnlyList<DateTime> AllCreatedTimes { get; init; }` | All creation times across the file set. Used by quartile() on the Created field. |
+| `AllLastAccessedTimes` | `IReadOnlyList<DateTime> AllLastAccessedTimes { get; init; }` | All last-accessed times across the file set. Used by quartile() on the LastAccessed field. |
+| `AllLastModifiedTimes` | `IReadOnlyList<DateTime> AllLastModifiedTimes { get; init; }` | All last-modified times across the file set. Used by quartile() on the LastModified field. |
+| `AllSizes` | `IReadOnlyList<long> AllSizes { get; init; }` | All sizes across the file set. Used by quartile() on the Size field. |
+| `Attributes` | `uint Attributes { get; init; }` | Attribute bitmask (filesystem-specific encoding); 0 when none. |
+| `Created` | `DateTime? Created { get; init; }` | Creation timestamp (UTC), or null when unavailable. |
+| `Extension` | `string Extension { get; init; }` | Extension including leading dot, lower-case. Empty when none. |
+| `LastAccessed` | `DateTime? LastAccessed { get; init; }` | Last-accessed timestamp (UTC), or null when unavailable. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Last-modified timestamp (UTC), or null when unavailable. |
+| `Name` | `string Name { get; init; }` | File name (final path segment). |
+| `Path` | `string Path { get; init; }` | Full path, '/'-separated. Empty string when not nested. |
+| `Size` | `long Size { get; init; }` | Logical file size in bytes (sum of extent lengths). |
 
 #### `IFileFilter`
 
