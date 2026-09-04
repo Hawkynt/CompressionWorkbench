@@ -7,10 +7,11 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Hammer;
 
 /// <summary>
-/// Read-only descriptor for HAMMER (DragonFly BSD original) filesystem images.
-/// Surfaces the volume header at offset 0 plus a structured metadata bundle and
-/// the raw image. Walking the HAMMER B-tree (zone blockmap → cluster → inode →
-/// records) is explicitly out of scope (multi-week effort).
+/// Descriptor for HAMMER (DragonFly BSD original) filesystem images. Walks the
+/// global B-Tree (zone blockmap → cluster → inode → records) for the files a
+/// volume holds, and writes single-volume images the DragonFly kernel mounts.
+/// A volume with no files surfaces the volume header at offset 0 plus a
+/// structured metadata bundle and the raw image instead.
 ///
 /// Magic: 8-byte uint64 <c>vol_signature = 0xC8414D4DC5523031</c> ("HAMMER01")
 /// at offset 0, serialised LE on disk as <c>31 30 52 C5 4D 4D 41 C8</c>.
@@ -57,7 +58,7 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -92,12 +93,10 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "HAMMER (DragonFly BSD original) filesystem image — volume header surface only. " +
-    "WORM emit deferred: HAMMER1 requires a real cluster B-tree (zone blockmap → " +
-    "cluster → inode → records with hammer_crc_t CRCs across every node), a per-volume " +
-    "TID generator with monotonic ordering across the whole transaction log, and a " +
-    "valid undo-fifo head/tail — none of which we can validate without a running " +
-    "DragonFly BSD instance. Multi-week effort, deferred to a future phase.";
+    "HAMMER (DragonFly BSD original) filesystem image — reads the global B-Tree, writes a " +
+    "single-volume image the DragonFly kernel mounts (validated with mount_hammer, hammer show " +
+    "and hammer checkmap), and edits an existing volume by laying it out again through the same " +
+    "writer. The UNDO-FIFO floor pins a volume at about 1 GB.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -187,6 +186,31 @@ public sealed class HammerFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // whatever the payload needs or the blockmap runs out of big-blocks.
     writer.VolumeSize = Math.Max(writer.VolumeSize, writer.ComputeAutoSize());
     writer.WriteTo(output);
+  }
+
+  /// <summary>Entries that describe the volume rather than live in it.</summary>
+  private static readonly HashSet<string> SyntheticNames =
+    new(StringComparer.OrdinalIgnoreCase) { "FULL.hammer", "metadata.ini", "volume_header.bin" };
+
+  /// <summary>
+  /// Adds or replaces files by unpacking the volume to scratch, merging the
+  /// inputs in by name and writing a fresh volume through <see cref="Create"/>.
+  /// A HAMMER volume is a gigabyte at least, so nothing is held in memory.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ModifyRebuilder.AddLargeVolume(archive, inputs, this, this, SyntheticNames);
+  }
+
+  /// <summary>
+  /// Removes the named files and writes a fresh volume without them, by the
+  /// same route as <see cref="Add"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, this, SyntheticNames);
   }
 
   /// <summary>

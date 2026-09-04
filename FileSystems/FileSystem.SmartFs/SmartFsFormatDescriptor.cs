@@ -5,12 +5,12 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.SmartFs;
 
 /// <summary>
-/// Read-only descriptor for SmartFS — the wear-levelled raw-flash
-/// filesystem in Apache NuttX RTOS. Recognises the "SMRT" format
-/// signature near the start of the format sector (NuttX
-/// CONFIG_SMARTFS_FORMAT_SIG). Sector-chain traversal + directory
-/// enumeration are out of scope; this descriptor surfaces the parsed
-/// format sector as metadata plus the raw image.
+/// Descriptor for SmartFS — the wear-levelled raw-flash filesystem in Apache
+/// NuttX RTOS. Recognises the "SMRT" format signature near the start of the
+/// format sector (NuttX CONFIG_SMARTFS_FORMAT_SIG), walks the root directory
+/// and each file's sector chain, and writes volumes in the state
+/// <c>mksmartfs</c> leaves behind. An existing volume is edited by reading its
+/// files out and laying it out again through the same writer.
 ///
 /// References:
 /// <list type="bullet">
@@ -19,7 +19,7 @@ namespace FileSystem.SmartFs;
 /// </list>
 /// </summary>
 public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveDefragmentable, IFilesystemExtentMap {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
 
   /// <summary>
   /// Largest volume the in-place pass is offered for. Its guard holds a copy of
@@ -51,7 +51,7 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -128,11 +128,57 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     options ??= new FormatCreateOptions();
 
     var sectorSize = options.GetOptionInt("SectorSize", 1024);
-    var writer = new SmartFsWriter { SectorSize = sectorSize };
-    foreach (var (name, data) in FilesOnly(inputs))
-      writer.AddFile(Path.GetFileName(name), data);
+    output.Write(BuildImage(FilesOnly(inputs).ToList(), sectorSize));
+  }
 
-    output.Write(writer.Build());
+  /// <summary>
+  /// Adds or replaces files: the volume's files are read out, the inputs merged
+  /// in by name, and the volume laid out again at its own sector size.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var sectorSize = SectorSizeOf(archive);
+    ModifyRebuilder.Add(archive, inputs, ReadEntries, files => BuildImage(files, sectorSize), StringComparer.Ordinal);
+  }
+
+  /// <summary>
+  /// Removes the named files and lays the volume out again without them, so
+  /// nothing of their bytes remains.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var sectorSize = SectorSizeOf(archive);
+    ModifyRebuilder.Remove(archive, entryNames, ReadEntries, files => BuildImage(files, sectorSize), StringComparer.Ordinal);
+  }
+
+  /// <summary>The sector size the volume was formatted with, so a rebuild keeps it.</summary>
+  private static int SectorSizeOf(Stream archive) {
+    archive.Position = 0;
+    var reader = new SmartFsReader(archive);
+    return reader.ValidFormatSector && reader.SectorSize > 0 ? (int)reader.SectorSize : 1024;
+  }
+
+  /// <summary>The files a volume holds — never the entries that describe the volume.</summary>
+  private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
+    stream.Position = 0;
+    var reader = new SmartFsReader(stream);
+    return reader.Entries
+      .Where(e => !e.IsDirectory && !IsSynthetic(e.Name))
+      .Select(e => (e.Name, reader.Extract(e)))
+      .ToList();
+  }
+
+  /// <summary>A fresh volume holding exactly the given files.</summary>
+  private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files, int sectorSize) {
+    var writer = new SmartFsWriter { SectorSize = sectorSize };
+    foreach (var (name, data) in files) {
+      var leaf = Path.GetFileName(name);
+      if (IsSynthetic(leaf)) continue;
+      writer.AddFile(leaf, data);
+    }
+    return writer.Build();
   }
 
   /// <summary>
