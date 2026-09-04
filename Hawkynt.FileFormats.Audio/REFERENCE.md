@@ -1461,7 +1461,7 @@ Flag bits in the F register (low nibble is always zero on SM83).
 
 #### `Gsm610Codec`
 
-GSM 06.10 full-rate speech codec (ETSI EN 300 961). Each 33-byte frame decodes to 160 × 16-bit PCM samples at 8 kHz. The decoder unpacks the bitstream into LAR/LTP/RPE parameters, applies RPE grid positioning and the LTP + short-term synthesis filters. The fixed-point synthesis remains a compact approximation of the ETSI reference; the encoder lives in the companion partial declaration and emits the standard 0xD signature + 260 parameter bits.
+GSM 06.10 full-rate speech codec (ETSI EN 300 961), RPE-LTP at 13 kbit/s. Each 33-byte frame carries 160 × 16-bit PCM samples at 8 kHz. Both directions are the bit-exact fixed-point algorithm of the specification, converted from the reference implementation by Jutta Degener and Carsten Bormann (Technische Universität Berlin, 1992–1994; the notice their licence requires be kept is at the top of this file): pre-processing, LPC analysis with the Schur recursion, short-term lattice filters with LAR interpolation, long-term prediction, RPE grid selection and APCM quantisation, and the de-emphasis post-processing. Streams interoperate with libgsm / toast and ffmpeg. The on-disk frame is the "toast"/`.gsm` layout: signature nibble `0xD`, then the 260 parameter bits packed MSB-first. The WAV49 65-byte double-frame variant used by Microsoft's WAVE tag 0x0031 is unpacked by the container reader before reaching this codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4107,9 +4107,9 @@ Represents an opus repacketizer.
 
 #### `AacFormatDescriptor`
 
-AAC-LC in ADTS framing. Besides the pseudo-archive view this descriptor exposes canonical PCM encode/decode and raw AAC access units for packet-preserving remux.
+AAC-LC in ADTS framing. Besides the pseudo-archive view this descriptor exposes canonical PCM encode/decode and raw AAC access units for packet-preserving remux in both directions: `TryDemux` strips the ADTS header off each access unit and `Mux` puts an equivalent one back, so a demux/mux round trip reproduces the input byte for byte without going anywhere near the decoder.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4128,15 +4128,18 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the codecs this descriptor can wrap in ADTS framing. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
 | `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` | ADTS can carry any AAC access unit whose sample rate has an index in the 13-entry table of ISO/IEC 13818-7 and whose channel count fits the 3-bit channel configuration. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
 | `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` | Writes each access unit behind a rebuilt 7-byte ADTS header. |
 | `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Ac3`
