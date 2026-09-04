@@ -6880,6 +6880,7 @@ Options for archive/stream creation, passed from the orchestration layer to form
 | `Level` | `int? Level { get; init; }` | Compression level (0-9), or null for format default. |
 | `MethodName` | `string MethodName { get; init; }` | Compression method name (e.g. "deflate", "lzma", "aac", "opus"). |
 | `Method` | `string Method { get; init; }` | Alias for `MethodName` used by codec/container creation paths. Both properties share the same backing value. |
+| `OptimizeLevel` | `int OptimizeLevel { get; init; }` | How many "+" were requested: 0 for none, 1 for "+", 2 for "++", and so on. Defaults to what `Optimize` says when nobody set it, so a caller that only knows about the flag still reads back a consistent level. |
 | `Optimize` | `bool Optimize { get; init; }` | Whether "+" optimization was requested. |
 | `Password` | `string Password { get; init; }` | Encryption password. |
 | `SolidSize` | `long SolidSize { get; init; }` | Maximum solid block size in bytes. |
@@ -6917,6 +6918,7 @@ Shared utility methods for format descriptors (path sanitization, filtering, etc
 | `FilesOnly` | `static IEnumerable<ValueTuple<string, byte[]>> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)` | Returns only file entries (non-directories) with their data, preserving paths. |
 | `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
 | `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
+| `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
 | `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
 
 #### `FormatMethodInfo`
