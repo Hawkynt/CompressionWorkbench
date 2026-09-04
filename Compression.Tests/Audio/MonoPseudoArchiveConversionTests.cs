@@ -58,6 +58,41 @@ public sealed class MonoPseudoArchiveConversionTests {
   }
 
   /// <summary>
+  /// An 8-bit source into an encoder that only takes 16-bit. The width is offered
+  /// only after the encoder has refused the one it was given, so nothing is
+  /// re-quantised that did not have to be.
+  /// </summary>
+  [TestCase("Mp3")]
+  [TestCase("Qoa")]
+  [Category("RoundTrip")]
+  public void EightBitSource_IsWidenedForTargetsThatRequireSixteen(string targetId) {
+    const int frames = 8_192;
+    var eightBit = new byte[frames];
+    for (var i = 0; i < frames; ++i)
+      eightBit[i] = (byte)(128 + (int)(Math.Sin(2 * Math.PI * 440 * i / 44_100.0) * 100));
+
+    using var input = new MemoryStream(
+      PcmCodec.ToWavBlob(eightBit, channels: 1, 44_100, bitsPerSample: 8), writable: false);
+    using var output = new MemoryStream();
+
+    AudioConversionOperation.Convert(
+      input, new WavFormatDescriptor(), output, Descriptor(targetId), new FormatCreateOptions());
+
+    Assert.That(output.Length, Is.GreaterThan(0), targetId);
+  }
+
+  /// <summary>Widening is exact: every 8-bit code maps to one 16-bit value and back.</summary>
+  [Test]
+  public void WideningEightToSixteenAndBackIsLossless() {
+    var original = new byte[256];
+    for (var i = 0; i < 256; ++i) original[i] = (byte)i;
+
+    var widened = PcmCodec.Requantize(original, 8, 16);
+    Assert.That(widened, Has.Length.EqualTo(512));
+    Assert.That(PcmCodec.Requantize(widened, 16, 8), Is.EqualTo(original));
+  }
+
+  /// <summary>
   /// The stereo path already worked; it must keep working, and both paths must
   /// name their channels the same way.
   /// </summary>
