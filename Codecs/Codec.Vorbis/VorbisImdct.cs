@@ -19,17 +19,22 @@ internal static class VorbisImdct {
   /// Inverse MDCT: reads <paramref name="n"/>/2 frequency coefficients from
   /// <paramref name="freq"/> and writes <paramref name="n"/> time samples
   /// into <paramref name="time"/>.
+  /// <para>
+  /// y[k] = Σ X[i]·cos(π/(2n)·(2k + 1 + n/2)·(2i + 1)), unscaled — the convention the
+  /// Vorbis reference implementations (libvorbis <c>mdct_backward</c>, stb_vorbis
+  /// <c>inverse_mdct</c>) use, and therefore the one Vorbis encoders assume. Any extra
+  /// normalisation here shifts the decoded level: 2/n is −60 dB for a 2048 block.
+  /// </para>
   /// </summary>
   public static void Inverse(ReadOnlySpan<float> freq, Span<float> time, int n) {
     var half = n / 2;
-    var scale = 2.0 / n;
     for (var k = 0; k < n; ++k) {
       double sum = 0;
       for (var i = 0; i < half; ++i) {
         var phase = Math.PI / n * ((k + 0.5 + half * 0.5) * (i * 2 + 1));
         sum += freq[i] * Math.Cos(phase);
       }
-      time[k] = (float)(sum * scale);
+      time[k] = (float)sum;
     }
   }
 
