@@ -3,7 +3,7 @@
 The three media ledgers record **what is true today**, one row at a time. This page is the other half: the **order the remaining rows should be closed in**, and what "closed" has to mean before a row may be re-marked.
 
 - [Media containers](../Hawkynt.FileFormats.Archives/README.md) — *Media containers* table in the archive package README
-- [Audio codecs and WAVE/ACM identifiers](AUDIO-CODEC-COVERAGE.md)
+- Audio codecs: the support ledger is the [audio package README](../Hawkynt.FileFormats.Audio/README.md); [how its identifiers are sourced and mapped](AUDIO-IDENTIFIER-REGISTRY.md)
 - [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
 
 The ledgers stay authoritative for per-row state. Nothing here duplicates a marker; if the two ever disagree, the ledger is right and this page is stale.

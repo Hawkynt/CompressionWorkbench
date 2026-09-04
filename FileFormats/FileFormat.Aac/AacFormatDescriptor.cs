@@ -9,11 +9,14 @@ namespace FileFormat.Aac;
 
 /// <summary>
 /// AAC-LC in ADTS framing. Besides the pseudo-archive view this descriptor exposes
-/// canonical PCM encode/decode and raw AAC access units for packet-preserving remux.
+/// canonical PCM encode/decode and raw AAC access units for packet-preserving remux in
+/// both directions: <see cref="TryDemux"/> strips the ADTS header off each access unit and
+/// <see cref="Mux"/> puts an equivalent one back, so a demux/mux round trip reproduces the
+/// input byte for byte without going anywhere near the decoder.
 /// </summary>
 public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable,
-  IAudioContainerFormat, IAudioPcmSource, IAudioPcmTarget, IAudioDemuxSource {
+  IAudioContainerFormat, IAudioPcmSource, IAudioPcmTarget, IAudioDemuxSource, IAudioMuxTarget {
 
   private static readonly string[] EncodeCodecs = ["aac", "aac-lc"];
 
@@ -218,6 +221,96 @@ public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       pcm.ToArray());
   }
 
+  /// <summary>Gets the codecs this descriptor can wrap in ADTS framing.</summary>
+  public IReadOnlyList<string> SupportedMuxCodecs => EncodeCodecs;
+
+  /// <summary>
+  /// ADTS can carry any AAC access unit whose sample rate has an index in the 13-entry table
+  /// of ISO/IEC 13818-7 and whose channel count fits the 3-bit channel configuration.
+  /// </summary>
+  public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!EncodeCodecs.Contains(stream.CodecId, StringComparer.OrdinalIgnoreCase)) {
+      reason = $"ADTS carries AAC access units, not codec '{stream.CodecId}'";
+      return false;
+    }
+
+    if (SampleRateIndexOf(stream.SampleRate) < 0) {
+      reason = $"ADTS has no sample-rate index for {stream.SampleRate} Hz";
+      return false;
+    }
+
+    if (stream.Channels is < 1 or > 7) {
+      reason = "the ADTS channel configuration covers 1 to 7 channels";
+      return false;
+    }
+
+    reason = null;
+    return true;
+  }
+
+  /// <summary>Writes each access unit behind a rebuilt 7-byte ADTS header.</summary>
+  public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!this.CanMux(stream.Format, options, out var reason))
+      throw new NotSupportedException(reason);
+
+    var sampleRateIndex = PropertyValue(stream.Format, "sample-rate-index")
+                          ?? SampleRateIndexOf(stream.Format.SampleRate);
+    if (sampleRateIndex is < 0 or > 12)
+      throw new InvalidDataException($"ADTS sample-rate index {sampleRateIndex} is reserved.");
+
+    // ADTS stores the object type biased by one; only the four two-bit profiles fit the field.
+    var objectType = PropertyValue(stream.Format, "object-type") ?? 2;
+    var profile = objectType - 1;
+    if (profile is < 0 or > 3)
+      throw new NotSupportedException($"AAC object type {objectType} has no ADTS profile encoding.");
+
+    var mpeg2 = PropertyValue(stream.Format, "adts-mpeg2") == 1;
+    var written = 0;
+    foreach (var packet in stream.Packets) {
+      // The audio specific config travels out of band; ADTS re-states it in every header.
+      if (packet.IsHeader)
+        continue;
+      if (packet.Data.Length == 0)
+        throw new InvalidDataException("ADTS cannot carry an empty access unit.");
+
+      var frameLength = AacAdtsReader.ShortHeaderLength + packet.Data.Length;
+      if (frameLength > 0x1FFF)
+        throw new InvalidDataException($"AAC access unit of {packet.Data.Length} bytes exceeds the 13-bit ADTS frame length.");
+
+      var blocks = packet.DurationSamples > 0 ? packet.DurationSamples / AacEncoder.FrameSamples - 1 : 0;
+      if (blocks is < 0 or > 3)
+        throw new InvalidDataException($"AAC access unit spans {packet.DurationSamples} samples, which is not 1 to 4 raw data blocks.");
+
+      output.Write(AacAdtsReader.BuildHeader(
+        profile, sampleRateIndex, stream.Format.Channels, frameLength,
+        mpeg2: mpeg2, numRawBlocks: (int)blocks));
+      output.Write(packet.Data);
+      ++written;
+    }
+
+    if (written == 0)
+      throw new ArgumentException("ADTS muxing requires at least one access unit.", nameof(stream));
+  }
+
+  private static int SampleRateIndexOf(int sampleRate) {
+    for (var i = 0; i < 13; ++i)
+      if (AacAdtsReader.SampleRateTable[i] == sampleRate)
+        return i;
+    return -1;
+  }
+
+  private static int? PropertyValue(AudioStreamFormat format, string key)
+    => format.Properties is { } properties
+       && properties.TryGetValue(key, out var raw)
+       && int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value)
+      ? value
+      : null;
+
   public bool TryDemux(Stream input, out AudioEncodedStream? stream) {
     ArgumentNullException.ThrowIfNull(input);
     var data = ReadAll(input);
@@ -258,6 +351,7 @@ public sealed class AacFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Properties: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
           ["object-type"] = objectType.ToString(System.Globalization.CultureInfo.InvariantCulture),
           ["sample-rate-index"] = initial.SampleRateIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+          ["adts-mpeg2"] = initial.IsMpeg2 ? "1" : "0",
         }),
       packets,
       asc);

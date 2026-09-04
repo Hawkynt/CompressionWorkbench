@@ -2,13 +2,14 @@
 
 CompressionWorkbench deliberately separates **containers**, **audio codecs**, and **video codecs**. A file being recognized or demuxed does not imply that its carried streams can be decoded, and a codec implementation does not imply that every historical container tag is wired to it.
 
-The detailed ledgers are now split accordingly:
+The detailed ledgers are split accordingly. Support tables belong to the package that ships
+the code, so the audio ledger is the audio package README rather than a page here:
 
 - [Media containers](../Hawkynt.FileFormats.Archives/README.md) — *Media containers* table in the archive package README
-- [Audio codecs and WAVE/ACM identifiers](AUDIO-CODEC-COVERAGE.md)
+- Audio codecs: the support ledger is the [audio package README](../Hawkynt.FileFormats.Audio/README.md); [how its identifiers are sourced and mapped](AUDIO-IDENTIFIER-REGISTRY.md)
 - [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
 
-Those three record what is true today. The order the remaining rows should be closed in, and what closing one has to mean, is in [the GSpot parity roadmap](GSPOT-ROADMAP.md).
+Those record what is true today. The order the remaining rows should be closed in, and what closing one has to mean, is in [the GSpot parity roadmap](GSPOT-ROADMAP.md).
 
 ## Baseline catalogues
 
