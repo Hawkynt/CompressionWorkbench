@@ -56,7 +56,7 @@ public sealed class MethodNameCrossesTheBoundaryTests {
   public void TheDefaultSentinel_DoesNotCrossTheBoundary(string input, int level) {
     var spec = MethodSpec.Parse(input);
     Assert.Multiple(() => {
-      Assert.That(spec.NamesNoMethod, Is.True,
+      Assert.That(spec.EffectiveName, Is.Null,
         $"'{input}' names no method, so the far side has to be told null rather than the literal 'default'.");
       Assert.That(spec.PlusLevel, Is.EqualTo(level), "the effort the caller asked for went with the name");
     });

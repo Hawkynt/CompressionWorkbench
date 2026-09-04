@@ -29,17 +29,16 @@ namespace Compression.Tests.Operations;
 public sealed class FilesystemVerbsAreBackedTests {
 
   /// <summary>
-  /// Verbs whose removal cannot land in this pass, and why. Each of these three
+  /// Verbs whose removal cannot land in this pass, and why. Each of these
   /// declares a marker whose only possible answer is a capability refusal, so the
   /// support matrix ticks a cell the code cannot honour — but dropping the marker
   /// also changes the derived matrix in <c>docs/OPERATION_COVERAGE.md</c>, which
-  /// another change is rewriting wholesale. Removing them here would hand that
-  /// change a conflict in the rows it is already moving. They come out with it.
+  /// this pass is not to edit. The entry names the row that has to move with it.
   /// </summary>
   private static readonly Dictionary<string, string> Deferred = new(StringComparer.Ordinal) {
-    ["TahoeLafs:Defrag"] = "read-only distributed store; Defragment can only refuse. Also a row in docs/OPERATION_COVERAGE.md.",
-    ["Ecryptfs:Defrag"] = "read-only stacked encryption layer; Defragment can only refuse. Also a row in docs/OPERATION_COVERAGE.md.",
-    ["Refs:Layout"] = "AnalyzeLayout is real, RebuildStreaming cannot be: ReFS has no creator to re-create a volume with. Also a row in docs/OPERATION_COVERAGE.md.",
+    ["Refs:Layout"] = "AnalyzeLayout is real; RebuildStreaming cannot be, because ReFS has no creator "
+                    + "to re-create a volume with. Dropping the marker also changes the Refs row of "
+                    + "docs/OPERATION_COVERAGE.md, which this pass is not to edit.",
   };
 
   private static IEnumerable<TestCaseData> DefragmentableIds() => Ids(typeof(IArchiveDefragmentable), "Defrag");
