@@ -18,8 +18,13 @@ namespace FileFormat.Afio;
 /// stored payload may be a gzip stream (RFC 1952), in which case the original
 /// size is recorded after the name. This reader detects a gzip member by its
 /// <c>1F 8B</c> signature and transparently inflates it on extraction, surfacing
-/// each member as an entry. Read-only (List / Extract); malformed input never
-/// throws — it stops at the last parseable member.</para>
+/// each member as an entry. Malformed input never throws — it stops at the last
+/// parseable member.</para>
+///
+/// <para>Creation writes stored members only, via <see cref="AfioWriter"/>. The compressed-member
+/// extension is read but not written: afio records a member's original size after the name and
+/// this reader does not parse that record, so an emitted gzip member would be one real afio
+/// misreads.</para>
 ///
 /// References:
 /// <list type="bullet">
@@ -28,7 +33,7 @@ namespace FileFormat.Afio;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cpio</c> — background on the cpio family</description></item>
 /// </list>
 /// </summary>
-public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -45,7 +50,8 @@ public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
@@ -143,6 +149,31 @@ public sealed class AfioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     } catch {
       return m.StoredData.Length;
     }
+  }
+
+  // ── IArchiveCreatable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Writes a fresh afio archive: one stored member per input, directories included, terminated by
+  /// the <c>TRAILER!!!</c> member.
+  /// </summary>
+  /// <remarks>
+  /// Members are stored rather than gzip-compressed, and a payload that already begins with the
+  /// gzip signature is refused. <see cref="AfioWriter"/> carries the reasoning: this reader detects
+  /// a compressed member by sniffing that signature instead of parsing afio's original-size record,
+  /// so such a payload would be inflated on the way out and would not read back as written.
+  /// </remarks>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) {
+        AfioWriter.WriteDirectory(output, input.ArchiveName);
+        continue;
+      }
+      AfioWriter.WriteFile(output, input.ArchiveName, input.ReadContent());
+    }
+    AfioWriter.WriteTrailer(output);
   }
 
   private static List<AfioMember> TryReadMembers(Stream stream, out bool partial) {

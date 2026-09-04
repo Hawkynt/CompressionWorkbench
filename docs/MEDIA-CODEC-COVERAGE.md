@@ -5,7 +5,7 @@ CompressionWorkbench deliberately separates **containers**, **audio codecs**, an
 The detailed ledgers are split accordingly. Support tables belong to the package that ships
 the code, so the audio ledger is the audio package README rather than a page here:
 
-- [Media containers and ISO-BMFF brands](MEDIA-CONTAINER-COVERAGE.md)
+- [Media containers](../Hawkynt.FileFormats.Archives/README.md) — *Media containers* table in the archive package README
 - Audio codecs: the support ledger is the [audio package README](../Hawkynt.FileFormats.Audio/README.md); [how its identifiers are sourced and mapped](AUDIO-IDENTIFIER-REGISTRY.md)
 - [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
 

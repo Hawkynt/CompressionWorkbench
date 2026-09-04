@@ -6885,6 +6885,7 @@ Options for archive/stream creation, passed from the orchestration layer to form
 | `SolidSize` | `long SolidSize { get; init; }` | Maximum solid block size in bytes. |
 | `Threads` | `int Threads { get; init; }` | Number of parallel threads. |
 | `WordSize` | `int? WordSize { get; init; }` | Word size / fast bytes, or null for format default. |
+| `Copy` | `FormatCreateOptions Copy()` | A field-for-field copy, with `FormatSpecific` re-materialised under the case-insensitive comparer the property initializer uses. |
 | `FormatSpecificFrom` | `static Dictionary<string, string> FormatSpecificFrom(IEnumerable<KeyValuePair<string, string>> source)` | Builds a `FormatSpecific` map from an optional source, keeping the case-insensitive comparer the property's own initializer uses. Callers hold read-only or nullable views of the bag, which cannot be assigned to the mutable property directly. |
 | `GetOptionBool` | `bool GetOptionBool(string key, bool fallback)` | Reads a format-specific boolean option. Accepts true/false/1/0 (case-insensitive). |
 | `GetOptionInt` | `int GetOptionInt(string key, int fallback)` | Reads a format-specific integer option. Returns `fallback` if absent or unparsable. |

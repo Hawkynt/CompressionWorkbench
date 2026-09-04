@@ -6,67 +6,45 @@ using System.Text;
 namespace FileSystem.SmartFs;
 
 /// <summary>
-/// Detection / metadata-surface reader for SmartFS — the wear-levelled
-/// raw-flash filesystem in Apache NuttX RTOS. SmartFS uses a logical-
-/// to-physical sector map: sector 0 is the "format sector" carrying
-/// the partition signature, sector size, and number of root sectors.
-/// File data is stored in chains of sectors with a 5-byte logical
-/// header (logical sector number, sequence, CRC).
-///
-/// Full chain traversal would require modeling the FAT-like sector
-/// mapping table plus directory entry walk. This reader surfaces the
-/// parsed format sector and image as metadata.
+/// Reader for SmartFS — the wear-levelled raw-flash filesystem in Apache NuttX
+/// RTOS. SmartFS uses a logical-to-physical sector map: sector 0 is the format
+/// sector carrying the partition signature, sector size, and number of root
+/// sectors. File data is stored in chains of logical sectors.
 ///
 /// Format sector header (selected, little-endian, at file offset 0):
-///   0x00 5 bytes  per-sector header (logical sector / status / crc)
-///                 — exact layout depends on CONFIG_SMARTFS_NLOGSECS
-///   ...
-///   0x0A 4 bytes  Format signature = "SMRT" (NuttX CONFIG_SMARTFS_FORMAT_SIG)
-///   0x0E 1 byte   format version (typically 1 or 2)
-///   0x0F 1 byte   sector size code (0=256, 1=512, 2=1024, 3=2048, 4=4096)
+///   0x00 5 bytes  per-sector header (logical sector / sequence / CRC / status)
+///   0x0A 4 bytes  format signature = "SMRT"
+///   0x0E 1 byte   format version
+///   0x0F 1 byte   sector size code (0..7 = 256..32768 bytes)
 ///   0x10 2 bytes  number of root directory sectors
-///   0x12 1 byte   reserved
-///   0x13+ ...
 /// </summary>
 public sealed class SmartFsReader : IDisposable {
   private readonly byte[] _data;
   private readonly List<SmartFsEntry> _entries = [];
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
+  /// <summary>Gets the entries.</summary>
   public IReadOnlyList<SmartFsEntry> Entries => _entries;
 
-  /// <summary>
-  /// Gets or sets the format version.
-  /// </summary>
+  /// <summary>Gets the format version.</summary>
   public byte FormatVersion { get; private set; }
-  /// <summary>
-  /// Gets or sets the sector size.
-  /// </summary>
+
+  /// <summary>Gets the logical sector size.</summary>
   public uint SectorSize { get; private set; }
-  /// <summary>
-  /// Gets or sets the root sector count.
-  /// </summary>
+
+  /// <summary>Gets the root-directory sector count.</summary>
   public ushort RootSectorCount { get; private set; }
-  /// <summary>
-  /// Gets a value indicating whether valid format sector.
-  /// </summary>
+
+  /// <summary>Gets whether a valid format sector was found.</summary>
   public bool ValidFormatSector { get; private set; }
 
-  /// <summary>
-  /// Provides the format signature value.
-  /// </summary>
+  /// <summary>Provides the format signature value.</summary>
   public static readonly byte[] FormatSignature = "SMRT"u8.ToArray();
-  // Scan a small window around the documented offset (10) for the signature —
-  // some NuttX builds pad the per-sector header differently depending on
-  // CONFIG_MTD_SMART_SECTOR_SIZE / wear-level config, but the signature is
-  // always within the first 32 bytes of the format sector.
+
+  // Some NuttX configurations pad the per-sector header differently; the
+  // signature stays within the beginning of the format sector.
   private const int SignatureScanWindow = 32;
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="SmartFsReader"/>.
-  /// </summary>
+  /// <summary>Initializes a SmartFS reader.</summary>
   public SmartFsReader(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -91,17 +69,14 @@ public sealed class SmartFsReader : IDisposable {
 
     this.ValidFormatSector = true;
     if (sigOffset + 4 < _data.Length) this.FormatVersion = _data[sigOffset + 4];
-    if (sigOffset + 5 < _data.Length) this.SectorSize = SectorSizeFromCode(_data[sigOffset + 5]);
-    if (sigOffset + 8 <= _data.Length) this.RootSectorCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(sigOffset + 6));
+    if (sigOffset + 5 < _data.Length) this.SectorSize = (uint)SmartFsLayout.SizeFromCode(_data[sigOffset + 5]);
+    if (sigOffset + 8 <= _data.Length)
+      this.RootSectorCount = BinaryPrimitives.ReadUInt16LittleEndian(_data.AsSpan(sigOffset + 6));
 
     var meta = BuildMetadata(sigOffset);
     _entries.Add(new SmartFsEntry { Name = "FULL.smartfs", Size = _data.Length, Data = _data });
     _entries.Add(new SmartFsEntry { Name = "metadata.ini", Size = meta.Length, Data = meta });
 
-    // Past the format sector the volume is chains: the root directory names
-    // each file and where its first sector is, and each sector says which one
-    // follows and how much of itself is in use. Walking that is what turns the
-    // image from a blob into files.
     try {
       WalkRootDirectory();
     } catch (Exception ex) when (ex is InvalidDataException or ArgumentOutOfRangeException
@@ -112,13 +87,13 @@ public sealed class SmartFsReader : IDisposable {
   }
 
   /// <summary>
-  /// Reads every entry the root directory chain holds, and each file's bytes
+  /// Reads every entry the root-directory chain holds, and each file's bytes
   /// from the sector chain the entry points at.
   /// </summary>
   private void WalkRootDirectory() {
     if (this.SectorSize == 0) return;
 
-    var sectorSize = (int)this.SectorSize;
+    var sectorSize = checked((int)this.SectorSize);
     var payloadStart = SmartFsLayout.SectorHeaderSize + SmartFsLayout.ChainHeaderSize;
     if (sectorSize <= payloadStart) return;
 
@@ -187,15 +162,6 @@ public sealed class SmartFsReader : IDisposable {
     return Encoding.ASCII.GetString(field[..length]);
   }
 
-  private static uint SectorSizeFromCode(byte code) => code switch {
-    0 => 256u,
-    1 => 512u,
-    2 => 1024u,
-    3 => 2048u,
-    4 => 4096u,
-    _ => 0u,
-  };
-
   private byte[] BuildMetadata(int sigOffset) {
     var bldr = new StringBuilder();
     bldr.Append("parse_status=ok\n");
@@ -204,20 +170,16 @@ public sealed class SmartFsReader : IDisposable {
     bldr.Append(CultureInfo.InvariantCulture, $"format_version={this.FormatVersion}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"sector_size={this.SectorSize}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"root_sector_count={this.RootSectorCount}\n");
-    bldr.Append("note=Sector-chain walk + directory enumeration not implemented (research read-only).\n");
+    bldr.Append("note=Root-directory and file sector chains are enumerated when their geometry is supported.\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Decodes the supplied input.</summary>
   public byte[] Extract(SmartFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
+  /// <summary>Releases resources held by this instance.</summary>
   public void Dispose() { }
 }
