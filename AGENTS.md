@@ -133,6 +133,32 @@ cannot, commit the captured expected output with a note saying what produced it.
 
   Paraphrasing a vendored codec into our own namespace is the one thing this
   does not permit: take it whole and credit it, or write it from the spec.
+- **Reverse engineering produces a specification, never code.** Some formats
+  have no published bitstream and no vendorable implementation — the audio
+  ledger names a dozen. They are reachable, in this order:
+  1. **Behaviour first.** Drive the reference tool and read what it makes of
+     streams we choose. `cwb reverse-engineer` does this for a tool that runs;
+     `StaticFormatAnalyzer` does it from (original, archived) pairs; a codec
+     that only decodes is still an oracle, because it accepts or rejects.
+     `docs/QUANTUM-ON-DISK.md` and `docs/LZMS-ON-DISK.md` were derived this
+     way and are the template: every constant measured, refuted hypotheses
+     kept alongside the confirmed ones.
+  2. **Static analysis only where behaviour cannot reach** — a table that no
+     input reveals, a decision rule that never varies. Disassembly and
+     decompiler output are derived from someone's binary: they are evidence,
+     not source. Read them to write down *what the format is*, put that in a
+     `docs/<FORMAT>-ON-DISK.md`, and implement from that document. Code
+     transliterated from a decompiler is a derivative work and is exactly what
+     the first rule forbids — the specification is the firewall, and a
+     conversion that still reads like decompiler output is not finished.
+  3. **Verify against the original.** A derived format is only proven when the
+     reference accepts what we write, or we reproduce what it wrote, byte for
+     byte. Say which, and pin it with a test.
+
+  Record provenance either way: which binary, which version, which tool, and
+  what was measured rather than assumed. An unverifiable claim is worse than a
+  missing codec — `docs/AUDIO-IDENTIFIER-REGISTRY.md` lists absences on
+  purpose, and refusing to guess is a supported outcome.
 - Latest C# features; codecs are hot paths — measure, never make a
   round-trip slower without a stated reason.
 - Per-package folders with their own `<Version>` — untouched packages keep
