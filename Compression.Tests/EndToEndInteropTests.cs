@@ -438,6 +438,18 @@ public class EndToEndInteropTests {
     // records the block-granular stored size, so a payload comes back zero-padded
     // up to the block boundary. Names round-trip; only the length does not.
     ".mcr",
+    // Intel HEX: an address-to-bytes image written as ASCII records. The writer
+    // takes one payload and the reader normalises it back to firmware.bin, so a
+    // name has nowhere to live. FirmwareContainerWriteTests round-trips the bytes.
+    ".hex",
+    // TI-TXT: the same shape, and its descriptor deliberately claims no extension
+    // at all -- ".txt" is far too ambiguous to route by -- so this grid cannot
+    // reach its writer in the first place. FirmwareContainerWriteTests does.
+    ".txt",
+    // U-Boot uImage: one body under a 64-byte header, and likewise no claimed
+    // extension, because ".img"/".bin"/".uimg" all belong to other formats and the
+    // 0x27051956 magic is what identifies it. FirmwareContainerWriteTests does.
+    ".uimg",
   };
 
   private static IEnumerable<string> RoundTripFormats() {
