@@ -9,8 +9,13 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 2
 
-[*.{cs,csproj,props,targets}]
-indent_size = 4
+[*.cs]
+# K&R: the opening brace ends the line that opens the block, and else/catch/finally
+# continue the line that closed the previous one. Indentation is the 2 spaces from [*].
+csharp_new_line_before_open_brace = none
+csharp_new_line_before_else = false
+csharp_new_line_before_catch = false
+csharp_new_line_before_finally = false
 
 # Imported codec sources are source dependencies, not style-exempt black boxes.
 # Keep their original license/provenance notices, but compile and maintain them
