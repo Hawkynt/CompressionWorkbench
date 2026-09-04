@@ -264,7 +264,9 @@
                     EnableColumnVirtualization="False"
                     Sorting="OnFilesGridSorting">
             <DataGrid.Columns>
-              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" />
+              <!-- The fixed columns beside it already exceed the panel's default width, so a bare star
+                   width collapses the name to a couple of characters. -->
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" MinWidth="140" />
               <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
               <DataGridTextColumn Header="Frag" Binding="{Binding FragmentsDisplay}" Width="44">
                 <DataGridTextColumn.ElementStyle>
