@@ -249,6 +249,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the Defrag/Optimize window |
 | `IStreamFormatOperations`  | single-stream (de)compression with level/dictionary options |
 
-Coverage counts per verb live in `docs/OPERATION_COVERAGE.md`; per-format R/O/WORM/R-W
-state lives in the README tables and is audited against the actual interface
-implementations, not advertised intent.
+How each verb is provided — the verified rebuild engine most formats inherit it
+from — is in `docs/MAINTENANCE-MECHANISMS.md`. Per-format coverage and R/O/WORM/R-W
+state live in the package README tables and are audited against the actual
+interface implementations, not advertised intent.

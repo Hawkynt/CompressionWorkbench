@@ -4,7 +4,7 @@ The three media ledgers record **what is true today**, one row at a time. This p
 
 - [Media containers](../Hawkynt.FileFormats.Archives/README.md) — *Media containers* table in the archive package README
 - Audio codecs: the support ledger is the [audio package README](../Hawkynt.FileFormats.Audio/README.md); [how its identifiers are sourced and mapped](AUDIO-IDENTIFIER-REGISTRY.md)
-- [Video codecs, FourCC identifiers, and frame/GOP analysis](VIDEO-CODEC-COVERAGE.md)
+- Video codecs: the ledger is the [`Hawkynt.FileFormats.Video` package README](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) of the sibling PNGCrushCS project, which is where the decoders live; [frame and GOP structure analysis](VIDEO-FRAME-ANALYSIS.md) is this repository's half
 
 The ledgers stay authoritative for per-row state. Nothing here duplicates a marker; if the two ever disagree, the ledger is right and this page is stale.
 
@@ -18,7 +18,7 @@ GSpot v2.70a identifies media. It does not decode most of what it names. Matchin
 | GSpot audio codecs | 245 | WAVE/ACM *format tags*, with several vendor registrations per underlying codec. |
 | GSpot file types | — | Content-based container/raw-stream identification. |
 
-So the roadmap is sequenced by **envelope first, identifier second, decoder last**. Recognising a stream is cheap and compounding; decoding it is expensive and narrow. The canonicalization rule in [the hub](MEDIA-CODEC-COVERAGE.md#canonicalization-rule) applies throughout: an identifier is not a codec, and a row may only be marked ✅ against a canonical family, never against an alias count.
+So the roadmap is sequenced by **envelope first, identifier second, decoder last**. Recognising a stream is cheap and compounding; decoding it is expensive and narrow. The canonicalization rule in [the ledger index](MEDIA-LEDGERS.md#canonicalization-rule) applies throughout: an identifier is not a codec, and a row may only be marked ✅ against a canonical family, never against an alias count.
 
 ## Definition of done per phase
 

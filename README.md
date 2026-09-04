@@ -252,9 +252,13 @@ source code** — `IArchiveCreatable` and `IArchiveModifiable` interface impleme
 > maintenance verbs (optimize / shrink / defrag / purge / wipe), the block-map
 > display contract, and the streaming (OOM-free) paths — and **which interface a
 > format must implement to unlock each** is specified in
-> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md). Per-verb coverage of the filesystem
-> descriptors is in [`docs/OPERATION_COVERAGE.md`](docs/OPERATION_COVERAGE.md); for archives it is
-> the Maintenance column of [`Hawkynt.FileFormats.Archives/README.md`](Hawkynt.FileFormats.Archives/README.md).
+> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md), and how the verbs are provided
+> without bespoke per-format code is in
+> [`docs/MAINTENANCE-MECHANISMS.md`](docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the
+> filesystem descriptors is the support matrix of
+> [`Hawkynt.FileFormats.FileSystems/README.md`](Hawkynt.FileFormats.FileSystems/README.md); for
+> archives it is the Maintenance column of
+> [`Hawkynt.FileFormats.Archives/README.md`](Hawkynt.FileFormats.Archives/README.md).
 
 > **How big an input can a building block take?** The measured ceilings, the
 > `Array.MaxLength` limit that `IBuildingBlock` cannot exceed, the 32-bit quantities
