@@ -9,12 +9,12 @@ namespace Compression.Tests.Operations;
 /// claims it.
 /// </summary>
 /// <remarks>
-/// <para>The Defrag, Wipe, Shrink and Layout columns are rendered from marker
-/// interfaces — <c>ops is IArchiveDefragmentable</c> and its three siblings. An
-/// <c>is</c>-check cannot tell an implemented verb from a declared one whose only
-/// statement is <c>throw new NotSupportedException</c>, so a descriptor could
-/// carry the marker for documentation and still render a green check it does not
-/// honour. That is what this fixture closes.</para>
+/// <para>Most of the verb columns are rendered from marker interfaces —
+/// <c>ops is IArchiveDefragmentable</c> and its siblings. An <c>is</c>-check
+/// cannot tell an implemented verb from a declared one whose only statement is
+/// <c>throw new NotSupportedException</c>, so a descriptor could carry the marker
+/// for documentation and still render a green check it does not honour. That is
+/// what this fixture closes.</para>
 ///
 /// <para>The discriminator is the exception type. A verb that is <em>implemented</em>
 /// fails on the DATA it was handed — bad magic, a truncated image, an unreadable
@@ -29,22 +29,29 @@ namespace Compression.Tests.Operations;
 public sealed class FilesystemVerbsAreBackedTests {
 
   /// <summary>
-  /// Verbs whose removal cannot land in this pass, and why. Each of these
-  /// declares a marker whose only possible answer is a capability refusal, so the
-  /// support matrix ticks a cell the code cannot honour — but dropping the marker
-  /// also changes the derived matrix in <c>docs/OPERATION_COVERAGE.md</c>, which
-  /// this pass is not to edit. The entry names the row that has to move with it.
+  /// Verbs whose removal cannot land in the pass that found them, and why. Each
+  /// entry names a descriptor that declares a marker whose only possible answer
+  /// is a capability refusal, so the support matrix would tick a cell the code
+  /// cannot honour. An entry earns its place only while the cell is still ticked;
+  /// the honest fix is to stop ticking it.
   /// </summary>
-  private static readonly Dictionary<string, string> Deferred = new(StringComparer.Ordinal) {
-    ["Refs:Layout"] = "AnalyzeLayout is real; RebuildStreaming cannot be, because ReFS has no creator "
-                    + "to re-create a volume with. Dropping the marker also changes the Refs row of "
-                    + "docs/OPERATION_COVERAGE.md, which this pass is not to edit.",
-  };
+  private static readonly Dictionary<string, string> Deferred = new(StringComparer.Ordinal);
 
   private static IEnumerable<TestCaseData> DefragmentableIds() => Ids(typeof(IArchiveDefragmentable), "Defrag");
   private static IEnumerable<TestCaseData> WipeableIds() => Ids(typeof(IWipeEmpty), "Wipe");
   private static IEnumerable<TestCaseData> ShrinkableIds() => Ids(typeof(IArchiveShrinkable), "Shrink");
-  private static IEnumerable<TestCaseData> LayoutIds() => Ids(typeof(ILayoutOptimizable), "Layout");
+
+  /// <summary>
+  /// The layout probe follows the rendered cell rather than the marker, because
+  /// the two are no longer the same question. A descriptor declares
+  /// <see cref="ILayoutOptimizable"/> to publish its geometry analysis, which is
+  /// real work; only the ones the matrix ticks claim a rebuild.
+  /// </summary>
+  private static IEnumerable<TestCaseData> LayoutIds() {
+    foreach (var descriptor in Descriptors())
+      if (FilesystemSupportMatrix.RelaysOut(FormatRegistry.GetArchiveOps(descriptor.Id)))
+        yield return new TestCaseData(descriptor.Id).SetName($"LayoutIsBacked_{descriptor.Id}");
+  }
   private static IEnumerable<TestCaseData> BlockMoverIds() => Ids(typeof(IFilesystemBlockMover), "Move");
 
   private static IEnumerable<TestCaseData> Ids(Type marker, string verb) {

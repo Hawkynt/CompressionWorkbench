@@ -195,7 +195,7 @@ public class AudioReadmeStateTests {
   /// </summary>
   [Test]
   public void NoSecondAudioSupportTableExists() {
-    var docs = new DirectoryInfo(Path.GetDirectoryName(FindRepositoryFile("docs", "MEDIA-CODEC-COVERAGE.md"))!);
+    var docs = new DirectoryInfo(Path.GetDirectoryName(FindRepositoryFile("docs", "MEDIA-LEDGERS.md"))!);
     var offenders = docs
       .GetFiles("*AUDIO*.md")
       .Where(static f => File.ReadAllLines(f.FullName).Count(static l => l.TrimStart().StartsWith('|')) > 4)

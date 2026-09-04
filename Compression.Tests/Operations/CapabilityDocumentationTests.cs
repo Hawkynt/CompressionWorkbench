@@ -1,23 +1,36 @@
 #pragma warning disable CS1591
 using System.Text.RegularExpressions;
 using Compression.Registry;
+using Compression.Tests.Documentation;
 
 namespace Compression.Tests.Operations;
 
+/// <summary>
+/// The pages that describe what the maintenance verbs cover say what the code says.
+/// </summary>
+/// <remarks>
+/// The per-format matrix itself lives in the filesystem package README, rendered
+/// from the descriptors by <see cref="FilesystemSupportMatrix"/>. This fixture
+/// reads it back from the other side: the render walks the descriptors the
+/// package bundles, and the check below walks the ids the registry calls
+/// filesystems, so a format that falls out of one set and not the other is
+/// caught rather than quietly dropped from the table. Both use the same verb
+/// predicates, so there is one derivation and two ways in.
+/// </remarks>
 [TestFixture]
 public sealed class CapabilityDocumentationTests {
   [Test, Category("HappyPath")]
-  public void OperationCoverageFilesystemMatrixMatchesLiveRegistry() {
+  public void FilesystemMatrixInThePackageReadmeMatchesLiveRegistry() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
-    var document = File.ReadAllText(FindRepositoryFile("docs", "OPERATION_COVERAGE.md"));
-    var section = Slice(document, "## Filesystem descriptors", "## N/A notes");
+    var root = FilesystemReadmeIsCurrentTests.RepositoryRoot();
+    var readme = File.ReadAllText(Path.Combine(root, FilesystemSupportMatrix.ReadmePath));
+    var (_, section, _) = FilesystemSupportMatrix.Split(readme);
     var documented = ParseFilesystemMatrix(section);
     var problems = new List<string>();
 
     foreach (var id in FormatRegistry.FilesystemFormatIds) {
-      var descriptor = FormatRegistry.GetById(id)!;
       var ops = FormatRegistry.GetArchiveOps(id);
-      var expected = ExpectedRow(descriptor, ops);
+      var expected = ExpectedRow(ops);
       if (!documented.Remove(id, out var actual)) {
         problems.Add($"missing row: {RenderRow(id, expected)}");
         continue;
@@ -28,19 +41,25 @@ public sealed class CapabilityDocumentationTests {
           problems.Add($"{id}.{column}: documented={Render(actual.GetValueOrDefault(column))}, live={Render(expected[column])}; expected row: {RenderRow(id, expected)}");
     }
 
+    // What is left over is the disk-image containers: the package bundles them
+    // and the matrix lists them, but the registry does not count them among the
+    // filesystems. Every one of those still has to name a format the package
+    // actually ships.
+    var bundled = FilesystemSupportMatrix.Descriptors(root).Select(d => d.Id).ToHashSet(StringComparer.Ordinal);
     foreach (var unexpected in documented.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
-      problems.Add($"unexpected filesystem row not present in live registry: {unexpected}");
+      if (!bundled.Contains(unexpected))
+        problems.Add($"row for a format the package does not bundle: {unexpected}");
 
     Assert.That(problems, Is.Empty,
-      "docs/OPERATION_COVERAGE.md filesystem matrix is stale. Regenerate/update it from the live registry:\n" +
+      $"The support matrix in {FilesystemSupportMatrix.ReadmePath} is stale. Re-run FilesystemReadmeIsCurrentTests with CWB_WRITE_DOCS=1 to render it from the live registry:\n" +
       string.Join("\n", problems));
   }
 
   [Test, Category("HappyPath")]
   public void WormProseCannotNameDescriptorsThatAdvertiseCanModify() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
-    var document = File.ReadAllText(FindRepositoryFile("docs", "OPERATION_COVERAGE.md"));
-    var section = Slice(document, "### Stays WORM", "## Filesystem descriptors");
+    var document = File.ReadAllText(FindRepositoryFile("docs", "MAINTENANCE-MECHANISMS.md"));
+    var section = Slice(document, "### Stays WORM", "## Where the per-format coverage lives");
     var boldNames = Regex.Matches(section, @"\*\*([^*]+)\*\*")
       .SelectMany(m => m.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -56,56 +75,66 @@ public sealed class CapabilityDocumentationTests {
       "Write-capability prose contradicts executable descriptor state:\n" + string.Join("\n", contradictions));
   }
 
-  private static Dictionary<string, bool> ExpectedRow(IFormatDescriptor descriptor, IArchiveFormatOperations? ops) {
-    var defrag = ops is IArchiveDefragmentable;
-    var shrink = ops is IArchiveShrinkable;
-    var purge = ops is IArchivePurgeable;
-    var wipe = ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap;
-    var optimize = ops is ILayoutOptimizable || descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize);
-    return new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase) {
-      ["Compact"] = defrag || shrink || optimize,
-      ["Defrag"] = defrag,
-      ["Shrink"] = shrink,
-      ["Purge"] = purge,
-      ["Wipe"] = wipe,
-      ["Optimize"] = optimize,
+  private static Dictionary<string, bool> ExpectedRow(IArchiveFormatOperations? ops)
+    => new(StringComparer.OrdinalIgnoreCase) {
+      ["Compact"] = FilesystemSupportMatrix.Compacts(ops),
+      ["Defrag"] = FilesystemSupportMatrix.Defrags(ops),
+      ["Wipe"] = FilesystemSupportMatrix.Wipes(ops),
+      ["Shrink"] = FilesystemSupportMatrix.Shrinks(ops),
+      ["Layout"] = FilesystemSupportMatrix.RelaysOut(ops),
+      ["Purge"] = FilesystemSupportMatrix.Purges(ops),
     };
-  }
 
+  /// <summary>
+  /// Every row of every family table in the generated region, keyed by the id in
+  /// the second cell. Only the verb columns are read back; the hand-written ones
+  /// carry prose no descriptor can be asked about.
+  /// </summary>
   private static Dictionary<string, Dictionary<string, bool>> ParseFilesystemMatrix(string section) {
     var lines = section.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
-    var headerIndex = Array.FindIndex(lines, line => line.TrimStart().StartsWith("| Format |", StringComparison.Ordinal));
-    Assert.That(headerIndex, Is.GreaterThanOrEqualTo(0), "Filesystem capability table header is missing.");
-    var columns = SplitRow(lines[headerIndex]);
     var result = new Dictionary<string, Dictionary<string, bool>>(StringComparer.OrdinalIgnoreCase);
-    for (var i = headerIndex + 2; i < lines.Length; ++i) {
-      if (!lines[i].TrimStart().StartsWith('|')) break;
-      var cells = SplitRow(lines[i]);
-      if (cells.Count != columns.Count || cells.Count == 0) continue;
-      var id = cells[0];
-      if (string.IsNullOrWhiteSpace(id)) continue;
+    var verbs = new[] { "Compact", "Defrag", "Wipe", "Shrink", "Layout", "Purge" };
+    List<string>? columns = null;
+
+    foreach (var line in lines) {
+      var text = line.TrimStart();
+      if (!text.StartsWith('|')) continue;
+      var cells = SplitRow(line);
+      if (cells.Count < 3) continue;
+      if (cells[0] == "Format" && cells[1] == "Id") { columns = cells; continue; }
+      if (columns == null || cells.Count != columns.Count) continue;
+      var id = cells[1].Trim('`').Trim();
+      if (id.Length == 0 || id.All(c => c is '-' or ':')) continue;
+
       var row = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-      for (var c = 1; c < cells.Count; ++c)
-        row[columns[c]] = ParseMarker(cells[c]);
+      foreach (var verb in verbs) {
+        var index = columns.FindIndex(c => c.Equals(verb, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0) row[verb] = ParseMarker(cells[index]);
+      }
       result[id] = row;
     }
+
+    Assert.That(columns, Is.Not.Null, "The generated support matrix carries no table header.");
+    Assert.That(result, Is.Not.Empty, "The generated support matrix carries no rows.");
     return result;
   }
 
   private static List<string> SplitRow(string line)
     => line.Trim().Trim('|').Split('|').Select(cell => cell.Trim()).ToList();
 
+  /// <summary>A verb cell is a tick, a dash, or a tick that says how — "✅ moving", "✅ rebuild".</summary>
   private static bool ParseMarker(string marker)
     => marker switch {
-      "Y" or "Yes" or "✅" => true,
+      _ when marker.StartsWith("✅", StringComparison.Ordinal) => true,
+      "Y" or "Yes" => true,
       "·" or "—" or "-" or "" => false,
       _ => throw new InvalidDataException($"Unknown capability marker '{marker}'."),
     };
 
-  private static string Render(bool value) => value ? "Y" : "·";
+  private static string Render(bool value) => value ? "✅" : "—";
 
   private static string RenderRow(string id, IReadOnlyDictionary<string, bool> row)
-    => $"| {id} | {Render(row["Compact"])} | {Render(row["Defrag"])} | {Render(row["Shrink"])} | {Render(row["Purge"])} | {Render(row["Wipe"])} | {Render(row["Optimize"])} |";
+    => $"| `{id}` | {Render(row["Compact"])} | {Render(row["Defrag"])} | {Render(row["Wipe"])} | {Render(row["Shrink"])} | {Render(row["Layout"])} | {Render(row["Purge"])} |";
 
   private static string Slice(string text, string startHeading, string endHeading) {
     var start = text.IndexOf(startHeading, StringComparison.Ordinal);
