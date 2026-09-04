@@ -12,10 +12,10 @@ codecs are decoded, to what profile, and how far that reaches against ffmpeg's
 own decoder census:
 
 - [`Hawkynt.FileFormats.Video` package README](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md)
-  — containers, codec highlights and the four decode/encode states.
-- [`codec-coverage.md`](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/codec-coverage.md)
-  — the codec-by-codec accounting, including how the denominator is arrived at
-  and which codecs were established as not implementable from files alone.
+  — the container and codec tables, and what is not supported and why.
+- [`codec-investigations.md`](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/codec-investigations.md)
+  — the codecs investigated and established as not implementable from files and
+  published descriptions alone, so the work is not repeated.
 
 A second copy of that ledger here would be stale the day the other one moves, so
 what follows is only the half this repository owns. The historical-identifier

@@ -9,7 +9,7 @@ CompressionWorkbench deliberately separates **containers**, **audio codecs** and
 | --- | --- | --- |
 | Media containers | the *Media containers* table in the [archive package README](../Hawkynt.FileFormats.Archives/README.md) | — |
 | Audio codecs | the [audio package README](../Hawkynt.FileFormats.Audio/README.md) | [how its identifiers are sourced and mapped](AUDIO-IDENTIFIER-REGISTRY.md) |
-| Video codecs | the [`Hawkynt.FileFormats.Video` package README](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) of the sibling PNGCrushCS project, which is where the decoders live | [codec-coverage.md](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/codec-coverage.md) |
+| Video codecs | the [`Hawkynt.FileFormats.Video` package README](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) of the sibling PNGCrushCS project, which is where the decoders live | [which codecs were investigated and not implemented, and why](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/codec-investigations.md) |
 | Video frame / GOP structure | [this repository's analysis surface](VIDEO-FRAME-ANALYSIS.md) | — |
 
 Those record what is true today. The order the remaining rows should be closed in, and what closing one has to mean, is in [the GSpot parity roadmap](GSPOT-ROADMAP.md).
