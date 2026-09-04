@@ -69,14 +69,21 @@ public sealed class WavLegacyCompressedConversionTests {
     });
   }
 
+  /// <summary>
+  /// Known-answer decode of a 32 kbit/s G.726 frame against the ITU-T G.191 Software Tools
+  /// Library reference decoder (module <c>G726</c>, <c>G726_decode</c> at <c>rate = 4</c>),
+  /// sampled at the linear reconstructed signal SR before the output PCM format conversion
+  /// and synchronous coding adjustment of G.726 § 4.2.8. The same answer is produced by
+  /// spandsp's independent G.726 decoder.
+  /// </summary>
   [Test]
-  public void G726Reader_DecodesFfmpegKnownAnswerFrame() {
+  public void G726Reader_DecodesItuReferenceKnownAnswerFrame() {
     var data = Convert.FromHexString("F77777777F8A9ABCDF245555321DBAAA");
     var wav = BuildCompressedWave(0x0045, 8_000, 4, 1, 4_000, data, 32);
     var parsed = new WavReader().ReadCanonicalPcm(wav);
     var expected = new short[] {
-      0, 88, 120, 172, 244, 376, 588, 1052, 2124, 440, -2744, -7264, -11368, -13180, -12192, -10664,
-      -8280, -4448, -496, 3632, 6984, 9148, 10884, 12300, 10224, 8032, 5656, 1392, -2868, -6512, -8984, -11052,
+      0, 88, 120, 172, 244, 376, 584, 1052, 2116, 440, -2744, -7232, -11368, -13116, -12192, -10632,
+      -8268, -4436, -488, 3640, 6988, 9148, 10884, 12300, 10224, 8032, 5656, 1392, -2868, -6512, -8984, -11052,
     };
 
     Assert.That(ReadPcm16(parsed.InterleavedPcm), Is.EqualTo(expected));

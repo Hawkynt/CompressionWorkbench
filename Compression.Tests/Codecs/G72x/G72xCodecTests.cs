@@ -4,10 +4,10 @@ using Codec.G72x;
 namespace Compression.Tests.Codecs.G72x;
 
 /// <summary>
-/// Pins the ITU-T G.726 @ 32 kbit/s (G.721) ADPCM decoder/encoder. The reference is a
-/// backward-adaptive predictor, so correctness is verified by encode→decode round-trip
-/// fidelity (ADPCM is lossy) plus exact sample-count and packing invariants rather than
-/// fixed golden samples.
+/// Pins the ITU-T G.726 ADPCM decoder/encoder across all four rates. Decoding is held to
+/// known answers from the ITU-T G.191 reference implementation; the encoder, being a
+/// backward-adaptive predictor whose output is lossy, is verified by encode→decode
+/// round-trip fidelity plus exact sample-count and packing invariants.
 /// </summary>
 [TestFixture]
 public class G72xCodecTests {
@@ -90,6 +90,38 @@ public class G72xCodecTests {
   }
 
   // ── Full G.726 rate set (2/3/4/5-bit = 16/24/32/40 kbit/s). ──────────────────
+
+  /// <summary>
+  /// Decoder known answers taken from the ITU-T G.191 Software Tools Library reference
+  /// implementation (module <c>G726</c>, <c>G726_decode</c>), sampled at the linear
+  /// reconstructed signal SR and scaled to 16 bits — that is, before the output PCM format
+  /// conversion and synchronous coding adjustment of G.726 § 4.2.8, which our decoder does
+  /// not perform because it emits linear PCM rather than A-law/µ-law.
+  /// <para>
+  /// The codeword streams were produced by the same reference implementation's encoder, so
+  /// they stay inside the range a conformant encoder emits. Each case pins 32 samples.
+  /// </para>
+  /// </summary>
+  [TestCase(2, "95555552ABB00051", new short[] {
+    -60, 64, 72, 80, 92, 108, 124, 172, 232, 320, 496, 836, 1364, 2244, 1488, -1752,
+    -3800, -7000, -11284, -7460, -15496, -10596, -2656, -144, 1336, 2184, 2632, 2736, 5368, 8824, 6840, 11744,
+  })]
+  [TestCase(3, "8DB6DB6DB67E92DDBF28964A", new short[] {
+    -60, 72, 80, 92, 108, 132, 176, 240, 360, 544, 972, 1912, 3744, 2688, 1180, -344,
+    -3544, -8148, -10280, -11888, -8972, -8540, -5152, -3908, -788, 2696, 2648, 2972, 6712, 5744, 5436, 7208,
+  })]
+  [TestCase(4, "F77777777F8A9ABCDF245555321DBAAA", new short[] {
+    0, 88, 120, 172, 244, 376, 584, 1052, 2116, 440, -2744, -7232, -11368, -13116, -12192, -10632,
+    -8268, -4436, -488, 3640, 6988, 9148, 10884, 12300, 10224, 8032, 5656, 1392, -2868, -6512, -8984, -11052,
+  })]
+  [TestCase(5, "83DEF7BDEF7BDEA387F79CED7BEFE2318C64A0CB", new short[] {
+    -188, 212, 228, 280, 356, 452, 608, 920, 1436, 2280, 4408, 5212, 4348, 2144, 1640, -1288,
+    -5180, -8708, -9460, -9896, -10768, -7664, -5028, -2888, 532, 2128, 3112, 3632, 5704, 6332, 5680, 9256,
+  })]
+  public void G726_Decode_MatchesItuReference(int bits, string hex, short[] expected) {
+    var decoded = G72xCodec.DecodeG726(Convert.FromHexString(hex), bits);
+    Assert.That(decoded, Is.EqualTo(expected));
+  }
 
   private static double RoundTripSnr(short[] pcm, int bits, int warmup = 50) {
     var dec = G72xCodec.DecodeG726(G72xCodec.EncodeG726(pcm, bits), bits);
