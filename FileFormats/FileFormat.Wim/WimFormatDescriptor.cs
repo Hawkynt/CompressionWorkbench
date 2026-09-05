@@ -15,20 +15,7 @@ namespace FileFormat.Wim;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Windows_Imaging_Format</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "WIM defragmentation is not supported — XML metadata resource references SHA-1 hashes of " +
-      "compressed resource bytes; a rebuild would change those references and break the image.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class WimFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {

@@ -69,35 +69,57 @@ public static class AppleSingleWriter {
   }
 
   /// <summary>
+  /// Human-readable summary of the names <see cref="TryEntryIdForName"/> accepts,
+  /// for the write-constraint tooltips of both AppleSingle and AppleDouble.
+  /// </summary>
+  public const string AcceptedEntryNames =
+    "Accepts data_fork.bin, resource_fork.bin, real_name.txt, comment.txt, icon_bw.bin, "
+    + "icon_color.bin, file_dates.bin, finder_info.bin, macintosh_file_info.bin, "
+    + "prodos_file_info.bin, msdos_file_info.bin, short_name.txt, afp_file_info.bin, "
+    + "afp_directory_id.bin, afp_signature.bin, or entry_NNNNN.bin for any other entry id.";
+
+  /// <summary>
   /// Maps a stable display name (the same one
   /// <see cref="AppleSingleReader.EntryName"/> emits) back to the AppleSingle
   /// entry id. Unknown names following the <c>entry_NNNNN.bin</c> shape
   /// recover their numeric id; anything else throws.
   /// </summary>
-  public static uint EntryIdForName(string name) {
+  public static uint EntryIdForName(string name)
+    => TryEntryIdForName(name, out var id)
+      ? id
+      : throw new ArgumentException($"AppleSingle: cannot map name '{name}' to an entry id.", nameof(name));
+
+  /// <summary>
+  /// The non-throwing half of <see cref="EntryIdForName"/>, so a caller can ask
+  /// whether a name belongs in the container without provoking an exception.
+  /// </summary>
+  public static bool TryEntryIdForName(string name, out uint entryId) {
     ArgumentNullException.ThrowIfNull(name);
+    entryId = 0;
     switch (name) {
-      case "data_fork.bin": return 1;
-      case "resource_fork.bin": return 2;
-      case "real_name.txt": return 3;
-      case "comment.txt": return 4;
-      case "icon_bw.bin": return 5;
-      case "icon_color.bin": return 6;
-      case "file_dates.bin": return 7;
-      case "finder_info.bin": return 8;
-      case "macintosh_file_info.bin": return 9;
-      case "prodos_file_info.bin": return 10;
-      case "msdos_file_info.bin": return 11;
-      case "short_name.txt": return 12;
-      case "afp_file_info.bin": return 13;
-      case "afp_directory_id.bin": return 14;
-      case "afp_signature.bin": return 15;
+      case "data_fork.bin": entryId = 1; return true;
+      case "resource_fork.bin": entryId = 2; return true;
+      case "real_name.txt": entryId = 3; return true;
+      case "comment.txt": entryId = 4; return true;
+      case "icon_bw.bin": entryId = 5; return true;
+      case "icon_color.bin": entryId = 6; return true;
+      case "file_dates.bin": entryId = 7; return true;
+      case "finder_info.bin": entryId = 8; return true;
+      case "macintosh_file_info.bin": entryId = 9; return true;
+      case "prodos_file_info.bin": entryId = 10; return true;
+      case "msdos_file_info.bin": entryId = 11; return true;
+      case "short_name.txt": entryId = 12; return true;
+      case "afp_file_info.bin": entryId = 13; return true;
+      case "afp_directory_id.bin": entryId = 14; return true;
+      case "afp_signature.bin": entryId = 15; return true;
     }
     if (name.StartsWith("entry_", StringComparison.Ordinal) && name.EndsWith(".bin", StringComparison.Ordinal)) {
       var digits = name.Substring(6, name.Length - 6 - 4);
-      if (uint.TryParse(digits, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id))
-        return id;
+      if (uint.TryParse(digits, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var id)) {
+        entryId = id;
+        return true;
+      }
     }
-    throw new ArgumentException($"AppleSingle: cannot map name '{name}' to an entry id.", nameof(name));
+    return false;
   }
 }

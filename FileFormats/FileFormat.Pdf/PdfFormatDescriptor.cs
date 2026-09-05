@@ -14,19 +14,7 @@ namespace FileFormat.Pdf;
 ///   <item><description><c>https://en.wikipedia.org/wiki/PDF</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "PDF is a cross-referenced object stream (xref table + indirect objects + trailer) — " +
-      "rebuilding from extracted images would destroy the document structure.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+public sealed class PdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => PdfLayoutMap.Enumerate(archive);

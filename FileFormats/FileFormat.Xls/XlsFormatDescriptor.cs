@@ -13,20 +13,7 @@ namespace FileFormat.Xls;
 ///   <item><description><c>https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/53989ce4-7b05-4f8d-829b-d08d6148375b</c> — [MS-CFB]: Compound File Binary File Format — the OLE2 container</description></item>
 /// </list>
 /// </summary>
-public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "XLS is an OLE2 Compound File envelope with cross-referenced Excel binary streams — " +
-      "rebuilding from the surface stream list would destroy the workbook structure.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class XlsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);

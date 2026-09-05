@@ -13,18 +13,7 @@ namespace FileFormat.SplitFile;
 ///   <item><description>7-Zip and WinRAR use the same numeric-suffix naming for raw split volumes</description></item>
 /// </list>
 /// </summary>
-public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "Split-file (.001/.002/...) is a multi-part file join — defragmentation isn't meaningful for a stream view.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+public sealed class SplitFileFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.

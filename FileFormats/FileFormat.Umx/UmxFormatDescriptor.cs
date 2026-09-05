@@ -13,20 +13,7 @@ namespace FileFormat.Umx;
 ///   <item><description>Epic MegaGames Unreal package (UPKG) serialized-object format; music objects embed standard tracker modules</description></item>
 /// </list>
 /// </summary>
-public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "UMX is an Unreal Engine 1 package with cross-referenced objects (export/import tables); " +
-      "writer only embeds a single opaque payload — rebuilding from extracted entries would break references.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class UmxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {

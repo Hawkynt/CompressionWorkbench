@@ -13,7 +13,25 @@ namespace FileFormat.Pbp;
 ///   <item><description>No official Sony specification — structure documented by the PSP homebrew community</description></item>
 /// </list>
 /// </summary>
-public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IArchiveWriteConstraints {
+
+  // ── IArchiveWriteConstraints ────────────────────────────────────────
+
+  /// <inheritdoc />
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = null;
+    if (!input.IsDirectory && PbpConstants.IsSectionName(input.ArchiveName)) return true;
+    reason = $"'{input.ArchiveName}' is not a PBP section. " + this.AcceptedInputsDescription;
+    return false;
+  }
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription
+    => "Accepts the fixed PBP sections only: " + string.Join(", ", PbpConstants.SectionNames) + ".";
 
   /// <summary>
   /// Performs the defragment operation.
@@ -26,7 +44,6 @@ public sealed class PbpFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Performs the defragment operation.
   /// </summary>
   public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
