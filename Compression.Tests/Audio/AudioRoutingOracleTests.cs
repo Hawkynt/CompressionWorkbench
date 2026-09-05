@@ -149,6 +149,87 @@ public sealed class AudioRoutingOracleTests {
     Assert.That(peak, Is.GreaterThan(1_000), "decoded a silent buffer");
   }
 
+
+  // ── TTA ───────────────────────────────────────────────────────────────────
+
+  /// <summary>0.05 s of a 440 Hz sine, 44.1 kHz stereo, encoded by libavcodec.</summary>
+  private const string TtaStream =
+    "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" +
+    "gAAAAAAAAAAA";
+
+  /// <summary>SHA-256 of the interleaved 16-bit PCM libavcodec decodes from it.</summary>
+  private const string TtaPcmDigest =
+    "3b354e0522ec8d3ba9f9ef7cebb2238b3afe66468d2f0d59dd7b9c9c4d7a295b";
+
+  /// <summary>
+  /// TTA codes its unary prefix as ones terminated by a zero. The reader counted
+  /// the opposite — zeros terminated by a one — and the writer emitted the same
+  /// inversion, so the pair round-tripped perfectly and neither could exchange a
+  /// file with anything else. The frame CRC passes either way, since it covers
+  /// the bytes and not what they mean, which is why nothing caught it.
+  /// </summary>
+  [Test]
+  [Category("RoundTrip")]
+  public void TtaConvertsAndMatchesLibavcodecByteForByte() {
+    var wav = ConvertToWav(System.Convert.FromBase64String(TtaStream), "Tta");
+    var pcm = WavPayload(wav, out var channels, out var sampleRate);
+
+    Assert.Multiple(() => {
+      Assert.That(channels, Is.EqualTo(2));
+      Assert.That(sampleRate, Is.EqualTo(44_100));
+      Assert.That(System.Convert.ToHexString(SHA256.HashData(pcm)).ToLowerInvariant(), Is.EqualTo(TtaPcmDigest),
+        "decoded PCM must be byte-for-byte what libavcodec decodes from the same stream");
+    });
+  }
+
+  /// <summary>What we write must come back through our own reader unchanged.</summary>
+  [TestCase(1, 44_100, 16)]
+  [TestCase(2, 48_000, 24)]
+  [TestCase(2, 44_100, 8)]
+  [Category("RoundTrip")]
+  public void TtaRoundTripsEveryWidthItAccepts(int channels, int sampleRate, int bitsPerSample) {
+    var bytesPerSample = bitsPerSample / 8;
+    var frames = sampleRate / 10;
+    var pcm = new byte[frames * channels * bytesPerSample];
+    for (var i = 0; i < frames; ++i)
+      for (var c = 0; c < channels; ++c) {
+        var value = (int)(Math.Sin(2 * Math.PI * 440 * i / sampleRate) * ((1L << (bitsPerSample - 1)) - 1) * 0.8);
+        var offset = (i * channels + c) * bytesPerSample;
+        if (bytesPerSample == 1)
+          pcm[offset] = (byte)(value + 128);
+        else
+          for (var b = 0; b < bytesPerSample; ++b)
+            pcm[offset + b] = (byte)(value >> (b * 8));
+      }
+
+    using var input = new MemoryStream(pcm, writable: false);
+    using var encoded = new MemoryStream();
+    Codec.Tta.TtaCodec.Compress(input, encoded, channels, sampleRate, bitsPerSample);
+
+    encoded.Position = 0;
+    using var decoded = new MemoryStream();
+    Codec.Tta.TtaCodec.Decompress(encoded, decoded);
+    Assert.That(decoded.ToArray(), Is.EqualTo(pcm));
+  }
+
   // ── AC-3 and DTS ──────────────────────────────────────────────────────────
 
   /// <summary>0.07 s of a 440 Hz sine, 48 kHz stereo, encoded by libavcodec.</summary>
