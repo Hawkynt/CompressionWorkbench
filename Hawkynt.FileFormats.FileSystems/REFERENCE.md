@@ -7854,7 +7854,7 @@ Builds a fresh Sharp X68000 Human68k disk image from scratch. The format is FAT1
 
 ### Namespace `FileSystem.Iso`
 
-[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
+[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
 
 #### `IsoBlockMover`
 
@@ -7893,6 +7893,20 @@ Walks an ISO 9660 image and yields its actual on-disk byte layout — the 32 KiB
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Single-pass walker. Parses volume descriptors at sector 16+, then walks the directory tree from the root. Each file directory record carries an (extent_LBA, length) pair which is yielded as a single contiguous run. |
+
+#### `IsoFilesystemDriverAdapter`
+
+Native ISO 9660 filesystem sidecar. The archive descriptor remains the offline editor surface; this adapter gives mount backends a stable namespace and positional file handles without extracting entries into temporary files or byte arrays.
+
+Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsoFilesystemDriverAdapter` | `IsoFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `IsoFormatDescriptor`
 
