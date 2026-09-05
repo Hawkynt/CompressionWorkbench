@@ -83,6 +83,15 @@ public partial class AnalysisWindow : Window {
     }
   }
 
+  /// <summary>
+  /// Leaves the elapsed time out of the status line. Documentation capture renders this window
+  /// to a PNG that is committed, and a duration differs on every run, so the image differs on
+  /// every run: the capture bot then pushes a commit whose own continuous-integration run
+  /// cancels the one it was pushed into, and the changed bytes conflict with every other branch
+  /// carrying the same file. One number on screen is what makes the picture unstable.
+  /// </summary>
+  internal bool OmitElapsedTime { get; set; }
+
   internal void RunAnalysis(string fileName, byte[] data) => _ = RunAnalysisAsync(fileName, data);
 
   /// <summary>
@@ -262,7 +271,7 @@ public partial class AnalysisWindow : Window {
     sw.Stop();
     _lastResult = result;
     _entropyRegions = result.EntropyMap;
-    StatusText.Text = $"Done ({sw.ElapsedMilliseconds:N0}ms)";
+    StatusText.Text = this.OmitElapsedTime ? "Done" : $"Done ({sw.ElapsedMilliseconds:N0}ms)";
     BusyBar.Visibility = System.Windows.Visibility.Collapsed;
     RunBtn.IsEnabled = true;
 
