@@ -169,7 +169,7 @@ A primitive used by a file format does not by itself imply full support for that
 
 The public support matrix marks deliberate subsets with `⚠️`. Brotli is one example: the decoder accepts more of the format than the encoder chooses to emit. Such distinctions belong in the support table and implementation discussion rather than being hidden behind a generic “supported” label.
 
-For algorithm-specific investigations, inspect the implementation, nearby comments/tests, and dedicated repository documents where they exist. Examples include `docs/LZMS-ON-DISK.md` and `Compression.Core/SqxFormat/README.md`.
+For algorithm-specific investigations, inspect the implementation, nearby comments/tests, and the dedicated repository documents that record how an undocumented format was established: [`docs/LZMS-ON-DISK.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/LZMS-ON-DISK.md) and [`docs/QUANTUM-ON-DISK.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/QUANTUM-ON-DISK.md).
 
 ## 🧪 Verification
 
