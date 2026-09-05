@@ -15,47 +15,66 @@ CompressionWorkbench.slnx
 |   +-- Compression.Registry.Generator    Roslyn source generator for zero-reflection discovery
 |   +-- Compression.Lib                   Umbrella library: format detection, archive ops, SFX builder
 |
-+-- FileFormats (180+ projects)
-|   +-- FileFormat.Zip                    ZIP archive
-|   +-- FileFormat.Gzip                   Gzip stream
-|   +-- FileFormat.Rar                    RAR archive
-|   +-- ...                               One project per file format
++-- Format projects (one project per format, all discovered by the generator)
+|   +-- FileFormats/FileFormat.*          Archives, compression streams, containers, installers
+|   +-- FileSystems/FileSystem.*          On-disk filesystems and compressed-volume files
+|   +-- Codecs/Codec.*                    Audio codecs
 |
 +-- Analysis
 |   +-- Compression.Analysis              Binary analysis engine (signatures, entropy, fingerprinting,
 |                                         reverse engineering, external tool integration, visualization)
+|   +-- Compression.Benchmarks            Building-block benchmark harness
+|
++-- Mounting
+|   +-- Compression.Mounting              Mount-neutral session / backend contracts
+|   +-- Compression.Mounting.Dokan        Windows Dokany 2 backend
+|   +-- Compression.Mounting.Fuse         Linux FUSE3 backend
 |
 +-- User Interfaces
 |   +-- Compression.CLI                   Command-line tool (cwb)
 |   +-- Compression.UI                    WPF archive browser and analysis wizard
+|   +-- Compression.NativeUI              Cross-platform NativeForms shell for the mounting workflow
 |   +-- Compression.Shell                 Windows Explorer context menu integration
 |
 +-- Self-Extracting Archives
-|   +-- Compression.Sfx.Cli              Console SFX stub
-|   +-- Compression.Sfx.Ui               GUI SFX stub
+|   +-- Compression.Sfx.Cli               Console SFX stub
+|   +-- Compression.Sfx.Ui                GUI SFX stub
+|
++-- NuGet meta-packages (bundle the format projects for downstream consumers)
+|   +-- Hawkynt.FileFormats.Archives
+|   +-- Hawkynt.FileFormats.FileSystems
+|   +-- Hawkynt.FileFormats.Audio
+|   +-- Hawkynt.Algorithms.Hashing
+|   +-- Hawkynt.Algorithms.Checksums
 |
 +-- Tests
     +-- Compression.Tests                 NUnit test project (all tests in one project)
 ```
 
+
 ### Dependency Graph
 
 ```
-FileFormat.* ---> Compression.Core     (algorithm primitives)
-FileFormat.* ---> Compression.Registry (IFormatDescriptor, IStreamFormatOperations, IArchiveFormatOperations)
+FileFormat.* / FileSystem.* / Codec.* ---> Compression.Core     (algorithm primitives)
+FileFormat.* / FileSystem.* / Codec.* ---> Compression.Registry (IFormatDescriptor, IStreamFormatOperations,
+                                                                 IArchiveFormatOperations, IFilesystemDriverProvider)
 
-Compression.Lib -----> FileFormat.*              (ProjectReference for each format)
+Compression.Lib -----> FileFormat.*, FileSystem.*, Codec.*   (ProjectReference per format)
 Compression.Lib -----> Compression.Core
 Compression.Lib -----> Compression.Registry
 Compression.Lib <----- Compression.Registry.Generator  (source generator, compile-time only)
 
 Compression.Analysis -> Compression.Lib          (format detection, trial decompression)
+Compression.Mounting -> Compression.Registry     (mount-neutral session contracts)
 Compression.CLI ------> Compression.Analysis
 Compression.UI -------> Compression.Analysis
+Compression.NativeUI -> Compression.Mounting, Compression.Mounting.Dokan, Compression.Mounting.Fuse
 Compression.Tests ----> Compression.Lib, Compression.Analysis
 ```
 
-Each `FileFormat.*` project is a small, self-contained library that implements one file format. It references only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces). It does not reference `Compression.Lib` or any other format project.
+Each format project is a small, self-contained library that implements one format. It references only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces). It does not reference `Compression.Lib` or any other format project. `Compression.Lib` names every `FileFormat.*` and `Codec.*` project explicitly and picks up `FileSystems/FileSystem.*` through an exhaustive glob, so a new filesystem project joins the build without a csproj edit.
+
+The mount-side layering — block devices, filesystem sessions, and the rule that CompressionWorkbench parses every source layer itself — is described separately in [`docs/FILESYSTEM-DRIVER-ARCHITECTURE.md`](docs/FILESYSTEM-DRIVER-ARCHITECTURE.md).
 
 ---
 
@@ -83,7 +102,7 @@ Candidate formats from earlier stages are validated by parsing their headers and
 
 ## Source Generator
 
-The Roslyn incremental source generator (`Compression.Registry.Generator.FormatDescriptorGenerator`) discovers all implementations of `IFormatDescriptor` and `IBuildingBlock` at compile time. It scans all referenced assemblies for public, non-abstract classes implementing these interfaces.
+The Roslyn incremental source generator (`Compression.Registry.Generator.FormatDescriptorGenerator`) discovers all implementations of `IFormatDescriptor`, `IBuildingBlock` and `IFilesystemDriverAdapter` at compile time. It scans all referenced assemblies for public, non-abstract classes implementing these interfaces. A descriptor declared below a `FileSystem.*` namespace is registered with `isFilesystem: true`, and a discovered driver adapter is registered through `FormatRegistry.RegisterFilesystemDriver` — both without reflection.
 
 ### Generated Output
 
@@ -94,11 +113,12 @@ The generator emits two files:
    static partial void RegisterFormats() {
      FormatRegistry.Register(new FileFormat.Zip.ZipFormatDescriptor());
      FormatRegistry.Register(new FileFormat.Gzip.GzipFormatDescriptor());
-     // ... 180+ more
+     FormatRegistry.Register(new FileSystem.Ext.ExtFormatDescriptor(), isFilesystem: true);
+     // ... one call per discovered descriptor
    }
    static partial void RegisterBuildingBlocks() {
      BuildingBlockRegistry.Register(new Compression.Core.BuildingBlocks.BB_Deflate());
-     // ... 49 more
+     // ... one call per discovered building block
    }
    ```
 
@@ -115,7 +135,7 @@ The generator emits two files:
 
 ## How to Add a New Format
 
-1. Create a new project `FileFormat.YourFormat` at the repository root.
+1. Create a new project under `FileFormats/FileFormat.YourFormat` (or `FileSystems/FileSystem.YourFs`, or `Codecs/Codec.YourCodec` — the folder decides which family the format joins).
 
 2. Implement `IFormatDescriptor` with metadata (ID, display name, extensions, magic bytes, capabilities):
    ```csharp
@@ -141,7 +161,7 @@ The generator emits two files:
 
 3. Implement `IStreamFormatOperations` (for compression streams) or `IArchiveFormatOperations` (for multi-file archives).
 
-4. Add a `<ProjectReference>` to `Compression.Lib.csproj`.
+4. Add a `<ProjectReference>` to `Compression.Lib.csproj`, and to the matching `Hawkynt.FileFormats.*` meta-package. A `FileSystems/FileSystem.*` project is covered by an existing glob in both and needs neither edit.
 
 5. Add the project to `CompressionWorkbench.slnx`.
 
