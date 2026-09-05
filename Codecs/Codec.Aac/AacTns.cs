@@ -6,7 +6,7 @@ namespace Codec.Aac;
 /// One TNS filter for one window: a band-limited all-pole inverse prediction
 /// filter applied across frequency (ISO/IEC 14496-3 §4.6.9).
 /// </summary>
-internal readonly record struct TnsFilter(int Window, int StartBand, int EndBand, int Order, bool Down, float[] Coefficients);
+internal readonly record struct TnsFilter(int Window, int StartBin, int EndBin, int Order, bool Down, float[] Coefficients);
 
 /// <summary>
 /// Temporal Noise Shaping (TNS) inverse filter per ISO/IEC 14496-3 §4.6.9.
@@ -33,12 +33,20 @@ internal sealed class TnsData {
     var orderBits = isShort ? 3 : 5;
     var maxOrder = isShort ? 7 : 12; // AAC-LC long order is capped at 12
 
+    // The filters of a window are transmitted from the top band downwards: each
+    // one covers the `length` scale-factor bands below the previous filter's
+    // start, and the covered range is clipped to the lower of max_sfb and the
+    // rate-dependent TNS band limit (ISO/IEC 14496-3 Table 4.138).
+    var bandLimit = Math.Min(ics.MaxSfb, ics.TnsMaxBands);
+
     for (var w = 0; w < numWindows; ++w) {
       var nFilt = (int)reader.ReadBits(nFiltBits);
       if (nFilt == 0) continue;
       var coefRes = (int)reader.ReadBits(1);
+      var bottom = ics.NumSwb;
       for (var f = 0; f < nFilt; ++f) {
-        _ = reader.ReadBits(lengthBits); // band length (relative to running start)
+        var top = bottom;
+        bottom = Math.Max(0, top - (int)reader.ReadBits(lengthBits));
         var order = (int)reader.ReadBits(orderBits);
         if (order == 0) continue;
         if (order > maxOrder)
@@ -49,8 +57,12 @@ internal sealed class TnsData {
         var coefs = new float[order];
         for (var i = 0; i < order; ++i)
           coefs[i] = (int)reader.ReadBits(coefBits);
+        var startBin = ics.SwbOffset[Math.Min(bottom, bandLimit)];
+        var endBin = ics.SwbOffset[Math.Min(top, bandLimit)];
+        if (endBin <= startBin)
+          continue;
         var lpc = DecodeCoefficients(coefs, coefRes == 1, coefCompress == 1, order);
-        result.Filters.Add(new TnsFilter(w, 0, 0, order, direction, lpc));
+        result.Filters.Add(new TnsFilter(w, startBin, endBin, order, direction, lpc));
       }
     }
     return result;
@@ -90,19 +102,20 @@ internal sealed class TnsData {
   }
 
   /// <summary>
-  /// Applies in-place inverse TNS filtering to one window's spectral coefficients.
-  /// The filter region spans the full coded band; AAC-LC applies it across the
-  /// scale-factor bands the encoder selected (here: the whole long/short window).
+  /// Applies in-place inverse TNS filtering to the spectral coefficients, each
+  /// filter over the scale-factor-band range the bitstream assigned to it.
   /// </summary>
   public void Apply(float[] spectrum, IcsInfo ics) {
     if (this.IsEmpty) return;
     var windowBins = ics.IsEightShort ? AacFilterBank.ShortFrameSize : AacFilterBank.LongFrameSize;
     foreach (var filter in this.Filters) {
       if (filter.Order == 0) continue;
-      var start = filter.Window * windowBins;
-      var size = windowBins;
-      var inc = filter.Down ? 1 : -1;
-      var idx = filter.Down ? start : start + size - 1;
+      var windowBase = filter.Window * windowBins;
+      var size = filter.EndBin - filter.StartBin;
+      if (size <= 0) continue;
+      // direction 1 filters from the top of the region downwards.
+      var inc = filter.Down ? -1 : 1;
+      var idx = windowBase + (filter.Down ? filter.EndBin - 1 : filter.StartBin);
       var history = new float[filter.Order];
       for (var n = 0; n < size; ++n) {
         var y = spectrum[idx];

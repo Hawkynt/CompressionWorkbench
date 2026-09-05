@@ -49,4 +49,10 @@ internal static class AacScaleFactorBands {
 
   /// <summary>Number of scale-factor bands for short windows, per sample-rate index.</summary>
   public static readonly int[] NumSwbShort = [12, 12, 12, 14, 14, 14, 15, 15, 15, 15, 15, 15, 15];
+
+  /// <summary>Highest scale-factor band TNS may cover, long windows (ISO/IEC 14496-3 Table 4.138).</summary>
+  public static readonly int[] TnsMaxBandsLong = [31, 31, 34, 40, 42, 51, 46, 46, 42, 42, 42, 39, 39];
+
+  /// <summary>Highest scale-factor band TNS may cover, short windows (ISO/IEC 14496-3 Table 4.138).</summary>
+  public static readonly int[] TnsMaxBandsShort = [9, 9, 10, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14];
 }
