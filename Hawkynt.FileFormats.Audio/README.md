@@ -228,13 +228,13 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Ogg` | OGG (Xiph container) | WORM | ✅ | ✅ | — | — | Ogg packet blobs, comments, Vorbis/Opus routes |
 | `Okt` | Oktalyzer | R | — | — | — | — | Oktalyzer sample/pattern archive |
 | `Oma` | Sony OpenMG (OMA/AA3) | R | — | — | — | — | Sony OpenMG / ATRAC3 route with non-ATRAC payloads surfaced according to type |
-| `Opus` | Opus (Ogg) | R | — | — | — | — | Opus-in-Ogg route; codec limits apply |
+| `Opus` | Opus (Ogg) | R | ✅ | — | — | — | Opus-in-Ogg route; decodes at 48 kHz, trimmed to the final granule; codec limits apply |
 | `Paf` | PARIS Audio File (Ensoniq) | WORM | — | — | — | — | Ensoniq PARIS |
 | `Psf` | Portable Sound Format | WORM | — | — | — | — | PlayStation Sound Format family container |
 | `Psm` | PSM (Epic MegaGames MASI) | R | — | — | — | — | Epic MASI PSM sample archive |
 | `Ptm` | PTM (PolyTracker) | R | — | — | — | — | PolyTracker sample archive |
 | `Pvf` | Portable Voice Format (mgetty) | WORM | — | — | — | — | Portable Voice Format binary + ASCII |
-| `Qoa` | Quite OK Audio (QOA) | WORM | — | — | — | — | Quite OK Audio container |
+| `Qoa` | Quite OK Audio (QOA) | WORM | ✅ | ✅ | — | — | Quite OK Audio container; decode verified bit-exact against libavcodec |
 | `RealMedia` | RealMedia / RealAudio | R | — | — | — | — | RealMedia, codec-routed audio channels |
 | `Rf64` | RF64 / BWF (Broadcast Wave) | WORM | — | — | — | — | RF64/BWF, `ds64` sizes + `bext` |
 | `Roq` | id Software RoQ | WORM | — | — | — | — | id RoQ DPCM sound chunks; video chunks counted/surfaced separately |

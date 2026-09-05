@@ -50,42 +50,95 @@ public static partial class OpusCodec {
   private static void DecodeFamily0(OggOpusReader reader, Stream output, IOpusDecoder decoder,
     int channels, int preSkip) {
     var pcm = new short[5760 * channels];
-    var bytes = new byte[pcm.Length * 2];
+    var writer = new TrimmingPcmWriter(output, channels, preSkip);
     while (reader.TryReadPacket(out var packet)) {
       if (packet.Length == 0) continue;
       var decodedFrames = decoder.Decode(packet, pcm, 5760, decode_fec: false);
       if (decodedFrames < 0)
         throw new InvalidDataException($"Opus decoder returned invalid frame count {decodedFrames}.");
-      WriteDecodedPcm(output, pcm, channels, decodedFrames, ref preSkip, bytes);
+      writer.Add(pcm, decodedFrames);
     }
+
+    writer.Finish(reader.LastGranulePosition);
   }
 
   private static void DecodeFamily1(OggOpusReader reader, Stream output, IOpusMultiStreamDecoder decoder,
     int channels, int preSkip) {
     var pcm = new short[5760 * channels];
-    var bytes = new byte[pcm.Length * 2];
+    var writer = new TrimmingPcmWriter(output, channels, preSkip);
     while (reader.TryReadPacket(out var packet)) {
       if (packet.Length == 0) continue;
       var decodedFrames = decoder.DecodeMultistream(packet, pcm, 5760, decode_fec: false);
       if (decodedFrames < 0)
         throw new InvalidDataException($"Opus multistream decoder returned invalid frame count {decodedFrames}.");
-      WriteDecodedPcm(output, pcm, channels, decodedFrames, ref preSkip, bytes);
+      writer.Add(pcm, decodedFrames);
     }
+
+    writer.Finish(reader.LastGranulePosition);
   }
 
-  private static void WriteDecodedPcm(Stream output, short[] pcm, int channels, int decodedFrames,
-    ref int preSkip, byte[] bytes) {
-    var skip = Math.Min(preSkip, decodedFrames);
-    preSkip -= skip;
-    var takeFrames = decodedFrames - skip;
-    if (takeFrames <= 0) return;
+  /// <summary>
+  /// Writes decoded frames out, dropping the encoder's pre-skip at the front and
+  /// its padding at the back.
+  /// </summary>
+  /// <remarks>
+  /// The stream's true length is only known once the last page has been read, so
+  /// the most recent chunk is held back rather than written: the trailing padding
+  /// always falls inside it, and holding one chunk costs a frame of memory where
+  /// buffering the whole decode would cost the file.
+  /// </remarks>
+  private sealed class TrimmingPcmWriter(Stream output, int channels, int preSkip) {
+    private readonly byte[] _bytes = new byte[5760 * channels * 2];
+    private readonly int _preSkipTotal = preSkip;
+    private short[] _held = [];
+    private int _heldFrames;
+    private long _writtenFrames;
+    private int _preSkipRemaining = preSkip;
 
-    var source = skip * channels;
-    var sampleCount = takeFrames * channels;
-    var byteCount = sampleCount * 2;
-    for (var i = 0; i < sampleCount; ++i)
-      BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2, 2), pcm[source + i]);
-    output.Write(bytes, 0, byteCount);
+    public void Add(short[] pcm, int decodedFrames) {
+      this.Flush(this._heldFrames);
+
+      var skip = Math.Min(this._preSkipRemaining, decodedFrames);
+      this._preSkipRemaining -= skip;
+      var keep = decodedFrames - skip;
+      if (keep <= 0) {
+        this._heldFrames = 0;
+        return;
+      }
+
+      if (this._held.Length < keep * channels)
+        this._held = new short[keep * channels];
+      Array.Copy(pcm, skip * channels, this._held, 0, keep * channels);
+      this._heldFrames = keep;
+    }
+
+    /// <summary>
+    /// Flushes what is held, clipped to the length the final granule declares.
+    /// </summary>
+    public void Finish(long lastGranulePosition) {
+      var frames = this._heldFrames;
+      // Only a positive granule is a statement about length. Zero is what a page
+      // carries when it has nothing to say, so trusting it would throw away the
+      // last packet of any stream that never fills the field in.
+      if (lastGranulePosition > 0) {
+        // The granule counts pre-skip too, so the audible length is what is left
+        // after it. A stream that declares less than we decoded is padded.
+        var total = Math.Max(0, lastGranulePosition - this._preSkipTotal);
+        frames = (int)Math.Clamp(total - this._writtenFrames, 0, frames);
+      }
+
+      this.Flush(frames);
+      this._heldFrames = 0;
+    }
+
+    private void Flush(int frames) {
+      if (frames <= 0) return;
+      var sampleCount = frames * channels;
+      for (var i = 0; i < sampleCount; ++i)
+        BinaryPrimitives.WriteInt16LittleEndian(this._bytes.AsSpan(i * 2, 2), this._held[i]);
+      output.Write(this._bytes, 0, sampleCount * 2);
+      this._writtenFrames += frames;
+    }
   }
 
   /// <summary>Reads OpusHead / OpusTags metadata without decoding audio.</summary>
