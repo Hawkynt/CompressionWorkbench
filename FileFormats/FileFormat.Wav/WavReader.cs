@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 namespace FileFormat.Wav;
 
@@ -134,6 +135,38 @@ public sealed class WavReader {
         if (bitsPerSample is not (2 or 3 or 4 or 5))
           throw new InvalidDataException($"G.726 ADPCM requires 2, 3, 4 or 5 coded bits/sample, got {bitsPerSample}.");
         return Pcm16(1, sampleRate, Codec.G72x.G72xCodec.DecodeG726(rawData, bitsPerSample), metadata, channelMask, factSampleFrames);
+      }
+      case 0x0020: {
+        // Yamaha ADPCM packs one frame per byte: low nibble the first channel,
+        // high nibble the last, each with its own predictor and step.
+        if (numChannels is < 1 or > 2)
+          throw new InvalidDataException($"Yamaha ADPCM carries one or two channels, got {numChannels}.");
+        if (bitsPerSample is not (0 or 4))
+          throw new InvalidDataException($"Yamaha ADPCM expects 4 coded bits/sample, got {bitsPerSample}.");
+        return Pcm16(numChannels, sampleRate,
+          Codec.AicaAdpcm.AicaAdpcmCodec.Decode(rawData, numChannels), metadata, channelMask, factSampleFrames);
+      }
+      case 0x5346: {
+        // Shockwave Flash ADPCM restarts at every block: each one opens with its
+        // own code width and seed predictor, so the stream cannot be decoded as a
+        // single run the way the differential codecs can.
+        if (numChannels is < 1 or > 2)
+          throw new InvalidDataException($"SWF ADPCM carries one or two channels, got {numChannels}.");
+        if (blockAlign <= 0) throw new InvalidDataException("SWF ADPCM needs blockAlign.");
+        var swf = new List<short>();
+        for (var offset = 0; offset < rawData.Length; offset += blockAlign)
+          swf.AddRange(Codec.AdpcmX.Swf.Decode(
+            rawData.AsSpan(offset, Math.Min(blockAlign, rawData.Length - offset)), numChannels));
+        return Pcm16(numChannels, sampleRate, CollectionsMarshal.AsSpan(swf), metadata, channelMask, factSampleFrames);
+      }
+      case 0xC13A: {
+        // DFPWM is one bit per sample and carries no per-channel state: the
+        // decoder walks the interleaved stream and the samples fall out in order.
+        var dfpwm = Codec.Dfpwm.DfpwmCodec.Decompress(rawData);
+        var widened = new short[dfpwm.Length];
+        for (var i = 0; i < dfpwm.Length; ++i)
+          widened[i] = (short)((dfpwm[i] - 128) << 8);
+        return Pcm16(numChannels, sampleRate, widened, metadata, channelMask, factSampleFrames);
       }
       case 0x0050 or 0x0055:
         return DecodeMpegAudio(rawData, formatCode, numChannels, sampleRate, fmtExtra, metadata, channelMask, factSampleFrames);

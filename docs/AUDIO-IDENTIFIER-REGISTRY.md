@@ -96,8 +96,14 @@ disagree out loud. Measured that way, against ffmpeg 9.0.1 and the reference `wv
   decoder reads ours back losslessly — for WavPack, `wvunpack -v` verifies the file outright.
 - **Opus** matches libopus sample for sample within 2 LSB and now ends on the exact sample,
   once the final page's granule position is honoured rather than only the pre-skip.
+- **Yamaha ADPCM**, **SWF ADPCM**, **DFPWM**, **IMA ADPCM**, **MS ADPCM**, **G.722** and
+  **Microsoft GSM 06.10** decode a foreign WAVE stream bit-exactly, mono and stereo. **MP2**
+  matches within 2 LSB, as a lossy codec decoded by two implementations should.
 - **AC-3** and **DTS** return no samples at all from a foreign stream, though ffmpeg decodes
   what they write.
+- **WMA v1/v2** decodes a tone at roughly the right frequency and about four times too quiet in
+  RMS while only 1.6 times down in peak, so the shape is wrong and not merely the gain. It is
+  left unrouted from WAVE rather than made reachable in that state.
 
 Three of those were the same failure in three places: a decoder that reads what our own encoder
 writes and gives up on the first frame of anyone else's. WavPack framed its metadata sub-blocks
@@ -109,6 +115,15 @@ per-frame CRC passed throughout, because it covers the bytes and not what they m
 AC-3 and DTS are the remaining pair, and they now refuse rather than hand the pipeline nothing:
 it will build a valid, entirely empty file out of no samples, and an empty file that claims to
 be a conversion cannot be told apart from silence that was really in the source.
+
+### Where ffmpeg is the one that is wrong
+
+ffmpeg is the cheap oracle, not the authority. Our **G.726** decode differs from ffmpeg's by a
+few units in the codec's 14-bit domain — and it is ffmpeg that departs from the standard. Fed
+the ITU-T G.191 reference codeword vector, ffmpeg returns 588, 2124 and -7264 where G.191
+specifies 584, 2116 and -7232; our decoder returns the specified values and the conformance
+test in `Compression.Tests/Codecs/G72x` pins them. So a disagreement with ffmpeg is a question,
+never a verdict: for a codec with a published reference, the reference decides.
 
 Conversions that remain refusals by nature, not gaps: DSDIFF and DSF take per-channel raw DSD,
 so PCM must first be sigma-delta modulated; MIDI takes MIDI tracks, and turning audio into

@@ -1,0 +1,213 @@
+using System.Security.Cryptography;
+using FileFormat.Wav;
+using NUnit.Framework;
+
+namespace Compression.Tests.Audio;
+
+/// <summary>
+/// WAVE tags whose codec was already in the tree and which the reader refused
+/// anyway.
+/// </summary>
+/// <remarks>
+/// Each of these threw "WAVE format code 0x… is not decoded to canonical PCM"
+/// while a working decoder sat one call away — the ledger's "routing gap" as
+/// opposed to a "codec gap". The framing is what each route had to get right:
+/// Yamaha keeps per-channel state across the whole stream, SWF restarts at every
+/// block, and DFPWM arrives as WAVE_FORMAT_EXTENSIBLE so the tag only appears
+/// once the sub-format GUID is resolved.
+/// </remarks>
+[TestFixture]
+public sealed class WaveCompressedTagRoutingTests {
+
+  /// <summary>
+  /// The fmt chunk's format tag, resolved through the extensible sub-format when
+  /// the file uses one.
+  /// </summary>
+  private static int FormatTag(byte[] wave) {
+    var position = 12;
+    while (position + 8 <= wave.Length) {
+      var id = System.Text.Encoding.ASCII.GetString(wave, position, 4);
+      var size = BitConverter.ToInt32(wave, position + 4);
+      if (id == "fmt ") {
+        var tag = BitConverter.ToUInt16(wave, position + 8);
+        return tag == 0xFFFE && size >= 40 ? BitConverter.ToUInt16(wave, position + 8 + 24) : tag;
+      }
+
+      position += 8 + size + (size & 1);
+    }
+
+    return -1;
+  }
+
+  private static void AssertDecodesLikeLibavcodec(string base64Wave, string digest, int expectedTag) {
+    var wave = Convert.FromBase64String(base64Wave);
+
+    // The tag really is the one this test claims to cover. Read it out of the
+    // fixture rather than from the reader, which has already decoded it away.
+    Assert.That(FormatTag(wave), Is.EqualTo(expectedTag), "the fixture no longer carries the tag under test");
+
+    var parsed = new WavReader().ReadCanonicalPcm(wave);
+    Assert.Multiple(() => {
+      Assert.That(parsed.FormatCode, Is.EqualTo(1), "the tag was not decoded to linear PCM");
+      Assert.That(parsed.NumChannels, Is.EqualTo(2));
+      Assert.That(parsed.SampleRate, Is.EqualTo(22_050));
+      Assert.That(Convert.ToHexString(SHA256.HashData(parsed.InterleavedPcm)).ToLowerInvariant(),
+        Is.EqualTo(digest), "decoded PCM must be byte-for-byte what libavcodec decodes");
+    });
+  }
+
+  /// <summary>0.06 s of a 440 Hz sine, 22.05 kHz stereo, encoded by libavcodec.</summary>
+  private const string YamahaAdpcmWave =
+    "UklGRlQIAABXQVZFZm10IBIAAAAgAAIAIlYAAIA+AAAABAQAAABmYWN0BAAAACsFAABMSVNUGgAAAElORk9JU0ZUDQAAAExhdmY2" +
+    "My4xLjEwMQAAZGF0YQAIAAAAd2YiESIzIhEiIhEAiIiqu8zdzLvMu92qu8yqu7vMqruqqpmqiIgRIjNVRDNVM0QzRDMzREQiIjMz" +
+    "IiIiEREAmaq73cy73bvMu8y7u8y7zKq7u6qqqpmZiBERREREREQzREQzM0QzRDMzIjMzMyIiAACIqszMzMy73bu73aq7zKq7u7u7" +
+    "qruqqpmIESIzVTNVM0REM0QzRDMzM0QiMyIzIhERAIiqu8zdzLvMzLu73aq7u8yqu7uqu6qZmYgAIjNEVTNVMzNVIkQiMzNEIjMz" +
+    "IjMiEREAiJm73bvdu8zMu8y7u8y7zKq7u7uqqqqZiBERM0RVM0RERDNEMzNERCIzIjMzIiIiEQCImbvM3bvdu7vMzLvMu7u7zLuq" +
+    "u7uqmaqIACIiVTNEVTMzREQzRDMzM0QzIjMzIiIRAIiZu8zM3bvMu92qzKq7u8yqu7u7qruZmZkAETNERERVMzNERDMzVSIiMzMz" +
+    "IjMiIhERiJm7zMzMzMzMu7vdqru7zLuqu7uqu6qZiIgRM0RERERERDMzREQzMzNEMzMzIiIiIgAAmbu73czMu8zMu8y7zLu7u7vM" +
+    "qruqqpmIiBEiREREREQzVSIzRDMzRCIzMzMzIiIREQCZu7vdzLvdu8y7zLvMqsyqu6q7qqqqmZkAACJERERERDNERDMzVSIiMzMz" +
+    "MzMiIiIAAIi7u9273cy7u927u7vMu8yqu6q7qqqZmYgAIkREREQzVTNEMzNEM0QzMyIzMzMiIgAAiKq73cy73bu73bu7u8y7zKq7" +
+    "u6qqqqqZAAAiM0RVM1UzRDNEMzNEM0QiMzMiMyIREQCZmbvdu927zMy7zLvMqsyqu6q7u6qqqoiIABEzVTNVM0REM0QzM0REIjMi" +
+    "MzMiIiIAEZmZu8zdu927u92qzKq7u8yqu7uqu6qqmYgAIjNEVTNEREQzRDMzRDNEMyIzMyIiIhEAiJm7zN27zMzMu8y7u8y7zLuq" +
+    "u7uqqqqZiIgiIlUzRFUzM0REM0QzMzNEMyIzMyIiEQCImardu8zMzMy7zLu7zLvMu6q7u6q7maqIABEiRFUzREREMzNVIjMzRDMi" +
+    "MzMiMyIRAACZu8zMzN2qzLvMu7vMu8y7qru7qruqmYiIETMzVUREM0REM0QzRDMzMzNEIjMiIhEAiIiqzMzMzMzMu7vdqru7zLuq" +
+    "u7u7qqqZmYgRMzNVREQzREQzRDNEIkQiIjMzIiIiERGIiLu73cy73bvMu8y7u8zMqqq7u6qqqpmZiBEiREREREQzREQzM0QzRDMz" +
+    "IjMzMyIREQCZqrvdzLvdu8y7zLu7zLvMqru7qqqqmZmIACJEREREM1UzRDMzRDNEMyIzMzMzIiIRiIiqu9273bvdqsyqu8y7u7vM" +
+    "u6q7qqqqmQAAIjNEVTNVM0QzM1UiM0QiMyIzIjMiEREAiKq7zN273bu73bu7u8y7zKq7u6q7qpmZiAARM1UzVTNERDNEMzNERCIz" +
+    "IjMzIiIiEQCZmbvM3bvdu7vMzLvMu7u7zLuqu6q7mZmZEREzRFUzREREM0QzM0QzRDMiMzMiIiIRAIiZu8zdu8zMzLvMu7vMu8yq" +
+    "u7u7qqqqmZkAIiJEVTNEREQzRDMzRDNEIjMzMyIzESIAiJm7zMzdu8y73aq7zLu7zKq7u7uqqqqqiAARIkRVM0REM1UiRCIzM0Qz" +
+    "IjMzIjMiEQAAmbvMzMzMzMy7u92qu7vMu6q7u6q7qpmIiBEiREREVSJEM0QzM0QzRDMiMzMzIiIREYiZqszMzMz//4iIAIgAiIgA" +
+    "AIiIAACIiAAAiIgAiAAAiIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACI" +
+    "AIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgA" +
+    "iACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACI" +
+    "AIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgA" +
+    "iACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACI" +
+    "AIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgA" +
+    "iACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACI" +
+    "AIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgA" +
+    "iACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACI" +
+    "AIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiACIAIgAiA==";
+
+  /// <summary>SHA-256 of libavcodec's own decode, over the frames the `fact` count declares.</summary>
+  private const string YamahaAdpcmDigest = "bdd8e4f8a559769200db01551b65628f186b401c48c521770c24078702fe34b1";
+
+  /// <summary>
+  /// Yamaha ADPCM. One frame per byte: the low nibble is the first channel and the
+  /// high nibble the last, each with its own predictor and step.
+  /// </summary>
+  [Test]
+  [Category("RoundTrip")]
+  public void YamahaAdpcmTagDecodesLikeLibavcodec() => AssertDecodesLikeLibavcodec(YamahaAdpcmWave, YamahaAdpcmDigest, 0x0020);
+
+  /// <summary>0.06 s of a 440 Hz sine, 22.05 kHz stereo, encoded by libavcodec.</summary>
+  private const string SwfAdpcmWave =
+    "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" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+  /// <summary>SHA-256 of libavcodec's own decode, over the frames the `fact` count declares.</summary>
+  private const string SwfAdpcmDigest = "1ef2d9c06665a707c39a1d9a32b1855d0eb4b570ac73d3f72284a8991578119b";
+
+  /// <summary>
+  /// Shockwave Flash ADPCM. Every block restarts with its own code width and seed
+  /// predictor, so the stream cannot be decoded as one continuous run.
+  /// </summary>
+  [Test]
+  [Category("RoundTrip")]
+  public void SwfAdpcmTagDecodesLikeLibavcodec() => AssertDecodesLikeLibavcodec(SwfAdpcmWave, SwfAdpcmDigest, 0x5346);
+
+  /// <summary>0.06 s of a 440 Hz sine, 22.05 kHz stereo, encoded by libavcodec.</summary>
+  private const string DfpwmWave =
+    "UklGRrYBAABXQVZFZm10ICgAAAD+/wIAIlYAAIA+AAACAAEAFgABAAMAAAA6wfo4gR1DYaQNzlPKYHzRZmFjdAQAAAArBQAATElT" +
+    "VBoAAABJTkZPSVNGVA0AAABMYXZmNjMuMS4xMDEAAGRhdGFLAQAA9n3dLYkIgihIJHV333d93ZKICCiIRFJ3933X1y1JiECCQiS1" +
+    "fW/f9W6TIgiiIBGpdd97fbtbKYIgChKRWve917e7lSIICiIRSd197/V1tyQiCKIgkdTd915fd0sigiAKEknd3W/fdbckIgiiIJHU" +
+    "3X3f9XVLIoIgChJJ3d33XV+3JCICCiKR1N193/V1SxIiCJIQSW3f23fd3aQIgihIRGrd917f7laKIIiCRKTWfW/f7W6TCIKCSERS" +
+    "d997fd0tiQiCKEgkdfe919fdkoggiIJEUnf323fdLYkIgihIJHV333d93ZKIIIiCRFJ3933X1y2JiICCSCR1fe/1XbeSJAgiCiKp" +
+    "dd97fbtbKYIgChKRWve917e7lSIIoiARqXXf23e72yQioCAKkdTd915fd0sigiAKEkndfe/1dbckIgiiIJHU3f32XXdLIgA=";
+
+  /// <summary>SHA-256 of libavcodec's own decode, over the frames the `fact` count declares.</summary>
+  private const string DfpwmDigest = "1d592ca49819d1fe2327e001fbbac116fb2c334e0656b3d47cc4d3f9953ad5e0";
+
+  /// <summary>
+  /// DFPWM, one bit per sample, carried as WAVE_FORMAT_EXTENSIBLE. The decoder walks
+  /// the interleaved stream and the samples fall out in order.
+  /// </summary>
+  [Test]
+  [Category("RoundTrip")]
+  public void DfpwmTagDecodesLikeLibavcodec() => AssertDecodesLikeLibavcodec(DfpwmWave, DfpwmDigest, 0xC13A);
+
+  /// <summary>
+  /// The mono path shares one predictor across both nibbles of a byte; the stereo
+  /// path must not, or a two-channel stream decodes as noise.
+  /// </summary>
+  [Test]
+  public void YamahaStereoKeepsSeparateStatePerChannel() {
+    var wave = Convert.FromBase64String(YamahaAdpcmWave);
+    var parsed = new WavReader().ReadCanonicalPcm(wave);
+
+    var left = new List<short>();
+    var right = new List<short>();
+    for (var i = 0; i + 3 < parsed.InterleavedPcm.Length; i += 4) {
+      left.Add(BitConverter.ToInt16(parsed.InterleavedPcm, i));
+      right.Add(BitConverter.ToInt16(parsed.InterleavedPcm, i + 2));
+    }
+
+    // Both channels carry the same tone, so a shared predictor would make one of
+    // them drift away from the other rather than track it.
+    Assert.That(left, Is.EqualTo(right), "the two channels should decode identically for a mono-sourced tone");
+    Assert.That(left.Max(s => Math.Abs((int)s)), Is.GreaterThan(1_000), "decoded silence");
+  }
+}

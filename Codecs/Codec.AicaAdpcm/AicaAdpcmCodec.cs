@@ -33,21 +33,41 @@ public static class AicaAdpcmCodec {
   /// Decodes a mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two
   /// samples (low nibble first), so the output holds <c>data.Length * 2</c> samples.
   /// </summary>
-  public static short[] Decode(ReadOnlySpan<byte> data) {
+  public static short[] Decode(ReadOnlySpan<byte> data) => Decode(data, channels: 1);
+
+  /// <summary>
+  /// Decodes an interleaved AICA / Yamaha ADPCM stream of
+  /// <paramref name="channels" /> channels to 16-bit PCM.
+  /// </summary>
+  /// <remarks>
+  /// Each byte carries one frame: the low nibble belongs to the first channel and
+  /// the high nibble to the last, so mono simply reads two consecutive samples
+  /// from one state and stereo splits the byte between two. Each channel keeps
+  /// its own predictor and step — sharing them is what makes a stereo stream
+  /// decode as noise.
+  /// </remarks>
+  public static short[] Decode(ReadOnlySpan<byte> data, int channels) {
+    if (channels is < 1 or > 2)
+      throw new ArgumentOutOfRangeException(nameof(channels), "AICA ADPCM carries one or two channels.");
+
     var output = new short[data.Length * 2];
-    var predictor = 0;
-    var step = InitialStep;
+    var predictor = new int[channels];
+    var step = new int[channels];
+    Array.Fill(step, InitialStep);
+
+    var last = channels - 1;
     var o = 0;
     foreach (var b in data) {
-      output[o++] = DecodeNibble((byte)(b & 0x0F), ref predictor, ref step);
-      output[o++] = DecodeNibble((byte)(b >> 4), ref predictor, ref step);
+      output[o++] = DecodeNibble((byte)(b & 0x0F), ref predictor[0], ref step[0]);
+      output[o++] = DecodeNibble((byte)(b >> 4), ref predictor[last], ref step[last]);
     }
+
     return output;
   }
 
   /// <summary>
   /// Encodes 16-bit PCM to a mono AICA ADPCM byte stream using the same state machine
-  /// as <see cref="Decode"/>, so round-tripping reproduces the waveform within the
+  /// as <see cref="Decode(ReadOnlySpan{byte})"/>, so round-tripping reproduces the waveform within the
   /// codec's lossy tolerance. Two samples pack into each byte (low nibble first); an
   /// odd trailing sample is paired with a zero (silence) high nibble.
   /// </summary>
