@@ -351,6 +351,15 @@ Modern codecs in particular should be read according to their source/tests:
 
 The same rule applies to every long-tail codec: unsupported branches should fail explicitly or surface coded/raw data rather than fabricate PCM.
 
+The support matrix above is one of three separate ledgers — containers, audio
+codecs and video codecs are tracked apart, because recognising a stream does not
+imply decoding it. Which ledger answers which question, and the rule that an
+identifier is not a codec, are in
+[`docs/MEDIA-LEDGERS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/MEDIA-LEDGERS.md).
+Where the historical WAVE/ACM tags in this matrix come from, and why the
+catalogue is not a to-do list, is in
+[`docs/AUDIO-IDENTIFIER-REGISTRY.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/AUDIO-IDENTIFIER-REGISTRY.md).
+
 ## 🧪 Validation and interoperability
 
 The source repository uses codec/container round trips, synthetic vectors, format-specific regressions, and external-tool/reference comparisons where suitable. Exact numeric quality results belong to tests or generated reports rather than being frozen into package marketing copy, because implementations and test corpora evolve independently of NuGet README prose.
