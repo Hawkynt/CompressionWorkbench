@@ -445,10 +445,12 @@ public static class SbcCodec {
         Array.Copy(v, 0, v, 80, 9);
       }
       var m = SbcTables.SynMatrix4[i];
-      v[offset[i]] = (int)(((uint)m[0] * (uint)sbSample[0] +
-                            (uint)m[1] * (uint)sbSample[1] +
-                            (uint)m[2] * (uint)sbSample[2] +
-                            (uint)m[3] * (uint)sbSample[3]) >> 15);
+      // The sum is signed: it must be shifted as a signed value, or every negative
+      // sample zero-fills its top bits and comes back as a large positive one.
+      v[offset[i]] = (int)((uint)m[0] * (uint)sbSample[0] +
+                           (uint)m[1] * (uint)sbSample[1] +
+                           (uint)m[2] * (uint)sbSample[2] +
+                           (uint)m[3] * (uint)sbSample[3]) >> 15;
     }
 
     for (int idx = 0, i = 0; i < 4; ++i, idx += 5) {
@@ -477,14 +479,15 @@ public static class SbcCodec {
         Array.Copy(v, 0, v, 160, 9);
       }
       var m = SbcTables.SynMatrix8[i];
-      v[offset[i]] = (int)(((uint)m[0] * (uint)sbSample[0] +
-                            (uint)m[1] * (uint)sbSample[1] +
-                            (uint)m[2] * (uint)sbSample[2] +
-                            (uint)m[3] * (uint)sbSample[3] +
-                            (uint)m[4] * (uint)sbSample[4] +
-                            (uint)m[5] * (uint)sbSample[5] +
-                            (uint)m[6] * (uint)sbSample[6] +
-                            (uint)m[7] * (uint)sbSample[7]) >> 15);
+      // Signed sum, signed shift — see SynthesizeFour.
+      v[offset[i]] = (int)((uint)m[0] * (uint)sbSample[0] +
+                           (uint)m[1] * (uint)sbSample[1] +
+                           (uint)m[2] * (uint)sbSample[2] +
+                           (uint)m[3] * (uint)sbSample[3] +
+                           (uint)m[4] * (uint)sbSample[4] +
+                           (uint)m[5] * (uint)sbSample[5] +
+                           (uint)m[6] * (uint)sbSample[6] +
+                           (uint)m[7] * (uint)sbSample[7]) >> 15;
     }
 
     for (int idx = 0, i = 0; i < 8; ++i, idx += 5) {
