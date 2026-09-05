@@ -10,7 +10,8 @@ unsettled, so the staging is opt-in via environment variables. The tests
 skip cleanly with actionable hints when no image is staged.
 
 For FAT validation (no proprietary binaries needed) we ship FreeDOS — see
-`FreeDosCache.cs` and the `Fat_OurImage_FreedosChkdsk` test.
+`FreeDosCache.cs` and the `Fat_OurImage_FreedosChkdsk` test, which is
+`[Explicit]` and so has to be named on the filter to run.
 
 ---
 
@@ -18,18 +19,19 @@ For FAT validation (no proprietary binaries needed) we ship FreeDOS — see
 
 DBLSPACE and DRVSPACE are **on-disk-different products**:
 
-| Product   | DOS version | Driver        | CVF magic | Env var                       |
-| --------- | ----------- | ------------- | --------- | ----------------------------- |
-| DoubleSpace | 6.0 / 6.2 | `DBLSPACE.BIN` | `DBLS`    | `CWB_MSDOS_DBLSPACE_BOOT_IMG` |
-| DriveSpace  | 6.22+ / Win95 OSR2 | `DRVSPACE.BIN` | `DVRS`    | `CWB_MSDOS_DRVSPACE_BOOT_IMG` |
+| Product   | DOS version | Driver        | CVF magic | Env var (and legacy fallback)                            |
+| --------- | ----------- | ------------- | --------- | -------------------------------------------------------- |
+| DoubleSpace | 6.0 / 6.2 | `DBLSPACE.BIN` | `DBLS`    | `CWB_MSDOS_DBLSPACE_BOOT_IMG` / `CWB_MSDOS_BOOT_IMG`     |
+| DriveSpace  | 6.22+ / Win95 OSR2 | `DRVSPACE.BIN` | `DVRS`    | `CWB_MSDOS_DRVSPACE_BOOT_IMG` / `CWB_MSDOS622_BOOT_IMG`  |
 
 Each test builds its CVF via `DoubleSpaceWriter` with the matching
 `Variant` (`CvfVariant.DoubleSpace60` for DBLS, `CvfVariant.DriveSpace62`
 or `CvfVariant.DriveSpace30` for DVRS) and runs the matching `/CHKDSK`
 command inside DOSBox-X.
 
-A legacy `CWB_MSDOS_BOOT_IMG` env var is honored as a fallback for
-either gate when the variant-specific var is not set.
+Each gate has its own legacy fallback, honoured when the variant-specific
+var is not set: `CWB_MSDOS_BOOT_IMG` for DBLSPACE, `CWB_MSDOS622_BOOT_IMG`
+for DRVSPACE. There is no variable that serves both.
 
 ## Building a DBLSPACE boot image (MS-DOS 6.0 / 6.2)
 
@@ -111,10 +113,10 @@ gates.
 
 ## Why this is split
 
-The user explicitly asked for separate test gates because the two
-products have different drivers, different magic bytes, and different
-CVF version codes. Conflating them under one test would hide which
-variant actually validates against which driver — and we already
-maintain three `CvfVariant` enum values inside `DoubleSpaceWriter`, so
-splitting the harness brings the test surface in line with the writer
-surface.
+The two products have different drivers, different magic bytes and
+different CVF version codes. One combined test would pass or fail without
+saying which variant validated against which driver, which is the only
+thing these gates exist to establish. `DoubleSpaceWriter` already carries
+four `CvfVariant` values — `DoubleSpace60`, `DriveSpace62`,
+`DriveSpace30` and `DriveSpace3` — so a split harness keeps the test
+surface in line with the writer surface rather than behind it.

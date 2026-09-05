@@ -11,38 +11,80 @@ dotnet build Compression.CLI
 
 ## Commands
 
+### Reading and writing archives
+
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `list <archive>` | `l` | List contents of an archive |
+| `list <archive>` | `l`, `ls` | List contents of an archive |
 | `extract <archive> [files...]` | `x` | Extract files from an archive |
 | `create <archive> <files...>` | `c` | Create a new archive |
 | `test <archive>` | `t` | Test archive integrity |
 | `add <archive> <files...>` | - | Add or replace files inside an existing archive |
-| `remove <archive> <names...>` | - | Remove named entries from an existing archive |
+| `remove <archive> <names...>` | `rm` | Remove named entries from an existing archive |
 | `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
 | `info <archive>` | - | Show detailed archive information |
+| `inspect <file>` | - | Inspect file-specific capabilities (e.g. `--unpack-capabilities`) |
+
+### Conversion and re-encoding
+
+| Command | Alias | Description |
+|---------|-------|-------------|
 | `convert <input> <output>` | - | Convert between any formats (archive, FS, stream) |
+| `convert-archive <in> <out>` | - | Cross-format conversion (archive↔archive, archive↔FS, FS↔FS). `convert-fs` is a hidden back-compat alias |
 | `optimize <input> <output>` | `opt` | Re-encode with optimal compression |
+| `bestfit <file>` | - | Rank every building block on the file's data; `--apply` writes the winner's output |
 | `benchmark <file>` | `bench` | Compare compression across algorithms |
 | `formats` | - | List all supported formats |
+| `suggest <file>` | - | Platform-aware format recommendation |
+
+### Analysis
+
+| Command | Alias | Description |
+|---------|-------|-------------|
 | `analyze <file>` | - | Run binary analysis (signatures, entropy, fingerprinting) |
 | `auto-extract <file>` | - | Recursive nested extraction (disk -> partition -> FS -> file) |
 | `batch <dir>` | - | Scan a directory and aggregate format stats |
-| `suggest <file>` | - | Platform-aware format recommendation |
-| `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates |
-| `reverse-engineer <tool>` | `reveng` | Black-box probing of an unknown compression tool |
 | `carve <file>` | - | Photorec-style file carver |
 | `visualize <file>` | - | Colored block map of detected envelopes |
-| `defragment <image>` | - | Defragment a FS image in place (4 layout strategies) |
+| `reverse-engineer <tool>` | `reveng` | Black-box probing of an unknown compression tool |
+| `tool (init\|list\|add\|run\|remove)` | - | Manage and run external-tool templates |
+
+### Image maintenance
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `defragment <image>` | `defrag` | Defragment a FS image in place |
+| `scramble <image>` | - | Scatter every block on purpose, so the defragmenter has something to do. Content is preserved exactly |
+| `place <image> <name>` | - | Put one named file at one chosen offset, moving whatever is in the way |
 | `shrink <image>` | - | Defrag + truncate trailing free space |
-| `wipe-empty <image>` | - | Zero-fill all unused space in an image or archive |
-| `deploy <image> <device>` | - | Raw-write an image to a block device with CRC verification |
+| `wipe-empty <image>` | `wipe` | Zero-fill all unused space in an image or archive |
+| `compact <image>` | - | Defragment + optimize + shrink: the smallest still-valid container |
+| `reconfigure <image>` | - | Change geometry/options after creation without losing data; verified before the original is replaced |
 | `convert-clusters <image>` | - | Rebuild a FAT image with a different cluster size |
 | `resize <image>` | - | Resize a filesystem image to a target size |
-| `convert-archive <in> <out>` | - | Cross-format conversion (archive-to-archive, archive-to-FS, FS-to-archive, FS-to-FS). `convert-fs` is a hidden back-compat alias. |
 | `dedup <image>` | - | Find and optionally remove duplicate files (by SHA-256) |
 | `sparsify <image>` | - | Remove zero-filled blocks from a container image |
 | `densify <image>` | - | Pre-allocate all blocks in a container image |
+| `deploy <image> <device>` | - | Raw-write an image to a block device with CRC verification |
+
+### Partition table
+
+`cwb partition <sub>` edits the MBR/GPT table of a raw disk image or a
+virtual-disk container (VHD/VHDX/VMDK/QCOW2/VDI).
+
+| Subcommand | Description |
+|---|---|
+| `list` | Show all primaries + logicals in disk-table order |
+| `add` | Add a primary, or a logical inside an extended container |
+| `delete` | Remove a partition entry; bytes left untouched |
+| `purge` | Remove the entry **and** zero-fill the partition's bytes |
+| `convert` | Switch between MBR and GPT schemes |
+| `format` | Write a fresh filesystem image into a partition |
+| `verify` | Check signature, GPT header/entry-array CRCs, primary/backup consistency, extent bounds |
+
+The verbs `compact`, `defragment`, `shrink`, `wipe-empty` and `purge` are the
+maintenance set defined once in [`docs/ARCHIVE-MODEL.md`](../docs/ARCHIVE-MODEL.md);
+which formats offer which is recorded in the package READMEs, not here.
 
 ## Examples
 

@@ -1,9 +1,12 @@
 # Microsoft DriveSpace 3 (DVR3) CVF — format notes
 
-> **Driver-verification status (2026-06-18).**
-> - **`GenuineDvr3Writer` is driver-proven (read):** the independent `dmsdos`
->   driver detects its output as "drivespace 3 CVF", mounts it, and reads every
->   file back **byte-exact** (gated by `DriveSpace3GenuineDmsdosTests`).
+> **Driver-verification status (2026-09-05).**
+> - **`GenuineDvr3Writer` is driver-proven (read), for every codec it can
+>   emit:** the independent `dmsdos` driver detects its output as
+>   "drivespace 3 CVF", mounts it, and reads every file back **byte-exact**.
+>   `DriveSpace3GenuineDmsdosTests` runs that gate once per `CvfLzMethod` —
+>   `Stored`, `Ds`, `Jm`, `Sq` and `Auto` — so the compressed cluster paths are
+>   proven against the driver, not only against ourselves.
 > - **The legacy `DriveSpace3Writer` (`MS_DSP3` / `DVR3` / offset-36) is NOT
 >   genuine:** `dmsdos` rejects it (`cvftest` → "not a known CVF"). Its `MS_DSP3` /
 >   offset-36 assumptions below were never confirmed against a real driver and are
@@ -28,9 +31,9 @@ size is **32 KB for DriveSpace 3** (= 64 sectors/cluster, what `GenuineDvr3Write
 emits) versus 8 KB for the other compressed filesystems. Per-cluster compression
 is an orthogonal codec keyed by a 4-byte header — `JM-0-0` (DriveSpace 3 *Normal*,
 shared with DOS 6.22 DriveSpace), `JM-0-1` (*High*), `SQ-0-0` (*Ultra*).
-`GenuineDvr3Writer` writes **STORED (uncompressed)** clusters (MDFAT flag = used +
-uncompressed), a driver-accepted mode that sidesteps codec parity; emitting
-`JM`/`SQ`-compressed clusters is a future enhancement.
+`GenuineDvr3Writer` emits stored clusters (MDFAT flag = used + uncompressed) or
+`DS`/`JM`/`SQ`-compressed ones through `Compression.Registry.Cvf.CvfLzCodec`,
+selected per `CvfLzMethod`; all of them are read back byte-exact by `dmsdos`.
 
 ## Correction to the "MSDBL inner-base @0x27" assumption
 
@@ -56,7 +59,13 @@ This is exactly the layout `FileSystem.DriveSpace3.DriveSpace3Reader` /
 reader reads the genuine `drvspace3.cvf` byte-exact — see the round-trip test
 `Genuine_DVR3_StoredCluster_Layout_RoundTrips`.
 
-## MDBPB (sector 0) — confirmed field map for the genuine image
+## MDBPB (sector 0) — field map of the legacy `MS_DSP3` / offset-36 self-format
+
+Everything from here to the end of this section describes the **legacy**
+`DriveSpace3Writer` shape, not what `GenuineDvr3Writer` emits. The two differ on
+exactly the fields that matter: 8 sectors/cluster here against 64 in the genuine
+`MSDSP6.x` family, and 4-byte MDFAT entries here against 5-byte ones there. Read
+the status note at the top before taking any number below as genuine.
 
 | Offset | Size | Field                | Genuine value           |
 |-------:|-----:|----------------------|-------------------------|

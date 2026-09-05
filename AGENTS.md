@@ -169,7 +169,9 @@ cannot, commit the captured expected output with a note saying what produced it.
 
 ## README & repo conventions
 
-- Public NuGet package READMEs follow `docs/PACKAGE_README_TEMPLATE.md`.
+- Public NuGet package READMEs follow the house template enforced by the
+  `Hawkynt/RepositoryTemplate/package-readme` action that `ci.yml` runs. The
+  template lives in that repository and is deliberately not copied here.
   Common order: title → badges → one-line `>` blockquote →
   `## 📦 Installation` → `## ✨ Features` → `## 🧩 Support matrix` →
   `## 🚀 Quick start` → package-specific API/architecture →

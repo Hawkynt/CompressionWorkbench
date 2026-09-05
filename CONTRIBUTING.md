@@ -2,6 +2,12 @@
 
 This guide covers how to build, test, and extend CompressionWorkbench.
 
+For the shape of the thing you are extending, read
+[`ARCHITECTURE.md`](ARCHITECTURE.md) — project layout, the format-detection
+pipeline, and the source generator. The mount-side contracts, which are
+deliberately stricter than the archive API, are in
+[`docs/FILESYSTEM-DRIVER-ARCHITECTURE.md`](docs/FILESYSTEM-DRIVER-ARCHITECTURE.md).
+
 ---
 
 ## Prerequisites
@@ -24,27 +30,39 @@ The solution uses the `.slnx` XML solution format. `Directory.Build.props` appli
 
 ## Test
 
-### Full Test Suite
+### Default tier
+
+The tier that must pass. It excludes every category that needs an external tool
+or measures throughput. Exclusions use `TestCategory!=`; `Category!=` matches
+nothing and quietly runs the whole suite.
 
 ```bash
-dotnet test
+dotnet test Compression.Tests \
+  --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
 ```
 
-### External Tool Interop
+### The advisory tiers
 
-Tests that verify our output is readable by 7z, gzip, bzip2, xz, zstd, lz4, and tar (and vice versa). Tests are skipped when tools are not found on PATH.
+Each runs on its own in CI and is allowed to fail, because the tool it needs may
+not exist on a given runner. Locally they are opt-in:
+
+| Category | What it needs | What it proves |
+|---|---|---|
+| `EndToEnd` | 7z, gzip, bzip2, xz, zstd, lz4, tar | Our output is readable by the real archivers, and theirs by us |
+| `ExternalInterop` | third-party readers | A foreign reader accepts what we wrote |
+| `ExternalFsInterop` | fsck/mount tooling, dmsdos, DOSBox-X, QEMU | A real filesystem driver mounts and checks our images |
+| `OsIntegration` | PowerShell, mtools, genisoimage, qemu-img | Native OS tooling agrees with us |
+| `PolyglotInterop` | Python, Perl, Ruby, Node | Readers in other languages parse our output |
+| `Performance` | nothing external | Throughput and large-input behaviour |
 
 ```bash
-dotnet test --filter "Category=EndToEnd"
+dotnet test Compression.Tests --filter "Category=EndToEnd"
 ```
 
-### OS Integration
-
-Tests against native OS tools (PowerShell, mtools, genisoimage, qemu-img, etc.). Platform-specific tests are skipped on unsupported OSes.
-
-```bash
-dotnet test --filter "Category=OsIntegration"
-```
+Tests skip cleanly with an actionable message when their tool is absent, rather
+than failing. Staging a licensed MS-DOS image for the DBLSPACE / DRVSPACE gates
+is described in
+[`Compression.Tests/Support/MsDosImageStaging.md`](Compression.Tests/Support/MsDosImageStaging.md).
 
 ---
 
@@ -76,40 +94,44 @@ The repository uses GitHub Actions for build, test, coverage, and release automa
 
 | Workflow | File | Trigger | Purpose |
 |---|---|---|---|
-| Build and Test | `build.yml` | push/PR to `main` | Cross-platform (Ubuntu + Windows) build and test matrix. Runs core tests unconditionally; E2E and OS integration tests run with `continue-on-error` after installing required tools. |
-| Publish Release | `publish.yml` | tags matching `v*`, manual dispatch | Publishes self-contained single-file CLI (Windows + Linux) and UI (Windows only), uploading artifacts per platform. |
-| Code Coverage | `coverage.yml` | push/PR to `main` | Runs core tests with `XPlat Code Coverage`, generates an HTML report via `dotnet-reportgenerator-globaltool`, and uploads it as an artifact. |
-| Build and Release | `NewBuild.yml` | push/PR to `main`/`master` | Legacy end-to-end publish pipeline including SFX stub staging and GitHub Releases creation. |
-| Tests | `Tests.yml` | push/PR to `main`/`master` | Legacy Windows-only full test run with coverage collection. |
+| CI | `ci.yml` | pull request, `workflow_call`, manual | Cross-platform (Ubuntu + Windows) build and test matrix. The default tier must pass; the six external-tool tiers run with `continue-on-error`. Also verifies the meta-packages pack and checks the package READMEs. |
+| Release | `release.yml` | manual dispatch only | Runs CI, publishes self-contained single-file CLI (Windows + Linux) and UI (Windows), pushes the `Hawkynt.*` NuGet packages, then tags `v<version>`. |
+| Nightly | `nightly.yml` | push to `main`, manual | Publishes a `nightly-YYYY-MM-DD` prerelease and prunes old ones on a Grandfather-Father-Son schedule. |
+| Build artifacts | `_build.yml` | `workflow_call` (internal) | Shared block behind Release and Nightly: SFX-stub staging and the multi-RID publish. |
+| Coverage | `coverage.yml` | daily cron 03:17 UTC, manual | Instrumented run plus an HTML report. Deliberately not a PR gate — instrumenting the full suite costs hours. |
+| Generate | `generate.yml` | push to any branch but `main`, manual | Refreshes `screenshots/main-window.png` from a deterministic demo archive and commits it back to the branch. |
+| Branch screenshots | `branch-screenshots.yml` | push to any branch but `main`/`master`, manual | Recaptures `docs/screenshots/*.png` from the UI and commits them back to the branch. |
 
-Automated dependency updates are configured via `.github/dependabot.yml` for NuGet packages and GitHub Actions (weekly).
+`.github/workflows/README.md` is the fuller description of the pipeline and its helper scripts.
 
 ### Running CI Steps Locally
 
-The same commands the workflows run are reproducible locally:
+The same commands the workflows run are reproducible locally. Note the filter
+key is `TestCategory`, not `Category` — `Category` silently matches nothing and
+gives you a green run over zero exclusions.
 
 ```bash
-# Build and core test run (mirrors build.yml)
+# Build and default-tier test run (mirrors ci.yml)
 dotnet restore CompressionWorkbench.slnx
 dotnet build CompressionWorkbench.slnx --configuration Release --no-restore
 dotnet test Compression.Tests --configuration Release --no-build \
-  --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop"
+  --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance"
 
 # Coverage (mirrors coverage.yml)
 dotnet test Compression.Tests --configuration Release \
-  --filter "Category!=EndToEnd&Category!=OsIntegration&Category!=ExternalInterop" \
+  --filter "TestCategory!=EndToEnd&TestCategory!=OsIntegration&TestCategory!=ExternalInterop&TestCategory!=ExternalFsInterop&TestCategory!=PolyglotInterop&TestCategory!=Performance" \
   --collect:"XPlat Code Coverage" --results-directory ./coverage
 dotnet tool install -g dotnet-reportgenerator-globaltool
 reportgenerator -reports:./coverage/**/coverage.cobertura.xml \
   -targetdir:./coverage/report -reporttypes:HtmlInline_AzurePipelines
 
-# Publish (mirrors publish.yml)
+# Publish (mirrors _build.yml)
 dotnet publish Compression.CLI/Compression.CLI.csproj \
   --configuration Release --self-contained --runtime linux-x64 \
   --output publish/cli -p:DebugType=none -p:GenerateDocumentationFile=false
 ```
 
-For E2E and OS integration tests to run locally, install the external tools listed under the corresponding CI steps (`p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils` on Linux, `7zip` on Windows).
+For the external-tool tiers to run locally, install the tools listed under the corresponding CI steps (`p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils` on Linux, `7zip` on Windows).
 
 ### Validating Workflow Changes
 
@@ -142,14 +164,17 @@ dotnet publish Compression.UI -c Release --self-contained -r win-x64 -o publish/
 
 ## Adding a Format
 
-Each file format lives in its own project at the repository root.
+Each format lives in its own project under the folder for its family:
+`FileFormats/FileFormat.*` for archives, compression streams and containers,
+`FileSystems/FileSystem.*` for on-disk filesystems, `Codecs/Codec.*` for audio
+codecs. The folder decides which meta-package ships it.
 
 ### Step 1: Create the Project
 
-Create a new class library project `FileFormat.YourFormat`:
+Create a new class library project:
 
 ```bash
-dotnet new classlib -n FileFormat.YourFormat -o FileFormat.YourFormat
+dotnet new classlib -n FileFormat.YourFormat -o FileFormats/FileFormat.YourFormat
 ```
 
 The project inherits all settings from `Directory.Build.props` (net10.0, C# 14, nullable, warnings-as-errors, XML docs). Add references to the core libraries in the `.csproj`:
@@ -157,8 +182,8 @@ The project inherits all settings from `Directory.Build.props` (net10.0, C# 14, 
 ```xml
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
-    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 </Project>
 ```
@@ -242,11 +267,18 @@ public sealed class YourFormatArchiveOps : IArchiveFormatOperations {
 
 ### Step 4: Wire It Up
 
-Add a `ProjectReference` in `Compression.Lib/Compression.Lib.csproj`:
+Add a `ProjectReference` in `Compression.Lib/Compression.Lib.csproj` and in the
+meta-package that ships the family — `Hawkynt.FileFormats.Archives`,
+`Hawkynt.FileFormats.Audio` or `Hawkynt.FileFormats.FileSystems`:
 
 ```xml
-<ProjectReference Include="..\FileFormat.YourFormat\FileFormat.YourFormat.csproj" />
+<ProjectReference Include="..\FileFormats\FileFormat.YourFormat\FileFormat.YourFormat.csproj" />
 ```
+
+A `FileSystems/FileSystem.*` project needs neither edit: both `Compression.Lib`
+and `Hawkynt.FileFormats.FileSystems` pick it up through an exhaustive glob, and
+`Compression.Tests/Operations/FilesystemDriverCoverageTests.cs` then requires it
+to have a derivable driver path.
 
 Add the project to `CompressionWorkbench.slnx`.
 
@@ -377,7 +409,7 @@ Bootstrap a known-good image using a third-party tool (`mkfs.ext4`, `zip`, `bsdt
 
 ### The mutual-compensation trap
 
-Self round-trip passes when the reader and writer are **mutually wrong at the same offsets** (the "XFS-style" bug). Examples from this project's history (see `docs/FILESYSTEMS.md`):
+Self round-trip passes when the reader and writer are **mutually wrong at the same offsets** (the "XFS-style" bug). Examples from this project's history:
 
 - **XFS** writer used wrong superblock field offsets; reader used the same wrong offsets; self round-trip passed; `xfs_repair` rejected the image.
 - **exFAT** multi-file defrag preserved bytes through our reader; external `fsck.exfat` flagged FAT chain corruption.

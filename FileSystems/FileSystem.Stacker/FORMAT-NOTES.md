@@ -1,11 +1,13 @@
 # Stacker STACVOL on-disk format
 
-> **Driver-verification status (2026-06-19).**
+> **Driver-verification status (2026-09-05).**
 > - **`GenuineStackerWriter` + `GenuineStackerReader` are driver-proven (full
 >   r/w over the genuine format):** the independent `dmsdos` driver detects the
 >   output as "stacker version 3 CVF", mounts it, and reads every file back
 >   **byte-exact**; our reader reads the same driver-certified image byte-exact
 >   (gated by `GenuineStackerDmsdosTests` + `GenuineStackerRoundTripTests`).
+>   The dmsdos gate runs once per `CvfLzMethod` — `Stored`, `Ds` and `Sd4` — so
+>   the compressed cluster paths are proven against the driver too.
 > - **The legacy `StackerWriter` (invented `STKMAP01` trailer) is NOT genuine:**
 >   `dmsdos` panics on it. It is retained only for self-round-trip.
 >
@@ -29,9 +31,9 @@ copied.
 (<https://github.com/sandsmark/dmsdos/tree/master/doc>, `dmsdos.doc`): Stacker
 uses an 8 KB cluster (= 16 sectors/cluster, what `GenuineStackerWriter` emits) and
 two compressed-cluster codecs keyed by a header — `SD-3` (Stacker 3) and `0x81-0`
-(Stacker 4, "more powerful than SD-3"). `GenuineStackerWriter` writes **STORED
-(uncompressed)** clusters, a driver-accepted mode; emitting SD-3/SD-4-compressed
-clusters is a future enhancement.
+(Stacker 4, "more powerful than SD-3"). `GenuineStackerWriter` emits stored clusters or
+`DS`/`SD-4`-compressed ones through `Compression.Registry.Cvf.CvfLzCodec`,
+selected per `CvfLzMethod`; `dmsdos` reads all three back byte-exact.
 
 A Stacker compressed volume is an ordinary MS-DOS host file (canonically
 `STACVOL.DSK`, also `*.STA`/`*.STK`) that wraps a compressed inner FAT volume.

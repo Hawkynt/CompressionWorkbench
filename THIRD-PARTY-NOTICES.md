@@ -1,9 +1,17 @@
 # Third-party notices
 
-This distribution contains, in binary form, the third-party sources vendored
-under `Codecs/Codec.*/Vendored/`. Their licences require that these notices
-travel with the binaries, so they are reproduced in full below. See
-`Codecs/VENDORED_AUDIO_CODECS.md` for the pinned revisions.
+This distribution contains, in binary form, third-party code under two
+arrangements: sources vendored verbatim under `Codecs/Codec.*/Vendored/`, and
+ports written from third-party sources that carry their own notice. Both sets
+have licences requiring the notice to travel with the binaries, so every one is
+reproduced in full below.
+
+For the vendored set, the pinned upstream revisions and the one local
+modification made to keep the copies fully managed are recorded in
+[`Codecs/VENDORED_AUDIO_CODECS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Codecs/VENDORED_AUDIO_CODECS.md).
+
+This file ships inside the `Hawkynt.FileFormats.Audio` package, so links out of
+it are absolute.
 
 ## Concentus (Opus)
 
