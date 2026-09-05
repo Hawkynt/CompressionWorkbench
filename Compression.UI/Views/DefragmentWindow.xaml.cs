@@ -1437,6 +1437,7 @@ public partial class DefragmentWindow : Window {
     if (ModePackEnd.IsChecked == true) return DefragMode.ConsolidateAtEnd;
     if (ModeFillHoles.IsChecked == true) return DefragMode.FillHolesLazy;
     if (ModeCarveHole.IsChecked == true) return DefragMode.CarveHole;
+    if (ModeAscending.IsChecked == true) return DefragMode.AscendingOrder;
     return DefragMode.ConsolidateAtStart;
   }
 

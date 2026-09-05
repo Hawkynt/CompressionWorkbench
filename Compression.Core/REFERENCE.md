@@ -5451,7 +5451,20 @@ Pixel layouts recognised by `Split`.
 
 ### Namespace `Compression.Core.Layout`
 
-[`BlockMapView`](#blockmapview) · [`ClusterMove`](#clustermove) · [`DefragPlan`](#defragplan) · [`DefragPlanner`](#defragplanner) · [`DefragPlannerExecutor`](#defragplannerexecutor) · [`DefragStaging`](#defragstaging) · [`DefragStagingBuffer`](#defragstagingbuffer) · [`ExtentLayoutPlanner`](#extentlayoutplanner) · [`ExtentMove`](#extentmove) · [`FilesystemDefragmentor`](#filesystemdefragmentor) · [`FilesystemLayoutOptimizer`](#filesystemlayoutoptimizer) · [`FilesystemScrambler`](#filesystemscrambler) · [`LayoutOptimizerAdapter`](#layoutoptimizeradapter) · [`LiveExtent`](#liveextent) · [`MediaGeometry`](#mediageometry) · [`MediaProjection`](#mediaprojection) · [`PlatterWedge`](#platterwedge) · [`PlatterWedgeLayout`](#platterwedgelayout) · [`ScramblePlanner`](#scrambleplanner) · [`SectorCache`](#sectorcache) · [`StackedPlatterWedge`](#stackedplatterwedge)
+[`AscendingBlockOrder`](#ascendingblockorder) · [`BlockMapView`](#blockmapview) · [`BlockOrderReading`](#blockorderreading) · [`ClusterMove`](#clustermove) · [`DefragPlan`](#defragplan) · [`DefragPlanner`](#defragplanner) · [`DefragPlannerExecutor`](#defragplannerexecutor) · [`DefragStaging`](#defragstaging) · [`DefragStagingBuffer`](#defragstagingbuffer) · [`ExtentLayoutPlanner`](#extentlayoutplanner) · [`ExtentMove`](#extentmove) · [`FilesystemDefragmentor`](#filesystemdefragmentor) · [`FilesystemFilePlacer`](#filesystemfileplacer) · [`FilesystemLayoutOptimizer`](#filesystemlayoutoptimizer) · [`FilesystemScrambler`](#filesystemscrambler) · [`LayoutOptimizerAdapter`](#layoutoptimizeradapter) · [`LiveExtent`](#liveextent) · [`MediaGeometry`](#mediageometry) · [`MediaProjection`](#mediaprojection) · [`PlacementPlanner`](#placementplanner) · [`PlatterWedge`](#platterwedge) · [`PlatterWedgeLayout`](#platterwedgelayout) · [`ScramblePlanner`](#scrambleplanner) · [`SectorCache`](#sectorcache) · [`StackedPlatterWedge`](#stackedplatterwedge)
+
+#### `AscendingBlockOrder`
+
+The ordering property a placement and a defragmentation both promise: reading an owner from start to finish never seeks backwards.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HoldsForAll` | `static bool HoldsForAll(IReadOnlyList<DefragBlockInfo> layout, int blockSize = 0)` | Whether every owner in the layout ascends. |
+| `Holds` | `static bool Holds(IReadOnlyList<DefragBlockInfo> layout, string owner, int blockSize = 0)` | Whether one owner's blocks ascend. |
+| `ReadAll` | `static IReadOnlyList<BlockOrderReading> ReadAll(IReadOnlyList<DefragBlockInfo> layout, int blockSize = 0)` | Every owner the layout holds, read the same way. |
+| `Read` | `static BlockOrderReading Read(IReadOnlyList<DefragBlockInfo> layout, string owner, int blockSize = 0)` | Reads `owner`'s block order out of a layout. |
+| `Require` | `static void Require(IReadOnlyList<DefragBlockInfo> layout, string what, int blockSize = 0)` | Throws naming the first owner that reads backwards. Used by the planners to refuse a layout rather than write one that is worse than what it replaced. |
+| `Violations` | `static IReadOnlyList<BlockOrderReading> Violations(IReadOnlyList<DefragBlockInfo> layout, int blockSize = 0)` | The owners that break the property, in the order the layout lists them. Empty when it holds throughout. |
 
 #### `BlockMapView`
 
@@ -5463,6 +5476,26 @@ How a block-map view projects a logical byte offset / LBA onto screen space.
 | `LinearLba` | `1` | Linear by logical block address (one cell per sector run, LBA order). |
 | `CircularPlatter` | `2` | 2-D circular platter: angle = sector-in-track, radius = cylinder (outer rim is cylinder 0), as data sits on a spinning disk. |
 | `CylinderStack` | `3` | 3-D cylinder stack: angle = sector, radius = cylinder, height = head (platter surface), to show the head/cylinder layering of the medium. |
+
+#### `BlockOrderReading`
+
+What one owner's block order looks like: how many blocks it has, and where — if anywhere — a block sits at a lower address than the one it follows.
+
+Implements `IEquatable<BlockOrderReading>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockOrderReading` | `BlockOrderReading(string Owner, int Blocks, int Runs, int Descents, long FirstDescentFrom, long FirstDescentTo, int FirstDescentIndex)` | What one owner's block order looks like: how many blocks it has, and where — if anywhere — a block sits at a lower address than the one it follows. |
+| `Ascends` | `bool Ascends { get; }` | Whether every block sits above the one it follows. |
+| `Blocks` | `int Blocks { get; init; }` | Blocks the owner holds, counted in logical order. |
+| `Contiguous` | `bool Contiguous { get; }` | Whether the owner is one uninterrupted stretch. |
+| `Descents` | `int Descents { get; init; }` | Places where the next block is not above the last. |
+| `FirstDescentFrom` | `long FirstDescentFrom { get; init; }` | Address of the block the first descent leaves, or -1 when there is none. |
+| `FirstDescentIndex` | `int FirstDescentIndex { get; init; }` | Logical index of the block that descends, or -1. |
+| `FirstDescentTo` | `long FirstDescentTo { get; init; }` | Address the first descent lands on, or -1. |
+| `Owner` | `string Owner { get; init; }` | The owner the reading is about. |
+| `Runs` | `int Runs { get; init; }` | Stretches those blocks break into. One is contiguous. |
+| `ToString` | `override string ToString()` | A sentence naming what is wrong, for a failure message. |
 
 #### `ClusterMove`
 
@@ -5570,6 +5603,16 @@ Filesystem-agnostic defragmentor. Composes `ExtentLayoutPlanner` into named, use
 | --- | --- | --- |
 | `Plan` | `static DefragPlan Plan(IReadOnlyList<LiveExtent> extents, DefragOptions options)` | Plans a defragmentation pass over `extents` using the chosen `options`. |
 
+#### `FilesystemFilePlacer`
+
+Runs a `PlacementPlanner` plan against a volume through the shared move loop, so a descriptor that already defragments in place gains the placement verb without a second copy of the machinery.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsDefragOptions` | `static DefragOptions AsDefragOptions(PlacementOptions options)` | The knobs the shared move loop reads. Its own mode is never consulted once a plan is in hand, which is why a placement needs no mode of its own. |
+| `PlaceFileAt` | `static void PlaceFileAt(Stream image, PlacementOptions options, IFilesystemBlockMover mover, IReadOnlyList<DefragBlockInfo> extents, long dataOrigin, long imageSize, int clusterSize, Action reinitAfterMove = null)` | Plans and runs the placement. Emits the same scanning / moving / complete progress a defragmentation does, so the maintenance block map shows the owner arrive at its offset. |
+| `RequirePlacementRelink` | `static void RequirePlacementRelink(IFilesystemBlockMover mover)` | Refuses a placement the mover cannot express, before a byte is written. |
+
 #### `FilesystemLayoutOptimizer`
 
 Generic grid-search optimizer for cluster-based filesystem layouts. Minimises the sum of internal slack (wasted bytes in the tail of each file's last cluster) and structural overhead (allocation tables, metadata zones, etc.) across all valid combinations of the supplied parameter candidates. The optimizer is filesystem-agnostic: the caller supplies a cost function that encodes all filesystem-specific knowledge. The optimizer just finds the global minimum over the candidate space, pruning invalid combinations (cost == null).Typical usage — FAT cluster size:Typical usage — NTFS cluster + MFT record size:
@@ -5646,6 +5689,15 @@ Pure projections of an LBA onto normalised coordinates for each `BlockMapView`. 
 | `CircularPlatter` | `static ValueTuple<double, double> CircularPlatter(MediaGeometry g, long lba, double innerRadiusFraction = 0.25)` | 2-D platter coordinate: angle in radians [0, 2π) from the sector position within its track, and radius (0..1) from the cylinder — cylinder 0 is the outer rim (radius 1), the innermost cylinder maps to `innerRadiusFraction`. |
 | `CylinderStack` | `static ValueTuple<double, double, double> CylinderStack(MediaGeometry g, long lba)` | 3-D cylinder-stack coordinate: angle (sector), radius (cylinder, 0..1 inner→outer), and height z (head/platter surface, 0..1). |
 | `LinearFraction` | `static double LinearFraction(MediaGeometry g, long lba)` | Fraction (0..1) of the way through the medium for a linear/LBA view. |
+
+#### `PlacementPlanner`
+
+Puts one named owner at one chosen offset, moving whatever is in the way out of the way first.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Plan` | `static IReadOnlyList<ClusterMove> Plan(IReadOnlyList<DefragBlockInfo> extents, string owner, long targetOffset, long dataOrigin, long imageSize, int clusterSize, bool allowMemoryStaging = true)` | Plans the moves that put `owner` at `targetOffset`. |
+| `TargetSlots` | `static IReadOnlyList<long> TargetSlots(IReadOnlyList<DefragBlockInfo> extents, string owner, long targetOffset, long dataOrigin, long imageSize, int clusterSize)` | The addresses `owner`'s blocks would end up at. Ascending by construction, contiguous except where a reserved or bad region forces a step over it. |
 
 #### `PlatterWedge`
 
@@ -6204,7 +6256,7 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementZone`](#placementzone) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
+[`AlgorithmFamily`](#algorithmfamily) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
 
 #### `AlgorithmFamily`
 
@@ -6511,6 +6563,7 @@ Defragmentation strategies for `Defragment`.
 | `ConsolidateAtEnd` | `1` | Pack every live extent contiguously at the end of the image, leaving free space at the start (after metadata). Useful when a bootloader / installer / preallocated header expects to land in low offsets. |
 | `FillHolesLazy` | `2` | Lazy compaction: each existing hole is filled with a single tail extent that fits, in best-fit order. Moves the minimum number of bytes but doesn't guarantee a contiguous final layout. Use when only a few small files were removed from a huge image. |
 | `CarveHole` | `3` | Carve a contiguous free region of `HoleSize` bytes at `HoleAt`. Live extents intersecting the target region are relocated to the first available post-region free slot (or appended to the end of the image if no existing free slot fits). |
+| `AscendingOrder` | `4` | Move the least that makes every owner read forwards: over an owner's own blocks in logical order, `block(n) > block(n-1)`, so a sequential read never seeks backwards. Nothing else is promised. |
 
 #### `DefragOptions`
 
@@ -7265,6 +7318,14 @@ Opt-in capability for filesystems whose own structures — the MFT, an allocatio
 | `PrepareMetadataMove` | `void PrepareMetadataMove(Stream image, string metadataName, long oldOffset, long newOffset, long length)` | Gives the filesystem a chance to make the destination safe before the raw bytes are copied there. |
 | `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Repoints whatever locates `metadataName` after its bytes have been copied from `oldOffset` to `newOffset`, and moves the allocation with it. |
 
+#### `IFilesystemPlaceable`
+
+Opt-in capability for putting one named owner at one chosen offset, moving whatever is in the way out of the way first.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlaceFileAt` | `void PlaceFileAt(Stream image, PlacementOptions options)` | Puts `FileName` at `TargetOffset`, relocating every live extent that is in the way. Content is preserved exactly; only where it lives changes. |
+
 #### `IFilesystemScrambleable`
 
 Opt-in capability for scattering a volume's allocation blocks across the whole data area — fragmentation on purpose, so a defragmenter has something real to work against.
@@ -7623,6 +7684,21 @@ Implements `IDisposable`, `IRandomAccessBlockDevice`.
 | `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
 | `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
 | `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `PlacementOptions`
+
+Inputs to `PlaceFileAt` — which owner goes where.
+
+Implements `IEquatable<PlacementOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlacementOptions` | `PlacementOptions()` |  |
+| `CancellationToken` | `CancellationToken CancellationToken { get; init; }` | Cooperative cancellation, honoured at the next safe move boundary. |
+| `FileName` | `string FileName { get; init; }` | The owner to place, as the extent map names it. Matched case-insensitively; an owner the volume does not hold is refused before anything moves. |
+| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback, emitting the same snapshots and read/write-head updates a defragmentation does, so the maintenance block map animates the placement as it happens. |
+| `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; init; }` | Bytes the pass may hold in memory while a block whose destination is still occupied waits for it to clear. |
+| `TargetOffset` | `long TargetOffset { get; init; }` | Byte offset its first block has to end up at. Has to name a real cluster boundary inside the data area; a target between boundaries, outside the volume, or inside a reserved region is refused rather than rounded, since rounding would report a placement that did not happen. |
 
 #### `PlacementZone`
 
