@@ -16,73 +16,265 @@
 [![Release](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench)](https://github.com/Hawkynt/CompressionWorkbench/releases/latest)
 [![Nightly](https://img.shields.io/github/v/release/Hawkynt/CompressionWorkbench?include_prereleases&sort=date&filter=nightly-*&label=nightly&color=FF9800)](https://github.com/Hawkynt/CompressionWorkbench/releases)
 [![Downloads](https://img.shields.io/github/downloads/Hawkynt/CompressionWorkbench/total)](https://github.com/Hawkynt/CompressionWorkbench/releases)
-[![NuGet Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/)
-[![NuGet Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/)
-[![NuGet Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives?label=Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/)
-[![NuGet FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems?label=FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/)
 
-> A fully clean-room C# implementation of compression primitives, archive file formats, and analysis tools. Every algorithm is implemented from scratch using no external compression source code — only our own primitives.
+[![NuGet Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/) [![NuGet Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/) [![NuGet Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives?label=Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/) [![NuGet FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems?label=FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/) [![NuGet Images](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Images?label=Images)](https://www.nuget.org/packages/Hawkynt.FileFormats.Images/) [![NuGet Video](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Video?label=Video)](https://www.nuget.org/packages/Hawkynt.FileFormats.Video/)
+
+> A pure-managed .NET toolbox for compression, format detection, conversion, container/filesystem operations, and binary analysis — with format-specific coverage documented by the package that owns each domain.
+
+## ✨ Vision
+
+CompressionWorkbench is built on a deliberately ambitious premise: **if you have this software, you
+should not need another archiver, format inspector, or compression workbench just because the next
+file happens to use a different envelope.** The long-term target is every useful compression
+algorithm, archive/container, filesystem, image, audio format and video format — mainstream,
+obscure, retro and awkward — supported as completely as the format itself permits.
+
+It exists to answer two broad questions:
+
+1. **"What is this, and what is inside?"** — given arbitrary bytes, identify the format, expose its
+   native structure, recover its logical payloads, and keep descending through nested formats.
+2. **"How does the algorithm work, and how does it compare?"** — provide readable managed
+   implementations of compression primitives that can be inspected, benchmarked, combined and
+   optimized from one codebase.
+
+The foundation is a library of composable **compression building blocks** — dictionary coders,
+entropy coders, transforms, filters and related primitives. Formats use those shared pieces instead
+of each growing its own private copy. On top sits a registry-driven format ecosystem and a workbench
+that can detect, inspect, convert, optimize, recurse and analyze across domain boundaries.
+
+The vision does **not** mean pretending every format is the same thing, nor claiming unfinished work
+as complete. It means:
+
+- **Clean-room, managed implementations.** Prefer specifications, standards, published vectors and
+  behavioral oracles; avoid native compression dependencies and hidden platform-specific readers.
+- **Complete domain coverage as a direction, honest capability ledgers as the present truth.** A
+  missing writer, unsupported profile or read-only implementation stays visible in the package that
+  owns it.
+- **Native semantics first.** A TIFF is an image, H.264 is a video codec, FLAC is audio, ext4 is a
+  filesystem and ZIP is an archive. Each keeps the operations that actually make sense for it.
+- **Addressable contents as a cross-cutting capability.** When a format naturally contains useful
+  independent children — members, pages, frames, tracks, resources, partitions — the workbench can
+  project them through a common traversal surface without reclassifying the format itself.
+- **Analysis as a first-class surface.** Unknown or damaged data should still yield signatures,
+  entropy, strings, candidate structures, carved payloads and trial decompression instead of a blunt
+  "unsupported".
+- **Benchmarking and optimization at the primitive level.** Compare algorithms and parameter sets on
+  the actual data rather than conflating the compressor with its container overhead.
+- **One engine, many surfaces.** Library APIs, `cwb`, WPF UI, shell integration, SFX and mounting
+  helpers share the same registries and operations instead of becoming separate implementations.
+
+The destination is deliberately larger than the current implementation. The package support tables
+below-linked are the source of truth for what is implemented **today**; this section explains what the
+project is trying to become.
 
 ---
 
-CompressionWorkbench is built on a single, ambitious premise: **if you have this
-software, you should never need another archiver again.** Every algorithm, every
-archive format, every filesystem, every file that is secretly an archive, and every
-parameter combination — no matter how exotic — supported to the fullest state each
-format allows.
+## 🧭 Capability map
 
-The foundation is a library of **primitive building blocks**: the raw compression
-algorithms (dictionary coders, entropy coders, transforms, filters) implemented as
-composable, standalone primitives. Everything else is assembled from these blocks
-rather than reimplemented. On top of them we chase **each and every exotic compression
-format** ever shipped — mainstream, obscure, retro, and long-forgotten alike — exposed
-through a **universal compressor** that surfaces the *complete* option set of each format
-instead of a lowest-common-denominator subset, paired with a **compression optimizer**
-that hunts for the parameter combination yielding the best result on your actual data.
+CompressionWorkbench is the orchestration and tooling layer around Hawkynt's file-format ecosystem.
+This README stays at that product level; the package READMEs own the exhaustive per-format and
+per-codec matrices.
 
-We treat **everything as a potentially-addressable archive** — the
-"everything-may-be-an-archive" principle: not just ZIP/7z/RAR, but every container,
-document, package, disk image, and file format that holds multiple payloads inside it.
-That reaches all the way down to **filesystems**: the goal is to get every filesystem in,
-and to make each one **read *and* write** — with a **WORM** (write-once) path as the
-honest intermediate state on the way to full read/write. Each writable filesystem gets a
-**layout optimizer** (cluster / block / MFT sizing tuned to minimise wasted space),
-**defragmentation**, and a relentless **hunt for exotic parameter combinations** that
-turns partial support into complete support for every variant out there.
+| Capability | What CompressionWorkbench provides | Exact support lives in |
+| --- | --- | --- |
+| **Compression primitives** | Raw dictionary, entropy, transform, context-mixing and related building blocks; compress/decompress, benchmark and optimizer surfaces | [Compression.Core](Compression.Core/README.md) |
+| **Compression streams and archives** | Detect, decompress/compress streams; list/extract/test containers; create and, where supported, edit existing containers; convert and run maintenance operations | [Archives](Hawkynt.FileFormats.Archives/README.md) |
+| **Filesystems and disk images** | Open without relying on the host filesystem implementation; list/extract/create/edit; recurse through disk-image containers; defragment, wipe, shrink, relayout and related maintenance where implemented | [FileSystems](Hawkynt.FileFormats.FileSystems/README.md) |
+| **Audio** | Codec decode/encode, audio-container handling, metadata plus track/channel/sample-oriented access where the format permits it | [Audio](Hawkynt.FileFormats.Audio/README.md) |
+| **Images** | Detect, read, write, inspect metadata, convert, expose multi-image/page/frame content, and losslessly optimize supported formats | [Images](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Images/README.md) |
+| **Video** | Demux/mux containers, decode/encode codecs, preserve packet boundaries, and remux without needless decode/re-encode where the source and target allow it | [Video](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) |
+| **Analysis and forensics** | Signature scanning, entropy maps, statistical fingerprints, strings, trial decompression, compression-chain reconstruction, carving, structure templates and recursive extraction | `Compression.Analysis` and the `cwb analyze` / `carve` / `auto-extract` workflows |
+| **Cross-format orchestration** | Common detection, nested traversal, archive/filesystem conversion, compression search, registry-driven dispatch and UI/CLI/library surfaces | [CLI](Compression.CLI/README.md), [architecture](ARCHITECTURE.md) |
 
-The end state: every codec, every archive format, every filesystem, every pseudo-archive,
-and every exotic parameter combination — handled in one place, as completely as each
-format permits. One tool, for all of it.
+The table deliberately does **not** reduce every domain to one fake universal support scale. The native
+operations differ:
+
+- archives and filesystems use **R / WORM / R/W** plus maintenance verbs;
+- images expose **Read / Write / Info / Multi / Optimizer** capabilities;
+- video separates **Demux / Mux** from **Decode / Encode**;
+- audio tracks codec and container support separately;
+- raw compression building blocks expose algorithm-level compress/decompress and parameter surfaces.
+
+The linked package README is authoritative for those details. If a row is partial, read-only, missing
+an encoder, or deliberately limited to a profile, that is documented there rather than blurred into a
+root-level "supported formats" list.
 
 ---
 
-## 📦 Quick start
+## 🧱 Abstraction layers
 
-**Install via NuGet** — pick the surface you need:
+CompressionWorkbench has several layers, but they have different jobs:
 
-```bash
-dotnet add package Hawkynt.Compression.Core         # primitives only
-dotnet add package Hawkynt.FileFormats.Audio        # + audio codecs / containers
-dotnet add package Hawkynt.FileFormats.Archives     # + zip / tar / 7z / and the long tail
-dotnet add package Hawkynt.FileFormats.FileSystems  # + FAT / ext / NTFS / VHD / VMDK / etc.
+| Level | Responsibility | Examples |
+| --- | --- | --- |
+| **Building block** | Implements an algorithm independent of a file format | LZ-family matchers, Huffman/range coding, BWT/MTF, ANS/FSE |
+| **Domain format/codec** | Understands the native semantics of one format | ZIP members, JPEG pixels, H.264 pictures, FLAC samples, ext4 files |
+| **Addressable-entry projection** | Optionally exposes independently useful children through a common list/extract surface | archive members, image pages/frames, media tracks, resources, font members |
+| **Workbench orchestration** | Detects formats, chooses operations, converts, recurses, optimizes, analyzes and combines handlers | `Compression.Lib`, `Compression.Analysis` |
+| **User surface** | Presents those capabilities to people or applications | `cwb`, WPF UI, .NET APIs, shell integration, SFX/mounting helpers |
+
+### 📂 Pseudo-archives are a projection, not a competing taxonomy
+
+A format does not become an "archive format" merely because it contains multiple addressable things.
+If a native handler can expose useful children independently, CompressionWorkbench may also project
+those children through the generic archive-style `List` / `Extract` model. That lets recursive tools
+walk pages, frames, tracks, resources or embedded payloads using the same traversal code.
+
+The format still belongs to its native domain and its native package README remains the coverage
+ledger. The cross-cutting contract itself is documented in [docs/ARCHIVE-MODEL.md](docs/ARCHIVE-MODEL.md).
+
+Conceptually:
+
+```text
+bytes
+  |
+  +--> detect native format
+         |
+         +--> native API       (decode image/video/audio, open filesystem, read archive, ...)
+         |
+         +--> addressable view (when useful)
+                 |
+                 +--> enumerate/extract children
+                         |
+                         +--> detect again and recurse
 ```
 
-**Use the CLI** — `cwb` is a self-contained single-file executable, no .NET runtime needed:
+This is what makes workflows such as disk image → filesystem → archive → media container → embedded
+payload possible without pretending those formats are all the same kind of object.
+
+---
+
+## 📦 Packages
+
+Install only the domains you need. The format ecosystem is split between this repository and the
+[`Hawkynt/PNGCrushCS`](https://github.com/Hawkynt/PNGCrushCS) sibling repository.
+
+| Package | Repository | Owns |
+| --- | --- | --- |
+| [`Hawkynt.Compression.Core`](Compression.Core/README.md) | CompressionWorkbench | Compression primitives and `IBuildingBlock` registry |
+| [`Hawkynt.FileFormats.Audio`](Hawkynt.FileFormats.Audio/README.md) | CompressionWorkbench | Audio codecs, containers, trackers/chiptunes and game audio |
+| [`Hawkynt.FileFormats.Archives`](Hawkynt.FileFormats.Archives/README.md) | CompressionWorkbench | Compression streams, archives, software/document/game/scientific containers and archive-style adapters |
+| [`Hawkynt.FileFormats.FileSystems`](Hawkynt.FileFormats.FileSystems/README.md) | CompressionWorkbench | Filesystems, disk-image containers, firmware/retro disk formats |
+| [`Hawkynt.FileFormats.Images`](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Images/README.md) | PNGCrushCS | Image formats, image metadata, multi-image access and image optimization |
+| [`Hawkynt.FileFormats.Video`](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) | PNGCrushCS | Video containers, demux/mux, codecs, decode/encode and remux |
 
 ```bash
-cwb list mystery.bin            # auto-detect format and list contents
-cwb extract photos.tar.gz       # auto-detect compression chain + extract
-cwb analyze unknown.bin         # entropy heatmap + signature scan + trial decompression
-cwb benchmark sample.txt        # compare every building block on your data
-cwb auto-extract sample.vhd --recursive  # disk → partition → filesystem → file
+dotnet add package Hawkynt.Compression.Core
+dotnet add package Hawkynt.FileFormats.Audio
+dotnet add package Hawkynt.FileFormats.Archives
+dotnet add package Hawkynt.FileFormats.FileSystems
+dotnet add package Hawkynt.FileFormats.Images
+dotnet add package Hawkynt.FileFormats.Video
 ```
 
-**Read the per-package format reference** to find out what's actually supported, audited
-against the real source code (R / WORM / R/W states, upstream spec links, limitations):
-[Archives](Hawkynt.FileFormats.Archives/README.md) ·
-[Audio](Hawkynt.FileFormats.Audio/README.md) ·
-[FileSystems](Hawkynt.FileFormats.FileSystems/README.md) ·
-[Building blocks](Compression.Core/README.md).
+All format packages are pure managed code. The CompressionWorkbench packages share the registry and
+core primitives; the image/video sibling packages expose their own generated registries and shared
+image model where appropriate.
+
+---
+
+## 🚀 Quick start
+
+`Compression.CLI` is the general command-line surface. Representative workflows:
+
+```bash
+cwb formats                              # inspect the registered format surface
+cwb analyze unknown.bin                  # signatures + entropy + trial decompression
+cwb list archive.zip                     # list an addressable container
+cwb extract archive.7z -o ./output       # extract
+cwb create output.zip ./input            # create when the target format supports it
+cwb convert input.tar.gz output.tar.xz    # convert through the cheapest valid path
+cwb optimize input.zip optimized.zip     # search/re-encode for better compression
+cwb auto-extract sample.vhd --recursive  # disk -> partition -> filesystem -> nested payloads
+cwb carve damaged.img                    # recover recognizable files from damaged/raw data
+cwb defragment disk.img --mode pack-start
+```
+
+The dedicated [Compression.CLI README](Compression.CLI/README.md) carries command-specific details,
+but the root README keeps the command map below because the CLI is one of the primary ways to use the
+application.
+
+---
+
+## ⌨️ CLI reference
+
+`cwb` is the universal command-line surface for archive work, format conversion, optimization,
+filesystem maintenance and binary analysis.
+
+| Command | Alias | What it does |
+| --- | --- | --- |
+| `list <archive>` | `l` | List contents of an archive |
+| `extract <archive> [files...]` | `x` | Extract files from an archive |
+| `create <archive> <files...>` | `c` | Create a new archive |
+| `test <archive>` | `t` | Test archive integrity |
+| `add <archive> <files...>` | - | Add or replace files inside an existing archive |
+| `remove <archive> <names...>` | - | Remove named entries from an existing archive |
+| `replace <archive> <entry> <file>` | - | Replace a single entry with a new file |
+| `info <archive>` | - | Show detailed archive information |
+| `convert <input> <output>` | - | Convert between formats (archive, filesystem, stream) |
+| `optimize <input> <output>` | `opt` | Re-encode with optimal compression; `--search-blocks` / `--best` searches building blocks and `--apply <out>` writes the winner |
+| `bestfit <file>` | - | Benchmark building blocks, rank them and report the best compressor; `--apply <out>` writes it and `--ratio` favours best ratio within the speed window |
+| `benchmark <file>` | `bench` | Benchmark all building blocks on the supplied data |
+| `formats` | - | List all supported formats |
+| `analyze <file>` | - | Run binary analysis (detection + entropy + trial decompress) |
+| `auto-extract <file>` | - | Recursive nested extraction |
+| `batch <dir>` | - | Scan a directory in parallel and aggregate format statistics |
+| `suggest <file>` | - | Platform-aware format recommendation |
+| `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates |
+| `reverse-engineer <tool>` | `reveng` | Black-box probing of an unknown compression tool |
+| `carve <file>` | - | Photorec-style file carving at arbitrary offsets, including slack space |
+| `visualize <file>` | - | Render a colored block map of detected envelopes; `--format ascii\|svg\|html` |
+| `defragment <image>` | - | Defragment a filesystem image in place (`--mode pack-start\|pack-end\|fill-holes\|carve-hole`) |
+| `shrink <image>` | - | Defragment + truncate trailing free space; `--compact` for sparse VHD |
+| `wipe-empty <image>` | - | Zero-fill unused space, cluster tips and deleted-entry regions |
+| `deploy <image> <device>` | - | Raw-write an image to a block device with CRC verification |
+| `convert-clusters <image>` | - | Rebuild a FAT image with a different cluster size |
+| `resize <image>` | - | Resize a filesystem image to a target size |
+| `convert-archive <in> <out>` | - | Convert between any listable/creatable formats: archive↔archive, archive↔filesystem, filesystem↔filesystem; `convert-fs` is a hidden compatibility alias |
+| `dedup <image>` | - | Find and optionally remove duplicate files by SHA-256 |
+| `sparsify <image>` | - | Remove zero-filled blocks from a container image |
+| `densify <image>` | - | Pre-allocate all blocks in a container image |
+
+Examples:
+
+```bash
+cwb list archive.zip
+cwb extract archive.7z -o ./output
+cwb x archive.rar -p mypassword
+cwb create output.zip myDir file1.txt '*.txt'
+cwb create output.7z file.txt --method lzma2+
+cwb convert input.tar.gz output.tar.xz
+cwb optimize input.zip optimized.zip
+cwb benchmark largefile.bin
+cwb analyze unknown.bin
+cwb auto-extract sample.vhd --recursive
+cwb suggest big.csv
+cwb defragment disk.img --mode pack-start
+cwb shrink disk.img
+cwb wipe-empty disk.img
+cwb convert-archive disk.d64 output.zip
+cwb convert-archive archive.zip out.tar
+cwb convert-archive archive.zip out.img -f fat
+cwb dedup disk.img --dry-run
+cwb sparsify disk.vhd
+cwb deploy disk.img \\.\PhysicalDrive2 --yes
+```
+
+**3-tier conversion model.** `cwb convert` picks the cheapest strategy that preserves the required
+data:
+
+| Tier | Strategy | Example |
+| --- | --- | --- |
+| 1 | Bitstream transfer (zero decompression) | `.gz` ↔ `.zlib`, `.zip` ↔ `.gz` |
+| 2 | Container restream (decompress wrapper only) | `.tar.gz` → `.tar.xz` |
+| 3 | Full recompress (extract + re-encode) | `.zip` → `.7z` |
+
+**Method+ system.** Append `+` to a method name for its optimal encoder path, for example `deflate+`,
+`lzma+` or `lz4+`.
+
+**Tool templates.** `cwb tool` registers external CLI tools such as 7z, binwalk, file or trid in
+`~/.cwb-tools.json`. Templates use `{input}`, `{output}` and `{outputDir}` placeholders and can capture
+stdout, pipe stdin or set a timeout. `cwb tool init` pre-populates templates for common tools.
 
 ---
 
@@ -97,468 +289,209 @@ These screenshots are generated from the current branch by the real WPF applicat
 
 <!-- branch-screenshots:end -->
 
-## Vision
-
-CompressionWorkbench exists to answer two kinds of questions about compressed and packaged data, entirely in managed .NET with no native dependency on zlib, liblzma, libarchive, or any other third-party compression library:
-
-1. **"What is this, and what is inside?"** — given an arbitrary blob of bytes, identify the format, slice it into its logical payloads, and recover the original data.
-2. **"How does the algorithm work, and how does it compare?"** — provide a reference implementation of every major compression primitive, from LZ77 through arithmetic coding to modern neural / context-mixing compressors, so the algorithms can be read, benchmarked, and taught from a single codebase.
-
-Concretely that means:
-
-- **Clean-room, from-scratch C#.** Every primitive — bit I/O, Huffman, range coding, LZ family, BWT/MTF, PPM, context mixing, modern ANS/FSE — is written from the original specification or from a clean reverse of the reference algorithm. No line of native compression code is linked in or ported.
-- **Every common container, read *and* written** wherever a spec exists to write against honestly. When the writer cannot match an external spec (proprietary element streams, missing on-disk structures), that is documented in the support tables instead of shipping a silent toy.
-- **Every multi-payload container treated as an archive.** The distinction that matters to a user is "can I list and extract the N things inside?", not "is this called ZIP". That makes PE resource DLLs, multi-page TIFFs, font collections, multi-frame GIFs, PSD layer stacks, and MPEG transport streams all first-class archives — see [Archives and Pseudo-archives](#archives-and-pseudo-archives) below.
-- **Analysis as a first-class surface.** Identification, entropy mapping, trial decompression, chain reconstruction, signature scanning, and cross-validation against external tools are exposed through a library (`Compression.Analysis`), a CLI (`cwb`), and a UI visualiser — not as an afterthought.
-- **Benchmarking at the primitive level.** The benchmark compares the building blocks — raw algorithms without container overhead — so ratio/speed numbers reflect the algorithm, not the envelope.
-- **One library, many surfaces.** CLI archiver (`cwb`), UI browser + analyser, Explorer shell integration, self-extracting stubs (`Compression.Sfx.*`), and a library any .NET consumer can link.
-
----
-
-## Archives and Pseudo-archives
-
-> **Any format that packages N discrete, separately-addressable payloads is an archive.**
-
-A format earns archive treatment — the `IArchiveFormatOperations` contract (`List` / `Extract` / optional `Create`) — whenever its binary layout contains:
-
-1. A directory or index of named or indexed entries, **and**
-2. Each entry can be extracted as an independent blob, **and**
-3. A consumer might plausibly want one entry without the others.
-
-This is true regardless of whether the entries happen to be files, images, pages, frames, tracks, layers, tables, fonts, strings, or other domain objects. The contents of an extracted blob remain domain-specific (a TIFF page is still a TIFF, an `RT_ICON` resource is still an icon), but that is a property of the payload, not of the container.
-
-### Real archives
-
-Formats in the canonical archive sense — ZIP, TAR, 7z, RAR, CAB, CPIO, and their relatives.
-They were designed as "a bag of files with a directory". The exhaustive per-format reference
-(extensions, R / WORM / R/W state, upstream spec link, limitations) is in
-**[Hawkynt.FileFormats.Archives/README.md](Hawkynt.FileFormats.Archives/README.md)**.
-
-### Pseudo-archives
-
-Formats that *are* archives by structure but have never been presented that way in ordinary file managers. CompressionWorkbench slices each one along its natural payload boundary and exposes the same `List` / `Extract` surface as ZIP.
-
-State columns audited against actual `IArchiveCreatable` / `IArchiveModifiable` implementation, not advertised intent. Where one bullet covers multiple projects with different states (e.g. ICO is R/W, ANI is WORM), each project's state is shown explicitly.
-
-| Container                              | State                                  | Entries become                                                                     | Where shipped                                          |
-| -------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| **PE resource DLLs/EXEs**              | PeResources=R, ResourceDll=WORM        | one entry per resource: `RT_GROUP_ICON` → `.ico`, `RT_BITMAP` → `.bmp`, `RT_MANIFEST` → `.xml`, `RT_STRING` → `.txt`, `RT_VERSION` → `.rcv`, raw `RT_RCDATA` | `FileFormat.PeResources`, `FileFormat.ResourceDll`     |
-| **ICO / CUR / ANI**                    | Ico=R/W, Cur=WORM, Ani=WORM            | one entry per `ICONDIRENTRY` → `.png` / `.bmp` (cursor adds hotspot)               | `FileFormat.Ico`, `FileFormat.PngCrushAdapters.Ani`    |
-| **Multi-page TIFF / BigTIFF**          | sibling-provided                       | one single-page `.tif` per IFD                                                     | `FileFormat.PngCrushAdapters.Tiff` / `BigTiff`         |
-| **Multi-frame GIF / MNG / FLI / DCX**  | sibling-provided                       | one `.gif` / `.png` per frame                                                      | `FileFormat.Gif`, `PngCrushAdapters.{Mng,Fli,Dcx}`     |
-| **Animated PNG (APNG)**                | sibling-provided                       | one `.png` per frame with dispose/blend applied against previous frames            | `FileFormat.PngCrushAdapters.Apng`                     |
-| **Icon containers (ICNS, MPO)**        | sibling-provided                       | Apple icon suite / stereoscopic JPEG pair                                          | `FileFormat.PngCrushAdapters.{Icns,Mpo}`               |
-| **Font collections (TTC / OTC)**       | R                                      | one `.ttf` / `.otf` per member font                                                | `FileFormat.FontCollection`                            |
-| **Single-font (TTF / OTF)**            | R                                      | per-glyph entries (cmap + glyf slicing; CFF/OpenType passes through)               | `FileFormat.FontCollection.Ttf`                        |
-| **Gettext MO / PO**                    | Mo=WORM, Po=R                          | one `.txt` per msgid/msgstr pair                                                   | `FileFormat.Gettext`                                   |
-| **WAV / FLAC / MP3**                   | WAV=WORM, FLAC=WORM, MP3=WORM          | full file + per-channel WAV + ID3v2/RIFF metadata + APIC cover art                 | `FileFormat.Wav`, `FileFormat.Flac`, `FileFormat.Mp3`  |
-| **Ogg**                                | R                                      | per-logical-stream packets + Vorbis/Opus comments                                  | `FileFormat.Ogg`                                       |
-| **MP4 / MOV / MKV / WebM**             | Mp4=WORM (audio mux), Mkv=R            | demuxed tracks (H.264 → Annex-B), attachments, chapters                            | `FileFormat.Mp4`, `FileFormat.Matroska`                |
-| **MPEG Transport / Program Stream, FLV** | R                                    | per-PID elementary streams; PES-stripped streams and DVD substreams; per-codec streams | `FileFormat.MpegTs`, `FileFormat.MpegPs`, `FileFormat.Flv` |
-| **Blu-ray PGS (SUP)**                  | R                                      | subtitle segments grouped by epoch                                                 | `FileFormat.Sup`                                       |
-| **VobSub (DVD)**                       | R                                      | `.idx` metadata + per-entry slices of the sibling `.sub` PES stream                | `FileFormat.VobSub`                                    |
-| **HLS M3U8**                           | R                                      | segment list with per-variant metadata                                             | `FileFormat.M3u8`                                      |
-| **U-Boot uImage, FDT/DTB, UEFI FV**    | R                                      | firmware header metadata + decompressed payload or per-FFS/property entries        | `FileFormat.UImage`, `FileFormat.Dtb`, `FileFormat.UefiFv` |
-| **Device executable packers**          | R                                      | the packer's `metadata.ini` (detection evidence) + `packed_payload.bin`; in-process decompressed body for UPX, ASPack and the aPLib packers (FSG / PECompact / RLPack) — see the *Executable packer handlers* table in `Hawkynt.FileFormats.Archives/README.md` | `FileFormat.ExePackers`                                |
-
-### Honest failure
-
-Formats that cannot produce multiple addressable entries stay in `FormatCategory.Stream` rather than falsely advertising themselves as archives. `IArchiveFormatOperations.List` is free to return a single "whole payload" entry for stream-style containers (and does, for formats like PAQ8 or the audio-stream-as-archive descriptors), but a format that would have to fake an index has no business claiming `SupportsMultipleEntries`.
-
----
-
-## Solution Structure
-
-The solution uses the `.slnx` XML format. Core / library / tooling projects sit at the
-repository root; the individual format projects are grouped into three subdirectories
-by domain. Three meta-package projects bundle them into NuGet drops.
-
-```
-CompressionWorkbench.slnx
-|
-+-- Compression.Core                 Primitives, building blocks, SIMD, partition parsers
-+-- Compression.Registry             Interfaces (IFormatDescriptor, IBuildingBlock) + registries
-+-- Compression.Registry.Generator   Roslyn source generator for auto-discovery
-+-- Compression.Lib                  Umbrella library: detection, archive ops, SFX hosting
-+-- Compression.Analysis             Binary analysis engine (signatures, entropy, trial decomp)
-+-- Compression.CLI                  `cwb` command-line tool (System.CommandLine v3)
-+-- Compression.UI                   WPF browser + analyser + heatmap + wizard
-+-- Compression.Shell                Explorer context-menu integration
-+-- Compression.Sfx.Cli              Self-extracting archive stub (console)
-+-- Compression.Sfx.Ui               Self-extracting archive stub (GUI)
-+-- Compression.Tests                NUnit test project
-|
-+-- Hawkynt.FileFormats.Audio/       Meta-package: bundles every Codec.* + audio FileFormat.*
-+-- Hawkynt.FileFormats.Archives/    Meta-package: every archive / compression-stream / pseudo-archive
-+-- Hawkynt.FileFormats.FileSystems/ Meta-package: every filesystem + disk-image container
-|
-+-- Codecs/Codec.*/                  Standalone audio codecs (PCM / FLAC / A-law / μ-law / GSM /
-|                                    ADPCM / MIDI / MP3 / Vorbis / Opus / AAC)
-+-- FileFormats/FileFormat.*/        One project per archive / stream / pseudo-archive / packer
-+-- FileSystems/FileSystem.*/        One project per filesystem image format
-```
-
-Adding a new format is a four-step process:
-
-1. Create the project under the right bucket: `FileFormats/FileFormat.<Name>/` for an
-   archive / compression stream / pseudo-archive, `FileSystems/FileSystem.<Name>/` for a
-   filesystem image, or `Codecs/Codec.<Name>/` for an audio codec. Add a class implementing
-   `IFormatDescriptor` plus the appropriate operations interface (`IStreamFormatOperations`,
-   `IArchiveFormatOperations`, plus optionally `IArchiveCreatable` for WORM, or
-   `IArchiveModifiable` for full R/W).
-2. Add a `<ProjectReference>` from `Compression.Lib.csproj` so the source generator picks it up.
-3. Add a `<ProjectReference PrivateAssets="all" />` to the matching meta-package csproj
-   (`Hawkynt.FileFormats.{Audio,Archives,FileSystems}/Hawkynt.FileFormats.*.csproj`) so the
-   format ships in its NuGet meta-package and the meta README's reference table can include it.
-4. Add the project to `CompressionWorkbench.slnx`.
-
-The Roslyn source generator (`Compression.Registry.Generator`) discovers every implementation
-at compile time and emits the registration table. No reflection, no hand-maintained switch
-statements, no init hooks.
-
-For more detail on conventions, testing, and the registry mechanism, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Technology stack
-
-| Concern   | Choice                                                              |
-| --------- | ------------------------------------------------------------------- |
-| Language  | C# 14 / .NET 10                                                     |
-| Solution  | `.slnx` (XML solution format)                                       |
-| Testing   | NUnit                                                               |
-| GUI       | WPF                                                                 |
-| CLI       | System.CommandLine v3                                               |
-| Discovery | Roslyn source generator (zero-reflection format/block registration) |
-| Bundling  | Costura.Fody single-file embedding for CLI/UI/SFX                   |
-
----
-
-## Supported Formats
-
-### Capability scale
-
-The state shown for each format in the meta-package READMEs is **audited against the actual
-source code** — `IArchiveCreatable` and `IArchiveModifiable` interface implementations,
-`FormatCapabilities.CanCreate` / `CanModify` flags — not advertised intent.
-
-| State           | Meaning                                                                                  | Source-code signal                                            |
-| --------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| **Unsupported** | No descriptor exists.                                                                    | —                                                             |
-| **R**           | Read-only: can `List` / `Extract` / `Test`; no creation.                                 | `IArchiveFormatOperations` only                               |
-| **WORM**        | Write-Once-Read-Many: can produce a fresh archive / image, but cannot modify in place.   | `IArchiveCreatable` (or `FormatCapabilities.CanCreate`)       |
-| **R/W**         | Can also add / replace / remove entries inside an existing archive with consistent free-space bookkeeping. | `IArchiveModifiable` (or `FormatCapabilities.CanModify`)      |
-
-> The full model — R/O/WORM/R-W tiers, archive vs. pseudo-archive, the five
-> maintenance verbs (optimize / shrink / defrag / purge / wipe), the block-map
-> display contract, and the streaming (OOM-free) paths — and **which interface a
-> format must implement to unlock each** is specified in
-> [`docs/ARCHIVE-MODEL.md`](docs/ARCHIVE-MODEL.md), and how the verbs are provided
-> without bespoke per-format code is in
-> [`docs/MAINTENANCE-MECHANISMS.md`](docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the
-> filesystem descriptors is the support matrix of
-> [`Hawkynt.FileFormats.FileSystems/README.md`](Hawkynt.FileFormats.FileSystems/README.md); for
-> archives it is the Maintenance column of
-> [`Hawkynt.FileFormats.Archives/README.md`](Hawkynt.FileFormats.Archives/README.md).
-
-> **How big an input can a building block take?** The measured ceilings, the
-> `Array.MaxLength` limit that `IBuildingBlock` cannot exceed, the 32-bit quantities
-> that wrap below it, and how to run the large-input tests are in
-> [`docs/LARGE-INPUTS.md`](docs/LARGE-INPUTS.md).
-
-### NuGet meta-packages
-
-The raw algorithm primitives registered via `IBuildingBlock` live in `Hawkynt.Compression.Core`
-and are published as the foundation NuGet package. Three sister meta-packages add format
-coverage on top — all version-locked 1:1, all built from the same source repo, all
-single-responsibility:
-
-| Package | Surface | NuGet |
-|---|---|---|
-| `Hawkynt.Compression.Core` | Compression primitives + `IBuildingBlock` registry. PCM / WAV / archive / filesystem code lives elsewhere. | [![Core](https://img.shields.io/nuget/v/Hawkynt.Compression.Core?label=Hawkynt.Compression.Core)](https://www.nuget.org/packages/Hawkynt.Compression.Core/) |
-| `Hawkynt.FileFormats.Audio` | PCM + lossy/lossless audio codecs (MP3 / AAC / Vorbis / Opus / FLAC / ALAC) + audio containers + tracker / chiptune / game-audio bundles. | [![Audio](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Audio?label=Hawkynt.FileFormats.Audio)](https://www.nuget.org/packages/Hawkynt.FileFormats.Audio/) |
-| `Hawkynt.FileFormats.Archives` | Catch-all for every format with multiple addressable payloads: archives (zip / tar / 7z / rar / cab / wim) + compression streams + Office / ODF / web bundles + software / installer packages + game / engine archives + pseudo-archives (PE resources, ICO, font collections, gettext) + multi-track video / subtitle containers + scientific / ML / CAD / 3D / medical containers + executable packer detection. | [![Archives](https://img.shields.io/nuget/v/Hawkynt.FileFormats.Archives?label=Hawkynt.FileFormats.Archives)](https://www.nuget.org/packages/Hawkynt.FileFormats.Archives/) |
-| `Hawkynt.FileFormats.FileSystems` | FAT / exFAT / NTFS / ext / Btrfs / XFS / HFS+ / APFS / SquashFS / ISO9660 / UDF / ZFS + retro-disk formats + disk-image containers (VHD / VHDX / VMDK / VDI / QCOW2 / DMG) + firmware / embedded boot images (uImage / Device Tree Blob / UEFI FV / Intel HEX / SREC). | [![FileSystems](https://img.shields.io/nuget/v/Hawkynt.FileFormats.FileSystems?label=Hawkynt.FileFormats.FileSystems)](https://www.nuget.org/packages/Hawkynt.FileFormats.FileSystems/) |
-
-A fifth sister package — `Hawkynt.FileFormats.Images` — lives in the
-[`Hawkynt/PNGCrushCS`](https://github.com/Hawkynt/PNGCrushCS) sibling repo and supplies
-image-format coverage (PNG / JPEG / TIFF / APNG / etc.). Together the five packages form one
-cohesive surface without any one dragging in the others' transitive baggage.
-
-**Where each per-format detail table lives:**
-
-- **[Compression.Core/README.md](Compression.Core/README.md)** — every building block (Dictionary
-  / Entropy / Transform / Context-Mixing families) with reference papers and known-edge-case
-  notes. The canonical "how / when / why" for picking a compression primitive.
-- **[Hawkynt.FileFormats.Archives/README.md](Hawkynt.FileFormats.Archives/README.md)** — the
-  the archive / stream / pseudo-archive descriptors with R / WORM / R/W state per format.
-- **[Hawkynt.FileFormats.Audio/README.md](Hawkynt.FileFormats.Audio/README.md)** — every codec
-  + container with its production / partial / framing-only state honestly documented.
-- **[Hawkynt.FileFormats.FileSystems/README.md](Hawkynt.FileFormats.FileSystems/README.md)** —
-  filesystems, disk-image containers, firmware images, plus the WSL-validated external-tool
-  matrix and the forensic-recovery carver API.
-
-## Tools
-
-CompressionWorkbench exposes the same core library through five different surfaces. Pick the one that fits the task.
-
-### Compression.CLI — `cwb`
-
-Universal archive tool with smart conversion, optimal re-encoding, benchmarking, and analysis built in.
-
-| Command                        | Alias   | What it does                                                |
-| ------------------------------ | ------- | ----------------------------------------------------------- |
-| `list <archive>`               | `l`     | List contents of an archive                                 |
-| `extract <archive> [files...]` | `x`     | Extract files from an archive                               |
-| `create <archive> <files...>`  | `c`     | Create a new archive                                        |
-| `test <archive>`               | `t`     | Test archive integrity                                      |
-| `add <archive> <files...>`     | -       | Add or replace files inside an existing archive             |
-| `remove <archive> <names...>`  | -       | Remove named entries from an existing archive               |
-| `replace <archive> <entry> <file>` | -   | Replace a single entry with a new file                      |
-| `info <archive>`               | -       | Show detailed archive information                           |
-| `convert <input> <output>`     | -       | Convert between any formats (archive, FS, stream)           |
-| `optimize <input> <output>`    | `opt`   | Re-encode with optimal compression. `--search-blocks`/`--best` instead finds the best building block for the data (`--apply <out>` writes the winner) |
-| `bestfit <file>`               | -       | Benchmark every building block on the data, rank them, and report the winning compressor (`--apply <out>` writes its output; `--ratio` favours best-ratio-within-speed-window) |
-| `benchmark <file>`             | `bench` | Benchmark all building blocks on the supplied data          |
-| `formats`                      | -       | List all supported formats                                  |
-| `analyze <file>`               | -       | Run binary analysis (detection + entropy + trial decompress)|
-| `auto-extract <file>`          | -       | Recursive nested extraction (see below)                     |
-| `batch <dir>`                  | -       | Scan a directory in parallel and aggregate format stats     |
-| `suggest <file>`               | -       | Platform-aware format recommendation                        |
-| `tool (init\|list\|add\|run\|remove)` | - | Manage external-tool templates                          |
-| `reverse-engineer <tool>`      | `reveng`| Black-box probing of an unknown compression tool            |
-| `carve <file>`                 | -       | Photorec-style file carver (JPEG/PNG/MP4/ZIP/... at any offset, including in slack space) |
-| `visualize <file>`             | -       | Renders a colored block map of every detected envelope (FAT/ext/NTFS/MBR/...) stacked by depth. `--format ascii\|svg\|html` |
-| `defragment <image>`           | -       | Defragment a filesystem image in place (`--mode pack-start\|pack-end\|fill-holes\|carve-hole`) |
-| `shrink <image>`               | -       | Defragment + truncate trailing free space; `--compact` for VHD sparse |
-| `wipe-empty <image>`           | -       | Zero-fill all unused space (free clusters, cluster tips, deleted entries) |
-| `deploy <image> <device>`      | -       | Raw-write an image to a block device with CRC verification  |
-| `convert-clusters <image>`     | -       | Rebuild a FAT image with a different cluster size           |
-| `resize <image>`               | -       | Resize a filesystem image to a target size                  |
-| `convert-archive <in> <out>`   | -       | Convert between any listable/creatable formats (archive-to-archive, archive-to-FS, FS-to-archive, FS-to-FS). `convert-fs` is a hidden back-compat alias. |
-| `dedup <image>`                | -       | Find and optionally remove duplicate files (by SHA-256)     |
-| `sparsify <image>`             | -       | Remove zero-filled blocks from a container image            |
-| `densify <image>`              | -       | Pre-allocate all blocks in a container image                |
-
-Examples:
-
-```bash
-cwb list archive.zip
-cwb extract archive.7z -o ./output
-cwb x archive.rar -p mypassword
-cwb create output.zip myDir file1.txt *.txt
-cwb create output.7z file.txt --method lzma2+
-cwb convert input.tar.gz output.tar.xz
-cwb optimize input.zip optimized.zip
-cwb benchmark largefile.bin
-cwb analyze unknown.bin
-cwb auto-extract sample.vhd --recursive
-cwb suggest big.csv        # "→ consider zstd -19 (columnar/text, moderate entropy)"
-cwb defragment disk.img --mode pack-start
-cwb shrink disk.img
-cwb wipe-empty disk.img
-cwb convert-archive disk.d64 output.zip     # retro FS → modern archive
-cwb convert-archive archive.zip out.tar     # archive → archive
-cwb convert-archive archive.zip out.img -f fat # archive → filesystem image
-cwb dedup disk.img --dry-run
-cwb sparsify disk.vhd
-cwb deploy disk.img \\.\PhysicalDrive2 --yes
-```
-
-**3-tier conversion model.** `cwb convert` picks the cheapest strategy that preserves data:
-
-| Tier | Strategy                                     | Example                          |
-| ---- | -------------------------------------------- | -------------------------------- |
-| 1    | Bitstream transfer (zero decompression)      | `.gz` ↔ `.zlib`, `.zip` ↔ `.gz`  |
-| 2    | Container restream (decompress wrapper only) | `.tar.gz` → `.tar.xz`            |
-| 3    | Full recompress (extract + re-encode)        | `.zip` → `.7z`                   |
-
-**Method+ system.** Append `+` to any method name for optimal encoding: `deflate+` uses Zopfli, `lzma+` uses Best, `lz4+` uses HC.
-
-**Tool templates.** `cwb tool` registers external CLI tools (7z, binwalk, file, trid, …) in `~/.cwb-tools.json`. Templates use `{input}`, `{output}`, `{outputDir}` placeholders and can capture stdout, pipe stdin, or set a timeout. `cwb tool init` pre-populates templates for common tools.
-
-### Compression.UI — WPF browser + analyser + heatmap
-
-The archive browser is the conventional half: file list with icons, columns (name, size, compressed, ratio, method, modified), open / extract / create / test flows, preview window (text + hex), properties dialog with compression-ratio visualisation, benchmark tool, and Explorer context-menu integration (`Compression.Shell`).
-
-**UI niceties** that match power-user expectations from 7-Zip / Total Commander:
-
-- **".." everywhere** — navigates up one folder; at archive root it exits to **OS-browser mode** rooted at the archive's containing folder, so you can keep walking up the filesystem like 7z does.
-- **Auto-descent into nested archives** — double-clicking a file inside an archive that's itself an archive (e.g. a `.vhd` inside a `.zip`) opens it as a new archive context. ".." pops back to the parent. Guarded by content-hash dedup + max-depth-16 cap so a malformed file detected as containing itself doesn't loop forever.
-- **Drag in / drag out** — drop files on the window to open them or add them to the open archive (auto-detects); drag entries out of the list to copy them into Explorer or any drop target.
-- **Last-folder restore** — relaunching the app reopens the OS browser at the last folder a file was opened from. If that folder was deleted in the meantime, walks up parents until one exists, falling back to `%USERPROFILE%`.
-- **All file-type filters** — Open dialog dropdown lists "All Archives" + one entry per registered descriptor (auto-discovered, alphabetically sorted), so you can narrow to e.g. "ZIP archive (*.zip)" or "VMDK virtual disk (*.vmdk)" with one click.
-
-The analyser is the interesting half. **When you drop an unknown binary on the UI, it never says "unsupported" — it shows you what the bytes look like.** The Binary Analysis wizard has a toolbar that walks you through progressively deeper investigation:
-
-- **Scan Results** — every registered magic-byte signature that matches, with offsets and confidence.
-- **Fingerprints** — algorithm identification from byte-distribution and byte-pair statistics.
-- **Entropy Map** — per-region entropy profile with CUSUM change-point detection and 1D-Canny edge sharpening. Structured data (text, tables) shows low entropy; compressed/encrypted regions show high entropy; boundaries between them are marked.
-- **Trial Decompress** — runs every registered stream decompressor in parallel with per-trial timeout and early-terminates on a low-entropy output. If any decoder produces plausible output, it is offered for preview.
-- **Chain** — multi-layer compression reconstruction (e.g. `gzip(bzip2(data))`). Recursive trial decompression continues until entropy stops dropping.
-- **Statistics** — full byte distribution, bigram histogram, chi-square randomness test, longest run, run-length distribution.
-- **Strings** — ASCII / UTF-8 / UTF-16 string search with regex support.
-- **Structure** — ImHex/010-style `.cwbt` templates. Built-in templates ship for ZIP, PNG, BMP, ELF, Gzip; you can write your own using u8-u64 / i8-i64 / f16-f64 (LE/BE), char/u8 arrays, BCD, fixed-point, color, date/time, and network types with dynamic length via field references or repeat-to-EOF.
-
-### Heatmap Explorer
-
-The Heatmap Explorer is the *visual* first pass. A 16×16 colour grid represents a proportional region of the file. Each of the 256 cells is one tile.
-
-| Cell colour | Meaning                                          | Entropy  |
-| ----------- | ------------------------------------------------ | -------- |
-| Blue        | Low entropy — zeros, padding, simple headers     | 0.0–3.0  |
-| Green       | Structured data — tables, records, text          | 3.0–5.5  |
-| Orange      | Compressed data                                  | 5.5–7.5  |
-| Red         | Random / encrypted (incompressible)              | 7.5–8.0  |
-| Purple      | A known format signature was detected here       | any      |
-
-Click any cell to subdivide into another 16×16 grid — it recursively zooms in on a region. Hovering shows offset, size, entropy, unique-byte count, and the detected signature (if any). **Extract** on a purple cell saves just that region to a file. The explorer only samples each block, so it handles arbitrarily large files without loading them into memory. Accessible from the analyser's "Heatmap" tab.
-
-### Compression.Analysis — the analyser as a library
-
-Everything the UI exposes is available as a .NET library under `Compression.Analysis`:
-
-- **Signature Scanner** — magic-byte detection for every registered format (hash-indexed, O(n)).
-- **Algorithm Fingerprinting** — statistical fingerprinting against known compression-output distributions.
-- **Trial Decompression** — `TryAllAsync` runs every registered stream decompressor in parallel with per-trial timeout and early termination.
+## 🔬 Analysis and forensics
+
+The analysis surfaces are intentionally useful even when no high-level format reader succeeds. They
+work from the bytes outward instead of stopping at "unsupported".
+
+### 🖥️ Compression.UI — browser, analyser and heatmap
+
+The archive browser is the conventional half: file list with name, size, compressed size, ratio,
+method and modified columns; open / extract / create / test flows; text and hex preview; properties
+with compression-ratio visualization; benchmark tooling; and Explorer context-menu integration.
+
+Power-user navigation includes:
+
+- **`..` everywhere** — move up a folder; at archive root it exits to OS-browser mode rooted at the
+  archive's containing folder.
+- **Auto-descent into nested formats** — double-click an addressable child that is itself recognized
+  and it opens as a nested context; `..` returns to the parent. Content-hash dedup and a depth cap
+  prevent recursive loops.
+- **Drag in / drag out** — drop files on the window to open or add them; drag entries out to Explorer
+  or another drop target.
+- **Last-folder restore** — relaunching returns to the last usable folder, walking upward if that path
+  disappeared.
+- **Registered file-type filters** — the Open dialog exposes an all-formats filter plus generated
+  per-format filters.
+
+The Binary Analysis wizard walks progressively deeper through an unknown binary:
+
+- **Scan Results** — registered magic-byte signatures with offsets and confidence.
+- **Fingerprints** — likely compression algorithms from byte and byte-pair statistics.
+- **Entropy Map** — per-region entropy with change-point and edge detection to expose boundaries.
+- **Trial Decompress** — registered stream decompressors run in parallel with timeout and plausible-
+  output early termination.
+- **Chain** — recursive reconstruction of layered compression such as `gzip(bzip2(data))`.
+- **Statistics** — byte distribution, bigrams, chi-square randomness, longest run and run lengths.
+- **Strings** — ASCII / UTF-8 / UTF-16 search with regex support.
+- **Structure** — ImHex/010-style `.cwbt` templates; built-ins include ZIP, PNG, BMP, ELF and Gzip,
+  with integer/float endian variants, arrays, BCD, fixed-point, color, date/time and network types.
+
+### 🗺️ Heatmap Explorer
+
+The Heatmap Explorer is the visual first pass. A 16×16 colour grid represents a proportional region
+of the file; each of the 256 cells is one tile.
+
+| Cell colour | Meaning | Entropy |
+| --- | --- | --- |
+| Blue | Low entropy — zeros, padding, simple headers | 0.0–3.0 |
+| Green | Structured data — tables, records, text | 3.0–5.5 |
+| Orange | Compressed data | 5.5–7.5 |
+| Red | Random / encrypted (incompressible) | 7.5–8.0 |
+| Purple | A known format signature was detected here | any |
+
+Click a cell to subdivide it into another 16×16 grid and recursively zoom into that region. Hovering
+shows offset, size, entropy, unique-byte count and a detected signature when present. **Extract** on a
+purple cell saves just that region. The explorer samples each block rather than loading the whole file,
+so it remains usable on very large inputs. It is available from the analyser's **Heatmap** tab.
+
+### 🧬 Compression.Analysis — analyser as a library
+
+Everything behind the UI is also available from the managed `Compression.Analysis` library:
+
+- **Signature Scanner** — magic-byte detection for every registered format using a hash-indexed scan.
+- **Algorithm Fingerprinting** — statistical matching against known compression-output distributions.
+- **Trial Decompression** — `TryAllAsync` runs registered stream decompressors in parallel with
+  per-trial timeout and early termination.
 - **Chain Reconstruction** — discovers layered compression.
-- **Entropy Mapping** — per-region entropy profiling with boundary detection; multi-resolution entropy pyramid (64 KB / 8 KB / 1 KB / 256 B), CUSUM binary segmentation, KL-divergence + chi-square boundary validation, 1D-Canny edge sharpening.
+- **Entropy Mapping** — per-region profiling, multi-resolution entropy pyramids, CUSUM binary
+  segmentation, KL-divergence / chi-square validation and edge sharpening.
 - **String Extraction** — ASCII / UTF-8 / UTF-16 with regex.
 - **Structure Templates** — `.cwbt` template language.
-- **Streaming Analysis** — reads the first 64 KB for magic/header; computes entropy in 64 KB chunks; returns per-chunk entropy profiles for arbitrarily large files.
-- **Black-box tool integration** — `ExternalToolRunner`, `ToolOutputParser`, `CrossValidator`, `FallbackDecompressor` with auto-discovery of tools on `PATH`.
-- **AutoExtractor** — recursive nested extraction: archives inside archives, disk images → partition tables → filesystems → files. Configurable max depth (default 5) and file-size limits.
-- **BatchAnalyzer** — parallel directory scan with aggregate format statistics.
-- **FileCarver / FileCarverOutputSink** — photorec-style flat magic-scan carving for damaged dumps. Streams 1 MB windows with 64 KB overlap; never materialises multi-GB images.
-- **FilesystemCarver / FilesystemExtractor** — finds filesystem superblocks anywhere in a stream (ext at +1080, FAT at +54/+82, XFS "XFSB" at 0, Btrfs at 0x10020, …), validates each via the matching reader's `List()`, extracts contents per-file with isolated error handling.
-- **RecursiveFilesystemCarver** — descends through wrapper chains: VHD → MBR → FAT → file.zip etc. Each `NestedHit` carries its `EnvelopeStack` lineage so consumers know what's wrapping what.
-- **BlockMap / BlockMapRenderer** — colored visualization of envelope stacks. ASCII / SVG / HTML output with per-format palette (ext = green, FAT = orange, NTFS = blue, Btrfs = teal, XFS = red, MBR/GPT = grey, QCOW2/VMDK/VHD = purples). Used by `cwb visualize`.
-- **PayloadCarver, StringsExtractor, EntropyHeatmap** — standalone helpers.
+- **Streaming Analysis** — reads a small header window and computes entropy chunk-by-chunk for inputs
+  that should not be materialized in memory.
+- **Black-box tool integration** — `ExternalToolRunner`, `ToolOutputParser`, `CrossValidator` and
+  `FallbackDecompressor` with tool discovery on `PATH`.
+- **AutoExtractor** — recursive nested extraction across archives, disk images, partition tables,
+  filesystems and contained files, with configurable depth and file-size limits.
+- **BatchAnalyzer** — parallel directory scanning with aggregate format statistics.
+- **FileCarver / FileCarverOutputSink** — streaming magic-scan carving for damaged dumps.
+- **FilesystemCarver / FilesystemExtractor** — locate filesystem superblocks inside a stream, validate
+  candidates with their native readers and extract per-file with isolated error handling.
+- **RecursiveFilesystemCarver** — descend wrapper chains such as VHD → MBR → FAT → ZIP while retaining
+  each hit's `EnvelopeStack` lineage.
+- **BlockMap / BlockMapRenderer** — ASCII / SVG / HTML visualization of nested envelope stacks; used by
+  `cwb visualize`.
+- **PayloadCarver, StringsExtractor, EntropyHeatmap** — standalone analysis helpers.
 
-**Detection pipeline.** Magic bytes → parallel trial decompression (early-termination on low-entropy output) → extension fallback → deep probe (header parse + structural validation + integrity check).
+**Detection pipeline.** Magic bytes → parallel trial decompression with plausible-output early
+termination → extension fallback → deep probe with header parse, structural validation and integrity
+checks.
 
-**Partition table support.** `MbrParser` (four primaries at 0x1BE + extended/logical chain) + `GptParser` (EFI PART at LBA 1) + `PartitionTypeDatabase` (type-byte / GUID → filesystem name). Recursive descent via `--recursive`: disk image → partition table → filesystem → archive chain.
+**Partition-table support.** `MbrParser`, `GptParser` and `PartitionTypeDatabase` feed recursive
+descent so `--recursive` can follow disk image → partition table → filesystem → nested format.
 
-### Reverse Engineering
-
-Two complementary flows for reverse-engineering unknown compression tools and file formats.
-
-**Black-box tool probing** runs the target tool with a battery of controlled probe inputs (empty, single byte, incrementing patterns, text, random data, various sizes 0–64 KB), cross-correlates all outputs, and reports: magic bytes, size-field offsets (LE/BE, 2/4/8 byte), the compression algorithm (trial decompression against all building blocks), filename storage (UTF-8 / UTF-16), determinism, payload entropy.
-
-```bash
-cwb reverse-engineer MyTool.exe "{input} {output}"
-cwb reverse-engineer packer.exe "--pack {input} --out {output}" --timeout 10000
-```
-
-The GUI offers the same via **Tools → Reverse Engineer Format** as a step-by-step wizard with progress reporting.
-
-**Static analysis mode** works when you have archive files with known original content but no tool to run. `StaticFormatAnalyzer` accepts pairs of (original, archived) and locates where the content appears inside the archive — verbatim or compressed with any known building block — then infers header/footer structure, size fields, and compression algorithm without ever executing an external tool.
-
-### Compression.Shell
-
-Explorer context-menu integration. Right-click any file to invoke `cwb` commands directly: list, extract, test, optimise.
-
-### Compression.Sfx.Cli / Compression.Sfx.Ui
-
-Self-extracting archive stubs for console and GUI use. The stub is a normal `cwb`-style reader prepended to an archive overlay; running the resulting exe extracts in place. Used for single-file distributions via Costura.Fody.
+Analysis does not change format ownership: discovering JPEG data inside damaged storage does not make
+JPEG an archive format, and finding an ext superblock does not make `Compression.Analysis` the ext
+implementation. Once a native handler exists, analysis delegates to the owning package.
 
 ---
 
-## External tool validation
+## 🛠️ Optimization, conversion and maintenance
 
-The test suite includes three tiers of external validation beyond the standard self-round-trip tests.
+Three cross-cutting ideas are worth knowing at root level because they combine several packages:
 
-**Self round-trip.** All formats that support both create and extract are tested by creating an archive, extracting it, and verifying the output matches the original. Runs as part of the normal `dotnet test`.
+### 🗜️ Compression search
 
-**External tool interop** (`Category=EndToEnd`). Verifies our output is readable by external tools and vice versa. Dynamic tool discovery via `PATH` and common install locations; gracefully skips when tools are unavailable. Covered: **7z**, **gzip**, **bzip2**, **xz**, **zstd**, **lz4**, **tar**. Both directions are tested: create with our library → read with external tool, and vice versa.
+Building blocks expose their tunable parameters instead of collapsing to a single "fast" or "best"
+preset. `benchmark`, `bestfit` and `optimize` can compare algorithms and parameter sets on the actual
+input data. Algorithm details and input-size constraints live in
+[Compression.Core/README.md](Compression.Core/README.md) and [docs/LARGE-INPUTS.md](docs/LARGE-INPUTS.md).
 
-```bash
-dotnet test --filter "Category=EndToEnd"
-```
+### 🔄 Conversion
 
-**.NET BCL interop.** Verifies interoperability with `System.IO.Compression` (`GZipStream`, `DeflateStream`, `BrotliStream`, `ZipArchive`).
+Conversion chooses the cheapest valid path that preserves the required data. Depending on source and
+target, that can mean transferring an existing bitstream, restreaming a container, or fully decoding
+and re-encoding. Container/filesystem conversion is gated by the capabilities of both ends rather
+than by hard-coded format pairs.
 
-**OS integration** (`Category=OsIntegration`). Platform-specific tooling:
+### 🧹 Maintenance
 
-- **Windows** — PowerShell `Compress-Archive` / `Expand-Archive`, Windows `tar`, `certutil`, `Mount-DiskImage`, DISM
-- **Linux** — `mtools` (FAT), `genisoimage` (ISO), `qemu-img` (virtual disks), `debugfs` (ext4), `cpio`
-
-Platform detection + `Assert.Ignore` means tests never fail due to missing prerequisites.
-
-```bash
-dotnet test --filter "Category=OsIntegration"
-```
-
-**Filesystem validation matrix.** `Compression.Tests/ExternalFsInteropTests.cs` wires 18 filesystem-image tests against the tools below:
-
-| Tool                | Present?                                        | Validates                                                                        |
-| ------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
-| 7-Zip (portable)    | Bundled                                         | NTFS, FAT, exFAT, ext, HFS, HFS+, ISO 9660, UDF, SquashFS, CramFS (list/extract) |
-| qemu-img            | Optional — install from https://qemu.weilnetz.de/w64/ | VHD, VMDK, QCOW2, VDI (info + check)                                       |
-| DISM                | Windows built-in                                | WIM, VHD, ISO                                                                    |
-| chkdsk              | Windows built-in (admin + mounted volume)       | FAT, exFAT, NTFS                                                                 |
-| mtools              | Optional — install from Cygwin                  | FAT (non-admin)                                                                  |
-| WSL + mkfs.* / fsck.* | Optional — `wsl --install` as admin + reboot  | ext / XFS / Btrfs / F2FS / JFS / ReiserFS / UDF / UFS                            |
-| DOSBox-X + MS-DOS 6.0/6.2 | Opt-in — set `CWB_MSDOS_DBLSPACE_BOOT_IMG`  | DBLSPACE CVF (`DBLSPACE /CHKDSK D:`) — see [`Compression.Tests/Support/MsDosImageStaging.md`](Compression.Tests/Support/MsDosImageStaging.md) |
-| DOSBox-X + MS-DOS 6.22    | Opt-in — set `CWB_MSDOS_DRVSPACE_BOOT_IMG`  | DRVSPACE CVF (`DRVSPACE /CHKDSK D:`) — see [`Compression.Tests/Support/MsDosImageStaging.md`](Compression.Tests/Support/MsDosImageStaging.md) |
-| DOSBox-X + FreeDOS LiveCD | Auto (hash-pinned download)                  | FAT (`CHKDSK D:` from FreeDOS) — gate is `[Explicit]` because the LiveCD welcome screen races the autoexec |
-
-Tests skip cleanly when the tool is missing; they never fail the suite on a tool-deficient machine.
+Archives, filesystems and disk-image containers can expose maintenance verbs such as defragment,
+shrink, wipe, layout/optimize or reorder. Those are capabilities, not promises made for every format.
+The authoritative per-format cells are in the [archive](Hawkynt.FileFormats.Archives/README.md) and
+[filesystem](Hawkynt.FileFormats.FileSystems/README.md) matrices; the common mechanisms are described
+in [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md).
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
-**Principles:**
+The repository separates algorithms, registries, format packages and presentation surfaces rather
+than making every project know every format:
 
-1. **No external compression code.** Every algorithm is implemented from scratch in C#.
-2. **Composable primitives.** `Compression.Core` provides the building blocks; `FileFormat.*` / `FileSystem.*` projects compose them. `Compression.Core` never implements format interfaces — it is pure algorithm.
-3. **Stream-oriented.** All compression / decompression operates on `System.IO.Stream`.
-4. **Immutable headers.** File-format header structures are immutable record types.
-5. **Testability.** Every component is independently testable; NUnit tests cover primitives, format round-trips, and external interop.
-6. **.NET 10 / C# 14.** Latest language features, nullable reference types, warnings-as-errors.
+```text
+Compression.Core
+      |
+Compression.Registry <--- source-generated descriptor registration
+      |
+Compression.Lib -------> common detection / operations / conversion
+      |
+      +--> Compression.Analysis
+      +--> Compression.CLI
+      +--> Compression.UI
+      +--> Compression.Shell / Compression.Sfx.* / Compression.Mounting.*
+      |
+      +--> Hawkynt.FileFormats.Audio
+      +--> Hawkynt.FileFormats.Archives
+      +--> Hawkynt.FileFormats.FileSystems
+```
 
-**Registry.** The source generator (`Compression.Registry.Generator`) emits a `RegisterFormats()` method listing every `IFormatDescriptor` and a `FormatDetector.Format` enum with one entry per format — zero reflection, zero hand-maintained lists. The same mechanism discovers `IBuildingBlock` implementations in `Compression.Core`.
+Image and video packages live in the sibling PNGCrushCS repository and integrate at their package
+boundaries instead of being duplicated here.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for project-level dependencies and
+[CONTRIBUTING.md](CONTRIBUTING.md) for registry, format-project and testing conventions.
 
 ---
 
-## Building
+## 🧪 Building and testing
 
 ```bash
 dotnet build CompressionWorkbench.slnx
-```
-
-### Running the UI on Linux (Wine)
-
-The UI project targets `net10.0-windows` (WPF) and cannot run natively on Linux.
-Use the provided helper script to build and launch it under Wine:
-
-```bash
-./run-wine.sh            # first run: publishes a self-contained Windows exe, then launches
-./run-wine.sh --rebuild  # force a fresh publish (e.g. after pulling new changes)
-```
-
-**Prerequisites:** Wine must be installed (`sudo pacman -S wine` on Arch/CachyOS).
-For better font rendering install Core Fonts once: `winetricks corefonts`.
-
-## Testing
-
-```bash
 dotnet test
 ```
 
+The WPF UI targets Windows. On Linux, `run-wine.sh` builds and launches the self-contained Windows UI
+under Wine.
+
 ---
 
-## References to learn from
+## 📚 Documentation
 
-- **RFCs**: [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951) (Deflate), [RFC 1952](https://www.rfc-editor.org/rfc/rfc1952) (Gzip), [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) (Zlib), [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) (Brotli), [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) (Zstandard)
-- **[libxad](https://github.com/ashang/libxad)** — the external archive decompressor, format reference
+| Question | Go here |
+| --- | --- |
+| Which compression algorithms exist and what are their limits? | [Compression.Core/README.md](Compression.Core/README.md), [docs/LARGE-INPUTS.md](docs/LARGE-INPUTS.md) |
+| Which archive/stream formats can be read, created or edited? | [Hawkynt.FileFormats.Archives/README.md](Hawkynt.FileFormats.Archives/README.md) |
+| Which filesystems/disk images support R, WORM, R/W and maintenance? | [Hawkynt.FileFormats.FileSystems/README.md](Hawkynt.FileFormats.FileSystems/README.md) |
+| Which audio codecs/containers decode or encode? | [Hawkynt.FileFormats.Audio/README.md](Hawkynt.FileFormats.Audio/README.md) |
+| Which image formats read/write/info/multi/optimize? | [Hawkynt.FileFormats.Images/README.md](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Images/README.md) |
+| Which video containers/codecs demux/mux/decode/encode? | [Hawkynt.FileFormats.Video/README.md](https://github.com/Hawkynt/PNGCrushCS/blob/main/Hawkynt.FileFormats.Video/README.md) |
+| How are media-container, audio-codec and video-codec ledgers separated? | [docs/MEDIA-LEDGERS.md](docs/MEDIA-LEDGERS.md) |
+| What CLI commands exist? | [Compression.CLI/README.md](Compression.CLI/README.md) and [CLI reference](#%EF%B8%8F-cli-reference) |
+| What does the common archive/addressable-entry model mean? | [docs/ARCHIVE-MODEL.md](docs/ARCHIVE-MODEL.md) |
+| How do maintenance operations work without per-format duplication? | [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md) |
+| How is the solution structured? | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| How do I add or change a format? | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+---
+
+## 📖 References to learn from
+
+These remain useful both as implementation references and as places to learn the formats and
+compression families CompressionWorkbench deals with:
+
+- **RFCs:** [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951) (Deflate), [RFC 1952](https://www.rfc-editor.org/rfc/rfc1952) (Gzip), [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) (Zlib), [RFC 7932](https://www.rfc-editor.org/rfc/rfc7932) (Brotli), [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) (Zstandard)
+- **[libxad](https://github.com/ashang/libxad)** — archive decompressor and format reference
 - **[XADMaster / The Unarchiver](https://github.com/MacPaw/XADMaster)** — modern continuation of libxad
-- **[libarchive](https://github.com/libarchive/libarchive)** — multi-format reference
+- **[libarchive](https://github.com/libarchive/libarchive)** — multi-format archive reference
 - **[Wikipedia list of archive formats](https://en.wikipedia.org/wiki/List_of_archive_formats)**
-- **[ArchiveTeam Just Solve The File Format Problem](http://fileformats.archiveteam.org/wiki/Compression)** — compression format documentation
-- **[7-Zip](https://github.com/ip7z/7zip)** — multi-archiver reference
-- **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors + corpus
-- **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated list of information around executable packers
+- **[ArchiveTeam — Just Solve The File Format Problem](http://fileformats.archiveteam.org/wiki/Compression)** — compression-format documentation
+- **[7-Zip](https://github.com/ip7z/7zip)** — multi-archiver reference implementation
+- **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors and corpora
+- **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated executable-packer material
+
+---
 
 ## ❤️ Support
 
