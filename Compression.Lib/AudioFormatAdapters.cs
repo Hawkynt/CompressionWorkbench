@@ -5,6 +5,8 @@ using Codec.ALaw;
 using Codec.ImaAdpcm;
 using Codec.Mp3;
 using Codec.MuLaw;
+using Codec.Opus;
+using Codec.Qoa;
 using Codec.WavPack;
 using Compression.Registry;
 using FileFormat.Aiff;
@@ -22,13 +24,23 @@ internal static class AudioFormatAdapters {
   private static readonly AuAdapter Au = new();
   private static readonly Mp3Adapter Mp3 = new();
   private static readonly WavPackAdapter WavPack = new();
+  private static readonly QoaAdapter Qoa = new();
+  private static readonly OpusAdapter Opus = new();
 
+  // TTA, AC-3 and DTS are deliberately absent. Each has a decoder that works on
+  // streams our own encoder wrote and fails on streams from anyone else — TTA
+  // throws part-way through a frame whose CRC it has already checked, AC-3 and
+  // DTS return no samples at all. Routing them would turn an honest "no route"
+  // into a silently empty conversion, so they stay out until the decoders are
+  // fixed. Measurements are in docs/AUDIO-IDENTIFIER-REGISTRY.md.
   public static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmSource ?? descriptor.Id switch {
       "Aiff" => Aiff,
       "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
+      "Qoa" => Qoa,
+      "Opus" => Opus,
       _ => null,
     };
 
@@ -38,6 +50,7 @@ internal static class AudioFormatAdapters {
       "Au" => Au,
       "Mp3" => Mp3,
       "WavPack" => WavPack,
+      "Qoa" => Qoa,
       _ => null,
     };
 
@@ -484,6 +497,101 @@ internal static class AudioFormatAdapters {
         outputRate));
       output.Write(encoded);
     }
+  }
+
+  /// <summary>Quite OK Audio. Fixed 16-bit signed samples, in and out.</summary>
+  private sealed class QoaAdapter : IAudioPcmSource, IAudioPcmTarget {
+    private static readonly string[] Codecs = ["qoa"];
+
+    public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
+
+    public AudioPcmBuffer DecodePcm(Stream input) {
+      ArgumentNullException.ThrowIfNull(input);
+      using var materialized = Materialize(input);
+      var info = QoaCodec.ReadStreamInfo(materialized);
+      materialized.Position = 0;
+      using var pcm = new MemoryStream();
+      QoaCodec.Decompress(materialized, pcm);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(info.SampleRate, info.Channels, 16), pcm.ToArray());
+    }
+
+    public bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string? reason) {
+      if (!Codecs.Contains(codecId, StringComparer.OrdinalIgnoreCase)) {
+        reason = $"codec '{codecId}' is not QOA";
+        return false;
+      }
+      if (format.Channels is < 1 or > 255) {
+        reason = "QOA carries between one and 255 channels";
+        return false;
+      }
+      if (format.SampleRate is < 1 or > 0xFFFFFF) {
+        reason = "QOA stores the sample rate in 24 bits";
+        return false;
+      }
+
+      return CanEncodeInteger(format, "QOA", [16], out reason);
+    }
+
+    public void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options) {
+      ArgumentNullException.ThrowIfNull(output);
+      ArgumentNullException.ThrowIfNull(pcm);
+      if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
+        throw new NotSupportedException(reason);
+
+      using var input = new MemoryStream(pcm.InterleavedData, writable: false);
+      QoaCodec.Compress(input, output, pcm.Format.Channels, pcm.Format.SampleRate);
+    }
+  }
+
+  /// <summary>
+  /// Ogg Opus. The decoder always runs at 48 kHz whatever the original input
+  /// rate was, so that — and not <c>InputSampleRate</c> — is what the decoded
+  /// buffer carries.
+  /// </summary>
+  private sealed class OpusAdapter : IAudioPcmSource {
+    public AudioPcmBuffer DecodePcm(Stream input) {
+      ArgumentNullException.ThrowIfNull(input);
+      using var materialized = Materialize(input);
+      var info = OpusCodec.ReadStreamInfo(materialized);
+      materialized.Position = 0;
+      using var pcm = new MemoryStream();
+      OpusCodec.Decompress(materialized, pcm);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(48_000, info.Channels, 16), pcm.ToArray());
+    }
+  }
+
+  // WAVE keeps 8-bit samples unsigned and everything wider signed; the integer
+  // codecs here follow it.
+  private static AudioPcmEncoding IntegerEncodingFor(int bitsPerSample)
+    => bitsPerSample == 8 ? AudioPcmEncoding.UnsignedInteger : AudioPcmEncoding.SignedInteger;
+
+  private static bool CanEncodeInteger(
+      AudioPcmFormat format, string name, int[] widths, out string? reason) {
+    if (format.Channels < 1) {
+      reason = $"{name} requires at least one channel";
+      return false;
+    }
+    if (format.SampleRate < 1) {
+      reason = $"{name} requires a positive sample rate";
+      return false;
+    }
+    if (format.Encoding == AudioPcmEncoding.IeeeFloat) {
+      reason = $"{name} takes integer PCM, not IEEE floating point";
+      return false;
+    }
+    if (!widths.Contains(format.BitsPerSample)) {
+      reason = $"{name} supports {string.Join('/', widths)}-bit PCM";
+      return false;
+    }
+    if (format.BitsPerSample == 8 && format.Encoding != AudioPcmEncoding.UnsignedInteger) {
+      reason = "8-bit PCM must use the unsigned WAV sample representation";
+      return false;
+    }
+
+    reason = null;
+    return true;
   }
 
   private sealed class WavPackAdapter : IAudioPcmSource, IAudioPcmTarget {

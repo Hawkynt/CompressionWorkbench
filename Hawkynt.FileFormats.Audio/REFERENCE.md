@@ -2042,6 +2042,7 @@ Ogg page walker specialised for Opus streams. Reassembles packets across page bo
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OggOpusReader` | `OggOpusReader(Stream stream)` | Initializes a new instance of `OggOpusReader`. |
+| `LastGranulePosition` | `long LastGranulePosition { get; }` | Granule position of the most recent page that carried one, or -1 before any page has been read. |
 | `ReadHead` | `OpusHeadPacket ReadHead()` | Reads the head from the supplied input. |
 | `TryReadPacket` | `bool TryReadPacket(out byte[] packet)` | Attempts to read the packet from the supplied input. |
 | `TryReadTags` | `OpusTagsPacket TryReadTags()` | Attempts to read the tags from the supplied input. |

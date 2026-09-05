@@ -45,6 +45,17 @@ public sealed class OggOpusReader {
   public OggOpusReader(Stream stream) => this._stream = stream;
 
   /// <summary>
+  /// Granule position of the most recent page that carried one, or -1 before any
+  /// page has been read.
+  /// </summary>
+  /// <remarks>
+  /// For Opus the granule counts 48 kHz samples from the start of the stream,
+  /// pre-skip included, so the value on the final page is the whole length. A
+  /// decoder that ignores it emits the encoder's trailing padding as audio.
+  /// </remarks>
+  public long LastGranulePosition { get; private set; } = -1;
+
+  /// <summary>
   /// Reads the head from the supplied input.
   /// </summary>
   public OpusHeadPacket ReadHead() {
@@ -149,6 +160,11 @@ public sealed class OggOpusReader {
     if (!ReadExact(this._stream, header)) { this._eof = true; return; }
     if (!header[..4].SequenceEqual(OggS))
       throw new InvalidDataException("Not an Ogg stream: missing 'OggS' capture pattern.");
+
+    // A page whose last packet is unfinished carries -1 rather than a position.
+    var granule = BinaryPrimitives.ReadInt64LittleEndian(header[6..14]);
+    if (granule >= 0)
+      this.LastGranulePosition = granule;
 
     var segmentCount = header[26];
     Span<byte> segments = stackalloc byte[segmentCount];
