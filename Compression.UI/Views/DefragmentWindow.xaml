@@ -271,7 +271,7 @@
               <DataGridTextColumn Header="Frag" Binding="{Binding FragmentsDisplay}" Width="44">
                 <DataGridTextColumn.ElementStyle>
                   <Style TargetType="TextBlock">
-                    <Setter Property="ToolTip" Value="Fragment-count display requires per-FS extent walk; not yet implemented." />
+                    <Setter Property="ToolTip" Value="How many separate stretches of the container this file's data occupies. 1 is contiguous; higher is fragmented. An em dash means the format offers no layout to count from." />
                     <Setter Property="HorizontalAlignment" Value="Center" />
                     <Setter Property="Foreground" Value="DimGray" />
                   </Style>
@@ -300,26 +300,46 @@
     <ProgressBar Grid.Row="5" x:Name="Progress" Height="4" Margin="0,0,0,0"
                  IsIndeterminate="False" VerticalAlignment="Bottom" />
 
-    <!-- Action buttons -->
-    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-      <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
-                Margin="0,0,8,0" IsEnabled="False"
-                ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
-      <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
-              Click="OnCompact" IsEnabled="False"
-              ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />
-      <Button x:Name="PurgeBtn" Content="Purge" Width="100" Padding="4" Margin="0,0,8,0"
-              Click="OnPurge" IsEnabled="False"
-              ToolTip="Erase ALL live data, leaving a valid empty container. Distinct from Wipe Empty (which only zeros dead space)." />
-      <Button x:Name="WipeEmptyBtn" Content="Wipe Empty" Width="100" Padding="4" Margin="0,0,8,0"
-              Click="OnWipeEmpty" IsEnabled="False"
-              ToolTip="Zero-fill all unused space: free clusters, cluster-tip slack, dead bytes. Forensic cleanliness tool." />
-      <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4" Margin="0,0,8,0"
-              Click="OnShrink" IsEnabled="False"
-              ToolTip="Defragment + truncate trailing free space to minimize image size." />
-      <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
-              Click="OnRun" IsDefault="True" IsEnabled="False" />
-      <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
-    </StackPanel>
+    <!-- Action buttons.
+         A WrapPanel rather than one row: the row already filled the window at its minimum width,
+         and adding to it pushed "Minimal geometry" off the left edge, because a right-aligned
+         StackPanel overflows leftwards and clips silently. Each group wraps as a unit instead.
+
+         The panel flows right-to-left so a wrapped group stays against the right edge like the row
+         it came from rather than jumping to the left; the groups themselves flow the normal way,
+         and are listed here rightmost-first for that reason. Scramble sits next to Defragment
+         because it is the thing Defragment undoes. -->
+    <WrapPanel Grid.Row="6" HorizontalAlignment="Right" FlowDirection="RightToLeft">
+      <StackPanel Orientation="Horizontal" Margin="0,4,0,0" FlowDirection="LeftToRight">
+        <TextBlock Text="Seed" VerticalAlignment="Center" Margin="0,0,4,0"
+                   ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+        <TextBox x:Name="ScrambleSeedBox" Text="1" Width="60" Padding="2" Margin="0,0,8,0"
+                 VerticalContentAlignment="Center" IsEnabled="False"
+                 ToolTip="Seeds Scramble's shuffle. The same seed deals the same layout every run." />
+        <Button x:Name="ScrambleBtn" Content="Scramble" Width="100" Padding="4" Margin="0,0,8,0"
+                Click="OnScramble" IsEnabled="False"
+                ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content is preserved; only the layout changes. Asks first." />
+        <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
+                Click="OnRun" IsDefault="True" IsEnabled="False" />
+        <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" Margin="0,4,8,0" FlowDirection="LeftToRight">
+        <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
+                  Margin="0,0,8,0" IsEnabled="False"
+                  ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
+        <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
+                Click="OnCompact" IsEnabled="False"
+                ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />
+        <Button x:Name="PurgeBtn" Content="Purge" Width="100" Padding="4" Margin="0,0,8,0"
+                Click="OnPurge" IsEnabled="False"
+                ToolTip="Erase ALL live data, leaving a valid empty container. Distinct from Wipe Empty (which only zeros dead space)." />
+        <Button x:Name="WipeEmptyBtn" Content="Wipe Empty" Width="100" Padding="4" Margin="0,0,8,0"
+                Click="OnWipeEmpty" IsEnabled="False"
+                ToolTip="Zero-fill all unused space: free clusters, cluster-tip slack, dead bytes. Forensic cleanliness tool." />
+        <Button x:Name="ShrinkBtn" Content="Shrink" Width="100" Padding="4"
+                Click="OnShrink" IsEnabled="False"
+                ToolTip="Defragment + truncate trailing free space to minimize image size." />
+      </StackPanel>
+    </WrapPanel>
   </Grid>
 </Window>

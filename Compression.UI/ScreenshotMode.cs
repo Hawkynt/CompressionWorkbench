@@ -155,10 +155,12 @@ internal static class ScreenshotMode {
   /// point of the maintenance window, so the volume is left about a third full on a fixed floppy
   /// geometry: occupied regions, a directory block and a free tail, rather than one flat colour.
   ///
-  /// It is deliberately NOT fragmented, because it cannot honestly be. Both Add and Remove lay the
-  /// volume out again from scratch -- removing 421 KB of files leaves 1.4 KB of gaps, not 421 -- so
-  /// there is no sequence of public operations that produces split extents, and a caption claiming
-  /// otherwise would describe something the picture does not show.
+  /// It is then fragmented on purpose. Add and Remove both lay the volume out again from scratch --
+  /// removing 421 KB of files leaves 1.4 KB of gaps, not 421 -- so for a long time nothing here
+  /// could produce split extents and the map could only ever read "no fragmentation detected",
+  /// which is not what the window is for. The scramble verb deals every cluster a fresh slot from a
+  /// fixed seed, so the map shows the interleaving Defragment exists to undo, and shows the same
+  /// one on every run.
   /// </summary>
   private static string CreateFilesystemFixture(string fixtureRoot) {
     var stage = Path.Combine(fixtureRoot, "volume");
@@ -184,6 +186,14 @@ internal static class ScreenshotMode {
         ["ImageSize"] = "1.44 MB (3.5\" HD)",
         ["VolumeLabel"] = "CAPTURE",
       });
+
+    // The seed is what makes the capture reproducible: the same one deals the same layout on every
+    // machine, so the picture only changes when the fixture does.
+    var descriptor = Compression.Registry.FormatRegistry.GetArchiveOps(format.ToString());
+    if (descriptor is Compression.Registry.IFilesystemScrambleable scrambler) {
+      using var image = File.Open(imagePath, FileMode.Open, FileAccess.ReadWrite);
+      scrambler.Scramble(image, new Compression.Registry.ScrambleOptions { Seed = 0x5CA27B1E });
+    }
 
     return imagePath;
   }

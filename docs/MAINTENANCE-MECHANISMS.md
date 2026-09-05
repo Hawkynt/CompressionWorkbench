@@ -24,6 +24,13 @@ extract → re-create engine (`Compression.Registry.RebuildVerb`):
 - **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
   `Remove(all)` is the **purge** verb.
 
+**`IFilesystemScrambleable.Scramble`** is the exception that proves the pattern: it
+has no default and no rebuild behind it. A rebuild lays a volume out contiguously,
+which is the opposite of what the verb asks for, so a descriptor that cannot scatter
+in place refuses and names what stopped it rather than reporting success. It exists
+so the defragmenter can be tested against a volume that is genuinely fragmented —
+nothing else in the public surface produces one.
+
 A filesystem descriptor therefore gains shrink / defrag / purge by simply declaring
 the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
 Bespoke in-place implementations still override the default for efficiency. Coverage

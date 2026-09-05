@@ -14,7 +14,7 @@ namespace FileSystem.Fat;
 ///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/fat</c> — mainline kernel implementation</description></item>
 /// </list>
 /// </summary>
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -264,6 +264,25 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Status: "Already defragmented"));
       return;
     }
+
+    ExecutePlan(archive, options, mover, imageSize, extents, moves,
+      $"Defragmentation complete — {moves.Count} move(s) executed");
+  }
+
+  /// <summary>
+  /// Carries out a plan the planner has already produced: the raw byte moves in
+  /// planner order, then one chain relink per owner.
+  /// </summary>
+  /// <remarks>
+  /// Which layout the plan aims at makes no difference here — packing a volume
+  /// tight and scattering it across every cluster it owns are the same list of
+  /// block moves with different destinations. Keeping the execution in one place
+  /// is what lets <see cref="Scramble" /> reuse the subdirectory pointer
+  /// repatching and the held-run bookkeeping rather than repeat them.
+  /// </remarks>
+  private static void ExecutePlan(Stream archive, DefragOptions options, FatBlockMover mover,
+      long imageSize, List<DefragBlockInfo> extents, IReadOnlyList<ClusterMove> moves,
+      string completionStatus) {
 
     // Two-phase execution for BOTH contiguous (stride == 1) and interleaved
     // (stride > 1) placement:
@@ -525,7 +544,65 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       CurrentWriteOffset: -1,
       ImageSize: imageSize,
       BlockMap: postExtents,
-      Status: $"Defragmentation complete — {moves.Count} move(s) executed"));
+      Status: completionStatus));
+  }
+
+  // ── Scramble ───────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Scatters every cluster of every file and subdirectory across the volume's
+  /// whole cluster heap, dealt from <see cref="ScrambleOptions.Seed" />.
+  /// </summary>
+  /// <remarks>
+  /// <para>The reserved region, both copies of the FAT and a fixed root
+  /// directory stay exactly where they are: they are what finds everything
+  /// else, and a volume whose table has been scattered cannot be read back to
+  /// prove its files survived.</para>
+  ///
+  /// <para>There is no rebuild behind this. A rebuild packs the volume, so a
+  /// scramble that fell back to one would report success having done the
+  /// precise opposite of what it was asked for.</para>
+  /// </remarks>
+  public void Scramble(Stream archive, ScrambleOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new FatBlockMover();
+    mover.Init(archive);   // reads only the 512-byte BPB
+    FilesystemScrambler.RequireScatteredRelink(mover);
+
+    // Same bound as the defragment path: the cluster heap the VBR declares, not
+    // whatever the container happens to be padded out to.
+    var volumeBytes = mover.FirstDataByte + (long)mover.TotalDataClusters * mover.ClusterSize;
+    var imageSize = volumeBytes > 0 ? Math.Min(volumeBytes, archive.Length) : archive.Length;
+
+    var extents = FatExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning",
+      Fraction: 0,
+      CurrentReadOffset: 0,
+      CurrentWriteOffset: -1,
+      ImageSize: imageSize,
+      BlockMap: extents,
+      Status: "Analysing layout"));
+
+    var moves = ScramblePlanner.Plan(extents, mover.FirstDataByte, imageSize, mover.ClusterSize,
+      options.Seed, allowMemoryStaging: mover.SupportsHeldRuns);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete",
+        Fraction: 1,
+        CurrentReadOffset: -1,
+        CurrentWriteOffset: -1,
+        ImageSize: imageSize,
+        BlockMap: extents,
+        Status: "Nothing to scatter"));
+      return;
+    }
+
+    ExecutePlan(archive, FilesystemScrambler.AsDefragOptions(options), mover, imageSize, extents,
+      moves, $"Scramble complete — {moves.Count} block move(s) executed");
   }
 
   // ── Legacy rebuild path ────────────────────────────────────────────────

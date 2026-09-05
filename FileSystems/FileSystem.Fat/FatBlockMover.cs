@@ -393,8 +393,16 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
         ? (_rootDirSectors * _bytesPerSector + chunkSize - 1) / chunkSize
         : (dirClusters?.Count ?? 0);
 
+      // Two different reasons to stop, and they are not the same reason. Running
+      // out of entries ends the walk of THIS directory; it says nothing about
+      // the subdirectories listed in it, which is where the entry usually is.
+      // Conflating them meant the recursion below never ran for a fixed root —
+      // every root ends in an unused entry — so a file inside a folder never had
+      // its start cluster repointed. Nothing caught it: no defragmentation mode
+      // had ever moved a nested file's FIRST cluster.
       var fileFound = false;
-      for (var ci = 0; ci < chunkCount && !fileFound; ci++) {
+      var endOfDirectory = false;
+      for (var ci = 0; ci < chunkCount && !fileFound && !endOfDirectory; ci++) {
         var chunkAbsOff = isFixedRoot
           ? fixedRootOffset + (long)ci * chunkSize
           : _firstDataByte + (long)(dirClusters![ci] - 2) * _clusterSize;
@@ -404,7 +412,7 @@ public sealed class FatBlockMover : IFilesystemBlockMover, IFilesystemMetadataMo
         for (var i = 0; i < entriesPerChunk; i++) {
           var entryOff = i * 32;
           var firstByte = buf[entryOff];
-          if (firstByte == 0x00) { fileFound = true; break; } // end of directory
+          if (firstByte == 0x00) { endOfDirectory = true; break; } // end of directory
           if (firstByte == 0xE5) { lfnParts.Clear(); continue; }
 
           var attr = buf[entryOff + 11];
