@@ -16,6 +16,7 @@ internal sealed class Ac3AudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     source.Position = 0;
     using var pcm = new MemoryStream();
     Ac3Codec.Decompress(source, pcm);
+    ElementaryAudioAdapterHelpers.RejectSilentDecode("AC-3", pcm.Length, info.DurationSamples);
     return new AudioPcmBuffer(
       new AudioPcmFormat(info.SampleRate, info.Channels, 16, AudioPcmEncoding.SignedInteger),
       pcm.ToArray());
@@ -119,6 +120,7 @@ internal sealed class DtsAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
     source.Position = 0;
     using var pcm = new MemoryStream();
     DtsCodec.Decompress(source, pcm);
+    ElementaryAudioAdapterHelpers.RejectSilentDecode("DTS", pcm.Length, info.DurationSamples);
     return new AudioPcmBuffer(
       new AudioPcmFormat(info.SampleRate, info.Channels, 16, AudioPcmEncoding.SignedInteger),
       pcm.ToArray());
@@ -163,6 +165,26 @@ internal sealed class DtsAudioAdapter : IAudioPcmSource, IAudioPcmTarget {
 }
 
 file static class ElementaryAudioAdapterHelpers {
+
+  /// <summary>
+  /// Refuses a decode that produced nothing from a stream whose header declares
+  /// audio.
+  /// </summary>
+  /// <remarks>
+  /// Both of these decoders read their own encoder's output and give up on the
+  /// first frame of anyone else's, and the conversion pipeline will happily build
+  /// a valid, entirely empty file out of the result. An empty file that claims to
+  /// be a conversion is worse than a refusal, because nothing downstream can tell
+  /// it apart from silence that was really there.
+  /// </remarks>
+  public static void RejectSilentDecode(string name, long decodedBytes, long declaredSamples) {
+    if (decodedBytes > 0 || declaredSamples <= 0) return;
+
+    throw new NotSupportedException(
+      $"The {name} decoder produced no samples from a stream that declares {declaredSamples}. " +
+      "It reads streams written by this library and not yet those written by other encoders.");
+  }
+
   public static short[] ReadPcm16(ReadOnlySpan<byte> data) {
     if ((data.Length & 1) != 0) throw new InvalidDataException("PCM16 payload has odd length.");
     var samples = new short[data.Length / 2];
