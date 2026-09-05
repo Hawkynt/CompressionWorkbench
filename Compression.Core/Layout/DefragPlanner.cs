@@ -176,7 +176,7 @@ public static class DefragPlanner {
   /// every interval in <paramref name="covered" /> — which must be sorted and
   /// disjoint — is taken out of it.
   /// </summary>
-  private static List<(long Start, long End)> Subtract(long start, long end,
+  internal static List<(long Start, long End)> Subtract(long start, long end,
       IReadOnlyList<(long Start, long End)> covered) {
     var result = new List<(long Start, long End)>();
     var cursor = start;
@@ -301,6 +301,10 @@ public static class DefragPlanner {
     var fileSizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
     foreach (var (name, exts) in byFile)
       fileSizes[name] = exts.Sum(e => e.Length);
+
+    if (mode == DefragMode.AscendingOrder)
+      return PlanAscending(byFile, fileExtents, forbidden, dataOrigin, imageSize, clusterSize,
+        allowMemoryStaging);
 
     if (mode == DefragMode.CarveHole)
       return PlanCarveHole(byFile, fileSizes, fileExtents, dataOrigin, imageSize, clusterSize, freeRegions, holeSize, holeAt, allowMemoryStaging);
@@ -659,7 +663,7 @@ public static class DefragPlanner {
   }
 
   /// <summary>Align <paramref name="value"/> up to the next cluster boundary on the grid <c>baseOffset + k*alignment</c>.</summary>
-  private static long AlignUpFrom(long value, long baseOffset, long alignment) {
+  internal static long AlignUpFrom(long value, long baseOffset, long alignment) {
     if (alignment <= 1) return value;
     if (value <= baseOffset) return baseOffset;
     var rel = value - baseOffset;
@@ -667,7 +671,7 @@ public static class DefragPlanner {
   }
 
   /// <summary>Align <paramref name="value"/> down to the previous cluster boundary on the grid <c>baseOffset + k*alignment</c>.</summary>
-  private static long AlignDownFrom(long value, long baseOffset, long alignment) {
+  internal static long AlignDownFrom(long value, long baseOffset, long alignment) {
     if (alignment <= 1) return value;
     if (value <= baseOffset) return baseOffset;
     var rel = value - baseOffset;
@@ -875,70 +879,335 @@ public static class DefragPlanner {
       throw new InvalidOperationException(
         $"Carved hole [{holeStart}..{holeEnd}) exceeds image size {imageSize}.");
 
-    // Find all live extents that overlap the hole region.
-    var overlapping = new List<DefragBlockInfo>();
-    foreach (var ext in fileExtents) {
-      if (Overlaps(ext.Offset, ext.Length, holeStart, alignedHoleSize))
-        overlapping.Add(ext);
-    }
-
-    if (overlapping.Count == 0)
+    // Getting live data out of a target region is one operation with two
+    // callers: carving an empty hole, and clearing the way for an owner that is
+    // about to be laid down there. Evicting is the same either way, so it is
+    // written once.
+    var region = new List<(long Start, long End)> { (holeStart, holeEnd) };
+    var safeFree = ClipFree(freeRegions, region);
+    var moves = EvictFromRegions(fileExtents, region, safeFree, clusterSize, "carve hole");
+    if (moves.Count == 0)
       return []; // hole region is already free — nothing to move
 
-    // Build a list of free regions that are outside the hole. Start from the
-    // existing free regions and exclude any portion that falls inside the hole.
-    var safeFree = new List<(long Offset, long Length)>();
-    foreach (var (off, len) in freeRegions) {
-      var fEnd = off + len;
-      // Clip to exclude the hole region.
-      if (fEnd <= holeStart || off >= holeEnd) {
-        // Entirely outside — keep as is.
-        safeFree.Add((off, len));
-      } else {
-        // Partially overlapping — keep the portions outside.
-        if (off < holeStart)
-          safeFree.Add((off, holeStart - off));
-        if (fEnd > holeEnd)
-          safeFree.Add((holeEnd, fEnd - holeEnd));
-      }
+    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
+  }
+
+  /// <summary>
+  /// What is left of <paramref name="freeRegions" /> once every byte inside
+  /// <paramref name="regions" /> is taken out of it — the space an eviction may
+  /// relocate into without landing back in the region it is clearing.
+  /// </summary>
+  internal static List<(long Offset, long Length)> ClipFree(
+      IReadOnlyList<(long Offset, long Length)> freeRegions,
+      IReadOnlyList<(long Start, long End)> regions) {
+    var clipped = new List<(long Offset, long Length)>();
+    foreach (var (offset, length) in freeRegions) {
+      if (length <= 0) continue;
+      foreach (var (start, end) in Subtract(offset, offset + length, regions))
+        if (end > start) clipped.Add((start, end - start));
     }
+    return clipped;
+  }
 
-    // Also consider the space freed by extents that will be moved out of the
-    // hole but only the portions outside the hole.
-    // (Their old positions become free after the move, but portions inside the
-    // hole are part of the hole itself.)
-
+  /// <summary>
+  /// Relocates every live extent overlapping <paramref name="regions" /> into
+  /// free space outside them, so the regions come out empty. The one eviction
+  /// in the planner: carving a hole clears a region and leaves it empty, and
+  /// placing an owner clears the same way and then lays the owner down there.
+  /// </summary>
+  /// <param name="liveExtents">Every live extent on the volume.</param>
+  /// <param name="regions">Sorted, disjoint, half-open ranges to clear.</param>
+  /// <param name="safeFree">Free space outside <paramref name="regions" />, from
+  /// <see cref="ClipFree" />. Consumed as destinations are handed out, and grown
+  /// by whatever an eviction vacates outside the regions.</param>
+  /// <param name="clusterSize">One allocation block, in bytes.</param>
+  /// <param name="operation">Named in the refusal, so the message says which
+  /// request could not be honoured.</param>
+  /// <param name="exempt">An owner that is not evicted because it is the one
+  /// being placed there. Null when everything live must go.</param>
+  /// <returns>Unordered moves; the caller resolves their order.</returns>
+  /// <exception cref="InvalidOperationException">Some extent has nowhere outside
+  /// the regions to go. Thrown before any move is handed back, so the caller has
+  /// nothing half-planned to run.</exception>
+  internal static List<ClusterMove> EvictFromRegions(
+      IEnumerable<DefragBlockInfo> liveExtents,
+      IReadOnlyList<(long Start, long End)> regions,
+      List<(long Offset, long Length)> safeFree,
+      int clusterSize,
+      string operation,
+      string? exempt = null) {
     var moves = new List<ClusterMove>();
+    if (regions.Count == 0) return moves;
 
-    foreach (var ext in overlapping) {
+    foreach (var ext in liveExtents) {
+      if (ext.Length <= 0) continue;
+      if (exempt != null && string.Equals(ext.FileName, exempt, StringComparison.OrdinalIgnoreCase)) continue;
+
+      var overlaps = false;
+      foreach (var (start, end) in regions)
+        if (ext.Offset < end && start < ext.Offset + ext.Length) { overlaps = true; break; }
+      if (!overlaps) continue;
+
       var needed = AlignUp(ext.Length, clusterSize);
       var freeIdx = FindFreeRegion(safeFree, needed);
       if (freeIdx < 0)
         throw new InvalidOperationException(
-          $"Cannot carve hole: no free region of {needed} bytes found outside [{holeStart}..{holeEnd}) " +
-          $"to relocate extent '{ext.FileName}' at offset {ext.Offset} (length {ext.Length}).");
+          $"Cannot {operation}: no free region of {needed:N0} bytes outside the target to relocate " +
+          $"'{ext.FileName}' at offset {ext.Offset:N0} (length {ext.Length:N0}). Nothing was changed.");
 
       var (freeOff, freeLen) = safeFree[freeIdx];
       moves.Add(new ClusterMove(ext.Offset, freeOff, ext.Length, ext.FileName ?? "<unknown>"));
 
-      // Consume the used portion of the free region.
-      if (needed >= freeLen) {
+      if (needed >= freeLen)
         safeFree.RemoveAt(freeIdx);
-      } else {
+      else
         safeFree[freeIdx] = (freeOff + needed, freeLen - needed);
-      }
 
-      // The old position becomes free (outside the hole portion).
-      var extEnd = ext.Offset + needed;
-      if (ext.Offset < holeStart) {
-        safeFree.Add((ext.Offset, Math.Min(holeStart, extEnd) - ext.Offset));
-      }
-      if (extEnd > holeEnd) {
-        safeFree.Add((Math.Max(holeEnd, ext.Offset), extEnd - Math.Max(holeEnd, ext.Offset)));
-      }
+      // What it vacates is free again, minus whatever of it belongs to a region
+      // being cleared — that part is the point of the exercise, not spare room.
+      foreach (var (start, end) in Subtract(ext.Offset, ext.Offset + needed, regions))
+        if (end > start) safeFree.Add((start, end - start));
     }
 
-    return ResolveDependencies(moves, freeRegions, clusterSize, allowMemoryStaging);
+    return moves;
+  }
+
+  // ── AscendingOrder: the weaker goal ────────────────────────────────────
+
+  /// <summary>
+  /// Makes every owner read forwards — <c>block(n) &gt; block(n-1)</c> over its
+  /// own blocks in logical order — and nothing more.
+  /// </summary>
+  /// <remarks>
+  /// <para>Strictly weaker than contiguity, and the weakness is the point.
+  /// Packing fixes where every owner ends up, so two owners can each want what
+  /// the other holds; breaking that cycle means lifting a run out of the volume,
+  /// which needs <c>SupportsHeldRuns</c> — and a third of the block movers in
+  /// this tree do not have it. Ascending order fixes nothing but the direction,
+  /// which leaves two ways to reach it and one of them costs nothing.</para>
+  ///
+  /// <para>The first way is the cheap one. Keep the longest run of blocks that
+  /// already ascends and move only the rest, each into a free cluster in the gap
+  /// it belongs in. Every destination was already free, so no move waits on
+  /// another, no cycle can form and nothing is ever held. Where the free
+  /// clusters happen to be is what decides whether this works, which is why it
+  /// works on a volume with room and not on one without.</para>
+  ///
+  /// <para>The second way is the fallback, and it is what makes the goal
+  /// reachable at all where the first fails: an owner's blocks are sorted into
+  /// the slots that owner already holds. That needs no free space whatsoever —
+  /// the slots exist, they are simply in the wrong order — but a permutation has
+  /// cycles, and unwinding one needs a single spare cluster to hop through, or,
+  /// with none, a run held outside the volume. So on a genuinely full volume
+  /// this is a swap like any other and needs somewhere to put a block. That is
+  /// the honest limit, and it is one spare cluster rather than a whole file's
+  /// worth of contiguous room, which is what contiguity would ask for.</para>
+  /// </remarks>
+  private static IReadOnlyList<ClusterMove> PlanAscending(
+      Dictionary<string, List<DefragBlockInfo>> byFile,
+      List<DefragBlockInfo> fileExtents,
+      IReadOnlyList<(long Start, long End)> forbidden,
+      long dataOrigin, long imageSize, int clusterSize,
+      bool allowMemoryStaging) {
+
+    // Every cluster the volume owns that neither a live owner nor a reserved
+    // region holds. Kept as intervals rather than a slot per cluster: a volume
+    // has far more free clusters than this planner will ever hand out.
+    var claimed = new List<(long Start, long End)>();
+    foreach (var extent in fileExtents)
+      if (extent.Length > 0) claimed.Add((extent.Offset, extent.Offset + extent.Length));
+    foreach (var span in forbidden) claimed.Add(span);
+
+    var free = new List<(long Start, long End)>();
+    foreach (var (start, end) in Subtract(dataOrigin, imageSize, MergeIntervals(claimed))) {
+      var from = AlignUpFrom(start, dataOrigin, clusterSize);
+      var to = AlignDownFrom(end, dataOrigin, clusterSize);
+      if (to - from >= clusterSize) free.Add((from, to));
+    }
+
+    // Lowest first block first, so what the planner does depends on the volume
+    // and not on the order a dictionary happened to enumerate.
+    var owners = byFile.Keys.ToList();
+    owners.Sort((a, b) => {
+      var byOffset = byFile[a][0].Offset.CompareTo(byFile[b][0].Offset);
+      return byOffset != 0 ? byOffset : StringComparer.Ordinal.Compare(a, b);
+    });
+
+    var moves = new List<ClusterMove>();
+    foreach (var owner in owners) {
+      var blocks = BlocksOf(byFile[owner], clusterSize);
+      if (blocks.Count < 2) continue;
+
+      var ascends = true;
+      for (var i = 1; i < blocks.Count && ascends; ++i) ascends = blocks[i] > blocks[i - 1];
+      if (ascends) continue;
+
+      var cheap = PlaceIntoFreeGaps(blocks, free, clusterSize);
+      if (cheap != null) {
+        foreach (var (index, slot) in cheap) {
+          moves.Add(new ClusterMove(blocks[index], slot, clusterSize, owner));
+          GiveBackFree(free, blocks[index], clusterSize);
+        }
+        continue;
+      }
+
+      // Nowhere free to put the blocks that are out of order, so they take each
+      // other's places instead. Costs the volume nothing and always exists;
+      // what it costs is a cycle to unwind, which the ordering pass does.
+      var sorted = blocks.OrderBy(b => b).ToList();
+      for (var i = 0; i < blocks.Count; ++i)
+        if (blocks[i] != sorted[i])
+          moves.Add(new ClusterMove(blocks[i], sorted[i], clusterSize, owner));
+    }
+
+    if (moves.Count == 0) return [];
+
+    var staging = new List<(long Offset, long Length)>(free.Count);
+    foreach (var (start, end) in free) staging.Add((start, end - start));
+
+    return ResolveDependencies(Coalesce(moves), staging, clusterSize, allowMemoryStaging);
+  }
+
+  /// <summary>One owner's block addresses, in the owner's own order.</summary>
+  private static List<long> BlocksOf(List<DefragBlockInfo> extents, int clusterSize) {
+    var blocks = new List<long>();
+    foreach (var extent in extents) {
+      if (extent.Length <= 0) continue;
+      var count = (extent.Length + clusterSize - 1) / clusterSize;
+      for (var block = 0L; block < count; ++block) blocks.Add(extent.Offset + block * clusterSize);
+    }
+    return blocks;
+  }
+
+  /// <summary>
+  /// The cheap way: keep the longest ascending subsequence of
+  /// <paramref name="blocks" /> where it is, and find every other block a free
+  /// cluster in the gap it belongs in.
+  /// </summary>
+  /// <returns>
+  /// The blocks to move and where, or null when some block has no free cluster
+  /// in its gap — in which case <paramref name="free" /> is left exactly as it
+  /// was found, so the caller can take the other way without a half-spent list.
+  /// </returns>
+  private static List<(int Index, long Slot)>? PlaceIntoFreeGaps(
+      List<long> blocks, List<(long Start, long End)> free, int clusterSize) {
+    var kept = LongestAscending(blocks);
+    var attempt = new List<(long Start, long End)>(free);
+    var placed = new List<(int Index, long Slot)>();
+
+    var low = long.MinValue;
+    var nextKept = 0;
+    for (var i = 0; i < blocks.Count; ++i) {
+      if (kept.Contains(i)) { low = blocks[i]; continue; }
+
+      // The block has to end up above everything before it and below the next
+      // block that is staying put, or the ones after it cannot fit either.
+      while (nextKept < blocks.Count && (nextKept <= i || !kept.Contains(nextKept))) ++nextKept;
+      var high = nextKept < blocks.Count ? blocks[nextKept] : long.MaxValue;
+
+      var slot = TakeLowestFreeBetween(attempt, low, high, clusterSize);
+      if (slot < 0) return null;
+      placed.Add((i, slot));
+      low = slot;
+    }
+
+    free.Clear();
+    free.AddRange(attempt);
+    return placed;
+  }
+
+  /// <summary>
+  /// Indices of a longest strictly ascending subsequence of
+  /// <paramref name="blocks" />, by patience sorting. Those are the blocks that
+  /// do not have to move, so a longest one is a fewest-moves one.
+  /// </summary>
+  private static HashSet<int> LongestAscending(List<long> blocks) {
+    var tails = new List<int>();        // index of the smallest tail of each length
+    var previous = new int[blocks.Count];
+
+    for (var i = 0; i < blocks.Count; ++i) {
+      previous[i] = -1;
+      var lo = 0;
+      var hi = tails.Count;
+      while (lo < hi) {
+        var mid = (lo + hi) / 2;
+        if (blocks[tails[mid]] < blocks[i]) lo = mid + 1; else hi = mid;
+      }
+      if (lo > 0) previous[i] = tails[lo - 1];
+      if (lo == tails.Count) tails.Add(i); else tails[lo] = i;
+    }
+
+    var kept = new HashSet<int>();
+    for (var at = tails.Count > 0 ? tails[^1] : -1; at >= 0; at = previous[at]) kept.Add(at);
+    return kept;
+  }
+
+  /// <summary>
+  /// Takes the lowest free cluster strictly above <paramref name="low" /> and
+  /// strictly below <paramref name="high" /> out of <paramref name="free" />,
+  /// or returns -1 when there is none.
+  /// </summary>
+  private static long TakeLowestFreeBetween(List<(long Start, long End)> free, long low, long high,
+      int clusterSize) {
+    for (var i = 0; i < free.Count; ++i) {
+      var (start, end) = free[i];
+      var candidate = low == long.MinValue ? start : Math.Max(start, low + clusterSize);
+      if (candidate + clusterSize > end) continue;
+      if (candidate >= high) return -1;         // free list is in address order, so nothing lower is left
+
+      if (candidate == start && candidate + clusterSize == end) free.RemoveAt(i);
+      else if (candidate == start) free[i] = (start + clusterSize, end);
+      else if (candidate + clusterSize == end) free[i] = (start, end - clusterSize);
+      else {
+        free[i] = (start, candidate);
+        free.Insert(i + 1, (candidate + clusterSize, end));
+      }
+      return candidate;
+    }
+    return -1;
+  }
+
+  /// <summary>Puts a vacated cluster back on the free list, in address order.</summary>
+  private static void GiveBackFree(List<(long Start, long End)> free, long at, int clusterSize) {
+    var end = at + clusterSize;
+    var i = 0;
+    while (i < free.Count && free[i].Start < at) ++i;
+
+    var mergedLeft = i > 0 && free[i - 1].End == at;
+    var mergedRight = i < free.Count && free[i].Start == end;
+
+    if (mergedLeft && mergedRight) {
+      free[i - 1] = (free[i - 1].Start, free[i].End);
+      free.RemoveAt(i);
+    } else if (mergedLeft) {
+      free[i - 1] = (free[i - 1].Start, end);
+    } else if (mergedRight) {
+      free[i] = (at, free[i].End);
+    } else {
+      free.Insert(i, (at, end));
+    }
+  }
+
+  /// <summary>
+  /// Fuses moves that carry consecutive clusters of one owner from consecutive
+  /// sources to consecutive destinations, so a long run is one move.
+  /// </summary>
+  private static List<ClusterMove> Coalesce(List<ClusterMove> moves) {
+    var fused = new List<ClusterMove>(moves.Count);
+    foreach (var move in moves) {
+      if (fused.Count > 0) {
+        var last = fused[^1];
+        if (last.Staging == DefragStaging.None && move.Staging == DefragStaging.None
+            && string.Equals(last.FileName, move.FileName, StringComparison.OrdinalIgnoreCase)
+            && last.SrcOffset + last.Length == move.SrcOffset
+            && last.DstOffset + last.Length == move.DstOffset) {
+          fused[^1] = last with { Length = last.Length + move.Length };
+          continue;
+        }
+      }
+      fused.Add(move);
+    }
+    return fused;
   }
 
   // ── Zone classification ────────────────────────────────────────────────
@@ -1000,7 +1269,7 @@ public static class DefragPlanner {
   /// </summary>
   internal const int MaxPlannableExtents = 65536;
 
-  private static IReadOnlyList<ClusterMove> ResolveDependencies(
+  internal static IReadOnlyList<ClusterMove> ResolveDependencies(
     List<ClusterMove> rawMoves,
     List<(long Offset, long Length)> freeRegions,
     int clusterSize,

@@ -74,6 +74,13 @@
                        Text="Best-fit fill of existing free regions from tail extents. Doesn't guarantee contiguity but moves the minimum number of bytes. Use on huge images with a few small holes." />
           </StackPanel>
         </RadioButton>
+        <RadioButton x:Name="ModeAscending" GroupName="Mode" Margin="0,4,0,2" Checked="OnModeChanged">
+          <StackPanel>
+            <TextBlock FontWeight="SemiBold" Text="Ascending order only" />
+            <TextBlock TextWrapping="Wrap" Foreground="DimGray"
+                       Text="Move only what reads backwards, so every file's blocks end up in ascending order and a sequential read never seeks back. A file left in three ascending pieces stays in three pieces — but this moves about a third of the bytes packing does, because it touches only what is out of order." />
+          </StackPanel>
+        </RadioButton>
         <RadioButton x:Name="ModeCarveHole" GroupName="Mode" Margin="0,4,0,2" Checked="OnModeChanged">
           <StackPanel>
             <TextBlock FontWeight="SemiBold" Text="Carve a hole" />

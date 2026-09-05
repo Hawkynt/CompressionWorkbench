@@ -25,7 +25,7 @@ namespace FileSystem.Ext1;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Extended_file_system</c> — Wikipedia article on the original ext</description></item>
 /// </list>
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>
   /// The single tunable ext1 honours: the on-disk block size
@@ -367,7 +367,7 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // volume fragmented past what it will resolve, a plan it cannot order
     // safely — falls through to the rebuild below.
     if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd
-        or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+        or DefragMode.FillHolesLazy or DefragMode.CarveHole or DefragMode.AscendingOrder) {
       try {
         DefragmentWithPlanner(archive, options);
         return;
@@ -682,6 +682,27 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var mover = new Ext1BlockMover();
     mover.Init(archive);
     Compression.Core.Layout.FilesystemScrambler.Scramble(archive, options, mover,
+      Ext1ExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList(),
+      mover.FirstDataByte, archive.Length, mover.BlockSize);
+  }
+
+  /// <summary>
+  /// Puts one named owner at one chosen block, relocating every block in the
+  /// way first. Superblock, group descriptors, bitmaps and inode tables stay
+  /// where they are; there is no rebuild behind this.
+  /// </summary>
+  /// <remarks>
+  /// ext keeps a block map rather than a chain, so an owner stepped over a
+  /// reserved region is no harder to express than a contiguous one.
+  /// </remarks>
+  public void PlaceFileAt(Stream archive, PlacementOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new Ext1BlockMover();
+    mover.Init(archive);
+    Compression.Core.Layout.FilesystemFilePlacer.PlaceFileAt(archive, options, mover,
       Ext1ExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList(),
       mover.FirstDataByte, archive.Length, mover.BlockSize);
   }
