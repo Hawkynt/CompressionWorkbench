@@ -281,55 +281,11 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static void AddApeTags(
       byte[] file, long termStart, long termEnd,
       List<(string Name, string Kind, byte[] Data)> entries) {
-    var clampedEnd = Math.Min(termEnd, file.Length);
-    if (clampedEnd - termStart < 32) return;
+    if (!ApeTagReader.TryFind(file, termStart, termEnd, out var tag)) return;
 
-    // The footer is the last 32 bytes of the APEv2 tag. Search the terminating
-    // region for the footer magic at a 32-byte-aligned tail position.
-    for (var footerPos = clampedEnd - 32; footerPos >= termStart; --footerPos) {
-      if (!MatchesMagic(file, (int)footerPos, ApeTagMagic)) continue;
-      var tagSize = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)footerPos + 12)); // items + footer
-      var itemCount = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)footerPos + 16));
-      if (tagSize < 32 || itemCount == 0 || itemCount > 65535) continue;
-      var itemsStart = footerPos + 32 - (long)tagSize; // items begin tagSize-32 before the footer
-      if (itemsStart < termStart) continue;
-
-      var ini = TryParseApeItems(file, itemsStart, footerPos, itemCount);
-      if (ini != null) {
-        entries.Add(("tags.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
-        return;
-      }
-    }
-  }
-
-  private static string? TryParseApeItems(byte[] file, long itemsStart, long itemsEnd, uint itemCount) {
-    var sb = new StringBuilder();
-    sb.AppendLine("; APEv2 tags");
-    var pos = (int)itemsStart;
-    var end = (int)itemsEnd;
-    for (var i = 0; i < itemCount; ++i) {
-      if (pos + 8 > end) break;
-      var valueLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos));
-      var flags = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(pos + 4));
-      pos += 8;
-      // Key is a null-terminated ASCII string.
-      var keyStart = pos;
-      while (pos < end && file[pos] != 0) ++pos;
-      if (pos >= end) break;
-      var key = Encoding.ASCII.GetString(file, keyStart, pos - keyStart);
-      ++pos; // skip null
-      if (valueLen < 0 || pos + valueLen > end) break;
-      // Item value type lives in bits 1-2 of the flags: 0 = UTF-8 text.
-      var isText = ((flags >> 1) & 0x03) == 0;
-      if (isText) {
-        var value = Encoding.UTF8.GetString(file, pos, valueLen).Replace("\0", "; ");
-        sb.Append(key).Append('=').AppendLine(value);
-      } else {
-        sb.Append("; ").Append(key).Append(" (binary, ").Append(valueLen.ToString(CultureInfo.InvariantCulture)).AppendLine(" bytes)");
-      }
-      pos += valueLen;
-    }
-    return sb.Length > "; APEv2 tags\r\n".Length ? sb.ToString() : null;
+    var ini = ApeTagReader.TryRenderIni(file, tag);
+    if (ini != null)
+      entries.Add(("tags.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
   }
 
   private static bool MatchesMagic(byte[] buffer, int offset, byte[] magic) {
