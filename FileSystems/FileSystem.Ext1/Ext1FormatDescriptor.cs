@@ -25,7 +25,7 @@ namespace FileSystem.Ext1;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Extended_file_system</c> — Wikipedia article on the original ext</description></item>
 /// </list>
 /// </summary>
-public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveWriteConstraints, IArchiveModifiable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   /// <summary>
   /// The single tunable ext1 honours: the on-disk block size
@@ -662,6 +662,30 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Moves only what is out of place, relinking each file's inode as its blocks
   /// arrive at their new positions.
   /// </summary>
+  /// <summary>
+  /// Scatters every block of every inode across the data area, dealt from
+  /// <see cref="ScrambleOptions.Seed" />. Superblock, group descriptors,
+  /// bitmaps and inode tables stay where they are; there is no rebuild behind
+  /// this.
+  /// </summary>
+  /// <remarks>
+  /// ext keeps a block map rather than a chain, so a scattered file is no
+  /// harder to express than a contiguous one. What it does not offer is holding
+  /// a block outside the volume, so a cycle is unwound through a spare block
+  /// and a volume with none is refused rather than half-moved.
+  /// </remarks>
+  public void Scramble(Stream archive, ScrambleOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new Ext1BlockMover();
+    mover.Init(archive);
+    Compression.Core.Layout.FilesystemScrambler.Scramble(archive, options, mover,
+      Ext1ExtentMap.Enumerate(archive).Take(MaxPlannerExtents + 1).ToList(),
+      mover.FirstDataByte, archive.Length, mover.BlockSize);
+  }
+
   private void DefragmentWithPlanner(Stream archive, DefragOptions options) {
     archive.Position = 0;
     var mover = new Ext1BlockMover();

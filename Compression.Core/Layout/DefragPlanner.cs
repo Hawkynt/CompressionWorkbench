@@ -122,7 +122,7 @@ public static class DefragPlanner {
   /// rebuild. Silently executing one wrote files on top of each other and left
   /// them the right length with the wrong bytes.
   /// </summary>
-  private static IReadOnlyList<ClusterMove> Validate(IReadOnlyList<ClusterMove> moves, long imageSize,
+  internal static IReadOnlyList<ClusterMove> Validate(IReadOnlyList<ClusterMove> moves, long imageSize,
       IReadOnlyList<DefragBlockInfo> extents) {
     if (moves.Count == 0) return moves;
 
@@ -369,7 +369,7 @@ public static class DefragPlanner {
   /// <paramref name="freeRegions" />, so a map that lists only allocated space
   /// still gives the planner room to work in.
   /// </summary>
-  private static void AddUnclaimedSpace(
+  internal static void AddUnclaimedSpace(
       List<(long Offset, long Length)> freeRegions,
       IReadOnlyList<DefragBlockInfo> extents,
       long dataOrigin,
@@ -677,7 +677,7 @@ public static class DefragPlanner {
   /// <summary>
   /// Sort + merge overlapping/adjacent half-open intervals. Linear in input size.
   /// </summary>
-  private static List<(long Start, long End)> MergeIntervals(List<(long Start, long End)> raw) {
+  internal static List<(long Start, long End)> MergeIntervals(List<(long Start, long End)> raw) {
     if (raw.Count <= 1) return raw;
     raw.Sort((a, b) => a.Start.CompareTo(b.Start));
     var merged = new List<(long Start, long End)>(raw.Count);
@@ -993,12 +993,12 @@ public static class DefragPlanner {
   /// <summary>
   /// Moves past which in-place planning is refused in favour of a rebuild.
   /// </summary>
-  private const int MaxPlannableMoves = 4096;
+  internal const int MaxPlannableMoves = 4096;
 
   /// <summary>
   /// Extents past which in-place planning is refused in favour of a rebuild.
   /// </summary>
-  private const int MaxPlannableExtents = 65536;
+  internal const int MaxPlannableExtents = 65536;
 
   private static IReadOnlyList<ClusterMove> ResolveDependencies(
     List<ClusterMove> rawMoves,
@@ -1417,7 +1417,7 @@ public static class DefragPlanner {
     return -1;
   }
 
-  private static long AlignUp(long value, long alignment)
+  internal static long AlignUp(long value, long alignment)
     => alignment <= 1 ? value : (value + alignment - 1) / alignment * alignment;
 
   private static long AlignDown(long value, long alignment)
@@ -1432,7 +1432,7 @@ public static class DefragPlanner {
   /// at the last cluster boundary before one begins and resumes at the first
   /// boundary after it ends.
   /// </remarks>
-  private static List<(long Start, long Clusters)> UsableClusterRuns(long origin, long imageSize,
+  internal static List<(long Start, long Clusters)> UsableClusterRuns(long origin, long imageSize,
       int clusterSize, List<(long Start, long End)> forbidden) {
     var runs = new List<(long Start, long Clusters)>();
     var cursor = origin;

@@ -27,6 +27,12 @@ public enum MaintenanceVerb {
   WipeEmpty,
   /// <summary>Composite defrag → optimize → shrink: smallest valid container holding the same contents.</summary>
   Compact,
+  /// <summary>
+  /// Scatter every allocation block across the volume — fragmentation on
+  /// purpose, so <see cref="Defragment" /> has something real to undo. Content
+  /// is preserved; only where it lives changes.
+  /// </summary>
+  Scramble,
 }
 
 /// <summary>
@@ -178,6 +184,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Purge => "Purge",
       MaintenanceVerb.WipeEmpty => "Wipe Empty",
       MaintenanceVerb.Compact => "Compact",
+      MaintenanceVerb.Scramble => "Scramble",
       _ => "Maintenance",
     };
     var target = verb switch {
@@ -185,6 +192,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Purge => PurgeBtn,
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
       MaintenanceVerb.Compact => CompactBtn,
+      MaintenanceVerb.Scramble => ScrambleBtn,
       _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
@@ -312,6 +320,15 @@ public partial class DefragmentWindow : Window {
       CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
     if (MinimalGeometryCheck != null)
       MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
+
+    // Scramble is only offered by descriptors that can scatter a volume in
+    // place. There is no fallback to fall back to: a rebuild would pack the
+    // volume, which is the opposite of what the button says.
+    var canScramble = ops is IFilesystemScrambleable;
+    if (ScrambleBtn != null)
+      ScrambleBtn.IsEnabled = canScramble;
+    if (ScrambleSeedBox != null)
+      ScrambleSeedBox.IsEnabled = canScramble;
 
     var fi = new FileInfo(path);
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
@@ -457,8 +474,10 @@ public partial class DefragmentWindow : Window {
           Name = e.Name,
           Size = e.OriginalSize,
           SizeDisplay = FormatSize(e.OriginalSize),
-          // Fragment-count display requires a per-FS extent walk that
-          // ArchiveEntryInfo doesn't expose today; show a placeholder.
+          // This map is synthesised from the listing: the format reported no
+          // layout, so the tiles are sizes laid end to end rather than where
+          // anything actually is. Counting runs off that would report one for
+          // everything, which is a figure nothing measured.
           // TODO: clicking a row should highlight that file's tile range
           // on the block map.
           FragmentsDisplay = "—",
@@ -596,14 +615,8 @@ public partial class DefragmentWindow : Window {
     BlockMap.ImageSize = imageSize;
 
     // File panel rows: include a fragment count derived from the extent map.
+    var fragCount = CountRunsByOwner(classified);
     if (entries != null) {
-      var fragCount = new Dictionary<string, int>(StringComparer.Ordinal);
-      foreach (var ex in classified)
-        if (ex.Kind == DefragBlockKind.Used && ex.FileName != null) {
-          fragCount.TryGetValue(ex.FileName, out var n);
-          fragCount[ex.FileName] = n + 1;
-        }
-
       var rows = new List<FileRow>(entries.Count);
       foreach (var e in entries) {
         if (e.IsDirectory) continue;
@@ -625,9 +638,7 @@ public partial class DefragmentWindow : Window {
     }
 
     if (LayoutStatusLbl != null) {
-      var fragmentedFiles = entries == null ? 0 :
-        classified.Where(ex => ex.Kind == DefragBlockKind.Used && ex.FileName != null)
-                  .GroupBy(ex => ex.FileName!).Count(g => g.Count() > 1);
+      var fragmentedFiles = entries == null ? 0 : fragCount.Values.Count(runs => runs > 1);
       LayoutStatusLbl.Text = fragmentedFiles > 0
         ? $"Real on-disk layout — {classified.Count(ex => ex.Kind == DefragBlockKind.Used):N0} extents, {fragmentedFiles:N0} fragmented file(s)"
         : $"Real on-disk layout — {classified.Count(ex => ex.Kind == DefragBlockKind.Used):N0} extents (no fragmentation detected)";
@@ -716,6 +727,9 @@ public partial class DefragmentWindow : Window {
 
     // File panel rows with Method column.
     if (entries != null) {
+      // Counted off the layout the container reported, not assumed to be one.
+      // An entry the map does not name is not one run — it is unmeasured.
+      var runsByName = CountRunsByOwner(classified);
       var rows = new List<FileRow>(entries.Count);
       foreach (var e in entries) {
         if (e.IsDirectory) continue;
@@ -724,7 +738,7 @@ public partial class DefragmentWindow : Window {
           Name = e.Name,
           Size = e.OriginalSize,
           SizeDisplay = FormatSize(e.OriginalSize),
-          FragmentsDisplay = "1",
+          FragmentsDisplay = runsByName.TryGetValue(e.Name, out var runs) ? runs.ToString("N0") : "—",
           MethodDisplay = e.Method ?? "",
           Modified = e.LastModified,
           ModifiedDisplay = e.LastModified is { } dt ? dt.ToString("yyyy-MM-dd HH:mm") : "",
@@ -784,14 +798,19 @@ public partial class DefragmentWindow : Window {
     BlockMap.BlockMap = filled;
     BlockMap.ImageSize = imageSize;
 
-    // File panel: show each chunk as a row.
+    // File panel: show each chunk as a row. A row here IS one stretch of the
+    // file, so the count belongs to the chunk's owner rather than the row, and
+    // is taken from the same layout the map was drawn from.
+    var chunkRuns = CountRunsByOwner(filled, onlyKind: null);
     var rows = new List<FileRow>(filled.Count);
     foreach (var ch in filled) {
       rows.Add(new FileRow {
         Name = ch.FileName ?? ch.Kind.ToString(),
         Size = ch.Length,
         SizeDisplay = FormatSize(ch.Length),
-        FragmentsDisplay = "1",
+        FragmentsDisplay = ch.FileName is { } owner && chunkRuns.TryGetValue(owner, out var runs)
+          ? runs.ToString("N0")
+          : "—",
         MethodDisplay = ch.Kind.ToString(),
         Class = ch.Classification?.ToString() ?? "—",
       });
@@ -951,11 +970,40 @@ public partial class DefragmentWindow : Window {
   }
 
   /// <summary>
+  /// How many separate stretches of the container each owner's data occupies.
+  /// </summary>
+  /// <remarks>
+  /// Counting the entries a map yields would measure the map rather than the
+  /// layout: some merge an owner's consecutive blocks into one entry and some
+  /// emit one entry per block, so a contiguous file and a scattered one report
+  /// the same figure. Stretches that end exactly where the next begins are one
+  /// run either way.
+  /// </remarks>
+  /// <param name="onlyKind">Restricts the count to one kind of region, or counts
+  /// every named region when null — which is what a file-internal layout wants,
+  /// since a container's own metadata chunks are owners there too.</param>
+  private static Dictionary<string, int> CountRunsByOwner(IEnumerable<DefragBlockInfo> extents,
+      DefragBlockKind? onlyKind = DefragBlockKind.Used) {
+    var runs = new Dictionary<string, int>(StringComparer.Ordinal);
+    var endOf = new Dictionary<string, long>(StringComparer.Ordinal);
+    foreach (var extent in extents) {
+      if (onlyKind is { } wanted && extent.Kind != wanted) continue;
+      if (extent.FileName is not { } owner) continue;
+      if (!endOf.TryGetValue(owner, out var previousEnd) || previousEnd != extent.Offset) {
+        runs.TryGetValue(owner, out var count);
+        runs[owner] = count + 1;
+      }
+      endOf[owner] = extent.Offset + extent.Length;
+    }
+    return runs;
+  }
+
+  /// <summary>
   /// Row model for the file-list panel. Mirrors what Defraggler/UltraDefrag
   /// show: name, size, fragment count, last-modified date and a hot/cold
-  /// classification. Fragment count is a placeholder for now — a real
-  /// per-FS extent walk would need to plumb new metadata through
-  /// <see cref="IArchiveFormatOperations"/>.
+  /// classification. The fragment count is counted off whatever layout the
+  /// format offered; formats that offer none show an em dash rather than a
+  /// figure nothing measured.
   /// </summary>
   private sealed class FileRow {
     public string Name { get; init; } = "";
@@ -1709,6 +1757,92 @@ public partial class DefragmentWindow : Window {
           Append($"OK ({sw.ElapsedMilliseconds} ms) — {liveNames.Length} file(s) erased");
           Append($"Container size: {origSize:N0} -> {newSize:N0} bytes (Δ {newSize - origSize:+#,#;-#,#;0})");
         }
+        Append("");
+        PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
+      });
+    });
+  }
+
+  /// <summary>
+  /// Scatters every allocation block of every file across the volume, so the
+  /// block map shows the interleaving the window exists to fix and Defragment
+  /// has something real to undo.
+  /// </summary>
+  /// <remarks>
+  /// It asks first, and it names the file. Every other button here either
+  /// improves the image or leaves it as it was; this one deliberately makes it
+  /// worse, and only a test wants that done to a real image.
+  /// </remarks>
+  private void OnScramble(object sender, RoutedEventArgs e) {
+    if (this._imagePath == null) return;
+    var path = this._imagePath;
+    var formatStr = FormatLbl.Text;
+    if (FormatRegistry.GetArchiveOps(formatStr) is not IFilesystemScrambleable scrambler) {
+      Append($"Scramble not supported: {formatStr} cannot scatter a volume in place.");
+      Append("");
+      return;
+    }
+
+    if (!int.TryParse(ScrambleSeedBox.Text, out var seed)) {
+      Append($"Scramble aborted — '{ScrambleSeedBox.Text}' is not a seed.");
+      Append("");
+      return;
+    }
+
+    var confirm = MessageBox.Show(this,
+      $"Fragment {Path.GetFileName(path)} on purpose?\n\n"
+      + "Every file's blocks are scattered across the volume. The contents are preserved "
+      + "exactly -- only the layout changes, and Defragment undoes it -- but this is a "
+      + "testing tool, not a repair.",
+      "Confirm Scramble", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+    if (confirm != MessageBoxResult.Yes) return;
+
+    Append($"=== {DateTime.Now:HH:mm:ss}  Scrambling {Path.GetFileName(path)} (seed {seed}) ===");
+
+    // Everything else is locked out while the layout is being rewritten, and
+    // put back exactly as it was — which buttons applied to this image is a
+    // property of the format, not of what was just run on it.
+    var others = new[] { CompactBtn, PurgeBtn, WipeEmptyBtn, ShrinkBtn, RunBtn };
+    var wasEnabled = others.Select(button => button.IsEnabled).ToArray();
+    foreach (var button in others) button.IsEnabled = false;
+    ScrambleBtn.IsEnabled = false;
+    ScrambleSeedBox.IsEnabled = false;
+    Progress.IsIndeterminate = true;
+
+    Task.Run(() => {
+      var sw = Stopwatch.StartNew();
+      Exception? err = null;
+
+      // Same bridge the defragment run uses: the map animates the scattering as
+      // it happens rather than jumping to the finished layout.
+      void OnProgress(DefragProgressEvent ev) => Dispatcher.BeginInvoke(() => {
+        if (ev.BlockMap != null) {
+          BlockMap.BlockMap = ev.BlockMap;
+          BlockMap.ImageSize = ev.ImageSize;
+        }
+        BlockMap.ReadHead = ev.CurrentReadOffset;
+        BlockMap.WriteHead = ev.CurrentWriteOffset;
+        if (ev.Fraction >= 0) Progress.Value = Math.Clamp(ev.Fraction, 0, 1) * 100;
+      });
+
+      try {
+        using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
+        scrambler.Scramble(stream, new ScrambleOptions { Seed = seed, OnProgress = OnProgress });
+      } catch (Exception ex) {
+        err = ex;
+      }
+      sw.Stop();
+
+      Dispatcher.Invoke(() => {
+        Progress.IsIndeterminate = false;
+        Progress.Value = 100;
+        for (var i = 0; i < others.Length; ++i) others[i].IsEnabled = wasEnabled[i];
+        ScrambleBtn.IsEnabled = true;
+        ScrambleSeedBox.IsEnabled = true;
+        if (err != null)
+          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err.GetType().Name}: {err.Message}");
+        else
+          Append($"OK ({sw.ElapsedMilliseconds} ms) — the volume is fragmented; Defragment puts it back");
         Append("");
         PreviewBlockMap(path, FormatRegistry.GetArchiveOps(formatStr), wasMutated: err == null);
       });

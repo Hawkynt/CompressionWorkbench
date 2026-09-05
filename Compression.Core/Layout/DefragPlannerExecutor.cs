@@ -27,7 +27,8 @@ public static class DefragPlannerExecutor {
     IReadOnlyList<ClusterMove> moves,
     long imageSize,
     Action? reinitAfterMove = null,
-    IFilesystemMetadataMover? metadataMover = null) {
+    IFilesystemMetadataMover? metadataMover = null,
+    IReadOnlyList<DefragBlockInfo>? layout = null) {
 
     options.CancellationToken.ThrowIfCancellationRequested();
     var metadataNames = metadataMover?.RelocatableMetadata ?? (IReadOnlySet<string>)new HashSet<string>();
@@ -55,7 +56,7 @@ public static class DefragPlannerExecutor {
       ? moves
       : moves.Where(m => !IsMetadata(m.FileName)).ToList();
     var relink = mover.SupportsScatteredRelink
-      ? new ChainTracker(fileMoves, mover.AllocationBlockSize)
+      ? new ChainTracker(fileMoves, mover.AllocationBlockSize, layout)
       : null;
 
     var parks = moves.Any(m => m.Staging == DefragStaging.Park);
@@ -147,9 +148,41 @@ public static class DefragPlannerExecutor {
     private readonly Dictionary<string, List<long>> _originalByOwner = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<long, long> _finalOf = [];
 
-    public ChainTracker(IReadOnlyList<ClusterMove> moves, int blockSize) {
+    public ChainTracker(IReadOnlyList<ClusterMove> moves, int blockSize,
+        IReadOnlyList<DefragBlockInfo>? layout) {
       var occupant = new Dictionary<long, long>();
       var held = new Dictionary<(int Slot, long At), long>();
+
+      // An owner's blocks have to be relinked in the owner's own order, and the
+      // order the moves arrive in is the order it is safe to carry them out —
+      // which is not the same thing. A plan that keeps each owner's moves
+      // together and in sequence hides the difference; one that interleaves
+      // them, as any block-level rearrangement does, hands a chain-based mover
+      // the owner's blocks shuffled and the file reads back as noise.
+      //
+      // Given the layout the plan was made from, the order comes from there:
+      // extent maps walk each owner run by run in chain order. Without it the
+      // move order is all there is, which is what every caller had before.
+      if (layout != null) {
+        var moving = new HashSet<string>(moves.Select(m => m.FileName), StringComparer.OrdinalIgnoreCase);
+        foreach (var extent in layout) {
+          if (extent.Kind != DefragBlockKind.Used) continue;
+          var owner = extent.FileName ?? "<unknown>";
+          if (!moving.Contains(owner)) continue;
+          if (!this._originalByOwner.TryGetValue(owner, out var ordered))
+            this._originalByOwner[owner] = ordered = [];
+
+          var unit = blockSize > 0 ? blockSize : extent.Length;
+          if (unit <= 0) continue;
+          var count = (extent.Length + unit - 1) / unit;
+          for (var index = 0L; index < count; ++index) {
+            var at = extent.Offset + index * unit;
+            if (!occupant.TryAdd(at, at)) continue;
+            this._finalOf[at] = at;
+            ordered.Add(at);
+          }
+        }
+      }
 
       foreach (var move in moves) {
         if (!this._originalByOwner.TryGetValue(move.FileName, out var list))
