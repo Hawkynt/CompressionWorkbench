@@ -1211,7 +1211,18 @@ public sealed class FatWriter {
     void Allocate(DirNode dir) {
       foreach (var f in dir.Files) {
         var len = f.EffectiveLength;
-        f.ClusterCount = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
+        // An empty file owns no clusters and its directory entry names cluster 0.
+        // Giving it one anyway leaves a chain longer than the size says, which is
+        // what fsck reports as "file size is 0 bytes, cluster chain length is > 0".
+        // A subdirectory is the opposite case and always needs a cluster, because
+        // its "." and ".." entries have to live somewhere.
+        if (len == 0) {
+          f.ClusterCount = 0;
+          f.StartCluster = 0;
+          continue;
+        }
+
+        f.ClusterCount = (int)((len + clusterSize - 1) / clusterSize);
         f.StartCluster = nextCluster;
         p.Runs.Add((nextCluster, f.ClusterCount));
         nextCluster += f.ClusterCount;

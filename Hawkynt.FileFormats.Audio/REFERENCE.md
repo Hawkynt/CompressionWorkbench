@@ -911,7 +911,7 @@ CRI ADX ADPCM encoder and decoder. ADX is a fixed-block ADPCM stream used by man
 | `EncodingTypeStandard` | `const byte EncodingTypeStandard` | Standard ADX ADPCM encoding type (the only type this codec encodes/decodes). |
 | `EndMarkerScale` | `const ushort EndMarkerScale` | End-of-stream marker carried in a frame's scale word. |
 | `FrameSize` | `const int FrameSize` | Bytes per ADX frame (1 channel): a 2-byte scale plus 32 4-bit nibbles. |
-| `Magic` | `const ushort Magic` | ADX header magic word (big-endian): high bit set, low 15 bits = copyright offset. |
+| `Magic` | `const ushort Magic` | ADX header magic word (big-endian). The copyright offset is a separate field at byte 2. |
 | `SamplesPerFrame` | `const int SamplesPerFrame` | PCM samples carried by one 18-byte frame. |
 | `Decode` | `static ValueTuple<short[], int, int> Decode(ReadOnlySpan<byte> file)` | Decodes a complete standard ADX file to interleaved 16-bit PCM. Throws `NotSupportedException` for encrypted streams or non-standard encoding types, which the container layer treats as a FULL-only fallback. |
 | `DeriveCoefficients` | `static ValueTuple<int, int> DeriveCoefficients(int highpassFrequency, int sampleRate)` | Derives the two fixed-point predictor coefficients from a high-pass cutoff and sample rate. The prediction term is `(coef1*h1 + coef2*h2) >> 12`, so the coefficients use the standard 8192 / 4096 fixed-point scaling. |

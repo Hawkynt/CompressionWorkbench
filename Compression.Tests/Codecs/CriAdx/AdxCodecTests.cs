@@ -10,14 +10,15 @@ public class AdxCodecTests {
   /// <summary>
   /// The standard ADX coefficients for 44100 Hz / 500 Hz high-pass derive from
   /// z = cos(2π·500/44100), a = √2 − z, b = √2 − 1, c = (a − √((a+b)(a−b)))/b,
-  /// coef1 = ⌊c·8192⌋, coef2 = ⌊−c²·4096⌋. Hand-computing those yields 0x1CA6 / 0x7332's
-  /// signed values 7334 and −3284.
+  /// coef1 = round(c·8192), coef2 = round(−c²·4096) — the reference rounds to
+  /// nearest rather than flooring, and flooring biased both coefficients low into
+  /// a recursive predictor. Hand-computing those yields 7334 and −3283.
   /// </summary>
   [Test]
   public void DeriveCoefficients_44100_500_MatchesHandComputed() {
     var (coef1, coef2) = AdxCodec.DeriveCoefficients(500, 44100);
     Assert.That(coef1, Is.EqualTo(7334));
-    Assert.That(coef2, Is.EqualTo(-3284));
+    Assert.That(coef2, Is.EqualTo(-3283));
   }
 
   // ──────────── 2. Header round-trip ────────────

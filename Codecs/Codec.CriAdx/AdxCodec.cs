@@ -26,7 +26,7 @@ namespace Codec.CriAdx;
 /// </summary>
 public static class AdxCodec {
 
-  /// <summary>ADX header magic word (big-endian): high bit set, low 15 bits = copyright offset.</summary>
+  /// <summary>ADX header magic word (big-endian). The copyright offset is a separate field at byte 2.</summary>
   public const ushort Magic = 0x8000;
 
   /// <summary>Standard ADX ADPCM encoding type (the only type this codec encodes/decodes).</summary>
@@ -82,8 +82,10 @@ public static class AdxCodec {
     var a = Sqrt2 - z;
     var b = Sqrt2 - 1.0;
     var c = (a - Math.Sqrt((a + b) * (a - b))) / b;
-    var coef1 = (int)Math.Floor(c * 8192.0);
-    var coef2 = (int)Math.Floor(-(c * c) * 4096.0);
+    // The reference rounds to nearest here; flooring biases both coefficients
+    // low, and the predictor is recursive so the error compounds.
+    var coef1 = (int)Math.Round(c * 8192.0, MidpointRounding.AwayFromZero);
+    var coef2 = (int)Math.Round(-(c * c) * 4096.0, MidpointRounding.AwayFromZero);
     return (coef1, coef2);
   }
 
@@ -93,10 +95,11 @@ public static class AdxCodec {
       throw new InvalidDataException("ADX file too short for a header.");
 
     var magic = BinaryPrimitives.ReadUInt16BigEndian(file);
-    if ((magic & 0x8000) == 0)
-      throw new InvalidDataException("Missing ADX magic (high bit of word 0).");
+    if (magic != Magic)
+      throw new InvalidDataException($"Missing ADX magic 0x8000 (found 0x{magic:X4}).");
 
-    var copyrightOffset = (int)(magic & 0x7FFF);
+    // The offset is its own 16-bit field at byte 2, not the low bits of the magic.
+    var copyrightOffset = (int)BinaryPrimitives.ReadUInt16BigEndian(file[2..]);
     var dataOffset = copyrightOffset + 4;
 
     var encodingType = file[4];
@@ -166,8 +169,11 @@ public static class AdxCodec {
           var nibble = (i & 1) == 0 ? (nibbleByte >> 4) & 0x0F : nibbleByte & 0x0F;
           var delta = SignExtend4(nibble);
 
-          var predicted = (coef1 * h1 + coef2 * h2) >> 12;
-          var sample = Clamp16(predicted + delta * scale);
+          // The shift covers the whole sum, delta term included. Shifting only
+          // the prediction and adding the delta afterwards is the same in exact
+          // arithmetic but not in integer arithmetic — ">>" floors, so the two
+          // disagree by up to one per sample, and the predictor feeds that back.
+          var sample = Clamp16(((delta << 12) * scale + coef1 * h1 + coef2 * h2) >> 12);
 
           pcm[(samplesDone + i) * channels + ch] = (short)sample;
           h2 = h1;
@@ -208,7 +214,8 @@ public static class AdxCodec {
     const int dataOffset = copyrightOffset + 4; // == 26
     var header = new byte[dataOffset];
 
-    BinaryPrimitives.WriteUInt16BigEndian(header, (ushort)(Magic | copyrightOffset));
+    BinaryPrimitives.WriteUInt16BigEndian(header, Magic);
+    BinaryPrimitives.WriteUInt16BigEndian(header.AsSpan(2), copyrightOffset);
     header[4] = EncodingTypeStandard;
     header[5] = FrameSize;
     header[6] = BitDepth;

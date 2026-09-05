@@ -57,7 +57,8 @@ public class AhxTests {
     const int dataOffset = copyrightOffset + 4;
     var file = new byte[dataOffset + payload.Length];
 
-    BinaryPrimitives.WriteUInt16BigEndian(file, (ushort)(AdxCodec.Magic | copyrightOffset));
+    BinaryPrimitives.WriteUInt16BigEndian(file, AdxCodec.Magic);
+    BinaryPrimitives.WriteUInt16BigEndian(file.AsSpan(2), copyrightOffset);
     file[4] = encodingType;     // AHX
     file[5] = 18;               // block size (unused for AHX)
     file[6] = 4;                // bit depth (unused)

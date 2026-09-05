@@ -563,7 +563,16 @@ public sealed class ExFatWriter {
     var fileFirst = new uint[dir.Files.Count];
     for (var f = 0; f < dir.Files.Count; ++f) {
       var len = dir.Files[f].EffectiveLength;
-      var clustersNeeded = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
+      // An empty file owns no clusters and names cluster 0. Reserving one anyway
+      // is what fsck reports as "size 0, but the first cluster 0x…".
+      if (len == 0) {
+        fileFirst[f] = 0;
+        dir.Files[f].AllocatedStartCluster = 0;
+        dir.Files[f].AllocatedClusterCount = 0;
+        continue;
+      }
+
+      var clustersNeeded = (int)((len + clusterSize - 1) / clusterSize);
       fileFirst[f] = nextCluster;
       dir.Files[f].AllocatedStartCluster = nextCluster;
       dir.Files[f].AllocatedClusterCount = clustersNeeded;
@@ -635,7 +644,8 @@ public sealed class ExFatWriter {
     for (var f = 0; f < dir.Files.Count; ++f) {
       var file = dir.Files[f];
       var len = file.EffectiveLength;
-      var clustersNeeded = Math.Max(1, (int)((len + clusterSize - 1) / clusterSize));
+      if (len == 0) continue;   // nothing allocated, so nothing to fill or chain
+      var clustersNeeded = (int)((len + clusterSize - 1) / clusterSize);
       // Streaming entries leave the cluster heap zero — BuildToStreaming
       // post-fills them from the source in 64 KB chunks once metadata is
       // committed. The cluster-tail past Size stays sparse-zero.
@@ -705,7 +715,10 @@ public sealed class ExFatWriter {
 
     // Stream Extension (0xC0)
     buffer[pos] = 0xC0;
-    buffer[pos + 1] = 0x01; // AllocationPossible; NoFatChain=0 → chain read from FAT.
+    // AllocationPossible; NoFatChain=0 → chain read from FAT. A file with no
+    // clusters clears the flag, which the format requires to go together with a
+    // first cluster and a data length of zero.
+    buffer[pos + 1] = firstCluster == 0 ? (byte)0x00 : (byte)0x01;
     buffer[pos + 3] = (byte)nameChars.Length;
     BinaryPrimitives.WriteUInt16LittleEndian(buffer.AsSpan(pos + 4), ComputeNameHash(name));
     BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(pos + 8), dataLength);     // ValidDataLength
