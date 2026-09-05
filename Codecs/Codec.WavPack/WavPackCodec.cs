@@ -51,15 +51,27 @@ public static class WavPackCodec {
   private const uint FlagMagMask = 0x1F;
   private const uint FlagInitialBlock = 0x800;             // bit 11
   private const uint FlagFinalBlock = 0x1000;              // bit 12
+  // A block has to stay small enough for the reference decoder's block buffer.
+  // Measured against wvunpack 5.9: a 130,352-byte block reads, a 146,556-byte one
+  // is refused outright, so the ceiling sits at 128 KiB. Budget well under it and
+  // assume the worst case, that a block does not compress at all.
+  private const int MaxBlockPayloadBytes = 96 * 1024;
+  private const int MinBlockSamples = 4096;
+
+  private const int FlagMagnitudeShift = 18;               // bits 18-22
+  private const uint FlagMagnitudeMask = 0x1F;
   private const int FlagSampleRateShift = 23;              // bits 23-26
   private const uint FlagSampleRateMask = 0xF;
   private const uint FlagFalseStereo = 0x40000000;         // bit 30 FALSE_STEREO
   private const uint FlagDsd = 0x80000000;                 // bit 31 (WavPack 5 DSD)
 
   // Metadata sub-block ids (low 5 bits; 0x20 = odd size, 0x40 = large size word).
-  private const int IdMask = 0x1F;
-  private const int IdOddSize = 0x20;
-  private const int IdLargeSize = 0x40;
+  // Metadata sub-block id byte: the low six bits are the id (bit 5 marks it as
+  // optional data a decoder may skip), bit 6 says the payload has an odd byte
+  // count, and bit 7 says the size field is three words wide instead of one.
+  private const int IdMask = 0x3F;
+  private const int IdOddSize = 0x40;
+  private const int IdLargeSize = 0x80;
   private const int IdDecorrTerms = 0x02;
   private const int IdDecorrWeights = 0x03;
   private const int IdDecorrSamples = 0x04;
@@ -67,6 +79,7 @@ public static class WavPackCodec {
   private const int IdFloatInfo = 0x08;
   private const int IdInt32Info = 0x09;
   private const int IdBitstream = 0x0A;
+  private const int IdChannelInfo = 0x0D;
   private const int IdWvxBitstream = 0x0C;
 
   private const int MaxTerm = 8;
@@ -373,25 +386,59 @@ public static class WavPackCodec {
     for (var c = 0; c < channels; c += 2)
       plan.Add((c, Math.Min(2, channels - c)));
 
-    for (var p = 0; p < plan.Count; ++p) {
-      var (baseCh, count) = plan[p];
-      var isFirst = p == 0;
-      var isFinal = p == plan.Count - 1;
-      var block = EncodeBlock(pcm, totalSamples, channels, baseCh, count, bitsPerSample,
-        bytesPerSample, (uint)rateIndex, isFirst, isFinal, isFloat);
-      wvOutput.Write(block);
+    // Split the stream in time as well as across channels. The reference decoder
+    // reads a block into a fixed buffer, so one block per stream stops being
+    // readable as soon as the audio is a few seconds long — measured, the ceiling
+    // is on the block's byte count rather than on its sample count.
+    var blockSamples = ChooseBlockSamples(sampleRate, bytesPerSample, plan);
+
+    for (var offset = 0; offset < totalSamples; offset += blockSamples) {
+      var count = Math.Min(blockSamples, totalSamples - offset);
+      for (var p = 0; p < plan.Count; ++p) {
+        var (baseCh, subChannels) = plan[p];
+        var isFirst = p == 0;
+        var isFinal = p == plan.Count - 1;
+        var block = EncodeBlock(pcm, totalSamples, offset, count, channels, baseCh, subChannels,
+          bitsPerSample, bytesPerSample, (uint)rateIndex, isFirst, isFinal, isFloat);
+        wvOutput.Write(block);
+      }
     }
+
+    // An empty stream still needs one block, or there is no header to read back.
+    if (totalSamples == 0)
+      for (var p = 0; p < plan.Count; ++p) {
+        var (baseCh, subChannels) = plan[p];
+        wvOutput.Write(EncodeBlock(pcm, 0, 0, 0, channels, baseCh, subChannels,
+          bitsPerSample, bytesPerSample, (uint)rateIndex, p == 0, p == plan.Count - 1, isFloat));
+      }
+  }
+
+  /// <summary>
+  /// Samples per block: a quarter second, which is what the reference encoder
+  /// emits at CD rates, held down further when a frame is wide enough that a
+  /// quarter second of incompressible audio would overrun the reference's block
+  /// buffer.
+  /// </summary>
+  private static int ChooseBlockSamples(
+      int sampleRate, int bytesPerSample, List<(int Base, int Count)> plan) {
+    var widestFrame = 0;
+    foreach (var (_, count) in plan)
+      widestFrame = Math.Max(widestFrame, count * bytesPerSample);
+
+    var byteBudget = MaxBlockPayloadBytes / Math.Max(1, widestFrame);
+    return Math.Max(1, Math.Min(Math.Max(sampleRate / 4, MinBlockSamples), byteBudget));
   }
 
   private static byte[] EncodeBlock(
-      byte[] pcm, int totalSamples, int totalChannels, int channelBase, int subChannels,
+      byte[] pcm, int streamSamples, int sampleOffset, int totalSamples,
+      int totalChannels, int channelBase, int subChannels,
       int bitsPerSample, int bytesPerSample, uint rateIndex, bool isFirst, bool isFinal, bool isFloat) {
 
     // Gather this sub-block's channel samples from the interleaved input.
     var chData = new int[subChannels][];
     for (var c = 0; c < subChannels; ++c) chData[c] = new int[totalSamples];
     for (var s = 0; s < totalSamples; ++s) {
-      var frame = (long)s * totalChannels;
+      var frame = (long)(sampleOffset + s) * totalChannels;
       for (var c = 0; c < subChannels; ++c) {
         var src = (int)((frame + channelBase + c) * bytesPerSample);
         chData[c][s] = ReadSample(pcm, src, bitsPerSample);
@@ -428,6 +475,16 @@ public static class WavPackCodec {
     if (isFirst) flags |= FlagInitialBlock;
     if (isFinal) flags |= FlagFinalBlock;
 
+    // The block CRC covers the samples as the decoder will finally see them, so
+    // it has to be taken before joint-stereo and decorrelation rewrite them.
+    var crc = ComputeBlockCrc(chData, subChannels, totalSamples);
+
+    // How many bits the largest magnitude in the block occupies. The reference
+    // decoder sizes its work from this field, and a block that under-reports it
+    // decodes to silence rather than to an error.
+    flags |= (ComputeMagnitude(chData, subChannels, totalSamples) & FlagMagnitudeMask)
+      << FlagMagnitudeShift;
+
     var useJoint = subChannels == 2;
     if (useJoint) flags |= FlagJointStereo;
 
@@ -457,9 +514,15 @@ public static class WavPackCodec {
     // Entropy-code the residuals (buffer-at-once, matching send_words_lossless).
     var writer = new WavPackBitWriter();
     var words = new WavPackWords(subChannels);
+    // The medians as they stand at the *start* of the block — what a decoder has
+    // to seed its own coder with. Captured before the residuals move them.
+    var entropyVars = EncodeEntropyVars(words, subChannels);
     words.SendWordsLossless(writer, chData, totalSamples);
     words.FlushFinal(writer);
-    var bitstream = writer.Flush();
+    // The bitstream is a run of 16-bit words, so it always ends on an even byte
+    // count. Letting it end odd sets the sub-block's odd-size flag, which the
+    // reference decoder never expects there and refuses the file over.
+    var bitstream = writer.FlushEven();
 
     // Assemble the metadata sub-blocks: decorr terms, weights, samples, then the
     // bitstream. The weights/samples sub-blocks here carry the *initial* (zero)
@@ -468,6 +531,16 @@ public static class WavPackCodec {
     WriteSubBlock(bodyMs, IdDecorrTerms, EncodeDecorrTerms(terms, deltas));
     WriteSubBlock(bodyMs, IdDecorrWeights, EncodeDecorrWeights(subChannels, new int[terms.Length], new int[terms.Length]));
     WriteSubBlock(bodyMs, IdDecorrSamples, EncodeDecorrSamples(subChannels, terms, FreshSamples(terms.Length), FreshSamples(terms.Length)));
+    // Our own reader treats a missing entropy-vars sub-block as "all medians
+    // cleared", which is what they are here — but that leniency is ours alone,
+    // and a decoder is entitled to reject a block that omits them.
+    WriteSubBlock(bodyMs, IdEntropyVars, entropyVars);
+    // Beyond stereo the channels are spread over several blocks, and nothing in
+    // those blocks says how many there are in total or where each sits. The
+    // initial block of the group has to carry that, or a decoder reads the first
+    // block's two channels and makes nonsense of the rest.
+    if (isFirst && totalChannels > 2)
+      WriteSubBlock(bodyMs, IdChannelInfo, EncodeChannelInfo(totalChannels));
     if (isFloat)
       WriteSubBlock(bodyMs, IdFloatInfo, WavPackFloat.WriteFloatInfo(floatInfo));
     WriteSubBlock(bodyMs, IdBitstream, bitstream);
@@ -494,11 +567,11 @@ public static class WavPackCodec {
     BinaryPrimitives.WriteUInt16LittleEndian(span[8..], VersionWrite);
     span[10] = 0; // block index high
     span[11] = 0; // total samples high
-    BinaryPrimitives.WriteUInt32LittleEndian(span[12..], (uint)totalSamples); // total samples low
-    BinaryPrimitives.WriteUInt32LittleEndian(span[16..], 0u);                 // block index low
-    BinaryPrimitives.WriteUInt32LittleEndian(span[20..], (uint)totalSamples); // block samples
+    BinaryPrimitives.WriteUInt32LittleEndian(span[12..], (uint)streamSamples);  // total samples low
+    BinaryPrimitives.WriteUInt32LittleEndian(span[16..], (uint)sampleOffset);   // block index low
+    BinaryPrimitives.WriteUInt32LittleEndian(span[20..], (uint)totalSamples);   // block samples
     BinaryPrimitives.WriteUInt32LittleEndian(span[24..], flags);
-    BinaryPrimitives.WriteUInt32LittleEndian(span[28..], 0u);                 // crc (advisory; not validated here)
+    BinaryPrimitives.WriteUInt32LittleEndian(span[28..], crc);               // block check value
     body.CopyTo(span[HeaderSize..]);
     return block;
   }
@@ -812,6 +885,26 @@ public static class WavPackCodec {
 
   // ── 0x05 entropy vars (wp_exp2s of stored medians) ───────────────────────────
 
+  /// <summary>
+  /// The three magnitude medians per channel, log-encoded as 16-bit values —
+  /// the inverse of what <see cref="ApplyEntropyVars" /> reads back.
+  /// </summary>
+  private static byte[] EncodeEntropyVars(WavPackWords words, int subChannels) {
+    var payload = new byte[subChannels == 1 ? 6 : 12];
+    WriteMedians(payload, 0, words.Channel(0).Median);
+    if (subChannels == 2)
+      WriteMedians(payload, 6, words.Channel(1).Median);
+    return payload;
+
+    static void WriteMedians(byte[] payload, int offset, uint[] median) {
+      for (var i = 0; i < 3; ++i) {
+        var log = WpLog2S((int)median[i]);
+        payload[offset + i * 2] = (byte)(log & 0xFF);
+        payload[offset + i * 2 + 1] = (byte)((log >> 8) & 0xFF);
+      }
+    }
+  }
+
   private static void ApplyEntropyVars(ReadOnlySpan<byte> body, WavPackWords words, int subChannels) {
     // Re-walk the sub-blocks to find 0x05 and seed the medians. Absent => zero.
     var o = 0;
@@ -956,6 +1049,75 @@ public static class WavPackCodec {
   }
 
   // ── Sub-block read/write ──────────────────────────────────────────────────────
+
+  /// <summary>
+  /// The per-block check value: <c>crc = crc * 3 + sample</c> over the samples
+  /// in interleaved order, seeded all-ones and wrapping at 32 bits.
+  /// </summary>
+  private static uint ComputeBlockCrc(int[][] channels, int subChannels, int totalSamples) {
+    var crc = 0xFFFFFFFFu;
+    for (var s = 0; s < totalSamples; ++s)
+      for (var c = 0; c < subChannels; ++c)
+        crc = unchecked(crc * 3 + (uint)channels[c][s]);
+    return crc;
+  }
+
+  /// <summary>
+  /// Bit length of the largest sample magnitude in the block. A negative sample
+  /// contributes <c>~sample</c>, so -1 counts as zero and the range stays
+  /// symmetric.
+  /// </summary>
+  private static uint ComputeMagnitude(int[][] channels, int subChannels, int totalSamples) {
+    var largest = 0;
+    for (var c = 0; c < subChannels; ++c) {
+      var samples = channels[c];
+      for (var s = 0; s < totalSamples; ++s) {
+        var magnitude = samples[s];
+        if (magnitude < 0) magnitude = ~magnitude;
+        if (magnitude > largest) largest = magnitude;
+      }
+    }
+
+    var bits = 0u;
+    while (largest != 0) {
+      ++bits;
+      largest >>= 1;
+    }
+
+    return bits;
+  }
+
+  /// <summary>
+  /// Channel count followed by the Microsoft channel mask, in as few bytes as
+  /// the mask needs.
+  /// </summary>
+  private static byte[] EncodeChannelInfo(int channels) {
+    var mask = DefaultChannelMask(channels);
+    using var ms = new MemoryStream();
+    ms.WriteByte((byte)channels);
+    while (mask != 0) {
+      ms.WriteByte((byte)(mask & 0xFF));
+      mask >>= 8;
+    }
+
+    return ms.ToArray();
+  }
+
+  /// <summary>
+  /// The conventional speaker layout for a channel count, used when the caller
+  /// gives us a count and nothing more.
+  /// </summary>
+  private static uint DefaultChannelMask(int channels) => channels switch {
+    1 => 0x004,  // front centre
+    2 => 0x003,  // front left + right
+    3 => 0x007,
+    4 => 0x033,
+    5 => 0x037,
+    6 => 0x03F,  // 5.1
+    7 => 0x13F,  // 6.1
+    8 => 0x63F,  // 7.1
+    _ => channels >= 32 ? 0xFFFFFFFF : (1u << channels) - 1,
+  };
 
   private static void WriteSubBlock(Stream output, int id, byte[] payload) {
     var size = payload.Length;
