@@ -19,8 +19,13 @@ namespace Codec.Nellymoser;
 /// Ported verbatim: all four tables, the <c>headroom</c>/<c>sum_bits</c>/
 /// <c>get_sample_bits</c> allocator, the lagged-Fibonacci RNG seeding the noise sign,
 /// and the per-block gain/dequant walk. The IMDCT is a direct O(n²) evaluation of
-/// FFmpeg's MDCT phase (size-256 transform, <c>imdct_half</c> middle slice), which is
-/// numerically equivalent to the reference FFT-based transform for these 128 points.
+/// FFmpeg's MDCT phase (size-256 transform, <c>imdct_half</c> middle slice), negated
+/// to match the reference's sign, and evaluated in double where the reference uses a
+/// float FFT — so the two agree to well under a count rather than bit for bit.
+/// </para>
+/// <para>
+/// The upstream files are MIT licensed; the notice is reproduced in
+/// <c>THIRD-PARTY-NOTICES.md</c> at the repository root.
 /// </para>
 /// </summary>
 public static class NellymoserCodec {
@@ -134,8 +139,12 @@ public static class NellymoserCodec {
   }
 
   // ── vector_fmul_window (float_dsp.c) ─────────────────────────────────────────
-  // dst[len+i]=s0*wj-s1*wi ; dst[len+j]=s0*wi+s1*wj over i=-len..-1, j=len-1..0
-  // re-expressed with non-negative indexing into the BUF_LEN-sized arrays.
+  // The reference walks i from -len with dst, win and src0 already advanced by
+  // len, so its two window taps come from opposite halves of a 2*len window:
+  // win[i] is the lower half and win[j] the upper. Re-expressed with
+  // non-negative indexing, that upper tap is win[len + j] — reading win[j] here
+  // instead windows both taps with the rising half, which leaves the output
+  // correlated with the signal but wrong, and uniformly mis-scaled.
   private static void VectorFmulWindow(Span<float> dst, ReadOnlySpan<float> src0,
       ReadOnlySpan<float> src1, ReadOnlySpan<float> win, int len) {
     for (var i = 0; i < len; ++i) {
@@ -143,7 +152,7 @@ public static class NellymoserCodec {
       var s0 = src0[i];
       var s1 = src1[j];
       var wi = win[i];
-      var wj = win[j];
+      var wj = win[len + j];
       dst[i] = s0 * wj - s1 * wi;
       dst[len + j] = s0 * wi + s1 * wj;
     }
@@ -164,7 +173,11 @@ public static class NellymoserCodec {
       var acc = 0.0;
       for (var m = 0; m < n2; ++m)
         acc += input[m] * Math.Cos(phase * (2 * m + 1));
-      output[k] = (float)acc;
+
+      // Negated: the reference's inverse MDCT carries the opposite sign to the
+      // textbook sum written above, and the band powers are already negative, so
+      // without this the whole waveform comes out inverted.
+      output[k] = (float)-acc;
     }
   }
 
