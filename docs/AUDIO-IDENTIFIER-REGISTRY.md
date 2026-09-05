@@ -92,20 +92,23 @@ that the pair agrees with itself. Decoding a stream *libavcodec* produced, and h
 libavcodec or the format's own reference tool decode ours, is what makes two implementations
 disagree out loud. Measured that way, against ffmpeg 9.0.1 and the reference `wvunpack`:
 
-- **FLAC**, **WavPack** and **QOA** decode a foreign stream bit-exactly, and a foreign decoder
-  reads ours back losslessly — for WavPack, `wvunpack -v` verifies the file outright.
+- **FLAC**, **WavPack**, **QOA** and **TTA** decode a foreign stream bit-exactly, and a foreign
+  decoder reads ours back losslessly — for WavPack, `wvunpack -v` verifies the file outright.
 - **Opus** matches libopus sample for sample within 2 LSB and now ends on the exact sample,
   once the final page's granule position is honoured rather than only the pre-skip.
-- **TTA** throws part-way through a frame whose CRC it has just checked, and ffmpeg refuses
-  ours in turn.
 - **AC-3** and **DTS** return no samples at all from a foreign stream, though ffmpeg decodes
   what they write.
 
-The last three are the same failure in three places: a decoder that reads what our own encoder
-writes and gives up on the first frame of anyone else's. TTA is unrouted, and AC-3 and DTS now
-refuse rather than hand the pipeline nothing — it will build a valid, entirely empty file out
-of no samples, and an empty file that claims to be a conversion cannot be told apart from
-silence that was really in the source.
+Three of those were the same failure in three places: a decoder that reads what our own encoder
+writes and gives up on the first frame of anyone else's. WavPack framed its metadata sub-blocks
+a bit out of position; TTA counted its unary prefix the wrong way round, zeros terminated by a
+one where the format codes ones terminated by a zero. Both writers carried the same inversion,
+so each pair round-tripped perfectly and could exchange a file with nothing else — and TTA's
+per-frame CRC passed throughout, because it covers the bytes and not what they mean.
+
+AC-3 and DTS are the remaining pair, and they now refuse rather than hand the pipeline nothing:
+it will build a valid, entirely empty file out of no samples, and an empty file that claims to
+be a conversion cannot be told apart from silence that was really in the source.
 
 Conversions that remain refusals by nature, not gaps: DSDIFF and DSF take per-channel raw DSD,
 so PCM must first be sigma-delta modulated; MIDI takes MIDI tracks, and turning audio into

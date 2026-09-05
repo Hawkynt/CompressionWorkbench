@@ -256,7 +256,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Stm` | STM (Scream Tracker 2) | R | — | — | — | — | Scream Tracker 2 sample archive |
 | `Svx8` | IFF/8SVX (Amiga) | WORM | — | — | — | — | Amiga IFF/8SVX, Fibonacci-delta, planar stereo |
 | `Swav` | SWAV (Nintendo DS sample) | WORM | — | — | — | — | Nintendo DS SWAV |
-| `Tta` | True Audio (TTA) | WORM | — | — | — | — | True Audio lossless split + assemble |
+| `Tta` | True Audio (TTA) | WORM | ✅ | ✅ | — | — | True Audio lossless split + assemble; decode verified bit-exact against libavcodec, 8/16/24/32-bit |
 | `Txw` | TXW (Yamaha TX16W) | WORM | — | — | — | — | Yamaha TX16W 12-bit packed |
 | `Ult` | UltraTracker | R | — | — | — | — | UltraTracker sample archive |
 | `Vag` | Sony VAG (PS1/PS2 SPU-ADPCM) | WORM | — | — | — | — | Sony VAG / SPU-ADPCM |

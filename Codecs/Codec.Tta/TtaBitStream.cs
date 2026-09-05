@@ -29,14 +29,14 @@ internal sealed class TtaBitWriter {
     }
   }
 
-  /// <summary>Writes <paramref name="count"/> zero bits followed by a single one bit (unary escape).</summary>
+  /// <summary>Writes <paramref name="count"/> one bits followed by a single zero bit (unary escape).</summary>
   public void PutUnary(int count) {
     while (count >= 1) {
       var run = Math.Min(count, 24);
-      this.PutBits(0u, run);
+      this.PutBits((1u << run) - 1, run);
       count -= run;
     }
-    this.PutBits(1u, 1);
+    this.PutBits(0u, 1);
   }
 
   /// <summary>Flushes any partial byte (zero-padded) and returns the frame bytes.</summary>
@@ -86,10 +86,10 @@ internal sealed class TtaBitReader {
     return result;
   }
 
-  /// <summary>Counts zero bits up to the terminating one bit (unary value).</summary>
+  /// <summary>Counts one bits up to the terminating zero bit (unary value).</summary>
   public int GetUnary() {
     var count = 0;
-    while (this.GetBits(1) == 0)
+    while (this.GetBits(1) != 0)
       ++count;
     return count;
   }
