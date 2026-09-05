@@ -18,6 +18,9 @@
     <ProjectReference Include="..\..\Codecs\Codec.Gsm610\Codec.Gsm610.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.Mp3\Codec.Mp3.csproj" />
     <ProjectReference Include="..\..\Codecs\Codec.TrueSpeech\Codec.TrueSpeech.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.AicaAdpcm\Codec.AicaAdpcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.AdpcmX\Codec.AdpcmX.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Dfpwm\Codec.Dfpwm.csproj" />
   </ItemGroup>
 
 </Project>

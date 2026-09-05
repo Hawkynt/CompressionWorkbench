@@ -77,7 +77,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.XaAdpcm` | ADPCM | R/W | — | CD-ROM XA / PlayStation streaming ADPCM |
 | `Codec.EaXa` | ADPCM | R/W | — | Electronic Arts EA-XA coefficient/shift frames |
 | `Codec.WwiseIma` | ADPCM | R/W | — | Audiokinetic Wwise IMA / MS-IMA block layout |
-| `Codec.AicaAdpcm` | ADPCM | R/W | — | Yamaha AICA / ADPCM-B (Dreamcast) |
+| `Codec.AicaAdpcm` | ADPCM | R/W | `0x0020` | Yamaha AICA / ADPCM-B (Dreamcast); the WAVE Yamaha ADPCM route decodes bit-exactly against libavcodec, mono and stereo |
 | `Codec.G722` | Speech | R/W | `0x0065`, `0x028F` | ITU-T G.722 sub-band ADPCM @ 64 kbit |
 | `Codec.Cvsd` | Speech | R/W | `0x0005` | CVSD delta modulation |
 | `Codec.Mace` | Lossy | R | QuickTime `MAC3`, `MAC6` | Apple MACE 3:1 / 6:1 decode |
@@ -93,7 +93,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.Cook` | Lossy | R | `0x2004` | RealAudio G2 `cook` |
 | `Codec.Atrac3` | Lossy | R | `0x0272` | Sony ATRAC3 |
 | `Codec.Ac3` | Lossy | R/W ⚠️ | `0x0092`, `0x0241`, `0x2000` | AC-3 / E-AC-3 encode + decode with advanced-feature boundaries; S/PDIF-encapsulated variants are not routed |
-| `Codec.Wma` | Lossy | R | `0x0160`, `0x0161` | WMA v1/v2; ASF carriage is read through `FileFormat.Asf` |
+| `Codec.Wma` | Lossy | R ⚠️ | `0x0160`, `0x0161` | WMA v1/v2; ASF carriage is read through `FileFormat.Asf`. Measured against libavcodec the decode is the right tone at the wrong shape, so the WAVE tags are recognised but deliberately not routed |
 | `Codec.Musepack` | Lossy | R | — | Musepack SV7/SV8 |
 | `Codec.WmaPro` | Lossy | R | `0x0162`, `0x0164` | WMA 9 Professional; the S/PDIF registration `0x0164` stays a separate profile |
 | `Codec.Sipr` | Speech | R ⚠️ | `0x0130`-`0x0132` | RealAudio ACELP.NET; unsupported mode boundaries documented in source |
@@ -119,7 +119,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.AmrWb` | Speech | R/W | `0xA104` | 3GPP AMR wideband / G.722.2, all 9 modes; the WAVE alias is not routed; native `.awb` is |
 | `Codec.Tracker` | Tracker | R | — | ProTracker MOD + Scream Tracker 3 S3M playback |
 | `Codec.TrackerXmIt` | Tracker | R | — | FastTracker II XM + Impulse Tracker IT playback, IT214/215 samples |
-| `Codec.AdpcmX` | ADPCM | R | — | IMA DK3/DK4/EACS/SEAD, EA R1-R3, THP/AFC, SWF, 4XM, Xan, Interplay, SDX2, DERF, Gremlin |
+| `Codec.AdpcmX` | ADPCM | R | `0x5346` | IMA DK3/DK4/EACS/SEAD, EA R1-R3, THP/AFC, SWF, 4XM, Xan, Interplay, SDX2, DERF, Gremlin; the SWF WAVE route decodes per block, bit-exactly against libavcodec |
 | `Codec.Atrac1` | Lossy | R | `0x0270` | Sony ATRAC1 / MiniDisc |
 | `Codec.Ra288` | Speech | R | `0x2003` | RealAudio 28.8 / G.728-style path |
 | `Codec.Ralf` | Lossless | R | — | RealAudio Lossless |
@@ -132,7 +132,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.WmaLossless` | Lossless | R | `0x0163` | WMA Lossless 0x0163 |
 | `Codec.Xma` | Lossy | R ⚠️ | — | XMA1/XMA2 packet/extradata layer over WMAPro; full-decode boundaries documented in source |
 | `Codec.Qoa` | Lossy (DPCM) | R/W | — | Quite OK Audio sign-LMS slices |
-| `Codec.Dfpwm` | Lossy (1-bit) | R/W | — | DFPWM1a encode + decode |
+| `Codec.Dfpwm` | Lossy (1-bit) | R/W | `0xC13A` | DFPWM1a encode + decode; carried as WAVE_FORMAT_EXTENSIBLE and decoded bit-exactly against libavcodec |
 | `Codec.Bonk` | Lossless/lossy | R/W | — | Bonk encode + decode |
 | `Codec.WavArc` | Lossless | R ⚠️ | — | WavArc `.wa`; adaptive-LPC block boundaries documented in source |
 

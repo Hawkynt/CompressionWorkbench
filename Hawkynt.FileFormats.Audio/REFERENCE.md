@@ -554,6 +554,7 @@ Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip; the same quantiser as the YM
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two samples (low nibble first), so the output holds `data.Length * 2` samples. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes an interleaved AICA / Yamaha ADPCM stream of `channels` channels to 16-bit PCM. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit PCM to a mono AICA ADPCM byte stream using the same state machine as `Decode`, so round-tripping reproduces the waveform within the codec's lossy tolerance. Two samples pack into each byte (low nibble first); an odd trailing sample is paired with a zero (silence) high nibble. |
 
 ### Namespace `Codec.Alac`
