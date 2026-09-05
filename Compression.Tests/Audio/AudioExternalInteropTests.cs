@@ -382,8 +382,74 @@ public sealed class AudioExternalInteropTests {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  WavPack — reference encodes, our reader parses (no writer in repo)
+  //  WavPack — both directions
   // ─────────────────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Given a WavPack file produced by OUR encoder from a known WAV,
+  /// When the reference <c>wvunpack</c> verifies and decodes it,
+  /// Then it reports the file lossless and returns our source samples.
+  /// </summary>
+  /// <remarks>
+  /// Only this direction catches an encoder that is wrong in the same way as our
+  /// own decoder. It found four: sub-block framing bits a position out, a
+  /// bitstream left at an odd byte count, absent entropy medians, and a sample
+  /// magnitude of zero that made the reference decode the whole file as silence.
+  /// </remarks>
+  [TestCase(1, 16)]
+  [TestCase(2, 16)]
+  [TestCase(6, 16)]
+  public void WavPack_OurEncode_ReferenceVerifies(int channels, int bitsPerSample) {
+    if (!FsInteropToolbox.WslHasTool("wvunpack"))
+      Assert.Ignore("wvunpack not found.");
+
+    var frames = SampleRate / 2;
+    var bytesPerSample = bitsPerSample / 8;
+    var pcm = new byte[frames * channels * bytesPerSample];
+    for (var i = 0; i < frames; ++i)
+      for (var c = 0; c < channels; ++c) {
+        var value = (short)(Math.Sin(2 * Math.PI * (440 + 55 * c) * i / SampleRate) * 12_000);
+        BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan((i * channels + c) * 2), value);
+      }
+
+    using var input = new MemoryStream(pcm, writable: false);
+    using var encoded = new MemoryStream();
+    Codec.WavPack.WavPackCodec.Compress(input, encoded, channels, SampleRate, bitsPerSample);
+
+    var wvPath = this.WriteToTmp($"ours-{channels}ch.wv", encoded.ToArray());
+    var verify = FsInteropToolbox.RunWsl($"wvunpack -v {FsInteropToolbox.WinToWsl(wvPath)}");
+    Assert.That(verify.ExitCode, Is.Zero,
+      $"wvunpack rejected our {channels}-channel file\nstdout: {verify.StdOut}\nstderr: {verify.StdErr}");
+
+    // and the samples it hands back are the ones we put in
+    var outPath = Path.Combine(this._tmpDir, $"ours-{channels}ch.wav");
+    var decode = FsInteropToolbox.RunWsl(
+      $"wvunpack -y -q -o {FsInteropToolbox.WinToWsl(outPath)} {FsInteropToolbox.WinToWsl(wvPath)}");
+    Assert.That(decode.ExitCode, Is.Zero, $"wvunpack failed to decode\nstderr: {decode.StdErr}");
+
+    var wav = File.ReadAllBytes(outPath);
+    var dataOffset = FindWavDataChunk(wav, out var dataLength);
+    Assert.That(dataLength, Is.EqualTo(pcm.Length), "decoded sample byte count");
+    Assert.That(wav.AsSpan(dataOffset, dataLength).ToArray(), Is.EqualTo(pcm),
+      "wvunpack must return our source samples exactly");
+  }
+
+  // Offset of the data-chunk payload in a canonical RIFF/WAVE file.
+  private static int FindWavDataChunk(byte[] wav, out int length) {
+    var position = 12;
+    while (position + 8 <= wav.Length) {
+      var size = BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(position + 4));
+      if (wav.AsSpan(position, 4).SequenceEqual("data"u8)) {
+        length = Math.Min(size, wav.Length - position - 8);
+        return position + 8;
+      }
+
+      position += 8 + size + (size & 1);
+    }
+
+    length = 0;
+    return wav.Length;
+  }
 
   /// <summary>
   /// Given a WavPack file produced by the reference <c>wavpack</c> encoder from a known WAV,

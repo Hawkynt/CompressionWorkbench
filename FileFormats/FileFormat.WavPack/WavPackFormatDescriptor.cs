@@ -122,6 +122,10 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
 
     var blockIndex = 0;
     var pos = 0;
+    // Where the last complete block ended. The scan above re-syncs a byte at a
+    // time, so by the time it stops `pos` has already walked into whatever
+    // follows the audio.
+    var blockEnd = 0;
     ParsedHeader? first = null;
     while (pos + HeaderSize <= file.Length) {
       // Magic "wvpk" at pos.
@@ -143,10 +147,19 @@ public sealed class WavPackFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       entries.Add((name, "Block", blob));
       ++blockIndex;
       pos += (int)blockSize;
+      blockEnd = pos;
     }
 
     if (first.HasValue)
       entries.Add(("metadata.ini", "Metadata", Encoding.UTF8.GetBytes(BuildMetadata(first.Value))));
+
+    // WavPack tags with APEv2; the tag sits behind the last block, which is
+    // where the scan above stopped.
+    if (ApeTagReader.TryFind(file, blockEnd, file.Length, out var apeTag)) {
+      var ini = ApeTagReader.TryRenderIni(file, apeTag);
+      if (ini != null)
+        entries.Add(("tags.ini", "Tag", Encoding.UTF8.GetBytes(ini)));
+    }
 
     AddChannelEntries(file, entries);
 

@@ -495,17 +495,18 @@ public class WavPackCodecTests {
     var bodyEnd = 8 + (int)ckSize;
     var o = 32;
     while (o < bodyEnd && o < wv.Length) {
+      // id byte: low six bits the id, bit 6 odd size, bit 7 three-word size field
       var id = wv[o++];
       int s;
-      if ((id & 0x40) != 0) {
+      if ((id & 0x80) != 0) {
         s = (wv[o] | (wv[o + 1] << 8) | (wv[o + 2] << 16)) << 1;
         o += 3;
       } else {
         s = wv[o++] << 1;
       }
-      if ((id & 0x20) != 0) s -= 1;
+      if ((id & 0x40) != 0) s -= 1;
       var payloadStart = o;
-      if ((id & 0x1F) == rawId) {
+      if ((id & 0x3F) == rawId) {
         size = s;
         return payloadStart;
       }

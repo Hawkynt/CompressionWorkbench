@@ -28,9 +28,15 @@ internal sealed class WavPackAudioPacketAdapter : IAudioDemuxSource, IAudioMuxTa
     var packets = new List<AudioPacket>();
     WavPackBlockHeader? firstAudio = null;
     var offset = 0;
+    var trailerStart = -1;
     while (offset < bytes.Length) {
-      if (IsId3v1(bytes, offset)) {
-        offset += 128;
+      // APEv2 is WavPack's own tagging format and ID3v1 the legacy alternative,
+      // so a tagged file is the normal case rather than a damaged one. Both sit
+      // behind the last block, where a reader that only knows blocks sees
+      // garbage.
+      if (ApeTagReader.IsTrailingMetadata(bytes, offset)) {
+        trailerStart = offset;
+        offset = bytes.Length;
         break;
       }
       if (bytes.Length - offset < HeaderSize)
@@ -78,6 +84,9 @@ internal sealed class WavPackAudioPacketAdapter : IAudioDemuxSource, IAudioMuxTa
       ["block-count"] = packets.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
       ["sample-format"] = isFloat ? "float" : "integer",
     };
+    if (trailerStart >= 0)
+      properties["trailing-metadata-bytes"] =
+        (bytes.Length - trailerStart).ToString(System.Globalization.CultureInfo.InvariantCulture);
     stream = new AudioEncodedStream(
       new AudioStreamFormat("wavpack", sampleRate, channels, bitsPerSample, properties),
       packets);
@@ -133,9 +142,6 @@ internal sealed class WavPackAudioPacketAdapter : IAudioDemuxSource, IAudioMuxTa
       BinaryPrimitives.ReadUInt32LittleEndian(bytes[20..]),
       BinaryPrimitives.ReadUInt32LittleEndian(bytes[24..]));
   }
-
-  private static bool IsId3v1(ReadOnlySpan<byte> bytes, int offset)
-    => bytes.Length - offset == 128 && bytes.Slice(offset, 3).SequenceEqual("TAG"u8);
 
   private static byte[] Materialize(Stream input) {
     using var copy = new MemoryStream();
