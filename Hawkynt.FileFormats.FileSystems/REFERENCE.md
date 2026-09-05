@@ -5810,7 +5810,7 @@ Walks an ext1 image and yields its actual on-disk byte layout — per-file block
 
 Descriptor for ext1 filesystem images — the 1992 predecessor of ext2 by Rémy Card. ext1's on-disk superblock layout is identical to the GOOD_OLD-revision ext2 superblock with one crucial difference: the s_magic field at offset 56 of the superblock (file-relative offset 1080) reads `0xEF51` instead of ext2's `0xEF53`. ext1 has no journal, no extents, and no FEATURE_INCOMPAT_FILETYPE — directory entries are 8-byte fixed-header (with a 16-bit `name_len`) + name only. Detection, structural surfacing and round-trip read+write of small WORM images are supported; vintage pre-1993 Linux disk images and forensic tooling for early Linux installs are the consumers. References: `https://e2fsprogs.sourceforge.net/ext2intro.html` — Card/Ts'o/Tweedie, "Design and Implementation of the Second Extended Filesystem", which documents the original ext it replaced`https://mirrors.edge.kernel.org/pub/linux/kernel/Historic/` — historic kernel trees whose `fs/ext` is the primary source for the 1992 layout`https://en.wikipedia.org/wiki/Extended_file_system` — Wikipedia article on the original ext
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFilesystemPlaceable`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5841,6 +5841,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `PlaceFileAt` | `void PlaceFileAt(Stream archive, PlacementOptions options)` | Puts one named owner at one chosen block, relocating every block in the way first. Superblock, group descriptors, bitmaps and inode tables stay where they are; there is no rebuild behind this. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default wrote the synthetic entries back as files, so the rebuilt volume listed more entries than the original and the rebuild was refused. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Ext1 image. Uses `Ext1Modifier` for O(touched bytes) random-access I/O — file data blocks are wiped during removal so no forensic trace remains. |
 | `Scramble` | `void Scramble(Stream archive, ScrambleOptions options)` | Moves only what is out of place, relinking each file's inode as its blocks arrive at their new positions. |
@@ -6091,7 +6092,7 @@ Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `
 
 References: `https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc` — Microsoft "FAT32 File System Specification" (FATGEN 1.03), the canonical FAT12/16/32 spec`https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system` — Wikipedia's detailed on-disk reference incl. vendor variants`https://github.com/torvalds/linux/tree/master/fs/fat` — mainline kernel implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFilesystemPlaceable`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6122,6 +6123,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single FAT entry as a forward-only stream that walks its cluster chain one cluster at a time, wrapped in a `BoundedEntryStream` sized to the entry's logical size. Reads past `entry.Size` return 0 — the cluster-tail slack is physically unreachable through this view. |
+| `PlaceFileAt` | `void PlaceFileAt(Stream archive, PlacementOptions options)` | Puts one named file or subdirectory at one chosen cluster, relocating every cluster in the way first. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes files from an existing FAT image with full secure wipe (cluster bytes, cluster-tip slack, directory entries, FAT chain entries). No forensic recovery of the removed content is possible from the resulting bytes. |
 | `Scramble` | `void Scramble(Stream archive, ScrambleOptions options)` | Scatters every cluster of every file and subdirectory across the volume's whole cluster heap, dealt from `Seed`. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Performs the shrink operation. |
@@ -6364,7 +6366,7 @@ Single directory record from an Xbox FATX volume.
 
 R/W descriptor for Microsoft Xbox / Xbox 360 FATX volumes. Magic "FATX" at offset 0; 4 KiB superblock followed by FAT16/FAT32 table. Read via `FatxReader`, create via `FatxWriter`, mutate via `FatxModifier` (in-place Add/Remove on the root directory; sub-directory mutation stays out of scope). References: `https://xboxdevwiki.net/FATX` — Xbox Dev Wiki's FATX page, the de-facto community specification`https://github.com/mborgerson/fatx` — maintained open-source FATX implementation (fatxfs)`https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system` — Wikipedia's FAT reference, which covers the FATX variant
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFilesystemPlaceable`, `IFilesystemScrambleable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6393,6 +6395,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Performs the open entry operation. |
 | `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` |  |
+| `PlaceFileAt` | `void PlaceFileAt(Stream archive, PlacementOptions options)` | Puts one named owner at one chosen cluster, relocating every cluster in the way first. The allocation table and the reserved region stay where they are; there is no rebuild behind this. |
 | `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | In-place remove: tombstones each named dirent (name_length = 0xE5) and frees + wipes every data cluster in the file's FAT chain. Unknown names are silently skipped (consistent with how WORM Extract treats them). |
 | `Scramble` | `void Scramble(Stream archive, ScrambleOptions options)` | Plans the moves the layout needs and commits them in place. |

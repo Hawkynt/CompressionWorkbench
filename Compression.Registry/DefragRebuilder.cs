@@ -93,6 +93,10 @@ public static class DefragRebuilder {
     switch (options.Mode) {
       case DefragMode.ConsolidateAtStart:
       case DefragMode.FillHolesLazy:
+      // Packing satisfies the ascending goal — every owner ends up in one run,
+      // which reads forwards — so a rebuild is a correct answer for it, merely
+      // a far more expensive one than the in-place pass that was asked for.
+      case DefragMode.AscendingOrder:
         // Underlying writers always start-pack from the first data cluster,
         // so both modes converge to the same layout for rebuild-based FSes.
         ordered = files;

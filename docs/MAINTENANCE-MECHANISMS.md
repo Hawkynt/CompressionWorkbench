@@ -31,6 +31,26 @@ in place refuses and names what stopped it rather than reporting success. It exi
 so the defragmenter can be tested against a volume that is genuinely fragmented —
 nothing else in the public surface produces one.
 
+**`IFilesystemPlaceable.PlaceFileAt`** follows scramble's precedent for the same
+reason. It takes two things no defragmentation takes — which owner, and where — so a
+`DefragMode` carrying them would be an operation reachable by a mis-set enum value on
+a method whose name means something else. It shares *carve-hole*'s eviction rather
+than repeating it: carving clears a region and leaves it empty, placement clears the
+same way and then lays the owner down there. There is no rebuild behind it either —
+a rebuild lays the volume out in directory order, which is not the order that was
+asked for.
+
+**Ascending order** (`DefragMode.AscendingOrder`) is the weaker goal both verbs
+promise: over an owner's own blocks in logical order, `block(n) > block(n-1)`, so a
+sequential read never seeks backwards. `AscendingBlockOrder` states it as a checkable
+property rather than a comment, and the fixtures assert it after a placement and after
+an ordinary defragmentation — a partial success is only worth having if the pieces are
+in the right order. It was expected to be a way around movers that lack
+`SupportsHeldRuns`; measured, it is not. It needs holding *more* often than packing
+does, because packing vacates space as it sweeps forward while sorting an owner in
+place has nothing spare. What it buys is cost: about a third of the bytes, because it
+touches only the blocks that are actually out of order.
+
 A filesystem descriptor therefore gains shrink / defrag / purge by simply declaring
 the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
 Bespoke in-place implementations still override the default for efficiency. Coverage
