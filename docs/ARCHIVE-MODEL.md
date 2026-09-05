@@ -83,10 +83,11 @@ and the outer container size is *not increased*.** Each verb says whether it may
 |--------------|----------------------------------------------------------------------------------------------------------------|-----------------------|---------------------------|
 | **optimize** | Find and apply the **best parameter set** for the data (cluster/block/inode size, FAT bits, geometry, alignment). Does not change which files exist or their bytes. | Preserved if possible | `ILayoutOptimizable` (+ `IFormatOptionsSchema` to declare the tunables) |
 | **shrink**   | **Keep the parameter set**; reduce the *stored* footprint by re-encoding payloads with better methods/levels and/or dropping trailing free space / stepping to the smallest canonical container size that still fits. | Preserved, or reduced to the smallest size that holds the content | `IArchiveShrinkable` (+ `IFormatOptionsSchema` for method/level) |
-| **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
+| **defrag**   | **Re-order** the things inside so each file/extent is contiguous (consolidate at start/end, fill holes, carve a region), or merely so each reads forwards (ascending order — weaker, and about a third of the bytes). | Preserved              | `IArchiveDefragmentable`; true in-place moves via `IFilesystemBlockMover` |
 | **purge**    | **Erase all live data** from within the container — empty the filesystem / drop every entry — leaving a valid empty container. | Preserved              | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` *(no dedicated `IArchivePurgeable` yet — see Naming note)* |
 | **wipe**     | Overwrite **only unused space** — free clusters/sectors, cluster-tip slack, deleted directory entries, inter-entry padding, dead trailer bytes. Live data untouched. | Preserved              | `IWipeEmpty` (`WipeUnusedSpace(wipeClusterTips, wipeDeletedEntries)`) |
 | **scramble** | **Scatter** every allocation block of every owner across the whole data area, dealt from a seed — fragmentation on purpose, so *defrag* has something real to work against. Content preserved exactly; only where it lives changes. The volume's own structures stay put. | Preserved              | `IFilesystemScrambleable` (needs a mover that can relink a scattered owner) |
+| **place**    | **Put** one named owner at one chosen offset, relocating whatever is in the way first. Contiguous where the volume allows it; split around a reserved table or a bad block, and still ascending across the split. Content preserved exactly. | Preserved              | `IFilesystemPlaceable` (needs a mover that can relink a split owner) |
 | **compact**  | **Composite**: run *defrag → optimize → shrink* in one pass to produce the smallest valid container that still holds the same contents. With `--minimal`, replace the trio with a single **minimal-geometry rebuild**. | Reduced | Any of `IArchiveDefragmentable` / `IArchiveCreatable` / `IArchiveShrinkable`; `--minimal` also needs `IArchiveCreatable` + `IFormatOptionsSchema` geometry knobs |
 
 **optimize vs. shrink:** *optimize* searches the parameter space (e.g. pick the
@@ -244,6 +245,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IArchiveDefragmentable`   | **defrag** (with optional `DefragOptions` modes) |
 | `IFilesystemBlockMover`    | true in-place defrag (extent moves, no rebuild) |
 | `IFilesystemScrambleable`  | **scramble** (seeded scatter; no rebuild fallback, refuses instead) |
+| `IFilesystemPlaceable`     | **place** (one owner at one offset; no rebuild fallback, refuses instead) |
 | `IArchiveShrinkable`       | **shrink** (smallest canonical size / tight-pack) |
 | `ILayoutOptimizable`       | **optimize** (parameter retune, in-place or streaming) |
 | `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
