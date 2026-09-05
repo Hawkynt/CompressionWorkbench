@@ -7,6 +7,7 @@ using Codec.Mp3;
 using Codec.MuLaw;
 using Codec.Opus;
 using Codec.Qoa;
+using Codec.Tta;
 using Codec.WavPack;
 using Compression.Registry;
 using FileFormat.Aiff;
@@ -25,14 +26,14 @@ internal static class AudioFormatAdapters {
   private static readonly Mp3Adapter Mp3 = new();
   private static readonly WavPackAdapter WavPack = new();
   private static readonly QoaAdapter Qoa = new();
+  private static readonly TtaAdapter Tta = new();
   private static readonly OpusAdapter Opus = new();
 
-  // TTA, AC-3 and DTS are deliberately absent. Each has a decoder that works on
-  // streams our own encoder wrote and fails on streams from anyone else — TTA
-  // throws part-way through a frame whose CRC it has already checked, AC-3 and
-  // DTS return no samples at all. Routing them would turn an honest "no route"
-  // into a silently empty conversion, so they stay out until the decoders are
-  // fixed. Measurements are in docs/AUDIO-IDENTIFIER-REGISTRY.md.
+  // AC-3 and DTS are deliberately absent: both decoders read streams our own
+  // encoder wrote and return no samples at all from anyone else's. Routing them
+  // would turn an honest "no route" into a silently empty conversion, so they
+  // stay out until the decoders are fixed. Measurements are in
+  // docs/AUDIO-IDENTIFIER-REGISTRY.md.
   public static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmSource ?? descriptor.Id switch {
       "Aiff" => Aiff,
@@ -40,6 +41,7 @@ internal static class AudioFormatAdapters {
       "Mp3" => Mp3,
       "WavPack" => WavPack,
       "Qoa" => Qoa,
+      "Tta" => Tta,
       "Opus" => Opus,
       _ => null,
     };
@@ -51,6 +53,7 @@ internal static class AudioFormatAdapters {
       "Mp3" => Mp3,
       "WavPack" => WavPack,
       "Qoa" => Qoa,
+      "Tta" => Tta,
       _ => null,
     };
 
@@ -500,6 +503,47 @@ internal static class AudioFormatAdapters {
   }
 
   /// <summary>Quite OK Audio. Fixed 16-bit signed samples, in and out.</summary>
+  /// <summary>
+  /// TrueAudio. The codec reads and writes 8/16/24/32-bit integer PCM, so the
+  /// format takes part in conversion both ways.
+  /// </summary>
+  private sealed class TtaAdapter : IAudioPcmSource, IAudioPcmTarget {
+    private static readonly string[] Codecs = ["tta"];
+
+    public IReadOnlyList<string> SupportedEncodeCodecs => Codecs;
+
+    public AudioPcmBuffer DecodePcm(Stream input) {
+      ArgumentNullException.ThrowIfNull(input);
+      using var materialized = Materialize(input);
+      var info = TtaCodec.ReadStreamInfo(materialized);
+      materialized.Position = 0;
+      using var pcm = new MemoryStream();
+      TtaCodec.Decompress(materialized, pcm);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(info.SampleRate, info.Channels, info.BitsPerSample, IntegerEncodingFor(info.BitsPerSample)),
+        pcm.ToArray());
+    }
+
+    public bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string? reason) {
+      if (!Codecs.Contains(codecId, StringComparer.OrdinalIgnoreCase)) {
+        reason = $"codec '{codecId}' is not TTA";
+        return false;
+      }
+
+      return CanEncodeInteger(format, "TTA", [8, 16, 24, 32], out reason);
+    }
+
+    public void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options) {
+      ArgumentNullException.ThrowIfNull(output);
+      ArgumentNullException.ThrowIfNull(pcm);
+      if (!this.CanEncode(pcm.Format, codecId, options, out var reason))
+        throw new NotSupportedException(reason);
+
+      using var input = new MemoryStream(pcm.InterleavedData, writable: false);
+      TtaCodec.Compress(input, output, pcm.Format.Channels, pcm.Format.SampleRate, pcm.Format.BitsPerSample);
+    }
+  }
+
   private sealed class QoaAdapter : IAudioPcmSource, IAudioPcmTarget {
     private static readonly string[] Codecs = ["qoa"];
 
