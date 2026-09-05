@@ -135,11 +135,16 @@ public static class PlacementPlanner {
         $"{targetOffset - offGrid + clusterSize:N0}. Nothing was changed.");
 
     var forbidden = DefragPlanner.MergeIntervals(forbiddenRaw);
+
+    // The whole first cluster has to be available, not merely the byte the
+    // target names. A reserved region that begins inside it would make the
+    // owner step over and start above — somewhere the caller did not ask for,
+    // reported as though it had.
     foreach (var (start, end) in forbidden)
-      if (targetOffset < end && start <= targetOffset)
+      if (targetOffset < end && start < targetOffset + clusterSize)
         throw new InvalidOperationException(
           $"Cannot place '{owner}' at {targetOffset:N0}: [{start:N0}..{end:N0}) is reserved by the " +
-          "volume or marked bad, and nothing can be moved out of it. Nothing was changed.");
+          "volume or marked bad, so the first cluster cannot go there. Nothing was changed.");
 
     return (blocks, forbidden);
   }
@@ -176,6 +181,10 @@ public static class PlacementPlanner {
       at += clusterSize;
     }
 
+    if (slots[0] != from)
+      throw new InvalidOperationException(
+        $"Cannot place '{owner}' at {from:N0}: the first cluster it could be given is {slots[0]:N0}. " +
+        "Nothing was changed.");
     return slots;
   }
 
@@ -228,8 +237,8 @@ public static class PlacementPlanner {
     foreach (var extent in live) {
       if (!string.Equals(extent.FileName, owner, StringComparison.OrdinalIgnoreCase)) continue;
       if (extent.Length <= 0) continue;
-      var span = DefragPlanner.AlignUp(extent.Length, clusterSize);
-      foreach (var (start, end) in DefragPlanner.Subtract(extent.Offset, extent.Offset + span, wanted))
+      var span = Math.Min(extent.Offset + DefragPlanner.AlignUp(extent.Length, clusterSize), imageSize);
+      foreach (var (start, end) in DefragPlanner.Subtract(extent.Offset, span, wanted))
         if (end > start) safeFree.Add((start, end - start));
     }
 
@@ -238,6 +247,7 @@ public static class PlacementPlanner {
     // any block that has to leave before another arrives.
     var moves = DefragPlanner.EvictFromRegions(live, wanted, safeFree, clusterSize,
       $"place '{owner}' at {targetOffset:N0}", exempt: owner);
+
 
     // The owner's blocks, in the owner's order, into the slots in address
     // order. Runs whose source and destination both step by one cluster are
@@ -254,6 +264,14 @@ public static class PlacementPlanner {
       i += runLength;
     }
 
-    return DefragPlanner.ResolveDependencies(moves, safeFree, clusterSize, allowMemoryStaging);
+    // Every refusal this verb makes says the volume is untouched, including the
+    // ones the shared ordering pass raises. A caller told only that some moves
+    // form a cycle cannot tell whether half of them already ran.
+    try {
+      return DefragPlanner.ResolveDependencies(moves, safeFree, clusterSize, allowMemoryStaging);
+    } catch (InvalidOperationException ex) {
+      throw new InvalidOperationException(
+        $"Cannot place '{owner}' at {targetOffset:N0}: {ex.Message} Nothing was changed.", ex);
+    }
   }
 }

@@ -126,6 +126,40 @@ public class FilePlacementPlannerTests {
     }
   }
 
+  /// <summary>
+  /// A reserved region that begins part-way into the target's first cluster
+  /// used to make the owner step over it and start above — somewhere the caller
+  /// never asked for, reported as though it had been honoured.
+  /// </summary>
+  [Test, Category("ErrorHandling")]
+  public void ATargetWhoseFirstClusterIsPartlyReserved_IsRefusedRatherThanQuietlyMovedUp() {
+    const long Origin = Cluster;
+    const long ImageSize = Cluster * 20L;
+    var target = Origin + 4L * Cluster;
+
+    List<DefragBlockInfo> Volume(long badAt) => [
+      new(0, Cluster, DefragBlockKind.MetadataReserved, "superblock"),
+      new(Origin, Cluster, DefragBlockKind.Used, "A"),
+      new(Origin + Cluster, Cluster, DefragBlockKind.Used, "A"),
+      new(badAt, 200, DefragBlockKind.Bad, null),
+    ];
+
+    // Begins 100 bytes into the target's own first cluster.
+    var thrown = Assert.Throws<InvalidOperationException>(
+      () => PlacementPlanner.Plan(Volume(target + 100), "A", target, Origin, ImageSize, Cluster));
+    TestContext.Out.WriteLine(thrown!.Message);
+    Assert.That(thrown.Message, Does.Contain("Nothing was changed"));
+
+    // The same volume with the bad region a cluster further on places fine, so
+    // the refusal above is caused by the overlap and nothing incidental.
+    var moves = PlacementPlanner.Plan(Volume(target + Cluster + 100), "A", target, Origin, ImageSize, Cluster);
+    var after = LayoutSimulation.Apply(Volume(target + Cluster + 100), moves, Cluster, Origin, ImageSize);
+    var placed = after.First(e => e.Kind == DefragBlockKind.Used
+      && string.Equals(e.FileName, "A", StringComparison.OrdinalIgnoreCase));
+    Assert.That(placed.Offset, Is.EqualTo(target));
+    Assert.That(AscendingBlockOrder.Holds(after, "A", Cluster), Is.True);
+  }
+
   [Test, Category("EdgeCase")]
   public void AVolumeWithNowhereToPutWhatIsInTheWay_IsRefused() {
     // Full: every block of the data area is live, so an eviction has nowhere to go.

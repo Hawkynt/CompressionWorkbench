@@ -941,7 +941,12 @@ public static class DefragPlanner {
 
     foreach (var ext in liveExtents) {
       if (ext.Length <= 0) continue;
-      if (exempt != null && string.Equals(ext.FileName, exempt, StringComparison.OrdinalIgnoreCase)) continue;
+      // Same key the rest of the planner uses: a run the map does not name is
+      // "<unknown>", and comparing the raw null against that would evict the
+      // very owner being placed there — and move it as well.
+      if (exempt != null
+          && string.Equals(ext.FileName ?? "<unknown>", exempt, StringComparison.OrdinalIgnoreCase))
+        continue;
 
       var overlaps = false;
       foreach (var (start, end) in regions)

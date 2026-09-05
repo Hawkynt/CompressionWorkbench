@@ -39,7 +39,7 @@ public class LayoutGoalSurveyTests {
   /// Reading (a): defragment by folding placement over every file, and compare
   /// it against the planner that computes the whole target layout at once.
   /// </summary>
-  [Test, Category("Performance")]
+  [Test, Category("Contract")]
   [TestCase(0.15)]
   [TestCase(0.25)]
   [TestCase(0.40)]
@@ -117,7 +117,7 @@ public class LayoutGoalSurveyTests {
   /// is not how many blocks each goal parks; it is how many volumes each goal
   /// can be reached on at all by such a mover.
   /// </remarks>
-  [Test, Category("Performance")]
+  [Test, Category("Contract")]
   public void AnAscendingGoalDoesNotAvoidParking_ButCostsAThirdOfTheBytes() {
     const int Seeds = 24;
     double[] levels = [0, 0.02, 0.05, 0.10, 0.20, 0.30, 0.50];
