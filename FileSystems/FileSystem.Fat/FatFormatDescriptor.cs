@@ -14,7 +14,7 @@ namespace FileSystem.Fat;
 ///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/fat</c> — mainline kernel implementation</description></item>
 /// </list>
 /// </summary>
-public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
@@ -167,7 +167,7 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(options);
 
     // Try the planner-driven path for supported modes.
-    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole) {
+    if (options.Mode is DefragMode.ConsolidateAtStart or DefragMode.ConsolidateAtEnd or DefragMode.FillHolesLazy or DefragMode.CarveHole or DefragMode.AscendingOrder) {
       try {
         DefragmentWithPlanner(archive, options);
         return;
@@ -605,6 +605,66 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       moves, $"Scramble complete — {moves.Count} block move(s) executed");
   }
 
+  // ── Placement ──────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Puts one named file or subdirectory at one chosen cluster, relocating every
+  /// cluster in the way first.
+  /// </summary>
+  /// <remarks>
+  /// <para>The reserved region, both copies of the FAT and a fixed root
+  /// directory stay exactly where they are, so a target inside any of them is
+  /// refused rather than honoured — and an owner whose span reaches one steps
+  /// over it and carries on above, coming out in two ascending pieces rather
+  /// than one.</para>
+  ///
+  /// <para>There is no rebuild behind this. A rebuild lays the volume out in
+  /// directory order, which is not the order that was asked for, so it would
+  /// report success having put the file somewhere else entirely.</para>
+  /// </remarks>
+  public void PlaceFileAt(Stream archive, PlacementOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new FatBlockMover();
+    mover.Init(archive);   // reads only the 512-byte BPB
+    FilesystemFilePlacer.RequirePlacementRelink(mover);
+
+    // Same bound as the defragment path: the cluster heap the VBR declares, not
+    // whatever the container happens to be padded out to.
+    var volumeBytes = mover.FirstDataByte + (long)mover.TotalDataClusters * mover.ClusterSize;
+    var imageSize = volumeBytes > 0 ? Math.Min(volumeBytes, archive.Length) : archive.Length;
+
+    var extents = FatExtentMap.Enumerate(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      Phase: "scanning",
+      Fraction: 0,
+      CurrentReadOffset: 0,
+      CurrentWriteOffset: -1,
+      ImageSize: imageSize,
+      BlockMap: extents,
+      Status: "Analysing layout"));
+
+    var moves = PlacementPlanner.Plan(extents, options.FileName, options.TargetOffset,
+      mover.FirstDataByte, imageSize, mover.ClusterSize,
+      allowMemoryStaging: mover.SupportsHeldRuns);
+    if (moves.Count == 0) {
+      options.OnProgress?.Invoke(new DefragProgressEvent(
+        Phase: "complete",
+        Fraction: 1,
+        CurrentReadOffset: -1,
+        CurrentWriteOffset: -1,
+        ImageSize: imageSize,
+        BlockMap: extents,
+        Status: $"'{options.FileName}' already starts at {options.TargetOffset:N0}"));
+      return;
+    }
+
+    ExecutePlan(archive, FilesystemFilePlacer.AsDefragOptions(options), mover, imageSize, extents,
+      moves, $"'{options.FileName}' placed at {options.TargetOffset:N0} — {moves.Count} move(s) executed");
+  }
+
   // ── Legacy rebuild path ────────────────────────────────────────────────
 
   private void DefragmentWithRebuild(Stream archive, DefragOptions options) {
@@ -618,7 +678,11 @@ public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     switch (options.Mode) {
       case DefragMode.ConsolidateAtStart:
-      case DefragMode.FillHolesLazy: {
+      case DefragMode.FillHolesLazy:
+      // Packing satisfies the ascending goal — every owner ends up in one run,
+      // which reads forwards — so a rebuild is a correct answer for it, merely
+      // a far more expensive one than the in-place pass that was asked for.
+      case DefragMode.AscendingOrder: {
         // FAT's writer is always start-packed; both modes converge to the same layout.
         var w = new FatWriter();
         foreach (var (name, data) in files) w.AddFile(name, data);

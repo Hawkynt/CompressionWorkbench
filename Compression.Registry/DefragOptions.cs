@@ -51,6 +51,37 @@ public enum DefragMode {
   /// slot fits).
   /// </summary>
   CarveHole,
+
+  /// <summary>
+  /// Move the least that makes every owner read forwards: over an owner's own
+  /// blocks in logical order, <c>block(n) &gt; block(n-1)</c>, so a sequential
+  /// read never seeks backwards. Nothing else is promised.
+  /// </summary>
+  /// <remarks>
+  /// <para>A strictly weaker goal than the packing modes. An owner left in
+  /// three ascending pieces stays in three ascending pieces; what it gains is
+  /// that the pieces are in the right order, which is what makes a partial
+  /// success worth having.</para>
+  ///
+  /// <para>It gets there two ways. Where free clusters sit in the right places
+  /// it keeps the longest run of blocks that already ascends and moves only the
+  /// rest, each into a free cluster in the gap it belongs in — every
+  /// destination was already empty, so nothing waits on anything and nothing is
+  /// held outside the volume. Where they do not, it sorts an owner's blocks into
+  /// the slots that owner already holds, which needs no free space at all but is
+  /// a permutation, and unwinding a permutation's cycles needs a spare cluster
+  /// to hop through or a run held outside the volume.</para>
+  ///
+  /// <para>So this is <em>not</em> a way around a mover that lacks
+  /// <see cref="IFilesystemBlockMover.SupportsHeldRuns" />. Measured over
+  /// scattered volumes it needs holding more often than packing does, not less:
+  /// packing vacates space as it sweeps forward, while sorting in place has
+  /// nothing spare to work with. What it does buy is cost. It moves roughly a
+  /// third of the bytes packing moves, because it only touches the blocks that
+  /// are actually out of order — so on a volume with room to work in, where
+  /// neither goal needs to hold anything, this is the cheap one.</para>
+  /// </remarks>
+  AscendingOrder,
 }
 
 /// <summary>

@@ -1310,7 +1310,7 @@ visualizeCmd.SetAction((ParseResult ctx) => {
 
 var defragImageArg = new Argument<string>("image") { Description = "Filesystem image (or glob pattern / directory) to defragment in place" };
 var defragModeOpt = new Option<string>("--mode") {
-  Description = "Layout strategy: pack-start (default), pack-end, fill-holes, carve-hole",
+  Description = "Layout strategy: pack-start (default), pack-end, fill-holes, carve-hole, ascending",
   DefaultValueFactory = _ => "pack-start",
 };
 var defragHoleSizeOpt = new Option<long>("--hole-size") {
@@ -1332,7 +1332,7 @@ var defragRecursiveOpt = new Option<bool>("--recursive") {
   Description = "When argument is a directory, recurse into subdirectories",
 };
 var defragCmd = new Command("defragment", """
-  Defragment a filesystem image in place using one of four layout strategies:
+  Defragment a filesystem image in place using one of five layout strategies:
 
     pack-start    Pack live extents at the data origin; trailing free space.
                   The default; closest match to a traditional defrag tool.
@@ -1345,6 +1345,11 @@ var defragCmd = new Command("defragment", """
     carve-hole    Reserve a contiguous free region of --hole-size bytes at
                   --hole-at (or auto-pick at the end). Live extents in the
                   way are relocated to existing free space or appended.
+    ascending     Move only what reads backwards, so every file's blocks end
+                  up in ascending order and a sequential read never seeks
+                  back. Weaker than packing — a file left in three ascending
+                  pieces stays in three pieces — but it moves about a third
+                  of the bytes, because it touches only what is out of order.
 
   Batch mode:
     cwb defragment *.img --mode pack-start --stride 2
@@ -1372,7 +1377,8 @@ defragCmd.SetAction((ParseResult ctx) => {
     "pack-end" => DefragMode.ConsolidateAtEnd,
     "fill-holes" => DefragMode.FillHolesLazy,
     "carve-hole" => DefragMode.CarveHole,
-    _ => throw new ArgumentException($"Unknown mode '{modeStr}'. Use one of: pack-start, pack-end, fill-holes, carve-hole."),
+    "ascending" => DefragMode.AscendingOrder,
+    _ => throw new ArgumentException($"Unknown mode '{modeStr}'. Use one of: pack-start, pack-end, fill-holes, carve-hole, ascending."),
   };
 
   // Resolve file list: single file, glob, or directory
@@ -1484,6 +1490,71 @@ scrambleCmd.SetAction((ParseResult ctx) => {
     var sw = Stopwatch.StartNew();
     using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
     scrambler.Scramble(stream, new ScrambleOptions { Seed = seed });
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($" FAILED: {ex.Message}");
+    return 1;
+  }
+});
+
+// ── place ─────────────────────────────────────────────────────────────
+
+var placeImageArg = new Argument<string>("image") { Description = "Filesystem image to rearrange in place" };
+var placeFileArg = new Argument<string>("file") { Description = "Name of the file or directory to place, as the volume lists it" };
+var placeAtOpt = new Option<long>("--at") {
+  Description = "Byte offset its first block must end up at; has to be a cluster boundary",
+  Required = true,
+};
+var placeCmd = new Command("place", """
+  Put one named file at one chosen offset, moving whatever is in the way out
+  of the way first. The file comes out contiguous where the volume allows it.
+
+  Where a reserved table or a bad block sits inside the span, the file steps
+  over it and carries on above: it comes out split, but every block still sits
+  above the one before it, so a sequential read never seeks backwards. That is
+  the promise that survives a split, and it is the same one --mode ascending
+  makes for every file on the volume.
+
+    --at    Byte offset for the file's first block. It has to name a real
+            cluster boundary inside the data area; an offset between
+            boundaries, outside the volume, or inside a reserved region is
+            refused rather than rounded, because rounding would report a
+            placement that did not happen.
+
+  Nothing is written unless the whole request can be honoured. No such file,
+  no room from the target upward, or nowhere to put what is in the way — each
+  is refused with the volume untouched.
+
+  Examples:
+    cwb place disk.img KERNEL.SYS --at 32768
+    cwb defragment disk.img --mode pack-start   Undo it
+
+  Only descriptors that implement IFilesystemPlaceable accept this command.
+  Currently: FAT12 / FAT16 / FAT32, FATX and ext.
+  """) { placeImageArg, placeFileArg, placeAtOpt };
+
+placeCmd.SetAction((ParseResult ctx) => {
+  var imageArg = ctx.GetValue(placeImageArg)!;
+  var fileArg = ctx.GetValue(placeFileArg)!;
+  var at = ctx.GetValue(placeAtOpt);
+
+  if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
+
+  FormatRegistration.EnsureInitialized();
+  var format = FormatDetector.Detect(imageArg);
+  var ops = FormatRegistry.GetById(format.ToString());
+  if (ops is not IFilesystemPlaceable placer) {
+    Console.Error.WriteLine($"{format} cannot place a file at a chosen offset.");
+    return 1;
+  }
+
+  try {
+    Console.Write($"Placing {fileArg} at {at:N0} in {Path.GetFileName(imageArg)} ({format})...");
+    var sw = Stopwatch.StartNew();
+    using var stream = File.Open(imageArg, FileMode.Open, FileAccess.ReadWrite);
+    placer.PlaceFileAt(stream, new PlacementOptions { FileName = fileArg, TargetOffset = at });
     sw.Stop();
     Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
     return 0;
@@ -2601,6 +2672,7 @@ var root = new RootCommand("""
     cwb test archive.zip                      Verify integrity
     cwb defragment disk.img --mode pack-end   Repack files at end of image
     cwb scramble disk.img --seed 7 --yes     Fragment on purpose (testing tool)
+    cwb place disk.img KERNEL.SYS --at 32768 Put one file at one offset
     cwb shrink disk.img                      Defrag + truncate trailing free space
     cwb shrink disk.vhd --compact            Also compact container (VHD sparse)
     cwb wipe-empty disk.img                  Zero all unused space in image
@@ -2617,7 +2689,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();

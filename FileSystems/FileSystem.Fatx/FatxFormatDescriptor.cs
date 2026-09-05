@@ -19,7 +19,7 @@ namespace FileSystem.Fatx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
 /// </list>
 /// </summary>
-public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   /// <summary>
   /// Creation knobs surfaced by the Convert dialog / CLI. <c>SectorsPerCluster</c>
@@ -472,6 +472,22 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var mover = new FatxBlockMover();
     mover.Init(archive);
     Compression.Core.Layout.FilesystemScrambler.Scramble(archive, options, mover,
+      this.EnumerateExtents(archive).ToList(), mover.FirstDataByte, archive.Length, mover.ClusterSize);
+  }
+
+  /// <summary>
+  /// Puts one named owner at one chosen cluster, relocating every cluster in
+  /// the way first. The allocation table and the reserved region stay where
+  /// they are; there is no rebuild behind this.
+  /// </summary>
+  public void PlaceFileAt(Stream archive, PlacementOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+
+    archive.Position = 0;
+    var mover = new FatxBlockMover();
+    mover.Init(archive);
+    Compression.Core.Layout.FilesystemFilePlacer.PlaceFileAt(archive, options, mover,
       this.EnumerateExtents(archive).ToList(), mover.FirstDataByte, archive.Length, mover.ClusterSize);
   }
 
