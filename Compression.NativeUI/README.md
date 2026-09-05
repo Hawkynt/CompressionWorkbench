@@ -13,9 +13,23 @@ The existing WPF `Compression.UI` remains the full Windows workstation while thi
 - choose an injected mount backend and resolve support through `Compression.Mounting`;
 - provide a mount target and own mount/unmount lifecycle once an `IMountLauncher` is composed.
 
-No filesystem mount backend or launcher is registered by this project yet. That is deliberate: the UI does not invent Dokan/FUSE availability. The Dokan/FUSE composition layer will inject real `IFilesystemMountBackend` implementations and an image/session opener after their dependency probes and callback bridges exist.
+## Backend composition
 
-Archive files are also rejected for now rather than being mislabeled as filesystem images. They will become mountable through the synthetic archive namespace adapter described in the repository `TODO.md`.
+`Program.cs` is the composition root. It registers the Win32 and GTK NativeForms
+backends, initialises the format registry, and then offers exactly the mount
+backend the host can actually provide: `DokanFilesystemMountBackend` on Windows,
+`FuseFilesystemMountBackend` on Linux — and each only if its own runtime probe
+reports the dependency present. A backend whose probe fails is not listed, so the
+UI never invents Dokan or FUSE availability. Both are read-only today; neither
+advertises `SupportsReadWrite`.
+
+`MainForm` receives the resolved backends and a `RegistryMountLauncher` over
+`FilesystemMountLauncher`, so mount and unmount are driven through
+`Compression.Mounting` rather than reimplemented here.
+
+Archive files are rejected for now rather than being mislabeled as filesystem
+images. They will become mountable through the synthetic archive namespace
+adapter described in the repository [`TODO.md`](../TODO.md).
 
 ## Run
 
