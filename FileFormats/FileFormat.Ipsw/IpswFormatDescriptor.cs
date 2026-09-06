@@ -31,6 +31,25 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
 
   /// <summary>
+  /// Re-packs the underlying ZIP directly. IPSW's reader exposes canonical
+  /// pseudo-paths such as <c>other/foo</c>; feeding those names through the
+  /// generic archive rebuild would change the actual ZIP namespace.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => new FileFormat.Zip.ZipFormatDescriptor().Defragment(archive);
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive, DefragOptions options)
+    => new FileFormat.Zip.ZipFormatDescriptor().Defragment(archive, options);
+
+  /// <summary>
+  /// Drops bytes after the ZIP end-of-central-directory record without touching
+  /// Apple payloads or canonical names.
+  /// </summary>
+  public void Shrink(Stream input, Stream output)
+    => new FileFormat.Zip.ZipFormatDescriptor().Shrink(input, output);
+
+  /// <summary>
   /// Gets the id.
   /// </summary>
   public string Id => "Ipsw";
@@ -148,18 +167,15 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
 
       if (c.CanonicalName == "BuildManifest.plist") {
-        // BuildManifest is bounded (typically <1 MB) — safe to read back for metadata parsing.
         var data = File.ReadAllBytes(destPath);
         TryParsePlistFields(data, out identifier, out productVersion, out buildVersion);
       }
     }
 
     if (Wants(files, "metadata.ini")) {
-      // If we didn't extract the manifest above, best-effort parse it now to populate metadata.
       if (identifier == null && productVersion == null && buildVersion == null) {
         var manifest = zip.GetEntry("BuildManifest.plist");
         if (manifest != null) {
-          // Manifest is small and bounded — fine to materialize.
           using var es = manifest.Open();
           using var ms = new MemoryStream();
           es.CopyTo(ms);
@@ -236,7 +252,6 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   private static (List<CanonicalEntry> Canonical, int TotalZipEntries) EnumerateCanonicalFromZip(ZipArchive zip) {
     var canonical = new List<CanonicalEntry>();
     foreach (var entry in zip.Entries) {
-      // Skip directory entries (trailing slash, zero length implied).
       if (entry.FullName.EndsWith('/')) continue;
 
       var name = entry.FullName.Replace('\\', '/');
@@ -263,7 +278,6 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         kind = "other";
       }
 
-      // Use entry.Length — never call entry.Open() during List enumeration.
       canonical.Add(new CanonicalEntry(
         CanonicalName: canonicalName,
         ZipEntryName: entry.FullName,
@@ -277,7 +291,6 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   private static bool IsBootloaderStage(string filename) {
-    // Apple boot stage prefixes: LLB., iBSS., iBEC., iBoot.
     if (filename.StartsWith("LLB.", StringComparison.OrdinalIgnoreCase)) return true;
     if (filename.StartsWith("iBSS.", StringComparison.OrdinalIgnoreCase)) return true;
     if (filename.StartsWith("iBEC.", StringComparison.OrdinalIgnoreCase)) return true;
@@ -306,7 +319,6 @@ public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     productVersion = null;
     buildVersion = null;
     if (data.Length < 16) return;
-    // Binary plist — give up; we surface raw bytes so consumers can parse.
     if (data[0] == (byte)'b' && data[1] == (byte)'p' && data[2] == (byte)'l') return;
 
     string text;
