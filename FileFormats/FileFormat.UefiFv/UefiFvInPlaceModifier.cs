@@ -6,7 +6,8 @@ namespace FileFormat.UefiFv;
 
 /// <summary>
 /// Offline random-access editor for ordinary FFS2 records in a firmware volume.
-/// It reuses erased 0xFF ranges and never relocates unrelated FFS files.
+/// It reuses erased 0xFF ranges and never relocates unrelated FFS files except
+/// during an explicit defragmentation pass.
 /// </summary>
 internal static class UefiFvInPlaceModifier {
   private sealed record Slot(int Offset, int Length, Guid Guid, byte Type) {
@@ -44,6 +45,32 @@ internal static class UefiFvInPlaceModifier {
       if (slot != null)
         Erase(state, slot.Offset, slot.Length);
     }
+  }
+
+  /// <summary>
+  /// Packs all live FFS records at the beginning of the FV data area while
+  /// preserving every record byte verbatim and leaving the FV header, block map,
+  /// capacity, and any bytes outside the volume untouched. The remainder of the
+  /// fixed-capacity volume is restored to the erased 0xFF state.
+  /// </summary>
+  public static void Defragment(Stream archive) {
+    var state = Open(archive);
+    var slots = ScanSlots(state.Image, state.FvStart, state.FvEnd);
+    if (slots.Count == 0)
+      return;
+
+    var original = state.Image.ToArray();
+    var cursor = state.DataStart;
+    foreach (var slot in slots) {
+      original.AsSpan(slot.Offset, slot.Length).CopyTo(state.Image.AsSpan(cursor, slot.Length));
+      cursor += slot.Length;
+    }
+
+    state.Image.AsSpan(cursor, state.FvEnd - cursor).Fill(0xFF);
+    state.Archive.Position = state.DataStart;
+    state.Archive.Write(state.Image, state.DataStart, state.FvEnd - state.DataStart);
+    state.Archive.Flush();
+    state.Archive.Position = 0;
   }
 
   private static EditorState Open(Stream archive) {
