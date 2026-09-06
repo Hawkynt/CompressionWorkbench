@@ -18,7 +18,7 @@ namespace FileFormat.FirmwareHex;
 ///   <item><description><c>https://srecord.sourceforge.net</c> — SRecord tool suite — documents and converts TI-TXT (srec_ti_txt)</description></item>
 /// </list>
 /// </summary>
-public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class TiTxtFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveShrinkable {
 
   /// <summary>
   /// Gets the id.
