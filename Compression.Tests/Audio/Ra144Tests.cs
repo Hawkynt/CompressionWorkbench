@@ -4,11 +4,11 @@ using Codec.Ra144;
 namespace Compression.Tests.Audio;
 
 /// <summary>
-/// Pins the RealAudio 1.0 "14_4"/lpcJ decoder (<see cref="Ra144Codec"/>). Cross-checking
-/// against FFmpeg output is not available in this environment, so these tests pin
-/// determinism + structure: block→sample arithmetic, truncated-input tolerance, the
-/// zero-block "near silence" property, and an exact byte-pattern decode (hand-captured
-/// from this implementation) that guards against regressions in the synthesis path.
+/// Pins the RealAudio 1.0 "14_4"/lpcJ decoder (<see cref="Ra144Codec"/>): block→sample
+/// arithmetic, truncated-input tolerance, the zero-block "near silence" property, and an
+/// exact byte-pattern decode that guards against regressions in the synthesis path.
+/// <para>The sample-exact cross-check against libavcodec's own decode of a real stream
+/// lives in <see cref="ForeignAudioStreamTests"/>.</para>
 /// </summary>
 [TestFixture]
 public class Ra144Tests {
@@ -59,7 +59,8 @@ public class Ra144Tests {
   [Test]
   public void KnownBytePattern_DecodesToExactBoundedSamples() {
     // A fixed 20-byte pattern exercises the LPC/codebook/gain path with bounded energy.
-    // The exact sample values are pinned to this faithful port of the reference decoder.
+    // The expectations below are libavcodec's decode of this very block, obtained by
+    // splicing it into the first data packet of a RealMedia file.
     var block = new byte[20];
     for (var i = 0; i < block.Length; ++i)
       block[i] = (byte)(i * 13);
@@ -72,6 +73,6 @@ public class Ra144Tests {
     // Peak position and signal energy pin the synthesis path deterministically.
     var peakIndex = Array.FindIndex(pcm, s => Math.Abs((int)s) == 20);
     Assert.That(peakIndex, Is.EqualTo(93));
-    Assert.That(pcm.Sum(s => (long)s), Is.EqualTo(360));
+    Assert.That(pcm.Sum(s => (long)s), Is.EqualTo(284));
   }
 }

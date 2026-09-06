@@ -140,7 +140,10 @@ public static class Ra144Codec {
     short[]? s1, sbyte[] s2, sbyte[] s3) {
     var v = new int[3];
     v[0] = 0;
-    for (var i = skipFirst != 0 ? 1 : 0; i < 3; ++i)
+    // The reference starts at `!skip_first`: index 0 — the adaptive-codebook gain — is
+    // only evaluated when skipFirst (the adaptive-codebook index) is non-zero. When it is
+    // zero there is no adaptive contribution and v[0] must stay 0.
+    for (var i = skipFirst != 0 ? 0 : 1; i < 3; ++i)
       v[i] = (int)((uint)Ra144Tables.GainValTab[n][i] * (uint)m[i] >> Ra144Tables.GainExpTab[n]);
 
     if (v[0] != 0) {
