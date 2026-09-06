@@ -13,7 +13,7 @@ namespace FileFormat.T64;
 ///   <item><description><c>https://vice-emu.sourceforge.io/</c> — VICE emulator — reference implementation reading/writing T64</description></item>
 /// </list>
 /// </summary>
-public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
+public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemBlockMover {
   /// <summary>
   /// Gets the id.
   /// </summary>
