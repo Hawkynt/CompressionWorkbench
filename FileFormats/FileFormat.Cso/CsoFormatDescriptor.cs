@@ -23,7 +23,7 @@ namespace FileFormat.Cso;
 /// </list>
 /// </summary>
 public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -83,6 +83,26 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
 
+  /// <summary>
+  /// Re-packs indexed CSO/ZSO blocks in logical order. Classic CSO v0/v1 is
+  /// decoded and recompressed block-by-block so orphaned slots are eliminated;
+  /// ZSO/CSO-v2 block slots are preserved byte-for-byte while their offsets are
+  /// canonicalised.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => CsoMaintenance.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive, DefragOptions options)
+    => CsoMaintenance.Defragment(archive, options);
+
+  /// <summary>
+  /// Emits the compacted representation only when it is smaller; otherwise the
+  /// source is copied through unchanged.
+  /// </summary>
+  public void Shrink(Stream input, Stream output)
+    => CsoMaintenance.Shrink(input, output);
+
   private const uint IndexUncompressedMask = 0x8000_0000u;
   private const uint IndexOffsetMask = 0x7FFF_FFFFu;
 
@@ -125,7 +145,6 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         IsEncrypted: false,
         LastModified: null,
         Kind: isUncompressed ? "stored" : "compressed"));
-      // offset intentionally referenced to avoid unused-local warning in contexts that strip.
       _ = offset;
     }
     return entries;
@@ -188,12 +207,9 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(header[16..20]);
     var version = header[20];
     var align = header[21];
-    // header[22..24] reserved.
 
     if (blockSize == 0)
       throw new InvalidDataException("CSO/ZSO block_size is zero.");
-    // Block count is uncompressed_size / block_size + 1 index entries form the table, last entry
-    // marks end of file. Number of actual blocks is uncompressed_size / block_size (ceil).
     var blockCountLong = (long)((uncompressedSize + blockSize - 1) / blockSize);
     if (blockCountLong < 0 || blockCountLong > 8_000_000)
       throw new InvalidDataException($"CSO/ZSO block count implausible: {blockCountLong}.");
@@ -201,7 +217,6 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var indexCount = blockCount + 1;
     var indexBytes = new byte[indexCount * 4];
-    // The index table immediately follows the 24-byte header (header_size is typically 0x18=24).
     stream.Position = 24;
     ReadExact(stream, indexBytes);
     var indexRaw = new uint[indexCount];
@@ -302,8 +317,6 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (input.IsDirectory) continue;
       var name = input.ArchiveName.Replace('\\', '/');
       var idx = ParseBlockIndex(name);
-      // A name this cannot place is not a name to pass over: writing nothing and
-      // raising nothing reports an add that did not happen.
       if (idx < 0)
         throw new NotSupportedException(
           $"CSO: '{input.ArchiveName}' cannot be added. A compressed ISO is edited a block at a "
