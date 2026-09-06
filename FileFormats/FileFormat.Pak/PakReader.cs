@@ -10,9 +10,12 @@ namespace FileFormat.Pak;
 /// in-place modifier deliberately requires the canonical trailing-directory form.
 /// </summary>
 public sealed class PakReader : IDisposable {
-  internal const int HeaderSize = 12;
-  internal const int DirectoryEntrySize = 64;
-  internal const int NameFieldSize = 56;
+  /// <summary>Size of the fixed PACK header in bytes.</summary>
+  public const int HeaderSize = 12;
+  /// <summary>Size of one PACK directory record in bytes.</summary>
+  public const int DirectoryEntrySize = 64;
+  /// <summary>Size of the NUL-padded file-name field in one directory record.</summary>
+  public const int NameFieldSize = 56;
 
   private readonly Stream _stream;
   private readonly List<PakEntry> _entries = [];
