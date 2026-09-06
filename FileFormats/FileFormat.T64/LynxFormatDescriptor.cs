@@ -16,6 +16,7 @@ public sealed class LynxFormatDescriptor :
     IArchiveCreatable,
     IArchiveModifiable,
     IArchiveDefragmentable,
+    IArchiveShrinkable,
     IArchiveLayoutMap,
     IFormatOptionsSchema {
 
