@@ -406,7 +406,7 @@ public sealed class JfsWriter {
     // anything out, or a large volume's dmaps would land on the secondary AIM.
     var payloadBlocks = 0L;
     foreach (var file in files)
-      payloadBlocks += Math.Max(1, (file.EffectiveLength + BlockSize - 1) / BlockSize);
+      payloadBlocks += (file.EffectiveLength + BlockSize - 1) / BlockSize;
     var estimatedBlocks = 64 + fsitBlocks + payloadBlocks + directories.Count + FsckWspBlocks + InlineLogBlocks;
     this.PlaceAfterBlockMap((int)Math.Min(int.MaxValue, Math.Max(MinUsableBlocks, estimatedBlocks * 2)));
 
@@ -431,8 +431,13 @@ public sealed class JfsWriter {
     // Directories are stored inline (or in external dtree pages above); only
     // regular files claim data blocks here.
     foreach (var file in files) {
-      file.DataBlock = nextBlock;
-      file.BlockCount = Math.Max(1, (int)((file.EffectiveLength + BlockSize - 1) / BlockSize));
+      // An empty file claims no blocks and carries an empty xtree. Reserving one
+      // anyway leaves the block allocation maps disagreeing with what the inode
+      // says it owns, which fsck reports as corrupt data plus a stray allocation.
+      file.BlockCount = file.EffectiveLength == 0
+        ? 0
+        : (int)((file.EffectiveLength + BlockSize - 1) / BlockSize);
+      file.DataBlock = file.BlockCount == 0 ? 0 : nextBlock;
       nextBlock += file.BlockCount;
     }
 
@@ -920,7 +925,9 @@ public sealed class JfsWriter {
           mode: IfJournal | IfReg | 0x1A4,                          // 0644
           size: node.EffectiveLength, nblocks: node.BlockCount,
           hasXtreeData: true,
-          xtreeEntries: [(0, (uint)node.BlockCount, (ulong)node.DataBlock)]);
+          xtreeEntries: node.BlockCount == 0
+            ? []
+            : [(0, (uint)node.BlockCount, (ulong)node.DataBlock)]);
       }
     }
   }

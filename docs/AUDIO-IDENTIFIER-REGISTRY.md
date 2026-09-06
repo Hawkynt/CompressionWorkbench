@@ -99,8 +99,18 @@ disagree out loud. Measured that way, against ffmpeg 9.0.1 and the reference `wv
 - **Yamaha ADPCM**, **SWF ADPCM**, **DFPWM**, **IMA ADPCM**, **MS ADPCM**, **G.722** and
   **Microsoft GSM 06.10** decode a foreign WAVE stream bit-exactly, mono and stereo. **MP2**
   matches within 2 LSB, as a lossy codec decoded by two implementations should.
+- **CRI ADX** and **ROQ DPCM** decode a foreign stream bit-exactly; ffmpeg reads our ADX back
+  within the codec's own quantisation. **Speex**, **AMR-NB** and **Vorbis** match within 1 LSB.
 - **AC-3** and **DTS** return no samples at all from a foreign stream, though ffmpeg decodes
   what they write.
+- **RealAudio 14.4** decodes at about a seventh of the right amplitude — the frame and subframe
+  unpacking, the RMS/energy helpers and the gain application all read as faithful ports, so the
+  fault is further inside the synthesis.
+- **Apple Lossless** cannot decode libavcodec's frames at all: every packet throws. That is a
+  codec fault rather than the routing gap it looks like from the outside, so CAF still refuses
+  ALAC rather than offering a route that always fails. The container side is understood — the
+  `kuki` chunk wraps the 24-byte config in QuickTime's `frma`/`alac` atoms, and the packet
+  lengths are base-128 varints in `pakt`, because ALAC frames are not self-delimiting.
 - **WMA v1/v2** decodes a tone at roughly the right frequency and about four times too quiet in
   RMS while only 1.6 times down in peak, so the shape is wrong and not merely the gain. It is
   left unrouted from WAVE rather than made reachable in that state.

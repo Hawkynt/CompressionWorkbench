@@ -220,9 +220,22 @@ internal static class AudioFormatAdapters {
     }
 
     private static AudioPcmBuffer DecodeIma4(AiffReader.ParsedAiff parsed) {
+      // QuickTime IMA packets hold a fixed 64 sample frames each.
+      const int framesPerPacket = 64;
+
       var channels = ImaAdpcmCodec.DecodeQuickTime(parsed.SoundData, parsed.NumChannels);
       var availableFrames = channels.Length == 0 ? 0 : channels.Min(static channel => channel.Length);
-      var frames = parsed.SampleFrames > 0 ? Math.Min(parsed.SampleFrames, availableFrames) : availableFrames;
+
+      // COMM's numSampleFrames can only honestly trim the padding inside the last
+      // packet, so that is the only range in which it is believed. Writers differ
+      // on what they put there — libavformat stores the *packet* count, which for
+      // this codec is a 64th of the frame count, and taking it at face value
+      // truncates the decode to a fraction of the audio.
+      var frames = parsed.SampleFrames > 0 &&
+                   parsed.SampleFrames <= availableFrames &&
+                   parsed.SampleFrames > availableFrames - framesPerPacket
+        ? parsed.SampleFrames
+        : availableFrames;
       var bytes = new byte[checked(frames * parsed.NumChannels * 2)];
       for (var frame = 0; frame < frames; ++frame)
         for (var channel = 0; channel < parsed.NumChannels; ++channel)
