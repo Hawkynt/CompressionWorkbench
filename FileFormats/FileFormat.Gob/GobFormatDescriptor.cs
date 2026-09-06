@@ -27,7 +27,7 @@ public sealed class GobFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (entry.Size > 0)
         yield return new DefragBlockInfo(entry.Offset, entry.Size, DefragBlockKind.Used, FileName: entry.Name);
 
-    Span<byte> directoryOffsetBytes = stackalloc byte[4];
+    var directoryOffsetBytes = new byte[4];
     archive.Position = 8;
     archive.ReadExactly(directoryOffsetBytes);
     var directoryOffset = BinaryPrimitives.ReadUInt32LittleEndian(directoryOffsetBytes);
