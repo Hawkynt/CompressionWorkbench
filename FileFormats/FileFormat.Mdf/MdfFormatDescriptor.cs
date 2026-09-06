@@ -13,7 +13,7 @@ namespace FileFormat.Mdf;
 ///   <item><description>No official specification — proprietary Alcohol Soft format, reverse-engineered</description></item>
 /// </list>
 /// </summary>
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
 
   /// <summary>
