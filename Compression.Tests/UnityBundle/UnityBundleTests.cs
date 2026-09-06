@@ -126,11 +126,11 @@ public class UnityBundleTests {
   }
 
   [Test]
-  public void Descriptor_AdvertisesWormAndRebuildVerbsWithoutFalseInPlaceClaim() {
+  public void Descriptor_AdvertisesChangedByteModifyAndRebuildFallback() {
     var d = new UnityBundleFormatDescriptor();
     Assert.Multiple(() => {
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
       Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
       Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
@@ -230,7 +230,7 @@ public class UnityBundleTests {
   }
 
   [Test]
-  public void RebuildBackedAddRemove_RoundTripsWithoutClaimingCanModify() {
+  public void AddRemove_RoundTripsWithFastPathOrRebuildFallback() {
     var descriptor = new UnityBundleFormatDescriptor();
     var initial = CreateBundle("stored", [ArchiveInputInfo.InMemory("a.txt", "first"u8.ToArray())]);
     using var archive = new MemoryStream();

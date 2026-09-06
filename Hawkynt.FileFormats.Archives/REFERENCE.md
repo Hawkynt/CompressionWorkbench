@@ -18021,12 +18021,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the options schema. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces nodes through the repository's verified extract/re-create path. This is deliberately rebuild-backed WORM behavior, not a CanModify claim. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds new nodes through the trailer-only path for BlocksInfoAtEnd UnityFS bundles. Existing storage blocks remain byte-identical and new content is appended as independent Stored blocks before a regenerated BlocksInfo record. Same-name replacement and unsupported layouts fall back to verified rebuild. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh modern UnityFS bundle. The selected method controls storage-block compression; BlocksInfo compression/layout and Unity header strings are independently configurable through `OptionsSchema`. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuilds a UnityFS archive with compact contiguous blocks. Legacy UnityWeb/UnityRaw/ UnityArchive containers are rejected because their distinct layout cannot be recreated. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named nodes through verified rebuild, which also wipes stale container bytes because the complete UnityFS image is replaced. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes zero-length nodes by metadata rewrite alone and non-empty nodes when they occupy whole trailing storage blocks unused by survivors. Other removals retain the verified rebuild fallback. |
 
 #### `UnityBundleReader`
 
