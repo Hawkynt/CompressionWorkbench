@@ -13,7 +13,7 @@ namespace FileFormat.Tap;
 ///   <item><description>World of Spectrum "File format reference" — long-standing community documentation</description></item>
 /// </list>
 /// </summary>
-public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemBlockMover {
+public sealed class TapFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemBlockMover {
   /// <summary>
   /// Gets the id.
   /// </summary>
