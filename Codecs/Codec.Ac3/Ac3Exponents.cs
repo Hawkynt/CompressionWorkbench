@@ -22,17 +22,19 @@ public static class Ac3Exponents {
   /// Decodes <paramref name="nGroups"/> grouped delta-exponent words from <paramref name="r"/> into
   /// the exponent array <paramref name="exp"/> starting at bin <paramref name="start"/>, given the
   /// already-read absolute first exponent <paramref name="absExp"/> and the grouping
-  /// <paramref name="strategy"/>. Returns the exclusive end bin. The result is the full per-bin
-  /// exponent array (each group of mantissas shares the group exponent).
+  /// <paramref name="strategy"/>. Returns the exclusive end bin.
+  /// <para>
+  /// The absolute exponent occupies exactly one bin (A/52 §7.1.3: <c>exp[0] = absexp</c>), whatever
+  /// the grouping; only the differentially coded exponents that follow are replicated across the
+  /// pair or quad. Filling the first group with the absolute value instead shifts the whole envelope
+  /// up by one or three bins for D25 / D45.
+  /// </para>
   /// </summary>
   public static int Decode(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy) {
     var step = GroupSize(strategy);
     var prev = absExp;
     var bin = start;
     exp[bin++] = (byte)prev;
-    // Fill the remaining bins of the first group (D25/D45 repeat the absolute exponent).
-    for (var i = 1; i < step; ++i)
-      exp[bin++] = (byte)prev;
 
     for (var g = 0; g < nGroups; ++g) {
       var word = (int)r.ReadBits(7);
@@ -41,9 +43,8 @@ public static class Ac3Exponents {
       var d1 = (word / 5) % 5;
       var d2 = word % 5;
       foreach (var code in stackalloc[] { d0, d1, d2 }) {
-        prev += code - 2;        // delta exponent in -2..+2
-        prev = Math.Clamp(prev, 0, 24);
-        for (var i = 0; i < step; ++i)
+        prev = Math.Clamp(prev + code - 2, 0, 24);
+        for (var i = 0; i < step && bin < exp.Length; ++i)
           exp[bin++] = (byte)prev;
       }
     }
@@ -51,9 +52,32 @@ public static class Ac3Exponents {
   }
 
   /// <summary>
-  /// Computes the number of grouped exponent words for a channel covering <paramref name="nExp"/>
-  /// mantissa exponents under <paramref name="strategy"/>: one absolute exponent then
-  /// <c>ceil((nExp - 1) / (3 * step))</c> grouped 7-bit words (A/52 §7.1.3).
+  /// Decodes the coupling channel's exponent set. The coupling channel's absolute exponent is a
+  /// decoding reference only, not a real exponent, so it consumes no bin: the expanded exponents
+  /// start directly at <paramref name="start"/> (A/52 §7.1.3, <c>cplexp[n + cplstrtmant] = exp[n+1]</c>).
+  /// </summary>
+  public static void DecodeCoupling(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy) {
+    var step = GroupSize(strategy);
+    var prev = absExp;
+    var bin = start;
+    for (var g = 0; g < nGroups; ++g) {
+      var word = (int)r.ReadBits(7);
+      var d0 = word / 25;
+      var d1 = (word / 5) % 5;
+      var d2 = word % 5;
+      foreach (var code in stackalloc[] { d0, d1, d2 }) {
+        prev = Math.Clamp(prev + code - 2, 0, 24);
+        for (var i = 0; i < step && bin < exp.Length; ++i)
+          exp[bin++] = (byte)prev;
+      }
+    }
+  }
+
+  /// <summary>
+  /// Computes the number of grouped exponent words for an independent or coupled channel covering
+  /// <paramref name="nExp"/> mantissas: A/52 §7.1.3 gives <c>(endmant-1)/3</c>, <c>(endmant+2)/6</c>
+  /// and <c>(endmant+8)/12</c> for D15 / D25 / D45, all truncating — the same value as
+  /// <c>ceil((nExp - 1) / (3 * grpsize))</c>.
   /// </summary>
   public static int GroupCount(int nExp, Strategy strategy) {
     var step = GroupSize(strategy);

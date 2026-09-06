@@ -4,84 +4,99 @@ namespace Codec.Ac3;
 
 /// <summary>
 /// Inverse modified discrete cosine transform for AC-3 (ATSC A/52 §7.9). Each audio block carries
-/// 256 frequency coefficients per channel. With <c>blksw=0</c> a single 512-point IMDCT is applied;
-/// with <c>blksw=1</c> the 256 coefficients split into two interleaved 256-point IMDCTs. The
-/// transform output is windowed with the A/52 window and overlap-added against the previous block's
-/// tail to yield 256 PCM time samples per block per channel. This implementation uses the direct
-/// O(N²) summation form of the IMDCT, which is exact and matches the spec equations; performance is
-/// not a concern for the per-channel extraction use case.
+/// 256 frequency coefficients per channel. With <c>blksw=0</c> a single 512-point IMDCT is applied
+/// (§7.9.4.1); with <c>blksw=1</c> the coefficients de-interleave into two 128-coefficient sets, each
+/// driving a 256-point IMDCT (§7.9.4.2). Either way the result is a 512-sample windowed sequence
+/// <c>x[]</c> whose first half overlap-adds with the previous block's second half:
+/// <c>pcm[n] = 2 * (x[n] + delay[n])</c>, the factor of two undoing the encoder's headroom scaling.
+/// <para>
+/// The spec states the transform as a pre-twiddle / complex IFFT / post-twiddle / de-interleave
+/// chain; this implementation evaluates the equivalent direct cosine sum, which was checked term by
+/// term against the spec's factorisation for both block lengths. The direct form is O(N²) but the
+/// per-channel extraction use case is not performance critical.
+/// </para>
 /// </summary>
 public static class Ac3Imdct {
 
-  private const int N = 256;     // coefficients per block
-  private const double Pi = Math.PI;
+  private const int Coefficients = 256;   // transform coefficients per block
+  private const int BlockSamples = 256;   // new PCM samples produced per block
+  private const int WindowSamples = 512;  // full windowed sequence length
+
+  // Long block (§7.9.4.1): x[n] = -sum_k X[k] * cos(pi/1024 * (2n + 1 + 256) * (2k + 1)).
+  private static readonly float[] LongBasis = BuildLongBasis();
+
+  // Short block (§7.9.4.2): both 128-coefficient halves use one kernel,
+  // S(C, m) = -sum_k C[k] * cos(pi/512 * (2m + 1) * (2k + 1)); the even-indexed coefficients are
+  // evaluated over m = 0..255 and the odd-indexed ones over m = 128..383, so the table runs to 384.
+  private const int ShortRows = 384;
+  private static readonly float[] ShortBasis = BuildShortBasis();
+
+  private static float[] BuildLongBasis() {
+    var table = new float[WindowSamples * Coefficients];
+    for (var n = 0; n < WindowSamples; ++n)
+      for (var k = 0; k < Coefficients; ++k)
+        table[n * Coefficients + k] =
+          (float)-Math.Cos(Math.PI / 1024.0 * (2 * n + 1 + 256) * (2 * k + 1));
+    return table;
+  }
+
+  private static float[] BuildShortBasis() {
+    const int half = Coefficients / 2;
+    var table = new float[ShortRows * half];
+    for (var m = 0; m < ShortRows; ++m)
+      for (var k = 0; k < half; ++k)
+        table[m * half + k] = (float)-Math.Cos(Math.PI / 512.0 * (2 * m + 1) * (2 * k + 1));
+    return table;
+  }
 
   /// <summary>
   /// Long-block (512-point) IMDCT + window + overlap-add. <paramref name="coeffs"/> holds the 256
   /// transform coefficients; <paramref name="delay"/> is the 256-sample overlap memory (updated in
-  /// place); the 256 reconstructed PCM samples are written to <paramref name="output"/>.
+  /// place); the 256 reconstructed samples are written to <paramref name="output"/>.
   /// </summary>
   public static void Long(float[] coeffs, float[] delay, float[] output) {
-    // 512-point IMDCT: x[n] = sum_{k=0}^{255} X[k] cos( (pi/512)(2n+1+256)(2k+1) ), n=0..511.
-    // Split the 512 outputs into the first half (windowed + delay → PCM) and the second half
-    // (windowed → next delay), exactly as A/52 §7.9.4 specifies.
-    var tmp = new float[2 * N];
-    for (var n = 0; n < 2 * N; ++n) {
+    var x = new float[WindowSamples];
+    for (var n = 0; n < WindowSamples; ++n) {
+      var row = n * Coefficients;
       double sum = 0;
-      for (var k = 0; k < N; ++k)
-        sum += coeffs[k] * Math.Cos(Pi / (2 * N) * (2 * n + 1 + N) * (2 * k + 1));
-      tmp[n] = (float)sum;
+      for (var k = 0; k < Coefficients; ++k)
+        sum += coeffs[k] * LongBasis[row + k];
+      x[n] = (float)sum;
     }
-
-    var w = Ac3Tables.Window;
-    for (var n = 0; n < N; ++n) {
-      // First half windowed by w, second half windowed by w reversed.
-      var a = tmp[n] * w[n];
-      output[n] = a + delay[n];
-      delay[n] = tmp[N + n] * w[N - 1 - n];
-    }
+    WindowAndOverlap(x, delay, output);
   }
 
   /// <summary>
-  /// Short-block (dual 256-point) IMDCT + window + overlap-add. The 256 coefficients are
-  /// de-interleaved into two 128-coefficient sub-blocks; each drives a 256-point IMDCT. The two
-  /// 256-sample windowed outputs are concatenated and overlap-added with <paramref name="delay"/>.
+  /// Short-block (dual 256-point) IMDCT + window + overlap-add. The even-indexed coefficients build
+  /// the first half of the windowed sequence and the odd-indexed ones the second half; the
+  /// overlap-add that follows is identical to the long-block case.
   /// </summary>
   public static void Short(float[] coeffs, float[] delay, float[] output) {
-    const int half = N / 2;       // 128
-    // De-interleave: even-indexed coefficients form sub-block 0, odd form sub-block 1.
-    var c0 = new float[half];
-    var c1 = new float[half];
-    for (var k = 0; k < half; ++k) {
-      c0[k] = coeffs[2 * k];
-      c1[k] = coeffs[2 * k + 1];
+    const int half = Coefficients / 2;
+    var x = new float[WindowSamples];
+    for (var m = 0; m < BlockSamples; ++m) {
+      var rowFirst = m * half;
+      var rowSecond = (m + half) * half;
+      double first = 0, second = 0;
+      for (var k = 0; k < half; ++k) {
+        first += coeffs[2 * k] * ShortBasis[rowFirst + k];
+        second += coeffs[2 * k + 1] * ShortBasis[rowSecond + k];
+      }
+      x[m] = (float)first;
+      x[BlockSamples + m] = (float)second;
     }
-
-    var x0 = Imdct256(c0);
-    var x1 = Imdct256(c1);
-
-    var w = Ac3Tables.Window;
-    // First 256 windowed output samples come from sub-block 0 windowed + delay.
-    for (var n = 0; n < N; ++n)
-      output[n] = x0[n] * w[n] + delay[n];
-
-    // Build next delay: tail of sub-block 0 plus head of sub-block 1, per A/52 short-block layout.
-    var newDelay = new float[N];
-    for (var n = 0; n < N; ++n)
-      newDelay[n] = x1[n] * w[N - 1 - n];
-    Array.Copy(newDelay, delay, N);
+    WindowAndOverlap(x, delay, output);
   }
 
-  // 256-point IMDCT producing 256 time samples from 128 coefficients (direct form).
-  private static float[] Imdct256(float[] coeffs) {
-    const int half = N / 2;       // 128
-    var outp = new float[N];
-    for (var n = 0; n < N; ++n) {
-      double sum = 0;
-      for (var k = 0; k < half; ++k)
-        sum += coeffs[k] * Math.Cos(Pi / N * (2 * n + 1 + half) * (2 * k + 1));
-      outp[n] = (float)sum;
+  // A/52 §7.9.4 steps 5 and 6. Only the rising half of the 512-point window is tabulated; the
+  // falling half is its mirror, w[511 - n] = w[n].
+  private static void WindowAndOverlap(float[] x, float[] delay, float[] output) {
+    var w = Ac3Tables.Window;
+    for (var n = 0; n < BlockSamples; ++n) {
+      var head = x[n] * w[n];
+      var tail = x[BlockSamples + n] * w[BlockSamples - 1 - n];
+      output[n] = 2f * (head + delay[n]);
+      delay[n] = tail;
     }
-    return outp;
   }
 }

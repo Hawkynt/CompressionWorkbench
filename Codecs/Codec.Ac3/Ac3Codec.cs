@@ -12,7 +12,7 @@ public sealed record Ac3StreamInfo(
 /// Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companion partial
 /// source file. Decoding supports legacy AC-3 sync frames (bsid ≤ 10) plus independent E-AC-3
 /// substreams (bsid 11..16) to interleaved little-endian signed 16-bit PCM at the native channel
-/// count, with LFE last when present.
+/// count, in the ITU/WAVE interleave order.
 /// </summary>
 public static partial class Ac3Codec {
 
@@ -43,7 +43,9 @@ public static partial class Ac3Codec {
 
   /// <summary>
   /// Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on
-  /// <paramref name="output"/>. Channels are emitted in acmod order with LFE last. AC-3 (bsid ≤ 10)
+  /// <paramref name="output"/>. Channels are emitted in the ITU/WAVE interleave order — front left,
+  /// front right, front centre, LFE, then the surrounds — not the acmod order the bit stream uses.
+  /// AC-3 (bsid ≤ 10)
   /// and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent
   /// substreams (frame type 1) are skipped.
   /// </summary>

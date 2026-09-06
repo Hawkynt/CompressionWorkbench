@@ -94,7 +94,7 @@ internal sealed class Ac3EnhancedFrameDecoder {
 
   // delta bit allocation per channel
   private readonly int[] _dbaMode = new int[Slots];
-  private readonly (int Length, int Delta)[]?[] _deltas = new (int, int)[]?[Slots];
+  private readonly Ac3BitAllocation.DeltaSegment[]?[] _deltas = new Ac3BitAllocation.DeltaSegment[]?[Slots];
 
   /// <summary>
   /// Decodes the independent-substream frame at <paramref name="offset"/>. Returns interleaved
@@ -365,8 +365,8 @@ internal sealed class Ac3EnhancedFrameDecoder {
       var nmant = this._endFreq[CplChannel] - this._startFreq[CplChannel];
       var strat = this._expStrategy[blk][CplChannel];
       var ngrp = nmant / (3 * Ac3Exponents.GroupSize(strat));
-      var absExp = (int)r.ReadBits(4);
-      this.DecodeCouplingExponents(r, absExp, ngrp, strat);
+      var absExp = (int)r.ReadBits(4) << 1;
+      Ac3Exponents.DecodeCoupling(r, this._exp[CplChannel], this._startFreq[CplChannel], absExp, ngrp, strat);
     }
     for (var ch = 0; ch < nfchans; ++ch) {
       var strat = this._expStrategy[blk][ch];
@@ -707,7 +707,7 @@ internal sealed class Ac3EnhancedFrameDecoder {
     if (cplInUse)
       ComputeBapFor(this._exp[CplChannel], this._bap[CplChannel], this._startFreq[CplChannel],
         this._endFreq[CplChannel], p, this._fastGain[CplChannel], this._snrOffset[CplChannel], this._fscod,
-        this._channelUsesAht[CplChannel], true, this._cplFastLeak << 8, this._cplSlowLeak << 8, this._deltas[CplChannel]);
+        this._channelUsesAht[CplChannel], true, this._cplFastLeak, this._cplSlowLeak, this._deltas[CplChannel]);
     if (this._lfeon)
       ComputeBapFor(this._exp[LfeChannel], this._bap[LfeChannel], 0, 7, p, this._fastGain[LfeChannel],
         this._snrOffset[LfeChannel], this._fscod, this._channelUsesAht[LfeChannel], false, 0, 0, this._deltas[LfeChannel]);
@@ -717,30 +717,13 @@ internal sealed class Ac3EnhancedFrameDecoder {
   // channel uses AHT (the masking curve is identical; only the address→pointer LUT differs).
   private static void ComputeBapFor(byte[] exp, byte[] bap, int start, int end, Ac3BitAllocation.AllocParams p,
       int fgain, int snr, int fscod, bool usesAht, bool isCoupling, int cplFast, int cplSlow,
-      (int Length, int Delta)[]? deltas) {
+      Ac3BitAllocation.DeltaSegment[]? deltas) {
     if (!usesAht) {
       Ac3BitAllocation.ComputeBap(exp, bap, start, end, p, fgain, snr, fscod, isCoupling, cplFast, cplSlow, deltas);
       return;
     }
     Ac3BitAllocation.ComputeBap(exp, bap, start, end, p, fgain, snr, fscod, isCoupling, cplFast, cplSlow, deltas,
       Ac3EnhancedTables.HebapTab);
-  }
-
-  private void DecodeCouplingExponents(Ac3BitReader r, int absExp, int ngrp, Ac3Exponents.Strategy strategy) {
-    var step = Ac3Exponents.GroupSize(strategy);
-    var prev = absExp;
-    var bin = this._startFreq[CplChannel];
-    var cplExp = this._exp[CplChannel];
-    for (var i = 0; i < step && bin < MaxBins; ++i)
-      cplExp[bin++] = (byte)prev;
-    for (var g = 0; g < ngrp; ++g) {
-      var word = (int)r.ReadBits(7);
-      foreach (var code in stackalloc[] { word / 25, (word / 5) % 5, word % 5 }) {
-        prev = Math.Clamp(prev + code - 2, 0, 24);
-        for (var i = 0; i < step && bin < MaxBins; ++i)
-          cplExp[bin++] = (byte)prev;
-      }
-    }
   }
 
   private void ApplyCoupling() {
@@ -828,14 +811,14 @@ internal sealed class Ac3EnhancedFrameDecoder {
     this._numSpxBands = this.DecodeBandStructure(r, blk, startSubband, endSubband, defaultStruct).NumBands;
   }
 
-  private static (int Length, int Delta)[]? ReadDeltaBa(Ac3BitReader r) {
+  private static Ac3BitAllocation.DeltaSegment[] ReadDeltaBa(Ac3BitReader r) {
     var nseg = (int)r.ReadBits(3) + 1;
-    var result = new (int, int)[nseg];
+    var result = new Ac3BitAllocation.DeltaSegment[nseg];
     for (var s = 0; s < nseg; ++s) {
       var offset = (int)r.ReadBits(5);
       var length = (int)r.ReadBits(4);
-      var delta = (int)r.ReadBits(3);
-      result[s] = (offset + length, delta);
+      var value = (int)r.ReadBits(3);
+      result[s] = new Ac3BitAllocation.DeltaSegment(offset, length, value);
     }
     return result;
   }
