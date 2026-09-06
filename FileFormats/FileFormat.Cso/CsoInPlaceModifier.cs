@@ -54,7 +54,6 @@ public static class CsoInPlaceModifier {
         $"New block payload must be exactly block_size ({header.BlockSize}) bytes; got {newUncompressedData.Length}.",
         nameof(newUncompressedData));
 
-    // Compress (or accept verbatim) the new payload.
     var deflated = CsoWriter.Deflate(newUncompressedData);
     byte[] payload;
     bool storedUncompressed;
@@ -66,7 +65,6 @@ public static class CsoInPlaceModifier {
       storedUncompressed = true;
     }
 
-    // Determine old block's on-disk extent.
     var oldRaw = header.IndexRaw[blockIndex];
     var oldNextRaw = header.IndexRaw[blockIndex + 1];
     var oldOffset = (long)(oldRaw & CsoWriter.IndexOffsetMask) << header.Align;
@@ -74,22 +72,17 @@ public static class CsoInPlaceModifier {
     var oldSize = oldEndOffset - oldOffset;
 
     if (payload.Length <= oldSize) {
-      // In-place: write payload at oldOffset, zero trailing slack.
       image.Position = oldOffset;
       image.Write(payload, 0, payload.Length);
       var slack = (int)(oldSize - payload.Length);
       if (slack > 0)
         image.Write(new byte[slack], 0, slack);
 
-      // Update flag bit on the index entry (length unchanged → next offset
-      // is also unchanged, so we only need to rewrite this one entry).
       var newRaw = (uint)(oldRaw & CsoWriter.IndexOffsetMask);
       if (storedUncompressed)
         newRaw |= CsoWriter.IndexUncompressedFlag;
       WriteIndexEntry(image, blockIndex, newRaw);
     } else {
-      // Append-at-EOF: orphan the old in-place bytes, write payload at EOF,
-      // patch this block's index entry to point at the new offset.
       var appendOffset = image.Length;
       if (appendOffset > CsoWriter.IndexOffsetMask)
         throw new InvalidOperationException(
@@ -97,48 +90,15 @@ public static class CsoInPlaceModifier {
       image.Position = appendOffset;
       image.Write(payload, 0, payload.Length);
 
-      // The sentinel entry (index[blockCount]) is the on-disk EOF marker; it
-      // changes by the new payload length minus the existing zero-length sliver
-      // that lived between the old EOF and the previous sentinel. Recompute
-      // from the post-write stream length to stay consistent.
       var newSentinelRaw = (uint)image.Length;
-      // The block boundary we're moving is the chosen block's start; its
-      // length is now (newSentinelRaw - appendOffset). For the WriteBlock
-      // contract to remain valid for the FOLLOWING entries' offsets we must
-      // also update every index slot that previously pointed past oldOffset
-      // but lived inside the file — which is none, because we appended.
+      _ = newSentinelRaw;
 
       var newRaw = (uint)appendOffset;
       if (storedUncompressed)
         newRaw |= CsoWriter.IndexUncompressedFlag;
       WriteIndexEntry(image, blockIndex, newRaw);
 
-      // Update the sentinel (index[blockCount]) to the new EOF so the reader
-      // computes our block's compressed length as (sentinel - newOffset).
-      // BUT — the sentinel only acts as the "next offset" for the LAST block.
-      // For non-last blocks, the next offset is index[blockIndex+1], which
-      // didn't move (still points at the OLD orphaned-region neighbour). To
-      // preserve the (next - this) length contract for our moved block, we
-      // need the block immediately after ours, in index-order, to "see" us
-      // at the new offset and yield the right length.
-      //
-      // Easiest correct approach: when we append, also update index[blockIndex+1]
-      // to point at the new EOF so reader's (next - this) = (newEOF - appendOffset)
-      // = payload.Length. But that breaks the neighbour's own length.
-      //
-      // Real CSO writers handle this by simply keeping orphans and laying each
-      // block's index entry pointing to its physical start; the "length" of
-      // a block is determined either by (next - this) OR by reading until the
-      // expected slab boundary. The reader in CsoFormatDescriptor uses
-      // (next - this), so when we append we need to ensure the next entry is
-      // the sentinel.
-      //
-      // Strategy: if blockIndex is NOT the last block, append a copy of the
-      // following block's CURRENT compressed bytes after our new payload so
-      // that index[blockIndex+1] = appendOffset + payload.Length still points
-      // at a valid (now duplicated) copy of that next block. Repeat through
-      // the end of the index.
-      RebuildTailFromBlock(image, header, blockIndex, appendOffset, payload.Length);
+      RebuildTailFromBlock(image, header, blockIndex, appendOffset, payload.Length, storedUncompressed);
     }
   }
 
@@ -150,17 +110,15 @@ public static class CsoInPlaceModifier {
   /// </summary>
   private static void RebuildTailFromBlock(
       Stream image, CsoHeader oldHeader, int movedBlockIndex,
-      long movedBlockNewOffset, int movedBlockNewSize) {
+      long movedBlockNewOffset, int movedBlockNewSize, bool movedBlockStoredUncompressed) {
 
     var cursor = movedBlockNewOffset + movedBlockNewSize;
     var newIndex = new uint[oldHeader.IndexRaw.Length];
     Array.Copy(oldHeader.IndexRaw, newIndex, oldHeader.IndexRaw.Length);
-    // The moved block's entry was already rewritten by the caller; preserve it.
     newIndex[movedBlockIndex] = (uint)movedBlockNewOffset
-      | (oldHeader.IndexRaw[movedBlockIndex] & CsoWriter.IndexUncompressedFlag);
+      | (movedBlockStoredUncompressed ? CsoWriter.IndexUncompressedFlag : 0);
 
     for (var i = movedBlockIndex + 1; i < oldHeader.BlockCount; ++i) {
-      // Copy block i's existing compressed bytes from its OLD offset to the new tail.
       var oldOff = (long)(oldHeader.IndexRaw[i] & CsoWriter.IndexOffsetMask) << oldHeader.Align;
       var oldEnd = (long)(oldHeader.IndexRaw[i + 1] & CsoWriter.IndexOffsetMask) << oldHeader.Align;
       var oldLen = (int)(oldEnd - oldOff);
@@ -180,14 +138,12 @@ public static class CsoInPlaceModifier {
       newIndex[i] = (uint)cursor | (oldHeader.IndexRaw[i] & CsoWriter.IndexUncompressedFlag);
       cursor += oldLen;
     }
-    // Sentinel = final EOF.
     if (cursor > CsoWriter.IndexOffsetMask)
       throw new InvalidOperationException(
         "CSO image would exceed 2 GiB after append — would overflow a 31-bit offset.");
     newIndex[oldHeader.BlockCount] = (uint)cursor;
     image.SetLength(cursor);
 
-    // Persist the rewritten index.
     image.Position = CsoWriter.HeaderSize;
     Span<byte> idxBuf = stackalloc byte[4];
     for (var i = 0; i < newIndex.Length; ++i) {
@@ -195,8 +151,6 @@ public static class CsoInPlaceModifier {
       image.Write(idxBuf);
     }
   }
-
-  // ── Header parsing ────────────────────────────────────────────────────
 
   internal sealed record CsoHeader(
     uint HeaderSize, ulong UncompressedSize, uint BlockSize, byte Version, byte Align,
