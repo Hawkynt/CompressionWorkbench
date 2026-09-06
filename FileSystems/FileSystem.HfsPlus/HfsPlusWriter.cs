@@ -772,7 +772,10 @@ public sealed class HfsPlusWriter {
     for (var i = 0; i < keyed.Count; i++) {
       var entry = keyed[i];
       if (entry.ForkPatchOffset < 0) continue;
-      var startBlock = nextBlockAfterData;
+      // An empty file owns no blocks, and an unused extent descriptor is the
+      // all-zero one. Naming a start block with a count of zero is the "invalid
+      // extent entry" fsck_hfs reports.
+      var startBlock = entry.BlockCount == 0 ? 0u : nextBlockAfterData;
       var rec = records[i];
       BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset), startBlock);
       BinaryPrimitives.WriteUInt32BigEndian(rec.AsSpan(entry.ForkPatchOffset + 4), entry.BlockCount);

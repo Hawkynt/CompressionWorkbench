@@ -28,6 +28,25 @@ internal static class Mp4AudioChannels {
   internal sealed record AudioTrack(int TrackId, string Codec, IReadOnlyList<ChannelWav>? Channels, string? Reason);
 
   /// <summary>Decodes every audio trak in the file; video/other traks are ignored here.</summary>
+  /// <summary>
+  /// AAC-LC's decoder delay: one whole frame of warm-up precedes the first real
+  /// sample, and every decoder drops it.
+  /// </summary>
+  private const int AacPrimingFrames = 1024;
+
+  /// <summary>Media duration in frames, from the track's mdhd box.</summary>
+  private static long ReadMediaFrames(byte[] file, BoxParser.Box mdia) {
+    var mdhd = mdia.Children?.FirstOrDefault(b => b.Type == "mdhd");
+    if (mdhd is null || mdhd.BodyLength < 24) return 0;
+
+    var at = (int)mdhd.BodyOffset;
+    var version = file[at];
+    // version 0 packs 32-bit times, version 1 widens them to 64.
+    return version == 1 && mdhd.BodyLength >= 36
+      ? (long)BinaryPrimitives.ReadUInt64BigEndian(file.AsSpan(at + 24, 8))
+      : BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(at + 16, 4));
+  }
+
   internal static IReadOnlyList<AudioTrack> Decode(byte[] file) {
     var result = new List<AudioTrack>();
     var parser = new BoxParser();
@@ -51,8 +70,9 @@ internal static class Mp4AudioChannels {
       var fourcc = ReadFourCc(file, stsd);
       var sampleRate = ReadSampleRate(file, stsd);
       var samples = ReadSamples(file, stbl);
+      var mediaFrames = ReadMediaFrames(file, mdia);
 
-      var decoded = TryDecode(file, stsd, fourcc, sampleRate, samples);
+      var decoded = TryDecode(file, stsd, fourcc, sampleRate, samples, mediaFrames);
       result.Add(decoded with { TrackId = trackOrdinal });
       ++trackOrdinal;
     }
@@ -60,11 +80,11 @@ internal static class Mp4AudioChannels {
   }
 
   private static AudioTrack TryDecode(byte[] file, BoxParser.Box stsd, string fourcc,
-                                      int sampleRate, IReadOnlyList<byte[]> samples) {
+                                      int sampleRate, IReadOnlyList<byte[]> samples, long mediaFrames = 0) {
     var codec = fourcc.Trim();
     try {
       var channels = fourcc switch {
-        "mp4a" => DecodeMp4a(file, stsd, sampleRate, samples, ref codec),
+        "mp4a" => DecodeMp4a(file, stsd, sampleRate, samples, mediaFrames, ref codec),
         "alac" => DecodeAlac(file, stsd, samples),
         "ac-3" or "ec-3" => DecodeViaStream(Concat(samples), "ac3"),
         "Opus" => DecodeOpus(file, stsd, samples),
@@ -85,7 +105,8 @@ internal static class Mp4AudioChannels {
   // ── mp4a (AAC / MP3 / MP2 via esds) ──────────────────────────────────────────
 
   private static IReadOnlyList<ChannelWav>? DecodeMp4a(byte[] file, BoxParser.Box stsd, int sampleRate,
-                                                       IReadOnlyList<byte[]> samples, ref string codec) {
+                                                       IReadOnlyList<byte[]> samples, long mediaFrames,
+                                                       ref string codec) {
     var esds = FindChildBox(file, stsd, "esds");
     if (esds == null) return null;
     if (!TryParseEsds(esds, out var objectType, out var asc)) return null;
@@ -96,7 +117,7 @@ internal static class Mp4AudioChannels {
         if (asc == null || asc.Length < 2) return null;
         var (_, srIdx, channelConfig) = Codec.Aac.AacCodec.ParseAudioSpecificConfig(asc);
         var adts = AacAdtsWrapper.Wrap(samples, srIdx, channelConfig);
-        return DecodeViaStream(adts, "aac");
+        return DecodeViaStream(adts, "aac", primingFrames: AacPrimingFrames, mediaFrames: mediaFrames);
       }
       case 0x6B or 0x69: { // MP3 / MP2 (MPEG-1/2 audio)
         codec = objectType == 0x6B ? "mp3" : "mp2";
@@ -190,7 +211,8 @@ internal static class Mp4AudioChannels {
 
   // ── shared decode-via-codec (AAC / MP3 / AC-3 / Opus) ─────────────────────────
 
-  private static IReadOnlyList<ChannelWav>? DecodeViaStream(byte[] stream, string codec, int channelHint = 0) {
+  private static IReadOnlyList<ChannelWav>? DecodeViaStream(byte[] stream, string codec, int channelHint = 0,
+                                                            int primingFrames = 0, long mediaFrames = 0) {
     using var src = new MemoryStream(stream, writable: false);
     using var pcm = new MemoryStream();
     int channels, rate;
@@ -230,7 +252,38 @@ internal static class Mp4AudioChannels {
         return null;
     }
     if (channels < 1 || rate <= 0) return null;
-    return Wrap(PcmCodec.SplitInterleavedPcm(pcm.ToArray(), channels, rate, 16));
+    return Wrap(PcmCodec.SplitInterleavedPcm(
+      TrimPriming(pcm.ToArray(), channels, primingFrames, mediaFrames), channels, rate, 16));
+  }
+
+  /// <summary>
+  /// Drops the encoder's priming frames from the front and the padding past the
+  /// track's declared length from the back.
+  /// </summary>
+  /// <remarks>
+  /// A transform codec cannot start cold: AAC-LC hands back a whole frame of
+  /// warm-up before the first real sample, and rounds the tail up to a frame.
+  /// The container is what says where the audio actually is — mdhd's duration —
+  /// and a decoder that skips both ends up a frame ahead of everyone else's.
+  /// </remarks>
+  private static byte[] TrimPriming(byte[] pcm, int channels, int primingFrames, long mediaFrames) {
+    const int bytesPerSample = 2;
+    var frameBytes = channels * bytesPerSample;
+    if (frameBytes <= 0) return pcm;
+
+    var priming = Math.Max(0, primingFrames);
+    var start = Math.Min((long)priming * frameBytes, pcm.Length);
+    var available = (pcm.Length - start) / frameBytes;
+
+    // mdhd counts every coded frame, priming included, so what remains audible
+    // after dropping the warm-up is the declared duration less that warm-up.
+    var audible = mediaFrames - priming;
+    var take = audible > 0 ? Math.Min(audible, available) : available;
+    if (start == 0 && take == available) return pcm;
+
+    var trimmed = new byte[take * frameBytes];
+    Array.Copy(pcm, start, trimmed, 0, trimmed.Length);
+    return trimmed;
   }
 
   // ── stsd / stbl readers ──────────────────────────────────────────────────────

@@ -17,6 +17,8 @@ namespace Compression.Tests.FileSystems;
 ///   <item><c>fsck.fat</c>: "File size is 0 bytes, cluster chain length is &gt; 0 bytes."</item>
 ///   <item><c>fsck.exfat</c>: "size 0, but the first cluster 0x…".</item>
 ///   <item><c>fsck.jfs</c>: corrupt data on the object, plus a block the allocation maps say is used and nothing owns.</item>
+///   <item><c>fsck_hfs</c>: "Invalid extent entry" — an unused HFS+ extent descriptor is the all-zero one, so naming a start block with a count of zero is not a legal way to say "no blocks".</item>
+///   <item><c>btrfs check</c>: "bad file extent" — btrfs gives an empty file no EXTENT_DATA item at all, rather than an inline extent describing zero bytes.</item>
 /// </list>
 /// <para>
 /// A subdirectory is the opposite case and still needs a block of its own,
@@ -48,6 +50,8 @@ public sealed class EmptyFileAllocationTests {
   [TestCase("Fat")]
   [TestCase("ExFat")]
   [TestCase("Jfs")]
+  [TestCase("HfsPlus")]
+  [TestCase("Btrfs")]
   [Category("RoundTrip")]
   public void AnEmptyFileSurvivesTheRoundTripWithoutStorage(string id) {
     var image = Create(id);

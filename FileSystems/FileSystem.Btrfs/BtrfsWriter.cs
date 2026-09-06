@@ -1094,6 +1094,10 @@ public sealed class BtrfsWriter {
         var fileInode = BuildInodeItem(mode: 0x81A4 /* S_IFREG | 0644 */, size: data.Length, bytes: data.Length, nlink: 1);
         items.Add((fileObjectId, InodeItem, 0L, fileInode));
 
+        // An empty file carries no EXTENT_DATA item at all. An inline extent
+        // describing zero bytes is what `btrfs check` calls a bad file extent.
+        if (data.Length == 0) continue;
+
         var extent = new byte[21 + data.Length];
         BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(0), 1);           // generation
         BinaryPrimitives.WriteInt64LittleEndian(extent.AsSpan(8), data.Length); // ram_bytes
