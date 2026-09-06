@@ -208,14 +208,6 @@ public sealed class MinixFsWriter : IDisposable {
     var inodesPerBlock = BlockSize / V3InodeSize;
     var inodeTableBlocks = (totalInodes + inodesPerBlock - 1) / inodesPerBlock;
 
-    // We keep 1 block each for inode bitmap and zone bitmap.
-    const int imapBlocks = 1;
-    const int zmapBlocks = 1;
-
-    // firstdatazone = block index of first data zone
-    // Layout: block0 (boot) + block1 (superblock) + imapBlocks + zmapBlocks + inodeTableBlocks
-    var firstdatazone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
-
     // Zones needed: per directory, ceil(entries/EntriesPerZone) data zones plus
     // one indirect zone when it spills past the 7 direct slots; per file,
     // ceil(size/blocksize) data zones.
@@ -229,9 +221,21 @@ public sealed class MinixFsWriter : IDisposable {
     // from one piece of code rather than from two descriptions of it.
     foreach (var file in stored) {
       var counter = 0;
-      LayoutFile(null, 0, 0, ref counter, file, null);
+      LayoutFile(null, 0, 0, 0, ref counter, file, null);
       dataZonesNeeded += counter;
     }
+
+    // Both bitmaps reserve bit 0, and a block of bitmap covers BlockSize * 8
+    // entries. Fixing either at one block silently caps the volume at that many
+    // — and the bits past the end land in whatever follows, which for the zone
+    // bitmap is the inode table. An 8 MB volume was the last one that fitted.
+    const int bitsPerBlock = BlockSize * 8;
+    var imapBlocks = (totalInodes + 1 + bitsPerBlock - 1) / bitsPerBlock;
+    var zmapBlocks = (dataZonesNeeded + 1 + bitsPerBlock - 1) / bitsPerBlock;
+
+    // firstdatazone = block index of first data zone
+    // Layout: block0 (boot) + block1 (superblock) + imapBlocks + zmapBlocks + inodeTableBlocks
+    var firstdatazone = 2 + imapBlocks + zmapBlocks + inodeTableBlocks;
 
     var totalZones = firstdatazone + dataZonesNeeded;
     var totalBlocks = totalZones; // zones == blocks for log_zone_size=0
@@ -246,22 +250,22 @@ public sealed class MinixFsWriter : IDisposable {
     var disk = new byte[diskSize];
 
     // --- Bitmap / inode-table offsets ---
-    var imapOff = 2 * BlockSize;        // inode bitmap: block 2
-    var zmapOff = 3 * BlockSize;        // zone bitmap:  block 3
-    var inodeTableOff = 4 * BlockSize;  // inode table:  block 4
+    var imapOff = 2 * BlockSize;                              // inode bitmap follows the superblock
+    var zmapOff = (2 + imapBlocks) * BlockSize;                // zone bitmap follows the inode bitmap
+    var inodeTableOff = (2 + imapBlocks + zmapBlocks) * BlockSize;
 
     // Inode N occupies bit N of the inode bitmap, and bit 0 is reserved for the
     // inode number that means "none". mkfs.minix leaves bits 0 and 1 set on a
     // fresh volume: the reserved one and the root.
-    SetBit(disk, imapOff, 0);
+    SetBit(disk, imapOff, 0, imapBlocks * BlockSize);
     for (var ino = 1; ino <= totalInodes; ino++)
-      SetBit(disk, imapOff, ino);
+      SetBit(disk, imapOff, ino, imapBlocks * BlockSize);
 
     // The zone bitmap covers the data zones only, and counts from the first of
     // them: absolute zone Z occupies bit Z - firstdatazone + 1, with bit 0
     // reserved as the inode bitmap's is. The metadata zones below firstdatazone
     // are not in it at all.
-    SetBit(disk, zmapOff, 0);
+    SetBit(disk, zmapOff, 0, zmapBlocks * BlockSize);
 
     var nextZone = firstdatazone;
 
@@ -283,7 +287,7 @@ public sealed class MinixFsWriter : IDisposable {
       // Render and place each data zone; entries never cross a zone boundary.
       for (var z = 0; z < zoneCount; z++) {
         var zone = (uint)nextZone++;
-        SetBit(disk, zmapOff, (int)zone - firstdatazone + 1);
+        SetBit(disk, zmapOff, (int)zone - firstdatazone + 1, zmapBlocks * BlockSize);
         dirZones[z] = zone;
 
         var zoneData = new byte[BlockSize];
@@ -303,7 +307,7 @@ public sealed class MinixFsWriter : IDisposable {
         inodeZones[z] = dirZones[z];
       if (zoneCount > DirectZones) {
         var indirectZone = (uint)nextZone++;
-        SetBit(disk, zmapOff, (int)indirectZone - firstdatazone + 1);
+        SetBit(disk, zmapOff, (int)indirectZone - firstdatazone + 1, zmapBlocks * BlockSize);
         inodeZones[IndirectSlot] = indirectZone;
         var table = new byte[BlockSize];
         for (var z = DirectZones; z < zoneCount; z++)
@@ -326,7 +330,7 @@ public sealed class MinixFsWriter : IDisposable {
     // --- Allocate and write each file's zones, then its inode ---
     foreach (var file in stored) {
       var placements = file.StreamOpener == null ? null : new List<(long To, long From, int Span)>();
-      var fileZones = LayoutFile(disk, zmapOff, firstdatazone, ref nextZone, file, placements);
+      var fileZones = LayoutFile(disk, zmapOff, zmapBlocks * BlockSize, firstdatazone, ref nextZone, file, placements);
 
       WriteV3Inode(disk, inodeTableOff, inodeIndex: (int)(file.Inode - 1),
         mode: ModeRegularFile,
@@ -363,8 +367,8 @@ public sealed class MinixFsWriter : IDisposable {
     //  uint8  s_disk_version   [30]
     var sb = disk.AsSpan(SuperblockOff);
     BinaryPrimitives.WriteUInt32LittleEndian(sb,              (uint)totalInodes);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6),     imapBlocks);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(8),     zmapBlocks);
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6),     (ushort)imapBlocks);
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(8),     (ushort)zmapBlocks);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(10),    (ushort)firstdatazone);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(12),    0); // log_zone_size = 0 (zone==block)
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(16),    (uint)diskSize); // s_max_size
@@ -512,7 +516,7 @@ public sealed class MinixFsWriter : IDisposable {
   /// by the checks that ask an outside tool for an opinion, because they could
   /// not build the probe volume at all.</para>
   /// </remarks>
-  private uint[] LayoutFile(byte[]? disk, int zmapOff, int firstdatazone, ref int nextZone,
+  private uint[] LayoutFile(byte[]? disk, int zmapOff, int zmapBytes, int firstdatazone, ref int nextZone,
       TreeNode file, List<(long To, long From, int Span)>? placements) {
     var slots = new uint[10];
     var length = file.EffectiveLength;
@@ -530,7 +534,7 @@ public sealed class MinixFsWriter : IDisposable {
       dataZones[z] = zone;
       if (disk == null) continue;
 
-      SetBit(disk, zmapOff, (int)zone - firstdatazone + 1);
+      SetBit(disk, zmapOff, (int)zone - firstdatazone + 1, zmapBytes);
       var at = (long)z * BlockSize;
       var span = (int)Math.Min(BlockSize, length - at);
       if (placements != null) {
@@ -549,7 +553,7 @@ public sealed class MinixFsWriter : IDisposable {
 
     for (var level = 1; level <= 3 && idx < zoneCount; ++level)
       slots[DirectZones + level - 1] =
-        BuildIndirect(disk, zmapOff, firstdatazone, ref nextZone, dataZones, ref idx, zoneCount, level);
+        BuildIndirect(disk, zmapOff, zmapBytes, firstdatazone, ref nextZone, dataZones, ref idx, zoneCount, level);
 
     if (idx < zoneCount)
       throw new InvalidOperationException(
@@ -567,7 +571,7 @@ public sealed class MinixFsWriter : IDisposable {
   /// asks for a block it is not filling. A block of nothing but zero pointers
   /// would read back the same and still be a volume no minix system produced.
   /// </remarks>
-  private static uint BuildIndirect(byte[]? disk, int zmapOff, int firstdatazone, ref int nextZone,
+  private static uint BuildIndirect(byte[]? disk, int zmapOff, int zmapBytes, int firstdatazone, ref int nextZone,
       uint[] dataZones, ref int idx, int total, int level) {
     var reach = ZonePointersPerBlock;
     for (var i = 1; i < level; ++i) reach *= ZonePointersPerBlock;
@@ -584,7 +588,7 @@ public sealed class MinixFsWriter : IDisposable {
 
     var root = (uint)nextZone++;
     var baseByte = (long)root * BlockSize;
-    if (disk != null) SetBit(disk, zmapOff, (int)root - firstdatazone + 1);
+    if (disk != null) SetBit(disk, zmapOff, (int)root - firstdatazone + 1, zmapBytes);
 
     if (level == 1) {
       var count = Math.Min(ZonePointersPerBlock, total - idx);
@@ -597,7 +601,7 @@ public sealed class MinixFsWriter : IDisposable {
     }
 
     for (var i = 0; i < ZonePointersPerBlock && idx < total; i++) {
-      var child = BuildIndirect(disk, zmapOff, firstdatazone, ref nextZone, dataZones, ref idx, total, level - 1);
+      var child = BuildIndirect(disk, zmapOff, zmapBytes, firstdatazone, ref nextZone, dataZones, ref idx, total, level - 1);
       if (disk != null)
         BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan((int)(baseByte + i * 4)), child);
     }
@@ -672,8 +676,16 @@ public sealed class MinixFsWriter : IDisposable {
       BinaryPrimitives.WriteUInt32LittleEndian(span.Slice(24 + i * 4), zones[i]);
   }
 
-  private static void SetBit(byte[] data, int bitmapOffset, int bitIndex) {
-    data[bitmapOffset + bitIndex / 8] |= (byte)(1 << (bitIndex % 8));
+  private static void SetBit(byte[] data, int bitmapOffset, int bitIndex, int bitmapBytes) {
+    var at = bitmapOffset + bitIndex / 8;
+    // Running off the end of a bitmap used to write into whatever followed it,
+    // which for the zone bitmap is the inode table: the volume then read back as
+    // empty rather than as broken. Say so instead.
+    if (bitIndex < 0 || at >= bitmapOffset + bitmapBytes)
+      throw new InvalidOperationException(
+        $"Minix: bit {bitIndex} falls outside the {bitmapBytes:N0}-byte bitmap at offset {bitmapOffset:N0}.");
+
+    data[at] |= (byte)(1 << (bitIndex % 8));
   }
 
   /// <summary>

@@ -17,7 +17,7 @@ namespace FileSystem.CramFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cramfs</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
+public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveWriteConstraints, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -72,6 +72,36 @@ public sealed class CramFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the description.
   /// </summary>
   public string Description => "Linux compressed ROM filesystem with offline R/W rebuild and layout maintenance support";
+
+  /// <summary>
+  /// cramfs keeps a file's length in a 24-bit inode field, so it cannot hold one
+  /// of 16 MiB or more.
+  /// </summary>
+  /// <remarks>
+  /// The writer has always refused such a file, but it did so by throwing from
+  /// the middle of a build. Declaring the limit here lets a caller ask first and
+  /// get an answer instead of an exception.
+  /// </remarks>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    var size = input.InMemoryContent?.LongLength
+      ?? (input.IsDirectory || !File.Exists(input.FullPath) ? 0L : new FileInfo(input.FullPath).Length);
+    if (size > CramFsWriter.MaxFileBytes) {
+      reason = $"cramfs stores at most {CramFsWriter.MaxFileBytes:N0} bytes per file " +
+               $"(its inode size field is 24 bits); '{input.ArchiveName}' is {size:N0}.";
+      return false;
+    }
+
+    reason = null;
+    return true;
+  }
+
+  /// <summary>cramfs images have no fixed size of their own.</summary>
+  public long? MaxTotalArchiveSize => null;
+
+  /// <summary>One-line summary of what this writer takes.</summary>
+  public string AcceptedInputsDescription =>
+    $"accepts files and directories; a single file may not reach {CramFsWriter.MaxFileBytes + 1:N0} bytes";
 
   /// <summary>
   /// Lists the entries in the supplied container.
