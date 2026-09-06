@@ -47,6 +47,10 @@ public static class PakInPlaceModifier {
     var state = ReadCanonicalState(pak);
     var planned = new List<DirectoryEntry>(state.Entries);
     var byName = BuildUniqueNameIndex(state.Entries, requests.Select(request => request.Name));
+    var newNames = requests.Count(request => !byName.ContainsKey(request.Name));
+    if (planned.Count + newNames > PakReader.MaxEntries)
+      throw new NotSupportedException($"Quake PAK supports at most {PakReader.MaxEntries} directory entries.");
+
     var wipeCandidates = new List<Range>();
     var appendOffset = state.DirectoryOffset;
 
@@ -158,10 +162,14 @@ public static class PakInPlaceModifier {
     if ((long)directoryOffset + directoryLength != pak.Length)
       throw new NotSupportedException("Changed-byte PAK editing requires the directory to be the exact physical trailer.");
 
-    var entries = new List<DirectoryEntry>(directoryLength / PakReader.DirectoryEntrySize);
+    var entryCount = directoryLength / PakReader.DirectoryEntrySize;
+    if (entryCount > PakReader.MaxEntries)
+      throw new NotSupportedException($"Quake PAK contains {entryCount} entries; the original engine limit is {PakReader.MaxEntries}.");
+
+    var entries = new List<DirectoryEntry>(entryCount);
     var record = new byte[PakReader.DirectoryEntrySize];
     pak.Position = directoryOffset;
-    for (var i = 0; i < directoryLength / PakReader.DirectoryEntrySize; ++i) {
+    for (var i = 0; i < entryCount; ++i) {
       pak.ReadExactly(record);
       var rawName = record.AsSpan(0, PakReader.NameFieldSize).ToArray();
       var name = DecodeName(rawName);
