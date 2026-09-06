@@ -5,7 +5,7 @@ namespace Codec.Dts;
 /// <summary>
 /// Decodes a single DTS Coherent Acoustics (DCA) core frame to per-channel float PCM. One instance
 /// is reused across the stream so the QMF synthesis memory and the ADPCM predictor history persist
-/// between frames. The decode follows the DTS core bitstream / FFmpeg's <c>dcadec.c</c>:
+/// between frames. The decode follows the DTS core bitstream:
 /// the primary audio coding header (subband activity, VQ start, joint intensity, the bit-allocation
 /// / scale-factor / transient / quantization-index code-book selections and scale-factor adjusts),
 /// then per subframe a set of sub-subframes carrying bit allocation, scale factors, the quantized
@@ -23,6 +23,8 @@ internal sealed class DtsFrameDecoder {
   private const int MaxPrimChannels = 7;   // DCA_PRIM_CHANNELS_MAX
   private const int Subbands = 32;         // DCA_SUBBANDS
   private const int MaxSubsubframes = 4;
+  private const int MaxAbits = 32;         // DCA_ABITS_MAX: bit-allocation index range
+  private const int CodeBooks = 10;        // bit-allocation indices that can carry a sample code book
 
   // ── Code books (built once) ───────────────────────────────────────────────
   private static readonly DtsBitAllocBook BitAllocIndex = BuildBitAllocIndex();
@@ -62,6 +64,7 @@ internal sealed class DtsFrameDecoder {
   private int _subframes;
   private int _bitRateIndex;
   private bool _perfectReconstruction;
+  private int[] _channelMap = [];
 
   private readonly int[] _subbandActivity = new int[MaxPrimChannels];
   private readonly int[] _vqStartSubband = new int[MaxPrimChannels];
@@ -69,8 +72,11 @@ internal sealed class DtsFrameDecoder {
   private readonly int[] _transientHuffman = new int[MaxPrimChannels];
   private readonly int[] _scalefactorHuffman = new int[MaxPrimChannels];
   private readonly int[] _bitallocHuffman = new int[MaxPrimChannels];
-  private readonly int[][] _quantIndexHuffman = NewIntMatrix(MaxPrimChannels, 11);
-  private readonly float[][] _scalefactorAdj = NewFloatMatrix(MaxPrimChannels, 11);
+  // Indexed by the bit-allocation index, which the subframe header allows up to 26 even though only
+  // groups 1..10 carry a transmitted code-book selector and scale-factor adjustment. Sizing these to
+  // the group count alone puts every wide-band subband out of bounds.
+  private readonly int[][] _quantIndexHuffman = NewIntMatrix(MaxPrimChannels, MaxAbits);
+  private readonly float[][] _scalefactorAdj = NewFloatMatrix(MaxPrimChannels, MaxAbits);
 
   // Per-subframe header state.
   private readonly int[][] _predictionMode = NewIntMatrix(MaxPrimChannels, Subbands);
@@ -85,13 +91,15 @@ internal sealed class DtsFrameDecoder {
   // LFE decimated samples (history + current frame). Sized for the worst case.
   private readonly float[] _lfeData = new float[64 * 2 + 256];
   private float _lfeScaleFactor;
+  private int _lfeWritten;
+  private int _lfeHistoryLfe = -1;
 
   // Subband samples for the whole frame: [block][chan][subband][8].
   private float[][][][]? _subbandSamples;
 
   /// <summary>
   /// Decodes the core frame at <paramref name="offset"/>. On success <paramref name="outChannelCount"/>
-  /// is the native channel count (AMODE channels + LFE last when present) and the return value is
+  /// is the native channel count and the return value is, in ITU/WAVE interleave order,
   /// <c>[channel][sample]</c> float PCM (normalised to roughly ±1). Returns <see langword="null"/>
   /// when the frame cannot be decoded.
   /// </summary>
@@ -112,6 +120,7 @@ internal sealed class DtsFrameDecoder {
       // MULTIRATE_INTER selects the perfect-reconstruction prototype; it is bit 0 of the field that
       // immediately follows the (optional) header CRC. Re-read it from the parsed header position.
       this._perfectReconstruction = ReadMultirateInter(data, offset, header);
+      this._channelMap = DtsFrameHeader.ChannelMap(header.Amode, header.Lfe > 0);
 
       // Seek the reader to the end of the parsed frame header (which is byte-exact in bits).
       r.SkipBits(header.HeaderBitLength);
@@ -120,12 +129,19 @@ internal sealed class DtsFrameDecoder {
         return null;
 
       var totalChannels = this._primChannels + (this._lfe > 0 ? 1 : 0);
+      // The audio coding header carries its own channel count; when it disagrees with AMODE the
+      // arrangement is unknown, so fall back to bit-stream order rather than shuffle blindly.
+      if (this._channelMap.Length != totalChannels) {
+        this._channelMap = new int[totalChannels];
+        for (var c = 0; c < totalChannels; ++c)
+          this._channelMap[c] = c;
+      }
       var blocks = this._sampleBlocks / 8;
       if (blocks <= 0)
         return null;
 
       this._subbandSamples = NewSubbandSamples(blocks, this._primChannels);
-      Array.Clear(this._lfeData, 0, this._lfeData.Length);
+      this.CarryLfeHistory(blocks);
 
       var currentSubframe = 0;
       var currentSubsubframe = 0;
@@ -163,6 +179,20 @@ internal sealed class DtsFrameDecoder {
     }
   }
 
+  // The interpolation FIR reaches back past the first decimated sample of the frame, so the tail of
+  // the previous frame has to stay in place; clearing the whole buffer restarts the filter from
+  // silence once per frame and leaves a periodic artefact on the LFE channel.
+  private void CarryLfeHistory(int blocks) {
+    var history = 8 * this._lfe;
+    if (this._lfeHistoryLfe == this._lfe && this._lfeWritten >= history)
+      Array.Copy(this._lfeData, this._lfeWritten - history, this._lfeData, 0, history);
+    else
+      Array.Clear(this._lfeData, 0, Math.Max(history, 0));
+    Array.Clear(this._lfeData, history, this._lfeData.Length - history);
+    this._lfeWritten = history + 2 * this._lfe * blocks;
+    this._lfeHistoryLfe = this._lfe;
+  }
+
   // The MULTIRATE_INTER flag sits right after the optional 16-bit header CRC. Re-parse minimally.
   private static bool ReadMultirateInter(byte[] data, int offset, DtsFrameHeader header) {
     var buffer = data.AsSpan(offset, Math.Min(data.Length - offset, 32)).ToArray();
@@ -196,14 +226,13 @@ internal sealed class DtsFrameDecoder {
     for (var i = 0; i < this._primChannels; ++i) this._bitallocHuffman[i] = (int)r.ReadBits(3);
 
     for (var i = 0; i < this._primChannels; ++i)
-      this._quantIndexHuffman[i][0] = 0;
+      Array.Clear(this._quantIndexHuffman[i]);
     for (var j = 1; j < 11; ++j)
       for (var i = 0; i < this._primChannels; ++i)
         this._quantIndexHuffman[i][j] = (int)r.ReadBits(QuantIndexBitLen[j]);
 
-    for (var j = 0; j < 11; ++j)
-      for (var i = 0; i < this._primChannels; ++i)
-        this._scalefactorAdj[i][j] = 1f;
+    for (var i = 0; i < this._primChannels; ++i)
+      Array.Fill(this._scalefactorAdj[i], 1f);
     for (var j = 1; j < 11; ++j)
       for (var i = 0; i < this._primChannels; ++i)
         if (this._quantIndexHuffman[i][j] < QuantIndexThreshold[j])
@@ -257,7 +286,7 @@ internal sealed class DtsFrameDecoder {
     for (var j = 0; j < this._primChannels; ++j) {
       uint[] scaleTable;
       int logSize;
-      if (this._scalefactorHuffman[j] == 6) { scaleTable = DtsTables.ScaleFactorQuant7; logSize = 7; }
+      if (this._scalefactorHuffman[j] > 5) { scaleTable = DtsTables.ScaleFactorQuant7; logSize = 7; }
       else { scaleTable = DtsTables.ScaleFactorQuant6; logSize = 6; }
 
       for (var k = 0; k < this._subbandActivity[j]; ++k) {
@@ -355,25 +384,30 @@ internal sealed class DtsFrameDecoder {
           rscale[l] = 0f;
           Array.Clear(block, 8 * l, 8);
         } else {
-          var sfi = this._transitionMode[k][l] != 0 && subsubframe >= this._transitionMode[k][l] ? 1 : 0;
-          rscale[l] = quantStepSize * this._scaleFactor[k][l][sfi] * this._scalefactorAdj[k][sel];
+          // A code book is only in play when the transmitted selector falls inside that group's
+          // size; otherwise the samples are block codes (abits <= 7) or plain fixed-width values.
+          var book = abits <= CodeBooks ? SampleBitAlloc[abits] : null;
+          var huffman = book != null && sel < QuantIndexThreshold[abits] && book.Vlc[sel] != null;
 
-          var book = abits < SampleBitAlloc.Length ? SampleBitAlloc[abits] : null;
-          if (abits >= 11 || book == null || book.Vlc[sel] == null) {
-            if (abits <= 7) {
-              var size = DtsBlockCode.Sizes[abits - 1];
-              var levels = DtsBlockCode.Levels[abits - 1];
-              var code1 = (int)r.ReadBits(size);
-              var code2 = (int)r.ReadBits(size);
-              if (DtsBlockCode.DecodeBlockCodes(code1, code2, levels, block, 8 * l) != 0)
-                return false;
-            } else {
-              for (var m = 0; m < 8; ++m)
-                block[8 * l + m] = r.ReadSigned(abits - 3);
-            }
+          var sfi = this._transitionMode[k][l] != 0 && subsubframe >= this._transitionMode[k][l] ? 1 : 0;
+          // The scale-factor adjustment belongs to the bit-allocation index, and it applies only
+          // when the samples were Huffman coded.
+          var adj = huffman ? this._scalefactorAdj[k][abits] : 1f;
+          rscale[l] = quantStepSize * this._scaleFactor[k][l][sfi] * adj;
+
+          if (huffman) {
+            for (var m = 0; m < 8; ++m)
+              block[8 * l + m] = book!.Get(r, sel);
+          } else if (abits <= 7) {
+            var size = DtsBlockCode.Sizes[abits - 1];
+            var levels = DtsBlockCode.Levels[abits - 1];
+            var code1 = (int)r.ReadBits(size);
+            var code2 = (int)r.ReadBits(size);
+            if (DtsBlockCode.DecodeBlockCodes(code1, code2, levels, block, 8 * l) != 0)
+              return false;
           } else {
             for (var m = 0; m < 8; ++m)
-              block[8 * l + m] = book.Get(r, sel);
+              block[8 * l + m] = r.ReadSigned(abits - 3);
           }
         }
       }
@@ -432,21 +466,20 @@ internal sealed class DtsFrameDecoder {
 
   // ── QMF synthesis + LFE interpolation → per-channel PCM ───────────────────
   private void FilterChannels(int blocks, float[][] pcm) {
-    var totalChannels = this._primChannels + (this._lfe > 0 ? 1 : 0);
-    // Output ordering: decoded prim channels in document (AMODE) order, LFE last. The QMF scale
-    // 1/sqrt(2) / 32768 matches the reference; we keep ±1-normalised floats (no /32768) for WAV.
-    var qmfScale = (float)(1.0 / Math.Sqrt(2.0));
+    // The QMF output is scaled to the +/-1 float domain the caller quantizes from; the reference
+    // filterbank gain is 1/sqrt(2) over a 15-bit sample range.
+    var qmfScale = (float)(1.0 / Math.Sqrt(2.0) / 32768.0);
+    var map = this._channelMap;
 
     for (var blk = 0; blk < blocks; ++blk) {
       var subbandSamples = this._subbandSamples![blk];
       for (var k = 0; k < this._primChannels; ++k)
-        this._qmf[k].Process(subbandSamples[k], this._subbandActivity[k], pcm[k], blk * 256,
+        this._qmf[k].Process(subbandSamples[k], this._subbandActivity[k], pcm[map[k]], blk * 256,
           this._perfectReconstruction, qmfScale);
 
-      if (this._lfe > 0) {
-        var lfeChannel = totalChannels - 1;
-        DtsLfe.Interpolate(this._lfe, this._lfeData, 2 * this._lfe * (blk + 4), pcm[lfeChannel], blk * 256);
-      }
+      if (this._lfe > 0)
+        DtsLfe.Interpolate(this._lfe, this._lfeData, 2 * this._lfe * (blk + 4),
+          pcm[map[this._primChannels]], blk * 256);
     }
   }
 

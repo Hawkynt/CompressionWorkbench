@@ -80,24 +80,37 @@ public static class DtsTables {
   ];
 
   /// <summary>
-  /// Provides the lossy quant value.
+  /// Quantizer step sizes for the lossy (constant bit rate) core, as the Q22 fixed-point integers
+  /// the format defines. Rounding them to short decimals loses up to 0.14 percent on the finest
+  /// steps, and that shows up as a level error on any content the encoder codes at high resolution.
   /// </summary>
-  public static readonly float[] LossyQuant = [
-    0f, 1.6f, 1.0f, 0.8f, 0.59f, 0.50f, 0.42f, 0.34f,
-    0.19f, 0.11f, 0.06f, 0.035f, 0.019f, 0.011f, 0.0065f, 0.0040f,
-    0.0025f, 0.0014f, 0.0008f, 0.00045f, 0.00030f, 0.00017f, 0.00008f, 0.00004f,
-    0.00002f, 0.00001f, 0.000005f, 0f, 0f, 0f, 0f, 0f,
+  private static readonly int[] LossyQuantQ22 = [
+    0, 6710886, 4194304, 3355443, 2474639, 2097152, 1761608, 1426063,
+    796918, 461373, 251658, 146801, 79692, 46137, 27263, 16777,
+    10486, 5872, 3355, 1887, 1258, 713, 336, 168,
+    84, 42, 21, 0, 0, 0, 0, 0,
   ];
 
-  /// <summary>
-  /// Provides the lossless quant value.
-  /// </summary>
-  public static readonly float[] LosslessQuant = [
-    0f, 1.0f, 0.5f, 0.33f, 0.25f, 0.166f, 0.125f, 0.083f,
-    0.0625f, 0.03125f, 0.0156f, 7.874E-3f, 3.922E-3f, 1.957E-3f, 9.775E-4f, 4.885E-4f,
-    2.442E-4f, 1.221E-4f, 6.104E-5f, 3.052E-5f, 1.526E-5f, 7.629E-6f, 3.815E-6f, 1.907E-6f,
-    9.537E-7f, 4.768E-7f, 2.384E-7f, 0f, 0f, 0f, 0f, 0f,
+  /// <summary>Quantizer step sizes for the lossless (variable bit rate) core, Q22 fixed point.</summary>
+  private static readonly int[] LosslessQuantQ22 = [
+    0, 4194304, 2097152, 1384120, 1048576, 696254, 524288, 348127,
+    262144, 131072, 65431, 33026, 16450, 8208, 4100, 2049,
+    1024, 512, 256, 128, 64, 32, 16, 8,
+    4, 2, 1, 0, 0, 0, 0, 0,
   ];
+
+  /// <summary>Lossy-core quantizer step size indexed by the bit-allocation index.</summary>
+  public static readonly float[] LossyQuant = FromQ22(LossyQuantQ22);
+
+  /// <summary>Lossless-core quantizer step size indexed by the bit-allocation index.</summary>
+  public static readonly float[] LosslessQuant = FromQ22(LosslessQuantQ22);
+
+  private static float[] FromQ22(int[] q22) {
+    var result = new float[q22.Length];
+    for (var i = 0; i < q22.Length; ++i)
+      result[i] = q22[i] / 4194304f;
+    return result;
+  }
 
   private static short[][]? _adpcmVb;
   /// <summary>

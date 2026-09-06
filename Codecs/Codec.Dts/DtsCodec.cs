@@ -9,11 +9,10 @@ public sealed record DtsStreamInfo(
   int SampleRate, int Channels, int Bitrate, int Amode, bool Lfe, long DurationSamples);
 
 /// <summary>
-/// Clean-room DTS Coherent Acoustics (DCA) core codec. The decoder is a faithful managed port of
-/// the FFmpeg reference decoder (<c>libavcodec/dcadec.c</c> + <c>dcadata.c</c> +
-/// <c>dcahuff.h</c>) and the encoder lives in the companion partial source file. The core decoder
-/// emits interleaved little-endian signed 16-bit PCM at the stream's native channel count (the
-/// AMODE full-bandwidth channels in document order, with the LFE channel last when present).
+/// Clean-room DTS Coherent Acoustics (DCA) core codec; the encoder lives in the companion partial
+/// source file. The core decoder emits interleaved little-endian signed 16-bit PCM at the stream's
+/// native channel count, in the ITU/WAVE interleave order — front left, front right, front centre,
+/// LFE, then the surrounds — rather than the centre-first AMODE order the bit stream uses.
 /// <para>
 /// Scope: only the standard 16-bit big-endian framing (sync 0x7FFE8001) is decoded; the 14-bit and
 /// byte-swapped framings throw <see cref="NotSupportedException"/>. DTS-HD extension substreams
@@ -44,7 +43,7 @@ public static partial class DtsCodec {
 
   /// <summary>
   /// Decodes a DTS stream into raw interleaved little-endian signed 16-bit PCM on
-  /// <paramref name="output"/>. Channels are emitted in AMODE document order with LFE last.
+  /// <paramref name="output"/>. Channels are emitted in the ITU/WAVE interleave order.
   /// Throws <see cref="NotSupportedException"/> for the unsupported 14-bit / LE framings.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
