@@ -29,6 +29,45 @@ internal static class DtbModifier {
     });
   }
 
+  /// <summary>
+  /// Canonically rewrites the DTB without changing its properties, memory
+  /// reservations, or boot CPU id. This removes trailing totalsize slack and
+  /// packs the structure/string blocks exactly as the writer emits them.
+  /// </summary>
+  public static void Defragment(Stream archive)
+    => Mutate(archive, static _ => { });
+
+  /// <summary>
+  /// Emits the canonical compact DTB only when it is smaller than the input;
+  /// otherwise copies the original through unchanged.
+  /// </summary>
+  public static void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("DTB shrink requires a readable, seekable input stream.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("DTB shrink requires a writable, seekable output stream.", nameof(output));
+    if (input.Length > int.MaxValue)
+      throw new NotSupportedException("DTB images larger than 2 GiB are not supported.");
+
+    input.Position = 0;
+    var original = new byte[checked((int)input.Length)];
+    input.ReadExactly(original);
+    using var compacted = new MemoryStream(original.ToArray(), writable: true);
+    Defragment(compacted);
+
+    output.Position = 0;
+    output.SetLength(0);
+    if (compacted.Length < original.LongLength) {
+      compacted.Position = 0;
+      compacted.CopyTo(output);
+    } else {
+      output.Write(original);
+    }
+    output.Position = 0;
+  }
+
   private static void Mutate(Stream archive, Action<List<DtbWriter.PropertySpec>> edit) {
     ArgumentNullException.ThrowIfNull(archive);
     if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
@@ -51,6 +90,7 @@ internal static class DtbModifier {
     rebuilt.Position = 0;
     rebuilt.CopyTo(archive);
     archive.SetLength(archive.Position);
+    archive.Position = 0;
   }
 
   private static bool SameProperty(DtbWriter.PropertySpec a, DtbWriter.PropertySpec b) =>
