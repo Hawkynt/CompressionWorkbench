@@ -34,14 +34,16 @@ public sealed class PakWriter : IDisposable {
       throw new InvalidOperationException("The PAK directory has already been written.");
     ArgumentNullException.ThrowIfNull(data);
     var nameBytes = EncodeName(fileName);
-    if (!this._names.Add(fileName))
-      throw new ArgumentException($"Duplicate Quake PAK entry '{fileName}'.", nameof(fileName));
+    var terminator = Array.IndexOf(nameBytes, (byte)0);
+    var normalized = Encoding.ASCII.GetString(nameBytes, 0, terminator >= 0 ? terminator : nameBytes.Length);
+    if (!this._names.Add(normalized))
+      throw new ArgumentException($"Duplicate Quake PAK entry '{normalized}'.", nameof(fileName));
     if (this._stream.Position > int.MaxValue || data.LongLength > int.MaxValue || this._stream.Position + data.LongLength > int.MaxValue)
       throw new NotSupportedException("Quake PAK uses signed 32-bit file offsets and lengths.");
 
     var offset = checked((int)this._stream.Position);
     this._stream.Write(data);
-    this._entries.Add((fileName, nameBytes, offset, data.Length));
+    this._entries.Add((normalized, nameBytes, offset, data.Length));
   }
 
   /// <summary>Writes the trailing directory and patches the PACK header.</summary>
