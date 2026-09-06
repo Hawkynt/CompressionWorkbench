@@ -56,6 +56,12 @@ public class UdfTests {
     // Main VDS extent: length at offset 16, location at offset 20
     BinaryPrimitives.WriteUInt32LittleEndian(avdp[16..], 4 * (uint)sectorSize); // 4 sectors
     BinaryPrimitives.WriteUInt32LittleEndian(avdp[20..], 32); // starts at sector 32
+    // The anchor is the one descriptor a reader finds by address rather than by
+    // being pointed at, so it has to say which block it is and carry a valid
+    // ECMA-167 §7.2 checksum — that pair is what separates a real anchor from
+    // file data that happens to start with the same two bytes.
+    BinaryPrimitives.WriteUInt32LittleEndian(avdp[12..], 256);
+    SealTagChecksum(img, 256 * sectorSize);
 
     // Partition Descriptor at sector 32 (tag 5)
     var pd = img.AsSpan(32 * sectorSize);
@@ -153,6 +159,22 @@ public class UdfTests {
     BinaryPrimitives.WriteUInt32LittleEndian(img.AsSpan(rootFeOff + 180), (uint)rootDirDataLbn);
 
     return img;
+  }
+
+  /// <summary>
+  /// Writes the ECMA-167 §7.2 TagChecksum of the descriptor tag at
+  /// <paramref name="offset" />: the sum modulo 256 of the tag's other fifteen
+  /// bytes.
+  /// </summary>
+  private static void SealTagChecksum(byte[] image, int offset) {
+    image[offset + 4] = 0;
+    byte sum = 0;
+    for (var i = 0; i < 16; ++i) {
+      if (i == 4) continue;
+      sum = (byte)(sum + image[offset + i]);
+    }
+
+    image[offset + 4] = sum;
   }
 
   [Test, Category("HappyPath")]
@@ -286,8 +308,9 @@ public class UdfTests {
     using var ms = new MemoryStream();
     w.WriteTo(ms);
     var bytes = ms.ToArray();
-    // NSR02 at sector 17, offset 1
-    Assert.That(Encoding.ASCII.GetString(bytes, 17 * 2048 + 1, 5), Is.EqualTo("NSR02"));
+    // NSR03 at sector 17, offset 1: the writer records UDF 2.01, whose volume
+    // recognition sequence names the third-generation structure.
+    Assert.That(Encoding.ASCII.GetString(bytes, 17 * 2048 + 1, 5), Is.EqualTo("NSR03"));
   }
 
   // ── Descriptor tag CRC-16 (ECMA-167 §7.2.1) validation ──────────────────

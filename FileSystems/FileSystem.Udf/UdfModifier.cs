@@ -1,6 +1,5 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.Text;
 using Compression.Core.Checksums;
 
 namespace FileSystem.Udf;
@@ -18,7 +17,11 @@ namespace FileSystem.Udf;
 ///   <item>The root directory's FID extent — appended into trailing sector padding,
 ///         or extended via a second short_ad on the root File Entry.</item>
 ///   <item>The root File Entry sector — info length and L_AD updated, tag re-CRC'd.</item>
-///   <item>The Partition Descriptor sector — partition length grown.</item>
+///   <item>Every Partition Descriptor — the main sequence's and the reserve
+///         sequence's copy — grown to the partition's new length.</item>
+///   <item>The volume's second anchor, re-recorded in its new last block.</item>
+///   <item>The Logical Volume Integrity Descriptor — size, free space and the
+///         file count it advertises.</item>
 /// </list></para>
 ///
 /// <para>Remove uses the FID Characteristics "deleted" flag (bit 2 = 0x04) per
@@ -62,8 +65,10 @@ public static class UdfModifier {
 
     var ctx = ReadContext(image);
 
-    // Compute new file's allocation: FE sector + data sectors, all at partition tail.
-    var dataSectors = data.Length == 0 ? 1 : (data.Length + SectorSize - 1) / SectorSize;
+    // Compute new file's allocation: FE sector + data sectors, all at partition
+    // tail. A zero-length file is given no data block: an allocation descriptor
+    // naming a block it does not own is a chain longer than the size says.
+    var dataSectors = (data.Length + SectorSize - 1) / SectorSize;
     var feLbn = ctx.HighWaterLbn;
     var dataLbn = feLbn + 1;
     var newHighWater = dataLbn + dataSectors;
@@ -72,12 +77,14 @@ public static class UdfModifier {
     var fid = BuildFid(flags: 0x00, icbLbn: feLbn, name);
 
     // Write file data (zero-padded to sector boundary).
-    var dataAbs = (ctx.PartitionStart + dataLbn) * (long)SectorSize;
-    EnsureLength(image, dataAbs + dataSectors * (long)SectorSize);
-    image.Position = dataAbs;
-    image.Write(data);
-    var dataPad = dataSectors * SectorSize - data.Length;
-    if (dataPad > 0) image.Write(new byte[dataPad]);
+    if (dataSectors > 0) {
+      var dataAbs = (ctx.PartitionStart + dataLbn) * (long)SectorSize;
+      EnsureLength(image, dataAbs + dataSectors * (long)SectorSize);
+      image.Position = dataAbs;
+      image.Write(data);
+      var dataPad = dataSectors * SectorSize - data.Length;
+      if (dataPad > 0) image.Write(new byte[dataPad]);
+    }
 
     // Write file File Entry sector.
     var feSector = BuildFileFe(feLbn, data.Length, dataLbn);
@@ -88,6 +95,7 @@ public static class UdfModifier {
 
     // Grow the partition descriptor and image to cover the new allocations.
     UpdatePartitionLength(image, ctx, newHighWater);
+    AdjustFileCount(image, ctx, +1);
   }
 
   /// <summary>
@@ -134,6 +142,7 @@ public static class UdfModifier {
       WipeFileEntry(image, ctx, hit.IcbLbn);
     }
 
+    AdjustFileCount(image, ctx, -1);
     return true;
   }
 
@@ -142,10 +151,15 @@ public static class UdfModifier {
   private sealed record Context(
     int PartitionStart,
     int PartitionLengthSectors,
-    int PdSectorLba,
+    IReadOnlyList<int> PdSectorLbas,
     int RootFeLbn,
     int HighWaterLbn,
-    long ImageSize);
+    int LvidLba,
+    long ImageSize) {
+
+    /// <summary>The main sequence's partition descriptor, which always exists.</summary>
+    public int PdSectorLba => this.PdSectorLbas[0];
+  }
 
   private static Context ReadContext(Stream image) {
     if (image.Length < 257L * SectorSize)
@@ -157,28 +171,46 @@ public static class UdfModifier {
       throw new InvalidDataException("UDF: invalid AVDP tag.");
     var mainVdsLoc = (int)BinaryPrimitives.ReadUInt32LittleEndian(avdp.AsSpan(20));
     var mainVdsLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(avdp.AsSpan(16));
+    var reserveVdsLoc = (int)BinaryPrimitives.ReadUInt32LittleEndian(avdp.AsSpan(28));
+    var reserveVdsLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(avdp.AsSpan(24));
 
     // Walk VDS for PD and LVD
-    int partStart = 0, partLen = 0, pdSectorLba = 0;
-    int fsdLbn = 0;
-    var vdsSectors = mainVdsLen / SectorSize;
-    for (var i = 0; i < vdsSectors && i < 64; i++) {
-      var sectorLba = mainVdsLoc + i;
-      if ((long)(sectorLba + 1) * SectorSize > image.Length) break;
-      var sec = ReadSector(image, sectorLba);
-      var tag = BinaryPrimitives.ReadUInt16LittleEndian(sec);
-      if (tag == PdTagId) {
-        partStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(188));
-        partLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(192));
-        pdSectorLba = sectorLba;
-      } else if (tag == LvdTagId) {
-        fsdLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(252));
-      } else if (tag == 8) {
-        break;
+    int partStart = 0, partLen = 0;
+    int fsdLbn = 0, lvidLba = 0;
+    var pdSectors = new List<int>();
+
+    void Scan(int loc, int len, bool primary) {
+      var sectors = len / SectorSize;
+      for (var i = 0; i < sectors && i < 64; i++) {
+        var sectorLba = loc + i;
+        if ((long)(sectorLba + 1) * SectorSize > image.Length) break;
+        var sec = ReadSector(image, sectorLba);
+        var tag = BinaryPrimitives.ReadUInt16LittleEndian(sec);
+        if (tag == PdTagId) {
+          if (primary) {
+            partStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(188));
+            partLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(192));
+          }
+          pdSectors.Add(sectorLba);
+        } else if (tag == LvdTagId) {
+          if (primary) {
+            fsdLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(252));
+            lvidLba = (int)BinaryPrimitives.ReadUInt32LittleEndian(sec.AsSpan(436));
+          }
+        } else if (tag == 8) {
+          break;
+        }
       }
     }
 
-    if (pdSectorLba == 0)
+    Scan(mainVdsLoc, mainVdsLen, primary: true);
+    // The reserve sequence carries the same partition descriptor. Growing the
+    // partition without growing its copy leaves a reader that falls back to the
+    // reserve seeing a volume that stops short of its own data.
+    if (reserveVdsLen > 0)
+      Scan(reserveVdsLoc, reserveVdsLen, primary: false);
+
+    if (pdSectors.Count == 0)
       throw new InvalidDataException("UDF: partition descriptor not found.");
 
     // FSD → root ICB LBN
@@ -192,9 +224,10 @@ public static class UdfModifier {
     return new Context(
       PartitionStart: partStart,
       PartitionLengthSectors: partLen,
-      PdSectorLba: pdSectorLba,
+      PdSectorLbas: pdSectors,
       RootFeLbn: rootLbn,
       HighWaterLbn: partLen,
+      LvidLba: lvidLba,
       ImageSize: image.Length);
   }
 
@@ -339,15 +372,8 @@ public static class UdfModifier {
     return null;
   }
 
-  private static string DecodeCs0(byte[] buf, int offset, int len) {
-    if (len <= 0) return "";
-    var compressionId = buf[offset];
-    if (compressionId == 8 && len > 1)
-      return Encoding.UTF8.GetString(buf, offset + 1, len - 1);
-    if (compressionId == 16 && len > 1)
-      return Encoding.BigEndianUnicode.GetString(buf, offset + 1, len - 1);
-    return Encoding.ASCII.GetString(buf, offset, len);
-  }
+  private static string DecodeCs0(byte[] buf, int offset, int len)
+    => len <= 0 ? "" : OstaCompressedUnicode.Decode(buf.AsSpan(offset, len));
 
   // ── Root FID growth (Add path) ────────────────────────────────────────────
 
@@ -372,6 +398,10 @@ public static class UdfModifier {
       capacity += sectors * SectorSize;
     }
 
+    // The record starts wherever the directory's bytes currently end, and its
+    // tag has to name the logical block that position falls in.
+    StampFidLocation(fid, BlockAtDirectoryOffset(ext, oldLength));
+
     if (newLength <= capacity) {
       // Fits inside the trailing pad of the last extent's last sector.
       WriteFidIntoExistingExtent(image, ctx, ext, fid);
@@ -382,6 +412,8 @@ public static class UdfModifier {
       // First, write any spillover into the existing tail (if some bytes still fit).
       var tailRoom = (int)(capacity - oldLength);
       var spilled = Math.Min(tailRoom, fid.Length);
+      if (spilled == 0)
+        StampFidLocation(fid, highWaterLbn);
       if (spilled > 0) {
         // Fill the tail of the last extent with the first `spilled` bytes.
         WriteFidPartialToExistingTail(image, ctx, ext, fid, 0, spilled);
@@ -401,6 +433,22 @@ public static class UdfModifier {
       UpdateRootFeLength(image, ctx, ext, newLength,
         addExtent: (newLbn, remaining));
     }
+  }
+
+  /// <summary>
+  /// The logical block holding byte <paramref name="offset" /> of a directory's
+  /// data, walking its extents in order. Returns -1 when the offset lies past
+  /// everything the extents cover.
+  /// </summary>
+  private static int BlockAtDirectoryOffset(FidExtent ext, long offset) {
+    foreach (var (lbn, len) in ext.Extents) {
+      var capacity = (long)((len + SectorSize - 1) / SectorSize) * SectorSize;
+      if (offset < capacity)
+        return lbn + (int)(offset / SectorSize);
+      offset -= capacity;
+    }
+
+    return -1;
   }
 
   private static void WriteFidIntoExistingExtent(Stream image, Context ctx, FidExtent ext, byte[] fid) {
@@ -518,24 +566,40 @@ public static class UdfModifier {
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), (1u << 12) | (1u << 7) | (1u << 2));
     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), 1);
     BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)fileSize);
+    var sectors = (fileSize + SectorSize - 1) / SectorSize;
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(64), (ulong)sectors); // LogicalBlocksRecorded
+    UdfDescriptors.WriteTimestamp(buf, 72, UdfDescriptors.RecordingTime);     // AccessTime
+    UdfDescriptors.WriteTimestamp(buf, 84, UdfDescriptors.RecordingTime);     // ModificationTime
+    UdfDescriptors.WriteTimestamp(buf, 96, UdfDescriptors.RecordingTime);     // AttributeTime
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(108), 1);             // Checkpoint
+    UdfDescriptors.WriteEntityId(buf, 128, UdfDescriptors.ImplementationId,
+      UdfDescriptors.ImplementationSuffix);
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(168), 0);  // L_EA
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8);  // L_AD = 8 (one short_ad)
-    var allocLen = Math.Max(fileSize, SectorSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)allocLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), (uint)dataLbn);
-    FinalizeTag(buf, 0, (176 - 16) + 0 + 8); // body covers FE header + L_EA + L_AD
+    // A zero-length file records no extent at all.
+    var lAd = fileSize > 0 ? 8 : 0;
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), (uint)lAd);
+    if (lAd > 0) {
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)fileSize);
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), (uint)dataLbn);
+    }
+    FinalizeTag(buf, 0, (176 - 16) + 0 + lAd); // body covers FE header + L_EA + L_AD
     return buf;
   }
 
   // ── FID construction ──────────────────────────────────────────────────────
 
+  /// <summary>
+  /// Builds a File Identifier Descriptor. Its tag location is stamped by
+  /// <see cref="StampFidLocation" /> once the caller knows which block the
+  /// record will start in.
+  /// </summary>
   private static byte[] BuildFid(byte flags, int icbLbn, string name) {
-    var nameBytes = name.Length == 0 ? [] : EncodeCs0(name);
+    var nameBytes = OstaCompressedUnicode.Encode(name);
     var fidLen = 38 + nameBytes.Length;
     var padded = (fidLen + 3) & ~3;
     var buf = new byte[padded];
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0), FidTagId);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(2), 2); // descriptor version
+    WriteTag(buf, 0, FidTagId, 0);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(16), 1); // FileVersionNumber
     buf[18] = flags;
     buf[19] = (byte)nameBytes.Length;
     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20), (uint)SectorSize); // ICB ext length
@@ -545,12 +609,13 @@ public static class UdfModifier {
     return buf;
   }
 
-  private static byte[] EncodeCs0(string name) {
-    var utf8 = Encoding.UTF8.GetBytes(name);
-    var result = new byte[1 + utf8.Length];
-    result[0] = 8; // CS0 = UTF-8
-    utf8.CopyTo(result, 1);
-    return result;
+  /// <summary>
+  /// Records the logical block a File Identifier Descriptor starts in and
+  /// re-seals its tag. A record spanning two blocks names the first of them.
+  /// </summary>
+  private static void StampFidLocation(byte[] fid, int lbn) {
+    BinaryPrimitives.WriteUInt32LittleEndian(fid.AsSpan(12), (uint)lbn);
+    FinalizeTag(fid, 0, fid.Length - 16);
   }
 
   // ── Wipe (Remove path) ────────────────────────────────────────────────────
@@ -623,37 +688,92 @@ public static class UdfModifier {
   private static void UpdatePartitionLength(Stream image, Context ctx, int newPartLenSectors) {
     if (newPartLenSectors <= ctx.PartitionLengthSectors) return;
 
-    var pd = ReadSector(image, ctx.PdSectorLba);
-    BinaryPrimitives.WriteUInt32LittleEndian(pd.AsSpan(192), (uint)newPartLenSectors);
-    FinalizeTag(pd, 0, 496); // PdBodySize
-    WriteSector(image, ctx.PdSectorLba, pd);
-
-    EnsureLength(image, (long)(ctx.PartitionStart + newPartLenSectors) * SectorSize);
-  }
-
-  // ── Tag helpers (mirror UdfWriter) ────────────────────────────────────────
-
-  private static void WriteTag(byte[] buf, int off, ushort tagId, uint tagLocation) {
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off), tagId);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off + 2), 2); // descriptor version
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(off + 12), tagLocation);
-  }
-
-  private static void FinalizeTag(byte[] buf, int tagOffset, int bodyLength) {
-    var bodyStart = tagOffset + 16;
-    if (bodyStart + bodyLength > buf.Length) bodyLength = buf.Length - bodyStart;
-    if (bodyLength < 0) bodyLength = 0;
-    var crc = Crc16Ccitt.Compute(buf.AsSpan(bodyStart, bodyLength));
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(tagOffset + 8), crc);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(tagOffset + 10), (ushort)bodyLength);
-    buf[tagOffset + 4] = 0;
-    byte sum = 0;
-    for (var i = 0; i < 16; i++) {
-      if (i == 4) continue;
-      sum = (byte)(sum + buf[tagOffset + i]);
+    foreach (var lba in ctx.PdSectorLbas) {
+      var pd = ReadSector(image, lba);
+      if (BinaryPrimitives.ReadUInt16LittleEndian(pd) != PdTagId) continue;
+      BinaryPrimitives.WriteUInt32LittleEndian(pd.AsSpan(192), (uint)newPartLenSectors);
+      FinalizeTag(pd, 0, 496); // PdBodySize
+      WriteSector(image, lba, pd);
     }
-    buf[tagOffset + 4] = sum;
+
+    // The volume keeps one block past the partition for its second anchor
+    // (ECMA-167 §3/8.4), which has to follow the partition as it grows.
+    var lastBlock = ctx.PartitionStart + newPartLenSectors;
+    EnsureLength(image, (long)(lastBlock + 1) * SectorSize);
+    MoveTailAnchor(image, lastBlock);
+    UpdateIntegrity(image, ctx, newPartLenSectors);
   }
+
+  /// <summary>
+  /// Re-records the volume's second anchor in its new last block, copied from
+  /// the one at block 256 so both name the same descriptor sequences.
+  /// </summary>
+  private static void MoveTailAnchor(Stream image, int lastBlock) {
+    var anchor = ReadSector(image, AvdpLba);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(anchor) != 2) return;
+    BinaryPrimitives.WriteUInt32LittleEndian(anchor.AsSpan(12), (uint)lastBlock);
+    FinalizeTag(anchor, 0, 496);
+    WriteSector(image, lastBlock, anchor);
+  }
+
+  /// <summary>
+  /// Refreshes the logical volume integrity descriptor after the partition
+  /// grew: a stale size table describes a volume smaller than its own data,
+  /// and every tool reads the difference as missing blocks.
+  /// </summary>
+  private static void UpdateIntegrity(Stream image, Context ctx, int newPartLenSectors) {
+    if (ctx.LvidLba <= 0) return;
+    if ((long)(ctx.LvidLba + 1) * SectorSize > image.Length) return;
+
+    var lvid = ReadSector(image, ctx.LvidLba);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(lvid) != 9) return;
+
+    var partitions = BinaryPrimitives.ReadUInt32LittleEndian(lvid.AsSpan(72));
+    if (partitions < 1) return;
+    var implementationUse = (int)BinaryPrimitives.ReadUInt32LittleEndian(lvid.AsSpan(76));
+    var tables = 80 + (int)partitions * 4;
+
+    BinaryPrimitives.WriteUInt32LittleEndian(lvid.AsSpan(80), 0);                       // free space
+    BinaryPrimitives.WriteUInt32LittleEndian(lvid.AsSpan(tables), (uint)newPartLenSectors); // size
+    FinalizeTag(lvid, 0, (tables + (int)partitions * 4 - 16) + implementationUse);
+    WriteSector(image, ctx.LvidLba, lvid);
+  }
+
+  /// <summary>Adjusts the file count the integrity descriptor advertises.</summary>
+  private static void AdjustFileCount(Stream image, Context ctx, int delta) {
+    if (ctx.LvidLba <= 0 || delta == 0) return;
+    if ((long)(ctx.LvidLba + 1) * SectorSize > image.Length) return;
+
+    var lvid = ReadSector(image, ctx.LvidLba);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(lvid) != 9) return;
+
+    var partitions = (int)BinaryPrimitives.ReadUInt32LittleEndian(lvid.AsSpan(72));
+    if (partitions < 1) return;
+    var implementationUse = (int)BinaryPrimitives.ReadUInt32LittleEndian(lvid.AsSpan(76));
+    // OSTA UDF §2.2.6.4 puts the counts after the entity identifier that opens
+    // the implementation use area.
+    var counts = 80 + partitions * 8 + 32;
+    if (implementationUse < 40 || counts + 8 > SectorSize) return;
+
+    var files = (int)BinaryPrimitives.ReadUInt32LittleEndian(lvid.AsSpan(counts));
+    BinaryPrimitives.WriteUInt32LittleEndian(lvid.AsSpan(counts), (uint)Math.Max(0, files + delta));
+    // A new object also consumes the next unique identifier.
+    if (delta > 0) {
+      var next = BinaryPrimitives.ReadUInt64LittleEndian(lvid.AsSpan(40));
+      BinaryPrimitives.WriteUInt64LittleEndian(lvid.AsSpan(40), next + (ulong)delta);
+    }
+
+    FinalizeTag(lvid, 0, (80 + partitions * 8 - 16) + implementationUse);
+    WriteSector(image, ctx.LvidLba, lvid);
+  }
+
+  // ── Tag helpers ───────────────────────────────────────────────────────────
+
+  private static void WriteTag(byte[] buf, int off, ushort tagId, uint tagLocation)
+    => UdfDescriptors.WriteTag(buf, off, tagId, tagLocation);
+
+  private static void FinalizeTag(byte[] buf, int tagOffset, int bodyLength)
+    => UdfDescriptors.FinalizeTag(buf, tagOffset, bodyLength);
 
   // ── Stream helpers ────────────────────────────────────────────────────────
 

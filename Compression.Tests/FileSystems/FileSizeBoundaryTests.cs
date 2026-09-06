@@ -47,7 +47,7 @@ public sealed class FileSizeBoundaryTests {
   /// </summary>
   private static readonly string[] Filesystems = [
     "Fat", "ExFat", "Jfs", "HfsPlus", "Btrfs", "Ext",
-    "CramFs", "Erofs", "MinixFs", "SquashFs", "Iso", "ReiserFs", "Jffs2",
+    "CramFs", "Erofs", "MinixFs", "SquashFs", "Iso", "ReiserFs", "Jffs2", "Udf",
   ];
 
   /// <summary>

@@ -40,8 +40,9 @@ public class UdfWipeEmptyTests {
     var fileExtent = UdfExtentMap.Enumerate(ms)
       .First(e => e.Kind == DefragBlockKind.Used && e.FileName == "data.bin"
                   && e.Classification != DefragBlockClass.Directory);
-    Assert.That(fileExtent.Length, Is.GreaterThan(content.Length),
-      "The data extent is sector-padded, so a tip exists beyond the logical size");
+    Assert.That(fileExtent.Length, Is.EqualTo(content.Length),
+      "The allocation descriptor records the logical length, so the extent stops there "
+      + "and the rest of the sector is the tip");
 
     // Dirty the cluster tip (immediately after the file's logical end).
     var tipOffset = fileExtent.Offset + content.Length;

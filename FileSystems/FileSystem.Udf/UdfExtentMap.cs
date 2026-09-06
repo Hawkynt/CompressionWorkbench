@@ -70,10 +70,26 @@ public static class UdfExtentMap {
 
     var mainVdsLoc = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(20));
     var mainVdsLen = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(16));
+    var reserveVdsLoc = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(28));
+    var reserveVdsLen = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(24));
+
+    // A second anchor sits in the volume's last block (ECMA-167 §3/8.4). Left
+    // uncovered it reads as free space and the wiper zeroes it, which costs the
+    // volume the redundancy the standard asks for.
+    var lastBlock = image.Length / SectorSize - 1;
+    if (lastBlock > AvdpSector) {
+      var tailOff = lastBlock * SectorSize;
+      cache.Read(tailOff, sectorBuf);
+      if (BinaryPrimitives.ReadUInt16LittleEndian(sectorBuf) == 2)
+        yield return new DefragBlockInfo(tailOff, SectorSize, DefragBlockKind.MetadataReserved,
+          FileName: "UDF AVDP");
+    }
 
     // Walk VDS to find PD (5) and LVD (6).
     int partStart = 0;
     int fsdLbn = 0;
+    long lvidLoc = 0;
+    long lvidLen = 0;
     var vdsSectors = (int)(mainVdsLen / SectorSize);
     for (var i = 0; i < vdsSectors && i < 64; i++) {
       var off = (long)(mainVdsLoc + i) * SectorSize;
@@ -87,7 +103,31 @@ public static class UdfExtentMap {
         partStart = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(188));
       } else if (tagId == 6) {
         fsdLbn = (int)BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(252));
+        lvidLen = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(432));
+        lvidLoc = BinaryPrimitives.ReadUInt32LittleEndian(sectorBuf.AsSpan(436));
       } else if (tagId == 8) break; // terminator
+    }
+
+    // The reserve sequence the anchor names, and the logical volume integrity
+    // sequence the logical volume descriptor names, are both real structures
+    // outside the partition.
+    var reserveSectors = (int)(reserveVdsLen / SectorSize);
+    for (var i = 0; i < reserveSectors && i < 64; i++) {
+      var off = (long)(reserveVdsLoc + i) * SectorSize;
+      if (off + SectorSize > image.Length) break;
+      cache.Read(off, sectorBuf);
+      var tagId = BinaryPrimitives.ReadUInt16LittleEndian(sectorBuf);
+      yield return new DefragBlockInfo(off, SectorSize, DefragBlockKind.MetadataReserved,
+        FileName: $"UDF reserve VDS tag={tagId}");
+      if (tagId == 8) break;
+    }
+
+    var lvidSectors = (int)(lvidLen / SectorSize);
+    for (var i = 0; i < lvidSectors && i < 64; i++) {
+      var off = (lvidLoc + i) * SectorSize;
+      if (off + SectorSize > image.Length) break;
+      yield return new DefragBlockInfo(off, SectorSize, DefragBlockKind.MetadataReserved,
+        FileName: "UDF LVID");
     }
 
     // Read FSD.
@@ -214,14 +254,7 @@ public static class UdfExtentMap {
 
         if (!isParent && !isDeleted && fidIdLen > 0) {
           var nameStart = pos + 38 + lIu;
-          string name;
-          if (fidIdLen > 1 && dirBytes[nameStart] == 8)
-            name = Encoding.UTF8.GetString(dirBytes, nameStart + 1, fidIdLen - 1);
-          else if (fidIdLen > 1 && dirBytes[nameStart] == 16)
-            name = Encoding.BigEndianUnicode.GetString(dirBytes, nameStart + 1, fidIdLen - 1);
-          else
-            name = Encoding.ASCII.GetString(dirBytes, nameStart, fidIdLen);
-          name = name.TrimEnd('\0');
+          var name = OstaCompressedUnicode.Decode(dirBytes.AsSpan(nameStart, fidIdLen));
 
           var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
 

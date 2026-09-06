@@ -111,9 +111,31 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string AcceptedInputsDescription => "UDF 2.01 disc image; any files, flat directory.";
   /// <summary>
-  /// Performs the can accept operation.
+  /// Accepts any file the writer can address. Short allocation descriptors cap
+  /// an extent below 2^30 bytes (OSTA UDF §2.3.10.1) and only so many of them
+  /// fit in one File Entry, so a file past that ceiling is declined here rather
+  /// than written as a volume nothing can read.
   /// </summary>
-  public bool CanAccept(ArchiveInputInfo input, out string? reason) { reason = null; return true; }
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    reason = null;
+    if (input is null || input.IsDirectory)
+      return true;
+
+    long size;
+    if (input.InMemoryContent is { } content)
+      size = content.LongLength;
+    else if (File.Exists(input.FullPath))
+      size = new FileInfo(input.FullPath).Length;
+    else
+      return true;
+
+    if (size <= UdfWriter.MaxFileBytes)
+      return true;
+
+    reason = $"UDF addresses at most {UdfWriter.MaxFileBytes:N0} bytes per file without " +
+      "allocation descriptor continuation, which this writer does not record.";
+    return false;
+  }
 
   /// <summary>
   /// Gets the id.

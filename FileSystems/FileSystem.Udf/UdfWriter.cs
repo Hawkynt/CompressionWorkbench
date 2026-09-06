@@ -1,60 +1,97 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.Text;
-using Compression.Core.Checksums;
+using static FileSystem.Udf.UdfDescriptors;
 
 namespace FileSystem.Udf;
 
 /// <summary>
-/// Writes a minimal UDF 1.02 filesystem image (ECMA-167). Builds a real
-/// directory tree from slash-separated file paths, short allocation
-/// descriptors. Computes ECMA-167 §7.2.1 DescriptorCRC
-/// (CRC-16/CCITT, init=0, poly=0x1021, non-reflected) and TagChecksum for
-/// every descriptor tag so that strict readers (xorriso, Linux udf.ko,
-/// mkudffs fsck) accept the produced images.
+/// Writes a UDF 2.01 volume image (ECMA-167 plus the OSTA UDF profile). Builds a
+/// real directory tree from slash-separated file paths using short allocation
+/// descriptors, and records every descriptor the standard's own tools look for:
+/// both volume descriptor sequences, both anchors, the unallocated space and
+/// implementation use descriptors, and a closed logical volume integrity
+/// descriptor.
 ///
-/// Layout:
+/// Layout (2048-byte logical blocks):
 /// <code>
-/// Sectors   0-15:  System area
-/// Sector   16:     VRS BEA01
-/// Sector   17:     VRS NSR02
-/// Sector   18:     VRS TEA01
-/// Sector   32-35:  Main VDS (PVD + Partition + LVD + Terminator)
-/// Sector  256:     AVDP
-/// Sector  257:     Partition start: File Set Descriptor (FSD) at LBN 0
-/// Sector  258:     Root directory File Entry at LBN 1
-/// Sector  259+:    Per-node File Entries, directory FID data, file data
+/// Block     0-15:  System area
+/// Block       16:  VRS BEA01
+/// Block       17:  VRS NSR03
+/// Block       18:  VRS TEA01
+/// Block    32-47:  Main volume descriptor sequence
+/// Block    48-63:  Reserve volume descriptor sequence
+/// Block    64-65:  Logical volume integrity sequence (LVID + terminator)
+/// Block      256:  Anchor volume descriptor pointer
+/// Block      257:  Partition start; File Set Descriptor at LBN 0
+/// Block      258:  Root directory File Entry at LBN 1
+/// Block     259+:  Per-node File Entries, directory FID data, file data
+/// Last block:      Second anchor volume descriptor pointer
 /// </code>
 ///
-/// A directory's data is a sequence of File Identifier Descriptors (FID,
-/// tag 257). The first FID of every directory is the parent entry (Parent
-/// flag 0x08, zero-length identifier, ICB pointing at the parent FE). Every
-/// directory and file is a File Entry (FE, tag 261); directories carry file
-/// type 4, regular files file type 5. A subdirectory FID carries the
-/// Directory flag 0x02 and points at the child directory's FE.
+/// A directory's data is a dense sequence of File Identifier Descriptors (FID,
+/// tag 257) — dense because ECMA-167 lets a FID span a logical block boundary
+/// and Linux's udf driver reads directory bytes as one uninterrupted run, so
+/// padding a FID onto the next block makes the directory unreadable. The first
+/// FID of every directory is the parent entry (Parent flag 0x08, zero-length
+/// identifier). Every directory and file is a File Entry (FE, tag 261);
+/// directories carry file type 4, regular files file type 5.
 /// </summary>
 public sealed class UdfWriter {
   private const int Sector = 2048;
+
+  private const int VrsFirstSector = 16;
+  private const int MainVdsSector = 32;
+  private const int VdsSectors = 16;
+  private const int ReserveVdsSector = MainVdsSector + VdsSectors;
+  private const int LvidSector = ReserveVdsSector + VdsSectors;
+  private const int LvidSectors = 2;
+  private const int AnchorSector = 256;
   private const int PartitionStartSector = 257;
 
-  // Descriptor body sizes per ECMA-167 §10. The body starts at offset 16
-  // (after the 16-byte descriptor tag) and DescriptorCRCLength covers
-  // exactly these many bytes. Using fixed structure sizes (rather than
-  // the full sector) keeps us compatible with real UDF implementations.
-  private const int PvdBodySize = 496;          // AVDP/PVD/PD sector size 512 - 16 tag
-  private const int AvdpBodySize = 496;
-  private const int PdBodySize = 496;
-  private const int LvdBodySize = 440 - 16;     // 440 header + zero partition maps
-  private const int TerminatorBodySize = 496;
-  private const int FsdBodySize = 496;
-  private const int FeBodyHeader = 160;         // 176 - 16 (up to L_EA), plus L_EA + L_AD content
+  /// <summary>File Set Descriptor block, relative to the partition start.</summary>
+  private const int FsdLbn = 0;
+
+  /// <summary>Root directory File Entry block, relative to the partition start.</summary>
+  private const int RootFeLbn = 1;
+
+  // Descriptor body sizes per ECMA-167 §3/10. The body starts 16 bytes after the
+  // tag and DescriptorCRCLength covers exactly these many bytes.
+  private const int VolumeDescriptorBodySize = 496;   // 512-byte descriptor minus its tag
+  private const int LvdBodySize = 446 - 16;           // through the single Type-1 partition map
+  private const int UsdBodySize = 24 - 16;            // no allocation descriptors follow
+  private const int LvidBodySize = (88 - 16) + LvidImplementationUseSize;
+  private const int LvidImplementationUseSize = 46;
+  private const int FeHeaderBodySize = 176 - 16;      // File Entry header, up to L_EA
+
+  /// <summary>
+  /// Bytes one short allocation descriptor may address. ECMA-167 caps an extent
+  /// length at 2^30-1 and OSTA UDF §2.3.10.1 requires every extent but the last
+  /// of a file to be a whole number of blocks, so the usable maximum is the
+  /// largest block multiple below 2^30.
+  /// </summary>
+  private const long MaxExtentBytes = (1L << 30) - Sector;
+
+  /// <summary>
+  /// Short allocation descriptors that fit in one File Entry. They start after
+  /// the 176-byte header and the extended attributes, of which this writer
+  /// records none.
+  /// </summary>
+  private const int MaxAllocationDescriptors = (Sector - 176) / 8;
+
+  /// <summary>Largest file this writer can address without descriptor continuation.</summary>
+  internal const long MaxFileBytes = MaxAllocationDescriptors * MaxExtentBytes;
+
+  /// <summary>
+  /// First unique identifier handed to a file or directory. OSTA UDF §3.2.1
+  /// reserves 0 for the root directory and 1..15 for the standard's own use.
+  /// </summary>
+  private const uint FirstUniqueId = 16;
 
   private readonly List<(string name, byte[] data)> _files = [];
 
   /// <summary>
   /// ECMA-167 PVD Volume Identifier (dstring at PVD offset 24, 32 bytes).
   /// Linux's udf driver surfaces this as the volume label. Default "UDF Volume".
-  /// Truncated to 31 bytes (ECMA-167 dstring length byte caps at 31).
   /// </summary>
   public string VolumeIdentifier { get; set; } = "UDF Volume";
 
@@ -117,7 +154,8 @@ public sealed class UdfWriter {
     public int FeLbn;          // File Entry block
     public int DataLbn;        // first data block (FID data for dirs, payload for files)
     public int DataSectors;    // sectors occupied by data
-    public int DataLength;     // exact byte length of the (directory or file) data
+    public long DataLength;    // exact byte length of the (directory or file) data
+    public uint UniqueId;      // OSTA UDF §3.2.1 unique identifier
   }
 
   /// <summary>
@@ -126,46 +164,47 @@ public sealed class UdfWriter {
   public void WriteTo(Stream output) {
     var root = BuildTree();
 
-    // LBN 0 is the FSD; the root File Entry lives at LBN 1. Everything else
-    // (per-node FEs, directory FID data, file payloads) is laid out after.
-    root.FeLbn = 1;
-    var nextLbn = 2;
-    AssignLayout(root, ref nextLbn);
+    root.FeLbn = RootFeLbn;
+    root.UniqueId = 0;
+    var nextLbn = RootFeLbn + 1;
+    var nextUniqueId = FirstUniqueId;
+    AssignLayout(root, ref nextLbn, ref nextUniqueId);
 
     var totalPartitionSectors = nextLbn; // LBNs 0..nextLbn-1 are all in use
-    var totalImageSectors = PartitionStartSector + totalPartitionSectors;
+    var lastBlock = PartitionStartSector + totalPartitionSectors;
 
-    // ── Write system area (sectors 0-15) ──
-    WritePadding(output, 16);
+    var (fileCount, directoryCount) = Count(root);
 
-    // ── Write VRS (sectors 16-18) ──
+    // ── System area (blocks 0-15) ──
+    WritePadding(output, VrsFirstSector);
+
+    // ── Volume recognition sequence (blocks 16-18) ──
     WriteVrs(output, "BEA01");
-    WriteVrs(output, "NSR02");
+    WriteVrs(output, "NSR03");
     WriteVrs(output, "TEA01");
 
-    // ── Padding to sector 32 ──
-    WritePadding(output, 32 - 19);
+    WritePadding(output, MainVdsSector - (VrsFirstSector + 3));
 
-    // ── Main VDS at sectors 32-35 ──
-    this.WritePvd(output, 32, totalImageSectors);
-    WritePartitionDescriptor(output, 33, PartitionStartSector, totalPartitionSectors);
-    WriteLvd(output, 34);
-    WriteTerminator(output, 35);
+    // ── Both volume descriptor sequences ──
+    this.WriteVds(output, MainVdsSector, totalPartitionSectors);
+    this.WriteVds(output, ReserveVdsSector, totalPartitionSectors);
 
-    // ── Padding to sector 256 ──
-    WritePadding(output, 256 - 36);
+    // ── Logical volume integrity sequence ──
+    this.WriteLvid(output, LvidSector, totalPartitionSectors, fileCount, directoryCount, nextUniqueId);
+    WriteTerminator(output, LvidSector + 1);
 
-    // ── AVDP at sector 256 ──
-    WriteAvdp(output, 256, mainVdsLoc: 32, mainVdsLen: 4 * Sector);
+    WritePadding(output, AnchorSector - (LvidSector + LvidSectors));
 
-    // ── Partition data (starting at sector 257 = LBN 0) ──
-    WriteFsd(output, lbn: 0, rootIcbLbn: root.FeLbn);
+    // ── First anchor ──
+    WriteAnchor(output, AnchorSector);
+
+    // ── Partition data (starting at block 257 = LBN 0) ──
+    this.WriteFsd(output, FsdLbn, RootFeLbn);
 
     // Emit blocks in LBN order so the stream stays sequential. Gather every
     // block-producing action keyed by its starting LBN, then drain in order.
-    blocksOutput = output;
     var blocks = new SortedDictionary<int, Action>();
-    CollectBlocks(root, blocks);
+    CollectBlocks(root, blocks, output);
 
     var written = 1; // LBN 0 (FSD) already written
     foreach (var (lbn, emit) in blocks) {
@@ -180,6 +219,11 @@ public sealed class UdfWriter {
     if (written != totalPartitionSectors)
       throw new InvalidOperationException(
         $"UDF layout mismatch: wrote {written} partition sectors, expected {totalPartitionSectors}.");
+
+    // ── Second anchor, in the volume's last block ──
+    // ECMA-167 §3/8.4 wants an anchor at block 256 and at the last block of the
+    // volume; a volume carrying only the first is one udfinfo reports on.
+    WriteAnchor(output, lastBlock);
   }
 
   /// <summary>
@@ -233,17 +277,34 @@ public sealed class UdfWriter {
     return root;
   }
 
+  /// <summary>Files and directories below (and including) <paramref name="node" />.</summary>
+  private static (int files, int directories) Count(Node node) {
+    if (!node.IsDirectory) return (1, 0);
+    var files = 0;
+    var directories = 1;
+    foreach (var child in node.Children) {
+      var (f, d) = Count(child);
+      files += f;
+      directories += d;
+    }
+
+    return (files, directories);
+  }
+
   /// <summary>
   /// Assigns File Entry and data block numbers depth-first. The node's own FE
   /// LBN must already be set by the caller; this method assigns FE LBNs for
   /// all children first (so a directory's FID data can reference them), then
   /// the directory's own FID-data block(s), then recurses.
   /// </summary>
-  private void AssignLayout(Node node, ref int nextLbn) {
+  private static void AssignLayout(Node node, ref int nextLbn, ref uint nextUniqueId) {
     if (node.IsDirectory) {
-      // Reserve FE blocks for every child up front.
-      foreach (var child in node.Children)
+      // Reserve FE blocks and identifiers for every child up front: the parent's
+      // FIDs name both.
+      foreach (var child in node.Children) {
         child.FeLbn = nextLbn++;
+        child.UniqueId = nextUniqueId++;
+      }
 
       // Reserve this directory's FID-data block(s).
       var fidData = BuildFidData(node);
@@ -252,13 +313,26 @@ public sealed class UdfWriter {
       node.DataLbn = nextLbn;
       nextLbn += node.DataSectors;
 
+      if (node.DataSectors > MaxAllocationDescriptors)
+        throw new InvalidOperationException(
+          $"UDF directory '{node.Name}' needs {node.DataSectors} data blocks but only " +
+          $"{MaxAllocationDescriptors} short allocation descriptors fit in one File Entry; " +
+          "allocation descriptor continuation is not supported.");
+
       // Recurse into children so their own subtree blocks are laid out.
       foreach (var child in node.Children)
-        AssignLayout(child, ref nextLbn);
+        AssignLayout(child, ref nextLbn, ref nextUniqueId);
     } else {
-      var len = node.EffectiveLength;
-      node.DataLength = (int)len;
-      node.DataSectors = Math.Max(1, (int)((len + Sector - 1) / Sector));
+      var length = node.EffectiveLength;
+      if (length > MaxFileBytes)
+        throw new InvalidOperationException(
+          $"UDF file '{node.Name}' is {length:N0} bytes; this writer addresses at most " +
+          $"{MaxFileBytes:N0} without allocation descriptor continuation.");
+
+      node.DataLength = length;
+      // An empty file gets no extent at all: an allocation descriptor naming a
+      // block a zero-length file does not own is a chain longer than the size.
+      node.DataSectors = (int)((length + Sector - 1) / Sector);
       node.DataLbn = nextLbn;
       nextLbn += node.DataSectors;
     }
@@ -269,44 +343,41 @@ public sealed class UdfWriter {
   /// the starting LBN of each block group, so the writer can drain them in
   /// strictly ascending order.
   /// </summary>
-  private void CollectBlocks(Node node, SortedDictionary<int, Action> blocks) {
+  private static void CollectBlocks(Node node, SortedDictionary<int, Action> blocks, Stream output) {
     if (node.IsDirectory) {
-      // This directory's File Entry.
       var dirNode = node;
-      blocks[node.FeLbn] = () => WriteDirectoryFe(blocksOutput, dirNode);
+      blocks[node.FeLbn] = () => WriteDirectoryFe(output, dirNode);
 
-      // This directory's FID data.
       blocks[node.DataLbn] = () => {
         var fidData = BuildFidData(dirNode);
-        blocksOutput.Write(fidData);
+        output.Write(fidData);
         var pad = dirNode.DataSectors * Sector - fidData.Length;
-        if (pad > 0) blocksOutput.Write(new byte[pad]);
+        if (pad > 0) output.Write(new byte[pad]);
       };
 
       foreach (var child in node.Children)
-        CollectBlocks(child, blocks);
+        CollectBlocks(child, blocks, output);
     } else {
       var fileNode = node;
-      blocks[node.FeLbn] = () => WriteFileFe(blocksOutput, fileNode.FeLbn, fileNode.DataLength, fileNode.DataLbn);
+      blocks[node.FeLbn] = () => WriteFileFe(output, fileNode);
+      if (fileNode.DataSectors == 0)
+        return;
+
       blocks[node.DataLbn] = () => {
         long produced;
         if (fileNode.StreamOpener != null) {
           // Stream the body straight into the sequential output in 64 KiB chunks
           // — never buffered as a byte[]. Exactly DataLength bytes are copied.
-          produced = StreamCopy(blocksOutput, fileNode.StreamOpener, fileNode.DataLength);
+          produced = StreamCopy(output, fileNode.StreamOpener, fileNode.DataLength);
         } else {
-          blocksOutput.Write(fileNode.Data);
+          output.Write(fileNode.Data);
           produced = fileNode.Data.Length;
         }
         var pad = (long)fileNode.DataSectors * Sector - produced;
-        if (pad > 0) blocksOutput.Write(new byte[pad]);
+        if (pad > 0) output.Write(new byte[pad]);
       };
     }
   }
-
-  // The output stream is captured for the duration of WriteTo so the block
-  // actions stay simple closures; set before CollectBlocks runs.
-  private Stream blocksOutput = Stream.Null;
 
   /// <summary>
   /// Copies up to <paramref name="size"/> bytes from a freshly opened source
@@ -335,102 +406,55 @@ public sealed class UdfWriter {
   /// identifier, parent + directory flags) pointing at the parent's FE,
   /// followed by one FID per child referencing the child's FE.
   /// <para>
-  /// ECMA-167 §4/14.4: a File Identifier Descriptor may not cross a logical
-  /// block boundary. When the next FID would straddle the current block, the
-  /// remainder of that block is zero-padded and the FID starts at the next
-  /// block. The returned buffer is therefore a multiple of the block size, so
-  /// the directory spans whole blocks regardless of entry count.
+  /// The records are written back to back. ECMA-167 §4/14.4 permits a File
+  /// Identifier Descriptor to span a logical block boundary, and both mkudffs
+  /// and Linux's udf driver rely on that: a directory padded onto block
+  /// boundaries makes the driver stop at the first pad byte with "entry at
+  /// pos N with incorrect tag 0".
   /// </para>
   /// </summary>
   private static byte[] BuildFidData(Node dir) {
     using var ms = new MemoryStream();
 
-    // Parent FID (flags=0x0A: parent + directory). The parent of the root is
+    // Parent FID (flags 0x0A: parent + directory). The parent of the root is
     // itself.
-    var parentFeLbn = (dir.Parent ?? dir).FeLbn;
-    WriteFidBlockAligned(ms, 0x0A, parentFeLbn, "");
+    var parent = dir.Parent ?? dir;
+    WriteFid(ms, dir, 0x0A, parent.FeLbn, parent.UniqueId, "");
 
     foreach (var child in dir.Children) {
       var flags = child.IsDirectory ? (byte)0x02 : (byte)0x00;
-      WriteFidBlockAligned(ms, flags, child.FeLbn, child.Name);
+      WriteFid(ms, dir, flags, child.FeLbn, child.UniqueId, child.Name);
     }
 
     return ms.ToArray();
   }
 
   /// <summary>
-  /// Writes one FID, first padding to the next logical block boundary if the
-  /// FID would otherwise cross it (ECMA-167 §14.4 forbids that crossing).
+  /// Writes one File Identifier Descriptor into a directory's byte stream. The
+  /// tag records the logical block the record starts in, which for a record
+  /// spanning two blocks is the first of them.
   /// </summary>
-  private static void WriteFidBlockAligned(MemoryStream ms, byte flags, int icbLbn, string name) {
-    var fidLen = FidLength(name);
-    var posInBlock = (int)(ms.Length % Sector);
-    if (posInBlock + fidLen > Sector) {
-      var pad = Sector - posInBlock;
-      ms.Write(new byte[pad]);
-    }
-    WriteFid(ms, flags, icbLbn, name);
-  }
-
-  /// <summary>Padded on-disk byte length of a FID for the given identifier.</summary>
-  private static int FidLength(string name) {
-    var nameLen = name.Length == 0 ? 0 : EncodeCs0(name).Length;
-    return (38 + nameLen + 3) & ~3;
-  }
-
-  private static void WriteFid(Stream s, byte flags, int icbLbn, string name) {
-    var nameBytes = name.Length == 0 ? [] : EncodeCs0(name);
-    var fidLen = 38 + nameBytes.Length;
-    var padded = (fidLen + 3) & ~3;
+  private static void WriteFid(MemoryStream ms, Node dir, byte flags, int icbLbn, uint uniqueId, string name) {
+    var nameBytes = OstaCompressedUnicode.Encode(name);
+    var padded = (38 + nameBytes.Length + 3) & ~3;
     var buf = new byte[padded];
 
-    // Tag: FID = 257
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(0), 257);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(2), 2); // descriptor version
+    var startBlock = dir.DataLbn + (int)(ms.Length / Sector);
+    WriteTag(buf, 0, 257, (uint)startBlock);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(16), 1); // FileVersionNumber, OSTA UDF §2.3.4.1
     buf[18] = flags;
-    buf[19] = (byte)nameBytes.Length; // identifier length
-    // ICB at offset 20: long_ad (16 bytes) — length(4) + lbn(4) + partRef(2) + impl(6)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20), (uint)Sector);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(24), (uint)icbLbn);
-    // lIU at offset 36 = 0
-    // Name at offset 38
+    buf[19] = (byte)nameBytes.Length;
+    WriteLongAd(buf, 20, Sector, (uint)icbLbn, uniqueId);
+    // LengthOfImplementationUse at offset 36 stays zero.
     nameBytes.CopyTo(buf, 38);
 
-    // ECMA-167 §14.4: FID DescriptorCRCLength covers the entire padded FID
-    // minus the 16-byte tag.
+    // ECMA-167 §4/14.4.9: the CRC covers the whole record, padding included.
     FinalizeTag(buf, 0, padded - 16);
 
-    s.Write(buf);
-  }
-
-  private static byte[] EncodeCs0(string name) {
-    var utf8 = Encoding.UTF8.GetBytes(name);
-    var result = new byte[1 + utf8.Length];
-    result[0] = 8; // CS0 compression ID = UTF-8
-    utf8.CopyTo(result, 1);
-    return result;
+    ms.Write(buf);
   }
 
   // ── Descriptor writers ────────────────────────────────────────────────────
-
-  // UDF domain entity-identifier suffix (UDF 1.02): UDFRevision(2 LE)=0x0102,
-  // DomainFlags(1)=0, Reserved(5). Stamped after the "*OSTA UDF Compliant" id.
-  private static readonly byte[] DomainSuffix = [0x02, 0x01, 0, 0, 0, 0, 0, 0];
-
-  // ECMA-167 §7.4 EntityID (regid): Flags(1) + Identifier(23) + Suffix(8).
-  private static void WriteRegid(byte[] buf, int off, string id, ReadOnlySpan<byte> suffix) {
-    buf[off] = 0;
-    var idb = Encoding.ASCII.GetBytes(id);
-    Array.Copy(idb, 0, buf, off + 1, Math.Min(idb.Length, 23));
-    if (!suffix.IsEmpty)
-      suffix[..Math.Min(suffix.Length, 8)].CopyTo(buf.AsSpan(off + 24, 8));
-  }
-
-  // ECMA-167 §7.2.1 charspec: CharacterSetType(1)=0 (CS0) + CharacterSetInfo(63).
-  private static void WriteCharspec(byte[] buf, int off) {
-    buf[off] = 0;
-    Encoding.ASCII.GetBytes("OSTA Compressed Unicode").CopyTo(buf, off + 1);
-  }
 
   /// <summary>Owner/group/other read+execute, in ECMA-167 permission bits.</summary>
   private const uint DirectoryPermissions =
@@ -439,42 +463,6 @@ public sealed class UdfWriter {
   /// <summary>Owner/group/other read, in ECMA-167 permission bits.</summary>
   private const uint FilePermissions = (1u << 12) | (1u << 7) | (1u << 2);
 
-  private static void WriteTag(byte[] buf, int off, ushort tagId, uint tagLocation) {
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off), tagId);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(off + 2), 2); // descriptor version
-    // DescriptorCRC (off+8..9), DescriptorCRCLength (off+10..11), TagChecksum (off+4)
-    // filled in by FinalizeTag after the descriptor body is populated.
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(off + 12), tagLocation);
-  }
-
-  /// <summary>
-  /// Finalizes a UDF descriptor tag per ECMA-167 §7.2.1 by computing the
-  /// CRC-16/CCITT (init=0, poly=0x1021, non-reflected) over <paramref name="bodyLength"/>
-  /// bytes starting at <c>tagOffset + 16</c>, storing it in the tag at offsets 8..9,
-  /// writing the DescriptorCRCLength at offsets 10..11, and finally computing the
-  /// byte-sum-mod-256 TagChecksum at offset 4.
-  /// </summary>
-  private static void FinalizeTag(byte[] buf, int tagOffset, int bodyLength) {
-    var bodyStart = tagOffset + 16;
-    if (bodyStart + bodyLength > buf.Length)
-      bodyLength = buf.Length - bodyStart;
-    if (bodyLength < 0) bodyLength = 0;
-
-    var crc = Crc16Ccitt.Compute(buf.AsSpan(bodyStart, bodyLength));
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(tagOffset + 8), crc);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(tagOffset + 10), (ushort)bodyLength);
-
-    // TagChecksum = (sum of bytes [0..3, 5..15]) mod 256. Byte at offset 4
-    // is excluded (it IS the checksum) and must be zero while computing.
-    buf[tagOffset + 4] = 0;
-    byte sum = 0;
-    for (var i = 0; i < 16; i++) {
-      if (i == 4) continue;
-      sum = (byte)(sum + buf[tagOffset + i]);
-    }
-    buf[tagOffset + 4] = sum;
-  }
-
   private static void WritePadding(Stream output, int sectors) {
     for (var i = 0; i < sectors; i++) output.Write(new byte[Sector]);
   }
@@ -482,166 +470,290 @@ public sealed class UdfWriter {
   private static void WriteVrs(Stream output, string id) {
     var buf = new byte[Sector];
     buf[0] = 0; // structure type
-    Encoding.ASCII.GetBytes(id).CopyTo(buf, 1);
+    System.Text.Encoding.ASCII.GetBytes(id).CopyTo(buf, 1);
     buf[6] = 1; // structure version
     output.Write(buf);
   }
 
-  private static void WriteAvdp(Stream output, int sectorNum, int mainVdsLoc, int mainVdsLen) {
+  /// <summary>
+  /// ECMA-167 §3/10.2 anchor: it names both volume descriptor sequences and
+  /// records its own block, which is how a reader recognises it and, with it,
+  /// the volume's logical block size.
+  /// </summary>
+  private static void WriteAnchor(Stream output, int block) {
     var buf = new byte[Sector];
-    WriteTag(buf, 0, 2, (uint)sectorNum);
-    // Main VDS extent: length(4) + location(4) at offset 16
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), (uint)mainVdsLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20), (uint)mainVdsLoc);
-    FinalizeTag(buf, 0, AvdpBodySize);
-    output.Write(buf);
-  }
-
-  private void WritePvd(Stream output, int sectorNum, int totalSectors) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 1, (uint)sectorNum); // Primary Volume Descriptor
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 1); // VDS number
-    // Volume Identifier — ECMA-167 dstring (max 31 ASCII bytes + length byte at offset+31).
-    var volId = string.IsNullOrEmpty(this.VolumeIdentifier) ? "UDF Volume" : this.VolumeIdentifier;
-    if (volId.Length > 31) volId = volId[..31];
-    Encoding.ASCII.GetBytes(volId).CopyTo(buf, 24);
-    FinalizeTag(buf, 0, PvdBodySize);
-    output.Write(buf);
-  }
-
-  private static void WritePartitionDescriptor(Stream output, int sectorNum, int partStart, int partLen) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 5, (uint)sectorNum);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 1);          // VDS number
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 1);          // partition flags = allocated
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(22), 0);          // partition number 0
-    WriteRegid(buf, 24, "+NSR02", default);                              // partition contents (ECMA-167 §4)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(184), 1);         // access type = read-only
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(188), (uint)partStart);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(192), (uint)partLen);
-    FinalizeTag(buf, 0, PdBodySize);
-    output.Write(buf);
-  }
-
-  private void WriteLvd(Stream output, int sectorNum) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 6, (uint)sectorNum);
-    WriteCharspec(buf, 20);                                              // descriptor character set (CS0)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(212), (uint)Sector); // logical block size
-    WriteRegid(buf, 216, "*OSTA UDF Compliant", DomainSuffix);          // domain identifier (kernel-mandatory)
-    // logical_volume_contents_use @248: FSD long_ad (length=4, lbn=4, partRef=2, impl=6)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(248), (uint)Sector); // extent length
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(252), 0); // FSD LBN = 0
-    // partRef at 256 = 0 (default)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(264), 6);        // map table length (one Type-1 map)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(268), 1);        // number of partition maps
-    // The implementation identifier names the UDF implementation, not the product:
-    // an image made on Linux says so, whichever tool wrote it.
-    WriteRegid(buf, 272, "*Linux UDFFS", default);                      // implementation identifier
-    // Type-1 partition map @440: type(1)=1, length(1)=6, vol_seq(2)=1, part_num(2)=0
-    buf[440] = 1;
-    buf[441] = 6;
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(442), 1);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(444), 0);
-    // CRC must cover through the partition map (offset 16..446).
-    FinalizeTag(buf, 0, 446 - 16);
-    output.Write(buf);
-  }
-
-  private static void WriteTerminator(Stream output, int sectorNum) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 8, (uint)sectorNum);
-    FinalizeTag(buf, 0, TerminatorBodySize);
-    output.Write(buf);
-  }
-
-  private static void WriteFsd(Stream output, int lbn, int rootIcbLbn) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 256, (uint)lbn);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), 3);          // interchange level
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(30), 3);          // max interchange level
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(32), 1);          // charset list
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(36), 1);          // max charset list
-    WriteCharspec(buf, 48);                                              // logical volume id charset (CS0)
-    WriteCharspec(buf, 240);                                             // file set charset (CS0)
-    // Root ICB: long_ad at offset 400
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(400), (uint)Sector);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(404), (uint)rootIcbLbn);
-    WriteRegid(buf, 416, "*OSTA UDF Compliant", DomainSuffix);          // domain identifier (kernel-checked)
-    FinalizeTag(buf, 0, FsdBodySize);
+    WriteTag(buf, 0, 2, (uint)block);
+    WriteExtent(buf, 16, VdsSectors * Sector, MainVdsSector);
+    WriteExtent(buf, 24, VdsSectors * Sector, ReserveVdsSector);
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
     output.Write(buf);
   }
 
   /// <summary>
-  /// Writes a directory File Entry (file type 4). The file link count is set
-  /// to 1 (the parent's reference) plus one per subdirectory child, matching
-  /// ECMA-167's accounting of incoming directory links.
+  /// Writes one complete volume descriptor sequence: primary volume, logical
+  /// volume, partition, implementation use and unallocated space descriptors,
+  /// then the terminator, then zero blocks out to the sequence's extent. Both
+  /// the main and the reserve sequence carry the same descriptors — only their
+  /// tag locations differ.
   /// </summary>
-  private static void WriteDirectoryFe(Stream output, Node dir) {
-    var buf = new byte[Sector];
-    WriteTag(buf, 0, 261, (uint)dir.FeLbn);
-    // ICB tag at offset 16: strategy_type(2)@20 must be 4 (the only type the
-    // kernel supports; 0 → "unsupported strategy type"), max_entries(2)@24 = 1.
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1);
-    buf[27] = 4; // file type = directory
-    // Permissions at FE offset 44. Left at zero, a mounted volume gives every
-    // object mode 0000 and the mount cannot even be listed. r-x for owner,
-    // group and other (ECMA-167 4/14.9.5 bit order).
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), DirectoryPermissions);
-    // File link count is at FE offset 48 (ECMA-167 §14.9, after uid/gid/perms);
-    // offset 28 falls inside the ICB tag and leaves the kernel seeing link
-    // count 0 → "Error in udf_iget". Parent link + one per child directory.
-    var subDirCount = dir.Children.Count(c => c.IsDirectory);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), (ushort)(1 + subDirCount));
-    // icb flags at offset 34: adType=0 (short ADs)
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0);
-    // info length at offset 56 — the directory's FID data is block-aligned, so
-    // this covers whole blocks (one short AD each).
-    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)dir.DataLength);
+  private void WriteVds(Stream output, int firstBlock, int partitionSectors) {
+    this.WritePvd(output, firstBlock);
+    this.WriteLvd(output, firstBlock + 1);
+    WritePartitionDescriptor(output, firstBlock + 2, PartitionStartSector, partitionSectors);
+    this.WriteIuvd(output, firstBlock + 3);
+    WriteUsd(output, firstBlock + 4);
+    WriteTerminator(output, firstBlock + 5);
+    WritePadding(output, VdsSectors - 6);
+  }
 
-    // One short AD per logical block. ECMA-167 forbids a FID from crossing a
-    // block boundary, so BuildFidData already padded the data to a block
-    // multiple; describe each block with its own descriptor (length always a
-    // full block). Multiple ADs lift the single-block directory cap.
-    var blocks = dir.DataSectors;
-    // Short ADs live inside the FE sector after the 176-byte header, so their
-    // count is bounded by the sector. ~234 blocks ≈ 478 KiB of FID data, which
-    // is thousands of small entries; beyond that an AD-continuation extent
-    // would be required (not yet implemented).
-    var maxAds = (Sector - 176) / 8;
-    if (blocks > maxAds)
-      throw new InvalidOperationException(
-        $"UDF directory '{dir.Name}' needs {blocks} data blocks but only {maxAds} short " +
-        "allocation descriptors fit in one File Entry; AD-continuation extents are not supported.");
-    var lAd = blocks * 8;
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), (uint)lAd);
-    for (var b = 0; b < blocks; b++) {
-      var adOff = 176 + b * 8;
-      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(adOff), (uint)Sector);          // extent length
-      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(adOff + 4), (uint)(dir.DataLbn + b)); // LBN
+  /// <summary>
+  /// Volume set identifier (ECMA-167 §3/10.1.10). OSTA UDF §2.2.2.5 requires
+  /// its first sixteen characters to be unique among volume sets, and to be
+  /// hexadecimal digits; deriving them from the volume identifier keeps two
+  /// runs over the same input byte-identical while still separating volumes
+  /// that are named differently.
+  /// </summary>
+  private string VolumeSetIdentifier {
+    get {
+      var hash = 0xCBF29CE484222325UL;
+      foreach (var c in this.EffectiveVolumeIdentifier) {
+        hash ^= c;
+        hash *= 0x100000001B3UL;
+      }
+
+      return hash.ToString("x16") + this.EffectiveVolumeIdentifier;
     }
-    // File Entry body: 176-byte header (minus 16-byte tag) + L_EA(0) + L_AD bytes.
-    FinalizeTag(buf, 0, FeBodyHeader + 0 + lAd);
+  }
+
+  private string EffectiveVolumeIdentifier
+    => string.IsNullOrEmpty(this.VolumeIdentifier) ? "UDF Volume" : this.VolumeIdentifier;
+
+  private void WritePvd(Stream output, int block) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 1, (uint)block);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 1);   // VolumeDescriptorSequenceNumber
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20), 0);   // PrimaryVolumeDescriptorNumber
+    OstaCompressedUnicode.WriteDString(buf, 24, 32, this.EffectiveVolumeIdentifier);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(56), 1);   // VolumeSequenceNumber
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(58), 1);   // MaximumVolumeSequenceNumber
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(60), 2);   // InterchangeLevel
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(62), 3);   // MaximumInterchangeLevel
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(64), 1);   // CharacterSetList
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(68), 1);   // MaximumCharacterSetList
+    OstaCompressedUnicode.WriteDString(buf, 72, 128, this.VolumeSetIdentifier);
+    WriteCharacterSet(buf, 200);                                   // DescriptorCharacterSet
+    WriteCharacterSet(buf, 264);                                   // ExplanatoryCharacterSet
+    WriteTimestamp(buf, 376, RecordingTime);
+    WriteEntityId(buf, 388, ImplementationId, ImplementationSuffix);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(488), 1);  // Flags: volume set identification
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
     output.Write(buf);
   }
 
-  private static void WriteFileFe(Stream output, int lbn, int fileSize, int dataLbn) {
+  private void WriteLvd(Stream output, int block) {
     var buf = new byte[Sector];
-    WriteTag(buf, 0, 261, (uint)lbn);
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4); // ICB strategy type 4
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1); // max entries 1
-    // Permissions at FE offset 44 — see WriteDirectoryFe.
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), FilePermissions);
-    buf[27] = 5; // file type = file (regular)
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), 1); // file link count (ECMA-167 §14.9 offset)
-    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0); // adType=0 short
-    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)fileSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), 8); // L_AD = 8
-    var allocLen = Math.Max(fileSize, Sector); // at least one sector
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(176), (uint)allocLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(180), (uint)dataLbn);
-    FinalizeTag(buf, 0, FeBodyHeader + 0 + 8);
+    WriteTag(buf, 0, 6, (uint)block);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 2);   // VolumeDescriptorSequenceNumber
+    WriteCharacterSet(buf, 20);                                    // DescriptorCharacterSet
+    OstaCompressedUnicode.WriteDString(buf, 84, 128, this.EffectiveVolumeIdentifier);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(212), Sector);
+    WriteEntityId(buf, 216, "*OSTA UDF Compliant", DomainSuffix);
+    WriteLongAd(buf, 248, Sector, FsdLbn);                         // LogicalVolumeContentsUse: the FSD
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(264), 6);  // MapTableLength
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(268), 1);  // NumberOfPartitionMaps
+    WriteEntityId(buf, 272, ImplementationId, ImplementationSuffix);
+    WriteExtent(buf, 432, LvidSectors * Sector, LvidSector);       // IntegritySequenceExtent
+    // Type-1 partition map: type(1), length(1), volume sequence(2), partition(2).
+    buf[440] = 1;
+    buf[441] = 6;
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(442), 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(444), 0);
+    FinalizeTag(buf, 0, LvdBodySize);
     output.Write(buf);
+  }
+
+  private static void WritePartitionDescriptor(Stream output, int block, int partStart, int partLen) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 5, (uint)block);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 3);   // VolumeDescriptorSequenceNumber
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 1);   // PartitionFlags: allocated
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(22), 0);   // PartitionNumber
+    WriteEntityId(buf, 24, "+NSR03", default);                     // PartitionContents
+    // PartitionContentsUse holds the Partition Header Descriptor (OSTA UDF
+    // §2.2.3). All its space tables stay unrecorded, which a read-only
+    // partition is allowed to do since nothing will ever allocate in it.
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(184), 1);  // AccessType: read-only
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(188), (uint)partStart);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(192), (uint)partLen);
+    WriteEntityId(buf, 196, ImplementationId, ImplementationSuffix);
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
+    output.Write(buf);
+  }
+
+  /// <summary>
+  /// ECMA-167 §3/10.4 implementation use volume descriptor carrying the OSTA
+  /// UDF §2.2.7 "*UDF LV Info" payload: the logical volume's name and the
+  /// identity of whoever recorded it.
+  /// </summary>
+  private void WriteIuvd(Stream output, int block) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 4, (uint)block);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 4);   // VolumeDescriptorSequenceNumber
+    WriteEntityId(buf, 20, "*UDF LV Info", UdfEntitySuffix);
+    WriteCharacterSet(buf, 52);                                    // LVICharset
+    OstaCompressedUnicode.WriteDString(buf, 116, 128, this.EffectiveVolumeIdentifier);
+    // LVInfo1..3 at 244/280/316 name the owner, organisation and contact; this
+    // writer knows none of them and leaves all three empty.
+    WriteEntityId(buf, 352, ImplementationId, ImplementationSuffix);
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
+    output.Write(buf);
+  }
+
+  /// <summary>
+  /// ECMA-167 §3/10.8 unallocated space descriptor. The volume this writer
+  /// emits has no space outside the partition to hand out, so it records no
+  /// allocation descriptors — but the descriptor itself has to be there.
+  /// </summary>
+  private static void WriteUsd(Stream output, int block) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 7, (uint)block);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(16), 5);   // VolumeDescriptorSequenceNumber
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20), 0);   // NumberOfAllocationDescriptors
+    FinalizeTag(buf, 0, UsdBodySize);
+    output.Write(buf);
+  }
+
+  private static void WriteTerminator(Stream output, int block) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 8, (uint)block);
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
+    output.Write(buf);
+  }
+
+  /// <summary>
+  /// ECMA-167 §3/10.10 logical volume integrity descriptor. Its integrity type
+  /// says whether the volume was left in a consistent state; without one, every
+  /// tool reports the logical volume as inconsistent and the free-space and
+  /// object counts as unknown.
+  /// </summary>
+  private void WriteLvid(Stream output, int block, int partitionSectors,
+      int fileCount, int directoryCount, uint nextUniqueId) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 9, (uint)block);
+    WriteTimestamp(buf, 16, RecordingTime);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(28), 1);   // IntegrityType: close
+    // NextIntegrityExtent at 32 stays empty: this is the only integrity
+    // descriptor the volume has.
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(40), nextUniqueId); // next UniqueID
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(72), 1);   // NumberOfPartitions
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(76), LvidImplementationUseSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(80), 0);   // FreeSpaceTable: packed solid
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(84), (uint)partitionSectors); // SizeTable
+    WriteEntityId(buf, 88, ImplementationId, ImplementationSuffix);
+    // The root directory counts: a freshly made empty volume reports one.
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(120), (uint)fileCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(124), (uint)directoryCount);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(128), UdfRevision); // MinimumUDFReadRevision
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(130), UdfRevision); // MinimumUDFWriteRevision
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(132), UdfRevision); // MaximumUDFWriteRevision
+    FinalizeTag(buf, 0, LvidBodySize);
+    output.Write(buf);
+  }
+
+  private void WriteFsd(Stream output, int lbn, int rootIcbLbn) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 256, (uint)lbn);
+    WriteTimestamp(buf, 16, RecordingTime);
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(28), 3);   // InterchangeLevel
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(30), 3);   // MaximumInterchangeLevel
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(32), 1);   // CharacterSetList
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(36), 1);   // MaximumCharacterSetList
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(40), 0);   // FileSetNumber
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), 0);   // FileSetDescriptorNumber
+    WriteCharacterSet(buf, 48);                                    // LogicalVolumeIdentifierCharacterSet
+    OstaCompressedUnicode.WriteDString(buf, 112, 128, this.EffectiveVolumeIdentifier);
+    WriteCharacterSet(buf, 240);                                   // FileSetCharacterSet
+    OstaCompressedUnicode.WriteDString(buf, 304, 32, this.EffectiveVolumeIdentifier);
+    WriteLongAd(buf, 400, Sector, (uint)rootIcbLbn);               // RootDirectoryICB
+    WriteEntityId(buf, 416, "*OSTA UDF Compliant", DomainSuffix);
+    FinalizeTag(buf, 0, VolumeDescriptorBodySize);
+    output.Write(buf);
+  }
+
+  /// <summary>
+  /// Writes the common part of an ECMA-167 §4/14.9 File Entry and returns the
+  /// buffer, leaving the caller to append allocation descriptors.
+  /// </summary>
+  private static byte[] BeginFileEntry(Node node, byte fileType, uint permissions, ushort linkCount) {
+    var buf = new byte[Sector];
+    WriteTag(buf, 0, 261, (uint)node.FeLbn);
+    // ICB tag (ECMA-167 §4/14.6). Strategy type 4 is the only one Linux's udf
+    // driver supports; type 0 makes it refuse the entry outright.
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20), 4);   // StrategyType
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(24), 1);   // MaximumNumberOfEntries
+    buf[27] = fileType;
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(34), 0);   // Flags: short allocation descriptors
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(44), permissions);
+    // FileLinkCount is at offset 48, after uid/gid/permissions. Offset 28 falls
+    // inside the ICB tag and leaves the driver seeing zero links.
+    BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(48), linkCount);
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(56), (ulong)node.DataLength);
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(64), (ulong)node.DataSectors); // LogicalBlocksRecorded
+    WriteTimestamp(buf, 72, RecordingTime);                        // AccessTime
+    WriteTimestamp(buf, 84, RecordingTime);                        // ModificationTime
+    WriteTimestamp(buf, 96, RecordingTime);                        // AttributeTime
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(108), 1);  // Checkpoint
+    WriteEntityId(buf, 128, ImplementationId, ImplementationSuffix);
+    BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(160), node.UniqueId);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(168), 0);  // LengthOfExtendedAttributes
+    return buf;
+  }
+
+  /// <summary>
+  /// Writes a directory File Entry (file type 4). The link count is the
+  /// parent's reference plus one per subdirectory child, matching ECMA-167's
+  /// accounting of incoming directory links.
+  /// </summary>
+  private static void WriteDirectoryFe(Stream output, Node dir) {
+    var subDirCount = dir.Children.Count(c => c.IsDirectory);
+    var buf = BeginFileEntry(dir, fileType: 4, DirectoryPermissions, (ushort)(1 + subDirCount));
+
+    // One short allocation descriptor per block, the last one only as long as
+    // the directory's remaining bytes. OSTA UDF §2.3.10.1 requires every extent
+    // but the last to be a whole number of blocks; making the last one whole
+    // too would claim bytes the information length says are not there.
+    var lAd = WriteExtents(buf, 176, dir.DataLbn, dir.DataLength);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), (uint)lAd);
+    FinalizeTag(buf, 0, FeHeaderBodySize + lAd);
+    output.Write(buf);
+  }
+
+  private static void WriteFileFe(Stream output, Node file) {
+    var buf = BeginFileEntry(file, fileType: 5, FilePermissions, linkCount: 1);
+    var lAd = WriteExtents(buf, 176, file.DataLbn, file.DataLength);
+    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(172), (uint)lAd);
+    FinalizeTag(buf, 0, FeHeaderBodySize + lAd);
+    output.Write(buf);
+  }
+
+  /// <summary>
+  /// Writes the short allocation descriptors covering <paramref name="length" />
+  /// contiguous bytes from <paramref name="firstLbn" /> and returns how many
+  /// bytes of descriptors that took. A zero-length object gets none at all.
+  /// </summary>
+  private static int WriteExtents(byte[] buf, int offset, int firstLbn, long length) {
+    var written = 0;
+    var lbn = firstLbn;
+    var remaining = length;
+    while (remaining > 0) {
+      var take = Math.Min(remaining, MaxExtentBytes);
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(offset + written), (uint)take);
+      BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(offset + written + 4), (uint)lbn);
+      written += 8;
+      remaining -= take;
+      lbn += (int)((take + Sector - 1) / Sector);
+    }
+
+    return written;
   }
 }
