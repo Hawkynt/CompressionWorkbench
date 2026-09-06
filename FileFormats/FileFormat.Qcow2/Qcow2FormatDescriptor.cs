@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -14,7 +15,7 @@ namespace FileFormat.Qcow2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Qcow</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -248,6 +249,60 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
   }
 
+  // ── IArchiveShrinkable ─────────────────────────────────────────────
+
+  /// <summary>
+  /// Rebuilds a supported flat QCOW2 v2 image from its raw guest-disk bytes so
+  /// zero guest clusters become unallocated and stale physical allocations are
+  /// discarded. The rebuilt guest disk is compared byte-for-byte before it can
+  /// replace the input. Unsupported profiles are copied through unchanged.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("QCOW2 shrink requires a readable, seekable input.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("QCOW2 shrink requires a writable, seekable output.", nameof(output));
+
+    if (!CanCanonicalizeFlatV2(input)) {
+      CopyUnchanged(input, output);
+      return;
+    }
+
+    try {
+      input.Position = 0;
+      var reader = new Qcow2Reader(input);
+      var rawDisk = reader.ExtractDisk();
+
+      using var staged = CreateScratchStream();
+      var writer = new Qcow2Writer();
+      writer.SetDiskImage(rawDisk);
+      writer.WriteTo(staged);
+
+      staged.Position = 0;
+      var verifyReader = new Qcow2Reader(staged);
+      var verifiedDisk = verifyReader.ExtractDisk();
+      if (!verifiedDisk.AsSpan().SequenceEqual(rawDisk)) {
+        CopyUnchanged(input, output);
+        return;
+      }
+
+      if (staged.Length >= input.Length) {
+        CopyUnchanged(input, output);
+        return;
+      }
+
+      output.Position = 0;
+      output.SetLength(0);
+      staged.Position = 0;
+      staged.CopyTo(output);
+      output.Position = 0;
+    } catch {
+      CopyUnchanged(input, output);
+    }
+  }
+
   // ── Private helpers ────────────────────────────────────────────────
 
   private static bool TryDelegateModifiable(Stream archive, out Qcow2Stream? qStream, out IArchiveModifiable? modifiable) {
@@ -266,6 +321,45 @@ public sealed class Qcow2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     qs.Dispose();
     return false;
   }
+
+  private static bool CanCanonicalizeFlatV2(Stream image) {
+    if (image.Length < 72)
+      return false;
+    image.Position = 0;
+    Span<byte> header = stackalloc byte[72];
+    image.ReadExactly(header);
+    if (!header[..4].SequenceEqual(new byte[] { 0x51, 0x46, 0x49, 0xFB }))
+      return false;
+
+    var version = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
+    var backingFileOffset = BinaryPrimitives.ReadUInt64BigEndian(header[8..]);
+    var backingFileSize = BinaryPrimitives.ReadUInt32BigEndian(header[16..]);
+    var cryptMethod = BinaryPrimitives.ReadUInt32BigEndian(header[32..]);
+    var snapshots = BinaryPrimitives.ReadUInt32BigEndian(header[60..]);
+    var snapshotsOffset = BinaryPrimitives.ReadUInt64BigEndian(header[64..]);
+    return version == 2
+        && backingFileOffset == 0
+        && backingFileSize == 0
+        && cryptMethod == 0
+        && snapshots == 0
+        && snapshotsOffset == 0;
+  }
+
+  private static void CopyUnchanged(Stream input, Stream output) {
+    if (ReferenceEquals(input, output)) {
+      input.Position = 0;
+      return;
+    }
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
+    output.Position = 0;
+  }
+
+  private static FileStream CreateScratchStream()
+    => new(Path.Combine(Path.GetTempPath(), "cwb_qcow2_" + Guid.NewGuid().ToString("N") + ".tmp"),
+      FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
 
   // ── Rebuild-path delegates (fallback) ──────────────────────────────
 
