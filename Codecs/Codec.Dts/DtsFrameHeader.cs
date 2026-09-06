@@ -64,6 +64,35 @@ public readonly record struct DtsFrameHeader(
     _ => $"user-defined ({amode})",
   };
 
+  /// <summary>
+  /// Maps a channel's position in the bit stream to its position in the decoded interleaved PCM.
+  /// The DTS core transmits the front channels centre-first (C, L, R) and carries the LFE channel
+  /// last, while interleaved PCM uses the ITU/WAVE order — front left, front right, front centre,
+  /// LFE, then the surrounds. The returned array is indexed by bit-stream channel (AMODE channels in
+  /// document order, LFE appended) and yields the interleave slot. AMODE codes above 9 describe
+  /// arrangements the core decoder does not reconstruct, and keep the bit-stream order.
+  /// </summary>
+  internal static int[] ChannelMap(int amode, bool lfe) => (amode, lfe) switch {
+    (0, false) => [0],             (0, true) => [0, 1],
+    (1, false) => [0, 1],          (1, true) => [0, 1, 2],
+    (2, false) => [0, 1],          (2, true) => [0, 1, 2],
+    (3, false) => [0, 1],          (3, true) => [0, 1, 2],
+    (4, false) => [0, 1],          (4, true) => [0, 1, 2],
+    (5, false) => [2, 0, 1],       (5, true) => [2, 0, 1, 3],
+    (6, false) => [0, 1, 2],       (6, true) => [0, 1, 3, 2],
+    (7, false) => [2, 0, 1, 3],    (7, true) => [2, 0, 1, 4, 3],
+    (8, false) => [0, 1, 2, 3],    (8, true) => [0, 1, 3, 4, 2],
+    (9, false) => [2, 0, 1, 3, 4], (9, true) => [2, 0, 1, 4, 5, 3],
+    _ => Identity(AmodeChannelCount(amode) + (lfe ? 1 : 0)),
+  };
+
+  private static int[] Identity(int count) {
+    var map = new int[count];
+    for (var i = 0; i < count; ++i)
+      map[i] = i;
+    return map;
+  }
+
   /// <summary>Channel count implied by an AMODE code (excluding the LFE channel).</summary>
   public static int AmodeChannelCount(int amode) => amode switch {
     0 => 1, 1 => 2, 2 => 2, 3 => 2, 4 => 2, 5 => 3, 6 => 3, 7 => 4,

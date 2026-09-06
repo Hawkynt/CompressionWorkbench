@@ -4,13 +4,12 @@ namespace Codec.Dts;
 
 /// <summary>
 /// 32-band cosine-modulated QMF synthesis filterbank for the DCA core, reconstructing 256 PCM
-/// samples per channel per block from 8 sub-subframe vectors of 32 subband samples each. This is a
-/// faithful port of FFmpeg's <c>dca_qmf_32_subbands</c> + <c>synth_filter_float</c>
-/// (<c>libavcodec/dcadsp.c</c>, <c>synth_filter.c</c>): the per-subband sign flip
-/// <c>((i-1)&amp;2)</c>, a direct (matrix-multiply) 64→32 <c>imdct_half</c>, and the 512-tap
-/// polyphase window/overlap stage driven by the perfect- or non-perfect-reconstruction prototype
-/// (<see cref="DtsTables.Fir32Perfect"/> / <see cref="DtsTables.Fir32NonPerfect"/>). The direct
-/// IMDCT replaces FFmpeg's FFT path; the task permits a direct matrix multiply for the transform.
+/// samples per channel per block from 8 sub-subframe vectors of 32 subband samples each. The stage
+/// is the per-subband sign flip <c>((i-1)&amp;2)</c>, the second half of a 64-point IMDCT over the
+/// 32 subband values, and a 512-tap polyphase window/overlap driven by the perfect- or
+/// non-perfect-reconstruction prototype
+/// (<see cref="DtsTables.Fir32Perfect"/> / <see cref="DtsTables.Fir32NonPerfect"/>). The IMDCT is
+/// evaluated as a direct matrix multiply, which is exact and cheap enough at this size.
 /// </summary>
 public sealed class DtsQmf {
 
@@ -20,9 +19,14 @@ public sealed class DtsQmf {
   private readonly float[] _synthBuf2 = new float[32];
   private int _synthBufOffset;
 
-  // Pre-computed imdct_half cosine matrix: out[k] = sum_n in[n] * Cos[k][n], k,n in 0..31.
-  // FFmpeg's MDCT-half of size 64 produces 32 outputs; the equivalent direct kernel is
-  // cos(pi/64 * (2k+1) * (n + 0.5)) scaled to match the synth_filter window convention.
+  // Pre-computed half-IMDCT cosine matrix: out[k] = sum_n in[n] * Cos[k][n], k,n in 0..31.
+  //
+  // The filterbank stage is the second half of a 64-point IMDCT over 32 coefficients:
+  //   full[i] = -sum_n in[n] * cos(pi * (2i + 1 + 32) * (2n + 1) / 128),  i = 0..63
+  // of which the synthesis window consumes full[16..47]. Substituting i = k + 16 leaves
+  //   out[k] = -sum_n in[n] * cos(pi * (2k + 65) * (2n + 1) / 128).
+  // The phase term is what places each subband at its own centre frequency; getting it wrong
+  // still yields a full-amplitude signal, just one built from the wrong modulation images.
   private static readonly float[][] ImdctCos = BuildImdctCos();
 
   private static float[][] BuildImdctCos() {
@@ -30,7 +34,7 @@ public sealed class DtsQmf {
     for (var k = 0; k < 32; ++k) {
       m[k] = new float[32];
       for (var n = 0; n < 32; ++n)
-        m[k][n] = (float)Math.Cos(Math.PI / 64.0 * (2 * k + 1) * (2 * n + 1));
+        m[k][n] = (float)-Math.Cos(Math.PI * (2 * k + 65) * (2 * n + 1) / 128.0);
     }
     return m;
   }

@@ -1095,11 +1095,11 @@ DCA "block code" sample unpacking for low bit-allocation indexes (abits 1..7 whe
 
 #### `DtsCodec`
 
-Clean-room DTS Coherent Acoustics (DCA) core codec. The decoder is a faithful managed port of the FFmpeg reference decoder (`libavcodec/dcadec.c` + `dcadata.c` + `dcahuff.h`) and the encoder lives in the companion partial source file. The core decoder emits interleaved little-endian signed 16-bit PCM at the stream's native channel count (the AMODE full-bandwidth channels in document order, with the LFE channel last when present). Scope: only the standard 16-bit big-endian framing (sync 0x7FFE8001) is decoded; the 14-bit and byte-swapped framings throw `NotSupportedException`. DTS-HD extension substreams (XCH / XXCH / X96 / XBR / XLL and EXSS) are not decoded; an embedded core remains decodable.
+Clean-room DTS Coherent Acoustics (DCA) core codec; the encoder lives in the companion partial source file. The core decoder emits interleaved little-endian signed 16-bit PCM at the stream's native channel count, in the ITU/WAVE interleave order — front left, front right, front centre, LFE, then the surrounds — rather than the centre-first AMODE order the bit stream uses. Scope: only the standard 16-bit big-endian framing (sync 0x7FFE8001) is decoded; the 14-bit and byte-swapped framings throw `NotSupportedException`. DTS-HD extension substreams (XCH / XXCH / X96 / XBR / XLL and EXSS) are not decoded; an embedded core remains decodable.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a DTS stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in AMODE document order with LFE last. Throws `NotSupportedException` for the unsupported 14-bit / LE framings. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a DTS stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in the ITU/WAVE interleave order. Throws `NotSupportedException` for the unsupported 14-bit / LE framings. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, DtsEncoderOptions options = null)` | Encodes interleaved PCM16 to standard 16-bit-big-endian DTS Coherent Acoustics core frames. This is a managed adaptation of FFmpeg's LGPL `dcaenc.c` core path: 512 PCM samples per frame, 32-band cosine analysis, direct bit allocation and scale-factor transmission, the no-Huffman quantizer selector, two sub-subframes and the mandatory 0xFFFF DSYNC marker. Prediction, high-frequency VQ and LFE coding are intentionally left off so every coded subband remains independently decodable and the generated core is deterministic. |
 | `ReadStreamInfo` | `static DtsStreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first core frame. |
 
@@ -1183,7 +1183,7 @@ DCA Huffman code tables ported verbatim from the FFmpeg reference decoder (`liba
 
 #### `DtsQmf`
 
-32-band cosine-modulated QMF synthesis filterbank for the DCA core, reconstructing 256 PCM samples per channel per block from 8 sub-subframe vectors of 32 subband samples each. This is a faithful port of FFmpeg's `dca_qmf_32_subbands` + `synth_filter_float` (`libavcodec/dcadsp.c`, `synth_filter.c`): the per-subband sign flip `((i-1)&2)`, a direct (matrix-multiply) 64→32 `imdct_half`, and the 512-tap polyphase window/overlap stage driven by the perfect- or non-perfect-reconstruction prototype (`Fir32Perfect` / `Fir32NonPerfect`). The direct IMDCT replaces FFmpeg's FFT path; the task permits a direct matrix multiply for the transform.
+32-band cosine-modulated QMF synthesis filterbank for the DCA core, reconstructing 256 PCM samples per channel per block from 8 sub-subframe vectors of 32 subband samples each. The stage is the per-subband sign flip `((i-1)&2)`, the second half of a 64-point IMDCT over the 32 subband values, and a 512-tap polyphase window/overlap driven by the perfect- or non-perfect-reconstruction prototype (`Fir32Perfect` / `Fir32NonPerfect`). The IMDCT is evaluated as a direct matrix multiply, which is exact and cheap enough at this size.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1223,8 +1223,8 @@ Constant numeric tables for the DCA core decoder, ported faithfully from the FFm
 | `LfeFir128` | `static readonly float[] LfeFir128` | Provides the lfe fir 128 value. |
 | `LfeFir64` | `static readonly float[] LfeFir64` | Provides the lfe fir 64 value. |
 | `LfeIndex` | `static readonly int[] LfeIndex` | Provides the lfe index value. |
-| `LosslessQuant` | `static readonly float[] LosslessQuant` | Provides the lossless quant value. |
-| `LossyQuant` | `static readonly float[] LossyQuant` | Provides the lossy quant value. |
+| `LosslessQuant` | `static readonly float[] LosslessQuant` | Lossless-core quantizer step size indexed by the bit-allocation index. |
+| `LossyQuant` | `static readonly float[] LossyQuant` | Lossy-core quantizer step size indexed by the bit-allocation index. |
 | `SampleRates` | `static readonly int[] SampleRates` | Provides the sample rates value. |
 | `ScaleFactorQuant6` | `static readonly uint[] ScaleFactorQuant6` | Provides the scale factor quant 6 value. |
 | `ScaleFactorQuant7` | `static readonly uint[] ScaleFactorQuant7` | Provides the scale factor quant 7 value. |
