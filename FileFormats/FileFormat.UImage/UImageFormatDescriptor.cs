@@ -20,7 +20,7 @@ namespace FileFormat.UImage;
 ///   <item><description><c>https://github.com/u-boot/u-boot</c> — U-Boot sources — <c>include/image.h</c> defines the 64-byte legacy header</description></item>
 /// </list>
 /// </summary>
-public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveShrinkable {
 
   /// <summary>
   /// Gets the id.
