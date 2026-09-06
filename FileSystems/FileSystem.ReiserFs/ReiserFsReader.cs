@@ -36,9 +36,14 @@ public sealed class ReiserFsReader : IDisposable {
   private int _blockSize;
   private int _rootBlock;
 
-  // All STAT_DATA items indexed by (dirId, objectId) → sd_mode (for dir/file
-  // classification). Populated by the leaf scan before the directory walk.
-  private readonly Dictionary<(uint DirId, uint ObjId), ushort> _statMode = [];
+  // All STAT_DATA items indexed by (dirId, objectId) → the fields the listing
+  // needs: sd_mode (dir/file classification) and sd_size (the object's byte
+  // length). Populated by the leaf scan before the directory walk, so a listing
+  // carries sizes without anyone having to read a body.
+  private readonly Dictionary<(uint DirId, uint ObjId), StatData> _statData = [];
+
+  /// <summary>The stat-data fields the directory walk needs: <c>sd_mode</c> and <c>sd_size</c>.</summary>
+  private readonly record struct StatData(ushort Mode, long Size);
   // All DIRENTRY items indexed by (dirId, objectId). dirId here is the parent
   // of the directory; objectId is the directory's own id.
   private readonly Dictionary<(uint DirId, uint ObjId), List<DirEntry>> _dirEntries = [];
@@ -141,9 +146,12 @@ public sealed class ReiserFsReader : IDisposable {
       var itemType = ResolveItemType(ihOff);
 
       if (itemType == 0) {
-        // STAT_DATA — record sd_mode (le16 at body +0) for dir/file detection.
+        // STAT_DATA — sd_mode (dir/file detection) and sd_size (the listed
+        // byte length). Both stat-data layouts start with le16 sd_mode, but
+        // sd_size sits at a different place and width in each, so it is read
+        // per the item's key format.
         if (ihLength >= 2)
-          _statMode[(keyDirId, keyObjId)] = U16((dataOff));
+          _statData[(keyDirId, keyObjId)] = new StatData(U16(dataOff), ReadStatDataSize(ihOff, dataOff, ihLength));
         continue;
       }
 
@@ -209,11 +217,14 @@ public sealed class ReiserFsReader : IDisposable {
     foreach (var entry in entries) {
       var childKey = (entry.PointedDirId, entry.PointedObjId);
       var fullPath = string.IsNullOrEmpty(basePath) ? entry.Name : $"{basePath}/{entry.Name}";
-      var isDir = _statMode.TryGetValue(childKey, out var mode) && (mode & 0xF000) == 0x4000;
+      var hasStat = _statData.TryGetValue(childKey, out var stat);
+      var isDir = hasStat && (stat.Mode & 0xF000) == 0x4000;
 
       _entries.Add(new ReiserFsEntry {
         Name = fullPath,
-        Size = 0, // overwritten for files during Extract from the DIRECT item length
+        // sd_size of a directory is the byte length of its directory items, not
+        // a file length, so only files carry a size.
+        Size = hasStat && !isDir ? stat.Size : 0,
         IsDirectory = isDir,
         DirId = entry.PointedDirId,
         ObjectId = entry.PointedObjId,
@@ -222,6 +233,26 @@ public sealed class ReiserFsReader : IDisposable {
       if (isDir)
         WalkDirectory(entry.PointedDirId, entry.PointedObjId, fullPath, visited);
     }
+  }
+
+  /// <summary>
+  /// Reads <c>sd_size</c> out of a stat-data item body.
+  /// </summary>
+  /// <remarks>
+  /// The two stat-data layouts differ, and which one an item carries is told by
+  /// its <c>ih_key_format</c> — <c>stat_data_v1(ih)</c> is
+  /// <c>get_ih_key_format(ih) == KEY_FORMAT_1</c> in reiserfsprogs-3.6.27
+  /// include/reiserfs_fs.h:835. <c>struct stat_data_v1</c> (ibid.:777) is
+  /// le16 sd_mode, le16 sd_nlink, le16 sd_uid, le16 sd_gid, then le32 sd_size at
+  /// body +8; <c>struct stat_data</c> (ibid.:800) is le16 sd_mode, le16
+  /// sd_attrs, le32 sd_nlink, then le64 sd_size at body +8. The offset happens
+  /// to coincide; the width does not.
+  /// </remarks>
+  private long ReadStatDataSize(int ihOff, int dataOff, int ihLength) {
+    var keyFormat = U16(ihOff + 22);
+    if (keyFormat == 0)
+      return ihLength >= 12 ? U32(dataOff + 8) : 0L;
+    return ihLength >= 16 ? (long)U64(dataOff + 8) : 0L;
   }
 
   /// <summary>

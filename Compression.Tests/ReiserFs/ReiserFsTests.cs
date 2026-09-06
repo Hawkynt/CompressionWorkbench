@@ -432,4 +432,59 @@ public class ReiserFsTests {
       File.Delete(tmp);
     }
   }
+
+  /// <summary>
+  /// Given a ReiserFS image, when its entries are listed, then every file's Size
+  /// is its real byte length — before any body is read.
+  /// </summary>
+  /// <remarks>
+  /// The length lives in the stat-data item's <c>sd_size</c> — the le64 at body
+  /// +8 for a v3.6 stat_data, the le32 at the same offset for the v3.5
+  /// stat_data_v1 (reiserfsprogs-3.6.27 include/reiserfs_fs.h:777 and :800) —
+  /// and the leaf scan that classifies each object as file or directory already
+  /// has that item in hand. The reader used to drop it and hand every entry a
+  /// Size of 0, so a listing reported nothing but names and only an extraction
+  /// produced a length; <c>ReiserFsFormatDescriptor.List</c> passed that zero
+  /// straight into the entry's compressed and original sizes.
+  /// </remarks>
+  [Test, Category("HappyPath")]
+  public void List_ReportsFileSizesWithoutExtractingBodies() {
+    // Sizes spanning both body encodings: empty (no body item at all), a couple
+    // of DIRECT tails, and two past the 1 KiB cutoff that become INDIRECT items.
+    var expected = new Dictionary<string, int>(StringComparer.Ordinal) {
+      ["empty.bin"] = 0,
+      ["tiny.bin"] = 1,
+      ["small.bin"] = 700,
+      ["cutoff.bin"] = 1024,
+      ["indirect.bin"] = 5000,
+      ["docs/nested.bin"] = 9000,
+    };
+
+    var writer = new FileSystem.ReiserFs.ReiserFsWriter();
+    var rng = new Random(7);
+    foreach (var (name, size) in expected) {
+      var payload = new byte[size];
+      rng.NextBytes(payload);
+      writer.AddFile(name, payload);
+    }
+
+    using var ms = new MemoryStream();
+    writer.WriteTo(ms);
+    ms.Position = 0;
+
+    using var r = new FileSystem.ReiserFs.ReiserFsReader(ms);
+    var files = r.Entries.Where(e => !e.IsDirectory)
+                         .ToDictionary(e => e.Name.Replace('\\', '/'), e => e.Size);
+
+    Assert.Multiple(() => {
+      foreach (var (name, size) in expected) {
+        Assert.That(files.ContainsKey(name), Is.True, $"file listed: {name}");
+        Assert.That(files.GetValueOrDefault(name), Is.EqualTo((long)size),
+          $"listed size of {name} must come from sd_size, not from reading the body");
+      }
+      // Directories report no file length.
+      foreach (var dir in r.Entries.Where(e => e.IsDirectory))
+        Assert.That(dir.Size, Is.EqualTo(0L), $"directory {dir.Name} must not report a body length");
+    });
+  }
 }
