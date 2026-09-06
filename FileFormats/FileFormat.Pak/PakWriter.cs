@@ -32,6 +32,8 @@ public sealed class PakWriter : IDisposable {
   public void AddEntry(string fileName, byte[] data) {
     if (this._finished)
       throw new InvalidOperationException("The PAK directory has already been written.");
+    if (this._entries.Count >= PakReader.MaxEntries)
+      throw new NotSupportedException($"Quake PAK supports at most {PakReader.MaxEntries} directory entries.");
     ArgumentNullException.ThrowIfNull(data);
     var nameBytes = EncodeName(fileName);
     var terminator = Array.IndexOf(nameBytes, (byte)0);
@@ -86,7 +88,7 @@ public sealed class PakWriter : IDisposable {
       if (part.Length == 0 || part is "." or "..")
         throw new ArgumentException("Unsafe Quake PAK entry path.", nameof(fileName));
     }
-    if (normalized.Any(c => c is '\0' or > '\x7F'))
+    if (normalized.Any(c => c == '\0' || c > '\x7F'))
       throw new ArgumentException("Quake PAK names are 7-bit archive paths.", nameof(fileName));
     var bytes = Encoding.ASCII.GetBytes(normalized);
     if (bytes.Length >= PakReader.NameFieldSize)
