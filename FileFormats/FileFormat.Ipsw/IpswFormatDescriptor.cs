@@ -25,7 +25,7 @@ namespace FileFormat.Ipsw;
 ///   <item><description><c>https://en.wikipedia.org/wiki/IPSW</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable {
+public sealed class IpswFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveLayoutMap, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => FileFormat.Zip.ZipLayoutMap.Enumerate(archive);
