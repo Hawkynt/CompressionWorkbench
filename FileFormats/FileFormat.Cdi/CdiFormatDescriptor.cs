@@ -13,7 +13,7 @@ namespace FileFormat.Cdi;
 ///   <item><description>CDIrip source — the DiscJuggler layout was reverse-engineered by the disc-preservation community; Padus never published a spec</description></item>
 /// </list>
 /// </summary>
-public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class CdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
 
   /// <summary>
