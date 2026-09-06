@@ -13500,7 +13500,7 @@ Builds a minimal UBIFS image holding a flat list of small regular files plus the
 
 ### Namespace `FileSystem.Udf`
 
-[`UdfBlockMover`](#udfblockmover) · [`UdfEntry`](#udfentry) · [`UdfExtentMap`](#udfextentmap) · [`UdfFormatDescriptor`](#udfformatdescriptor) · [`UdfModifier`](#udfmodifier) · [`UdfReader`](#udfreader) · [`UdfWriter`](#udfwriter)
+[`UdfBlockMover`](#udfblockmover) · [`UdfEntry`](#udfentry) · [`UdfExtentMap`](#udfextentmap) · [`UdfFilesystemDriverAdapter`](#udffilesystemdriveradapter) · [`UdfFormatDescriptor`](#udfformatdescriptor) · [`UdfModifier`](#udfmodifier) · [`UdfReader`](#udfreader) · [`UdfWriter`](#udfwriter)
 
 #### `UdfBlockMover`
 
@@ -13521,15 +13521,15 @@ Implements `IFilesystemBlockMover`.
 
 #### `UdfEntry`
 
-Represents an udf entry.
+Represents a UDF filesystem entry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UdfEntry` | `UdfEntry()` |  |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
-| `LastModified` | `DateTime? LastModified { get; init; }` | Gets or sets the last modified. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this entry is a directory. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Gets the last modification timestamp when present. |
+| `Name` | `string Name { get; init; }` | Gets the decoded path relative to the filesystem root. |
+| `Size` | `long Size { get; init; }` | Gets the logical file size. |
 
 #### `UdfExtentMap`
 
@@ -13538,6 +13538,20 @@ Walks a UDF (ECMA-167) image and yields its actual on-disk byte layout — the 3
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Single-pass walker. Locates AVDP@LBA 256 → VDS → FSD → root FE, then recurses through directory File Entries, decoding short_ad (8-byte) / long_ad (16-byte) allocation descriptors. |
+
+#### `UdfFilesystemDriverAdapter`
+
+Native UDF filesystem sidecar. The archive descriptor remains the offline editor surface; mount backends receive a parsed stable namespace plus positional file handles over the decoded allocation-descriptor map.
+
+Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `UdfFilesystemDriverAdapter` | `UdfFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `UdfFormatDescriptor`
 
@@ -13597,12 +13611,12 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `UdfReader` | `UdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `UdfReader`. |
+| `UdfReader` | `UdfReader(Stream stream, bool leaveOpen = false)` | Initializes a new UDF reader. |
 | `Entries` | `IReadOnlyList<UdfEntry> Entries { get; }` | Gets the entries. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `long ExtractTo(UdfEntry entry, Stream destination)` | Writes `entry`'s bytes into `destination`. |
-| `Extract` | `byte[] Extract(UdfEntry entry)` | Decodes the supplied input. |
+| `ExtractTo` | `long ExtractTo(UdfEntry entry, Stream destination)` | Writes `entry`'s logical bytes into `destination`. |
+| `Extract` | `byte[] Extract(UdfEntry entry)` | Decodes the supplied entry into one byte array. |
 
 #### `UdfWriter`
 
