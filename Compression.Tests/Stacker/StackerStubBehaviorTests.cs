@@ -6,7 +6,7 @@ namespace Compression.Tests.Stacker;
 
 /// <summary>
 /// Pins the capability surface for <see cref="StackerFormatDescriptor"/>. Stacker
-/// STACVOL is now a functional read/create tier: banner + Stacker Control Block
+/// STACVOL is a functional read/create/edit tier: banner + Stacker Control Block
 /// parsing, inner FAT12 directory walking, and STORED/Stac-LZS cluster I/O. These
 /// tests guard the advertised capabilities and the genuine-empty-volume surface.
 /// </summary>
@@ -25,18 +25,15 @@ public class StackerStubBehaviorTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_AdvertisesReadAndCreate() {
+  public void Descriptor_AdvertisesReadCreateAndModify() {
     var d = new StackerFormatDescriptor();
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanExtract), Is.True);
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
-      "Stacker now emits valid STACVOL volumes — must advertise CanCreate.");
-    // Stacker add/remove/defrag/purge work by rebuilding the whole STACVOL (read-all ->
-    // re-create), i.e. a full rewrite — WORM, not in-place R/W — so CanModify must not be
-    // advertised even though the verbs run. See Compression.Registry/FormatCapabilities.cs.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "Stacker modify is rebuild-backed (WORM); it must not claim R/W (CanModify).");
+      "Stacker emits valid STACVOL volumes — must advertise CanCreate.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "Flavor-preserving existing-image Add/Replace/Remove is R/W even when implemented by rebuild.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

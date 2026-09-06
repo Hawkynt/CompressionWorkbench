@@ -13,6 +13,11 @@ namespace FileSystem.Stacker;
 /// clusters are STORED verbatim or Stac-LZS compressed (RFC 1967/2395).
 /// Detection is by the ASCII "STACKER" banner at file offset 0.
 ///
+/// Existing-image add/replace/remove is implemented by a flavor-preserving
+/// rebuild: genuine STACVOL images remain genuine STACVOL images and Extended
+/// images remain Extended. Under the repository's capability contract this is
+/// R/W even though it is not a byte-local mutation.
+///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://github.com/sandsmark/dmsdos</c> — dmsdos driver — the de-facto public documentation of the STACVOL layout and cluster compression</description></item>
@@ -37,15 +42,12 @@ public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
-  // so the verb works via rebuild but nothing is modified in place. CanModify
-  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract
-    | FormatCapabilities.CanTest | FormatCapabilities.CanCreate;
+    | FormatCapabilities.CanTest | FormatCapabilities.CanCreate | FormatCapabilities.CanModify;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
