@@ -99,7 +99,7 @@ public static class AacEncoder {
         var available = Math.Min(FrameSamples, frames - baseFrame);
         for (var i = 0; i < available; ++i)
           for (var c = 0; c < options.Channels; ++c)
-            current[c][i] = interleaved[(baseFrame + i) * options.Channels + c] / 32768f;
+            current[c][i] = interleaved[(baseFrame + i) * options.Channels + c];
       }
 
       var spectrum = new float[options.Channels][];
@@ -416,7 +416,7 @@ public static class AacEncoder {
       double sum = 0;
       for (var n = 0; n < 2 * FrameSamples; ++n)
         sum += time[n] * MdctCosine[n * FrameSamples + k];
-      spectrum[k] = (float)sum;
+      spectrum[k] = (float)(2.0 * sum);
     }
     return spectrum;
   }
@@ -427,7 +427,7 @@ public static class AacEncoder {
     for (var n = 0; n < 2 * FrameSamples; ++n)
       for (var k = 0; k < FrameSamples; ++k)
         table[n * FrameSamples + k] =
-          (float)Math.Cos(Math.PI / FrameSamples * (n + n0) * (2 * k + 1));
+          (float)Math.Cos(Math.PI / FrameSamples * (n + n0) * (k + 0.5));
     return table;
   }
 

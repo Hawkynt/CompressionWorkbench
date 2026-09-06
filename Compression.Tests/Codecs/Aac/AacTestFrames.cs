@@ -128,7 +128,7 @@ internal static class AacTestFrames {
     var w = new BitWriter();
     w.Write((uint)AacElementType.Sce, 3);
     w.Write(0, 4); // element_instance_tag
-    w.Write(120, 8); // global_gain (scale factor baseline)
+    w.Write(180, 8); // global_gain (scale factor baseline)
     w.Write(0, 1);   // ics_reserved_bit
     w.Write(0, 2);   // window_sequence = ONLY_LONG
     w.Write(0, 1);   // window_shape = sine
@@ -140,7 +140,9 @@ internal static class AacTestFrames {
     w.Write(1, 5);   // sect_len_incr = 1
 
     // scale_factor_data: one delta for sfb 0. HCB_SF index 60 == delta 0 has the
-    // shortest code; use it so the band gain equals 2^((120-100)/4) = 32.
+    // shortest code; use it so the band gain equals 2^((180-100)/4) = 2^20. The
+    // filter bank works on the int16 sample scale, so a smaller gain would put the
+    // single coefficient below one LSB and decode to silence.
     var sfCode = AacHuffmanTables.ScaleFactorCodes[60];
     var sfBits = AacHuffmanTables.ScaleFactorBits[60];
     w.Write(sfCode, sfBits);

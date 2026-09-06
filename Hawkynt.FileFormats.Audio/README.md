@@ -59,8 +59,8 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.ImaAdpcm` | ADPCM | R/W | `0x0011` | IMA / Intel ADPCM + QuickTime `ima4` packet variant. `0x0039` is Roland RDAC in the IANA registry, not an IMA alias |
 | `Codec.MsAdpcm` | ADPCM | R/W | `0x0002` | Microsoft ADPCM encode + decode |
 | `Codec.Gsm610` | Speech | R/W | `0x0031`, `0x0086`, `0x00A1`, `0x0155` | GSM 06.10 RPE-LTP, bit-exact with the ETSI reference in both directions. `0x0031` uses real Microsoft WAV49 65-byte blocks; the vendor aliases are identifier-only |
-| `Codec.Mp3` | Lossy | R/W ⚠️ | `0x0050`, `0x0055`, `0x0700` | Decoder covers Layers I/II/III; the checked-in encoder is Layer III. See implementation scope below |
-| `Codec.Aac` | Lossy | R/W ⚠️ | `0x00B0`, `0x00FF`, `0x0180`, `0x0AAC`, `0x4143`, `0x706D`, `0xA106`, `0x2006`, `0x2007` | AAC-LC path with advanced-profile limits; only the ADTS/ADIF entry points are routed |
+| `Codec.Mp3` | Lossy | R/W ⚠️ | `0x0050`, `0x0055`, `0x0700` | Decoder covers Layers I/II/III; `0x0055` MPEGLAYER3WAVEFORMAT is validated WAVE R/W with the checked-in Layer III encoder. `0x0050` remains WAVE decode-only; `0x0700` is identifier-only |
+| `Codec.Aac` | Lossy | R/W ⚠️ | `0x00B0`, `0x00FF`, `0x0180`, `0x0AAC`, `0x1600`, `0x4143`, `0x706D`, `0xA106`, `0x2006`, `0x2007` | AAC-LC encode and decode pinned against ffmpeg's own stream, with advanced-profile limits; WAVE `0x00FF` RAW_AAC1 and `0x1600` ADTS are validated R/W, while the vendor registrations remain identifier-only |
 | `Codec.Vorbis` | Lossy | R/W | `0x564C`, `0x674F`, `0x6750`, `0x6751`, `0x676F`, `0x6770`, `0x6771` | Vorbis I encode + decode; the legacy ACM framings are not routed |
 | `Codec.Opus` | Lossy | R/W ⚠️ | — | Opus path with documented CELT/SILK/hybrid limits |
 | `Codec.Flac` | Lossless | R/W | `0xF1AC` | FLAC frame-level encode + decode; the WAVE tag is not routed; native `.flac` is |
@@ -344,10 +344,10 @@ Each codec is expected to expose a decompression path appropriate to its format 
 
 Modern codecs in particular should be read according to their source/tests:
 
-- **MP3**: MPEG framing and decode code exist; reference-corpus and bit-exact claims must follow current tests rather than old README prose.
+- **MP3**: MPEG framing and decode code exist; Layer III encoding and the `0x0055` WAVE route are covered by in-tree round trips, while Layer I/II remain decode-only.
 - **Vorbis**: the package contains the Vorbis decode path and Ogg integration; real-corpus interoperability evidence belongs in tests.
 - **Opus**: any CELT/SILK/hybrid boundary in the checked-in decoder is a material limitation and must not be hidden by a generic green “R”.
-- **AAC**: AAC-LC and any HE-AAC/SBR/profile boundary is documented as a subset rather than inferred as full ISO/IEC 14496-3 coverage.
+- **AAC**: AAC-LC encode and decode are pinned against an ffmpeg-produced bitstream that exercises all four window sequences, and the RAW_AAC1 / ADTS WAVE routes ride that same path; HE-AAC/SBR and other profile boundaries remain documented subsets rather than inferred as full ISO/IEC 14496-3 coverage.
 
 The same rule applies to every long-tail codec: unsupported branches should fail explicitly or surface coded/raw data rather than fabricate PCM.
 
