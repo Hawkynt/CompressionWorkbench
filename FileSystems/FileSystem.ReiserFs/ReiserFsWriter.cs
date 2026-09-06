@@ -71,6 +71,8 @@ public sealed class ReiserFsWriter {
   private const int SuperblockOff = 65536; // block 16 at 4-KB blocksize
   private const int SuperblockSize = 204;  // SB_SIZE for v3.6
   private const int LeafLevel = 1;
+  /// <summary>MAX_HEIGHT — the deepest S+tree the format allows (reiserfsprogs include/reiserfs_fs.h:1041).</summary>
+  private const int MaxTreeHeight = 6;
   private const int ItemHeaderSize = 24;
   private const int BlockHeadSize = 24;
 
@@ -263,6 +265,14 @@ public sealed class ReiserFsWriter {
     var hasInternal = internalLevels.Count > 0;
     var rootBlockNum = hasInternal ? internalLevels[^1][0].Block : firstTreeBlock;
     var treeHeight = (ushort)(2 + internalLevels.Count);
+    // MAX_HEIGHT is 6 (reiserfsprogs include/reiserfs_fs.h:1041) and both the
+    // superblock check (fsck/super.c:115) and is_internal_block_head
+    // (include/reiserfs_fs.h:740) reject anything above it. Refuse rather than
+    // emit a volume no tool would accept.
+    if (treeHeight > MaxTreeHeight)
+      throw new InvalidOperationException(
+        $"ReiserFsWriter: {leafCount:N0} leaves need an S+tree of height {treeHeight}, " +
+        $"past the format's MAX_HEIGHT of {MaxTreeHeight}.");
     var lastTreeBlock = hasInternal
       ? internalLevels[^1][^1].Block
       : firstTreeBlock + leafCount - 1;
@@ -455,9 +465,12 @@ public sealed class ReiserFsWriter {
     // (struct disk_child = le32 dc_block_number + le16 dc_size + le16 reserved).
     // key[i] is the left-delimiting key of child[i+1]; comp_keys ordering across
     // the children is therefore preserved by the leaf order from PackLeaves.
-    foreach (var level in internalLevels)
-      foreach (var node in level)
-        WriteInternal(image.AsSpan(node.Block * BlockSize, BlockSize), node);
+    // internalLevels is bottom-up, so internalLevels[0] sits directly above the
+    // leaves and carries blk_level 2; every further level adds one, leaving the
+    // root at s_tree_height - 1.
+    for (var lv = 0; lv < internalLevels.Count; ++lv)
+      foreach (var node in internalLevels[lv])
+        WriteInternal(image.AsSpan(node.Block * BlockSize, BlockSize), node, (ushort)(LeafLevel + 1 + lv));
 
     return image;
   }
@@ -585,18 +598,41 @@ public sealed class ReiserFsWriter {
   }
 
   /// <summary>
-  /// Serialises the internal block above the leaves: block_head (blk_level = 2)
-  /// + a key for every child after the first + one disk_child per child.
+  /// Serialises one internal block: block_head + a key for every child after the
+  /// first + one disk_child per child.
   /// </summary>
-  private static void WriteInternal(Span<byte> blk, InternalNode node) {
+  /// <remarks>
+  /// <para>
+  /// <paramref name="blkLevel"/> is the node's height above the leaves, counted
+  /// the way the on-disk format counts it: leaves are
+  /// <c>DISK_LEAF_NODE_LEVEL</c> = 1, the internal level directly above them is
+  /// 2, and so on up to the root at <c>s_tree_height - 1</c>. reiserfsck derives
+  /// the expected value the same way — <c>h_to_level()</c> in
+  /// reiserfsprogs-3.6.27 fsck/check_tree.c:898 returns
+  /// <c>get_sb_tree_height(sb) - h - 1</c> for a node reached at depth
+  /// <c>h</c> from the root — and rejects any node that disagrees
+  /// (check_tree.c:975).
+  /// </para>
+  /// <para>
+  /// Bytes 8..23 of the block_head are NOT a delimiting key that anything
+  /// checks. reiserfsprogs declares them as <c>blk_reserved</c> plus
+  /// <c>reserved[4]</c> (include/reiserfs_fs.h:712) and reads them nowhere; the
+  /// delimiting keys fsck really validates are the PARENT's key array, recovered
+  /// by <c>lkey</c> / <c>rkey</c> (check_tree.c:1021 and 1036) and compared
+  /// against the child's first and last item keys in <c>bad_path</c>. The
+  /// historical <c>blk_right_delim_key</c> that once lived here is why the
+  /// writer fills the bytes at all, so they are left as they have always been.
+  /// </para>
+  /// </remarks>
+  private static void WriteInternal(Span<byte> blk, InternalNode node, ushort blkLevel) {
     var childCount = node.Children.Count;
     var keyCount = childCount - 1; // blk_nr_item for an internal node
 
-    BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], 2);              // blk_level (internal)
+    BinaryPrimitives.WriteUInt16LittleEndian(blk[0..], blkLevel);       // blk_level
     BinaryPrimitives.WriteUInt16LittleEndian(blk[2..], (ushort)keyCount);
     BinaryPrimitives.WriteUInt16LittleEndian(blk[4..], 0);              // blk_free_space (unused by reader)
     BinaryPrimitives.WriteUInt16LittleEndian(blk[6..], 0);             // blk_reserved
-    MaxKey.CopyTo(blk[8..]);                                            // right-delim key (tree root)
+    MaxKey.CopyTo(blk[8..]);                                            // block_head reserved[4]
 
     // Keys: key[i] = left-delimiting key of child[i+1].
     var keysOff = BlockHeadSize;

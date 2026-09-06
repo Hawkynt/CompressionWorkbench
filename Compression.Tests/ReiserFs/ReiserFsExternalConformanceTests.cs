@@ -80,6 +80,80 @@ public class ReiserFsExternalConformanceTests {
     });
   }
 
+  /// <summary>
+  /// A volume deep enough to need two internal levels over the leaves must pass
+  /// reiserfsck as well. One internal node indexes 170 children at a 4 KiB
+  /// blocksize, so past roughly 4 800 small files the writer stacks a second
+  /// level and <c>s_tree_height</c> reaches 4 — the point at which every
+  /// internal node used to claim level 2 and the tool answered "block 8387: The
+  /// level of the node (2) is not correct, (3) expected".
+  /// </summary>
+  [Test, Category("RoundTrip")]
+  public void DeepTreeImage_PassesReiserfsckCheck() {
+    if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+      Assert.Ignore("reiserfsck conformance is a Linux-only check");
+    if (!HasCommand("reiserfsck"))
+      Assert.Ignore("reiserfsck (reiserfsprogs) not installed");
+
+    var writer = new FileSystem.ReiserFs.ReiserFsWriter();
+    // Nested directories, long names and bodies past the DIRECT cutoff, so item
+    // packing — which drives how many leaves the tree needs — varies across the
+    // volume rather than repeating one shape.
+    var rng = new Random(1234);
+    for (var i = 0; i < 6000; i++) {
+      var name = (i % 7) switch {
+        0 => $"a/f{i:D6}.bin",
+        1 => $"a/b/f{i:D6}.bin",
+        2 => $"a/b/c/{new string('x', 120)}_{i:D6}.bin",
+        3 => $"top{i:D6}.bin",
+        4 => $"d{i % 37:D3}/f{i:D6}.bin",
+        5 => $"a/b/c/d/e/f{i:D6}.bin",
+        _ => $"big/f{i:D6}.bin",
+      };
+      byte[] payload;
+      if (i % 70 == 6) {
+        payload = new byte[9000 + i % 5000];   // multi-block INDIRECT body
+        rng.NextBytes(payload);
+      } else if (i % 21 == 3) {
+        payload = new byte[1100 + i % 2900];   // just past the DIRECT cutoff
+        rng.NextBytes(payload);
+      } else {
+        payload = Encoding.ASCII.GetBytes($"c-{i:D6}");
+      }
+      writer.AddFile(name, payload);
+    }
+
+    var imagePath = Path.Combine(_tmpDir, "deep.reiserfs");
+    using (var fs = File.Create(imagePath))
+      writer.WriteTo(fs);
+
+    // The volume has to actually be deep, or the check proves nothing.
+    using (var img = File.OpenRead(imagePath)) {
+      var sb = new byte[128];
+      img.Position = 65536;
+      img.ReadExactly(sb);
+      Assert.That(BitConverter.ToUInt16(sb, 68), Is.GreaterThanOrEqualTo(4),
+        "the generated volume did not reach s_tree_height 4");
+    }
+
+    var result = RunTool("reiserfsck", $"--check \"{imagePath}\"", stdin: "Yes\n");
+    var combined = result.StdOut + "\n" + result.StdErr;
+    Assert.Multiple(() => {
+      Assert.That(result.ExitCode, Is.EqualTo(0),
+        $"reiserfsck exited {result.ExitCode}.\nstdout:\n{Tail(result.StdOut)}\nstderr:\n{Tail(result.StdErr)}");
+      Assert.That(combined, Does.Contain("No corruptions found"),
+        $"reiserfsck did not report the filesystem clean.\nstdout:\n{Tail(result.StdOut)}");
+      Assert.That(combined, Does.Not.Contain("is not correct"),
+        "reiserfsck rejected a node's level");
+      Assert.That(combined, Does.Not.Contain("vpf-"),
+        "reiserfsck reported a structural (vpf-) defect");
+    });
+  }
+
+  /// <summary>Last few kilobytes of a tool's output — reiserfsck's progress spinner floods the rest.</summary>
+  private static string Tail(string text)
+    => text.Length <= 4000 ? text : text[^4000..];
+
   // ── Process helpers (mirrors OsIntegrationTests) ───────────────────────
 
   private record struct ToolResult(string StdOut, string StdErr, int ExitCode);
