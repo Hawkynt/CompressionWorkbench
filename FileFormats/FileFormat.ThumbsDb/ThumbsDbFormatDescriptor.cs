@@ -14,20 +14,7 @@ namespace FileFormat.ThumbsDb;
 ///   <item><description>internal stream layout undocumented by Microsoft; reverse-engineered by the digital-forensics community (e.g. the vinetto tool)</description></item>
 /// </list>
 /// </summary>
-public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "Thumbs.db is an OLE2 Compound File with a Catalog stream + per-thumbnail JPEG streams — " +
-      "rebuilding from the surface stream list would destroy the catalog references.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class ThumbsDbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => Msi.CfbLayoutMap.Enumerate(archive);

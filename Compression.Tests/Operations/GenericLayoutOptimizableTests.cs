@@ -1,120 +1,57 @@
 #pragma warning disable CS1591
 using Compression.Lib;
 using Compression.Registry;
+using Compression.Tests.Support;
 
 namespace Compression.Tests.Operations;
 
 /// <summary>
-/// Safety net for the broad rollout of the default <see cref="ILayoutOptimizable"/>
-/// mechanism (verified extract → re-create rebuild via
-/// <see cref="RebuildVerb.RebuildToStream"/>). For every filesystem descriptor that
-/// exposes <c>ILayoutOptimizable</c> through the generic default (i.e. does NOT
-/// declare its own <c>RebuildStreaming</c>) and can create from trivial input, this
-/// builds a small two-file image, re-applies its layout via <c>RebuildStreaming</c>
-/// with default options, and asserts the rebuilt image lists the same file set. A
-/// format whose create path doesn't faithfully round-trip surfaces here (the
-/// rebuild itself also refuses lossy results) rather than silently corrupting data.
+/// Behavioural honesty test for every creatable format that advertises
+/// <see cref="ILayoutOptimizable"/>. Analysis and rebuild must both execute, and
+/// rebuilding with default geometry must keep whatever the reader could retrieve
+/// before it ran.
 /// </summary>
 [TestFixture]
 public class GenericLayoutOptimizableTests {
 
-  // EVERY format whose runtime ops exposes ILayoutOptimizable + IArchiveCreatable,
-  // scoped to the DEFAULT mechanism (those that don't declare their own
-  // RebuildStreaming) — discovered by reflection so new implementers are covered
-  // automatically.
   private static IEnumerable<string> LayoutOptimizableIds() =>
-    Compression.Tests.Support.CapabilityImplementers.RegisteredIdsExposing(typeof(ILayoutOptimizable))
+    CapabilityImplementers.RegisteredIdsExposing(typeof(ILayoutOptimizable))
       .Where(id => FormatRegistry.GetArchiveOps(id) is IArchiveCreatable
-                   && Enum.TryParse<FormatDetector.Format>(id, out _)
-                   && !Compression.Tests.Support.CapabilityImplementers.DeclaresOwn(
-                        id, "RebuildStreaming", typeof(Stream), typeof(Stream), typeof(LayoutRebuildOptions)));
+                   && Enum.TryParse<FormatDetector.Format>(id, out _));
 
   [TestCaseSource(nameof(LayoutOptimizableIds))]
-  public void RebuildStreaming_PreservesFiles_OrRefusesCleanly(string formatId) {
+  public void AnalyzeAndRebuild_ExecuteAndPreserveProbeFilesByteForByte(string formatId) {
     var work = Path.Combine(Path.GetTempPath(), "cwb_genlayout_" + Guid.NewGuid().ToString("N")[..8]);
     Directory.CreateDirectory(work);
     try {
-      // Two deterministic payloads: a short text file and a 4 KB binary.
-      var aData = "generic layout round-trip probe\n"u8.ToArray();
-      var bData = new byte[4096];
-      for (var i = 0; i < bData.Length; i++) bData[i] = (byte)(i * 31 + 7);
-      var aSrc = Path.Combine(work, "A.TXT"); File.WriteAllBytes(aSrc, aData);
-      var bSrc = Path.Combine(work, "B.BIN"); File.WriteAllBytes(bSrc, bData);
+      var ops = FormatRegistry.GetArchiveOps(formatId)!;
+      var probe = MaintenanceOperationProbe.CreateImage(formatId, work);
+      var optimizable = (ILayoutOptimizable)ops;
+      int before;
+      using (var source = File.OpenRead(probe.Path))
+        before = MaintenanceOperationProbe.ListFiles(ops, source).Count;
 
-      var fmt = Enum.Parse<FormatDetector.Format>(formatId);
-      var fmtOps = FormatRegistry.GetArchiveOps(formatId)!;
-      var img = Path.Combine(work, "img.dat");
-
-      // Some filesystems can't be created from a trivial two-file input (need a
-      // specific minimum geometry / options). That's a create limitation, not a
-      // layout defect — skip those rather than fail.
-      try {
-        ArchiveOperations.Create(img, [
-          new ArchiveInput(aSrc, "A.TXT"),
-          new ArchiveInput(bSrc, "B.BIN"),
-        ], new CompressionOptions(), fmt, null);
-      } catch (Exception ex) {
-        Assert.Ignore($"{formatId}: cannot create a probe image from trivial input ({ex.GetType().Name}: {ex.Message}).");
-        return;
-      }
-      if (!File.Exists(img) || new FileInfo(img).Length == 0) {
-        Assert.Ignore($"{formatId}: create produced no image.");
-        return;
+      using (var source = File.OpenRead(probe.Path)) {
+        var analysis = optimizable.AnalyzeLayout(source);
+        Assert.That(analysis, Is.Not.Null, $"{formatId}: AnalyzeLayout returned null.");
+        Assert.That(analysis.ImageSize, Is.GreaterThanOrEqualTo(0), $"{formatId}: AnalyzeLayout returned an invalid image size.");
       }
 
-      // Capture the source file set as the descriptor itself lists it (via its own
-      // ops — NOT path auto-detection, which would mis-route a bare image file).
-      var before = SafeList(fmtOps, img);
-      if (before.Count == 0) {
-        Assert.Ignore($"{formatId}: descriptor lists no files in its own freshly-created image (round-trip not exercisable).");
-        return;
-      }
-
-      var optimizable = (ILayoutOptimizable)fmtOps;
       byte[] rebuilt;
-      try {
-        using var inStream = File.OpenRead(img);
-        using var outStream = new MemoryStream();
-        // Default options: no explicit geometry change — re-apply the layout as-is.
-        optimizable.RebuildStreaming(inStream, outStream, new LayoutRebuildOptions());
-        rebuilt = outStream.ToArray();
-      } catch (NotSupportedException) {
-        Assert.Pass($"{formatId}: layout rebuild cleanly NotSupported (no corruption).");
-        return;
-      } catch (Exception ex) {
-        // RebuildStreaming writes to a SEPARATE target stream, so any failure here
-        // (verified-rebuild lossy guard, or the writer being unable to re-create the
-        // extracted content — e.g. a fixed-capacity volume that can't refit) leaves
-        // the source untouched. That's a safe, non-destructive refusal of the
-        // optimize verb — not a corruption. Skip with the reason.
-        Assert.Ignore($"{formatId}: layout rebuild refused non-destructively ({ex.GetType().Name}: {ex.Message}).");
-        return;
+      using (var source = File.OpenRead(probe.Path))
+      using (var target = new MemoryStream()) {
+        optimizable.RebuildStreaming(source, target, new LayoutRebuildOptions());
+        rebuilt = target.ToArray();
       }
 
-      Assert.That(rebuilt.Length, Is.GreaterThan(0), $"{formatId}: rebuild produced empty output");
-
-      // The rebuilt image must still list the same file set.
-      using var rebuiltStream = new MemoryStream(rebuilt);
-      var after = SafeList(fmtOps, rebuiltStream);
-      Assert.That(after.OrderBy(n => n, StringComparer.Ordinal),
-        Is.EqualTo(before.OrderBy(n => n, StringComparer.Ordinal)),
-        $"{formatId}: layout rebuild changed the file set ([{string.Join(", ", before)}] -> [{string.Join(", ", after)}])");
+      Assert.That(rebuilt.Length, Is.GreaterThan(0), $"{formatId}: layout rebuild produced an empty image.");
+      using var rebuiltStream = new MemoryStream(rebuilt, writable: false);
+      Assert.That(MaintenanceOperationProbe.ListFiles(ops, rebuiltStream), Has.Count.GreaterThanOrEqualTo(before),
+        $"{formatId}: layout rebuild dropped entries the reader listed before it ran.");
+      if (probe.PayloadObservable)
+        MaintenanceOperationProbe.AssertProbeFiles(ops, rebuiltStream, formatId);
     } finally {
       try { Directory.Delete(work, true); } catch { /* best effort */ }
-    }
-  }
-
-  private static List<string> SafeList(IArchiveFormatOperations ops, string path) {
-    try { using var s = File.OpenRead(path); return SafeList(ops, s); }
-    catch { return []; }
-  }
-
-  private static List<string> SafeList(IArchiveFormatOperations ops, Stream s) {
-    try {
-      s.Position = 0;
-      return ops.List(s, null).Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
-    } catch {
-      return [];
     }
   }
 }

@@ -16,6 +16,11 @@ namespace FileFormat.Nds;
 public sealed class NdsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
   /// <inheritdoc />
+  /// <remarks>An NDS ROM surfaces the files of its NitroFS; a ROM whose FNT/FAT is empty has no filesystem at all, so there is no empty instance to purge to.</remarks>
+  public bool CanPurgeToEmpty => false;
+
+
+  /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     archive.Position = 0;
     var r = new NdsReader(archive);

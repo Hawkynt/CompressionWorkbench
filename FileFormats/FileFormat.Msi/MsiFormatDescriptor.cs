@@ -15,20 +15,7 @@ namespace FileFormat.Msi;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Compound_File_Binary_Format</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "MSI is an OLE2 Compound File envelope with Installer DB schema tables, transforms, and cabinet streams — " +
-      "rebuilding from the surface stream list would destroy the package structure.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class MsiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IWipeEmpty {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => CfbLayoutMap.Enumerate(archive);

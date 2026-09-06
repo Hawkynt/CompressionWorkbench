@@ -154,6 +154,26 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
+  /// Opens one entry under the name <see cref="List"/> published for it. The
+  /// generic default reaches the entry through <see cref="Extract"/>, which
+  /// materialises a DFS file in the default directory as a bare <c>NAME</c>
+  /// rather than the catalogue's <c>$.NAME</c>, so every such entry would be
+  /// unreachable by the name it was listed under. Reading it straight off the
+  /// catalogue keeps the two namespaces the same one.
+  /// </summary>
+  public Stream OpenEntry(Stream stream, string entryName, string? password) {
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+    using var r = new BbcReader(stream, doubleSided: false);
+    foreach (var e in r.Entries) {
+      if (!string.Equals(e.FullName, entryName, StringComparison.OrdinalIgnoreCase)
+          && !string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase)) continue;
+      return new MemoryStream(r.Extract(e), writable: false);
+    }
+    throw new FileNotFoundException($"BBC DFS: no entry named '{entryName}'.", entryName);
+  }
+
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
@@ -178,8 +198,17 @@ public sealed class BbcFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         $"BBC DFS: combined input size {total} bytes exceeds 40-track SSD capacity ({BbcWriter.DiskSize40} bytes).");
 
     var w = new BbcWriter();
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var (name, data) in FlatFiles(inputs)) {
+      // "DIR.NAME" is the form List/FullName publishes, so anything re-creating an
+      // image from its own listing — the maintenance rebuild does exactly that —
+      // hands it straight back. Left to SanitizeName the ".NAME" half reads as an
+      // extension and the entry collapses to the directory character, which is the
+      // same hazard BbcModifier.RemoveFile already guards on the delete side.
+      if (name.Length >= 3 && name[1] == '.' && name.IndexOf('.', 2) < 0)
+        w.AddFile(name[2..], data, name[0]);
+      else
+        w.AddFile(name, data);
+    }
 
     var title = options?.GetOption("VolumeLabel", "") ?? "";
     if (string.IsNullOrEmpty(title)) title = "WORMDISK";

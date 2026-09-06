@@ -16,6 +16,11 @@ namespace FileFormat.Zpaq;
 /// </summary>
 public sealed class ZpaqFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
+  /// <inheritdoc />
+  /// <remarks>A ZPAQ stream is a sequence of blocks; a file carrying none is not a ZPAQ archive, so there is no empty instance to purge to.</remarks>
+  public bool CanPurgeToEmpty => false;
+
+
   /// <summary>Rebuild-based defrag: extracts then re-creates the ZPAQ archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });

@@ -31,7 +31,11 @@ namespace FileSystem.Tux3;
 /// container is always in, because removing a file writes it out compacted
 /// rather than leaving a hole. See <see cref="Tux2FormatDescriptor" />, which
 /// has the same shape.
-public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty, ISyntheticEntryNames {
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticNames;
+
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────
   private static readonly HashSet<string> SyntheticNames =

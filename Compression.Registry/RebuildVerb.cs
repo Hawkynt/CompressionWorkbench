@@ -258,6 +258,23 @@ public static class RebuildVerb {
   /// staged copy and the caller's stream is replaced only after the result lists
   /// successfully with every original live entry gone.
   /// </summary>
+  /// <remarks>
+  /// Two things stop a first, plain attempt from being the whole story, and both
+  /// are properties of the container rather than defects of the purge:
+  /// <list type="bullet">
+  ///   <item><description>A reader may render views of the container itself — a
+  ///     whole-image entry, a metadata rendering, a raw superblock or log dump.
+  ///     Asking the modifier to drop one is meaningless and finding it afterwards
+  ///     proves nothing, so those names are excluded and judged against
+  ///     <see cref="StructuralFloor"/>. Establishing the floor costs a create, so
+  ///     it is paid only once the plain attempt has tripped over one.</description></item>
+  ///   <item><description>A native modifier may own a narrower namespace than the
+  ///     one its reader lists — a sector or block index rather than a file inside
+  ///     the filesystem carried in it. The verb is still reachable there, through
+  ///     the same extract → drop → re-create rebuild the interface offers by
+  ///     default, so that is tried before the purge is reported impossible.</description></item>
+  /// </list>
+  /// </remarks>
   public static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(ops);
@@ -265,36 +282,115 @@ public static class RebuildVerb {
     if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
       throw new ArgumentException("Purge requires a readable, writable, seekable stream.", nameof(archive));
 
-    using var staged = CreateScratchStream();
-    archive.Position = 0;
-    archive.CopyTo(staged);
-    staged.Flush();
+    var attempt = TryPurge(archive, ops, modifier, null, false);
+    if (!attempt.Purged) {
+      var floor = StructuralFloor(ops);
+      if (floor.Count != 0)
+        attempt = Supersede(attempt, TryPurge(archive, ops, modifier, floor, false));
+      if (!attempt.Purged && ops is IArchiveCreatable)
+        attempt = Supersede(attempt, TryPurge(archive, ops, modifier, floor, true));
+      if (!attempt.Purged) {
+        attempt.Staged.Dispose();
+        throw attempt.Failure ?? PurgeIncomplete(attempt.Survivors);
+      }
+    }
 
-    staged.Position = 0;
-    var sourceNames = ops.List(staged, null)
-      .Where(e => !e.IsDirectory)
-      .Select(e => e.Name)
-      .Distinct(StringComparer.OrdinalIgnoreCase)
-      .ToArray();
-    if (sourceNames.Length == 0) return;
+    using (attempt.Staged) {
+      archive.Position = 0;
+      archive.SetLength(0);
+      attempt.Staged.Position = 0;
+      attempt.Staged.CopyTo(archive);
+      archive.Flush();
+    }
+  }
 
-    staged.Position = 0;
-    modifier.Remove(staged, sourceNames);
-    staged.Position = 0;
-    var remaining = ops.List(staged, null)
-      .Where(e => !e.IsDirectory)
-      .Select(e => e.Name)
-      .ToHashSet(StringComparer.OrdinalIgnoreCase);
-    var survivors = sourceNames.Where(remaining.Contains).ToArray();
-    if (survivors.Length != 0)
-      throw new InvalidOperationException(
-        $"Purge left {survivors.Length} original live entr{(survivors.Length == 1 ? "y" : "ies")} behind; original container retained.");
+  /// <summary>
+  /// One staged purge attempt: everything listed outside <paramref name="floor"/>
+  /// is dropped, either through the descriptor's own modifier or — when
+  /// <paramref name="viaRebuild"/> — through the extract → drop → re-create engine.
+  /// </summary>
+  private static PurgeAttempt TryPurge(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier,
+      IReadOnlySet<string>? floor, bool viaRebuild) {
+    var staged = CreateScratchStream();
+    try {
+      archive.Position = 0;
+      archive.CopyTo(staged);
+      staged.Flush();
 
-    archive.Position = 0;
-    archive.SetLength(0);
-    staged.Position = 0;
-    staged.CopyTo(archive);
-    archive.Flush();
+      staged.Position = 0;
+      var sourceNames = ops.List(staged, null)
+        .Where(e => !e.IsDirectory)
+        .Select(e => e.Name)
+        .Where(name => floor == null || !floor.Contains(name))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+      if (sourceNames.Length == 0) return new PurgeAttempt(staged, [], null);
+
+      staged.Position = 0;
+      if (viaRebuild)
+        // Everything goes, including the structural renderings: they are views of
+        // the container, and feeding a whole-image view back in as an input would
+        // re-ingest the very bytes the purge is removing.
+        EditViaRebuild(staged, ops, (IArchiveCreatable)ops, tmpDir => {
+          foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories))
+            File.Delete(file);
+        });
+      else
+        modifier.Remove(staged, sourceNames);
+
+      staged.Position = 0;
+      var remaining = ops.List(staged, null)
+        .Where(e => !e.IsDirectory)
+        .Select(e => e.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+      return new PurgeAttempt(staged, sourceNames.Where(remaining.Contains).ToArray(), null);
+    } catch (Exception ex) {
+      return new PurgeAttempt(staged, [], ex);
+    }
+  }
+
+  /// <summary>
+  /// Keeps <paramref name="next"/> and releases the staged copy of the attempt it
+  /// replaces.
+  /// </summary>
+  private static PurgeAttempt Supersede(PurgeAttempt previous, PurgeAttempt next) {
+    previous.Staged.Dispose();
+    return next;
+  }
+
+  private sealed record PurgeAttempt(FileStream Staged, string[] Survivors, Exception? Failure) {
+    public bool Purged => this.Failure == null && this.Survivors.Length == 0;
+  }
+
+  private static InvalidOperationException PurgeIncomplete(string[] survivors)
+    => new($"Purge left {survivors.Length} original live entr{(survivors.Length == 1 ? "y" : "ies")} behind "
+      + $"({string.Join(", ", survivors)}); original container retained.");
+
+  /// <summary>
+  /// The names this format renders from the container rather than from anything
+  /// stored in it: whatever the descriptor declares through
+  /// <see cref="ISyntheticEntryNames"/>, plus whatever an empty container of the
+  /// same format still lists. A format that cannot be created empty, or cannot
+  /// read back what it then wrote, contributes only the declared half.
+  /// </summary>
+  private static HashSet<string> StructuralFloor(IArchiveFormatOperations ops) {
+    var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    if (ops is ISyntheticEntryNames declared)
+      foreach (var name in declared.SyntheticEntryNames)
+        result.Add(name);
+    if (ops is not IArchiveCreatable creator) return result;
+    try {
+      using var empty = CreateScratchStream();
+      creator.Create(empty, [], new FormatCreateOptions());
+      empty.Position = 0;
+      foreach (var entry in ops.List(empty, null))
+        if (!entry.IsDirectory)
+          result.Add(entry.Name);
+    } catch {
+      // No empty form, or one this reader rejects. Only what the descriptor
+      // declares outright is excused.
+    }
+    return result;
   }
 
   private static List<string> LiveNameList(IEnumerable<ArchiveEntryInfo> entries)

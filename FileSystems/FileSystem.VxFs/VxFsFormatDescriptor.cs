@@ -43,7 +43,11 @@ namespace FileSystem.VxFs;
 /// volume rather than the bytes that changed; the result is the same shape the
 /// driver already mounts.</para>
 /// </remarks>
-public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
+public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, ISyntheticEntryNames {
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticNames;
+
 
   /// <summary>Entries that describe the volume rather than live in it.</summary>
   private static readonly HashSet<string> SyntheticNames =

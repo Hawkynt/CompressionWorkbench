@@ -15,6 +15,11 @@ namespace FileFormat.Wrapster;
 /// </summary>
 public sealed class WrapsterFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
 
+  /// <inheritdoc />
+  /// <remarks>A Wrapster file is a header wrapped around exactly one payload; without it the file is below the minimum size its own reader accepts.</remarks>
+  public bool CanPurgeToEmpty => false;
+
+
   /// <summary>Rebuild-based defrag: extracts then re-creates the Wrapster archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });

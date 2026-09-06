@@ -32,6 +32,11 @@ namespace FileFormat.Ova;
 /// </summary>
 public sealed class OvaFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+
+  /// <inheritdoc />
+  /// <remarks>An OVA is a manifest over at least one disk image or .ovf descriptor; a member-less appliance is not one.</remarks>
+  public bool CanPurgeToEmpty => false;
+
   /// <summary>
   /// Gets the id.
   /// </summary>

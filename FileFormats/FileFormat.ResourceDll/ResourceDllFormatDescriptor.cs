@@ -18,19 +18,7 @@ namespace FileFormat.ResourceDll;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Portable_Executable</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class ResourceDllFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "ResourceDll is a PE32+ DLL with RVAs, section alignment, and import tables — " +
-      "rebuilding from RT_RCDATA blobs alone would destroy the PE structure.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+public sealed class ResourceDllFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.

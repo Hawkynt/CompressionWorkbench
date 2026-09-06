@@ -24,4 +24,8 @@ internal static class PbpConstants {
     "DATA.PSP",
     "DATA.PSAR",
   ];
+
+  /// <summary>True when <paramref name="name"/> is one of the fixed PBP sections.</summary>
+  internal static bool IsSectionName(string name)
+    => Array.IndexOf(SectionNames, name) >= 0;
 }
