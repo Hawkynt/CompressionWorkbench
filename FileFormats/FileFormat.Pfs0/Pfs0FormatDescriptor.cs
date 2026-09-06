@@ -13,7 +13,7 @@ namespace FileFormat.Pfs0;
 ///   <item><description><c>https://github.com/SciresM/hactool</c> — hactool — reference extraction tool implementing PFS0</description></item>
 /// </list>
 /// </summary>
-public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class Pfs0FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap {
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the PFS0 archive in listing order.</summary>
   public void Defragment(Stream archive)
