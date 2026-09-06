@@ -161,6 +161,8 @@ internal sealed class FuseNativeCallbacks : IDisposable {
   private delegate void ReadDirectoryCallback(IntPtr request, ulong inode, nuint size, long offset, IntPtr fileInfo);
   [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
   private delegate void StatFsCallback(IntPtr request, ulong inode);
+  [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+  private delegate void AccessCallback(IntPtr request, ulong inode, int mask);
 
   private readonly FuseFilesystemOperations _operations;
   private readonly GCHandle _selfHandle;
@@ -194,12 +196,13 @@ internal sealed class FuseNativeCallbacks : IDisposable {
     HandleCallback releaseDirectory = ReleaseDirectory;
     FsyncCallback fsyncDirectory = FsyncDirectory;
     StatFsCallback statFs = StatFs;
+    AccessCallback access = Access;
 
     this._delegates = [
       lookup, forget, getAttr, setAttr, readLink, makeNode, makeDirectory,
       unlink, removeDirectory, symbolicLink, rename, link, open, read, write,
       flush, release, fsync, openDirectory, readDirectory, releaseDirectory,
-      fsyncDirectory, statFs,
+      fsyncDirectory, statFs, access,
     ];
 
     this.NativeOperations = new() {
@@ -226,6 +229,7 @@ internal sealed class FuseNativeCallbacks : IDisposable {
       ReleaseDirectory = Pointer(releaseDirectory),
       FsyncDirectory = Pointer(fsyncDirectory),
       StatFs = Pointer(statFs),
+      Access = Pointer(access),
     };
   }
 
@@ -428,6 +432,9 @@ internal sealed class FuseNativeCallbacks : IDisposable {
 
   private static void StatFs(IntPtr request, ulong inode)
     => LibFuseNative.fuse_reply_err(request, FuseErrno.NotImplemented);
+
+  private static void Access(IntPtr request, ulong inode, int mask)
+    => LibFuseNative.fuse_reply_err(request, State(request)._operations.Access(inode, mask));
 
   private static void ReplyBuffer(IntPtr request, byte[] buffer, int length) {
     if (length <= 0) {
