@@ -1,131 +1,117 @@
 using System.Buffers.Binary;
+using System.Text;
 using Compression.Registry;
+using FileSystem.Tux3;
 
 namespace Compression.Tests.Tux3;
 
 [TestFixture]
 public class Tux3Tests {
+  private static byte[] BuildNativeImage(bool legacy2012 = false) {
+    var image = new byte[16 * 1024];
+    var super = image.AsSpan(Tux3Reader.SuperblockOffset, Tux3Reader.DiskSuperSize);
+    (legacy2012 ? Tux3Reader.Legacy2012Magic : Tux3Reader.Magic).CopyTo(super);
 
-  // Build a minimal TUX3 image with valid superblock at offset 4096.
-  private static byte[] BuildMinimalImage() {
-    var image = new byte[8 * 1024];
-    var sb = 4096;
-    FileSystem.Tux3.Tux3Reader.Magic.CopyTo(image.AsSpan(sb));
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x08, 8), 0x1234_5678_9ABC_DEF0UL); // birthday
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x10, 8), 0x0000_0000_0000_0001UL); // flags
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x18, 8), 100UL); // iroot
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x20, 8), 200UL); // oroot
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x28, 8), 300UL); // aroot
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x30, 8), 12UL);  // blockbits => 4096
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x38, 8), 1024UL); // volblocks
-    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(sb + 0x40, 8), 512UL);  // freeblocks
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x08, 8), 0x0123_4567_89AB_CDEFUL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x10, 8), 0x1020_3040_5060_7080UL);
+    BinaryPrimitives.WriteUInt16BigEndian(super.Slice(0x18, 2), 12);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x20, 8), 0x0000_0000_0000_1234UL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x28, 8), 0x0001_0000_0000_0042UL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x30, 8), 0x8002_0000_0000_0043UL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x38, 8), 0x0000_0000_0000_0040UL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x40, 8), 0x0000_0000_0000_0080UL);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x48, 8), 0x0000_0000_0000_0100UL);
+    BinaryPrimitives.WriteUInt32BigEndian(super.Slice(0x50, 4), 0x1020_3040U);
+    BinaryPrimitives.WriteUInt32BigEndian(super.Slice(0x54, 4), 0x5060_7080U);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x58, 8), 0x0000_0000_0000_2222UL);
+    BinaryPrimitives.WriteUInt32BigEndian(super.Slice(0x60, 4), 0x0000_0003U);
     return image;
   }
 
-  [Test, Category("HappyPath")]
-  public void Descriptor_Properties() {
-    var d = new FileSystem.Tux3.Tux3FormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Tux3"));
-    Assert.That(d.DisplayName, Is.EqualTo("TUX3"));
-    Assert.That(d.Extensions, Does.Contain(".tux3"));
-    Assert.That(d.Category, Is.EqualTo(FormatCategory.Archive));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(4096));
+  [Test, Category("Spec")]
+  public void Reader_ParsesCanonicalPackedBigEndianDiskSuper() {
+    var image = BuildNativeImage();
+    using var stream = new MemoryStream(image, writable: false);
+    using var reader = new Tux3Reader(stream);
+
+    Assert.Multiple(() => {
+      Assert.That(reader.ValidSuperblock, Is.True);
+      Assert.That(reader.Revision, Is.EqualTo("2014-05-06"));
+      Assert.That(reader.Birthday, Is.EqualTo(0x0123_4567_89AB_CDEFUL));
+      Assert.That(reader.Flags, Is.EqualTo(0x1020_3040_5060_7080UL));
+      Assert.That(reader.BlockBits, Is.EqualTo(12));
+      Assert.That(reader.VolBlocks, Is.EqualTo(0x1234UL));
+      Assert.That(reader.IRoot, Is.EqualTo(0x0001_0000_0000_0042UL));
+      Assert.That(reader.ORoot, Is.EqualTo(0x8002_0000_0000_0043UL));
+      Assert.That(reader.UsedInodes, Is.EqualTo(0x40UL));
+      Assert.That(reader.NextBlock, Is.EqualTo(0x80UL));
+      Assert.That(reader.AtomDictionarySize, Is.EqualTo(0x100UL));
+      Assert.That(reader.FreeAtom, Is.EqualTo(0x1020_3040U));
+      Assert.That(reader.AtomGeneration, Is.EqualTo(0x5060_7080U));
+      Assert.That(reader.LogChain, Is.EqualTo(0x2222UL));
+      Assert.That(reader.LogCount, Is.EqualTo(3U));
+    });
+
+    Assert.That(reader.Entries.Select(entry => entry.Name),
+      Is.EquivalentTo(new[] { "FULL.tux3", "metadata.ini", "superblock.bin" }));
+    var superblock = reader.Extract(reader.Entries.Single(entry => entry.Name == "superblock.bin"));
+    Assert.That(superblock, Is.EqualTo(image.AsSpan(Tux3Reader.SuperblockOffset, Tux3Reader.DiskSuperSize).ToArray()));
+  }
+
+  [Test, Category("Spec")]
+  public void Reader_AcceptsKnown2012DiskRevision() {
+    using var stream = new MemoryStream(BuildNativeImage(legacy2012: true), writable: false);
+    using var reader = new Tux3Reader(stream);
+    Assert.That(reader.Revision, Is.EqualTo("2012-12-20"));
+  }
+
+  [Test, Category("Regression")]
+  public void FormerPrivateTux3SuprMagic_IsRejected() {
+    var image = new byte[16 * 1024];
+    "TUX3SUPR"u8.CopyTo(image.AsSpan(Tux3Reader.SuperblockOffset));
+    using var stream = new MemoryStream(image, writable: false);
+
+    Assert.Throws<InvalidDataException>(() => _ = new Tux3Reader(stream));
+  }
+
+  [Test, Category("Spec")]
+  public void Descriptor_AdvertisesOnlyTheNativeMetadataSurface() {
+    var descriptor = new Tux3FormatDescriptor();
+
+    Assert.Multiple(() => {
+      Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(2));
+      Assert.That(descriptor.MagicSignatures.All(signature => signature.Offset == Tux3Reader.SuperblockOffset), Is.True);
+      Assert.That(descriptor.MagicSignatures[0].Bytes, Is.EqualTo(Tux3Reader.Magic));
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries), Is.False);
+      Assert.That(descriptor is IArchiveCreatable, Is.False);
+      Assert.That(descriptor is IArchiveModifiable, Is.False);
+      Assert.That(descriptor.Description, Does.Contain("native big-endian superblock"));
+    });
   }
 
   [Test, Category("HappyPath")]
-  public void Read_MinimalSyntheticImage() {
-    var img = BuildMinimalImage();
-    using var ms = new MemoryStream(img);
-    var r = new FileSystem.Tux3.Tux3Reader(ms);
-    Assert.That(r.ValidSuperblock, Is.True);
-    Assert.That(r.Birthday, Is.EqualTo(0x1234_5678_9ABC_DEF0UL));
-    Assert.That(r.IRoot, Is.EqualTo(100UL));
-    Assert.That(r.BlockBits, Is.EqualTo(12UL));
-    Assert.That(r.VolBlocks, Is.EqualTo(1024UL));
-    Assert.That(r.FreeBlocks, Is.EqualTo(512UL));
+  public void Descriptor_ExtractsNativeMetadataWithoutInventedFileTable() {
+    var image = BuildNativeImage();
+    using var stream = new MemoryStream(image, writable: false);
+    var descriptor = new Tux3FormatDescriptor();
+    var output = Path.Combine(Path.GetTempPath(), $"tux3-native-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(output);
 
-    var names = r.Entries.Select(e => e.Name).ToHashSet();
-    Assert.That(names, Does.Contain("FULL.tux3"));
-    Assert.That(names, Does.Contain("metadata.ini"));
-    Assert.That(names, Does.Contain("superblock.bin"));
-  }
-
-  [Test, Category("HappyPath")]
-  public void Descriptor_List_Extract() {
-    var img = BuildMinimalImage();
-    using var ms = new MemoryStream(img);
-    var d = new FileSystem.Tux3.Tux3FormatDescriptor();
-    var entries = d.List(ms, null);
-    Assert.That(entries, Has.Count.EqualTo(3));
-
-    var tmp = Path.Combine(Path.GetTempPath(), $"tux3-{Guid.NewGuid():N}");
-    Directory.CreateDirectory(tmp);
     try {
-      ms.Position = 0;
-      d.Extract(ms, tmp, null, null);
-      Assert.That(File.Exists(Path.Combine(tmp, "metadata.ini")), Is.True);
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("format=TUX3"));
-      Assert.That(meta, Does.Contain("blockbits=12"));
+      descriptor.Extract(stream, output, null, null);
+      var metadata = File.ReadAllText(Path.Combine(output, "metadata.ini"));
+      Assert.Multiple(() => {
+        Assert.That(metadata, Does.Contain("parse_status=superblock-only"));
+        Assert.That(metadata, Does.Contain("revision=2014-05-06"));
+        Assert.That(metadata, Does.Contain("blockbits=12"));
+        Assert.That(metadata, Does.Not.Contain("TUX3WORM"));
+        Assert.That(Directory.EnumerateFiles(output).Select(Path.GetFileName),
+          Is.EquivalentTo(new[] { "FULL.tux3", "metadata.ini", "superblock.bin" }));
+      });
     } finally {
-      Directory.Delete(tmp, recursive: true);
+      Directory.Delete(output, recursive: true);
     }
-  }
-
-  [Test, Category("Sad")]
-  public void InvalidMagic_Throws() {
-    var img = new byte[8 * 1024];
-    using var ms = new MemoryStream(img);
-    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Tux3.Tux3Reader(ms));
-  }
-
-  /// <summary>
-  /// Carving a hole used to be refused outright, because the rebuild always
-  /// packed from the front. The pass moves whole records now, so a container
-  /// with no records in it has nothing to refuse.
-  /// </summary>
-  [Test]
-  public void Defragment_CarveHole_OnAMinimalContainer_DoesNothing() {
-    var d = new FileSystem.Tux3.Tux3FormatDescriptor();
-    var minimal = BuildMinimalImage();
-    using var ms = new MemoryStream(minimal.Length);
-    ms.Write(minimal, 0, minimal.Length);
-
-    ms.Position = 0;
-    Assert.DoesNotThrow(() => d.Defragment(ms, new DefragOptions { Mode = DefragMode.CarveHole }));
-    Assert.That(ms.ToArray(), Is.EqualTo(minimal), "a container with no records comes back unchanged");
-  }
-
-  [Test, Category("HappyPath")]
-  public void Defragment_PreservesFiles() {
-    var descriptor = new FileSystem.Tux3.Tux3FormatDescriptor();
-    var payload = new byte[5000];
-    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)(i * 11);
-
-    var path = Path.Combine(Path.GetTempPath(), "tux3_defrag_" + Guid.NewGuid().ToString("N"));
-    var outDir = path + "_out";
-    try {
-      using (var create = File.Create(path))
-        descriptor.Create(create, [ArchiveInputInfo.InMemory("data.bin", payload)], new FormatCreateOptions());
-      using (var archive = File.Open(path, FileMode.Open, FileAccess.ReadWrite))
-        descriptor.Defragment(archive);
-
-      Directory.CreateDirectory(outDir);
-      using (var read = File.OpenRead(path))
-        descriptor.Extract(read, outDir, null, ["data.bin"]);
-      Assert.That(File.ReadAllBytes(Path.Combine(outDir, "data.bin")), Is.EqualTo(payload));
-    } finally {
-      try { File.Delete(path); } catch { /* scratch file already gone */ }
-      try { Directory.Delete(outDir, recursive: true); } catch { /* ignore */ }
-    }
-  }
-
-  [Test, Category("HappyPath")]
-  public void Implements_IArchiveCreatable() {
-    var d = new FileSystem.Tux3.Tux3FormatDescriptor();
-    Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries), Is.True);
   }
 }
