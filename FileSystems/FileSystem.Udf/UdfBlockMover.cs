@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers;
 using System.Buffers.Binary;
-using System.Text;
 using Compression.Core.Checksums;
 using Compression.Core.Layout;
 using Compression.Registry;
@@ -163,10 +162,7 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
   /// <summary>Decodes a file identifier, which names its own character set in its first byte.</summary>
   private static string ReadFileIdentifier(byte[] bytes, int at, int length) {
     if (at + length > bytes.Length) return string.Empty;
-    var name = length > 1 && bytes[at] == 8 ? Encoding.UTF8.GetString(bytes, at + 1, length - 1)
-      : length > 1 && bytes[at] == 16 ? Encoding.BigEndianUnicode.GetString(bytes, at + 1, length - 1)
-      : Encoding.ASCII.GetString(bytes, at, length);
-    return name.TrimEnd('\0');
+    return OstaCompressedUnicode.Decode(bytes.AsSpan(at, length));
   }
 
   /// <inheritdoc />
@@ -264,14 +260,7 @@ public sealed class UdfBlockMover : IFilesystemBlockMover {
 
         if (!isParent && !isDeleted && idLen > 0) {
           var nameStart = pos + 38 + lIu;
-          string name;
-          if (idLen > 1 && dirBytes[nameStart] == 8)
-            name = Encoding.UTF8.GetString(dirBytes, nameStart + 1, idLen - 1);
-          else if (idLen > 1 && dirBytes[nameStart] == 16)
-            name = Encoding.BigEndianUnicode.GetString(dirBytes, nameStart + 1, idLen - 1);
-          else
-            name = Encoding.ASCII.GetString(dirBytes, nameStart, idLen);
-          name = name.TrimEnd('\0');
+          var name = OstaCompressedUnicode.Decode(dirBytes.AsSpan(nameStart, idLen));
 
           if (name.Equals(targetName, StringComparison.OrdinalIgnoreCase) ||
               targetName.Equals("*", StringComparison.Ordinal))

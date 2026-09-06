@@ -124,8 +124,14 @@ public sealed class UdfFilesystemDriverTests {
     Assert.That(reader.Extract(entry), Is.EqualTo(payload));
   }
 
+  /// <summary>
+  /// A continuation descriptor points at a block that must open with an
+  /// Allocation Extent Descriptor (ECMA-167 §4/14.5). Aiming one at the file's
+  /// own data instead leaves the object's extents unreachable, and the mount
+  /// has to close rather than serve a file it cannot address.
+  /// </summary>
   [Test, Category("Driver"), Category("Corruption")]
-  public void ContinuationAllocationDescriptorFailsMountClosed() {
+  public void BrokenContinuationAllocationDescriptorFailsMountClosed() {
     var payload = Enumerable.Repeat((byte)0xA5, 6000).ToArray();
     var bytes = BuildImage(("continued.bin", payload));
     var fe = FindRegularFileEntry(bytes, payload.Length);
@@ -139,7 +145,8 @@ public sealed class UdfFilesystemDriverTests {
 
     Assert.Multiple(() => {
       Assert.That(profile.CanMount, Is.False);
-      Assert.That(profile.Limitations.Any(text => text.Contains("continuation", StringComparison.OrdinalIgnoreCase)), Is.True);
+      Assert.That(profile.Limitations.Any(text => text.Contains("logical file bytes", StringComparison.OrdinalIgnoreCase)), Is.True,
+        string.Join("; ", profile.Limitations));
     });
   }
 

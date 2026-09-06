@@ -210,10 +210,11 @@ public class UdfModifierTests {
     UdfModifier.AddFile(img, "extra.bin", new byte[200]);
     var bytes = img.ToArray();
 
-    // PD is at sector 33 in writer layout.
-    var off = 33 * SectorSize;
+    // The main volume descriptor sequence starts at sector 32 with the primary
+    // volume descriptor, then the logical volume descriptor, then the partition.
+    var off = 34 * SectorSize;
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(off)), Is.EqualTo((ushort)5),
-      "expected Partition Descriptor at sector 33");
+      "expected Partition Descriptor at sector 34");
 
     var crcLen = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(off + 10));
     var storedCrc = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(off + 8));
