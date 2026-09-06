@@ -6,59 +6,27 @@ using Compression.Registry;
 namespace Compression.Analysis;
 
 /// <summary>
-/// Filesystem-aware carver. Scans arbitrary binary data (raw SD-card dumps,
-/// firmware blobs, broken disk images with trashed partition tables) for
-/// known filesystem superblock signatures and validates each candidate by
-/// asking the matching <see cref="IArchiveFormatOperations.List"/> to walk it.
+/// Filesystem-aware carver. Scans arbitrary binary data (raw SD-card dumps, firmware blobs,
+/// broken disk images with trashed/tampered partition tables) for known filesystem superblocks.
+/// Candidates are validated through the common filesystem-driver contract rather than requiring
+/// an archive projection, and strong content evidence can survive a failed mount probe as a damaged
+/// forensic candidate.
 /// <para>
-/// Complements <see cref="FileCarver"/> — that class carves individual files
-/// (photorec-style); this one mounts embedded filesystems so callers can
-/// recurse into them via <see cref="FilesystemExtractor"/> and recover entire
-/// directory trees, not just loose payloads.
+/// Complements <see cref="FileCarver"/> — that class carves individual files (PhotoRec-style);
+/// this one identifies embedded filesystems so callers can recurse into intact candidates via
+/// <see cref="FilesystemExtractor"/> while still reporting damaged ones for manual recovery.
 /// </para>
 /// </summary>
-/// <remarks>
-/// Unlike <see cref="FileCarver"/>, this class does not require a valid
-/// partition table to work: it finds the superblock directly via magic scan
-/// at offset-aware positions (ext at +1080, FAT at +510, SquashFS at 0,
-/// APFS at +32, Btrfs at +0x10020, etc.). When a partition table IS present
-/// and <see cref="FsCarveOptions.DescendIntoPartitionTables"/> is on, the
-/// carver first walks the MBR/GPT partitions and probes each; otherwise it
-/// just sliding-window scans the whole stream.
-/// </remarks>
 public sealed class FilesystemCarver {
 
-  private const int WindowSize = 1 * 1024 * 1024;      // 1 MB sliding window
-  private const int WindowOverlap = 128 * 1024;        // 128 KB overlap (larger than FileCarver because FS magics can sit up to 0x10020 from header start)
-
-  /// <summary>
-  /// Extra magic signatures for filesystems whose descriptors deliberately
-  /// leave <see cref="IFormatDescriptor.MagicSignatures"/> empty (usually
-  /// because their boot signature is too generic — e.g. the FAT boot-sig
-  /// 0x55 0xAA at offset 510 overlaps every MBR on earth). We scan for the
-  /// FAT BS_FilSysType label strings which are much less ambiguous.
-  /// <para>
-  /// The magic is matched at <c>MagicOffset</c> within the FS and the FS
-  /// is presumed to start at <c>MagicOffset - MagicOffset</c> (= absolute
-  /// offset - MagicOffset). Matches are then validated by
-  /// <see cref="IArchiveFormatOperations.List"/>.
-  /// </para>
-  /// </summary>
-  private static readonly (string FormatId, byte[] Magic, int MagicOffset, double Confidence)[] BuiltinSignatures = [
-    // FAT32 BS_FilSysType at offset 82 from FS start
-    ("Fat", "FAT32   "u8.ToArray(), 82, 0.90),
-    // FAT12/16 BS_FilSysType at offset 54
-    ("Fat", "FAT12   "u8.ToArray(), 54, 0.90),
-    ("Fat", "FAT16   "u8.ToArray(), 54, 0.90),
-  ];
+  private const int WindowSize = 1 * 1024 * 1024;
+  private const int WindowOverlap = 128 * 1024;
+  private const int FilesystemPrefixProbeSize = 0x20000; // covers Btrfs superblock at 0x10020 and peers
 
   /// <summary>Behavioural knobs.</summary>
   public FsCarveOptions Options { get; init; } = new();
 
-  /// <summary>
-  /// Carves embedded filesystems out of the provided stream.
-  /// Stream must be seekable.
-  /// </summary>
+  /// <summary>Carves embedded filesystems out of a readable, seekable stream.</summary>
   public IReadOnlyList<CarvedFilesystem> CarveStream(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead) throw new ArgumentException("Stream must be readable.", nameof(stream));
@@ -73,68 +41,48 @@ public sealed class FilesystemCarver {
       ? new HashSet<string>(f, StringComparer.OrdinalIgnoreCase)
       : null;
 
-    // IDs of formats for which we carry a builtin signature (FAT today) —
-    // these descriptors are intentionally empty on the magic-sig side
-    // because their boot signature is too generic to add to the shared
-    // registry, but we still want to include them here so the synthetic
-    // scan can find them.
-    var builtinFormatIds = new HashSet<string>(
-      BuiltinSignatures.Select(s => s.FormatId),
-      StringComparer.OrdinalIgnoreCase);
-
-    // Only consider descriptors that (1) live in a FileSystem.* namespace and
-    // (2) can actually list entries. A descriptor is scannable if it either
-    // carries its own magic signatures OR is covered by our builtin table.
-    var fsDescriptors = FormatRegistry.All
-      .Where(d => IsFilesystemDescriptor(d))
-      .Where(d => d is IArchiveFormatOperations)
-      .Where(d => d.MagicSignatures.Count > 0 || builtinFormatIds.Contains(d.Id))
+    var fsDescriptors = FormatRegistry.FilesystemFormatIds
+      .Select(FormatRegistry.GetById)
+      .OfType<IFormatDescriptor>()
       .Where(d => formatFilter is null || formatFilter.Contains(d.Id))
-      .ToList();
+      .ToArray();
+    if (fsDescriptors.Length == 0) return [];
 
-    if (fsDescriptors.Count == 0) return [];
-
-    var allowedIds = new HashSet<string>(fsDescriptors.Select(d => d.Id), StringComparer.OrdinalIgnoreCase);
-
+    var descriptorsById = fsDescriptors.ToDictionary(d => d.Id, StringComparer.OrdinalIgnoreCase);
+    var allowedIds = descriptorsById.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
     var results = new List<CarvedFilesystem>();
-    var seenOffsets = new HashSet<(long Offset, string Id)>();
+    var seen = new HashSet<(long Offset, string Id)>();
 
-    // ── Partition-table descent ──────────────────────────────────────
-    // When the caller opts in and an MBR/GPT is present, probe each
-    // partition individually — that gives deterministic starts for
-    // in-partition filesystems without relying on sliding-window luck.
+    // A valid partition table is useful evidence but not required. At known partition starts we can
+    // also try filesystems that have no safe raw-carving magic at all because the candidate count is
+    // tiny compared with probing every sector of the whole image.
     if (this.Options.DescendIntoPartitionTables) {
       try {
         var detection = PartitionTableDetector.Detect(stream);
-        if (detection.Partitions.Count > 0) {
-          foreach (var part in detection.Partitions) {
-            if (part.StartOffset < 0 || part.StartOffset >= length) continue;
+        foreach (var part in detection.Partitions) {
+          if (results.Count >= this.Options.MaxHits) break;
+          if (part.StartOffset < 0 || part.StartOffset >= length) continue;
+
+          var available = Math.Min(part.Size, length - part.StartOffset);
+          if (available <= 0) continue;
+
+          foreach (var candidate in ProbeKnownStart(stream, part.StartOffset, available, fsDescriptors)) {
+            if (seen.Add((candidate.ByteOffset, candidate.FormatId)))
+              results.Add(candidate);
             if (results.Count >= this.Options.MaxHits) break;
-
-            var partSize = Math.Min(part.Size, length - part.StartOffset);
-            if (partSize <= 0) continue;
-
-            var carved = TryValidateAt(stream, part.StartOffset, partSize, fsDescriptors, allowedIds);
-            foreach (var c in carved) {
-              if (seenOffsets.Add((c.ByteOffset, c.FormatId)))
-                results.Add(c);
-              if (results.Count >= this.Options.MaxHits) break;
-            }
           }
         }
       } catch {
-        // Partition-table parsing failure is fine — we still do the magic scan.
+        // A corrupt partition table is expected forensic input. The raw superblock scan below is
+        // deliberately independent and still runs.
       }
     }
 
-    // ── Magic-byte scan ───────────────────────────────────────────────
-    // Slide a 1 MB window with 128 KB overlap so superblock magics that
-    // straddle window boundaries are still found. We use SignatureScanner
-    // which already honours per-descriptor offset (e.g. ext at +1080).
+    // Raw superblock scan: SignatureScanner already converts non-zero signature offsets back to the
+    // filesystem start (ext, APFS, Btrfs, FAT label fallback, ...), so partition metadata is irrelevant.
     var buffer = new byte[WindowSize];
     long windowStart = 0;
-    long step = WindowSize - WindowOverlap;
-    if (step <= 0) step = WindowSize;
+    var step = WindowSize - WindowOverlap;
 
     while (windowStart < length && results.Count < this.Options.MaxHits) {
       stream.Position = windowStart;
@@ -142,226 +90,230 @@ public sealed class FilesystemCarver {
       var read = ReadExactlyOrEof(stream, buffer, 0, toRead);
       if (read <= 0) break;
 
-      var span = buffer.AsSpan(0, read);
-      var scanResults = SignatureScanner.Scan(span, maxResults: 2000);
+      var scanResults = SignatureScanner.Scan(
+        buffer.AsSpan(0, read),
+        maxResults: 4000,
+        headerProbeAlignment: 0);
 
-      // Builtin scan for FS that don't carry magic signatures in their
-      // descriptors (FAT especially). Appends synthetic ScanResults so the
-      // normal validation path below applies.
-      var synthetic = ScanBuiltins(span, windowStart, length, allowedIds);
-
-      foreach (var sr in synthetic.Concat(scanResults)) {
-        if (sr.Confidence < this.Options.MinConfidence) continue;
-        if (!allowedIds.Contains(sr.FormatName)) continue;
-
-        var globalOffset = windowStart + sr.Offset;
-        // Skip hits in the overlap tail of all-but-first windows — the
-        // previous window already emitted them.
-        if (windowStart > 0 && sr.Offset < WindowOverlap && globalOffset < windowStart + WindowOverlap)
-          continue;
-
-        if (globalOffset < 0 || globalOffset >= length) continue;
-        if (seenOffsets.Contains((globalOffset, sr.FormatName))) continue;
-
-        var desc = fsDescriptors.FirstOrDefault(d => string.Equals(d.Id, sr.FormatName, StringComparison.OrdinalIgnoreCase));
-        if (desc is null) continue;
-
-        var available = length - globalOffset;
-        var carved = TryValidateOne(stream, globalOffset, available, desc, sr.Confidence);
-        if (carved is null) continue;
-
-        if (seenOffsets.Add((carved.ByteOffset, carved.FormatId)))
-          results.Add(carved);
-
+      foreach (var hit in scanResults) {
         if (results.Count >= this.Options.MaxHits) break;
+        if (hit.Confidence < this.Options.MinConfidence) continue;
+        if (!allowedIds.Contains(hit.FormatName)) continue;
+
+        var globalOffset = windowStart + hit.Offset;
+        if (windowStart > 0 && hit.Offset < WindowOverlap) continue;
+        if (globalOffset < 0 || globalOffset >= length) continue;
+        if (!seen.Add((globalOffset, hit.FormatName))) continue;
+
+        var desc = descriptorsById[hit.FormatName];
+        var available = length - globalOffset;
+        var candidate = ProbeOne(
+          stream,
+          globalOffset,
+          available,
+          desc,
+          hit.Confidence,
+          hasContentEvidence: true);
+        if (candidate is not null)
+          results.Add(candidate);
+        else
+          seen.Remove((globalOffset, hit.FormatName));
       }
 
       if (read < toRead) break;
       windowStart += step;
     }
 
-    // Dedupe formats that both match the same offset (e.g. Fat12/Fat16
-    // variants, HFS/HFS+ at the same volume header). Keep the highest
-    // confidence per offset.
     return results
-      .GroupBy(r => r.ByteOffset)
-      .SelectMany(g => g.OrderByDescending(x => x.Confidence))
+      .OrderBy(r => r.ByteOffset)
+      .ThenByDescending(r => r.DriverValidated)
+      .ThenByDescending(r => r.Confidence)
       .ToList();
   }
 
-  /// <summary>
-  /// Probe a single offset against all FS descriptors (used for partition
-  /// table starts, where we know the FS header sits at offset 0 of the
-  /// partition). Returns every descriptor that successfully validates.
-  /// </summary>
-  private IReadOnlyList<CarvedFilesystem> TryValidateAt(
+  private IReadOnlyList<CarvedFilesystem> ProbeKnownStart(
     Stream stream,
     long offset,
     long available,
-    IReadOnlyList<IFormatDescriptor> fsDescriptors,
-    HashSet<string> allowedIds
-  ) {
-    var carved = new List<CarvedFilesystem>();
+    IReadOnlyList<IFormatDescriptor> descriptors) {
+    var result = new List<CarvedFilesystem>();
+    var prefixLength = (int)Math.Min(FilesystemPrefixProbeSize, available);
+    if (prefixLength <= 0) return result;
 
-    // Read the first 64 KB of the candidate region for magic matching.
-    // Most FS superblocks live in the first few KB; Btrfs at 0x10020 is the
-    // outlier and needs a bigger prefix — honour that when the available
-    // region is large.
-    var prefixLen = (int)Math.Min(Math.Max(65536, 0x11000), available);
-    if (prefixLen < 512) return carved;
-    var prefix = new byte[prefixLen];
+    var prefix = new byte[prefixLength];
     stream.Position = offset;
-    var read = ReadExactlyOrEof(stream, prefix, 0, prefixLen);
-    if (read < 512) return carved;
-
+    var read = ReadExactlyOrEof(stream, prefix, 0, prefixLength);
+    if (read <= 0) return result;
     var span = prefix.AsSpan(0, read);
-    foreach (var desc in fsDescriptors) {
-      if (!allowedIds.Contains(desc.Id)) continue;
 
-      // Any magic must match at its expected offset (relative to FS start).
-      double bestConf = 0;
-      foreach (var magic in desc.MagicSignatures) {
-        if (magic.Offset + magic.Bytes.Length > span.Length) continue;
-        if (!MatchesAt(span, magic.Offset, magic.Bytes)) continue;
-        if (magic.Confidence > bestConf) bestConf = magic.Confidence;
-      }
+    foreach (var desc in descriptors) {
+      var bestEvidence = BestSignatureConfidence(desc.Id, span);
 
-      // Fall back to builtin sigs for FS without descriptor-level magic (FAT).
-      if (bestConf <= 0) {
-        foreach (var (formatId, magic, magicOffset, conf) in BuiltinSignatures) {
-          if (!string.Equals(formatId, desc.Id, StringComparison.OrdinalIgnoreCase)) continue;
-          if (magicOffset + magic.Length > span.Length) continue;
-          if (!MatchesAt(span, magicOffset, magic)) continue;
-          if (conf > bestConf) bestConf = conf;
-        }
-      }
+      // No fixed signature is not a reason to exclude a filesystem at a known partition boundary:
+      // let its native/derived driver decide. A successful probe is itself structural evidence.
+      var seedConfidence = bestEvidence > 0 ? bestEvidence : this.Options.KnownBoundaryProbeConfidence;
+      if (seedConfidence < this.Options.MinConfidence && bestEvidence > 0) continue;
 
-      if (bestConf < this.Options.MinConfidence) continue;
-
-      var c = TryValidateOne(stream, offset, available, desc, bestConf);
-      if (c is not null) carved.Add(c);
+      var candidate = ProbeOne(
+        stream,
+        offset,
+        available,
+        desc,
+        seedConfidence,
+        hasContentEvidence: bestEvidence > 0);
+      if (candidate is not null)
+        result.Add(candidate);
     }
 
-    return carved;
+    return result;
   }
 
-  /// <summary>
-  /// Open a <see cref="SubStream"/> at the candidate's starting offset and
-  /// ask the descriptor's <see cref="IArchiveFormatOperations.List"/> to
-  /// walk it. If that succeeds without throwing and returns at least one
-  /// entry, emit a <see cref="CarvedFilesystem"/>.
-  /// </summary>
-  private CarvedFilesystem? TryValidateOne(
+  private static double BestSignatureConfidence(string formatId, ReadOnlySpan<byte> prefix) {
+    var best = 0d;
+    foreach (var entry in SignatureDatabase.Entries) {
+      if (!string.Equals(entry.FormatName, formatId, StringComparison.OrdinalIgnoreCase)) continue;
+      if (!MatchesAt(prefix, entry.Offset, entry.Magic, entry.Mask)) continue;
+      best = Math.Max(best, entry.Confidence);
+    }
+    return best;
+  }
+
+  private CarvedFilesystem? ProbeOne(
     Stream stream,
     long offset,
     long available,
     IFormatDescriptor desc,
-    double confidence
-  ) {
-    if (desc is not IArchiveFormatOperations archiveOps) return null;
+    double confidence,
+    bool hasContentEvidence) {
     if (available <= 0) return null;
 
     var sub = new SubStream(stream, offset, available);
     try {
-      var entries = archiveOps.List(sub, password: null);
-      if (entries == null || entries.Count == 0) return null;
+      var profile = FormatRegistry.ProbeFilesystem(desc.Id, sub, password: null);
+      if (!profile.CanMount || !ResolvesAVolume(desc, sub, out var estimatedSize))
+        return Damaged(offset, desc, confidence, hasContentEvidence, profile.ProfileName, profile.Limitations);
 
-      var estimated = TryEstimateSize(entries);
       return new CarvedFilesystem(
         ByteOffset: offset,
         FormatId: desc.Id,
-        Confidence: confidence,
-        EstimatedSize: estimated
-      );
+        Confidence: Math.Min(1, Math.Max(confidence, this.Options.ValidatedConfidenceFloor)),
+        EstimatedSize: estimatedSize,
+        DriverValidated: true,
+        CanMount: true,
+        ProfileName: profile.ProfileName,
+        Limitations: profile.Limitations);
+    } catch (Exception error) when (hasContentEvidence && this.Options.KeepDamagedCandidates) {
+      // A parser failing after a strong superblock/signature hit is evidence of damage, not evidence
+      // that the signature vanished. Keep it visible at reduced confidence for forensic workflows.
+      return Damaged(
+        offset,
+        desc,
+        confidence,
+        hasContentEvidence: true,
+        profileName: null,
+        limitations: [$"Driver probe failed: {error.GetType().Name}: {error.Message}"]);
     } catch {
-      // List() threw — this is NOT a valid FS at this offset.
+      // Without independent content evidence (e.g. trying every driver at a partition boundary), a
+      // failed probe is just a non-match and must not become a false positive.
       return null;
     }
   }
 
-  private static long TryEstimateSize(IReadOnlyList<ArchiveEntryInfo> entries) {
-    // Conservative estimate: sum of per-entry sizes, ignoring negatives and
-    // directories. Most FS readers don't know the image's total size — the
-    // caller who wants precise bounds should use the partition table.
-    var total = 0L;
-    foreach (var e in entries) {
-      if (e.IsDirectory) continue;
-      if (e.OriginalSize <= 0) continue;
-      total += e.OriginalSize;
-    }
-    return total;
+  /// <summary>
+  /// Builds the reduced-confidence record for a candidate whose driver would not resolve a volume,
+  /// or <c>null</c> when it carries too little evidence to be worth reporting.
+  /// </summary>
+  private CarvedFilesystem? Damaged(
+    long offset,
+    IFormatDescriptor desc,
+    double confidence,
+    bool hasContentEvidence,
+    string? profileName,
+    IReadOnlyList<string>? limitations) {
+    if (!hasContentEvidence || !this.Options.KeepDamagedCandidates)
+      return null;
+
+    // A weak magic that no driver could corroborate is noise, not a damaged volume. Holding damaged
+    // candidates to the same floor as scan hits keeps a single stray byte value from turning every
+    // one of its thousands of occurrences in arbitrary data into a reported filesystem.
+    var degraded = confidence * this.Options.DamagedConfidenceFactor;
+    if (degraded < this.Options.MinConfidence)
+      return null;
+
+    return new CarvedFilesystem(
+      ByteOffset: offset,
+      FormatId: desc.Id,
+      Confidence: degraded,
+      EstimatedSize: 0,
+      DriverValidated: false,
+      CanMount: false,
+      ProfileName: profileName,
+      Limitations: limitations);
   }
 
   /// <summary>
-  /// A descriptor is considered a filesystem if its concrete type lives in
-  /// a <c>FileSystem.*</c> namespace. We intentionally don't use
-  /// <see cref="FormatCategory"/> because all FS descriptors currently use
-  /// <see cref="FormatCategory.Archive"/> (there is no dedicated enum
-  /// member) — namespace-based discrimination is the cleanest signal.
+  /// Confirms that a mountable probe actually resolved a filesystem at this offset, and reports the
+  /// summed size of its entries.
   /// </summary>
-  private static bool IsFilesystemDescriptor(IFormatDescriptor desc)
-    => desc.GetType().Namespace?.StartsWith("FileSystem.", StringComparison.Ordinal) == true;
+  /// <remarks>
+  /// A format with its own filesystem driver has already proven this by probing. A format that is
+  /// only projected through its archive view has not: that projection reports success whenever
+  /// listing merely fails to throw, so an empty listing would promote every weak magic hit in
+  /// arbitrary data to a driver-validated volume.
+  /// </remarks>
+  private static bool ResolvesAVolume(IFormatDescriptor desc, Stream image, out long estimatedSize) {
+    // The listing runs either way so a native driver keeps its size estimate; only the verdict
+    // differs. A driver of its own has already proven the volume, so an archive view that declines
+    // to enumerate cannot overrule it.
+    var enumerated = TryListEntries(desc, image, out estimatedSize);
+    return enumerated
+      || desc is IFilesystemDriverProvider
+      || FormatRegistry.GetFilesystemDriver(desc.Id) is not null;
+  }
 
-  /// <summary>
-  /// Scan the current window for builtin FS signatures (<see cref="BuiltinSignatures"/>)
-  /// and synthesise <see cref="Scanning.ScanResult"/> entries for each hit,
-  /// so the shared validation path treats them uniformly. Skips entries whose
-  /// format is outside <paramref name="allowedIds"/>.
-  /// </summary>
-  private IEnumerable<Scanning.ScanResult> ScanBuiltins(
-    ReadOnlySpan<byte> span,
-    long windowStart,
-    long streamLength,
-    HashSet<string> allowedIds
-  ) {
-    var results = new List<Scanning.ScanResult>();
-    foreach (var (formatId, magic, magicOffset, conf) in BuiltinSignatures) {
-      if (!allowedIds.Contains(formatId)) continue;
-      if (conf < this.Options.MinConfidence) continue;
+  private static bool TryListEntries(IFormatDescriptor desc, Stream image, out long estimatedSize) {
+    estimatedSize = 0;
+    if (desc is not IArchiveFormatOperations archiveOps || !image.CanSeek)
+      return false;
 
-      // Walk the span looking for `magic`. Each hit at local index `i` means
-      // the FS header starts at window-local offset `i - magicOffset`. Emit
-      // only when that lands inside the current window and is non-negative.
-      for (var i = 0; i + magic.Length <= span.Length; ++i) {
-        if (span[i] != magic[0]) continue;
-        var ok = true;
-        for (var j = 1; j < magic.Length; ++j) {
-          if (span[i + j] != magic[j]) { ok = false; break; }
-        }
-        if (!ok) continue;
+    try {
+      image.Position = 0;
+      var entries = archiveOps.List(image, password: null);
+      if (entries is not { Count: > 0 })
+        return false;
 
-        var headerLocalOffset = i - magicOffset;
-        if (headerLocalOffset < 0) continue;   // header sits before this window
-
-        var headerAbsolute = windowStart + headerLocalOffset;
-        if (headerAbsolute < 0 || headerAbsolute >= streamLength) continue;
-
-        // Emit as a ScanResult so the shared loop picks it up. The `Offset`
-        // on ScanResult is window-local — the caller adds windowStart.
-        results.Add(new Scanning.ScanResult(
-          Offset: headerLocalOffset,
-          FormatName: formatId,
-          Confidence: conf,
-          MagicLength: magic.Length,
-          HeaderPreview: string.Empty));
+      var total = 0L;
+      foreach (var entry in entries) {
+        if (entry.IsDirectory || entry.OriginalSize <= 0) continue;
+        checked { total += entry.OriginalSize; }
       }
+      estimatedSize = total;
+      return true;
+    } catch (OverflowException) {
+      estimatedSize = long.MaxValue;
+      return true;
+    } catch {
+      return false;
     }
-    return results;
   }
 
-  private static bool MatchesAt(ReadOnlySpan<byte> span, int offset, byte[] pattern) {
-    if (offset < 0 || offset + pattern.Length > span.Length) return false;
+  private static bool MatchesAt(ReadOnlySpan<byte> span, int offset, byte[] pattern, byte[]? mask) {
+    if (offset < 0 || pattern.Length == 0 || offset > span.Length - pattern.Length) return false;
+    if (mask is null) return span.Slice(offset, pattern.Length).SequenceEqual(pattern);
+    if (mask.Length != pattern.Length) return false;
+
     for (var i = 0; i < pattern.Length; ++i)
-      if (span[offset + i] != pattern[i]) return false;
+      if ((span[offset + i] & mask[i]) != (pattern[i] & mask[i]))
+        return false;
     return true;
   }
 
-  private static int ReadExactlyOrEof(Stream stream, byte[] buf, int offset, int count) {
+  private static int ReadExactlyOrEof(Stream stream, byte[] buffer, int offset, int count) {
     var total = 0;
     while (total < count) {
-      var r = stream.Read(buf, offset + total, count - total);
-      if (r <= 0) break;
-      total += r;
+      var read = stream.Read(buffer, offset + total, count - total);
+      if (read <= 0) break;
+      total += read;
     }
     return total;
   }
@@ -372,26 +324,36 @@ public sealed record FsCarveOptions {
   /// <summary>Scanner-confidence floor (0..1). Hits below are dropped.</summary>
   public double MinConfidence { get; init; } = 0.5;
 
-  /// <summary>Restrict to specific FS format IDs (null = all FS descriptors).</summary>
+  /// <summary>Restrict to specific FS format IDs (null = all registered filesystem descriptors).</summary>
   public IReadOnlyList<string>? FormatIds { get; init; }
 
-  /// <summary>Honour MBR/GPT partition tables when present — probe each partition start.</summary>
+  /// <summary>Honour MBR/GPT partition tables when present and probe every partition start.</summary>
   public bool DescendIntoPartitionTables { get; init; } = true;
+
+  /// <summary>Keep signature-backed candidates whose filesystem driver rejects the damaged image.</summary>
+  public bool KeepDamagedCandidates { get; init; } = true;
+
+  /// <summary>Confidence multiplier when strong content evidence exists but structural probing fails.</summary>
+  public double DamagedConfidenceFactor { get; init; } = 0.75;
+
+  /// <summary>Initial confidence for a driver-only probe at a known partition boundary.</summary>
+  public double KnownBoundaryProbeConfidence { get; init; } = 0.60;
+
+  /// <summary>Minimum confidence assigned after a filesystem driver successfully validates a candidate.</summary>
+  public double ValidatedConfidenceFloor { get; init; } = 0.90;
 
   /// <summary>Safety cap on total hits returned.</summary>
   public int MaxHits { get; init; } = 256;
 }
 
-/// <summary>
-/// One carved filesystem located inside the host stream.
-/// </summary>
-/// <param name="ByteOffset">Byte offset where the FS starts in the source stream.</param>
-/// <param name="FormatId">Format descriptor ID (e.g. "Ext", "Fat", "Btrfs").</param>
-/// <param name="Confidence">Magic-match confidence [0..1] (propagated from <see cref="Scanning.SignatureScanner"/>).</param>
-/// <param name="EstimatedSize">Sum of listed file sizes (best-effort, 0 if not derivable).</param>
+/// <summary>One carved filesystem located inside the host stream.</summary>
 public sealed record CarvedFilesystem(
   long ByteOffset,
   string FormatId,
   double Confidence,
-  long EstimatedSize
+  long EstimatedSize,
+  bool DriverValidated = false,
+  bool CanMount = false,
+  string? ProfileName = null,
+  IReadOnlyList<string>? Limitations = null
 );

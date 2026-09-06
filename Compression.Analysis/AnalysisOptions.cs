@@ -22,6 +22,13 @@ public sealed class AnalysisOptions {
   /// <summary>Maximum scan results to return (default 100).</summary>
   public int MaxScanResults { get; init; } = 100;
 
+  /// <summary>
+  /// Alignment for package-native structure-only format probes during deep scanning. Offset zero and
+  /// fixed-signature candidate starts are always probed. The forensic default is 512 bytes; set to 1
+  /// for exhaustive byte-by-byte structural detection, or 0 to disable extra aligned probes.
+  /// </summary>
+  public int HeaderProbeAlignment { get; init; } = 512;
+
   /// <summary>Enable deep signature scanning (default false).</summary>
   public bool DeepScan { get; init; }
 

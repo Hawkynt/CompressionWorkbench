@@ -11,7 +11,7 @@
   <ItemGroup>
     <!-- GIF byte parsing/LZW lives in PNGCrushCS; this project keeps only the
          CompressionWorkbench-specific composed-frame and block-map adapters. -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.131" PrivateAssets="compile" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>
