@@ -103,6 +103,9 @@ public sealed class ReiserFsWriter {
   private const ulong TypeDirectV2 = 2UL << 60;
   private const ulong TypeDirentryV2 = 3UL << 60;
 
+  // The same type codes as plain numbers, for LeafItem.ItemType.
+  private const int ItemTypeStatData = 0;
+
   // Special object IDs (kernel reiserfs_fs.h).
   private const uint RootParentObjectId = 1; // dir_id of "/" — used as parent
   private const uint RootObjectId = 2;       // objectid of "/" itself
@@ -641,6 +644,8 @@ public sealed class ReiserFsWriter {
   /// for each item's item_head). A single item never spans leaves — large
   /// directory items were already split on entry boundaries by BuildLeafItems,
   /// and large file bodies were split into INDIRECT block-pointer arrays.
+  /// A break is also forced wherever <see cref="MustOpenLeaf"/> says the pair
+  /// may not sit side by side.
   /// </summary>
   private static List<List<LeafItem>> PackLeaves(List<LeafItem> items) {
     // Usable payload per leaf = block - block_head; each item costs its body
@@ -655,7 +660,7 @@ public sealed class ReiserFsWriter {
         throw new InvalidOperationException(
           $"ReiserFsWriter: single item of {it.Body.Length} bytes exceeds the leaf payload; " +
           "INDIRECT-item splitting must have failed.");
-      if (current.Count > 0 && used + cost > leafPayload) {
+      if (current.Count > 0 && (used + cost > leafPayload || MustOpenLeaf(current[^1], it))) {
         leaves.Add(current);
         current = [];
         used = 0;
@@ -666,6 +671,34 @@ public sealed class ReiserFsWriter {
     if (current.Count > 0 || leaves.Count == 0)
       leaves.Add(current);
     return leaves;
+  }
+
+  /// <summary>
+  /// True when <paramref name="item"/> may not follow <paramref name="previous"/>
+  /// inside one leaf and has to open the next one instead.
+  /// </summary>
+  /// <remarks>
+  /// reiserfsck (check_tree.c:bad_pair) demands that the left neighbour of a
+  /// DIRENTRY or INDIRECT item within a leaf be the stat-data of the very same
+  /// object — the position is only unconstrained for the leaf's first item. The
+  /// kernel gets that for free: two directory items of one directory are
+  /// mergeable, so balancing would have fused them rather than let both sit in
+  /// one node, and it only ever splits a directory across a NODE boundary. A
+  /// directory whose entries need several DIRENTRY items therefore has to spread
+  /// them over as many leaves, and the same holds for a file's run of INDIRECT
+  /// items. Without this every chunk past the first was a fatal
+  /// "wrong order of items" for whatever leaf packing happened to place two of
+  /// them together.
+  /// </remarks>
+  private static bool MustOpenLeaf(LeafItem previous, LeafItem item) {
+    // A stat-data item starts a new object, so any predecessor of a lower key
+    // is fine.
+    if (item.ItemType == ItemTypeStatData) return false;
+
+    // Body items must sit directly behind their own object's stat-data.
+    return previous.ItemType != ItemTypeStatData
+        || previous.DirId != item.DirId
+        || previous.ObjectId != item.ObjectId;
   }
 
   // Offset of sd_blocks within a stat_data_v2 body.
