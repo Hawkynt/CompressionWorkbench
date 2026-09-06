@@ -129,6 +129,11 @@ internal struct FuseLowLevelOps {
   public IntPtr ReleaseDirectory;
   public IntPtr FsyncDirectory;
   public IntPtr StatFs;
+  public IntPtr SetXAttr;
+  public IntPtr GetXAttr;
+  public IntPtr ListXAttr;
+  public IntPtr RemoveXAttr;
+  public IntPtr Access;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -196,9 +201,13 @@ internal static class FuseStatFactory {
 
   public static LinuxStat Create(ulong inode, FilesystemNodeInfo node) {
     var allocated = Math.Max(0, node.AllocatedSize);
+    var linkCount = node.Kind == FilesystemNodeKind.Directory
+      ? Math.Max(2U, node.LinkCount)
+      : Math.Max(1U, node.LinkCount);
+
     return new() {
       Inode = inode,
-      LinkCount = Math.Max(1U, node.LinkCount),
+      LinkCount = linkCount,
       Mode = ToMode(node.Kind),
       UserId = LibCNative.geteuid(),
       GroupId = LibCNative.getegid(),
