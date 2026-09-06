@@ -36,7 +36,7 @@ public sealed class BinaryAnalyzer {
     };
 
     if (_options.DeepScan || _options.All)
-      result.Signatures = SignatureScanner.Scan(slice, _options.MaxScanResults);
+      result.Signatures = SignatureScanner.Scan(slice, _options.MaxScanResults, _options.HeaderProbeAlignment);
 
     if (_options.Fingerprint || _options.All)
       result.Fingerprints = new AlgorithmFingerprinter().Analyze(slice);

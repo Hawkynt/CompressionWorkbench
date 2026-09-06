@@ -16,7 +16,7 @@
       overlap CompressionWorkbench internals. Runtime assets still flow to applications that
       consume the bridge; public bridge APIs expose only CompressionWorkbench contracts.
     -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.131" PrivateAssets="compile" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>

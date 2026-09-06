@@ -16,6 +16,7 @@ public static class FormatRegistry {
   private static readonly Dictionary<string, IAsyncArchiveOperations> _asyncArchiveOps = new(StringComparer.OrdinalIgnoreCase);
   private static readonly Dictionary<string, IFilesystemDriverAdapter> _filesystemDrivers = new(StringComparer.OrdinalIgnoreCase);
   private static readonly HashSet<string> _filesystemFormatIds = new(StringComparer.OrdinalIgnoreCase);
+  private static readonly List<IFormatDetectionSource> _detectionSources = [];
   private static bool _initialized;
 
   public static void Initialize() {
@@ -70,6 +71,16 @@ public static class FormatRegistry {
   }
 
   /// <summary>
+  /// Registers one source-generated package-native detection source. Detection sources contribute
+  /// signatures and optional structural header probing without becoming operational format descriptors.
+  /// </summary>
+  public static void RegisterDetectionSource(IFormatDetectionSource source) {
+    ArgumentNullException.ThrowIfNull(source);
+    if (_initialized) throw new InvalidOperationException("FormatRegistry is already initialized.");
+    _detectionSources.Add(source);
+  }
+
+  /// <summary>
   /// Registers one source-generated native filesystem-driver sidecar. Duplicate
   /// adapters for the same format ID are a build/runtime contract error rather
   /// than whichever registration happened to win.
@@ -84,6 +95,9 @@ public static class FormatRegistry {
   }
 
   public static IReadOnlyList<IFormatDescriptor> All => _all;
+
+  /// <summary>Package-native sources that contribute content detection metadata.</summary>
+  public static IReadOnlyList<IFormatDetectionSource> DetectionSources => _detectionSources;
 
   /// <summary>All descriptor IDs originating from FileSystem.* projects.</summary>
   public static IReadOnlyList<string> FilesystemFormatIds
@@ -204,6 +218,7 @@ public static class FormatRegistry {
     _asyncArchiveOps.Clear();
     _filesystemDrivers.Clear();
     _filesystemFormatIds.Clear();
+    _detectionSources.Clear();
     _initialized = false;
   }
 
