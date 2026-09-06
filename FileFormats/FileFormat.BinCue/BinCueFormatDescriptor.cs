@@ -14,7 +14,7 @@ namespace FileFormat.BinCue;
 ///   <item><description>ECMA-130 — CD-ROM sector layout (mode 1 / mode 2 framing)</description></item>
 /// </list>
 /// </summary>
-public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap {
+public sealed class BinCueFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IArchiveDefragmentable, IArchiveShrinkable {
 
 
   /// <summary>
