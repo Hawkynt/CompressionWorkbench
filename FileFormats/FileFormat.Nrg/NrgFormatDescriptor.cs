@@ -14,7 +14,7 @@ namespace FileFormat.Nrg;
 ///   <item><description>No official specification — proprietary Nero format, reverse-engineered</description></item>
 /// </list>
 /// </summary>
-public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
 
   /// <summary>
