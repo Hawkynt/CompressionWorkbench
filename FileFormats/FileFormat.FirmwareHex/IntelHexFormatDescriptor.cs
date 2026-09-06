@@ -17,7 +17,7 @@ namespace FileFormat.FirmwareHex;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Intel_HEX</c> — record types and checksum rules</description></item>
 /// </list>
 /// </summary>
-public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveShrinkable {
 
   /// <summary>
   /// Gets the id.
