@@ -124,7 +124,8 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       throw new NotSupportedException("DTB has no movable allocation policy; only canonical consolidation is supported.");
     options.CancellationToken.ThrowIfCancellationRequested();
     DtbModifier.Defragment(archive);
-    options.Progress?.Report(new DefragProgress(1, 1, "DTB canonicalized"));
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, null, "DTB canonicalized"));
   }
 
   public void Shrink(Stream input, Stream output)
