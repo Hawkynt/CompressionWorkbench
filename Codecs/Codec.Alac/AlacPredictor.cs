@@ -3,121 +3,183 @@
 namespace Codec.Alac;
 
 /// <summary>
-/// Dynamic (sign-adaptive LPC) predictor — modelled on Apple's <c>dp_dec.c</c>
-/// (<c>unpc_block</c>) and <c>dp_enc.c</c> (<c>pc_block</c>) from the open-source ALAC
-/// reference. For predictor order N the first N+1 samples are stored as a running
-/// first difference (the warm-up); every later sample is predicted from the previous
-/// N reconstructed samples with integer coefficients and a quantisation shift, and
-/// the coefficients adapt by a sign step after each sample. Crucially, both the
-/// prediction and the coefficient adaptation depend only on already-reconstructed
-/// samples, so encoder and decoder evolve identical state and the round-trip is
-/// bit-exact. Order 0 (verbatim residuals) and order 31 (pure first difference) — the
-/// two special modes the reference defines — are handled directly.
+/// Dynamic (sign-adaptive LPC) predictor, following the reference <c>dp_dec.c</c>
+/// (<c>unpc_block</c>) and <c>dp_enc.c</c> (<c>pc_block</c>).
+/// <para>
+/// The first sample is stored verbatim and the next <c>numActive</c> samples as running
+/// first differences. Every later sample is predicted from the previous <c>numActive</c>
+/// reconstructed samples, but relative to an <em>anchor</em> — the sample
+/// <c>numActive + 1</c> positions back — so the coefficients weight differences rather
+/// than absolute values. After each sample the coefficients take a signed unit step
+/// toward reducing the residual, walking from the oldest tap to the newest and stopping
+/// as soon as the running residual estimate changes sign. That early exit and the
+/// <c>(numActive - k)</c> weighting are load-bearing: a plain sign-LMS update decodes a
+/// different signal.
+/// </para>
+/// <para>
+/// Coefficients are 16-bit and are meant to wrap; the sums are 32-bit and are meant to
+/// wrap too, so every arithmetic step here is deliberately <c>unchecked</c>.
+/// </para>
 /// </summary>
 internal static class AlacPredictor {
 
+  /// <summary>Order 0 (verbatim) and order 31 (pure first difference) are the two special modes.</summary>
+  private const int FirstDifferenceOrder = 31;
+
+  /// <summary>The reference <c>sign_of_int()</c>: -1, 0 or +1.</summary>
+  private static int SignOf(int value) => (int)((uint)-value >> 31) | (value >> 31);
+
   /// <summary>
-  /// Reconstructs <paramref name="numSamples"/> samples in place from the residuals in
-  /// <paramref name="buffer"/>, using predictor <paramref name="coefs"/> of <paramref name="order"/>,
-  /// quantisation <paramref name="shift"/> and channel width <paramref name="bitsPerSample"/>.
+  /// Reconstructs <paramref name="numSamples"/> samples from the residuals in
+  /// <paramref name="input"/> into <paramref name="output"/> (which may be the same array),
+  /// using <paramref name="coefs"/> of <paramref name="numActive"/> taps, quantisation
+  /// <paramref name="denShift"/> and channel width <paramref name="chanBits"/>.
+  /// <paramref name="coefs"/> is updated in place, as the reference does.
   /// </summary>
   public static void Decompress(
-      int[] buffer, int numSamples, int[] coefs, int order, int shift, int bitsPerSample) {
-    if (order == 0)
+      int[] input, int[] output, int numSamples, short[] coefs, int numActive, int chanBits, int denShift) {
+    if (numSamples <= 0)
       return;
 
-    if (order == 31) {
-      for (var i = 1; i < numSamples; ++i)
-        buffer[i] = SignExtend(buffer[i] + buffer[i - 1], bitsPerSample);
+    var chanShift = 32 - chanBits;
+    output[0] = input[0];
+
+    if (numActive == 0) {
+      if (numSamples > 1 && !ReferenceEquals(input, output))
+        Array.Copy(input, 1, output, 1, numSamples - 1);
       return;
     }
 
-    // Warm-up: the first (order+1) entries are running first differences.
-    var lead = Math.Min(order, numSamples - 1);
-    for (var i = 1; i <= lead; ++i)
-      buffer[i] = SignExtend(buffer[i] + buffer[i - 1], bitsPerSample);
+    if (numActive == FirstDifferenceOrder) {
+      var previous = output[0];
+      for (var j = 1; j < numSamples; ++j) {
+        previous = SignExtend(input[j] + previous, chanShift);
+        output[j] = previous;
+      }
+      return;
+    }
 
-    var c = (int[])coefs.Clone();
-    var round = shift > 0 ? 1 << (shift - 1) : 0;
+    for (var j = 1; j <= numActive && j < numSamples; ++j)
+      output[j] = SignExtend(input[j] + output[j - 1], chanShift);
 
-    for (var i = order + 1; i < numSamples; ++i) {
-      var residual = buffer[i];
+    var lim = numActive + 1;
+    var denHalf = denShift > 0 ? 1 << (denShift - 1) : 0;
 
-      long sum = round;
-      var anchor = buffer[i - order - 1];
-      for (var j = 0; j < order; ++j)
-        sum += (long)c[j] * (buffer[i - 1 - j] - anchor);
-      var prediction = (int)(sum >> shift);
+    unchecked {
+      for (var j = lim; j < numSamples; ++j) {
+        var top = output[j - lim];
 
-      var sample = SignExtend(anchor + prediction + residual, bitsPerSample);
-      buffer[i] = sample;
+        var sum = 0;
+        for (var k = 0; k < numActive; ++k)
+          sum += coefs[k] * (output[j - 1 - k] - top);
 
-      Adapt(c, buffer, i, order, anchor, residual);
+        var residual = input[j];
+        var remaining = residual;
+        var residualSign = SignOf(residual);
+
+        output[j] = SignExtend(residual + top + ((sum + denHalf) >> denShift), chanShift);
+
+        if (residualSign > 0) {
+          for (var k = numActive - 1; k >= 0; --k) {
+            var difference = top - output[j - 1 - k];
+            var sign = SignOf(difference);
+            coefs[k] -= (short)sign;
+            remaining -= (numActive - k) * ((sign * difference) >> denShift);
+            if (remaining <= 0)
+              break;
+          }
+        } else if (residualSign < 0) {
+          for (var k = numActive - 1; k >= 0; --k) {
+            var difference = top - output[j - 1 - k];
+            var sign = SignOf(difference);
+            coefs[k] += (short)sign;
+            remaining -= (numActive - k) * ((-sign * difference) >> denShift);
+            if (remaining >= 0)
+              break;
+          }
+        }
+      }
     }
   }
 
   /// <summary>
-  /// Produces residuals in place from the samples in <paramref name="buffer"/> with the same
-  /// adaptive predictor. The exact inverse of <see cref="Decompress"/>.
+  /// Produces residuals from the samples in <paramref name="input"/> into
+  /// <paramref name="output"/>, the exact inverse of <see cref="Decompress"/>. Prediction and
+  /// adaptation read only <paramref name="input"/>, which the decoder will have rebuilt
+  /// identically, so the two evolve the same coefficient state.
   /// </summary>
   public static void Compress(
-      int[] buffer, int numSamples, int[] coefs, int order, int shift, int bitsPerSample) {
-    if (order == 0)
+      int[] input, int[] output, int numSamples, short[] coefs, int numActive, int chanBits, int denShift) {
+    if (numSamples <= 0)
       return;
 
-    if (order == 31) {
-      for (var i = numSamples - 1; i >= 1; --i)
-        buffer[i] = SignExtend(buffer[i] - buffer[i - 1], bitsPerSample);
+    var chanShift = 32 - chanBits;
+    output[0] = input[0];
+
+    if (numActive == 0) {
+      if (numSamples > 1 && !ReferenceEquals(input, output))
+        Array.Copy(input, 1, output, 1, numSamples - 1);
       return;
     }
 
-    // Work over a reconstructed copy so prediction/adaptation see the same state as
-    // the decoder (the decoder rebuilds samples from anchor + prediction + residual).
-    var recon = (int[])buffer.Clone();
-    var c = (int[])coefs.Clone();
-    var round = shift > 0 ? 1 << (shift - 1) : 0;
-
-    var lead = Math.Min(order, numSamples - 1);
-
-    for (var i = order + 1; i < numSamples; ++i) {
-      long sum = round;
-      var anchor = recon[i - order - 1];
-      for (var j = 0; j < order; ++j)
-        sum += (long)c[j] * (recon[i - 1 - j] - anchor);
-      var prediction = (int)(sum >> shift);
-
-      var residual = SignExtend(recon[i] - anchor - prediction, bitsPerSample);
-      buffer[i] = residual;
-
-      Adapt(c, recon, i, order, anchor, residual);
-    }
-
-    // Emit warm-up as running first differences (after the residual pass so the
-    // reconstructed history above was untouched).
-    for (var i = lead; i >= 1; --i)
-      buffer[i] = SignExtend(recon[i] - recon[i - 1], bitsPerSample);
-  }
-
-  /// <summary>
-  /// Sign-step coefficient adaptation, identical on both sides. Each coefficient nudges
-  /// toward reducing the residual based on the sign of the residual and of the matching
-  /// history difference — using only already-reconstructed samples.
-  /// </summary>
-  private static void Adapt(int[] c, int[] history, int i, int order, int anchor, int residual) {
-    if (residual == 0)
+    if (numActive == FirstDifferenceOrder) {
+      for (var j = 1; j < numSamples; ++j)
+        output[j] = SignExtend(input[j] - input[j - 1], chanShift);
       return;
-    var rSign = residual > 0 ? 1 : -1;
-    for (var j = 0; j < order; ++j) {
-      var diff = history[i - 1 - j] - anchor;
-      var dSign = diff > 0 ? 1 : diff < 0 ? -1 : 0;
-      c[j] += rSign * dSign;
+    }
+
+    for (var j = 1; j <= numActive && j < numSamples; ++j)
+      output[j] = SignExtend(input[j] - input[j - 1], chanShift);
+
+    var lim = numActive + 1;
+    var denHalf = denShift > 0 ? 1 << (denShift - 1) : 0;
+
+    unchecked {
+      for (var j = lim; j < numSamples; ++j) {
+        var top = input[j - lim];
+
+        var sum = 0;
+        for (var k = 0; k < numActive; ++k)
+          sum -= coefs[k] * (top - input[j - 1 - k]);
+
+        var residual = SignExtend(input[j] - top - ((sum + denHalf) >> denShift), chanShift);
+        output[j] = residual;
+
+        var remaining = residual;
+        var residualSign = SignOf(residual);
+
+        if (residualSign > 0) {
+          for (var k = numActive - 1; k >= 0; --k) {
+            var difference = top - input[j - 1 - k];
+            var sign = SignOf(difference);
+            coefs[k] -= (short)sign;
+            remaining -= (numActive - k) * ((sign * difference) >> denShift);
+            if (remaining <= 0)
+              break;
+          }
+        } else if (residualSign < 0) {
+          for (var k = numActive - 1; k >= 0; --k) {
+            var difference = top - input[j - 1 - k];
+            var sign = SignOf(difference);
+            coefs[k] += (short)sign;
+            remaining -= (numActive - k) * ((-sign * difference) >> denShift);
+            if (remaining >= 0)
+              break;
+          }
+        }
+      }
     }
   }
 
-  private static int SignExtend(int value, int bits) {
-    if (bits >= 32)
-      return value;
-    var s = 32 - bits;
-    return (value << s) >> s;
+  /// <summary>The reference <c>init_coefs()</c> seed for a fresh channel.</summary>
+  public static short[] InitialCoefficients(int numActive, int denShift) {
+    var coefs = new short[Math.Max(numActive, 1)];
+    var den = 1 << denShift;
+    if (coefs.Length > 0) coefs[0] = (short)(38 * den >> 4);
+    if (coefs.Length > 1) coefs[1] = (short)(-29 * den >> 4);
+    if (coefs.Length > 2) coefs[2] = (short)(-2 * den >> 4);
+    return coefs;
   }
+
+  private static int SignExtend(int value, int chanShift) => value << chanShift >> chanShift;
 }

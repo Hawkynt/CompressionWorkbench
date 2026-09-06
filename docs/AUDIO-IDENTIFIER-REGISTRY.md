@@ -114,11 +114,20 @@ disagree out loud. Measured that way, against ffmpeg 9.0.1 and the reference `wv
 - **RealAudio 14.4** decodes at about a seventh of the right amplitude — the frame and subframe
   unpacking, the RMS/energy helpers and the gain application all read as faithful ports, so the
   fault is further inside the synthesis.
-- **Apple Lossless** cannot decode libavcodec's frames at all: every packet throws. That is a
-  codec fault rather than the routing gap it looks like from the outside, so CAF still refuses
-  ALAC rather than offering a route that always fails. The container side is understood — the
-  `kuki` chunk wraps the 24-byte config in QuickTime's `frma`/`alac` atoms, and the packet
-  lengths are base-128 varints in `pakt`, because ALAC frames are not self-delimiting.
+- **Apple Lossless** used to throw on every libavcodec packet; it is now bit-exact, in both
+  directions. The old codec was self-consistent and agreed with nothing else: the adaptive
+  Golomb coder used a plain Rice symbol instead of the format's modulus of `2^k - 1`, the
+  per-channel `pb` factor and the mono `mixBits`/`mixRes` bytes went unread, the prediction
+  headers were interleaved with the residual blocks rather than all preceding them, and the
+  magic cookie was not unwrapped from its `frma`/`alac` atoms. Fifty-four libavcodec streams
+  (16- and 24-bit, mono/stereo/5.1, 8–192 kHz, MP4 and CAF, including uncompressed escape
+  frames) now decode byte for byte, and libavcodec decodes what we write byte for byte.
+  Untested: 20-bit and 32-bit streams, which libavcodec will not produce — its ALAC encoder
+  caps at 24 bits — and the order-31 pre-filter mode, which no encoder appears to emit.
+  CAF still has no ALAC route: the container side is understood — the `kuki` chunk wraps the
+  24-byte config in QuickTime's `frma`/`alac` atoms, and the packet lengths are base-128
+  varints in `pakt`, because ALAC frames are not self-delimiting — but that plumbing is not
+  built yet. The codec fault that made it pointless is gone.
 - **WMA v1/v2** decodes a tone at roughly the right frequency and about four times too quiet in
   RMS while only 1.6 times down in peak, so the shape is wrong and not merely the gain. It is
   left unrouted from WAVE rather than made reachable in that state.
