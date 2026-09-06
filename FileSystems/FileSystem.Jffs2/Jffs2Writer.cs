@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Core.Checksums;
 using Compression.Core.DiskImage;
 
 namespace FileSystem.Jffs2;
@@ -117,6 +116,13 @@ public sealed class Jffs2Writer {
     uint nextInode = 2; // inode 1 = root dir
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+    // Every directory entry gets its own version, the way mkfs.jffs2 numbers
+    // them: a dirent's version belongs to the directory it names something in.
+    // Stamping them all version 1 makes each one a claim to be that directory's
+    // latest state, and a reader that resolves the claim keeps one — mtd-utils'
+    // jffs2reader listed a single file out of a root directory holding three.
+    uint nextDirentVersion = 1;
+
     // 1. Cleanmarker
     emitter.Emit(BuildCleanmarker());
 
@@ -144,14 +150,17 @@ public sealed class Jffs2Writer {
           dirInode = nextInode++;
           directoryInodes[pathSoFar] = dirInode;
           emitter.Emit(BuildInodeNode(dirInode, 1, ModeDirectory, 0, [], now));
-          emitter.Emit(BuildDirentNode(parentInode, dirInode, segments[i], DtDir, 1, now));
+          emitter.Emit(BuildDirentNode(parentInode, dirInode, segments[i], DtDir, nextDirentVersion++, now));
         }
 
         parentInode = dirInode;
       }
 
-      // File data: one inode node per fragment, all at version 1 so the reader
-      // treats them as a single write contributing successive ranges.
+      // File data: one inode node per fragment, each a further version of the
+      // same inode. JFFS2 resolves data nodes by version, and the fragments were
+      // all stamped version 1 — the kernel driver read that as one write
+      // repeated and rebuilt the file from a single fragment, so a file longer
+      // than a page came back with the wrong bytes after the first 4 KiB.
       var leafName = segments[^1];
       var fileInode = nextInode++;
       var size = (uint)payload.Size;
@@ -162,6 +171,7 @@ public sealed class Jffs2Writer {
         var fragment = new byte[DataFragmentSize];
         using var source = payload.Open();
         uint written = 0;
+        uint fragmentVersion = 1;
         while (written < size) {
           var want = (int)Math.Min(DataFragmentSize, size - written);
           var got = 0;
@@ -172,12 +182,13 @@ public sealed class Jffs2Writer {
           }
           if (got <= 0)
             throw new IOException($"JFFS2: '{rawName}' ended after {written:N0} of {size:N0} bytes.");
-          emitter.Emit(BuildDataNode(fileInode, ModeRegular, size, written, fragment.AsSpan(0, got), now));
+          emitter.Emit(BuildDataNode(fileInode, ModeRegular, size, written, fragment.AsSpan(0, got), now,
+            fragmentVersion++));
           written += (uint)got;
         }
       }
 
-      emitter.Emit(BuildDirentNode(parentInode, fileInode, leafName, DtReg, 1, now));
+      emitter.Emit(BuildDirentNode(parentInode, fileInode, leafName, DtReg, nextDirentVersion++, now));
     }
 
     emitter.Finish();
@@ -227,7 +238,7 @@ public sealed class Jffs2Writer {
         BinaryPrimitives.WriteUInt16LittleEndian(pad.AsSpan(0, 2), Magic);
         BinaryPrimitives.WriteUInt16LittleEndian(pad.AsSpan(2, 2), NodeTypePadding);
         BinaryPrimitives.WriteUInt32LittleEndian(pad.AsSpan(4, 4), (uint)room);
-        BinaryPrimitives.WriteUInt32LittleEndian(pad.AsSpan(8, 4), Crc32.Compute(pad.AsSpan(0, 8)));
+        BinaryPrimitives.WriteUInt32LittleEndian(pad.AsSpan(8, 4), Jffs2Crc.Compute(pad.AsSpan(0, 8)));
         output.Write(pad, 0, pad.Length);
         this.FillErased(room - CommonHeaderSize);
       } else {
@@ -259,7 +270,7 @@ public sealed class Jffs2Writer {
     BinaryPrimitives.WriteUInt16LittleEndian(node.AsSpan(2, 2), NodeTypeCleanmarker);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(4, 4), CommonHeaderSize);
     // hdr_crc covers bytes 0..7
-    var hdrCrc = Crc32.Compute(node.AsSpan(0, 8));
+    var hdrCrc = Jffs2Crc.Compute(node.AsSpan(0, 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8, 4), hdrCrc);
     return node;
   }
@@ -315,22 +326,19 @@ public sealed class Jffs2Writer {
     if (data.Length > 0)
       data.CopyTo(node.AsSpan(InodeNodeHeaderSize));
 
-    // data_crc — CRC of the data payload
-    var dataCrc = Crc32.Compute(data);
+    // data_crc — the payload.
+    var dataCrc = Jffs2Crc.Compute(data);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(60, 4), dataCrc);
 
-    // node_crc — CRC of bytes 0..59 (header without data_crc and node_crc fields)
-    // Actually: node_crc covers bytes 12..59 (the inode-specific header, excluding common header's hdr_crc)
-    // Per JFFS2 spec: node_crc covers bytes 0..63 with node_crc zeroed
-    // Let's follow the kernel: node_crc = crc32(0, node, sizeof(*ri) - 8) where -8 skips data_crc+node_crc
-    // Actually the kernel does: ri->node_crc = 0; ri->data_crc = dataCrc; crc32(0, ri, sizeof(*ri)-8)
-    // sizeof(jffs2_raw_inode) = 68, so node_crc = crc32 of bytes 0..59
-    var nodeCrc = Crc32.Compute(node.AsSpan(0, InodeNodeHeaderSize - 8));
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(64, 4), nodeCrc);
-
-    // hdr_crc — CRC of common header bytes 0..7
-    var hdrCrc = Crc32.Compute(node.AsSpan(0, 8));
+    // hdr_crc — the common header's first eight bytes. It has to be in place
+    // before node_crc is taken, because node_crc reaches across it.
+    var hdrCrc = Jffs2Crc.Compute(node.AsSpan(0, 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8, 4), hdrCrc);
+
+    // node_crc — crc32(0, ri, sizeof(*ri) - 8): bytes 0..59, i.e. everything up
+    // to data_crc and node_crc themselves, hdr_crc included.
+    var nodeCrc = Jffs2Crc.Compute(node.AsSpan(0, InodeNodeHeaderSize - 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(64, 4), nodeCrc);
 
     return node;
   }
@@ -365,18 +373,17 @@ public sealed class Jffs2Writer {
     // Name
     nameBytes.CopyTo(node, DirentNodeHeaderSize);
 
-    // name_crc — CRC of the name bytes
-    var nameCrc = Crc32.Compute(nameBytes);
+    // name_crc — the name bytes.
+    var nameCrc = Jffs2Crc.Compute(nameBytes);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(36, 4), nameCrc);
 
-    // node_crc — CRC of bytes 0..31 (the 32 bytes before node_crc/name_crc)
-    // Per kernel: rd->node_crc = 0; crc32(0, rd, sizeof(*rd)-8) where sizeof=40, so bytes 0..31
-    var nodeCrc = Crc32.Compute(node.AsSpan(0, DirentNodeHeaderSize - 8));
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(32, 4), nodeCrc);
-
-    // hdr_crc — CRC of common header bytes 0..7
-    var hdrCrc = Crc32.Compute(node.AsSpan(0, 8));
+    // hdr_crc first: node_crc covers bytes 0..31, which contains it.
+    var hdrCrc = Jffs2Crc.Compute(node.AsSpan(0, 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8, 4), hdrCrc);
+
+    // node_crc — crc32(0, rd, sizeof(*rd) - 8): bytes 0..31.
+    var nodeCrc = Jffs2Crc.Compute(node.AsSpan(0, DirentNodeHeaderSize - 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(32, 4), nodeCrc);
 
     return node;
   }
