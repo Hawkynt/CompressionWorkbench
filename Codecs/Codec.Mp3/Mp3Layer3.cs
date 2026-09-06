@@ -44,11 +44,10 @@ internal sealed class Mp3Layer3 {
   /// (bytes backreference into the bit reservoir) or -1 on invalid side info.
   /// </summary>
   public static int ReadSideInfo(Mp3BitReader bs, GrInfo[] gr, in Mp3FrameHeader hdr) {
-    // Sample-rate index for sfbtabs: 0/1/2 (MPEG-1) then 3/4/5 (MPEG-2) then 6/7/8 (MPEG-2.5) — 8 entries,
-    // the minimp3 lookup does "sr_idx -= (sr_idx != 0)" to skip the hole between MPEG-1 idx 0 and MPEG-2 idx 3.
-    var srIdx = hdr.SampleRateIndex + (hdr.IsMpeg1 ? 0 : 3) + (hdr.IsMpeg25 ? 3 : 0);
+    // "sr_idx -= (sr_idx != 0)" collapses MPEG-2.5's 11.025 and 12 kHz onto the one row they share,
+    // which is what packs nine rate/version combinations into eight table rows.
+    var srIdx = hdr.ScalefactorSampleRateIndex;
     if (srIdx != 0) srIdx -= 1;
-    if (srIdx > 7) srIdx = 7;
 
     var grCount = hdr.IsMono ? 1 : 2;
     int mainDataBegin;
@@ -178,7 +177,9 @@ internal sealed class Mp3Layer3 {
         }
         sfc -= modprod;
       }
-      partOffset = k - 4;   // minimp3's "scf_partition += k" after the loop exits with k over-incremented by 4
+      // The ladder consumes one partition group per subtraction, so the group that ends up
+      // in use is the one *after* the last divisor block tried — k already points at it.
+      partOffset = k;
       scfsi = -16;
     }
 
@@ -333,7 +334,9 @@ internal sealed class Mp3Layer3 {
         leaf = codebookCount1[(leaf >> 3) + (int)(bsCache << 4 >> (32 - (leaf & 3)))];
       var consume = leaf & 7;
       bsCache <<= consume; bsSh += consume;
-      var bspos = (bsNextPtr - 4) * 8 - 24 + bsSh;
+      // bsNextPtr runs four bytes ahead of the consumed position and bsSh is biased by -8,
+      // so the live bit position is 24 bits behind the prefetch point.
+      var bspos = bsNextPtr * 8 - 24 + bsSh;
       if (bspos > layer3GrLimit) break;
 
       // Reload scf
@@ -440,12 +443,19 @@ internal sealed class Mp3Layer3 {
     var src = startOff;
     for (var i = sfbOff; sfb[i] != 0; i += 3) {
       int len = sfb[i];
+      // Every well-formed version/rate/block combination lands exactly on the granule's
+      // 576 coefficients. A corrupt mixed_block_flag can pair a long-band start offset
+      // with a short-band table that runs past the end, which the reference decoder reads
+      // over rather than detecting; stop at the boundary instead of faulting.
+      if (src + 3 * len > grbuf.Length) break;
       for (var k = 0; k < len; k++) {
         scratch[dst++] = grbuf[src + k + 0 * len];
         scratch[dst++] = grbuf[src + k + 1 * len];
         scratch[dst++] = grbuf[src + k + 2 * len];
       }
-      src += 2 * len;
+      // Each scalefactor band holds three interleaved short windows, so the source
+      // advances by three band widths — not the two the outer step alone would give.
+      src += 3 * len;
     }
     Array.Copy(scratch, 0, grbuf, startOff, dst);
   }

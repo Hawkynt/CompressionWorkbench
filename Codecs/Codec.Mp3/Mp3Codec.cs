@@ -329,7 +329,8 @@ public static class Mp3Codec {
       Array.Copy(combined, 576, s.Grbuf1, 0, 576);
     }
 
-    var srMy = hdr.SampleRateIndex + (hdr.IsMpeg1 ? 0 : 3) + (hdr.IsMpeg25 ? 3 : 0);
+    // Index 2 is MPEG-2.5 at 8 kHz, whose mixed blocks start with four long bands instead of two.
+    var srMy = hdr.ScalefactorSampleRateIndex;
     for (var ch = 0; ch < nch; ch++) {
       var gr = s.GrInfo[grBase + ch];
       var aaBands = 31;

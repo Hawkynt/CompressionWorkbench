@@ -84,6 +84,16 @@ public readonly record struct Mp3FrameHeader(
   /// <summary>Number of channels (1 for mono, 2 for any stereo mode).</summary>
   public int Channels => this.IsMono ? 1 : 2;
 
+  /// <summary>
+  /// Combined version+sample-rate index 0..8 that the Layer III scalefactor-band tables
+  /// are keyed on (minimp3's <c>HDR_GET_MY_SAMPLE_RATE</c>): MPEG-2.5 occupies 0..2,
+  /// MPEG-2 3..5 and MPEG-1 6..8, because both version bits are summed and tripled.
+  /// The ordering is not arbitrary — the eight-row table is then addressed by this value
+  /// minus one, which folds the two MPEG-2.5 rates that share a table onto one row.
+  /// </summary>
+  internal int ScalefactorSampleRateIndex =>
+    this.SampleRateIndex + (this.IsMpeg1 ? 6 : this.IsMpeg25 ? 0 : 3);
+
   /// <summary>Sample rate in Hz after version scaling (MPEG-2 halves, MPEG-2.5 quarters).</summary>
   public int SampleRateHz {
     get {
