@@ -4039,11 +4039,12 @@ Represents a single inode entry discovered while walking a CramFS image.
 
 Offline R/W descriptor for Linux CramFS images. The Linux filesystem is intentionally read-only when mounted, but the workbench can create and edit an existing image by verified rebuild and can perform physical layout moves where the compressed-block metadata can be repointed safely. References: `https://docs.kernel.org/filesystems/cramfs.html` — Linux kernel cramfs documentation`https://github.com/torvalds/linux/tree/master/fs/cramfs` — mainline implementation (its README documents the on-disk layout)`https://en.wikipedia.org/wiki/Cramfs` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CramFsFormatDescriptor` | `CramFsFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | One-line summary of what this writer takes. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -4054,9 +4055,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | cramfs images have no fixed size of their own. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | cramfs keeps a file's length in a 24-bit inode field, so it cannot hold one of 16 MiB or more. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the image out again. A file is a block pointer table followed by the compressed blocks it ends, and its inode says where that pair starts — so a move is the copy, one field, and the same delta added to every entry in the table, which is cheaper than decompressing every file and compressing it back. |
