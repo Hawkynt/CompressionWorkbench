@@ -18,7 +18,7 @@ namespace FileFormat.UefiFv;
 /// </list>
 /// </summary>
 public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveCreatable, IArchiveModifiable {
+  IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>
   /// Gets the id.
@@ -108,6 +108,26 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   public void Remove(Stream archive, string[] entryNames)
     => UefiFvInPlaceModifier.Remove(archive,
       entryNames.Where(n => !string.Equals(n, "metadata.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
+
+  /// <summary>
+  /// Packs live FFS records at the start of the firmware-volume data area while
+  /// preserving the FV header, block map, capacity and FFS record bytes.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => UefiFvInPlaceModifier.Defragment(archive);
+
+  /// <summary>
+  /// UEFI FVs have fixed block geometry; only consolidation at the beginning
+  /// is meaningful for the supported ordinary-FFS2 profile.
+  /// </summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException("UEFI FV supports only ConsolidateAtStart defragmentation.");
+    options.CancellationToken.ThrowIfCancellationRequested();
+    UefiFvInPlaceModifier.Defragment(archive);
+    options.Progress?.Report(new DefragProgress(1, 1, "UEFI FV compacted"));
+  }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     if (stream.CanSeek) stream.Position = 0;
