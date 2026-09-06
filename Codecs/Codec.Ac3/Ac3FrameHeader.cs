@@ -82,6 +82,25 @@ public readonly record struct Ac3FrameHeader(
     0 => 2, 1 => 1, 2 => 2, 3 => 3, 4 => 3, 5 => 4, 6 => 4, 7 => 5, _ => 0,
   };
 
+  /// <summary>
+  /// Maps a channel's position in the bit stream to its position in the decoded interleaved PCM.
+  /// AC-3 transmits the front channels as L, C, R and puts the LFE last (A/52 Table 5.8), while
+  /// interleaved PCM uses the ITU/WAVE order — front left, front right, front centre, LFE, then the
+  /// surrounds. The returned array is indexed by bit-stream channel (full-bandwidth channels in
+  /// acmod order, LFE appended) and yields the interleave slot.
+  /// </summary>
+  internal static int[] ChannelMap(int acmod, bool lfe) => (acmod, lfe) switch {
+    (0, false) => [0, 1],          (0, true) => [0, 1, 2],
+    (1, false) => [0],             (1, true) => [0, 1],
+    (2, false) => [0, 1],          (2, true) => [0, 1, 2],
+    (3, false) => [0, 2, 1],       (3, true) => [0, 2, 1, 3],
+    (4, false) => [0, 1, 2],       (4, true) => [0, 1, 3, 2],
+    (5, false) => [0, 2, 1, 3],    (5, true) => [0, 2, 1, 4, 3],
+    (6, false) => [0, 1, 2, 3],    (6, true) => [0, 1, 3, 4, 2],
+    (7, false) => [0, 2, 1, 3, 4], (7, true) => [0, 2, 1, 4, 5, 3],
+    _ => [],
+  };
+
   /// <summary>Friendly layout name including the LFE channel (e.g. "3/2 + LFE (5.1)").</summary>
   public static string LayoutName(int acmod, bool lfe) {
     var baseName = AcmodName(acmod);

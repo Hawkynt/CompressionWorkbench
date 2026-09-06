@@ -78,6 +78,22 @@ public static partial class Ac3Codec {
     return output.ToArray();
   }
 
+  // Inverse of Ac3FrameHeader.ChannelMap: for each bit-stream channel, which interleaved input
+  // slot it comes from. Falls back to the identity when the acmod has no map (encoder validation
+  // rejects those modes anyway).
+  private static int[] InputChannelOrder(int acmod, bool lfe, int channels) {
+    var map = Ac3FrameHeader.ChannelMap(acmod, lfe);
+    var order = new int[channels];
+    if (map.Length != channels) {
+      for (var i = 0; i < channels; ++i)
+        order[i] = i;
+      return order;
+    }
+    for (var bitstreamChannel = 0; bitstreamChannel < channels; ++bitstreamChannel)
+      order[bitstreamChannel] = map[bitstreamChannel];
+    return order;
+  }
+
   private readonly record struct FrameLayout(int FsCod, int FrameSizeCode, int FrameBytes);
   private sealed record ChannelCoding(int EndMantissa, byte[] Exponents, byte AbsoluteExponent, byte[] GroupedExponents);
 
@@ -92,7 +108,11 @@ public static partial class Ac3Codec {
     var lfeIndex = options.LowFrequencyEffects ? channels - 1 : -1;
     var bandwidthCode = ResolveBandwidthCode(options, fullBandwidthChannels);
     var endMantissa = bandwidthCode * 3 + 73;
-    var coefficients = AnalyzeFrame(pcm, channels, history);
+    // The caller hands us PCM in the ITU/WAVE interleave order the decoder emits; the bit stream
+    // wants the A/52 order (front L, C, R ... then LFE), so read each bit-stream channel from the
+    // input slot the channel map assigns to it.
+    var sourceChannel = InputChannelOrder(options.Acmod, options.LowFrequencyEffects, channels);
+    var coefficients = AnalyzeFrame(pcm, channels, sourceChannel, history);
     var coding = new ChannelCoding[channels];
 
     for (var ch = 0; ch < channels; ++ch) {
@@ -178,7 +198,7 @@ public static partial class Ac3Codec {
     }
   }
 
-  private static float[][][] AnalyzeFrame(ReadOnlySpan<short> pcm, int channels, float[][] history) {
+  private static float[][][] AnalyzeFrame(ReadOnlySpan<short> pcm, int channels, int[] sourceChannel, float[][] history) {
     var result = new float[BlocksPerFrame][][];
     var window = Ac3Tables.Window;
     Span<float> time = stackalloc float[512];
@@ -188,7 +208,7 @@ public static partial class Ac3Codec {
       for (var ch = 0; ch < channels; ++ch) {
         var current = new float[SamplesPerBlock];
         for (var n = 0; n < SamplesPerBlock; ++n)
-          current[n] = pcm[(block * SamplesPerBlock + n) * channels + ch] / 32768f;
+          current[n] = pcm[(block * SamplesPerBlock + n) * channels + sourceChannel[ch]] / 32768f;
 
         for (var n = 0; n < SamplesPerBlock; ++n) {
           time[n] = history[ch][n] * window[n];
@@ -201,7 +221,7 @@ public static partial class Ac3Codec {
           var row = k * 512;
           for (var n = 0; n < 512; ++n)
             sum += time[n] * MdctCos[row + n];
-          coeff[k] = (float)(sum * (2.0 / 256.0));
+          coeff[k] = (float)sum * MdctScale;
         }
         result[block][ch] = coeff;
         current.CopyTo(history[ch], 0);
@@ -235,10 +255,13 @@ public static partial class Ac3Codec {
     var wordCount = Ac3Exponents.GroupCount(endMantissa, strategy);
     var groupCount = 1 + wordCount * 3;
     var groups = new byte[groupCount];
+    // A/52 §7.1.3: exp[0] is the absolute exponent and covers bin 0 alone; each differentially
+    // coded exponent that follows covers a pair (D25) or a quad (D45).
     for (var group = 0; group < groupCount; ++group) {
-      var start = group * step;
+      var start = group == 0 ? 0 : 1 + (group - 1) * step;
+      var span = group == 0 ? 1 : step;
       var minimum = 24;
-      for (var i = 0; i < step; ++i) {
+      for (var i = 0; i < span; ++i) {
         var bin = Math.Min(start + i, Math.Max(0, endMantissa - 1));
         minimum = Math.Min(minimum, raw[bin]);
       }
@@ -252,13 +275,13 @@ public static partial class Ac3Codec {
       groups[i] = (byte)Math.Min(groups[i], groups[i + 1] + 2);
 
     var expanded = new byte[256];
-    for (var group = 0; group < groups.Length; ++group) {
-      var start = group * step;
-      for (var i = 0; i < step && start + i < expanded.Length; ++i)
-        expanded[start + i] = groups[group];
-    }
-    if (groups.Length * step < expanded.Length)
-      Array.Fill(expanded, groups[^1], groups.Length * step, expanded.Length - groups.Length * step);
+    expanded[0] = groups[0];
+    var expandedBin = 1;
+    for (var group = 1; group < groups.Length; ++group)
+      for (var i = 0; i < step && expandedBin < expanded.Length; ++i)
+        expanded[expandedBin++] = groups[group];
+    if (expandedBin < expanded.Length)
+      Array.Fill(expanded, groups[^1], expandedBin, expanded.Length - expandedBin);
 
     var packed = new byte[wordCount];
     for (var word = 0; word < wordCount; ++word) {
@@ -545,11 +568,16 @@ public static partial class Ac3Codec {
     }
   }
 
+  // Forward MDCT kernel, the transpose of the decoder's synthesis basis (A/52 §7.9.4.1). The
+  // -1/256 normalization is what makes analysis-window → transform → IMDCT → synthesis-window →
+  // overlap-add (which the decoder finishes with a factor of two) reproduce the input exactly.
+  private const float MdctScale = -1f / 256f;
+
   private static float[] BuildMdctCos() {
     var table = new float[256 * 512];
     for (var k = 0; k < 256; ++k)
       for (var n = 0; n < 512; ++n)
-        table[k * 512 + n] = (float)Math.Cos(Math.PI / 512.0 * (2 * n + 1 + 256) * (2 * k + 1));
+        table[k * 512 + n] = (float)Math.Cos(Math.PI / 1024.0 * (2 * n + 1 + 256) * (2 * k + 1));
     return table;
   }
 

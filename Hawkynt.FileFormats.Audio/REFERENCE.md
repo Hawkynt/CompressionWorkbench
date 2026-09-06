@@ -216,7 +216,7 @@ Implements `IEquatable<AdtsHeader>`.
 
 ### Namespace `Codec.Ac3`
 
-[`Ac3Aht`](#ac3aht) · [`Ac3BitAllocation`](#ac3bitallocation) · [`Ac3BitAllocation.AllocParams`](#ac3bitallocationallocparams) · [`Ac3BitReader`](#ac3bitreader) · [`Ac3Codec`](#ac3codec) · [`Ac3EncoderOptions`](#ac3encoderoptions) · [`Ac3EnhancedBandStructure`](#ac3enhancedbandstructure) · [`Ac3EnhancedBandStructure.Result`](#ac3enhancedbandstructureresult) · [`Ac3EnhancedTables`](#ac3enhancedtables) · [`Ac3Exponents`](#ac3exponents) · [`Ac3Exponents.Strategy`](#ac3exponentsstrategy) · [`Ac3FrameHeader`](#ac3frameheader) · [`Ac3Imdct`](#ac3imdct) · [`Ac3Mantissas`](#ac3mantissas) · [`Ac3StreamInfo`](#ac3streaminfo)
+[`Ac3Aht`](#ac3aht) · [`Ac3BitAllocation`](#ac3bitallocation) · [`Ac3BitAllocation.AllocParams`](#ac3bitallocationallocparams) · [`Ac3BitAllocation.DeltaSegment`](#ac3bitallocationdeltasegment) · [`Ac3BitReader`](#ac3bitreader) · [`Ac3Codec`](#ac3codec) · [`Ac3EncoderOptions`](#ac3encoderoptions) · [`Ac3EnhancedBandStructure`](#ac3enhancedbandstructure) · [`Ac3EnhancedBandStructure.Result`](#ac3enhancedbandstructureresult) · [`Ac3EnhancedTables`](#ac3enhancedtables) · [`Ac3Exponents`](#ac3exponents) · [`Ac3Exponents.Strategy`](#ac3exponentsstrategy) · [`Ac3FrameHeader`](#ac3frameheader) · [`Ac3Imdct`](#ac3imdct) · [`Ac3Mantissas`](#ac3mantissas) · [`Ac3StreamInfo`](#ac3streaminfo)
 
 #### `Ac3Aht`
 
@@ -229,12 +229,12 @@ Adaptive-Hybrid-Transform (AHT) arithmetic for E-AC-3 (ATSC A/52 Annex E §E.2.3
 
 #### `Ac3BitAllocation`
 
-AC-3 parametric bit-allocation model (ATSC A/52 §7.2.2). Given a channel's decoded exponents and the frame's allocation parameters (decay / gain / floor / snroffset / delta) it computes a power-spectral-density (PSD) envelope, integrates it into a masking curve and derives the bit-allocation pointer (bap) per mantissa. The algorithm and constants follow the A/52 reference pseudo-code (§7.2.2.1–§7.2.2.7) and FFmpeg's `ff_ac3_bit_alloc_calc_mask` / `ff_ac3_bit_alloc_calc_bap`.
+AC-3 parametric bit-allocation model (ATSC A/52 §7.2.2). Given a channel's decoded exponents and the frame's allocation parameters (decay / gain / knee / floor / snroffset / delta) it computes a power-spectral-density (PSD) envelope, integrates it into a masking curve and derives the bit-allocation pointer (bap) per mantissa. Every step is the spec's fixed-point integer arithmetic verbatim (§7.2.2.2 – §7.2.2.7); encoder and decoder must produce identical baps, so there is no latitude here at all.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BapTab` | `static readonly byte[] BapTab` | bap lookup table (A/52 Table 7.21 / FFmpeg `ff_ac3_bap_tab`). Indexed by the clamped (psd-mask)/32 address (0..63) → bit-allocation pointer 0..15. |
-| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, ValueTuple<int, int>[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one channel over bins `start`..`end`-1. `exp` holds the decoded exponents; `bap` (length ≥ end) receives the per-bin bap. `fgain` is the channel fast gain, `snrOffset` the combined coarse/fine SNR offset, `fscod` the sample-rate code (for the hearing threshold). `deltas` applies optional delta bit allocation (deltbae/deltba) as (lengthInBands, gainCode); pass null for none. Coupling channels start the leak integrators from `cplFastLeak`/`cplSlowLeak`. |
+| `BapTab` | `static readonly byte[] BapTab` | bap lookup table (A/52 Table 7.16, baptab[]). Indexed by the clamped (psd-mask)/32 address (0..63) → bit-allocation pointer 0..15. |
+| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, DeltaSegment[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one channel over bins `start`..`end`-1. `exp` holds the decoded exponents; `bap` (length ≥ end) receives the per-bin bap. `fgain` is the channel fast gain, `snrOffset` the combined coarse/fine SNR offset, `fscod` the sample-rate code (for the hearing threshold). `deltas` applies optional delta bit allocation; pass null for none. The coupling channel (`isCoupling`) skips the low-frequency excitation bootstrap and starts its leak integrators from `cplFastLeak` / `cplSlowLeak` instead. |
 | `Resolve` | `static AllocParams Resolve(int sdcycod, int fdcycod, int sgaincod, int dbpbcod, int floorcod)` | Resolves the coded allocation parameters (sdcycod/fdcycod/sgaincod/dbpbcod/floorcod) to their table values. |
 
 #### `Ac3BitAllocation.AllocParams`
@@ -252,6 +252,19 @@ Implements `IEquatable<AllocParams>`.
 | `SlowDecay` | `int SlowDecay { get; init; }` |  |
 | `SlowGain` | `int SlowGain { get; init; }` |  |
 
+#### `Ac3BitAllocation.DeltaSegment`
+
+One delta-bit-allocation segment (A/52 §7.2.2.6): band offset, band count, gain code.
+
+Implements `IEquatable<DeltaSegment>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DeltaSegment` | `DeltaSegment(int Offset, int Length, int Value)` | One delta-bit-allocation segment (A/52 §7.2.2.6): band offset, band count, gain code. |
+| `Length` | `int Length { get; init; }` |  |
+| `Offset` | `int Offset { get; init; }` |  |
+| `Value` | `int Value { get; init; }` |  |
+
 #### `Ac3BitReader`
 
 MSB-first big-endian bit reader over a byte buffer, used to walk an AC-3 (ATSC A/52) sync frame. Bits are consumed from the most significant bit of each byte downwards, which matches the bit packing the A/52 specification uses throughout syncinfo / BSI / audblk.
@@ -267,12 +280,12 @@ MSB-first big-endian bit reader over a byte buffer, used to walk an AC-3 (ATSC A
 
 #### `Ac3Codec`
 
-Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companion partial source file. Decoding supports legacy AC-3 sync frames (bsid ≤ 10) plus independent E-AC-3 substreams (bsid 11..16) to interleaved little-endian signed 16-bit PCM at the native channel count, with LFE last when present.
+Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companion partial source file. Decoding supports legacy AC-3 sync frames (bsid ≤ 10) plus independent E-AC-3 substreams (bsid 11..16) to interleaved little-endian signed 16-bit PCM at the native channel count, in the ITU/WAVE interleave order.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EncoderDelaySamples` | `const int EncoderDelaySamples` | Long-block AC-3 analysis delay in samples per channel. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in acmod order with LFE last. AC-3 (bsid ≤ 10) and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent substreams (frame type 1) are skipped. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in the ITU/WAVE interleave order — front left, front right, front centre, LFE, then the surrounds — not the acmod order the bit stream uses. AC-3 (bsid ≤ 10) and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent substreams (frame type 1) are skipped. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, Ac3EncoderOptions options = null)` | Encodes interleaved PCM16 as legacy AC-3 (bsid 8). The implementation is a managed adaptation of FFmpeg's LGPL `ac3enc.c`: long-block MDCT analysis, D45 exponent grouping/reuse, standards-defined parametric bit allocation, coarse/fine SNR rate control, grouped and linear mantissa quantizers, 44.1-kHz alternating frame sizes, and both A/52 CRC fields. Coupling, rematrixing and short-block switching are deliberately disabled so the core path remains deterministic and every channel is coded independently. |
 | `ReadStreamInfo` | `static Ac3StreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first sync frame. |
 
@@ -337,8 +350,9 @@ AC-3 exponent coding (ATSC A/52 §7.1.3). Exponents are differentially coded: an
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static int Decode(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy)` | Decodes `nGroups` grouped delta-exponent words from `r` into the exponent array `exp` starting at bin `start`, given the already-read absolute first exponent `absExp` and the grouping `strategy`. Returns the exclusive end bin. The result is the full per-bin exponent array (each group of mantissas shares the group exponent). |
-| `GroupCount` | `static int GroupCount(int nExp, Strategy strategy)` | Computes the number of grouped exponent words for a channel covering `nExp` mantissa exponents under `strategy`: one absolute exponent then `ceil((nExp - 1) / (3 * step))` grouped 7-bit words (A/52 §7.1.3). |
+| `DecodeCoupling` | `static void DecodeCoupling(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy)` | Decodes the coupling channel's exponent set. The coupling channel's absolute exponent is a decoding reference only, not a real exponent, so it consumes no bin: the expanded exponents start directly at `start` (A/52 §7.1.3, `cplexp[n + cplstrtmant] = exp[n+1]`). |
+| `Decode` | `static int Decode(Ac3BitReader r, byte[] exp, int start, int absExp, int nGroups, Strategy strategy)` | Decodes `nGroups` grouped delta-exponent words from `r` into the exponent array `exp` starting at bin `start`, given the already-read absolute first exponent `absExp` and the grouping `strategy`. Returns the exclusive end bin. The absolute exponent occupies exactly one bin (A/52 §7.1.3: `exp[0] = absexp`), whatever the grouping; only the differentially coded exponents that follow are replicated across the pair or quad. Filling the first group with the absolute value instead shifts the whole envelope up by one or three bins for D25 / D45. |
+| `GroupCount` | `static int GroupCount(int nExp, Strategy strategy)` | Computes the number of grouped exponent words for an independent or coupled channel covering `nExp` mantissas: A/52 §7.1.3 gives `(endmant-1)/3`, `(endmant+2)/6` and `(endmant+8)/12` for D15 / D25 / D45, all truncating — the same value as `ceil((nExp - 1) / (3 * grpsize))`. |
 | `GroupSize` | `static int GroupSize(Strategy s)` | Mantissas-per-exponent group step for a strategy: D15→1, D25→2, D45→4. |
 
 #### `Ac3Exponents.Strategy`
@@ -384,12 +398,12 @@ Implements `IEquatable<Ac3FrameHeader>`.
 
 #### `Ac3Imdct`
 
-Inverse modified discrete cosine transform for AC-3 (ATSC A/52 §7.9). Each audio block carries 256 frequency coefficients per channel. With `blksw=0` a single 512-point IMDCT is applied; with `blksw=1` the 256 coefficients split into two interleaved 256-point IMDCTs. The transform output is windowed with the A/52 window and overlap-added against the previous block's tail to yield 256 PCM time samples per block per channel. This implementation uses the direct O(N²) summation form of the IMDCT, which is exact and matches the spec equations; performance is not a concern for the per-channel extraction use case.
+Inverse modified discrete cosine transform for AC-3 (ATSC A/52 §7.9). Each audio block carries 256 frequency coefficients per channel. With `blksw=0` a single 512-point IMDCT is applied (§7.9.4.1); with `blksw=1` the coefficients de-interleave into two 128-coefficient sets, each driving a 256-point IMDCT (§7.9.4.2). Either way the result is a 512-sample windowed sequence `x[]` whose first half overlap-adds with the previous block's second half: `pcm[n] = 2 * (x[n] + delay[n])`, the factor of two undoing the encoder's headroom scaling. The spec states the transform as a pre-twiddle / complex IFFT / post-twiddle / de-interleave chain; this implementation evaluates the equivalent direct cosine sum, which was checked term by term against the spec's factorisation for both block lengths. The direct form is O(N²) but the per-channel extraction use case is not performance critical.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Long` | `static void Long(float[] coeffs, float[] delay, float[] output)` | Long-block (512-point) IMDCT + window + overlap-add. `coeffs` holds the 256 transform coefficients; `delay` is the 256-sample overlap memory (updated in place); the 256 reconstructed PCM samples are written to `output`. |
-| `Short` | `static void Short(float[] coeffs, float[] delay, float[] output)` | Short-block (dual 256-point) IMDCT + window + overlap-add. The 256 coefficients are de-interleaved into two 128-coefficient sub-blocks; each drives a 256-point IMDCT. The two 256-sample windowed outputs are concatenated and overlap-added with `delay`. |
+| `Long` | `static void Long(float[] coeffs, float[] delay, float[] output)` | Long-block (512-point) IMDCT + window + overlap-add. `coeffs` holds the 256 transform coefficients; `delay` is the 256-sample overlap memory (updated in place); the 256 reconstructed samples are written to `output`. |
+| `Short` | `static void Short(float[] coeffs, float[] delay, float[] output)` | Short-block (dual 256-point) IMDCT + window + overlap-add. The even-indexed coefficients build the first half of the windowed sequence and the odd-indexed ones the second half; the overlap-add that follows is identical to the long-block case. |
 
 #### `Ac3Mantissas`
 

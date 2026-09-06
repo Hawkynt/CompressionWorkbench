@@ -252,22 +252,27 @@ public sealed class AudioRoutingOracleTests {
     "8AA3eNoG7SYAAAbvG0DdpMAAAN3jaBu0gJ7U";
 
   /// <summary>
-  /// A stream whose header declares audio but which the decoder cannot read has
-  /// to come back as a refusal, not as a well-formed empty file.
+  /// A libavcodec-encoded stream has to convert to the sample count its header declares.
   /// </summary>
   /// <remarks>
-  /// The pipeline will build a target out of whatever PCM it is handed, so a
-  /// decoder that quietly returns nothing yields a valid WAV with a correct
-  /// header and no samples — indistinguishable from silence that was really in
-  /// the source.
+  /// The pipeline will build a target out of whatever PCM it is handed, so a decoder that quietly
+  /// returns nothing yields a valid WAV with a correct header and no samples — indistinguishable
+  /// from silence that was really in the source. This stream used to hit exactly that: the decoder
+  /// desynchronised in the first audio block and every frame after it was dropped.
   /// </remarks>
   [Test]
-  public void Ac3ThatTheDecoderCannotReadRefusesRatherThanEmitAnEmptyFile() {
+  [Category("RoundTrip")]
+  public void Ac3FromLibavcodecConvertsToItsDeclaredLength() {
     var stream = System.Convert.FromBase64String(Ac3Stream);
+    var wav = ConvertToWav(stream, "Ac3");
+    var pcm = WavPayload(wav, out var channels, out var sampleRate);
 
-    var thrown = Assert.Catch(() => ConvertToWav(stream, "Ac3"));
-    Assert.That(thrown, Is.Not.Null, "an unreadable stream must not convert silently");
-    Assert.That(thrown!.Message, Does.Contain("no samples").IgnoreCase.Or.Contain("no audio conversion route"),
-      $"unexpected failure: {thrown.Message}");
+    Assert.Multiple(() => {
+      Assert.That(channels, Is.EqualTo(2));
+      Assert.That(sampleRate, Is.EqualTo(48_000));
+      // Three 1536-sample frames, two channels, 16 bits.
+      Assert.That(pcm.Length, Is.EqualTo(3 * 1536 * 2 * sizeof(short)));
+      Assert.That(pcm, Is.Not.All.EqualTo((byte)0), "a 440 Hz sine must not decode to silence");
+    });
   }
 }

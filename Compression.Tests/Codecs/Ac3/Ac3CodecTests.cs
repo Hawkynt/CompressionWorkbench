@@ -238,8 +238,9 @@ public class Ac3CodecTests {
   [Test]
   [Category("HappyPath")]
   public void DecodeExponents_GroupedD25_RepeatsEachExponentTwice() {
-    // D25: every decoded exponent applies to 2 mantissa bins. Absolute 4, word deltas (2,3,2) →
-    // (0,+1,0): exponents 4,4 | 4,4 | 5,5 | 5,5.
+    // A/52 §7.1.3: exp[0] is the absolute exponent and covers bin 0 on its own; only the
+    // differentially coded exponents that follow are repeated across the pair. Absolute 4, word
+    // deltas (2,3,2) → (0,+1,0): bin 0 is 4, then 4,4 | 5,5 | 5,5.
     var w = new BitWriter();
     var word = 2 * 25 + 3 * 5 + 2;       // = 67
     w.Put(word, 7);
@@ -248,8 +249,24 @@ public class Ac3CodecTests {
     var exp = new byte[16];
     Ac3Exponents.Decode(r, exp, 0, absExp: 4, nGroups: 1, Ac3Exponents.Strategy.D25);
 
-    Assert.That(new[] { exp[0], exp[1], exp[2], exp[3], exp[4], exp[5], exp[6], exp[7] },
-                Is.EqualTo(new byte[] { 4, 4, 4, 4, 5, 5, 5, 5 }));
+    Assert.That(new[] { exp[0], exp[1], exp[2], exp[3], exp[4], exp[5], exp[6] },
+                Is.EqualTo(new byte[] { 4, 4, 4, 5, 5, 5, 5 }));
+  }
+
+  [Test]
+  [Category("HappyPath")]
+  public void DecodeCouplingExponents_StartAtCouplingBinWithoutAbsoluteSlot() {
+    // The coupling channel's absolute exponent is a decoding reference, not a real exponent, so the
+    // expanded set starts at cplstrtmant (A/52 §7.1.3, cplexp[n + cplstrtmant] = exp[n+1]).
+    var w = new BitWriter();
+    w.Put(3 * 25 + 1 * 5 + 4, 7);        // delta codes (3,1,4) → (+1,-1,+2)
+    var bytes = w.ToBytes(4);
+    var r = new Ac3BitReader(bytes, 0, bytes.Length);
+    var exp = new byte[256];
+    Ac3Exponents.DecodeCoupling(r, exp, start: 37, absExp: 10, nGroups: 1, Ac3Exponents.Strategy.D15);
+
+    Assert.That(exp[36], Is.EqualTo(0), "nothing below the coupling start may be written");
+    Assert.That(new[] { exp[37], exp[38], exp[39] }, Is.EqualTo(new byte[] { 11, 10, 12 }));
   }
 
   // ── Mantissa grouping unit tests (hand-computed) ───────────────────────────────────────

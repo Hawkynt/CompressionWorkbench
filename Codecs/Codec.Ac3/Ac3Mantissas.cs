@@ -99,17 +99,19 @@ public sealed class Ac3Mantissas {
     }
   }
 
-  // Deterministic 16-bit LFSR dither generator (matches FFmpeg dither_int16/dither_gen polynomial),
-  // mapped to a normalized mantissa in (-1, 1).
+  // A/52 §7.3.4 leaves the dither sequence to the implementation and asks only that it be a
+  // uniform distribution scaled by roughly 0.707. This is a deterministic 16-bit Galois LFSR, so
+  // the same stream always decodes to the same samples; it cannot reproduce another decoder's
+  // dither sample for sample, and the spec does not require it to.
+  private const float DitherScale = 0.707f;
+
   private float NextDither() {
     var state = this._dither;
-    // Galois LFSR with taps matching the AC-3 dither polynomial used by reference decoders.
     var lsb = state & 1;
     state >>= 1;
     if (lsb != 0)
       state ^= 0xB400u;
     this._dither = state;
-    var s = (short)state;
-    return s / 32768f;
+    return (short)state / 32768f * DitherScale;
   }
 }
