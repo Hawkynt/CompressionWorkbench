@@ -48,6 +48,9 @@ internal static class ScreenshotMode {
         var analysisWindow = new Views.AnalysisWindow {
           Width = CaptureWidth,
           Height = CaptureHeight,
+          // The status line otherwise ends in a millisecond count, which makes the rendered PNG
+          // differ on every run and the capture bot commit on every run.
+          OmitElapsedTime = true,
         };
         Capture(analysisWindow, Path.Combine(outputDirectory, "analysis.png"),
           afterShow: () => WaitFor(analysisWindow.RunAnalysisAsync(carvedName, carvedData)));

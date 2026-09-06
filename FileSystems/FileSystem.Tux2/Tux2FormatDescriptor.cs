@@ -34,7 +34,11 @@ namespace FileSystem.Tux2;
 /// space between records to close up. A pass over one of these would find
 /// nothing to move on every volume it was ever handed.</para>
 /// </remarks>
-public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class Tux2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty, ISyntheticEntryNames {
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticNames;
+
 
   // ── Synthetic, non-file entries the reader always surfaces ──────────────
   private static readonly HashSet<string> SyntheticNames =

@@ -18,20 +18,7 @@ namespace FileFormat.Fits;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Flexible_Image_Transport_System</c> — format overview</description></item>
 /// </list>
 /// </summary>
-public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "FITS is an astronomical data container of HDUs (headers + data) — defragmentation isn't meaningful " +
-      "and would risk corrupting the precise FITS card / 2880-byte alignment expected by astronomy tooling.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
-
+public sealed class FitsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveLayoutMap {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {

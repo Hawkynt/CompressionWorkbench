@@ -14,7 +14,7 @@ namespace FileFormat.InnoSetup;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Inno_Setup</c> — Wikipedia</description></item>
 /// </list>
 /// </summary>
-public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
+public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -130,16 +130,4 @@ public sealed class InnoSetupFormatDescriptor : IFormatDescriptor, IArchiveForma
     new InnoSetupWriter().WriteTo(output, embedded);
   }
 
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "Inno Setup is a single-payload installer wrapper (PE stub + opaque Setup.0 blob) — " +
-      "defragmentation is not meaningful and would destroy the installer's signed structure.");
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
 }

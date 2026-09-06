@@ -6,7 +6,7 @@ namespace FileFormat.Wav;
 
 /// <summary>
 /// RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float,
-/// G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, TrueSpeech and Microsoft GSM 06.10 WAV49.
+/// G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, AAC, TrueSpeech and Microsoft GSM 06.10 WAV49.
 /// Block/bit-packed codecs are decoded to canonical little-endian PCM and trimmed to
 /// the optional <c>fact</c> sample count so padding never leaks into transcoding.
 /// <para>G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so
@@ -178,6 +178,10 @@ public sealed class WavReader {
           throw new InvalidDataException($"The checked-in G.722 route implements the 64 kbit/s mode (4 coded bits/sample), got {bitsPerSample}.");
         return Pcm16(1, sampleRate, Codec.G722.G722Codec.Decode(rawData), metadata, channelMask, factSampleFrames);
       }
+      case 0x00FF:
+        return DecodeRawAac(rawData, numChannels, sampleRate, fmtExtra, metadata, channelMask, factSampleFrames);
+      case 0x1600:
+        return DecodeAdtsAac(rawData, numChannels, sampleRate, metadata, channelMask, factSampleFrames);
       default:
         return new ParsedWav(numChannels, sampleRate, bitsPerSample, formatCode, rawData, metadata, channelMask);
     }
@@ -226,6 +230,66 @@ public sealed class WavReader {
     using var encoded = new MemoryStream(rawData, writable: false);
     using var decoded = new MemoryStream();
     Codec.Mp3.Mp3Codec.Decompress(encoded, decoded);
+    return Pcm16Bytes(declaredChannels, declaredSampleRate, decoded.ToArray(), metadata, channelMask, factSampleFrames);
+  }
+
+  private static ParsedWav DecodeRawAac(
+    byte[] rawData,
+    int declaredChannels,
+    int declaredSampleRate,
+    byte[] fmtExtra,
+    IReadOnlyList<(string Id, byte[] Data)> metadata,
+    uint? channelMask,
+    uint? factSampleFrames) {
+    if (fmtExtra.Length < 4)
+      throw new InvalidDataException("WAVE_FORMAT_RAW_AAC1 requires cbSize plus AudioSpecificConfig data.");
+    var cbSize = BinaryPrimitives.ReadUInt16LittleEndian(fmtExtra);
+    if (cbSize < 2 || cbSize > fmtExtra.Length - 2)
+      throw new InvalidDataException($"WAVE_FORMAT_RAW_AAC1 has invalid cbSize {cbSize}.");
+
+    var (objectType, sampleRateIndex, channelConfiguration) =
+      Codec.Aac.AacCodec.ParseAudioSpecificConfig(fmtExtra.AsSpan(2, cbSize));
+    if (sampleRateIndex is < 0 or > 12)
+      throw new NotSupportedException("RAW_AAC1 explicit/reserved sample-rate AudioSpecificConfig is not supported.");
+    var configuredRate = Codec.Aac.AacAdtsReader.SampleRateTable[sampleRateIndex];
+    if (configuredRate != declaredSampleRate)
+      throw new InvalidDataException(
+        $"AAC AudioSpecificConfig declares {configuredRate} Hz but WAVE fmt declares {declaredSampleRate} Hz.");
+    if (channelConfiguration != declaredChannels)
+      throw new InvalidDataException(
+        $"AAC AudioSpecificConfig declares {channelConfiguration} channels but WAVE fmt declares {declaredChannels}.");
+
+    var decoder = new Codec.Aac.AacDecoder(objectType, sampleRateIndex, channelConfiguration);
+    var reader = new Codec.Aac.AacBitReader(rawData);
+    var samples = new List<short>();
+    while (reader.BitsRemaining >= 3) {
+      var before = reader.BitsRemaining;
+      samples.AddRange(decoder.DecodeRawDataBlock(reader));
+      if (reader.BitsRemaining >= before)
+        throw new InvalidDataException("AAC raw_data_block decoder made no forward progress.");
+    }
+    return Pcm16(declaredChannels, declaredSampleRate, CollectionsMarshal.AsSpan(samples), metadata, channelMask, factSampleFrames);
+  }
+
+  private static ParsedWav DecodeAdtsAac(
+    byte[] rawData,
+    int declaredChannels,
+    int declaredSampleRate,
+    IReadOnlyList<(string Id, byte[] Data)> metadata,
+    uint? channelMask,
+    uint? factSampleFrames) {
+    using var probe = new MemoryStream(rawData, writable: false);
+    var info = Codec.Aac.AacCodec.ReadStreamInfo(probe);
+    using var rateProbe = new MemoryStream(rawData, writable: false);
+    var coreSampleRate = Codec.Aac.AacCodec.ReadCoreSampleRate(rateProbe);
+    if (info.Channels != declaredChannels)
+      throw new InvalidDataException($"ADTS AAC declares {info.Channels} channels but WAVE fmt declares {declaredChannels}.");
+    if (coreSampleRate != declaredSampleRate)
+      throw new InvalidDataException($"ADTS AAC declares {coreSampleRate} Hz but WAVE fmt declares {declaredSampleRate} Hz.");
+
+    using var encoded = new MemoryStream(rawData, writable: false);
+    using var decoded = new MemoryStream();
+    Codec.Aac.AacCodec.Decompress(encoded, decoded);
     return Pcm16Bytes(declaredChannels, declaredSampleRate, decoded.ToArray(), metadata, channelMask, factSampleFrames);
   }
 

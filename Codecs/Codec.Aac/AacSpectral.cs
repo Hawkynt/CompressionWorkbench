@@ -36,6 +36,9 @@ internal sealed class IcsInfo {
 
   /// <summary>Number of scale-factor bands per window for the active sequence.</summary>
   public int NumSwb;
+
+  /// <summary>Highest scale-factor band TNS may cover (ISO/IEC 14496-3 Table 4.138).</summary>
+  public int TnsMaxBands;
 }
 
 /// <summary>

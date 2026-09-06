@@ -154,8 +154,10 @@ public sealed class AacDecoder {
     return outp;
   }
 
+  // The dequantised spectrum, and therefore the filter-bank output, is already on
+  // the int16 sample scale - the same convention the encoder feeds the MDCT.
   private static short ToPcm16(float v) {
-    var s = (int)MathF.Round(v * 32768f);
+    var s = (int)MathF.Round(v);
     return (short)Math.Clamp(s, short.MinValue, short.MaxValue);
   }
 
@@ -283,6 +285,7 @@ public sealed class AacDecoder {
       ResolveShortGrouping(ics);
       ics.SwbOffset = AacScaleFactorBands.Short128[sampleRateIndex];
       ics.NumSwb = AacScaleFactorBands.NumSwbShort[sampleRateIndex];
+      ics.TnsMaxBands = AacScaleFactorBands.TnsMaxBandsShort[sampleRateIndex];
     } else {
       ics.MaxSfb = (int)reader.ReadBits(6);
       if (reader.ReadBits(1) == 1) // predictor_data_present
@@ -291,6 +294,7 @@ public sealed class AacDecoder {
       ics.WindowGroupLength = [1];
       ics.SwbOffset = AacScaleFactorBands.Long1024[sampleRateIndex];
       ics.NumSwb = AacScaleFactorBands.NumSwbLong[sampleRateIndex];
+      ics.TnsMaxBands = AacScaleFactorBands.TnsMaxBandsLong[sampleRateIndex];
     }
 
     if (ics.MaxSfb > ics.NumSwb)

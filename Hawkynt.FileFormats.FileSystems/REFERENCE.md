@@ -2977,6 +2977,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream stream, string entryName, string password)` | Opens one entry under the name `List` published for it. The generic default reaches the entry through `Extract`, which materialises a DFS file in the default directory as a bare `NAME` rather than the catalogue's `$.NAME`, so every such entry would be unreachable by the name it was listed under. Reading it straight off the catalogue keeps the two namespaces the same one. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing Bbc image. Uses `BbcModifier` for O(touched bytes) random-access I/O. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all unused space in a BBC DFS image: every sector not claimed by a live file, plus the cluster-tip slack — the bytes between a file's logical length and the end of its last (256-byte) sector. DFS stores each file as a single contiguous sector run starting at the catalog's start-sector, so the generic `UnusedSpaceWiper` driven by the DFS extent map plus a catalog-entry file-size lookup wipes tips precisely. |
@@ -7854,7 +7855,7 @@ Builds a fresh Sharp X68000 Human68k disk image from scratch. The format is FAT1
 
 ### Namespace `FileSystem.Iso`
 
-[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
+[`IsoBlockMover`](#isoblockmover) · [`IsoEntry`](#isoentry) · [`IsoExtentMap`](#isoextentmap) · [`IsoFilesystemDriverAdapter`](#isofilesystemdriveradapter) · [`IsoFormatDescriptor`](#isoformatdescriptor) · [`IsoModifier`](#isomodifier) · [`IsoReader`](#isoreader) · [`IsoWriter`](#isowriter)
 
 #### `IsoBlockMover`
 
@@ -7893,6 +7894,20 @@ Walks an ISO 9660 image and yields its actual on-disk byte layout — the 32 KiB
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Single-pass walker. Parses volume descriptors at sector 16+, then walks the directory tree from the root. Each file directory record carries an (extent_LBA, length) pair which is yielded as a single contiguous run. |
+
+#### `IsoFilesystemDriverAdapter`
+
+Native ISO 9660 filesystem sidecar. The archive descriptor remains the offline editor surface; this adapter gives mount backends a stable namespace and positional file handles without extracting entries into temporary files or byte arrays.
+
+Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsoFilesystemDriverAdapter` | `IsoFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `IsoFormatDescriptor`
 
@@ -8025,7 +8040,7 @@ Implements `IEquatable<FileEntry>`.
 
 JFFS2 (Journaling Flash File System v2) format descriptor. Supports: list, extract, create, true in-place R/W modify (log-append per the JFFS2 spec — fresh node at the tail with bumped version, existing nodes left byte-identical), defragment, extent map. References: `https://sourceware.org/jffs2/` — original JFFS2 site (David Woodhouse), incl. the design paper`http://www.linux-mtd.infradead.org/doc/jffs2.html` — Linux MTD project's JFFS2 documentation`https://github.com/torvalds/linux/tree/master/fs/jffs2` — mainline implementation (`jffs2_fs_i.h` / node headers)`https://en.wikipedia.org/wiki/JFFS2` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8042,6 +8057,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The only writer-honoured knob is the flash erase-block size: the image is padded up to a whole multiple of it (the JFFS2 erase-block granularity). JFFS2 is a log-structured flash filesystem with no volume-label field, so no label knob is published. |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | In-place add (or replace) per JFFS2's log-structured semantic. Each input is appended as a fresh node (inode + dirent for new files; inode only with bumped version for replaces) at the end of the live log. Existing node bytes stay byte-identical at their original offsets — the reader's highest-version-wins resolution surfaces the new content. No rebuild. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
@@ -13190,7 +13206,7 @@ Represents a tux 2 entry.
 
 Read+WORM descriptor for TUX2 — Daniel Phillips's 2002 phase-tree filesystem proposal (OLS 2002 paper, never-stabilised research format). Recognises a deterministic header pattern (magic "TUX2FS\0\0" at offset 0) so research images we generate round-trip through the reader. Writer emits a single-phase image only (no alpha/beta phases, no version chain) — real legacy prototype images would need a custom parser matching the specific snapshot of the in-progress code that produced them. References: Daniel Phillips, "The Tux2 Filesystem" (Ottawa Linux Symposium 2002 proceedings) — the defining paper`https://en.wikipedia.org/wiki/Tux3` — Wikipedia article covering the phase-tree lineage
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13207,6 +13223,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The single tunable the single-phase WORM writer honours: the on-disk format version stamped into the header at offset 0x08. `Version` is written verbatim and `Version` reads it back, so the knob round-trips. Defaults to 1 (the version the reader documents). |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh single-phase TUX2 image: 16-byte header (magic + version + file count) followed by per-file records (u16 name length, UTF-8 name, u32 data length, raw bytes). Round-trips through `Tux2Reader`. |
@@ -13294,7 +13311,7 @@ Represents a tux 3 entry.
 
 #### `Tux3FormatDescriptor`
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13311,6 +13328,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The single tunable the single-version WORM writer honours: the 64-bit `birthday` field stamped into the superblock at offset 0x08. `Birthday` is written verbatim and `Birthday` reads it back, so the knob round-trips. Supplied as a hexadecimal string (with or without a leading `0x`); left blank the writer takes the moment of creation from the clock. |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh single-version TUX3 image: zeroed boot region (block 0), documented superblock prefix (block 1, "TUX3SUPR" magic at offset 4096), and a sentinel WORM file table at block 2 carrying the per-file records. Round-trips through `Tux3Reader`. |
@@ -13870,7 +13888,7 @@ Describes a VxFS volume block by block: what the walk to the files needs, what e
 
 Descriptor for VxFS (Veritas File System), used by HP-UX, Solaris and AIX (and read by the Linux `freevxfs` port). Besides the files a volume holds it surfaces: `FULL.vxfs` — the raw image bytes`metadata.ini` — parsed superblock fields`superblock.bin` — 1 KB capture of the on-disk superblock Detection: 4-byte magic `0xA501FCF5` at offset 1024. The magic is stored in the natural endianness of the host that wrote the volume — little-endian on x86 / Linux, big-endian on HP-UX PA-RISC and Solaris SPARC. Both signature variants are registered. References: Linux kernel `fs/freevxfs/vxfs.h` + `vxfs_super.c`HP-UX "VxFS Administrator's Guide" (Veritas / Symantec)Wikipedia "Veritas File System"
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13886,6 +13904,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files: the volume's files are read out, the inputs merged in by name, and the volume laid out again. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a volume the Veritas driver mounts, holding the given files. |
@@ -14328,7 +14347,7 @@ Implements `IFilesystemBlockMover`.
 
 R/W descriptor for YAFFS2 raw-NAND images. Auto-detects chunk/spare layout, surfaces an object table and reconstructed file tree. Modify semantics — true in-place, log-structured. YAFFS2 is a log-structured flash filesystem by spec: modifying a file means appending fresh chunks at the next free position with a higher seqNumber, never rewriting an existing chunk on the medium. `Add` and `Remove` route through `Yaffs2InPlaceModifier`, which appends at `Length` and never touches bytes in `[0, oldLength)`. The scanner resolves the live view by keeping the chunk with the highest seqNumber per (objectId, chunkId), and treats a header with `parent_obj_id == 0xFFFFFFFE` as a tombstone. Supports: list, extract, create, in-place modify, defragment, extent map. References: `https://yaffs.net/` — project home — hosts "How YAFFS Works" and the spec documentsCharles Manning, "How YAFFS Works" (yaffs.net documentation)`https://en.wikipedia.org/wiki/YAFFS` — Wikipedia article
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14344,6 +14363,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |

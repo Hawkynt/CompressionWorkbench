@@ -8171,7 +8171,7 @@ A synthetic entry exposed by `PsfReader` for the flat-archive view of a PSF. PSF
 
 Portable Sound Format (PSF) — game-music archival container wrapping a compressed program plus tags. References: Neill Corlett, "PSF — Portable Sound Format" specification (psf_format.txt) — the defining document`https://en.wikipedia.org/wiki/Portable_Sound_Format` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8189,8 +8189,6 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -9658,7 +9656,7 @@ Implements `IFileInternalChunkMover`.
 
 #### `WavReader`
 
-RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, TrueSpeech and Microsoft GSM 06.10 WAV49. Block/bit-packed codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so padding never leaks into transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
+RIFF/WAVE header + per-channel PCM extraction. Supports linear PCM, IEEE float, G.711, IMA/MS/OKI/G.72x ADPCM, G.722, MPEG audio, AAC, TrueSpeech and Microsoft GSM 06.10 WAV49. Block/bit-packed codecs are decoded to canonical little-endian PCM and trimmed to the optional `fact` sample count so padding never leaks into transcoding. G.711 is the exception: A-law/µ-law bytes carry identically into AU, AIFC and CAF, so `Read` surfaces them verbatim under their own format code and container remuxing can hand them on without a lossy decode/re-encode cycle. Callers that want samples rather than packets use `ReadCanonicalPcm`, which decodes them like every other codec.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

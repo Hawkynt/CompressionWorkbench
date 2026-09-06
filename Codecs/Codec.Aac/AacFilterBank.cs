@@ -127,7 +127,12 @@ internal static class AacFilterBank {
     float[] spec, int windowShape, int prevWindowShape, float[] overlap, float[] pcmOut) {
     const int n = ShortFrameSize;
     const int offset = (LongFrameSize - ShortFrameSize) / 2; // 448
-    var acc = new float[LongFrameSize + offset + ShortFrameSize]; // working area incl. tail
+    // The EIGHT_SHORT slot is a full 2048-sample window like any other sequence:
+    // zero for 0..447, the eight overlapped 256-point blocks for 448..1599, and
+    // zero again for 1600..2047. The whole second half becomes the next frame's
+    // overlap tail, so the accumulator has to span it even though only its first
+    // 576 samples can ever be non-zero.
+    var acc = new float[2 * LongFrameSize];
     var leftW = prevWindowShape == 1 ? KbdShort : SineShort;
     var thisW = windowShape == 1 ? KbdShort : SineShort;
 
@@ -149,8 +154,9 @@ internal static class AacFilterBank {
       overlap[i] = acc[LongFrameSize + i];
   }
 
-  // Direct IMDCT: time[n] = sum_k spec[k]·cos( (pi/N)·(n + N/2 + 1/2)·(2k+1) ),
-  // for n = 0..2N-1 (ISO/IEC 14496-3 §4.6.11.2.2). Input length N, output 2N.
+  // Direct IMDCT, ISO/IEC 14496-3 §4.6.11.2.2 with N = 2·nHalf:
+  //   x[n] = (2/N)·sum_k spec[k]·cos( (2·pi/N)·(n + n0)·(k + 1/2) ),  n = 0..N-1
+  // Input length N/2, output N.
   private static void Imdct(float[] spec, float[] time, int nHalf, float[] cosTable) {
     var twoN = 2 * nHalf;
     for (var nIdx = 0; nIdx < twoN; ++nIdx) {
@@ -158,7 +164,7 @@ internal static class AacFilterBank {
       var rowBase = nIdx * nHalf;
       for (var k = 0; k < nHalf; ++k)
         sum += spec[k] * cosTable[rowBase + k];
-      time[nIdx] = sum * (2f / nHalf);
+      time[nIdx] = sum * (1f / nHalf);
     }
   }
 
@@ -169,7 +175,7 @@ internal static class AacFilterBank {
     for (var nIdx = 0; nIdx < twoN; ++nIdx)
       for (var k = 0; k < nHalf; ++k)
         table[nIdx * nHalf + k] =
-          (float)Math.Cos(Math.PI / nHalf * (nIdx + n0) * (2 * k + 1));
+          (float)Math.Cos(Math.PI / nHalf * (nIdx + n0) * (k + 0.5));
     return table;
   }
 

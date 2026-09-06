@@ -22,7 +22,26 @@ extract → re-create engine (`Compression.Registry.RebuildVerb`):
   isn't smaller or fails).
 - **`IArchiveDefragmentable.Defragment`** — default verified in-place rebuild.
 - **`IArchiveModifiable.Add` / `Remove`** — default verified extract→edit→re-create;
-  `Remove(all)` is the **purge** verb.
+  `Remove(all)` is the **purge** verb. Two things the purge has to know about the
+  container it is emptying, because neither is a defect of the verb:
+  - **Rendered entries.** A reader may publish views of the container itself — a
+    whole-image entry, a metadata rendering, a raw superblock or log dump, an index
+    the format keeps for its own use. Asking the modifier to drop one is meaningless
+    and finding one afterwards proves nothing. They are told apart from user data by
+    what a descriptor declares through `ISyntheticEntryNames` plus what an empty
+    container of the same format still lists, and that reference container is built
+    only once a plain attempt has tripped over one.
+  - **A narrower native namespace.** A descriptor's own modifier may address sectors
+    or blocks where its reader lists files (BIN/CUE, CDI, MDF, NRG, CSO). The verb is
+    still reachable there through the same extract → drop → re-create rebuild, which
+    is tried before a purge is reported impossible.
+
+  **`IArchivePurgeable.CanPurgeToEmpty`** is the one honest way out: `false` says the
+  container mandates at least one member, so there is no empty instance for a purge to
+  leave behind — a ZPAQ needs a block, an OVA a disk or descriptor, a Wrapster its
+  payload, an NDS ROM a NitroFS. Those still add and remove individual entries; only
+  the empty end state does not exist, and the verb says so instead of writing
+  something its own reader rejects.
 
 **`IFilesystemScrambleable.Scramble`** is the exception that proves the pattern: it
 has no default and no rebuild behind it. A rebuild lays a volume out contiguously,
@@ -55,15 +74,31 @@ A filesystem descriptor therefore gains shrink / defrag / purge by simply declar
 the interface (it already implements `IArchiveFormatOperations` + `IArchiveCreatable`).
 Bespoke in-place implementations still override the default for efficiency. Coverage
 is guarded by the registry-parametrised `Generic{Shrink,Defrag,Purge}RoundTripTests`
-under `Compression.Tests/Operations/`, which fail loudly on any lossy rebuild.
+under `Compression.Tests/Operations/`. For every creatable claimant they build the
+same conservative one-payload probe, invoke the advertised verb, and identify that
+payload through the descriptor's own entry reader by SHA-256 rather than by filename,
+so single-stream and entry-renaming formats are exercised too. `NotSupportedException`,
+another runtime refusal, an unreadable result, or a dropped entry is a test failure —
+an advertised operation is not allowed to turn refusal into green CI.
+
+Whether the reader can hand the planted payload back *at all* is a property of the
+create/read path rather than of the verb, so the probe establishes it before the verb
+runs instead of assuming it. A container that rasterises files into disk tracks,
+transcodes them, or re-frames them as a message cannot return them verbatim; it is
+still held to executing the verb and to keeping every entry its reader listed, and the
+byte-for-byte clause applies wherever the payload was retrievable to begin with. The
+only way a format leaves the suite entirely is by declaring, through
+`IArchiveWriteConstraints`, that the probe payload is not a legal member — an
+undeclared create refusal fails.
 
 - **`ILayoutOptimizable`** carries the same kind of default — a verified rebuild
   honouring `LayoutRebuildOptions` geometry — guarded by
-  `GenericLayoutOptimizableTests`. That default needs a creator to write the new
-  volume with, so declaring the interface is not by itself a re-lay: a descriptor
-  may implement it purely to publish its geometry analysis, as ReFS does. The
-  Layout column of the support matrix reports the rebuild rather than the
-  interface, and is the count of how far this reaches.
+  `GenericLayoutOptimizableTests`. Creatable claimants must successfully analyse and
+  rebuild the standard probe, with byte-identical payloads afterwards. That default
+  needs a creator to write the new volume with, so declaring the interface is not by
+  itself a re-lay: a descriptor may implement it purely to publish its geometry
+  analysis, as ReFS does. The Layout column of the support matrix reports the rebuild
+  rather than the interface, and is the count of how far this reaches.
 - **`reconfigure`** (`Compression.Lib.ReconfigureOperation`, `cwb reconfigure --set
   Key=Value`, and the UI *Maintenance → Reconfigure* entry) re-applies geometry/options
   to an *existing* image (e.g. NTFS MFT-record size, cluster size, FAT root entries)
@@ -109,8 +144,10 @@ by a format-specific modifier or by the verified extract → re-create rebuild (
 
 `Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half:
 every `CanModify` claimant's ops must implement `IArchiveModifiable` (a real modify path —
-no unbacked flag). That the modify *works* (round-trips) is covered by the registry-driven
-`Generic{Purge,Defrag,Shrink}RoundTripTests`.
+no unbacked flag). Add/replace/remove behaviour is covered by the registry/rebuilder and
+per-format mutation suites; the generic purge contract independently proves that a claimant
+advertising `IArchivePurgeable` can actually remove the planted live files and leave a valid
+container.
 
 ### R/W realisation per format
 

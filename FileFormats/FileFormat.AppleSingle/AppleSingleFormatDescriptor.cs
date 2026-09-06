@@ -18,7 +18,25 @@ namespace FileFormat.AppleSingle;
 ///   <item><description><c>https://en.wikipedia.org/wiki/AppleSingle_and_AppleDouble_formats</c> — format overview</description></item>
 /// </list>
 /// </summary>
-public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
+
+  // ── IArchiveWriteConstraints ────────────────────────────────────────
+
+  /// <inheritdoc />
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    reason = null;
+    if (!input.IsDirectory && AppleSingleWriter.TryEntryIdForName(input.ArchiveName, out _)) return true;
+    reason = $"'{input.ArchiveName}' is not one of the named forks/attributes an "
+      + "AppleSingle entry id exists for. " + AppleSingleWriter.AcceptedEntryNames;
+    return false;
+  }
+
+  /// <inheritdoc />
+  public long? MaxTotalArchiveSize => null;
+
+  /// <inheritdoc />
+  public string AcceptedInputsDescription => AppleSingleWriter.AcceptedEntryNames;
 
   /// <summary>
   /// Gets the id.

@@ -13,19 +13,7 @@ namespace FileFormat.Tfc;
 ///   <item><description>Unreal Engine 3 streamed-texture cache; no official spec</description></item>
 /// </list>
 /// </summary>
-public sealed class TfcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "Mass Effect TFC bundles are opaque LZX-compressed chunks referenced from the parent UPK package — " +
-      "rebuilding without knowledge of UPK indices would break asset references.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+public sealed class TfcFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.

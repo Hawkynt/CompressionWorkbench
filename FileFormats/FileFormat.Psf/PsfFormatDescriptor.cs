@@ -14,19 +14,7 @@ namespace FileFormat.Psf;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Portable_Sound_Format</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveDefragmentable {
-
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive)
-    => throw new NotSupportedException(
-      "PSF is a fixed-section sound container (header + reserved + program + tags) — " +
-      "section order is part of the format spec; defragmentation isn't meaningful.");
-  /// <summary>
-  /// Performs the defragment operation.
-  /// </summary>
-  public void Defragment(Stream archive, DefragOptions options) => this.Defragment(archive);
+public sealed class PsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
