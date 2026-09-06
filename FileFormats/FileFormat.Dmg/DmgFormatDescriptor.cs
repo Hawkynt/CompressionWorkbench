@@ -16,7 +16,7 @@ namespace FileFormat.Dmg;
 /// </list>
 /// </summary>
 public sealed class DmgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-  IArchiveModifiable {
+  IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
 
   /// <summary>
