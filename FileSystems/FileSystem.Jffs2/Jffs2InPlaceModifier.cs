@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Text;
-using Compression.Core.Checksums;
 
 namespace FileSystem.Jffs2;
 
@@ -456,14 +455,15 @@ public static class Jffs2InPlaceModifier {
     if (data.Length > 0)
       data.CopyTo(node, InodeNodeHeaderSize);
 
-    var dataCrc = Crc32.Compute(data);
+    var dataCrc = Jffs2Crc.Compute(data);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(60, 4), dataCrc);
 
-    var nodeCrc = Crc32.Compute(node.AsSpan(0, InodeNodeHeaderSize - 8));
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(64, 4), nodeCrc);
-
-    var hdrCrc = Crc32.Compute(node.AsSpan(0, 8));
+    // hdr_crc before node_crc: node_crc runs across bytes 0..59 and so covers it.
+    var hdrCrc = Jffs2Crc.Compute(node.AsSpan(0, 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8, 4), hdrCrc);
+
+    var nodeCrc = Jffs2Crc.Compute(node.AsSpan(0, InodeNodeHeaderSize - 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(64, 4), nodeCrc);
 
     return node;
   }
@@ -486,14 +486,15 @@ public static class Jffs2InPlaceModifier {
 
     nameBytes.CopyTo(node, DirentNodeHeaderSize);
 
-    var nameCrc = Crc32.Compute(nameBytes);
+    var nameCrc = Jffs2Crc.Compute(nameBytes);
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(36, 4), nameCrc);
 
-    var nodeCrc = Crc32.Compute(node.AsSpan(0, DirentNodeHeaderSize - 8));
-    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(32, 4), nodeCrc);
-
-    var hdrCrc = Crc32.Compute(node.AsSpan(0, 8));
+    // hdr_crc before node_crc: node_crc runs across bytes 0..31 and so covers it.
+    var hdrCrc = Jffs2Crc.Compute(node.AsSpan(0, 8));
     BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(8, 4), hdrCrc);
+
+    var nodeCrc = Jffs2Crc.Compute(node.AsSpan(0, DirentNodeHeaderSize - 8));
+    BinaryPrimitives.WriteUInt32LittleEndian(node.AsSpan(32, 4), nodeCrc);
 
     return node;
   }
