@@ -16,6 +16,8 @@ public sealed class PakReader : IDisposable {
   public const int DirectoryEntrySize = 64;
   /// <summary>Size of the NUL-padded file-name field in one directory record.</summary>
   public const int NameFieldSize = 56;
+  /// <summary>Maximum directory entries accepted by the original Quake engine.</summary>
+  public const int MaxEntries = 2048;
 
   private readonly Stream _stream;
   private readonly List<PakEntry> _entries = [];
@@ -54,10 +56,13 @@ public sealed class PakReader : IDisposable {
     if ((long)directoryOffset + directoryLength > stream.Length)
       throw new InvalidDataException("Quake PAK directory extends beyond end of stream.");
 
+    var count = directoryLength / DirectoryEntrySize;
+    if (count > MaxEntries)
+      throw new NotSupportedException($"Quake PAK contains {count} entries; the original engine limit is {MaxEntries}.");
+
     this.DirectoryOffset = directoryOffset;
     this.DirectoryLength = directoryLength;
 
-    var count = directoryLength / DirectoryEntrySize;
     var record = new byte[DirectoryEntrySize];
     stream.Position = directoryOffset;
     for (var i = 0; i < count; ++i) {
