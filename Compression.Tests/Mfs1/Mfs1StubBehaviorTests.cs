@@ -6,9 +6,9 @@ namespace Compression.Tests.Mfs1;
 
 /// <summary>
 /// Pins the R/W capability surface for <see cref="Mfs1FormatDescriptor"/>.
-/// MFS-1 was promoted from read-only to a real DFS-tier writer +
-/// in-place modifier — this test locks the capability advertisement and
-/// verifies the opaque-blob entries are still surfaced for magic-only
+/// MFS-1 was promoted from read-only to a real DFS-tier writer plus an
+/// existing-image modifier — this test locks the capability advertisement
+/// and verifies the opaque-blob entries are still surfaced for magic-only
 /// inputs that have no parseable catalog.
 /// </summary>
 [TestFixture]
@@ -27,8 +27,9 @@ public class Mfs1StubBehaviorTests {
 
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True,
       "MFS-1 advertises CanCreate via Mfs1Writer (DFS-tier catalog emitter).");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "MFS-1 modify re-emits the whole image via Mfs1Writer (rebuild) = WORM; must not claim R/W.");
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "MFS-1 has a proven existing-image Add/Replace/Remove path, which is R/W by "
+      + "FormatCapabilities' definition even though it re-emits the image via Mfs1Writer.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>(),
       "MFS-1 implements IArchiveCreatable.");
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),

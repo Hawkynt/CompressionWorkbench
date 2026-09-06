@@ -8,7 +8,7 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Mfs1;
 
 /// <summary>
-/// Read-only descriptor for Acorn MFS-1 (Master File System v1) disk images —
+/// Read/write descriptor for Acorn MFS-1 (Master File System v1) disk images —
 /// the catalog-compatible evolution of Acorn DFS used on early Acorn / BBC Master
 /// systems. The on-disk catalog matches DFS (256-byte sectors, two-sector catalog
 /// at track 0 sectors 0-1, up to 31 entries with 7-char names + 1-char directory),
@@ -28,8 +28,9 @@ namespace FileSystem.Mfs1;
 /// <para><b>Write</b> is supported via the DFS-tier catalog layout (sector 0
 /// names + sector 1 metadata + contiguous data area from sector 2 onwards).
 /// Writer emits a self-consistent catalog with packed-high-bits encoding;
-/// the in-place modifier re-packs through the same writer so the outer
-/// sector count is preserved.</para>
+/// existing-image add/replace/remove re-pack through the same writer while
+/// preserving the outer sector count. This is R/W at the public API even though
+/// the physical strategy is a geometry-preserving rebuild.</para>
 /// <para>Distinct from <c>FileSystem.Mfs</c>, which targets the Macintosh File
 /// System with a strong <c>0xD2D7</c> magic.</para>
 /// </remarks>
@@ -58,15 +59,13 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the category.
   /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  // WORM, not R/W: Add/Remove rebuild the whole image (read-all -> re-create),
-  // so the verb works via rebuild but nothing is modified in place. CanModify
-  // must not be advertised. See Compression.Registry/FormatCapabilities.cs.
   /// <summary>
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries;
   // ".mfs" is shared with the classic Mac MFS filesystem (FileSystem.Mfs, strong
   // 0xD2D7 magic) whose reader rejects an Acorn MFS-1 image. MFS-1's own boot
   // pattern is a weak 0x0080, so detection is extension-driven; default to the
@@ -108,7 +107,7 @@ public sealed class Mfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker with in-place R/W (Mfs1Writer + Mfs1InPlaceModifier).";
+  public string Description => "Acorn MFS-1 (BBC Master) — DFS-tier catalog walker with geometry-preserving rebuild R/W (Mfs1Writer + Mfs1InPlaceModifier).";
 
   /// <summary>
   /// Lists the entries in the supplied container.

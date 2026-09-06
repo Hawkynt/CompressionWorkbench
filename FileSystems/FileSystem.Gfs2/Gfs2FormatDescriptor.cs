@@ -11,31 +11,28 @@ namespace FileSystem.Gfs2;
 /// mainline Linux since 2.6.19.
 ///
 /// We parse the superblock at offset 65536, surface block size + lock
-/// proto/table + UUID + master/root inode pointers, and walk the root
-/// inode's inline directory entries (single-leaf, di_height==0). For
-/// regular files with inline data (height==0) we extract the bytes.
+/// proto/table + UUID + master/root inode pointers, walk the inline root
+/// directory, and extract both stuffed files and files stored through GFS2's
+/// indirect block tree.
 ///
 /// On-disk layout reverse-validated against real <c>mkfs.gfs2</c> output
 /// (gfs2-utils 3.5.1): the <c>gfs2_meta_header</c> is 24 bytes, the sb carries
 /// a reserved <c>__pad2</c> inum between master and root, and the
 /// <c>gfs2_dirent</c> header is 40 bytes. See
-/// <c>Gfs2ExternalConformanceTests</c> for the mkfs.gfs2 / fsck.gfs2 gate.
+/// <c>Gfs2ExternalConformanceTests</c> and <c>Gfs2WriterExternalTests</c> for the
+/// mkfs.gfs2 / fsck.gfs2 gates.
 ///
-/// <para>Creation (<see cref="Create"/>, <see cref="Gfs2Writer"/>) emits a fresh,
-/// empty standalone (lock_nolock, single-journal) volume — superblock, the
-/// fixed first resource group plus a second data resource group with a correct
-/// (multi-block) allocation bitmap, the master directory and its system inodes
-/// (jindex, per_node, inum, statfs, rindex, quota), a formatted 8&#160;MB journal
-/// of clean unmount log headers, and the root directory — all sized so real
-/// <c>fsck.gfs2 -n</c> passes clean (exit 0). Supported size range 16–256&#160;MB
-/// (single data resource group); the volume is empty, since populating it with
-/// files is out of scope.</para>
+/// <para>Creation (<see cref="Create"/>, <see cref="Gfs2Writer"/>) emits a fresh
+/// standalone (<c>lock_nolock</c>, single-journal) volume — superblock, resource
+/// groups and allocation bitmaps, the master directory and its system inodes,
+/// a formatted 8&#160;MB journal, the root directory, and caller files. Small files
+/// are stuffed into their dinodes; larger files use one or more levels of
+/// indirect blocks. Large volumes are split into multiple resource groups.
+/// Existing-image add/replace/remove uses a verified rebuild while preserving
+/// the original image size as a floor and preserving <c>sb_locktable</c>.</para>
 ///
-/// Out of scope (multi-week effort each): writing files/directories, ExHash
-/// multi-leaf directories, multi-level block indirection (di_height &gt; 0),
-/// devices &gt; 256&#160;MB (which gfs2-utils splits into several evenly-spaced
-/// resource groups), journal replay, cluster lock manager state, extended
-/// attributes.
+/// Out of scope: ExHash multi-leaf/nested directory writing, journal replay,
+/// cluster lock manager state, and extended attributes.
 ///
 /// Magic: <c>mh_magic = 0x01161970</c> (BE u32) at the start of the
 /// superblock meta header. On disk at byte offset 65536 this serialises as
@@ -51,20 +48,27 @@ namespace FileSystem.Gfs2;
 /// </list>
 /// </summary>
 public sealed class Gfs2FormatDescriptor
-    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
+    : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty, ISyntheticEntryNames {
+
+  /// <inheritdoc />
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticEntries;
+
+  // ── Synthetic, non-file entries the reader always surfaces ──────────────
+  private static readonly IReadOnlySet<string> SyntheticEntries = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+    "FULL.gfs2", "metadata.ini", "superblock.bin",
+  };
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>
-  /// Knobs the empty-volume writer honours. <c>ImageSize</c> drives the writer's
-  /// total size (clamped to the single-data-resource-group range 16–256&#160;MB);
-  /// <c>LockTable</c> is written into <c>sb_locktable</c> and read back as
-  /// <c>Gfs2Reader.LockTable</c>. The 4&#160;KB block size and the
-  /// <c>lock_nolock</c> protocol are fixed by the standalone layout.
+  /// <c>ImageSize</c> drives the writer's total size; <c>LockTable</c> is written
+  /// into <c>sb_locktable</c> and read back as <c>Gfs2Reader.LockTable</c>. The
+  /// 4&#160;KB block size and <c>lock_nolock</c> protocol are fixed by this standalone
+  /// writer profile.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.ImageSize(["16 MB", "32 MB", "64 MB", "128 MB", "256 MB"],
-      description: "Total volume size (16–256 MB; a single data resource group)."),
+      description: "Total volume size; larger explicit legacy size values are also accepted and split across resource groups."),
     new FormatOptionDescriptor(
       Key: "LockTable", DisplayName: "Lock table", Kind: FormatOptionKind.String, Default: "",
       Description: "Cluster lock-table name stamped into sb_locktable (empty for a standalone volume)."),
@@ -87,7 +91,7 @@ public sealed class Gfs2FormatDescriptor
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.CanCreate |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
@@ -124,7 +128,7 @@ public sealed class Gfs2FormatDescriptor
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "GFS2 (Red Hat cluster filesystem) — read superblock + single-leaf root directory + inline-data files; create a fresh empty lock_nolock volume that fsck.gfs2 accepts.";
+    "GFS2 (Red Hat cluster filesystem) — reads/writes stuffed and indirect-tree regular files in a standalone lock_nolock volume; existing-image edits use a verified geometry-preserving rebuild.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -198,18 +202,13 @@ public sealed class Gfs2FormatDescriptor
   }
 
   /// <summary>
-  /// Creates a fresh, empty standalone (lock_nolock, single-journal) GFS2 volume
-  /// that real <c>fsck.gfs2</c> accepts clean. The volume size defaults to 32&#160;MB
-  /// and may be overridden with the <c>size</c> format option (bytes, clamped to
-  /// 16–256&#160;MB; <c>K</c>/<c>M</c> suffixes accepted).
+  /// Creates a fresh standalone (<c>lock_nolock</c>, single-journal) GFS2 volume
+  /// and populates its root with the supplied regular files. The volume size is
+  /// a floor: it defaults to 32&#160;MB, may be selected through <c>ImageSize</c> or
+  /// the legacy raw <c>size</c> option, and grows when the payload requires it.
+  /// Small files are stuffed into their dinode; larger files are addressed by
+  /// the indirect metadata tree written by <see cref="Gfs2Writer"/>.
   /// </summary>
-  /// <remarks>
-  /// Populating the volume with files is out of scope — GFS2 file/directory
-  /// writing (ExHash directories, multi-level indirection, block allocation
-  /// across resource groups) is multi-week work. The created root directory is
-  /// therefore empty; any non-directory inputs are rejected so callers are not
-  /// silently handed an archive missing their data.
-  /// </remarks>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
 
@@ -264,22 +263,72 @@ public sealed class Gfs2FormatDescriptor
     return Math.Max(bytes, 16L * 1024 * 1024);
   }
 
-  // ── In-place R/W assessment: LEFT REBUILDING (no CanModify) ───────────────
-  //
-  // Genuine O(bytes-changed) in-place add is NOT viable for this writer/reader
-  // pair, so the descriptor keeps the default IArchiveModifiable rebuild path
-  // and does NOT advertise FormatCapabilities.CanModify. Precise reasons:
-  //   • Create() emits an EMPTY volume — it rejects every non-directory input
-  //     ("GFS2 creation produces an empty volume only"), so there is no seeded
-  //     image carrying files to mutate in place.
-  //   • The reader only resolves files whose data is stuffed inline in the
-  //     dinode block (di_height == 0, payload ≤ BlockSize − 232 = 3864 bytes)
-  //     under a single-leaf inline root directory. A real R/W path needs
-  //     ExHash multi-leaf directories + multi-level block indirection
-  //     (di_height > 0) so a file can exceed ~3.8 KB — the documented
-  //     multi-week scope. Without it, round-tripping arbitrary file sizes
-  //     (the CRUD cycle writes 9000-byte payloads) is impossible, so claiming
-  //     R/W would be dishonest.
+  private readonly record struct EditProfile(long ImageSize, string LockTable);
+
+  private static EditProfile ReadEditProfile(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanSeek)
+      throw new ArgumentException("GFS2 mutation requires a seekable image stream.", nameof(archive));
+    archive.Position = 0;
+    using var reader = new Gfs2Reader(archive);
+    if (!reader.SuperblockValid)
+      throw new InvalidDataException("GFS2 mutation requires a valid superblock.");
+    var profile = new EditProfile(archive.Length, reader.LockTable);
+    archive.Position = 0;
+    return profile;
+  }
+
+  private static byte[] BuildEditedImage(IReadOnlyList<(string Name, byte[] Data)> files, EditProfile profile) {
+    var size = Math.Max(profile.ImageSize, Gfs2Writer.EstimateSize(files.Select(f => f.Data.LongLength)));
+    var writer = new Gfs2Writer(size, lockTable: profile.LockTable);
+    foreach (var (name, data) in files)
+      writer.AddFile(name, data);
+    return writer.Build();
+  }
+
+  private sealed class PreservingCreator(Gfs2FormatDescriptor descriptor, EditProfile profile) : IArchiveCreatable {
+    public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+      var preserved = new FormatCreateOptions {
+        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+          ["size"] = profile.ImageSize.ToString(CultureInfo.InvariantCulture),
+          ["LockTable"] = profile.LockTable,
+        },
+      };
+      descriptor.Create(output, inputs, preserved);
+    }
+  }
+
+  /// <summary>
+  /// Adds or replaces regular files while preserving the existing volume size as
+  /// a floor and preserving <c>sb_locktable</c>. Small volumes use the shared
+  /// in-memory rebuild; large volumes use the scratch-file path so the edit is
+  /// not bounded by <see cref="Array.MaxLength"/>.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var profile = ReadEditProfile(archive);
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.AddLargeVolume(archive, inputs, this, new PreservingCreator(this, profile), SyntheticEntries);
+      return;
+    }
+    ModifyRebuilder.Add(archive, inputs, ReadEntries,
+      files => BuildEditedImage(files, profile));
+  }
+
+  /// <summary>
+  /// Removes regular files with the same geometry/lock-table preservation as
+  /// <see cref="Add"/>.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var profile = ReadEditProfile(archive);
+    if (ModifyRebuilder.NeedsLargeVolumePath(archive)) {
+      ModifyRebuilder.RemoveLargeVolume(archive, entryNames, this, new PreservingCreator(this, profile), SyntheticEntries);
+      return;
+    }
+    ModifyRebuilder.Remove(archive, entryNames, ReadEntries,
+      files => BuildEditedImage(files, profile));
+  }
 
   /// <summary>
   /// Performs the defragment operation.

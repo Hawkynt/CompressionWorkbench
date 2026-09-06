@@ -6,10 +6,10 @@ using FileSystem.Mfs1;
 namespace Compression.Tests.Mfs1;
 
 /// <summary>
-/// In-place modify tests for the Acorn MFS-1 (DFS-tier) descriptor. MFS-1's
+/// Existing-image modify tests for the Acorn MFS-1 (DFS-tier) descriptor. MFS-1's
 /// catalog is a flat fixed-offset region (sector 0 names + sector 1 metadata)
-/// that the in-place modifier rebuilds via <see cref="Mfs1Writer"/>; the
-/// outer sector count is preserved across Add/Remove operations.
+/// that the modifier rebuilds via <see cref="Mfs1Writer"/>; the outer sector
+/// count is preserved across Add/Remove operations.
 /// </summary>
 [TestFixture]
 public class Mfs1InPlaceModifyTests {
@@ -106,12 +106,11 @@ public class Mfs1InPlaceModifyTests {
   // ── Descriptor interface routing ────────────────────────────────────────
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesCanCreate_IsWormNotRw_AndImplementsInterfaces() {
+  public void Descriptor_AdvertisesRw_AndImplementsInterfaces() {
     var d = new Mfs1FormatDescriptor();
     Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-    // Add/Remove re-emit the whole image via Mfs1Writer (read-all -> re-create) =
-    // WORM, not in-place R/W: CanModify must not be advertised.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True,
+      "A working existing-image Add/Replace/Remove path is R/W even when it rebuilds the fixed-size image.");
     Assert.That(d, Is.InstanceOf<IArchiveCreatable>());
     Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
   }

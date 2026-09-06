@@ -144,10 +144,10 @@ by a format-specific modifier or by the verified extract → re-create rebuild (
 
 `Compression.Tests.Operations.WriteCapabilityHonestyTests` enforces the deterministic half:
 every `CanModify` claimant's ops must implement `IArchiveModifiable` (a real modify path —
-no unbacked flag). Add/replace/remove behaviour is covered by the registry/rebuilder and
-per-format mutation suites; the generic purge contract independently proves that a claimant
-advertising `IArchivePurgeable` can actually remove the planted live files and leave a valid
-container.
+no unbacked flag). `FilesystemWriteRoundTripTests` then exercises create → add/replace → remove
+across every filesystem that claims R/W, and the per-format mutation suites cover the rest;
+the generic purge contract independently proves that a claimant advertising
+`IArchivePurgeable` can actually remove the planted live files and leave a valid container.
 
 ### R/W realisation per format
 
@@ -159,10 +159,13 @@ container.
   byte-identity append (Ghost); the sector-image editors (BIN/CUE, CDI, MDF, NRG, CSO); and
   the disk-image containers that delegate to a R/W inner filesystem (QCOW2/VHD/VHDX/VMDK/VDI).
 - **Relayout / re-pack** (valid result, existing data may move): **NTFS, XFS, Btrfs, ReiserFS,
-  CramFS, SquashFS, EROFS** and PS1 memory-card add/replace/defrag (the supported image is
-  rebuilt or re-packed and verified), plus **7-Zip, CAB, RAR** (the solid streams are rewritten
-  via the extract → re-create rebuild; RAR re-emits a valid RAR5 via `RarWriter` and recomputes
-  every CRC — so the cross-referencing-checksum concern of an append-style edit does not apply).
+  GFS2, MFS-1, Stacker, CramFS, SquashFS, EROFS** and PS1 memory-card add/replace/defrag
+  (the supported image is rebuilt or re-packed and verified), plus **7-Zip, CAB, RAR**
+  (the solid streams are rewritten via the extract → re-create rebuild; RAR re-emits a valid
+  RAR5 via `RarWriter` and recomputes every CRC — so the cross-referencing-checksum concern
+  of an append-style edit does not apply). GFS2 preserves the existing image-size floor and
+  lock-table value across CRUD; Stacker preserves Genuine vs Extended layout; MFS-1 preserves
+  the outer sector count.
 
 ### Stays WORM (create-only)
 
@@ -172,10 +175,10 @@ container.
   family but do carry an existing-instance editor — the verified extract → edit →
   re-create rebuild — and so advertise R/W; the checksum chain is re-derived rather
   than appended to.
-- **Wrapster**, **Ova**, **Mfs1**, **Stacker** keep the rebuild-backed verb without
-  advertising R/W, because each rejects an arbitrary edited member set: Wrapster
-  carries one MP3, OVA mandates a manifest over all members, MFS-1 and Stacker write
-  a bespoke catalog their own reader must still accept.
+- **Wrapster**, **Ova** remain create-only because their public writer profile does not
+  provide an arbitrary existing-instance member edit that satisfies the generic CRUD
+  contract. A rebuild by itself is not a reason to withhold R/W; absence of a proven
+  edit path is.
 
 ## Where the per-format coverage lives
 
