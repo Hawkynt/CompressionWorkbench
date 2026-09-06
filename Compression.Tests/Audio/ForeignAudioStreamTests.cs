@@ -185,4 +185,71 @@ public sealed class ForeignAudioStreamTests {
       peak = Math.Max(peak, Math.Abs(BitConverter.ToInt16(pcm, i)));
     Assert.That(peak, Is.GreaterThan(1_000), "decoded a silent buffer");
   }
+
+  // ── RealAudio 14.4 (lpcJ) ─────────────────────────────────────────
+
+  /// <summary>0.4 s of a 440 Hz sine, 8 kHz mono, encoded by libavcodec.</summary>
+  private const string Ra144Stream =
+    "LlJNRgAAABIAAAAAAAAAAAAFUFJPUAAAADIAAAAAH0AAAB9AAAAEAAAAABQAAAAVAAAAAAAAAAAAAAAAAAAA8QABAANDT05UAAAA" +
+    "EgAAAAAAAAAAAABNRFBSAAAAmwAAAAAAAB9AAAAfQAAABAAAAAAUAAAAAAAAAAAAAAAAEFRoZSBBdWRpbyBTdHJlYW0UYXVkaW8v" +
+    "eC1wbi1yZWFsYXVkaW8AAABJLnJh/QAEAAAucmE0AbU1MAAEAAAAOQADAAAAAAAFFUAAAOpgAADqYAABAAAAAAAAH0AAAAAQAAEE" +
+    "SW50MARscGNKAAAAAAAAAERBVEEAAALEAAAAAAAVAAAAAAAAACAAAAAAAAAAAieUOFXGYAAAAAAAAAAAEAAAgO/+AAAAIAAAAAAA" +
+    "AAACJ5Q4VcaperU6IbGlESUW48ix1IoAAAAgAAAAAAAAAAInlDhVxrIbp1ts3b8TZp/o5DX1YAAAACAAAAAAAAAAAieUOFXGshsz" +
+    "PJB7aoyGtXJJPRSUAAAAIAAAAAAAAAACJ5Q4Vca2mv3bItJXFabiWa039TQAAAAgAAAAAAAAAAInlDhVxraa1sXY9yWNpuQ07TWW" +
+    "EAAAACAAAAAAAAAAAieUOFXGtp9TOrR/PNyHgjftN5QSAAAAIAAAAAAAAAACJ5Q4Vca2mtEukNynBab5w2Q3H1QAAAAgAAAAAAAA" +
+    "AAInlDhVxrabmnjY3BeFpqVc7TZtMgAAACAAAAAAAAAAAieUOFXGshrKqpDWkaSGv1IkNcmWAAAAIAAAAAAAAAACJ5Q4VcatmtKo" +
+    "kNdc5IPaR+Q88o4AAAAgAAAAAAAAAAInlDhVxrIaf8KQ81obY+KuZDfdSAAAACAAAAAAAAAAAieUOFXGshrElNjWgbWm8aIkNbKU" +
+    "AAAAIAAAAAAAAAACJ5Q4Vca2j44JtNwRBIPpdeQ3kJYAAAAgAAAAAAAAAAInlDhVxrIPuqKQ3RH8g+wZJDW58AAAACAAAAAAAAAA" +
+    "AieUOFXGshuTKJDWak2mttRItITEAAAAIAAAAAAAAAACJ5Q4Vca2j3c9kN5i3aa1lm019fAAAAAgAAAAAAAAAAInlDhVxradkriQ" +
+    "fe58h7QSbTWF3AAAACAAAAAAAAAAAieUOFXGsh7EKpDXMhyG9ZKkNeXwAAAAIAAAAAAAAAACJ5Q4VcayD5mwkN1JDabjkqQ3DUQA" +
+    "AAAgAAAAAAAAAAIr8ChV1okboLu23xzhJ7bASV7GxAAAAAAAAAAA";
+
+  /// <summary>SHA-256 of the PCM libavcodec decodes from it.</summary>
+  private const string Ra144PcmDigest =
+    "85e02381979dcd5a28cc6765d1ded1d3da43349166ba27aa30836515e7ad52c9";
+
+  /// <summary>
+  /// The gain of the adaptive codebook is the excitation's dominant term, and
+  /// <c>add_wav</c> only evaluates it when the adaptive-codebook index is non-zero.
+  /// Inverting that condition drops the term on every subblock that has one, which
+  /// leaves the pitch structure audible but the amplitude at roughly a seventh.
+  /// </summary>
+  [Test]
+  [Category("RoundTrip")]
+  public void Ra144DecodesLikeLibavcodec() {
+    var wav = ConvertToWav(Convert.FromBase64String(Ra144Stream), "RealMedia");
+    var pcm = WavPayload(wav, out var channels, out var sampleRate);
+
+    Assert.Multiple(() => {
+      Assert.That(channels, Is.EqualTo(1));
+      Assert.That(sampleRate, Is.EqualTo(8_000));
+      Assert.That(pcm.Length, Is.EqualTo(6720), "21 blocks of 160 samples");
+      Assert.That(Convert.ToHexString(SHA256.HashData(pcm)).ToLowerInvariant(), Is.EqualTo(Ra144PcmDigest),
+        "decoded PCM must be byte-for-byte what libavcodec decodes from the same stream");
+    });
+  }
+
+  /// <summary>
+  /// Amplitude is the symptom the sample-exact digest above would not name on its own:
+  /// the pre-fix decoder still produced the right pitch, at an RMS seven times too low.
+  /// </summary>
+  [Test]
+  public void Ra144ReachesTheAmplitudeLibavcodecDoes() {
+    var wav = ConvertToWav(Convert.FromBase64String(Ra144Stream), "RealMedia");
+    var pcm = WavPayload(wav, out _, out _);
+
+    var peak = 0;
+    double energy = 0;
+    for (var i = 0; i + 1 < pcm.Length; i += 2) {
+      var sample = BitConverter.ToInt16(pcm, i);
+      peak = Math.Max(peak, Math.Abs((int)sample));
+      energy += (double)sample * sample;
+    }
+
+    var rms = Math.Sqrt(energy / (pcm.Length / 2));
+    Assert.Multiple(() => {
+      Assert.That(peak, Is.EqualTo(4516), "peak libavcodec decodes");
+      Assert.That(rms, Is.EqualTo(2817).Within(1.0), "RMS libavcodec decodes");
+    });
+  }
 }
