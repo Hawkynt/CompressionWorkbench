@@ -126,7 +126,8 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       throw new NotSupportedException("UEFI FV supports only ConsolidateAtStart defragmentation.");
     options.CancellationToken.ThrowIfCancellationRequested();
     UefiFvInPlaceModifier.Defragment(archive);
-    options.Progress?.Report(new DefragProgress(1, 1, "UEFI FV compacted"));
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, archive.Length, null, "UEFI FV compacted"));
   }
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
