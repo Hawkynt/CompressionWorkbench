@@ -6,10 +6,18 @@ namespace Codec.Alac;
 
 /// <summary>
 /// The ALAC "magic cookie" (the codec-specific <c>ALACSpecificConfig</c> carried in
-/// the <c>alac</c> sample-entry atom of an M4A file). All multi-byte fields are
-/// big-endian. <see cref="Parse"/> tolerates an optional leading 4-byte
-/// version/flags prefix that some QuickTime writers prepend; <see cref="Write"/>
-/// emits the bare 24-byte config.
+/// the <c>alac</c> sample-entry atom of an M4A file, or in the <c>kuki</c> chunk of a
+/// CAF file). All multi-byte fields are big-endian.
+/// <para>
+/// The config itself is 24 bytes, but it is rarely handed over bare. As
+/// <c>ALACMagicCookieDescription.txt</c> describes and the reference decoder's
+/// <c>Init()</c> implements, it may be preceded by a <c>frma</c> atom and an
+/// <c>alac</c> atom — that is how CAF carries it — and it may be followed by a
+/// channel-layout atom and a terminator, which are not needed to decode.
+/// <see cref="Parse"/> peels those wrappers, and also tolerates the bare 4-byte
+/// version/flags prefix left over when a caller has already stripped the <c>alac</c>
+/// box header. <see cref="Write"/> emits the bare 24-byte config.
+/// </para>
 /// </summary>
 public sealed record AlacCookie(
     uint FrameLength,
@@ -28,16 +36,26 @@ public sealed record AlacCookie(
   public const int Size = 24;
 
   /// <summary>
-  /// Parses a magic cookie. A leading 4-byte version/flags prefix is auto-detected and
-  /// skipped when present.
+  /// Parses a magic cookie, peeling any <c>frma</c>/<c>alac</c> atom wrapper or bare
+  /// version/flags prefix. Trailing atoms (channel layout, terminator) are ignored.
   /// </summary>
   public static AlacCookie Parse(ReadOnlySpan<byte> cookie) {
     var off = 0;
-    if (cookie.Length >= 4 + Size) {
-      var probe = BinaryPrimitives.ReadUInt32BigEndian(cookie[4..]);
-      if (probe is >= 64 and <= 1u << 20)
-        off = 4;
-    }
+
+    // A 'frma' atom (size, 'frma', 'alac') and/or an 'alac' atom header
+    // (size, 'alac', version/flags) may wrap the config; each is 12 bytes.
+    if (HasAtomType(cookie, off, "frma"u8))
+      off += 12;
+    if (HasAtomType(cookie, off, "alac"u8))
+      off += 12;
+    else if (off == 0 && cookie.Length >= 4 + Size
+             && BinaryPrimitives.ReadUInt32BigEndian(cookie) == 0
+             && BinaryPrimitives.ReadUInt32BigEndian(cookie[4..]) is >= 64 and <= 1u << 20)
+      // No atom header, but the full-box version/flags word is still in front of the
+      // config. A bare config cannot be mistaken for this: its first field is the frame
+      // length, which is never zero.
+      off = 4;
+
     if (cookie.Length < off + Size)
       throw new ArgumentException("ALAC cookie is shorter than 24 bytes.", nameof(cookie));
 
@@ -55,6 +73,10 @@ public sealed record AlacCookie(
       AvgBitRate: BinaryPrimitives.ReadUInt32BigEndian(s[16..]),
       SampleRate: BinaryPrimitives.ReadUInt32BigEndian(s[20..]));
   }
+
+  // True when a 4-byte box size at "offset" is followed by the given fourcc.
+  private static bool HasAtomType(ReadOnlySpan<byte> cookie, int offset, ReadOnlySpan<byte> type)
+    => cookie.Length >= offset + 8 && cookie.Slice(offset + 4, 4).SequenceEqual(type);
 
   /// <summary>Serialises the bare 24-byte config (big-endian).</summary>
   public byte[] Write() {

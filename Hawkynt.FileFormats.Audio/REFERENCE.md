@@ -563,22 +563,23 @@ Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip; the same quantiser as the YM
 
 #### `AlacCodec`
 
-ALAC (Apple Lossless) codec — encoder and decoder ported from Apple's open-sourced reference (`ALACDecoder.cpp`/`ALACEncoder.cpp` with the `dp_*` dynamic predictor, `ag_*` adaptive Golomb/Rice coder and `matrix_*` inter-channel decorrelation). A coded ALAC stream is a sequence of self-delimiting frames; each frame is a little chain of audio elements (a single channel element `SCE`, a channel-pair element `CPE`, fill/data elements that are skipped, terminated by an `END` tag) packed MSB-first big-endian. The decoder reconstructs interleaved little-endian PCM. The encoder emits spec-shaped frames — always non-escape, a fixed predictor order with the reference's default coefficient seed and the standard adaptive coder — so its output round-trips losslessly through this decoder for 16- and 24-bit mono and stereo. Hand-built uncompressed (escape) frames decode too, proving the header parsing is independent of the encoder.
+ALAC (Apple Lossless) codec — encoder and decoder implemented from Apple's open-sourced reference (`ALACDecoder.cpp`/`ALACEncoder.cpp` with the `dp_*` dynamic predictor, `ag_*` adaptive Golomb/Rice coder and `matrix_*` inter-channel decorrelation). A coded ALAC stream is a sequence of self-delimiting frames; each frame is a chain of audio elements (a single channel element `SCE`, a channel-pair element `CPE`, fill/data elements that are skipped, terminated by an `END` tag) packed MSB-first big-endian and then byte-aligned. Element layout, in the order the bits arrive: a 4-bit instance tag, 12 zero bits, a 1-bit partial-frame flag, a 2-bit "bytes shifted" count, a 1-bit escape flag, and — only when the frame is partial — an explicit 32-bit sample count. A compressed element then carries `mixBits`/`mixRes` (present for mono too, where they are zero), followed by all of the per-channel prediction headers, then the shifted-off low bytes interleaved across channels, and only then the residual blocks. Getting that order wrong desynchronises the bit cursor and the frame decodes as noise or not at all.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decode` | `static byte[] Decode(ReadOnlySpan<byte> frames, AlacCookie cookie)` | Decodes a concatenation of ALAC `frames` against `cookie` into interleaved little-endian PCM. Each frame holds `cookie.FrameLength` samples except possibly the last (which carries an explicit sample count). Frames are decoded in order until the input is exhausted. |
 | `Encode` | `static ValueTuple<byte[], AlacCookie> Encode(ReadOnlySpan<byte> pcmInterleaved, int channels, int sampleRate, int bitsPerSample, int frameLength = 4096)` | Encodes interleaved little-endian PCM into a concatenation of ALAC frames plus the matching magic cookie. Mono and stereo, 16- and 24-bit, are supported. |
+| `FrameByteLength` | `static int FrameByteLength(ReadOnlySpan<byte> frame, AlacCookie cookie)` | Returns the byte length of the ALAC frame starting at `frame`. Frames are self-delimiting but only bit-wise, so a container that has to store one packet per frame (MP4 `stsz`, CAF `pakt`) needs this to split an encoded stream. |
 
 #### `AlacCookie`
 
-The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file). All multi-byte fields are big-endian. `Parse` tolerates an optional leading 4-byte version/flags prefix that some QuickTime writers prepend; `Write` emits the bare 24-byte config.
+The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file, or in the `kuki` chunk of a CAF file). All multi-byte fields are big-endian. The config itself is 24 bytes, but it is rarely handed over bare. As `ALACMagicCookieDescription.txt` describes and the reference decoder's `Init()` implements, it may be preceded by a `frma` atom and an `alac` atom — that is how CAF carries it — and it may be followed by a channel-layout atom and a terminator, which are not needed to decode. `Parse` peels those wrappers, and also tolerates the bare 4-byte version/flags prefix left over when a caller has already stripped the `alac` box header. `Write` emits the bare 24-byte config.
 
 Implements `IEquatable<AlacCookie>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AlacCookie` | `AlacCookie(uint FrameLength, byte CompatibleVersion, byte BitDepth, byte Pb, byte Mb, byte Kb, byte NumChannels, ushort MaxRun, uint MaxFrameBytes, uint AvgBitRate, uint SampleRate)` | The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file). All multi-byte fields are big-endian. `Parse` tolerates an optional leading 4-byte version/flags prefix that some QuickTime writers prepend; `Write` emits the bare 24-byte config. |
+| `AlacCookie` | `AlacCookie(uint FrameLength, byte CompatibleVersion, byte BitDepth, byte Pb, byte Mb, byte Kb, byte NumChannels, ushort MaxRun, uint MaxFrameBytes, uint AvgBitRate, uint SampleRate)` | The ALAC "magic cookie" (the codec-specific `ALACSpecificConfig` carried in the `alac` sample-entry atom of an M4A file, or in the `kuki` chunk of a CAF file). All multi-byte fields are big-endian. The config itself is 24 bytes, but it is rarely handed over bare. As `ALACMagicCookieDescription.txt` describes and the reference decoder's `Init()` implements, it may be preceded by a `frma` atom and an `alac` atom — that is how CAF carries it — and it may be followed by a channel-layout atom and a terminator, which are not needed to decode. `Parse` peels those wrappers, and also tolerates the bare 4-byte version/flags prefix left over when a caller has already stripped the `alac` box header. `Write` emits the bare 24-byte config. |
 | `Size` | `const int Size` | Size in bytes of the bare config (no version/flags prefix). |
 | `AvgBitRate` | `uint AvgBitRate { get; init; }` |  |
 | `BitDepth` | `byte BitDepth { get; init; }` |  |
@@ -591,7 +592,7 @@ Implements `IEquatable<AlacCookie>`.
 | `NumChannels` | `byte NumChannels { get; init; }` |  |
 | `Pb` | `byte Pb { get; init; }` |  |
 | `SampleRate` | `uint SampleRate { get; init; }` |  |
-| `Parse` | `static AlacCookie Parse(ReadOnlySpan<byte> cookie)` | Parses a magic cookie. A leading 4-byte version/flags prefix is auto-detected and skipped when present. |
+| `Parse` | `static AlacCookie Parse(ReadOnlySpan<byte> cookie)` | Parses a magic cookie, peeling any `frma`/`alac` atom wrapper or bare version/flags prefix. Trailing atoms (channel layout, terminator) are ignored. |
 | `Write` | `byte[] Write()` | Serialises the bare 24-byte config (big-endian). |
 
 ### Namespace `Codec.AmrNb`
