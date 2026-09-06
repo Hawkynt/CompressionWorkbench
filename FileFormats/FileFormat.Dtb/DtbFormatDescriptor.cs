@@ -20,7 +20,7 @@ namespace FileFormat.Dtb;
 /// </list>
 /// </summary>
 public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable {
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
 
   /// <summary>
   /// Gets the id.
@@ -114,6 +114,21 @@ public sealed class DtbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   public void Remove(Stream archive, string[] entryNames)
     => DtbModifier.Remove(archive, entryNames);
+
+  public void Defragment(Stream archive)
+    => DtbModifier.Defragment(archive);
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException("DTB has no movable allocation policy; only canonical consolidation is supported.");
+    options.CancellationToken.ThrowIfCancellationRequested();
+    DtbModifier.Defragment(archive);
+    options.Progress?.Report(new DefragProgress(1, 1, "DTB canonicalized"));
+  }
+
+  public void Shrink(Stream input, Stream output)
+    => DtbModifier.Shrink(input, output);
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     if (stream.CanSeek) stream.Position = 0;
