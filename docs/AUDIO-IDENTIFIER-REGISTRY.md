@@ -103,6 +103,14 @@ disagree out loud. Measured that way, against ffmpeg 9.0.1 and the reference `wv
   within the codec's own quantisation. **Speex**, **AMR-NB** and **Vorbis** match within 1 LSB.
 - **AC-3** and **DTS** return no samples at all from a foreign stream, though ffmpeg decodes
   what they write.
+- **FLAC in an Ogg mapping** and **AAC in MP4** now match libavcodec — FLAC bit-exactly, AAC
+  within 2 LSB and to the exact length once the encoder's priming and tail padding are dropped.
+  **Vorbis**, **Speex** and **MP2** were rechecked alongside and match within 2 LSB.
+- **MP3 Layer III** returns *noise* from a LAME-encoded file. Layer II through the same
+  descriptor is fine, and our own encoder's Layer III output decodes, so the pair is
+  self-consistent and agrees with nothing else. Joint stereo, which LAME uses by default, is
+  far worse than plain stereo (rms 26,000 against 4,700 versus libavcodec's own decode); the
+  ID3v2 tag and the bitrate were ruled out by measurement.
 - **RealAudio 14.4** decodes at about a seventh of the right amplitude — the frame and subframe
   unpacking, the RMS/energy helpers and the gain application all read as faithful ports, so the
   fault is further inside the synthesis.

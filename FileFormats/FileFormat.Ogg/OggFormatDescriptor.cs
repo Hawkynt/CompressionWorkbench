@@ -2,6 +2,7 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using Codec.Flac;
 using Codec.Opus;
 using Codec.Pcm;
 using Codec.Speex;
@@ -224,6 +225,15 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var blob = ReadAll(input);
     var isOpus = IndexOf(blob, "OpusHead"u8) >= 0;
     var isSpeex = !isOpus && IndexOf(blob, "Speex   "u8) >= 0;
+    if (!isOpus && !isSpeex && TryUnwrapOggFlac(blob) is { } flac) {
+      using var flacSource = new MemoryStream(flac, writable: false);
+      var flacMeta = FlacCodec.ReadAudioProperties(flac);
+      using var flacPcm = new MemoryStream();
+      FlacCodec.Decompress(flacSource, flacPcm);
+      return new AudioPcmBuffer(
+        new AudioPcmFormat(flacMeta.SampleRate, flacMeta.Channels, flacMeta.BitsPerSample),
+        flacPcm.ToArray());
+    }
     int channels;
     int sampleRate;
     using var info = new MemoryStream(blob, writable: false);
@@ -246,6 +256,43 @@ public sealed class OggFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       VorbisCodec.Decompress(source, pcm);
     }
     return new AudioPcmBuffer(new AudioPcmFormat(sampleRate, channels, 16), pcm.ToArray());
+  }
+
+  /// <summary>
+  /// Rebuilds the native FLAC stream carried by an Ogg FLAC mapping, or null when
+  /// the bitstream is not Ogg FLAC.
+  /// </summary>
+  /// <remarks>
+  /// The first packet is a nine-byte mapping header — <c>0x7F "FLAC"</c>, a
+  /// two-byte version and a header-packet count — and the native <c>fLaC</c>
+  /// signature with STREAMINFO follows it inside that same packet. Every packet
+  /// after it is one metadata block or one audio frame, so concatenating them
+  /// behind that signature reproduces the file a native decoder expects.
+  /// </remarks>
+  private static byte[]? TryUnwrapOggFlac(byte[] blob) {
+    const int mappingHeaderBytes = 9;
+    var parser = new OggPageParser();
+    var first = parser.Pages(blob).FirstOrDefault();
+    if (first.Segments is null || first.Segments.Length == 0) return null;
+
+    var head = first.Segments[0];
+    if (head.Length < mappingHeaderBytes + 4 || head[0] != 0x7F ||
+        !head.AsSpan(1, 4).SequenceEqual("FLAC"u8))
+      return null;
+
+    using var native = new MemoryStream();
+    var packetIndex = 0;
+    foreach (var packet in parser.StreamPackets(blob, first.Serial)) {
+      if (packetIndex++ == 0) {
+        // Skip the mapping header; what remains is "fLaC" plus STREAMINFO.
+        native.Write(packet, mappingHeaderBytes, packet.Length - mappingHeaderBytes);
+        continue;
+      }
+
+      native.Write(packet, 0, packet.Length);
+    }
+
+    return native.Length == 0 ? null : native.ToArray();
   }
 
   private static IReadOnlyDictionary<string, string>? ReadComments(FormatCreateOptions options) {
