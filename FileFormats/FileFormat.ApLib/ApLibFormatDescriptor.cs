@@ -23,7 +23,8 @@ public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -43,7 +44,7 @@ public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("aplib", "aPLib")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("aplib", "aPLib", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -65,4 +66,8 @@ public sealed class ApLibFormatDescriptor : IFormatDescriptor, IStreamFormatOper
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => ApLibStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using the cost-based aPLib optimizer.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => ApLibStream.CompressOptimal(input, output);
 }
