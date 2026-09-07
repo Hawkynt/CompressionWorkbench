@@ -53,7 +53,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
 | BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | ✅ | Reference-compatible blzpack stream; optimizer compares managed effort levels 1–10 | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
-| BSC | `Bsc` | `.bsc` | ✅ | ✅ | — |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |
+| BSC | `Bsc` | `.bsc` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
 | [bzip2](https://en.wikipedia.org/wiki/Bzip2) | `Bzip2` | `.bz2` `.bzip2` | ✅ | ✅ | ✅ |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |
 | cmix | `Cmix` | `.cmix` | ✅ | ✅ | — |  | [GitHub](https://github.com/byronknoll/cmix) |
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
