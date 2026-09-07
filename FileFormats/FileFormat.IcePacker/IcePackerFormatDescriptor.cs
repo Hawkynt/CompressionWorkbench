@@ -101,8 +101,23 @@ public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormat
   public void Compress(Stream input, Stream output, FormatCreateOptions options)
     => IcePackerStream.Compress(input, output, ParseSearchDepth(options));
   /// <summary>
-  /// Encodes using the deepest built-in match search.
+  /// Encodes at every declared search depth and writes the smallest result.
   /// </summary>
-  public void CompressOptimal(Stream input, Stream output)
-    => IcePackerStream.Compress(input, output, SearchDepthByLevel["Best"]);
+  public void CompressOptimal(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    using var raw = new MemoryStream();
+    input.CopyTo(raw);
+    var data = raw.ToArray();
+
+    byte[]? best = null;
+    foreach (var depth in SearchDepthByLevel.Values.Distinct()) {
+      var candidate = IcePackerStream.Compress(data, depth);
+      if (best is null || candidate.Length < best.Length)
+        best = candidate;
+    }
+
+    output.Write(best!);
+  }
 }
