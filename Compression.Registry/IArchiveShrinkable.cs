@@ -30,8 +30,29 @@ public interface IArchiveShrinkable {
   void Shrink(Stream input, Stream output) => this.ShrinkDefault(input, output);
 
   /// <summary>
+  /// Shrinks while applying optional filesystem-level space-saving transforms.
+  /// With no requested transform this dispatches to the descriptor's existing
+  /// <see cref="Shrink(Stream, Stream)"/> implementation, preserving genuine in-place
+  /// shrinkers and canonical-size ladders. Advanced requests are routed through the
+  /// descriptor's <see cref="ILayoutOptimizable"/> writer and are capability-checked
+  /// before any output is written.
+  /// </summary>
+  void Shrink(Stream input, Stream output, FilesystemOptimizationOptions? options) {
+    options ??= new FilesystemOptimizationOptions();
+    if (!options.RequestsTransform) {
+      this.Shrink(input, output);
+      return;
+    }
+
+    if (this is not ILayoutOptimizable layout)
+      throw new NotSupportedException("This format has no layout rebuild path for option-aware shrink.");
+
+    FilesystemOptimization.Optimize(layout, input, output, options);
+  }
+
+  /// <summary>
   /// The default rebuild-or-copy-through shrink, exposed so a format-specific
-  /// <see cref="Shrink"/> override (e.g. a genuine in-place shrinker) can fall back to
+  /// <see cref="Shrink(Stream, Stream)"/> override (e.g. a genuine in-place shrinker) can fall back to
   /// it when the in-place path declines an image. Rebuilds into a buffer and emits the
   /// result only when it round-tripped AND is actually smaller; on any rebuild failure
   /// it copies the original through unchanged. Shrink is thus total — it never throws
