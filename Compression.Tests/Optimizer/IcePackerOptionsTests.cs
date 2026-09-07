@@ -14,12 +14,20 @@ namespace Compression.Tests.Optimizer;
 public sealed class IcePackerOptionsTests {
 
   private static byte[] LevelSensitiveSample() {
-    var rng = new Random(1);
+    uint state = 1;
+
+    uint Next() {
+      state ^= state << 13;
+      state ^= state >> 17;
+      state ^= state << 5;
+      return state;
+    }
+
     var data = new byte[30_000];
     var p = 0;
     while (p < data.Length) {
-      var run = rng.Next(2, 18);
-      var value = (byte)rng.Next(64);
+      var run = 2 + (int)(Next() & 15);
+      var value = (byte)(Next() & 63);
       for (var i = 0; i < run && p < data.Length; ++i)
         data[p++] = value;
     }
