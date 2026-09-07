@@ -79,15 +79,15 @@ public sealed class RzipFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       Description: "Maximum recent positions with the same rolling signature checked for the longest match. Larger values spend more CPU to recover older long matches."),
   ];
 
-  private static int ParseMinMatch(FormatCreateOptions options)
-    => options.GetOptionInt("MinMatch", RzipConstants.MinMatch) is 8 or 12 or 16 or 32 or 64
-      ? options.GetOptionInt("MinMatch", RzipConstants.MinMatch)
-      : RzipConstants.MinMatch;
+  private static int ParseMinMatch(FormatCreateOptions options) {
+    var value = options.GetOptionInt("MinMatch", RzipConstants.MinMatch);
+    return value is 8 or 12 or 16 or 32 or 64 ? value : RzipConstants.MinMatch;
+  }
 
-  private static int ParseCandidateSearchLimit(FormatCreateOptions options)
-    => options.GetOptionInt("CandidateSearchLimit", RzipConstants.CandidateSearchLimit) is 1 or 4 or 16 or 32 or 64
-      ? options.GetOptionInt("CandidateSearchLimit", RzipConstants.CandidateSearchLimit)
-      : RzipConstants.CandidateSearchLimit;
+  private static int ParseCandidateSearchLimit(FormatCreateOptions options) {
+    var value = options.GetOptionInt("CandidateSearchLimit", RzipConstants.CandidateSearchLimit);
+    return value is 1 or 4 or 16 or 32 or 64 ? value : RzipConstants.CandidateSearchLimit;
+  }
 
   /// <summary>
   /// Decodes the supplied input.
