@@ -23,7 +23,7 @@ public static class CmixStream {
   internal enum FinalizationMode {
     /// <summary>Historical managed encoding: write the complete 32-bit upper bound.</summary>
     Legacy,
-    /// <summary>Write only the distinguishing high byte and let EOF provide zero padding.</summary>
+    /// <summary>Use a decoder-compatible code whose omitted trailing bytes are implicit 0xFF.</summary>
     Compact,
   }
 
@@ -167,6 +167,7 @@ public static class CmixStream {
   private sealed class ArithEncoder {
     private uint _low;
     private uint _high = 0xFFFFFFFFu;
+    private int _bytesWritten;
     private readonly Stream _out;
 
     public ArithEncoder(Stream output) => _out = output;
@@ -189,7 +190,7 @@ public static class CmixStream {
 
     private void Normalize() {
       while ((_low ^ _high) < Top) {
-        _out.WriteByte((byte)(_high >> 24));
+        WriteByte((byte)(_high >> 24));
         _low <<= 8;
         _high = (_high << 8) | 0xFFu;
       }
@@ -197,17 +198,28 @@ public static class CmixStream {
 
     public void Flush(FinalizationMode finalization) {
       if (finalization == FinalizationMode.Compact) {
-        // Normalize() has stopped only once the bounds differ in their high byte.
-        // Therefore high's first byte followed by zero bits is > low and <= high,
-        // i.e. a complete arithmetic code inside the final interval.
-        _out.WriteByte((byte)(_high >> 24));
+        // Normalize() stops with different high bytes for low/high. Consequently
+        // (low's high byte | 0x00FFFFFF) is guaranteed to lie inside the final
+        // interval. The historical decoder supplies 0xFF after EOF during later
+        // renormalization, so those trailing 0xFF bytes need not be stored.
+        // Its constructor still reads four physical arithmetic bytes, therefore
+        // small streams retain enough suffix bytes to keep that contract intact.
+        var code = (_low & 0xFF000000u) | 0x00FFFFFFu;
+        var bytesToWrite = Math.Max(1, 4 - _bytesWritten);
+        for (var shift = 24; shift >= 32 - bytesToWrite * 8; shift -= 8)
+          WriteByte((byte)(code >> shift));
         return;
       }
 
       for (var i = 0; i < 4; i++) {
-        _out.WriteByte((byte)(_high >> 24));
+        WriteByte((byte)(_high >> 24));
         _high <<= 8;
       }
+    }
+
+    private void WriteByte(byte value) {
+      _out.WriteByte(value);
+      ++_bytesWritten;
     }
   }
 
@@ -220,7 +232,7 @@ public static class CmixStream {
     public ArithDecoder(Stream input) {
       _in = input;
       for (var i = 0; i < 4; i++)
-        _code = (_code << 8) | ReadByteOrZero();
+        _code = (_code << 8) | (uint)Math.Max(0, input.ReadByte());
     }
 
     public int DecodeBit(ref int prob) {
@@ -245,15 +257,11 @@ public static class CmixStream {
 
     private void Normalize() {
       while ((_low ^ _high) < Top) {
-        _code = (_code << 8) | ReadByteOrZero();
+        var b = _in.ReadByte();
+        _code = (_code << 8) | (uint)(b < 0 ? 0xFF : b);
         _low <<= 8;
         _high = (_high << 8) | 0xFFu;
       }
-    }
-
-    private uint ReadByteOrZero() {
-      var value = _in.ReadByte();
-      return value < 0 ? 0u : (uint)value;
     }
   }
 }
