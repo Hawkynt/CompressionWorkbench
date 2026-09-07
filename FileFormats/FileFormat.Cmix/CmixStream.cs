@@ -167,7 +167,7 @@ public static class CmixStream {
   private sealed class ArithEncoder {
     private uint _low;
     private uint _high = 0xFFFFFFFFu;
-    private int _bytesWritten;
+    private byte _bytesWrittenBeforeFinalization;
     private readonly Stream _out;
 
     public ArithEncoder(Stream output) => _out = output;
@@ -190,7 +190,9 @@ public static class CmixStream {
 
     private void Normalize() {
       while ((_low ^ _high) < Top) {
-        WriteByte((byte)(_high >> 24));
+        _out.WriteByte((byte)(_high >> 24));
+        if (_bytesWrittenBeforeFinalization < 3)
+          ++_bytesWrittenBeforeFinalization;
         _low <<= 8;
         _high = (_high << 8) | 0xFFu;
       }
@@ -205,21 +207,16 @@ public static class CmixStream {
         // Its constructor still reads four physical arithmetic bytes, therefore
         // small streams retain enough suffix bytes to keep that contract intact.
         var code = (_low & 0xFF000000u) | 0x00FFFFFFu;
-        var bytesToWrite = Math.Max(1, 4 - _bytesWritten);
+        var bytesToWrite = 4 - _bytesWrittenBeforeFinalization;
         for (var shift = 24; shift >= 32 - bytesToWrite * 8; shift -= 8)
-          WriteByte((byte)(code >> shift));
+          _out.WriteByte((byte)(code >> shift));
         return;
       }
 
       for (var i = 0; i < 4; i++) {
-        WriteByte((byte)(_high >> 24));
+        _out.WriteByte((byte)(_high >> 24));
         _high <<= 8;
       }
-    }
-
-    private void WriteByte(byte value) {
-      _out.WriteByte(value);
-      ++_bytesWritten;
     }
   }
 
