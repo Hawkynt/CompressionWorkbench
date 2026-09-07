@@ -61,6 +61,9 @@ public sealed class FilesystemOptimizationOptions {
 /// Optional capability for writers that can deliberately replace duplicate regular
 /// files with symbolic links. It is separate from merely being able to read symlinks:
 /// optimize must not claim this transform until the writer can create and round-trip it.
+/// Writer-specific implementations may alternatively register through
+/// <see cref="FilesystemOptimizationAdapters"/> when the format assembly owns the
+/// necessary entry semantics.
 /// </summary>
 public interface ISymbolicLinkDeduplicationLayout {
   void RebuildWithSymbolicLinkDeduplication(
@@ -93,10 +96,10 @@ public static class FilesystemOptimization {
         result |= FilesystemOptimizationFeatures.SparseFiles;
       if (layout.ReclaimSupport.HasFlag(LayoutReclaim.HardLinks))
         result |= FilesystemOptimizationFeatures.HardLinkDeduplication;
+      if (layout is ISymbolicLinkDeduplicationLayout
+          || FilesystemOptimizationAdapters.TryGetSymbolicLinkDeduplicator(layout, out _))
+        result |= FilesystemOptimizationFeatures.SymbolicLinkDeduplication;
     }
-
-    if (descriptor is ISymbolicLinkDeduplicationLayout)
-      result |= FilesystemOptimizationFeatures.SymbolicLinkDeduplication;
 
     if (descriptor is IFormatOptionsSchema schema) {
       var axes = SearchAxes(schema).ToArray();
@@ -150,8 +153,12 @@ public static class FilesystemOptimization {
         };
 
         if (options.DeduplicateWithSymbolicLinks) {
-          ((ISymbolicLinkDeduplicationLayout)layout)
-            .RebuildWithSymbolicLinkDeduplication(input, candidate, rebuild);
+          if (layout is ISymbolicLinkDeduplicationLayout direct)
+            direct.RebuildWithSymbolicLinkDeduplication(input, candidate, rebuild);
+          else if (FilesystemOptimizationAdapters.TryGetSymbolicLinkDeduplicator(layout, out var registered))
+            registered(layout, input, candidate, rebuild);
+          else
+            throw new NotSupportedException("This filesystem writer does not support symbolic-link deduplication.");
         } else {
           layout.RebuildStreaming(input, candidate, rebuild);
         }
