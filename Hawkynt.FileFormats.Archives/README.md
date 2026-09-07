@@ -83,7 +83,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | — |  | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | — |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
 | [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | — |  | [rzip.samba.org](https://rzip.samba.org/) |
-| [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | — |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
+| [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | — |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | — | FWS/CWS envelope; compress and decompress the body, no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
@@ -169,23 +169,23 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Electron asar | `Asar` | `.asar` | WORM | ✅ | — | JSON header plus concatenated payload | [GitHub](https://github.com/electron/asar) |
 | BitRock InstallBuilder | `BitRock` |  | R | ✅ | — | Metakit VFS with LZMA payloads | [installbuilder.com](https://installbuilder.com) |
 | [Rust crate](https://en.wikipedia.org/wiki/Cargo_(software)) | `Crate` | `.crate` | WORM | ✅ | — | tar.gz with the crate directory layout | [doc.rust-lang.org](https://doc.rust-lang.org/cargo/reference/registries.html#publish) |
-| [CRX](https://en.wikipedia.org/wiki/Google_Chrome#Google_Chrome_Apps) | `Crx` | `.crx` | WORM | ✅ | defrag · wipe | CRX3 envelope creation is unsigned and not browser-trusted | [chromium.googlesource.com](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/) |
+| [CRX](https://en.wikipedia.org/wiki/Google_Chrome#Extensions) | `Crx` | `.crx` | WORM | ✅ | defrag · wipe | CRX3 envelope creation is unsigned and not browser-trusted | [chromium.googlesource.com](https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/) |
 | [Debian .deb](https://en.wikipedia.org/wiki/Deb_(file_format)) | `Deb` | `.deb` | R/W | ✅ | defrag · wipe |  | [debian.org](https://www.debian.org/doc/debian-policy/) |
-| [EAR](https://en.wikipedia.org/wiki/Ear_(file_format)) | `Ear` | `.ear` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
+| [EAR](https://en.wikipedia.org/wiki/EAR_(file_format)) | `Ear` | `.ear` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/platform/) |
 | [Ruby gem](https://en.wikipedia.org/wiki/RubyGems) | `Gem` | `.gem` | WORM | ✅ | — | TAR with gzip-compressed metadata and data members | [docs.ruby-lang.org](https://docs.ruby-lang.org/en/3.0/Gem/Format.html) |
 | [Inno Setup](https://en.wikipedia.org/wiki/Inno_Setup) | `InnoSetup` |  | WORM | ✅ | — | Extraction plus signature/container output, not an installer compiler; some versions expose no per-file extraction | [sourceforge.net](https://sourceforge.net/projects/innounp/) |
 | [IPA](https://en.wikipedia.org/wiki/.ipa) | `Ipa` | `.ipa` | R/W | ✅ | defrag · wipe |  | [pkware.cachefly.net](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) |
-| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | defrag · wipe |  | [docs.oracle.com](https://docs.oracle.com/javase/8/docs/technotes/guides/jar/jar.html) |
+| [JAR](https://en.wikipedia.org/wiki/JAR_(file_format)) | `Jar` | `.jar` | R/W | ✅ | defrag · wipe |  | [docs.oracle.com](https://docs.oracle.com/en-us/javase/8/docs/technotes/guides/jar/jar.html) |
 | [MSI](https://en.wikipedia.org/wiki/Windows_Installer) | `Msi` | `.msi` `.msp` `.mst` | R/W | ✅ | wipe | CFB envelope; a functional Installer database is not synthesised | [Microsoft Learn](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/) |
 | [MSIX](https://en.wikipedia.org/wiki/MSIX) | `Msix` | `.msix` `.msixbundle` | R/W | ✅ | defrag · wipe | Unsigned fresh package output | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/msix/) |
-| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | WORM | ✅ | defrag | Extraction plus overlay-oriented output, not a PE installer builder | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
+| [NSIS](https://en.wikipedia.org/wiki/Nullsoft_Scriptable_Install_System) | `Nsis` |  | WORM | ✅ | defrag | Extraction plus overlay-oriented output, not a PE installer builder; some variants are detected but not expanded | [nsis.sourceforge.io](https://nsis.sourceforge.io/Docs/) |
 | [NuGet .nupkg](https://en.wikipedia.org/wiki/NuGet) | `NuPkg` | `.nupkg` | R/W | ✅ | defrag · wipe |  | [Microsoft Learn](https://learn.microsoft.com/nuget/reference/nuspec) |
 | [OVA](https://en.wikipedia.org/wiki/Open_Virtualization_Format) | `Ova` | `.ova` | WORM | ✅ | — | Stays WORM: the manifest must cover every member | [dmtf.org](https://www.dmtf.org/standards/ovf) |
 | [Pack200](https://en.wikipedia.org/wiki/Pack200) | `Pack200` | `.pack` | R | ✅ | — |  | [docs.oracle.com](https://docs.oracle.com/javase/8/docs/technotes/guides/pack200/pack-spec.html) |
 | [PyInstaller onefile](https://en.wikipedia.org/wiki/PyInstaller) | `PyInstaller` |  | R | ✅ | — | CArchive TOC plus PYZ modules; Linux builds are detected as ELF first | [GitHub](https://github.com/pyinstaller/pyinstaller) |
 | [RPM](https://en.wikipedia.org/wiki/RPM_Package_Manager) | `Rpm` | `.rpm` | WORM | ✅ | defrag · wipe |  | [GitHub](https://github.com/rpm-software-management/rpm) |
 | [Snap](https://en.wikipedia.org/wiki/Snap_(software)) | `Snap` | `.snap` | WORM | ✅ | — | SquashFS package | [snapcraft.io](https://snapcraft.io/docs) |
-| [WAR](https://en.wikipedia.org/wiki/War_(file_format)) | `War` | `.war` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/servlet/) |
+| [WAR](https://en.wikipedia.org/wiki/WAR_(file_format)) | `War` | `.war` | R/W | ✅ | defrag · wipe |  | [jakarta.ee](https://jakarta.ee/specifications/servlet/) |
 | [Python wheel](https://en.wikipedia.org/wiki/Wheel_(software)) | `Wheel` | `.whl` | WORM | ✅ | wipe | ZIP plus dist-info | [peps.python.org](https://peps.python.org/pep-0427/) |
 | [XPI](https://en.wikipedia.org/wiki/XPInstall) | `Xpi` | `.xpi` | R/W | ✅ | defrag · wipe |  | [extensionworkshop.com](https://extensionworkshop.com/) |
 
