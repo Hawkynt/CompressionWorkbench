@@ -13815,7 +13815,7 @@ Implements `IDisposable`.
 
 Describes paq 8 format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13831,8 +13831,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PAQ8L's documented compression levels are 1..8, with level 5 as the default. In this repository's simplified managed codec the level is stored in the stream and tunes predictor adaptation; the optimizer searches every supported level because the best learning rate depends on the input. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input at the highest PAQ8L level. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected compression level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `Paq8Stream`
@@ -13841,7 +13844,11 @@ PAQ8 stream compressor. Writes a simplified single-file paq8l container with an 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `DefaultLevel` | `const int DefaultLevel` |  |
+| `MaxLevel` | `const int MaxLevel` |  |
+| `MinLevel` | `const int MinLevel` |  |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into the PAQ8 container on `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses `input` using the requested PAQ8L-inspired level. Level 5 preserves the historical encoder behaviour; the other levels tune the predictor's adaptation rate and are therefore useful optimizer candidates. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a PAQ8 container from `input` into `output`. |
 
 ### Namespace `FileFormat.Par2`
