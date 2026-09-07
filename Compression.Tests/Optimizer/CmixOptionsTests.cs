@@ -61,7 +61,7 @@ public sealed class CmixOptionsTests {
   }
 
   [Test, Category("Spec")]
-  public void CompactFinalization_IsThreeBytesSmaller_AndRoundTrips() {
+  public void CompactFinalization_SavesThreeBytesOnNormalInput_AndRoundTrips() {
     var descriptor = new CmixFormatDescriptor();
     var data = Sample();
     var legacy = Compress(descriptor, data, "Legacy");
@@ -73,13 +73,34 @@ public sealed class CmixOptionsTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void CompactFinalization_OneByteInput_RoundTripsWithEofPadding() {
+  public void CompactFinalization_SmallInputsKeepFourPhysicalArithmeticBytes() {
     var descriptor = new CmixFormatDescriptor();
-    byte[] data = [0];
-    var compact = Compress(descriptor, data, "Compact");
 
-    Assert.That(compact.Length, Is.EqualTo(6), "5-byte header plus one arithmetic termination byte");
-    Assert.That(Decompress(descriptor, compact), Is.EqualTo(data));
+    for (var size = 1; size <= 4; ++size) {
+      var data = Enumerable.Range(0, size).Select(i => (byte)(i * 73 + 11)).ToArray();
+      var legacy = Compress(descriptor, data, "Legacy");
+      var compact = Compress(descriptor, data, "Compact");
+
+      Assert.That(compact.Length, Is.GreaterThanOrEqualTo(9), $"size={size}: 5-byte header plus four bootstrap bytes");
+      Assert.That(compact.Length, Is.LessThanOrEqualTo(legacy.Length), $"size={size}");
+      Assert.That(Decompress(descriptor, compact), Is.EqualTo(data), $"size={size}");
+    }
+  }
+
+  [Test, Category("EdgeCase")]
+  public void CompactFinalization_RoundTripsAcrossShortBoundarySizes() {
+    var descriptor = new CmixFormatDescriptor();
+    var rng = new Random(0xC0_51_7);
+
+    foreach (var size in new[] { 1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256 }) {
+      var data = new byte[size];
+      rng.NextBytes(data);
+      var legacy = Compress(descriptor, data, "Legacy");
+      var compact = Compress(descriptor, data, "Compact");
+
+      Assert.That(compact.Length, Is.LessThanOrEqualTo(legacy.Length), $"size={size}");
+      Assert.That(Decompress(descriptor, compact), Is.EqualTo(data), $"size={size}");
+    }
   }
 
   [Test, Category("EdgeCase")]
