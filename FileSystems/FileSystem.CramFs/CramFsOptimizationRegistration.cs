@@ -11,8 +11,10 @@ namespace FileSystem.CramFs;
 /// </summary>
 internal static class CramFsOptimizationRegistration {
   [ModuleInitializer]
-  internal static void Register()
-    => FilesystemOptimizationAdapters.RegisterSymbolicLinkDeduplicator<CramFsFormatDescriptor>(RebuildWithSymlinks);
+  internal static void Register() {
+    FilesystemOptimizationAdapters.RegisterSymbolicLinkDeduplicator<CramFsFormatDescriptor>(RebuildWithSymlinks);
+    FilesystemOptimizationAdapters.RegisterTransparentCompression<CramFsFormatDescriptor>();
+  }
 
   private static void RebuildWithSymlinks(
     ILayoutOptimizable _,
