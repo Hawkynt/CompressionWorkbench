@@ -69,7 +69,7 @@ public sealed class CmixFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       Kind: FormatOptionKind.Enum,
       Default: "Legacy",
       AllowedValues: ["Legacy", "Compact"],
-      Description: "Legacy writes the historical 32-bit final code. Compact chooses an equivalent final code with trailing 0xFF bytes that the existing decoder can supply implicitly at EOF."),
+      Description: "Legacy writes the historical 32-bit final code. Compact writes the shortest byte prefix whose entire possible EOF-padded range remains inside the final arithmetic interval."),
   ];
 
   /// <summary>
