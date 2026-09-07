@@ -99,6 +99,8 @@ public static class FilesystemOptimization {
       if (layout is ISymbolicLinkDeduplicationLayout
           || FilesystemOptimizationAdapters.TryGetSymbolicLinkDeduplicator(layout, out _))
         result |= FilesystemOptimizationFeatures.SymbolicLinkDeduplication;
+      if (FilesystemOptimizationAdapters.HasTransparentCompression(layout))
+        result |= FilesystemOptimizationFeatures.TransparentCompression;
     }
 
     if (descriptor is IFormatOptionsSchema schema) {
@@ -236,10 +238,6 @@ public static class FilesystemOptimization {
       yield break;
     }
 
-    // First probe the seeded/default configuration, then walk one axis at a time.
-    // This bounded coordinate sweep avoids a combinatorial explosion on filesystems
-    // exposing geometry plus compression choices, while still trying every declared
-    // value when the budget permits.
     var current = new Dictionary<string, string>(seed, StringComparer.OrdinalIgnoreCase);
     foreach (var axis in variableAxes)
       current.TryAdd(axis.Key, axis.Default);
