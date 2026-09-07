@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
+using FileSystem.CramFs;
 using FileSystem.Ext;
 using FileSystem.Ntfs;
 
@@ -24,6 +25,10 @@ public class FilesystemOptimizationTests {
         "NTFS publishes the writer-honoured Compression=Off/LZNT1 schema axis");
       Assert.That(ntfs.HasFlag(FilesystemOptimizationFeatures.CompressionParameterSearch), Is.True);
     });
+
+    var cramfs = FilesystemOptimization.GetSupportedFeatures(new CramFsFormatDescriptor());
+    Assert.That(cramfs.HasFlag(FilesystemOptimizationFeatures.SymbolicLinkDeduplication), Is.True,
+      "CramFS registers a writer-backed symbolic-link deduplication rebuild");
   }
 
   [Test]
@@ -34,6 +39,40 @@ public class FilesystemOptimizationTests {
     Assert.That(
       () => FilesystemOptimization.ValidateRequested(descriptor, options),
       Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test]
+  public void Optimize_CramFsSymbolicLinkDeduplication_ReplacesDuplicateWithRelativeLink() {
+    var duplicate = new byte[32 * 1024];
+    new Random(0xC0FFEE).NextBytes(duplicate);
+
+    using var source = new MemoryStream();
+    using (var writer = new CramFsWriter(source, leaveOpen: true)) {
+      writer.AddDirectory("/a");
+      writer.AddDirectory("/b");
+      writer.AddFile("/a/original.bin", duplicate);
+      writer.AddFile("/b/copy.bin", (byte[])duplicate.Clone());
+      writer.AddFile("/unique.bin", "unique"u8.ToArray());
+    }
+    var originalLength = source.Length;
+
+    var descriptor = new CramFsFormatDescriptor();
+    source.Position = 0;
+    using var optimized = new MemoryStream();
+    descriptor.Optimize(source, optimized, new FilesystemOptimizationOptions {
+      DeduplicateWithSymbolicLinks = true,
+    });
+
+    optimized.Position = 0;
+    using var reader = new CramFsReader(optimized);
+    var copy = reader.Entries.Single(e => e.FullPath == "/b/copy.bin");
+    var rawTarget = System.Text.Encoding.UTF8.GetString(reader.Extract(copy));
+
+    Assert.Multiple(() => {
+      Assert.That(optimized.Length, Is.LessThan(originalLength));
+      Assert.That(copy.IsSymlink, Is.True);
+      Assert.That(rawTarget, Is.EqualTo("../a/original.bin"));
+    });
   }
 
   [Test]
