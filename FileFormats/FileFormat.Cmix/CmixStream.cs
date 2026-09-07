@@ -23,7 +23,7 @@ public static class CmixStream {
   internal enum FinalizationMode {
     /// <summary>Historical managed encoding: write the complete 32-bit upper bound.</summary>
     Legacy,
-    /// <summary>Use a decoder-compatible code whose omitted trailing bytes are implicit 0xFF.</summary>
+    /// <summary>Write the shortest decoder-independent byte prefix contained by the final interval.</summary>
     Compact,
   }
 
@@ -200,23 +200,32 @@ public static class CmixStream {
 
     public void Flush(FinalizationMode finalization) {
       if (finalization == FinalizationMode.Compact) {
-        // Normalize() stops with different high bytes for low/high. Consequently
-        // (low's high byte | 0x00FFFFFF) is guaranteed to lie inside the final
-        // interval. The historical decoder supplies 0xFF after EOF during later
-        // renormalization, so those trailing 0xFF bytes need not be stored.
-        // Its constructor still reads four physical arithmetic bytes, therefore
-        // small streams retain enough suffix bytes to keep that contract intact.
-        var code = (_low & 0xFF000000u) | 0x00FFFFFFu;
-        var bytesToWrite = 4 - _bytesWrittenBeforeFinalization;
-        for (var shift = 24; shift >= 32 - bytesToWrite * 8; shift -= 8)
-          _out.WriteByte((byte)(code >> shift));
-        return;
+        // Find the largest byte-aligned suffix range fully contained in the final
+        // arithmetic interval. Every possible value of the omitted bytes then lies
+        // inside the interval, so decoder EOF padding (0x00, 0xFF, or anything else)
+        // cannot change the decoded symbols. Keep at least four physical arithmetic
+        // bytes overall because the historical managed decoder bootstraps a 32-bit code.
+        var maxOmittedBytes = _bytesWrittenBeforeFinalization;
+        for (var omittedBytes = (int)maxOmittedBytes; omittedBytes > 0; --omittedBytes) {
+          var mask = (1u << (omittedBytes * 8)) - 1u;
+          var start = ((ulong)_low + mask) & ~(ulong)mask;
+          if (start + mask > _high)
+            continue;
+
+          WriteCodePrefix((uint)start, 4 - omittedBytes);
+          return;
+        }
       }
 
       for (var i = 0; i < 4; i++) {
         _out.WriteByte((byte)(_high >> 24));
         _high <<= 8;
       }
+    }
+
+    private void WriteCodePrefix(uint code, int byteCount) {
+      for (var shift = 24; byteCount-- > 0; shift -= 8)
+        _out.WriteByte((byte)(code >> shift));
     }
   }
 
