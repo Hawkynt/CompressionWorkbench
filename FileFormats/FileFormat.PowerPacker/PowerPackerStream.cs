@@ -4,68 +4,69 @@ namespace FileFormat.PowerPacker;
 
 /// <summary>
 /// Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file format.
-/// PP20 is a backward-decoding LZ77 variant: both the bit stream and the output buffer
-/// are consumed from end to start.
+/// PP20 stores an LZ stream that is consumed from the end of the packed data and
+/// reconstructs the output from end to start.
 /// </summary>
 public static class PowerPackerStream {
 
-  // ── Public API ────────────────────────────────────────────────────────────
-
-  /// <summary>
-  /// Decompresses a PP20-crunched stream and writes the original data to
-  /// <paramref name="output"/>.
-  /// </summary>
-  /// <param name="input">Stream positioned at the start of a PP20 file.</param>
-  /// <param name="output">Stream that receives the decompressed data.</param>
-  /// <exception cref="InvalidDataException">
-  /// Thrown when the magic bytes are invalid or the file is truncated.
-  /// </exception>
+  /// <summary>Decompresses a PP20-crunched stream.</summary>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
     var data = ReadAllBytes(input);
-    var decompressed = DecompressCore(data);
-    output.Write(decompressed);
+    output.Write(DecompressCore(data));
   }
 
-  /// <summary>
-  /// Compresses raw data into the PP20 format and writes the result to
-  /// <paramref name="output"/>.
-  /// </summary>
-  /// <param name="input">Stream containing the raw data to compress.</param>
-  /// <param name="output">Stream that receives the PP20-encoded output.</param>
-  public static void Compress(Stream input, Stream output) {
+  /// <summary>Compresses with the traditional <see cref="PowerPackerEfficiency.Good"/> preset.</summary>
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, PowerPackerEfficiency.Good);
+
+  /// <summary>Compresses using the selected historical efficiency preset.</summary>
+  public static void Compress(Stream input, Stream output, PowerPackerEfficiency efficiency) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
     var data = ReadAllBytes(input);
-    var compressed = CompressCore(data);
-    output.Write(compressed);
+    output.Write(CompressCore(data, efficiency));
   }
 
-  /// <summary>
-  /// Decompresses a PP20-crunched byte array and returns the original data.
-  /// </summary>
-  /// <param name="data">The complete PP20 file contents.</param>
-  /// <exception cref="InvalidDataException">
-  /// Thrown when the magic bytes are invalid or the file is truncated.
-  /// </exception>
+  /// <summary>Tries every historical efficiency preset and writes the smallest result.</summary>
+  public static void CompressOptimal(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    var data = ReadAllBytes(input);
+    output.Write(CompressOptimal(data));
+  }
+
+  /// <summary>Decompresses a complete PP20 file.</summary>
   public static byte[] Decompress(ReadOnlySpan<byte> data) => DecompressCore(data);
 
-  /// <summary>
-  /// Compresses raw data into the PP20 format and returns the result as a new byte array.
-  /// </summary>
-  /// <param name="data">The raw bytes to compress.</param>
-  public static byte[] Compress(ReadOnlySpan<byte> data) => CompressCore(data);
+  /// <summary>Compresses with the traditional <see cref="PowerPackerEfficiency.Good"/> preset.</summary>
+  public static byte[] Compress(ReadOnlySpan<byte> data)
+    => CompressCore(data, PowerPackerEfficiency.Good);
 
-  // ── Decompression core ────────────────────────────────────────────────────
+  /// <summary>Compresses using the selected historical efficiency preset.</summary>
+  public static byte[] Compress(ReadOnlySpan<byte> data, PowerPackerEfficiency efficiency)
+    => CompressCore(data, efficiency);
+
+  /// <summary>Tries every historical efficiency preset and returns the smallest result.</summary>
+  public static byte[] CompressOptimal(ReadOnlySpan<byte> data) {
+    byte[]? best = null;
+    foreach (var efficiency in Enum.GetValues<PowerPackerEfficiency>()) {
+      var candidate = CompressCore(data, efficiency);
+      if (best is null || candidate.Length < best.Length)
+        best = candidate;
+    }
+
+    return best!;
+  }
 
   private static byte[] DecompressCore(ReadOnlySpan<byte> data) {
     if (data.Length < PowerPackerConstants.MinFileSize)
       throw new InvalidDataException("Input is shorter than the minimum PP20 file size.");
 
-    // Validate magic
     if (!data[..PowerPackerConstants.MagicLength].SequenceEqual(PowerPackerConstants.Magic)) {
       if (data[..PowerPackerConstants.MagicLength].SequenceEqual(PowerPackerConstants.PX20Magic))
         throw new InvalidDataException("Encrypted PowerPacker (PX20) files are not supported.");
@@ -73,402 +74,217 @@ public static class PowerPackerStream {
       throw new InvalidDataException("Invalid PowerPacker magic bytes.");
     }
 
-    // Read efficiency table (4 bytes at offset 4)
-    var efficiency = new int[PowerPackerConstants.OffsetClasses];
-    for (var i = 0; i < PowerPackerConstants.OffsetClasses; ++i)
-      efficiency[i] = data[PowerPackerConstants.EfficiencyTableOffset + i];
+    if ((data.Length & 3) != 0)
+      throw new InvalidDataException("PP20 file size must be a multiple of four bytes.");
 
-    // Read decrunch info from last 4 bytes
+    var efficiency = data.Slice(PowerPackerConstants.EfficiencyTableOffset, PowerPackerConstants.EfficiencyTableSize);
+    ValidateEfficiency(efficiency);
+
     var infoOffset = data.Length - PowerPackerConstants.DecrunchInfoSize;
-    var originalSize =
-      (data[infoOffset] << 16) |
-      (data[infoOffset + 1] << 8) |
-      data[infoOffset + 2];
+    var originalSize = (data[infoOffset] << 16) | (data[infoOffset + 1] << 8) | data[infoOffset + 2];
     var skipBits = data[infoOffset + 3];
+    if (skipBits > 31)
+      throw new InvalidDataException("PP20 skip-bit count must be between 0 and 31.");
 
-    // Packed data sits between offset 8 and (fileEnd - 4)
-    var packedStart = PowerPackerConstants.MagicLength + PowerPackerConstants.EfficiencyTableSize;
-    var packedEnd = data.Length - PowerPackerConstants.DecrunchInfoSize;
-    var packed = data[packedStart..packedEnd].ToArray();
+    var packed = data.Slice(
+      PowerPackerConstants.MagicLength + PowerPackerConstants.EfficiencyTableSize,
+      data.Length - PowerPackerConstants.MagicLength - PowerPackerConstants.EfficiencyTableSize - PowerPackerConstants.DecrunchInfoSize);
 
-    // Set up reverse bit reader: start at the last byte, MSB first
+    if (skipBits > packed.Length * 8)
+      throw new InvalidDataException("PP20 skip-bit count exceeds the packed bitstream.");
+
+    if (originalSize == 0)
+      return [];
+
     var output = new byte[originalSize];
     var outPos = originalSize;
+    var bits = new ReverseBitReader(packed);
+    bits.SkipBits(skipBits);
 
-    var bitState = new ReverseBitReader(packed);
-
-    // Skip the initial padding bits
-    if (skipBits > 0)
-      bitState.ReadBits(skipBits);
-
-    // Main decompression loop
     while (outPos > 0) {
-      // First check for a match (1) or literal run (0)
-      if (bitState.ReadBit() == 1) {
-        // Match: read offset class (2 bits)
-        var offsetClass = bitState.ReadBits(2);
-        var offset = bitState.ReadBits(efficiency[offsetClass]);
+      var hasLiteralRun = bits.ReadBit() == 0;
+      if (hasLiteralRun) {
+        var literalCount = 1;
+        int part;
+        do {
+          part = bits.ReadBits(2);
+          literalCount = checked(literalCount + part);
+        } while (part == 3);
 
-        // Extended offset for class 3
-        if (offsetClass == 3 && offset == (1 << efficiency[3]) - 1)
-          offset += bitState.ReadBits(7);
+        if (literalCount > outPos)
+          throw new InvalidDataException("PP20 literal run exceeds the remaining output size.");
 
-        // Read length based on class
-        int length;
-        if (offsetClass < 3) {
-          length = offsetClass + 2; // class 0→2, 1→3, 2→4
-        } else {
-          // Class 3: base length 5, read 3-bit extensions
-          var extra = bitState.ReadBits(3);
-          length = 5 + extra;
-          while (extra == 7) {
-            extra = bitState.ReadBits(3);
-            length += extra;
-          }
-        }
+        for (var i = 0; i < literalCount; ++i)
+          output[--outPos] = (byte)bits.ReadBits(8);
 
-        // Copy length bytes from (outPos + offset + 1) backward
-        for (var i = 0; i < length && outPos > 0; ++i) {
-          --outPos;
-          var srcIndex = outPos + offset + 1;
-          output[outPos] = srcIndex < originalSize ? output[srcIndex] : (byte)0;
-        }
+        if (outPos == 0)
+          break;
       }
 
-      // After a match (or if bit was 0), read literal count
-      if (outPos <= 0)
-        break;
+      var offsetClass = bits.ReadBits(2);
+      var offsetBits = efficiency[offsetClass];
+      var matchLength = offsetClass + 2;
 
-      var litCount = bitState.ReadBits(2);
-      if (litCount == 0 && outPos > 0) {
-        // Extended literal count: keep reading until we get a non-zero 2-bit value,
-        // or use the PP20 extended scheme
-        // PP20: if litCount == 0 after the first read, it means there are no
-        // literals to copy. But only at end-of-stream; during normal flow there
-        // are always 0-3 literals.
-        // Actually in PP20: lit_count 0 means 0 literals except at stream start
-        // (which is the logical end since we decompress backwards).
-        // The standard behavior: 0 = no literals.
+      if (offsetClass == 3) {
+        if (bits.ReadBit() == 0)
+          offsetBits = 7;
       }
 
-      for (var i = 0; i < litCount && outPos > 0; ++i) {
-        --outPos;
-        output[outPos] = (byte)bitState.ReadBits(8);
+      var offset = bits.ReadBits(offsetBits);
+
+      if (offsetClass == 3) {
+        int part;
+        do {
+          part = bits.ReadBits(3);
+          matchLength = checked(matchLength + part);
+        } while (part == 7);
+      }
+
+      if (matchLength > outPos)
+        throw new InvalidDataException("PP20 match exceeds the remaining output size.");
+      if (outPos + offset >= output.Length)
+        throw new InvalidDataException("PP20 match offset points outside the already decoded output.");
+
+      for (var i = 0; i < matchLength; ++i) {
+        var value = output[outPos + offset];
+        output[--outPos] = value;
       }
     }
 
     return output;
   }
 
-  // ── Compression core ──────────────────────────────────────────────────────
+  private static byte[] CompressCore(ReadOnlySpan<byte> input, PowerPackerEfficiency efficiencyPreset) {
+    if (input.Length > PowerPackerConstants.MaxOriginalSize)
+      throw new ArgumentOutOfRangeException(nameof(input), $"PP20 stores the original size in 24 bits; maximum is {PowerPackerConstants.MaxOriginalSize} bytes.");
 
-  /// <summary>
-  /// Represents a single token in the PP20 encoding: either a match or a literal run.
-  /// </summary>
-  private readonly struct Token {
-    public readonly bool IsMatch;
-    public readonly int OffsetClass;
-    public readonly int Offset;
-    public readonly int Length;
-    public readonly byte[] Literals;
+    var efficiency = PowerPackerConstants.GetEfficiency(efficiencyPreset);
+    if (input.IsEmpty)
+      return BuildPp20File(efficiency, new byte[sizeof(uint)], 0, 0);
 
-    private Token(int offsetClass, int offset, int length) {
-      this.IsMatch = true;
-      this.OffsetClass = offsetClass;
-      this.Offset = offset;
-      this.Length = length;
-      this.Literals = [];
-    }
-
-    private Token(byte[] literals) {
-      this.IsMatch = false;
-      this.Literals = literals;
-    }
-
-    public static Token CreateMatch(int offsetClass, int offset, int length) => new(offsetClass, offset, length);
-    public static Token CreateLiterals(byte[] literals) => new(literals);
-  }
-
-  private static byte[] CompressCore(ReadOnlySpan<byte> input) {
-    if (input.Length == 0)
-      return BuildPp20File([], [], 0);
-
-    var efficiency = new int[] { 9, 10, 11, 12 };
-    var maxDistances = new int[PowerPackerConstants.OffsetClasses];
-    for (var i = 0; i < PowerPackerConstants.OffsetClasses; ++i)
-      maxDistances[i] = (1 << efficiency[i]) - 1;
-
-    // Class 3 has extended offsets: max = (1 << eff[3]) - 1 + 127
-    var maxDistance = maxDistances[3] + 127;
-    // Round up to power of 2 — HashChainMatchFinder uses bitmask indexing
-    var windowSize = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)(maxDistance + 1));
-
-    // PP20 decompresses backward (output filled from end to start), so matches
-    // reference data at higher indices. Reverse the input so that a forward LZ77
-    // scan produces tokens in the correct decode order with valid match distances.
     var reversed = input.ToArray();
     Array.Reverse(reversed);
     ReadOnlySpan<byte> scanInput = reversed;
 
-    // Use hash chain match finder for LZ77
-    var matchFinder = new HashChainMatchFinder(windowSize);
-
-    // Collect tokens forward through reversed input
-    var tokens = new List<Token>();
+    var maxDistance = 1 << efficiency[3];
+    var matchFinder = new HashChainMatchFinder(maxDistance);
+    var bitWriter = new ReverseBitWriter();
     var pendingLiterals = new List<byte>();
     var pos = 0;
 
     while (pos < scanInput.Length) {
-      // Find the best match
-      var maxLen = Math.Min(scanInput.Length - pos, 256); // reasonable max
+      var maxLength = Math.Min(scanInput.Length - pos, 256);
       var match = pos >= 2
-        ? matchFinder.FindMatch(scanInput, pos, maxDistance, maxLen, 2)
+        ? matchFinder.FindMatch(scanInput, pos, maxDistance, maxLength, 2)
         : default;
 
-      if (match.Length >= 2) {
-        // Flush any pending literals first
-        if (pendingLiterals.Count > 0) {
-          tokens.Add(Token.CreateLiterals(pendingLiterals.ToArray()));
+      if (TrySelectMatch(match.Distance, match.Length, efficiency, out var offsetClass, out var matchLength)) {
+        if (pendingLiterals.Count == 0) {
+          bitWriter.WriteBit(1);
+        } else {
+          bitWriter.WriteBit(0);
+          WriteLiteralRun(bitWriter, pendingLiterals);
           pendingLiterals.Clear();
         }
 
-        // Determine offset class
-        var dist = match.Distance;
-        var offsetClass = -1;
-        var encodedOffset = 0;
+        WriteMatch(bitWriter, offsetClass, match.Distance - 1, matchLength, efficiency);
 
-        for (var c = 0; c < PowerPackerConstants.OffsetClasses; ++c) {
-          if (dist - 1 <= maxDistances[c]) {
-            offsetClass = c;
-            encodedOffset = dist - 1;
-            break;
-          }
-        }
-
-        if (offsetClass < 0) {
-          // Should not happen given our maxDistance constraint, treat as literal
-          pendingLiterals.Add(scanInput[pos]);
-          matchFinder.InsertPosition(scanInput, pos);
-          ++pos;
-          continue;
-        }
-
-        // Check if the length is compatible with the offset class
-        var baseLength = offsetClass + 2; // 2,3,4,5
-        var matchLen = match.Length;
-
-        // For classes 0-2, length is fixed at baseLength
-        if (offsetClass < 3) {
-          matchLen = Math.Min(matchLen, baseLength);
-          // Need at least baseLength to use this class
-          if (matchLen < baseLength) {
-            // Try a lower class or emit literal
-            var found = false;
-            for (var c = offsetClass - 1; c >= 0; --c) {
-              if (matchLen >= c + 2 && encodedOffset <= maxDistances[c]) {
-                offsetClass = c;
-                matchLen = c + 2;
-                found = true;
-                break;
-              }
-            }
-
-            if (!found) {
-              pendingLiterals.Add(scanInput[pos]);
-              matchFinder.InsertPosition(scanInput, pos);
-              ++pos;
-              continue;
-            }
-          } else {
-            matchLen = baseLength;
-          }
-        } else {
-          // Class 3: length >= 5, encoded via 3-bit extensions
-          if (matchLen < 5) {
-            // Try a lower class
-            var found = false;
-            for (var c = 2; c >= 0; --c) {
-              if (matchLen >= c + 2 && encodedOffset <= maxDistances[c]) {
-                offsetClass = c;
-                matchLen = c + 2;
-                found = true;
-                break;
-              }
-            }
-
-            if (!found) {
-              pendingLiterals.Add(scanInput[pos]);
-              matchFinder.InsertPosition(scanInput, pos);
-              ++pos;
-              continue;
-            }
-          }
-        }
-
-        tokens.Add(Token.CreateMatch(offsetClass, encodedOffset, matchLen));
-
-        // Insert skipped positions into hash chain
-        for (var i = 1; i < matchLen; ++i)
-          if (pos + i + 2 < scanInput.Length)
-            matchFinder.InsertPosition(scanInput, pos + i);
-
-        // Also insert the match start position (FindMatch already did this)
-        pos += matchLen;
+        for (var i = 1; i < matchLength; ++i)
+          matchFinder.InsertPosition(scanInput, pos + i);
+        pos += matchLength;
       } else {
         pendingLiterals.Add(scanInput[pos]);
-        // Only insert manually for pos < 2 — FindMatch already inserted for pos >= 2
         if (pos < 2)
           matchFinder.InsertPosition(scanInput, pos);
         ++pos;
       }
     }
 
-    // Flush remaining literals
-    if (pendingLiterals.Count > 0)
-      tokens.Add(Token.CreateLiterals(pendingLiterals.ToArray()));
+    if (pendingLiterals.Count > 0) {
+      bitWriter.WriteBit(0);
+      WriteLiteralRun(bitWriter, pendingLiterals);
+    }
 
-    // Encode tokens into groups and emit as a reverse bit stream.
-    // The decoder loop is: read 1 bit (match flag), optionally decode match,
-    // then read literal count + literal bytes. We group tokens into
-    // (optional_match, trailing_literals) pairs.
-    //
-    // The ReverseBitWriter packs entries[0] at the MSB of the last physical byte,
-    // which is what the backward reader reads first. So entries must be added in
-    // decode order: group[0] first (first decoded = last original bytes).
-    var bitWriter = new ReverseBitWriter();
-    var groups = BuildGroups(tokens, scanInput);
+    var packed = bitWriter.ToArray(out var skipBits);
+    return BuildPp20File(efficiency, packed, input.Length, skipBits);
+  }
 
-    // Write groups in forward order — group[0] is decoded first (fills end of output).
-    for (var g = 0; g < groups.Count; ++g) {
-      var (match, literals) = groups[g];
+  private static bool TrySelectMatch(
+    int distance,
+    int availableLength,
+    ReadOnlySpan<byte> efficiency,
+    out int offsetClass,
+    out int matchLength) {
+    offsetClass = 0;
+    matchLength = 0;
+    if (distance <= 0 || availableLength < 2)
+      return false;
 
-      // Match flag + data (decoder reads match flag first)
-      if (match != null) {
-        bitWriter.WriteBit(1);
-        WriteMatchData(bitWriter, match.Value, efficiency);
+    if (availableLength >= 5 && distance <= (1 << efficiency[3])) {
+      offsetClass = 3;
+      matchLength = availableLength;
+      return true;
+    }
+
+    for (var candidateClass = 2; candidateClass >= 0; --candidateClass) {
+      var length = candidateClass + 2;
+      if (availableLength >= length && distance <= (1 << efficiency[candidateClass])) {
+        offsetClass = candidateClass;
+        matchLength = length;
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static void WriteLiteralRun(ReverseBitWriter writer, List<byte> literals) {
+    var remaining = literals.Count - 1;
+    while (remaining >= 3) {
+      writer.WriteBits(3, 2);
+      remaining -= 3;
+    }
+    writer.WriteBits(remaining, 2);
+
+    foreach (var literal in literals)
+      writer.WriteBits(literal, 8);
+  }
+
+  private static void WriteMatch(
+    ReverseBitWriter writer,
+    int offsetClass,
+    int offset,
+    int matchLength,
+    ReadOnlySpan<byte> efficiency) {
+    writer.WriteBits(offsetClass, 2);
+
+    if (offsetClass == 3) {
+      if (offset < 128) {
+        writer.WriteBit(0);
+        writer.WriteBits(offset, 7);
       } else {
-        bitWriter.WriteBit(0);
+        writer.WriteBit(1);
+        writer.WriteBits(offset, efficiency[3]);
       }
 
-      // Literal count + literal bytes
-      WriteLiteralCount(bitWriter, literals.Length);
-      WriteLiteralBytes(bitWriter, literals);
-    }
-
-    var packedBits = bitWriter.ToArray(out var skipBits);
-    return BuildPp20File(efficiency, packedBits, input.Length, skipBits);
-  }
-
-  /// <summary>
-  /// Groups tokens into (optional match, trailing literals) pairs for PP20 encoding.
-  /// </summary>
-  private static List<(Token? Match, byte[] Literals)> BuildGroups(List<Token> tokens, ReadOnlySpan<byte> input) {
-    var groups = new List<(Token? Match, byte[] Literals)>();
-    var i = 0;
-
-    while (i < tokens.Count) {
-      if (tokens[i].IsMatch) {
-        var matchToken = tokens[i];
-        ++i;
-
-        // Collect following literals (in groups of up to 3, since lit count is 2 bits = 0-3)
-        // Actually: if litCount is 0, no literals. Values 1-3 are direct.
-        // For more than 3 literals, we need multiple groups with a "no match" + literals.
-        var allLiterals = CollectLiterals(tokens, ref i);
-        EmitLiteralGroups(groups, matchToken, allLiterals);
-      } else {
-        // Literal-only token
-        var allLiterals = tokens[i].Literals;
-        ++i;
-
-        // Collect any additional consecutive literal tokens
-        while (i < tokens.Count && !tokens[i].IsMatch) {
-          var combined = new byte[allLiterals.Length + tokens[i].Literals.Length];
-          allLiterals.CopyTo(combined, 0);
-          tokens[i].Literals.CopyTo(combined, allLiterals.Length);
-          allLiterals = combined;
-          ++i;
-        }
-
-        EmitLiteralGroups(groups, null, allLiterals);
-      }
-    }
-
-    // Ensure at least one group exists
-    if (groups.Count == 0)
-      groups.Add((null, []));
-
-    return groups;
-  }
-
-  private static byte[] CollectLiterals(List<Token> tokens, ref int i) {
-    var literals = new List<byte>();
-    while (i < tokens.Count && !tokens[i].IsMatch) {
-      literals.AddRange(tokens[i].Literals);
-      ++i;
-    }
-
-    return literals.ToArray();
-  }
-
-  private static void EmitLiteralGroups(
-    List<(Token? Match, byte[] Literals)> groups,
-    Token? matchToken,
-    byte[] allLiterals
-  ) {
-    if (allLiterals.Length <= 3) {
-      groups.Add((matchToken, allLiterals));
-    } else {
-      // First group has the match + first 3 literals
-      groups.Add((matchToken, allLiterals[..3]));
-
-      // Remaining literals in groups of up to 3, each with no-match flag
-      var remaining = allLiterals.AsSpan(3);
-      while (remaining.Length > 0) {
-        var chunk = Math.Min(remaining.Length, 3);
-        groups.Add((null, remaining[..chunk].ToArray()));
-        remaining = remaining[chunk..];
-      }
-    }
-  }
-
-  private static void WriteLiteralBytes(ReverseBitWriter writer, byte[] literals) {
-    // Literals in decode order: first literal read → highest outPos.
-    for (var i = 0; i < literals.Length; ++i)
-      writer.WriteBits(literals[i], 8);
-  }
-
-  private static void WriteLiteralCount(ReverseBitWriter writer, int count) =>
-    writer.WriteBits(count, 2);
-
-  private static void WriteMatchData(ReverseBitWriter writer, Token match, int[] efficiency) {
-    // Decoder reads: offset class (2 bits), offset, [ext offset], [length extensions].
-    // Write in the same order.
-
-    // Offset class (2 bits)
-    writer.WriteBits(match.OffsetClass, 2);
-
-    // Offset bits
-    var maxOffset = (1 << efficiency[match.OffsetClass]) - 1;
-    if (match.OffsetClass == 3 && match.Offset >= maxOffset) {
-      writer.WriteBits(maxOffset, efficiency[3]);
-      writer.WriteBits(match.Offset - maxOffset, 7);
-    } else {
-      writer.WriteBits(match.Offset, efficiency[match.OffsetClass]);
-    }
-
-    // Length (class 3 only — classes 0-2 have implicit length)
-    if (match.OffsetClass >= 3) {
-      var remaining = match.Length - 5;
+      var remaining = matchLength - 5;
       while (remaining >= 7) {
         writer.WriteBits(7, 3);
         remaining -= 7;
       }
       writer.WriteBits(remaining, 3);
+      return;
     }
+
+    writer.WriteBits(offset, efficiency[offsetClass]);
   }
 
-  private static byte[] BuildPp20File(int[] efficiency, byte[] packedData, int originalSize, int skipBits = 0) {
+  private static byte[] BuildPp20File(ReadOnlySpan<byte> efficiency, byte[] packedData, int originalSize, int skipBits) {
+    if (efficiency.Length != PowerPackerConstants.OffsetClasses)
+      throw new ArgumentException("PP20 efficiency table must contain four entries.", nameof(efficiency));
+    if (packedData.Length < sizeof(uint) || (packedData.Length & 3) != 0)
+      throw new ArgumentException("PP20 packed data must contain whole 32-bit words.", nameof(packedData));
+
     var totalSize = PowerPackerConstants.MagicLength
       + PowerPackerConstants.EfficiencyTableSize
       + packedData.Length
@@ -476,150 +292,112 @@ public static class PowerPackerStream {
 
     var result = new byte[totalSize];
     var span = result.AsSpan();
-
-    // Magic
     PowerPackerConstants.Magic.CopyTo(span);
+    efficiency.CopyTo(span[PowerPackerConstants.EfficiencyTableOffset..]);
+    packedData.CopyTo(span[(PowerPackerConstants.MagicLength + PowerPackerConstants.EfficiencyTableSize)..]);
 
-    // Efficiency table
-    if (efficiency.Length == 0) {
-      PowerPackerConstants.DefaultEfficiency.CopyTo(span[4..]);
-    } else {
-      for (var i = 0; i < PowerPackerConstants.OffsetClasses; ++i)
-        span[4 + i] = (byte)efficiency[i];
-    }
-
-    // Packed data
-    packedData.AsSpan().CopyTo(span[(PowerPackerConstants.MagicLength + PowerPackerConstants.EfficiencyTableSize)..]);
-
-    // Decrunch info (last 4 bytes): 24-bit original size (big-endian) + skip bits
     var infoOffset = totalSize - PowerPackerConstants.DecrunchInfoSize;
-    span[infoOffset] = (byte)((originalSize >> 16) & 0xFF);
-    span[infoOffset + 1] = (byte)((originalSize >> 8) & 0xFF);
-    span[infoOffset + 2] = (byte)(originalSize & 0xFF);
+    span[infoOffset] = (byte)(originalSize >> 16);
+    span[infoOffset + 1] = (byte)(originalSize >> 8);
+    span[infoOffset + 2] = (byte)originalSize;
     span[infoOffset + 3] = (byte)skipBits;
-
     return result;
   }
 
-  // ── Reverse bit reader (for decompression) ────────────────────────────────
+  private static void ValidateEfficiency(ReadOnlySpan<byte> efficiency) {
+    foreach (var bits in efficiency)
+      if (bits is < 9 or > 15)
+        throw new InvalidDataException("PP20 efficiency entries must be between 9 and 15 bits.");
+  }
 
-  /// <summary>
-  /// Reads bits from a byte buffer starting at the last byte, MSB first,
-  /// proceeding toward the first byte. This matches the PP20 bit ordering.
-  /// </summary>
-  private ref struct ReverseBitReader {
-    private readonly byte[] _data;
-    private int _bytePos;
-    private uint _buffer;
-    private int _bitsInBuffer;
-
-    public ReverseBitReader(byte[] data) {
-      this._data = data;
-      this._bytePos = data.Length - 1;
-      this._buffer = 0;
-      this._bitsInBuffer = 0;
-
-      // Pre-fill the buffer with up to 4 bytes from the end
-      this.FillBuffer();
-    }
-
-    private void FillBuffer() {
-      while (this._bitsInBuffer <= 24 && this._bytePos >= 0) {
-        this._buffer |= (uint)this._data[this._bytePos] << (24 - this._bitsInBuffer);
-        this._bitsInBuffer += 8;
-        --this._bytePos;
-      }
-    }
+  private ref struct ReverseBitReader(ReadOnlySpan<byte> data) {
+    private readonly ReadOnlySpan<byte> _data = data;
+    private int _bytePos = data.Length - 1;
+    private int _bitPos;
+    private int _remainingBits = data.Length * 8;
 
     public int ReadBit() => this.ReadBits(1);
 
+    public void SkipBits(int count) {
+      if ((uint)count > (uint)this._remainingBits)
+        throw new InvalidDataException("PP20 packed bitstream is truncated.");
+
+      var absolute = this._bitPos + count;
+      this._bytePos -= absolute >> 3;
+      this._bitPos = absolute & 7;
+      this._remainingBits -= count;
+    }
+
     public int ReadBits(int count) {
-      if (count == 0)
-        return 0;
+      if ((uint)count > (uint)this._remainingBits)
+        throw new InvalidDataException("PP20 packed bitstream is truncated.");
 
-      this.FillBuffer();
-
-      // Extract top 'count' bits from the buffer
-      var result = (int)(this._buffer >> (32 - count));
-      this._buffer <<= count;
-      this._bitsInBuffer -= count;
-
-      return result;
-    }
-  }
-
-  // ── Reverse bit writer (for compression) ──────────────────────────────────
-
-  /// <summary>
-  /// Accumulates bits that will form the PP20 packed data.
-  /// Bits are collected in logical decode order (first decoded = first written),
-  /// then reversed to produce the physical byte stream where the last byte
-  /// is read first during decompression.
-  /// </summary>
-  private sealed class ReverseBitWriter {
-    private readonly List<(int Value, int Bits)> _entries = [];
-
-    public void WriteBit(int value) => this.WriteBits(value, 1);
-
-    public void WriteBits(int value, int bits) {
-      if (bits > 0)
-        this._entries.Add((value & ((1 << bits) - 1), bits));
-    }
-
-    /// <summary>
-    /// Converts the accumulated bit stream into a byte array suitable for PP20.
-    /// The decoder reads from the last byte toward the first, MSB first.
-    /// </summary>
-    /// <param name="skipBits">
-    /// Output: the number of padding bits at the end of the last physical byte
-    /// that the decoder must skip before reading real data.
-    /// </param>
-    public byte[] ToArray(out int skipBits) {
-      // The entries are in logical decode order: entry[0] is what the decoder
-      // reads first. The decoder reads from the END of the byte array, MSB first.
-      // So we pack entries[0] at the MSB of the last byte, proceeding toward
-      // the first byte.
-
-      // First, calculate total bits
-      var totalBits = 0;
-      foreach (var (_, bits) in this._entries)
-        totalBits += bits;
-
-      if (totalBits == 0) {
-        skipBits = 0;
-        return [];
-      }
-
-      // Pad to a full byte count
-      var totalBytes = (totalBits + 7) / 8;
-      skipBits = totalBytes * 8 - totalBits;
-
-      var result = new byte[totalBytes];
-
-      // Pack bits: start from the end of the byte array, MSB first.
-      // The decoder reads byte[last] MSB first and skips `skipBits` padding bits
-      // before reaching real data. So leave skipBits zeros at byte[last] MSB.
-      var byteIdx = totalBytes - 1;
-      var bitIdx = 7 - skipBits; // start after padding bits
-
-      foreach (var (value, bits) in this._entries) {
-        for (var i = bits - 1; i >= 0; --i) {
-          if (((value >> i) & 1) == 1)
-            result[byteIdx] |= (byte)(1 << bitIdx);
-
-          --bitIdx;
-          if (bitIdx < 0) {
-            bitIdx = 7;
-            --byteIdx;
-          }
+      var result = 0;
+      for (var i = 0; i < count; ++i) {
+        result = (result << 1) | ((this._data[this._bytePos] >> this._bitPos) & 1);
+        if (++this._bitPos == 8) {
+          this._bitPos = 0;
+          --this._bytePos;
         }
       }
 
+      this._remainingBits -= count;
       return result;
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  private sealed class ReverseBitWriter {
+    private readonly List<byte> _bytes = [];
+    private byte _current;
+    private int _bitsInCurrent;
+    private int _totalBits;
+
+    public void WriteBit(int value) => this.WriteBits(value, 1);
+
+    public void WriteBits(int value, int bitCount) {
+      for (var bit = bitCount - 1; bit >= 0; --bit) {
+        if (((value >> bit) & 1) != 0)
+          this._current |= (byte)(1 << this._bitsInCurrent);
+
+        ++this._bitsInCurrent;
+        ++this._totalBits;
+        if (this._bitsInCurrent == 8) {
+          this._bytes.Add(this._current);
+          this._current = 0;
+          this._bitsInCurrent = 0;
+        }
+      }
+    }
+
+    public byte[] ToArray(out int skipBits) {
+      if (this._totalBits == 0) {
+        skipBits = 0;
+        return new byte[sizeof(uint)];
+      }
+
+      var logicalBytes = new byte[(this._totalBits + 7) >> 3];
+      for (var i = 0; i < this._bytes.Count; ++i)
+        logicalBytes[i] = this._bytes[i];
+      if (this._bitsInCurrent != 0)
+        logicalBytes[^1] = this._current;
+
+      var packedBytes = ((this._totalBits + 31) >> 5) << 2;
+      skipBits = packedBytes * 8 - this._totalBits;
+      var consumptionOrder = new byte[packedBytes];
+      var byteShift = skipBits >> 3;
+      var bitShift = skipBits & 7;
+
+      for (var i = 0; i < logicalBytes.Length; ++i) {
+        var target = i + byteShift;
+        consumptionOrder[target] |= (byte)(logicalBytes[i] << bitShift);
+        if (bitShift != 0 && target + 1 < consumptionOrder.Length)
+          consumptionOrder[target + 1] |= (byte)(logicalBytes[i] >> (8 - bitShift));
+      }
+
+      Array.Reverse(consumptionOrder);
+      return consumptionOrder;
+    }
+  }
 
   private static byte[] ReadAllBytes(Stream stream) {
     using var ms = new MemoryStream();

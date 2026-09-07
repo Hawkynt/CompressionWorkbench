@@ -6,7 +6,7 @@ namespace FileFormat.PowerPacker;
 /// <summary>
 /// Describes power packer format.
 /// </summary>
-public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -23,7 +23,8 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -43,7 +44,7 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("powerpacker", "PowerPacker")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("powerpacker", "PowerPacker", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -55,7 +56,26 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Amiga PowerPacker LZ77, classic retro format";
+  public string Description => "Amiga PowerPacker PP20 backward LZ compression";
+
+  /// <summary>The historical offset-width preset used by the PP20 match coder.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Efficiency",
+      DisplayName: "Efficiency",
+      Kind: FormatOptionKind.Enum,
+      Default: nameof(PowerPackerEfficiency.Good),
+      AllowedValues: Enum.GetNames<PowerPackerEfficiency>(),
+      Description: "PowerPacker offset-width preset. Optimize searches all five historical tables and keeps the smallest stream."),
+  ];
+
+  internal static PowerPackerEfficiency ParseEfficiency(FormatCreateOptions options) {
+    var value = options.GetOption("Efficiency", nameof(PowerPackerEfficiency.Good));
+    return Enum.TryParse<PowerPackerEfficiency>(value, ignoreCase: true, out var efficiency)
+      && Enum.IsDefined(efficiency)
+        ? efficiency
+        : PowerPackerEfficiency.Good;
+  }
 
   /// <summary>
   /// Decodes the supplied input.
@@ -65,4 +85,13 @@ public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamForm
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => PowerPackerStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input with the requested efficiency preset.
+  /// </summary>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options)
+    => PowerPackerStream.Compress(input, output, ParseEfficiency(options));
+  /// <summary>
+  /// Tries all historical efficiency presets and writes the smallest PP20 stream.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => PowerPackerStream.CompressOptimal(input, output);
 }
