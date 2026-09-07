@@ -19,12 +19,34 @@ public static class CmixStream {
   private const int ProbMax = 1 << ProbBits; // 4096
   private const int ProbInit = ProbMax / 2;  // 2048
 
+  /// <summary>Arithmetic-coder termination strategy.</summary>
+  internal enum FinalizationMode {
+    /// <summary>Historical managed encoding: write the complete 32-bit upper bound.</summary>
+    Legacy,
+    /// <summary>Write only the distinguishing high byte and let EOF provide zero padding.</summary>
+    Compact,
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the historical four-byte finalization.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, FinalizationMode.Legacy);
+
+  /// <summary>
+  /// Encodes the supplied input using the requested arithmetic-coder finalization.
+  /// </summary>
+  /// <remarks>
+  /// Finalization changes only the redundant bytes used to terminate the arithmetic
+  /// code. It does not alter the probability model or require a stream-format flag.
+  /// </remarks>
+  internal static void Compress(Stream input, Stream output, FinalizationMode finalization) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (finalization is not (FinalizationMode.Legacy or FinalizationMode.Compact))
+      throw new ArgumentOutOfRangeException(nameof(finalization));
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -61,13 +83,16 @@ public static class CmixStream {
       EncodeByte(enc, b, bitTree);
     }
 
-    enc.Flush();
+    enc.Flush(finalization);
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
     // Read 5-byte header
     var h0 = input.ReadByte();
     var h1 = input.ReadByte();
@@ -170,7 +195,15 @@ public static class CmixStream {
       }
     }
 
-    public void Flush() {
+    public void Flush(FinalizationMode finalization) {
+      if (finalization == FinalizationMode.Compact) {
+        // Normalize() has stopped only once the bounds differ in their high byte.
+        // Therefore high's first byte followed by zero bits is > low and <= high,
+        // i.e. a complete arithmetic code inside the final interval.
+        _out.WriteByte((byte)(_high >> 24));
+        return;
+      }
+
       for (var i = 0; i < 4; i++) {
         _out.WriteByte((byte)(_high >> 24));
         _high <<= 8;
@@ -187,7 +220,7 @@ public static class CmixStream {
     public ArithDecoder(Stream input) {
       _in = input;
       for (var i = 0; i < 4; i++)
-        _code = (_code << 8) | (uint)Math.Max(0, input.ReadByte());
+        _code = (_code << 8) | ReadByteOrZero();
     }
 
     public int DecodeBit(ref int prob) {
@@ -212,11 +245,15 @@ public static class CmixStream {
 
     private void Normalize() {
       while ((_low ^ _high) < Top) {
-        var b = _in.ReadByte();
-        _code = (_code << 8) | (uint)(b < 0 ? 0xFF : b);
+        _code = (_code << 8) | ReadByteOrZero();
         _low <<= 8;
         _high = (_high << 8) | 0xFFu;
       }
+    }
+
+    private uint ReadByteOrZero() {
+      var value = _in.ReadByte();
+      return value < 0 ? 0u : (uint)value;
     }
   }
 }
