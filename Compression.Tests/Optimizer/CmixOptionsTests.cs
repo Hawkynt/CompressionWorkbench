@@ -37,8 +37,10 @@ public sealed class CmixOptionsTests {
     var data = new byte[4096];
     var rng = new Random(0xC_1A5);
     rng.NextBytes(data);
-    for (var i = 64; i < data.Length; i += 97)
-      data.AsSpan(i, Math.Min(32, data.Length - i)).CopyFrom(data.AsSpan(i - 64));
+    for (var i = 64; i < data.Length; i += 97) {
+      var length = Math.Min(32, data.Length - i);
+      data.AsSpan(i - 64, length).CopyTo(data.AsSpan(i, length));
+    }
     return data;
   }
 
@@ -103,8 +105,4 @@ public sealed class CmixOptionsTests {
     Assert.That(result.CompressedSize, Is.EqualTo(Compress(descriptor, data, "Compact").LongLength));
     Assert.That(Decompress(descriptor, result.Bytes), Is.EqualTo(data));
   }
-}
-
-internal static class SpanCopyExtensions {
-  public static void CopyFrom(this Span<byte> destination, ReadOnlySpan<byte> source) => source.CopyTo(destination);
 }
