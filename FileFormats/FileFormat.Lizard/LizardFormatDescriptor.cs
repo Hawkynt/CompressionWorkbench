@@ -9,7 +9,7 @@ namespace FileFormat.Lizard;
 /// </summary>
 public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
   private const int DefaultLevel = 17;
-  private const int OptimalLevel = 19;
+  private const int OptimalLevel = 49;
   private const int DefaultBlockSize = 4 * 1024 * 1024;
 
   private static readonly IReadOnlyDictionary<string, int> BlockSizesByLabel =
@@ -34,13 +34,12 @@ public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
   public string Description =>
-    "Lizard/LZ5 managed fast-LZ4 codeword family (levels 10-19) with interoperable Lizard block framing";
+    "Lizard/LZ5 levels 10-49: fastLZ4, LIZv1, and their Huffman-coded variants with interoperable Lizard framing";
 
   /// <summary>
-  /// Tunable Lizard parameters supported by the managed encoder. The upstream
-  /// codec defines levels 10-49; levels 20-49 require LIZv1 and/or Huffman
-  /// streams, so this schema intentionally exposes only interoperable levels
-  /// 10-19 that this implementation can actually emit and decode.
+  /// Tunable Lizard parameters supported by the managed encoder. Upstream
+  /// defines four method families across levels 10-49: fastLZ4 (10-19),
+  /// LIZv1 (20-29), fastLZ4+HUF (30-39), and LIZv1+HUF (40-49).
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
@@ -48,8 +47,8 @@ public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
       DisplayName: "Compression level",
       Kind: FormatOptionKind.Integer,
       Default: "17",
-      AllowedValues: ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19"],
-      Description: "Lizard fast-LZ4 codeword level. 10 is fastest; 19 spends the most search effort."),
+      AllowedValues: Enumerable.Range(10, 40).Select(static value => value.ToString()).ToArray(),
+      Description: "Lizard compression level 10-49. Method family changes at 20, 30, and 40; higher levels spend more search effort."),
     new FormatOptionDescriptor(
       Key: "BlockSize",
       DisplayName: "Max frame block size",
@@ -61,7 +60,7 @@ public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
 
   internal static int ParseLevel(FormatCreateOptions options) {
     var raw = options.GetString("Level");
-    return int.TryParse(raw, out var level) && level is >= 10 and <= 19 ? level : DefaultLevel;
+    return int.TryParse(raw, out var level) && level is >= 10 and <= 49 ? level : DefaultLevel;
   }
 
   internal static int ParseBlockSize(FormatCreateOptions options) {
