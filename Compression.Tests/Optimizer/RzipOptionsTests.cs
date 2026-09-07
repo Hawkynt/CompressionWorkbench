@@ -55,11 +55,12 @@ public class RzipOptionsTests {
 
   private static byte[] CandidateDepthSample() {
     ReadOnlySpan<byte> prefix = "ABCDEFGH"u8;
-    var target = new byte[prefix.Length + 37 + 64];
+    ReadOnlySpan<byte> continuation = "THIS-IS-A-LONG-UNIQUE-CONTINUATION-"u8;
+    var target = new byte[prefix.Length + continuation.Length + 64];
     prefix.CopyTo(target);
-    "THIS-IS-A-LONG-UNIQUE-CONTINUATION-"u8.CopyTo(target.AsSpan(prefix.Length));
+    continuation.CopyTo(target.AsSpan(prefix.Length));
     for (var i = 0; i < 64; ++i)
-      target[^64 + i] = (byte)i;
+      target[prefix.Length + continuation.Length + i] = (byte)i;
 
     using var output = new MemoryStream();
     output.Write(target);
@@ -89,8 +90,7 @@ public class RzipOptionsTests {
     Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
     Assert.That(descriptor.OptionsSchema.Select(option => option.Key),
       Is.EquivalentTo(new[] { "MinMatch", "CandidateSearchLimit" }));
-    Assert.That(descriptor.OptionsSchema, Has.All.Matches<FormatOptionDescriptor>(
-      option => option.AllowedValues is { Count: > 1 }));
+    Assert.That(descriptor.OptionsSchema.All(option => option.AllowedValues is { Count: > 1 }), Is.True);
   }
 
   [Test, Category("Regression"), Category("RoundTrip")]
