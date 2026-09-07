@@ -4,6 +4,11 @@ using Compression.Core.Transforms;
 
 namespace FileFormat.Bsc;
 
+internal enum BscSortingContexts : byte {
+  Following = 1,
+  Preceding = 2,
+}
+
 /// <summary>
 /// BSC (libbsc) stream implementation.
 ///
@@ -29,59 +34,46 @@ public static class BscStream {
   private const int InternalHeaderSize = 28;   // 7 × int32 LE
   private const int ModeStoreRle = 0;          // sorter=0 (BWT), coder=0 (none/RLE)
 
+  internal const int MinimumBlockSize = 10_000;
+  internal const int DefaultBlockSize = 25 * 1024 * 1024;
+  internal const int MaximumBlockSize = 2047 * 1024 * 1024;
+
   // -------------------------------------------------------------------------
   // Public API
   // -------------------------------------------------------------------------
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using libbsc's default 25 MiB block size and
+  /// following-context ordering.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, DefaultBlockSize, BscSortingContexts.Following);
+
+  /// <summary>
+  /// Encodes the supplied input using the selected block size and sorting-context order.
+  /// </summary>
+  internal static void Compress(Stream input, Stream output, int blockSize, BscSortingContexts sortingContexts) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (blockSize is < MinimumBlockSize or > MaximumBlockSize)
+      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
+        $"BSC block size must be between {MinimumBlockSize} and {MaximumBlockSize} bytes.");
+    if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
+      throw new ArgumentOutOfRangeException(nameof(sortingContexts));
+
     var data = ReadAll(input);
+    var blockCount = data.Length == 0 ? 1 : ((data.Length - 1) / blockSize) + 1;
 
-    // --- Apply pipeline: BWT → MTF → zero-run-length encode ---
-    var (bwtData, primaryIndex) = BurrowsWheelerTransform.Forward(data);
-    var mtfData = MoveToFrontTransform.Encode(bwtData);
-    var payload = ZeroRunEncode(mtfData);
-
-    // --- Build mode bitfield (sorter=0 BWT, coder=0, lzpMinLen=0, lzpHashSize=0) ---
-    var mode = ModeStoreRle;
-
-    // --- Adler-32 checksums ---
-    var adler32Data       = Adler32(data);
-    var adler32Compressed = Adler32(payload);
-
-    // --- Build internal header (first 24 bytes, then checksum of those) ---
-    var blockSize = InternalHeaderSize + payload.Length; // total compressed including header
-    var dataSize  = data.Length;
-
-    var headerBytes = new byte[InternalHeaderSize];
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(0),  blockSize);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(4),  dataSize);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(8),  mode);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(12), primaryIndex);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(16), (int)adler32Data);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(20), (int)adler32Compressed);
-    var adler32Header = Adler32(headerBytes.AsSpan(0, 24)); // checksum of first 24 bytes
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(24), (int)adler32Header);
-
-    // --- Write file ---
     output.Write(Magic);
-
-    // Block count
-    var blockCountBytes = new byte[4];
-    BinaryPrimitives.WriteInt32LittleEndian(blockCountBytes, 1);
+    Span<byte> blockCountBytes = stackalloc byte[sizeof(int)];
+    BinaryPrimitives.WriteInt32LittleEndian(blockCountBytes, blockCount);
     output.Write(blockCountBytes);
 
-    // BSC_BLOCK_HEADER: offset=0, recordSize=1, sortingContexts=1
-    var bscBlockHeader = new byte[BscBlockHeaderSize];
-    BinaryPrimitives.WriteInt64LittleEndian(bscBlockHeader.AsSpan(0), 0L);
-    bscBlockHeader[8] = 1; // recordSize
-    bscBlockHeader[9] = 1; // sortingContexts
-    output.Write(bscBlockHeader);
-
-    // Internal header + payload
-    output.Write(headerBytes);
-    output.Write(payload);
+    var offset = 0;
+    for (var blockIndex = 0; blockIndex < blockCount; ++blockIndex) {
+      var length = Math.Min(blockSize, data.Length - offset);
+      WriteBlock(data.AsSpan(offset, length), output, offset, sortingContexts);
+      offset += length;
+    }
   }
 
   /// <summary>
@@ -105,7 +97,12 @@ public static class BscStream {
       // --- BSC_BLOCK_HEADER (10 bytes) ---
       var bscBlockHeader = new byte[BscBlockHeaderSize];
       input.ReadExactly(bscBlockHeader);
-      // offset, recordSize, sortingContexts — read but not validated further for round-trip
+      var recordSize = bscBlockHeader[8];
+      var sortingContexts = (BscSortingContexts)bscBlockHeader[9];
+      if (recordSize != 1)
+        throw new NotSupportedException($"BSC: record reordering (record size {recordSize}) is not supported");
+      if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
+        throw new InvalidDataException($"BSC: invalid sorting-context order {(byte)sortingContexts}");
 
       // --- Internal header (28 bytes) ---
       var headerBytes = new byte[InternalHeaderSize];
@@ -128,6 +125,8 @@ public static class BscStream {
       var payloadSize = blockSize - InternalHeaderSize;
       if (payloadSize < 0)
         throw new InvalidDataException($"BSC: invalid block size {blockSize}");
+      if (dataSize < 0)
+        throw new InvalidDataException($"BSC: invalid data size {dataSize}");
 
       var payload = new byte[payloadSize];
       if (payloadSize > 0)
@@ -140,8 +139,12 @@ public static class BscStream {
 
       // --- Reverse pipeline: zero-run decode → MTF inverse → BWT inverse ---
       var mtfData = ZeroRunDecode(payload, dataSize);
+      if (mtfData.Length != dataSize)
+        throw new InvalidDataException($"BSC: decoded block size {mtfData.Length} does not match expected {dataSize}");
       var bwtData = MoveToFrontTransform.Decode(mtfData);
       var original = BurrowsWheelerTransform.Inverse(bwtData, primaryIndex);
+      if (sortingContexts == BscSortingContexts.Preceding)
+        Array.Reverse(original);
 
       // Verify original data checksum
       var actualDataChecksum = Adler32(original);
@@ -150,6 +153,49 @@ public static class BscStream {
 
       output.Write(original);
     }
+  }
+
+  private static void WriteBlock(
+      ReadOnlySpan<byte> data, Stream output, long blockOffset, BscSortingContexts sortingContexts) {
+    var adler32Data = Adler32(data);
+
+    ReadOnlySpan<byte> transformInput = data;
+    byte[]? reversed = null;
+    if (sortingContexts == BscSortingContexts.Preceding) {
+      reversed = data.ToArray();
+      Array.Reverse(reversed);
+      transformInput = reversed;
+    }
+
+    // --- Apply pipeline: BWT → MTF → zero-run-length encode ---
+    var (bwtData, primaryIndex) = BurrowsWheelerTransform.Forward(transformInput);
+    var mtfData = MoveToFrontTransform.Encode(bwtData);
+    var payload = ZeroRunEncode(mtfData);
+
+    // --- Adler-32 checksums ---
+    var adler32Compressed = Adler32(payload);
+
+    // --- Build internal header (first 24 bytes, then checksum of those) ---
+    var blockSize = InternalHeaderSize + payload.Length;
+    var headerBytes = new byte[InternalHeaderSize];
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(0), blockSize);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(4), data.Length);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(8), ModeStoreRle);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(12), primaryIndex);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(16), (int)adler32Data);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(20), (int)adler32Compressed);
+    var adler32Header = Adler32(headerBytes.AsSpan(0, 24));
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(24), (int)adler32Header);
+
+    // BSC_BLOCK_HEADER follows libbsc's public file envelope: original block
+    // offset, record size 1 (no record reordering), and context order 1/2.
+    Span<byte> bscBlockHeader = stackalloc byte[BscBlockHeaderSize];
+    BinaryPrimitives.WriteInt64LittleEndian(bscBlockHeader, blockOffset);
+    bscBlockHeader[8] = 1;
+    bscBlockHeader[9] = (byte)sortingContexts;
+    output.Write(bscBlockHeader);
+    output.Write(headerBytes);
+    output.Write(payload);
   }
 
   // -------------------------------------------------------------------------
@@ -196,12 +242,16 @@ public static class BscStream {
     var i = 0;
     while (i < data.Length) {
       if (data[i] != 0) {
+        if (result.Count >= expectedSize)
+          throw new InvalidDataException("BSC: zero-run payload expands beyond the declared data size");
         result.Add(data[i]);
         i++;
       } else {
         if (i + 1 >= data.Length)
           throw new InvalidDataException("BSC: truncated zero-run escape sequence");
         var runLen = (int)data[i + 1] + 1;
+        if (runLen > expectedSize - result.Count)
+          throw new InvalidDataException("BSC: zero-run payload expands beyond the declared data size");
         for (var r = 0; r < runLen; r++)
           result.Add(0x00);
         i += 2;
