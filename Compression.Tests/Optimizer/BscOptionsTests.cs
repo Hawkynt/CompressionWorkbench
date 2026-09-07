@@ -13,6 +13,9 @@ namespace Compression.Tests.Optimizer;
 [TestFixture]
 [Category("Slow")]
 public class BscOptionsTests {
+  private const int FileHeaderSize = 8;
+  private const int FileBlockHeaderSize = 10;
+
   private static byte[] CompressibleSample() {
     using var ms = new MemoryStream();
     var rng = new Random(7331);
@@ -47,6 +50,23 @@ public class BscOptionsTests {
     return output.ToArray();
   }
 
+  private static int EncodedBlockLength(ReadOnlySpan<byte> archive, int offset)
+    => FileBlockHeaderSize + BinaryPrimitives.ReadInt32LittleEndian(archive[(offset + FileBlockHeaderSize)..]);
+
+  private static byte[] SwapFirstTwoBlocks(byte[] archive) {
+    var firstOffset = FileHeaderSize;
+    var firstLength = EncodedBlockLength(archive, firstOffset);
+    var secondOffset = firstOffset + firstLength;
+    var secondLength = EncodedBlockLength(archive, secondOffset);
+
+    var result = new byte[archive.Length];
+    archive.AsSpan(0, FileHeaderSize).CopyTo(result);
+    archive.AsSpan(secondOffset, secondLength).CopyTo(result.AsSpan(FileHeaderSize));
+    archive.AsSpan(firstOffset, firstLength).CopyTo(result.AsSpan(FileHeaderSize + secondLength));
+    archive.AsSpan(secondOffset + secondLength).CopyTo(result.AsSpan(FileHeaderSize + secondLength + firstLength));
+    return result;
+  }
+
   [Test, Category("Spec")]
   public void Bsc_ExposesSearchableOptimizationAxes() {
     var descriptor = new BscFormatDescriptor();
@@ -65,6 +85,16 @@ public class BscOptionsTests {
   }
 
   [Test, Category("Spec")]
+  public void Bsc_EmptyInputUsesLibbscZeroBlockEnvelope() {
+    var descriptor = new BscFormatDescriptor();
+    var compressed = CompressAt(descriptor, [], "16384", "Following");
+
+    Assert.That(compressed, Has.Length.EqualTo(FileHeaderSize));
+    Assert.That(BinaryPrimitives.ReadInt32LittleEndian(compressed.AsSpan(4, 4)), Is.Zero);
+    Assert.That(Decompress(descriptor, compressed), Is.Empty);
+  }
+
+  [Test, Category("Spec")]
   public void Bsc_HonoursBlockSize_AndRoundTripsMultipleBlocks() {
     var descriptor = new BscFormatDescriptor();
     var data = CompressibleSample();
@@ -74,8 +104,24 @@ public class BscOptionsTests {
 
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(smallBlocks.AsSpan(4, 4)), Is.EqualTo(2));
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(defaultBlocks.AsSpan(4, 4)), Is.EqualTo(1));
+
+    var secondBlockOffset = FileHeaderSize + EncodedBlockLength(smallBlocks, FileHeaderSize);
+    Assert.That(BinaryPrimitives.ReadInt64LittleEndian(smallBlocks.AsSpan(secondBlockOffset, 8)), Is.EqualTo(16384));
+
     Assert.That(Decompress(descriptor, smallBlocks), Is.EqualTo(data));
     Assert.That(Decompress(descriptor, defaultBlocks), Is.EqualTo(data));
+  }
+
+  [Test, Category("Spec")]
+  public void Bsc_DecoderHonoursBlockOffsets_WhenPhysicalOrderDiffers() {
+    var descriptor = new BscFormatDescriptor();
+    var data = CompressibleSample();
+    var compressed = CompressAt(descriptor, data, "16384", "Following");
+
+    var reordered = SwapFirstTwoBlocks(compressed);
+
+    Assert.That(Decompress(descriptor, reordered), Is.EqualTo(data),
+      "libbsc parallel compression may serialize completed blocks out of input order; blockOffset restores logical order");
   }
 
   [Test, Category("Spec")]
