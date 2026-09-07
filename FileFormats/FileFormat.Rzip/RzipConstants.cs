@@ -1,8 +1,9 @@
 namespace FileFormat.Rzip;
 
 /// <summary>
-/// Constants for the RZIP format. Every value here is part of the wire format:
-/// encoder and decoder must agree on all of them.
+/// Constants for the RZIP format plus defaults for encoder-only search settings.
+/// Wire-format constants must agree between encoder and decoder; match-finder settings
+/// only affect which valid token sequence the encoder chooses.
 /// </summary>
 internal static class RzipConstants {
 
@@ -25,17 +26,18 @@ internal static class RzipConstants {
   public const byte TagMatch = 1;
 
   /// <summary>
-  /// Width of the rolling-hash window, and the shortest run worth encoding as a match.
+  /// Default rolling-signature width and shortest run accepted as a match.
+  /// This is an encoder setting, not a field in the stream.
   /// </summary>
   public const int MinMatch = 16;
 
-  /// <summary>Multiplier of the polynomial rolling hash.</summary>
+  /// <summary>Multiplier of the polynomial rolling hash used by the encoder.</summary>
   public const uint RollingHashBase = 257;
 
-  /// <summary>Maximum number of candidate positions retained per hash value.</summary>
+  /// <summary>Historical minimum number of candidate positions retained per hash value.</summary>
   public const int HashBucketCapacity = 64;
 
-  /// <summary>Maximum number of candidate positions examined per input position.</summary>
+  /// <summary>Default maximum number of candidate positions examined per input position.</summary>
   public const int CandidateSearchLimit = 32;
 
   /// <summary>
