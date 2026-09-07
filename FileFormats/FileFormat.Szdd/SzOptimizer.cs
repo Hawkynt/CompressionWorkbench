@@ -130,7 +130,7 @@ public static class SzOptimizer {
   }
 
   private static int Hash(ReadOnlySpan<byte> input, int position) {
-    var value = input[position];
+    var value = (int)input[position];
     value = (value * 251) ^ input[position + 1];
     value = (value * 251) ^ input[position + 2];
     return value & (HashSize - 1);
@@ -172,10 +172,10 @@ public static class SzOptimizer {
   }
 
   private static byte[] EmitOptimalBody(
-      ReadOnlySpan<byte> input,
-      ReadOnlySpan<byte> matchLengths,
-      ReadOnlySpan<ushort> matchOffsets,
-      ReadOnlySpan<int> boundaryCosts) {
+      byte[] input,
+      byte[] matchLengths,
+      ushort[] matchOffsets,
+      int[] boundaryCosts) {
     using var body = new MemoryStream();
     var memo = new int[(StateCount + 1) * GroupStride];
     var choices = new byte[StateCount * GroupStride];
@@ -184,7 +184,7 @@ public static class SzOptimizer {
     while (position < input.Length) {
       var groupStart = position;
       Array.Fill(memo, -1);
-      Array.Clear(choices);
+      Array.Clear(choices, 0, choices.Length);
 
       int SolveGroup(int currentPosition, int tokenCount) {
         if (currentPosition >= input.Length)
