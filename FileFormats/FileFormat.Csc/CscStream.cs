@@ -8,7 +8,9 @@ namespace FileFormat.Csc;
 /// </summary>
 public static class CscStream {
 
-  private const int DictSize = 65536;
+  private const int DefaultDictionarySize = 65536;
+  private const int DefaultSearchDepth = 64;
+  private const int MaxDictionarySize = 65536;
   private const int CscBlockSize = 65536;
 
   // LZ77 parameters
@@ -24,14 +26,30 @@ public static class CscStream {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) =>
+    Compress(input, output, DefaultDictionarySize, DefaultSearchDepth);
+
+  /// <summary>
+  /// Encodes the supplied input with an explicit LZ77 dictionary and hash-chain
+  /// search depth. Kept internal so format options remain the public tuning surface.
+  /// </summary>
+  internal static void Compress(Stream input, Stream output, int dictionarySize, int searchDepth) {
+    if (dictionarySize is <= 0 or > MaxDictionarySize)
+      throw new ArgumentOutOfRangeException(nameof(dictionarySize), dictionarySize,
+        $"CSC dictionary size must be between 1 and {MaxDictionarySize} bytes.");
+    if (searchDepth <= 0)
+      throw new ArgumentOutOfRangeException(nameof(searchDepth), searchDepth,
+        "CSC search depth must be positive.");
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
     var size = data.Length;
 
-    // 10-byte property header (big-endian) + 4-byte uncompressed size
-    WriteUint32Be(output, (uint)DictSize);
+    // 10-byte property header (big-endian) + 4-byte uncompressed size.
+    // The decoder does not need the dictionary value to copy a decoded match,
+    // but recording the actual encoder window keeps the stream properties truthful.
+    WriteUint32Be(output, (uint)dictionarySize);
     WriteUint24Be(output, (uint)CscBlockSize);
     WriteUint24Be(output, (uint)Math.Min(size, 0xFFFFFF));
     WriteUint32Be(output, (uint)size);
@@ -39,7 +57,7 @@ public static class CscStream {
     if (size == 0) return;
 
     var enc = new RangeEncoder(output);
-    CompressLz77(data, enc);
+    CompressLz77(data, enc, dictionarySize, searchDepth);
     enc.Flush();
   }
 
@@ -61,7 +79,7 @@ public static class CscStream {
 
   // ── LZ77 Compress (hash chain) ────────────────────────────────────────────
 
-  private static void CompressLz77(byte[] data, RangeEncoder enc) {
+  private static void CompressLz77(byte[] data, RangeEncoder enc, int dictionarySize, int searchDepth) {
     var n = data.Length;
     const int hashBits = 16;
     const int hashSize = 1 << hashBits;
@@ -85,10 +103,10 @@ public static class CscStream {
 
       if (i + MinMatch <= n) {
         var h = Hash3(data, i, n, hashBits);
-        var maxDist = Math.Min(i, DictSize);
+        var maxDist = Math.Min(i, dictionarySize);
         var maxLen = Math.Min(MaxMatch, n - i);
         var cur = head[h];
-        var limit = 64;
+        var limit = searchDepth;
 
         while (cur >= 0 && i - cur <= maxDist && limit-- > 0) {
           var mlen = 0;
