@@ -107,10 +107,12 @@ public static class BscStream {
         throw new InvalidDataException($"BSC: block count {nBlocks} exceeds the available stream data");
     }
 
+    Span<byte> bscBlockHeader = stackalloc byte[BscBlockHeaderSize];
+    Span<byte> headerBytes = stackalloc byte[InternalHeaderSize];
     long expectedSequentialOffset = 0;
+
     for (var b = 0; b < nBlocks; ++b) {
       // --- BSC_BLOCK_HEADER (10 bytes) ---
-      Span<byte> bscBlockHeader = stackalloc byte[BscBlockHeaderSize];
       input.ReadExactly(bscBlockHeader);
       var blockOffset = BinaryPrimitives.ReadInt64LittleEndian(bscBlockHeader);
       var recordSize = bscBlockHeader[8];
@@ -123,7 +125,6 @@ public static class BscStream {
         throw new InvalidDataException($"BSC: invalid sorting-context order {(byte)sortingContexts}");
 
       // --- Internal header (28 bytes) ---
-      Span<byte> headerBytes = stackalloc byte[InternalHeaderSize];
       input.ReadExactly(headerBytes);
 
       var blockSize         = BinaryPrimitives.ReadInt32LittleEndian(headerBytes[0..]);
@@ -140,9 +141,9 @@ public static class BscStream {
         throw new InvalidDataException("BSC: header checksum mismatch");
 
       // Read payload
-      var payloadSize = blockSize - InternalHeaderSize;
-      if (payloadSize < 0)
+      if (blockSize is < InternalHeaderSize or > MaximumBlockSize + InternalHeaderSize)
         throw new InvalidDataException($"BSC: invalid block size {blockSize}");
+      var payloadSize = blockSize - InternalHeaderSize;
       if (dataSize < 0 || dataSize > MaximumBlockSize)
         throw new InvalidDataException($"BSC: invalid data size {dataSize}");
       if (blockOffset > long.MaxValue - dataSize)
