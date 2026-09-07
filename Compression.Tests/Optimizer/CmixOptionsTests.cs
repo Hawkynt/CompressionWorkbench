@@ -61,7 +61,7 @@ public sealed class CmixOptionsTests {
   }
 
   [Test, Category("Spec")]
-  public void CompactFinalization_IsSmallerOnNormalInput_AndRoundTrips() {
+  public void CompactFinalization_IsSmallerOnNormalInput_AndSuffixIndependent() {
     var descriptor = new CmixFormatDescriptor();
     var data = Sample();
     var legacy = Compress(descriptor, data, "Legacy");
@@ -71,6 +71,18 @@ public sealed class CmixOptionsTests {
     Assert.That(legacy.Length - compact.Length, Is.InRange(1, 3));
     Assert.That(Decompress(descriptor, legacy), Is.EqualTo(data));
     Assert.That(Decompress(descriptor, compact), Is.EqualTo(data));
+
+    foreach (var suffix in new byte[][] {
+      [0x00, 0x00, 0x00],
+      [0xFF, 0xFF, 0xFF],
+      [0x37, 0x80, 0x12],
+    }) {
+      var padded = new byte[compact.Length + suffix.Length];
+      compact.CopyTo(padded, 0);
+      suffix.CopyTo(padded, compact.Length);
+      Assert.That(Decompress(descriptor, padded), Is.EqualTo(data),
+        $"suffix={Convert.ToHexString(suffix)} must remain inside the final arithmetic prefix range");
+    }
   }
 
   [Test, Category("EdgeCase")]
