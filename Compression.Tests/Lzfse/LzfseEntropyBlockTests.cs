@@ -55,6 +55,52 @@ public class LzfseEntropyBlockTests {
     Assert.That(output.ToArray(), Is.EqualTo(original));
   }
 
+  [Test, Category("Interoperability"), Category("Boundary")]
+  public void Decompress_V1PartialFrequencyTables_MatchesAppleFseCheck() {
+    const int headerSize = 772;
+    const int literalPayloadSize = 7;
+    const int lmdPayloadSize = 8;
+    const int payloadSize = literalPayloadSize + lmdPayloadSize;
+    var encoded = new byte[headerSize + payloadSize + 4];
+
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x31787662u); // bvx1
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(4), 1); // one raw byte
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(8), payloadSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(12), 4); // literals are 4-way interleaved
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(16), 1); // one L/M/D record
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(20), literalPayloadSize);
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(24), lmdPayloadSize);
+
+    // Deliberately use only one state in each FSE table. Apple's fse_check_freq accepts
+    // sum(freq) <= stateCount; state zero remains fully defined and the zero payload keeps
+    // every transition on state zero.
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(54), 1);  // L symbol 1 => L=1, 1/64 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(92), 1);  // M symbol 0 => M=0, 1/64 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(132), 1); // D symbol 0 => D=0, 1/256 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(260), 1); // literal 0, 1/1024 states
+
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(headerSize + payloadSize), 0x24787662u); // bvx$
+
+    using var input = new MemoryStream(encoded);
+    using var output = new MemoryStream();
+    LzfseStream.Decompress(input, output);
+
+    Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0 }));
+  }
+
+  [Test, Category("MalformedInput")]
+  public void Decompress_V1FrequencyTableExceedsStateCount_Throws() {
+    const int headerSize = 772;
+    var encoded = new byte[headerSize];
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x31787662u);
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(52), 65); // L has only 64 states
+
+    using var input = new MemoryStream(encoded);
+    using var output = new MemoryStream();
+
+    Assert.That(() => LzfseStream.Decompress(input, output), Throws.TypeOf<InvalidDataException>());
+  }
+
   [Test, Category("MalformedInput")]
   public void Decompress_TruncatedV2Header_Throws() {
     byte[] truncated = [0x62, 0x76, 0x78, 0x32, 0, 0, 0, 0];
