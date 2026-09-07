@@ -88,6 +88,25 @@ public class LzfseEntropyBlockTests {
     Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0 }));
   }
 
+  [Test, Category("Interoperability"), Category("Boundary")]
+  public void ReadV2Header_EmptyFrequencySection_IsAccepted() {
+    var encoded = new byte[32];
+    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x32787662u); // bvx2
+    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(8), 7UL << 60); // literal_bits = 0
+    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(16), 7UL << 60); // lmd_bits = 0
+    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(24), 32); // header ends before freq[]
+
+    var header = LzfseCompressedBlock.ReadV2Header(encoded);
+
+    Assert.Multiple(() => {
+      Assert.That(header.HeaderBytes, Is.EqualTo(32));
+      Assert.That(header.LFrequency, Is.All.Zero);
+      Assert.That(header.MFrequency, Is.All.Zero);
+      Assert.That(header.DFrequency, Is.All.Zero);
+      Assert.That(header.LiteralFrequency, Is.All.Zero);
+    });
+  }
+
   [Test, Category("MalformedInput")]
   public void Decompress_V1FrequencyTableExceedsStateCount_Throws() {
     const int headerSize = 772;
