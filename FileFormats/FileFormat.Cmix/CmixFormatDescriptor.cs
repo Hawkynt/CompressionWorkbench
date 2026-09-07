@@ -60,7 +60,7 @@ public sealed class CmixFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
 
   /// <summary>
   /// Arithmetic-coder endings exposed to the shared optimizer. Legacy preserves
-  /// the historical managed output; Compact removes three redundant termination bytes.
+  /// historical managed output; Compact omits up to three redundant trailing bytes.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
@@ -69,7 +69,7 @@ public sealed class CmixFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
       Kind: FormatOptionKind.Enum,
       Default: "Legacy",
       AllowedValues: ["Legacy", "Compact"],
-      Description: "Legacy writes the historical 32-bit final code. Compact writes only the distinguishing byte and relies on zero EOF padding."),
+      Description: "Legacy writes the historical 32-bit final code. Compact chooses an equivalent final code with trailing 0xFF bytes that the existing decoder can supply implicitly at EOF."),
   ];
 
   /// <summary>
