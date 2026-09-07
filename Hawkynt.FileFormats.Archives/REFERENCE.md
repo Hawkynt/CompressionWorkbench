@@ -10311,7 +10311,7 @@ Writes data to the LZOP file format.
 
 Describes lzs format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10327,17 +10327,22 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The finite parsing-effort axis searched by `CompressionOptimizer`. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Tries every available LZS parsing effort and writes the smallest result. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the balanced encoder. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input honoring the format-specific compression level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `LzsStream`
 
-LZS stream format: 4-byte magic header followed by LZS building block output (4-byte LE uncompressed size + compressed bitstream).
+LZS stream format: 4-byte magic header followed by LZS building block output (4-byte LE uncompressed size + RFC 2395 compressed bitstream).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed LZS parsing effort and writes the smallest complete stream. This hard comparison makes optimization non-regressing even when a deeper greedy search changes token boundaries unfavourably for a particular input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the balanced encoder. |
+| `Compress` | `static void Compress(Stream input, Stream output, LzsCompressionLevel level)` | Encodes the supplied input with the requested encoder effort. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Lzx`
