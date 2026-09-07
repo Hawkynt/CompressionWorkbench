@@ -197,10 +197,10 @@ internal static class LzfseCompressedBlock {
     var literalPayload = payload[..literalPayloadLength];
     var lmdPayload = payload.Slice(literalPayloadLength, checked((int)header.LmdPayloadBytes));
 
-    var literalTable = LzfseFse.BuildDecoderTable(header.LiteralFrequency, LiteralStateCount);
-    var lTable = LzfseFse.BuildValueDecoderTable(header.LFrequency, LStateCount, LExtraBits, LBaseValues);
-    var mTable = LzfseFse.BuildValueDecoderTable(header.MFrequency, MStateCount, MExtraBits, MBaseValues);
-    var dTable = LzfseFse.BuildValueDecoderTable(header.DFrequency, DStateCount, DExtraBits, DBaseValues);
+    var literalTable = LzfseFseCompatibility.BuildDecoderTable(header.LiteralFrequency, LiteralStateCount);
+    var lTable = LzfseFseCompatibility.BuildValueDecoderTable(header.LFrequency, LStateCount, LExtraBits, LBaseValues);
+    var mTable = LzfseFseCompatibility.BuildValueDecoderTable(header.MFrequency, MStateCount, MExtraBits, MBaseValues);
+    var dTable = LzfseFseCompatibility.BuildValueDecoderTable(header.DFrequency, DStateCount, DExtraBits, DBaseValues);
 
     var literalCount = checked((int)header.LiteralCount);
     var literals = new byte[literalCount];
@@ -535,12 +535,12 @@ internal static class LzfseCompressedBlock {
     ValidateFrequencySum(header.LiteralFrequency, LiteralStateCount, "literal");
   }
 
-  private static void ValidateFrequencySum(ReadOnlySpan<ushort> frequencies, int expected, string name) {
+  private static void ValidateFrequencySum(ReadOnlySpan<ushort> frequencies, int maximum, string name) {
     var sum = 0;
     foreach (var frequency in frequencies)
       sum += frequency;
-    if (sum != expected)
-      throw new InvalidDataException($"LZFSE {name} FSE frequencies sum to {sum}, expected {expected}.");
+    if (sum > maximum)
+      throw new InvalidDataException($"LZFSE {name} FSE frequencies sum to {sum}, exceeding {maximum} states.");
   }
 
   private static void DecodeFrequencyTables(
@@ -549,6 +549,11 @@ internal static class LzfseCompressedBlock {
       Span<ushort> m,
       Span<ushort> d,
       Span<ushort> literal) {
+    // Apple's lzfse_decode_v1 explicitly permits a V2 header whose variable
+    // frequency section is empty. The arrays were zero-initialized by the caller.
+    if (source.IsEmpty)
+      return;
+
     var reader = new FrequencyBitReader(source);
     DecodeFrequencyArray(ref reader, l);
     DecodeFrequencyArray(ref reader, m);
