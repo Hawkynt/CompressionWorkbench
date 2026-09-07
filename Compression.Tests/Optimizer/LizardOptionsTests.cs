@@ -87,6 +87,18 @@ public class LizardOptionsTests {
   }
 
   [Test, Category("Spec")]
+  public void Encoder_RespectsReferenceMinimumMatchOffset() {
+    var descriptor = new LizardFormatDescriptor();
+    var data = Enumerable.Repeat((byte)'A', 4096).ToArray();
+
+    var compressed = CompressAt(descriptor, data, "10");
+
+    Assert.That(ReadFirstMatchOffset(compressed), Is.EqualTo(8),
+      "reference fast-LZ parsers require offsets >= 8 because the decoder copies matches in 8-byte chunks");
+    Assert.That(Decompress(descriptor, compressed), Is.EqualTo(data));
+  }
+
+  [Test, Category("Spec")]
   public void Schema_ExposesOnlyManagedInteroperableLevels() {
     var descriptor = new LizardFormatDescriptor();
     var level = descriptor.OptionsSchema.Single(option => option.Key == "Level");
@@ -130,6 +142,36 @@ public class LizardOptionsTests {
 
     Assert.That(() => LizardStream.Compress(input, output, 20, 4 * 1024 * 1024),
       Throws.TypeOf<ArgumentOutOfRangeException>());
+  }
+
+  private static ushort ReadFirstMatchOffset(byte[] compressed) {
+    const int frameHeaderSize = 15;
+    var outerBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(compressed.AsSpan(frameHeaderSize, 4));
+    Assert.That(outerBlockSize & 0x80000000u, Is.Zero, "test input must produce a compressed frame block");
+
+    var position = frameHeaderSize + 4;
+    ++position; // compression level
+    Assert.That(compressed[position++], Is.Zero, "test requires a non-Huffman internal block");
+
+    for (var stream = 0; stream < 3; ++stream) {
+      var length = ReadUInt24(compressed, position);
+      position += 3 + length;
+    }
+
+    var tokenLength = ReadUInt24(compressed, position);
+    position += 3;
+    Assert.That(tokenLength, Is.GreaterThan(0));
+    var firstToken = compressed[position];
+    position += tokenLength;
+
+    var literalsLength = ReadUInt24(compressed, position);
+    position += 3;
+    Assert.That(literalsLength, Is.GreaterThan(2));
+
+    var literalLength = firstToken & 0x0F;
+    Assert.That(literalLength, Is.LessThan(15), "minimum-offset regression vector should not need a literal-length extension");
+    position += literalLength;
+    return BinaryPrimitives.ReadUInt16LittleEndian(compressed.AsSpan(position, 2));
   }
 
   private static int ReadUInt24(byte[] data, int offset) =>

@@ -21,6 +21,7 @@ public static class LizardStream {
   private const byte DefaultFlags = 0x68; // version=01, independent blocks, content size present
   private const int RawBlockSize = 128 * 1024;
   private const int MinMatch = 4;
+  private const int MinOffset = 8;
   private const int LastLiterals = 16;
   private const int MatchFindLimit = LastLiterals + MinMatch;
   private const int MaxOffset = ushort.MaxValue;
@@ -328,7 +329,7 @@ public static class LizardStream {
           throw new InvalidDataException("Lizard match is missing its 16-bit offset.");
         var matchOffset = BinaryPrimitives.ReadUInt16LittleEndian(literals[literalPosition..]);
         literalPosition += 2;
-        if (matchOffset == 0 || matchOffset > output.Count)
+        if (matchOffset < MinOffset || matchOffset > output.Count)
           throw new InvalidDataException($"Lizard match offset {matchOffset} is invalid at output position {output.Count}.");
 
         var matchLength = token >> 4;
@@ -380,12 +381,18 @@ public static class LizardStream {
     var bestLength = 0;
     var bestOffset = 0;
     var maxLength = source.Length - LastLiterals - position;
+    var attempts = 0;
 
-    for (var attempts = 0; candidate >= 0 && attempts < searchDepth; ++attempts) {
+    while (candidate >= 0 && attempts < searchDepth) {
       var offset = position - candidate;
       if (offset > MaxOffset)
         break;
+      if (offset < MinOffset) {
+        candidate = previous[candidate];
+        continue;
+      }
 
+      ++attempts;
       if (source[candidate] == source[position] &&
           source[candidate + 1] == source[position + 1] &&
           source[candidate + 2] == source[position + 2] &&
