@@ -32,7 +32,8 @@ public static class BscStream {
   private static readonly byte[] Magic = [0x62, 0x73, 0x63, 0x31]; // "bsc1"
   private const int BscBlockHeaderSize = 10;   // offset(8) + recordSize(1) + sortingContexts(1)
   private const int InternalHeaderSize = 28;   // 7 × int32 LE
-  private const int ModeStoreRle = 0;          // sorter=0 (BWT), coder=0 (none/RLE)
+  private const int MinimumEncodedBlockSize = BscBlockHeaderSize + InternalHeaderSize;
+  private const int ModeStoreRle = 0;          // historical managed BWT + MTF + zero-run mode
 
   internal const int MinimumBlockSize = 10_000;
   internal const int DefaultBlockSize = 25 * 1024 * 1024;
@@ -61,7 +62,8 @@ public static class BscStream {
       throw new ArgumentOutOfRangeException(nameof(sortingContexts));
 
     var data = ReadAll(input);
-    var blockCount = data.Length == 0 ? 1 : ((data.Length - 1) / blockSize) + 1;
+    // libbsc writes zero blocks for an empty input; keep that envelope convention.
+    var blockCount = data.Length == 0 ? 0 : ((data.Length - 1) / blockSize) + 1;
 
     output.Write(Magic);
     Span<byte> blockCountBytes = stackalloc byte[sizeof(int)];
@@ -80,44 +82,60 @@ public static class BscStream {
   /// Decodes the supplied input.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
     // --- Verify magic ---
-    var magic = new byte[4];
+    Span<byte> magic = stackalloc byte[4];
     input.ReadExactly(magic);
-    if (magic[0] != 0x62 || magic[1] != 0x73 || magic[2] != 0x63 || magic[3] != 0x31)
+    if (!magic.SequenceEqual(Magic))
       throw new InvalidDataException("Not a BSC stream: invalid magic bytes");
 
     // --- Block count ---
-    var blockCountBytes = new byte[4];
+    Span<byte> blockCountBytes = stackalloc byte[4];
     input.ReadExactly(blockCountBytes);
     var nBlocks = BinaryPrimitives.ReadInt32LittleEndian(blockCountBytes);
-    if (nBlocks < 0 || nBlocks > 65536)
+    if (nBlocks < 0)
       throw new InvalidDataException($"BSC: invalid block count {nBlocks}");
 
-    for (var b = 0; b < nBlocks; b++) {
+    // Every block consumes at least its 10-byte file header plus the 28-byte
+    // libbsc block header. This bounds hostile block counts without imposing an
+    // arbitrary 65,536-block ceiling that valid small-block archives can exceed.
+    if (input.CanSeek) {
+      var remaining = input.Length - input.Position;
+      if ((long)nBlocks * MinimumEncodedBlockSize > remaining)
+        throw new InvalidDataException($"BSC: block count {nBlocks} exceeds the available stream data");
+    }
+
+    long expectedSequentialOffset = 0;
+    for (var b = 0; b < nBlocks; ++b) {
       // --- BSC_BLOCK_HEADER (10 bytes) ---
-      var bscBlockHeader = new byte[BscBlockHeaderSize];
+      Span<byte> bscBlockHeader = stackalloc byte[BscBlockHeaderSize];
       input.ReadExactly(bscBlockHeader);
+      var blockOffset = BinaryPrimitives.ReadInt64LittleEndian(bscBlockHeader);
       var recordSize = bscBlockHeader[8];
       var sortingContexts = (BscSortingContexts)bscBlockHeader[9];
+      if (blockOffset < 0)
+        throw new InvalidDataException($"BSC: invalid negative block offset {blockOffset}");
       if (recordSize != 1)
         throw new NotSupportedException($"BSC: record reordering (record size {recordSize}) is not supported");
       if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
         throw new InvalidDataException($"BSC: invalid sorting-context order {(byte)sortingContexts}");
 
       // --- Internal header (28 bytes) ---
-      var headerBytes = new byte[InternalHeaderSize];
+      Span<byte> headerBytes = stackalloc byte[InternalHeaderSize];
       input.ReadExactly(headerBytes);
 
-      var blockSize         = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(0));
-      var dataSize          = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(4));
-      // mode                = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(8));
-      var primaryIndex      = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(12));
-      var adler32Data       = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(16));
-      var adler32Compressed = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(20));
-      var adler32Header     = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(24));
+      var blockSize         = BinaryPrimitives.ReadInt32LittleEndian(headerBytes[0..]);
+      var dataSize          = BinaryPrimitives.ReadInt32LittleEndian(headerBytes[4..]);
+      // mode                = BinaryPrimitives.ReadInt32LittleEndian(headerBytes[8..]);
+      var primaryIndex      = BinaryPrimitives.ReadInt32LittleEndian(headerBytes[12..]);
+      var adler32Data       = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes[16..]);
+      var adler32Compressed = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes[20..]);
+      var adler32Header     = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes[24..]);
 
       // Verify header checksum (first 24 bytes of header)
-      var expectedHeaderChecksum = Adler32(headerBytes.AsSpan(0, 24));
+      var expectedHeaderChecksum = Adler32(headerBytes[..24]);
       if (expectedHeaderChecksum != adler32Header)
         throw new InvalidDataException("BSC: header checksum mismatch");
 
@@ -125,8 +143,12 @@ public static class BscStream {
       var payloadSize = blockSize - InternalHeaderSize;
       if (payloadSize < 0)
         throw new InvalidDataException($"BSC: invalid block size {blockSize}");
-      if (dataSize < 0)
+      if (dataSize < 0 || dataSize > MaximumBlockSize)
         throw new InvalidDataException($"BSC: invalid data size {dataSize}");
+      if (blockOffset > long.MaxValue - dataSize)
+        throw new InvalidDataException("BSC: block range overflows the output address space");
+      if (input.CanSeek && payloadSize > input.Length - input.Position)
+        throw new InvalidDataException("BSC: truncated block payload");
 
       var payload = new byte[payloadSize];
       if (payloadSize > 0)
@@ -151,8 +173,19 @@ public static class BscStream {
       if (actualDataChecksum != adler32Data)
         throw new InvalidDataException("BSC: original data checksum mismatch");
 
+      // libbsc may emit blocks out of physical order when parallel block
+      // processing is enabled. blockOffset is therefore semantic, not decorative.
+      if (output.CanSeek)
+        output.Position = blockOffset;
+      else if (blockOffset != expectedSequentialOffset)
+        throw new NotSupportedException("BSC: out-of-order blocks require a seekable output stream");
+
       output.Write(original);
+      expectedSequentialOffset = blockOffset + original.LongLength;
     }
+
+    if (output.CanSeek)
+      output.Position = output.Length;
   }
 
   private static void WriteBlock(
@@ -177,15 +210,15 @@ public static class BscStream {
 
     // --- Build internal header (first 24 bytes, then checksum of those) ---
     var blockSize = InternalHeaderSize + payload.Length;
-    var headerBytes = new byte[InternalHeaderSize];
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(0), blockSize);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(4), data.Length);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(8), ModeStoreRle);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(12), primaryIndex);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(16), (int)adler32Data);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(20), (int)adler32Compressed);
-    var adler32Header = Adler32(headerBytes.AsSpan(0, 24));
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(24), (int)adler32Header);
+    Span<byte> headerBytes = stackalloc byte[InternalHeaderSize];
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[0..], blockSize);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[4..], data.Length);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[8..], ModeStoreRle);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[12..], primaryIndex);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[16..], (int)adler32Data);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[20..], (int)adler32Compressed);
+    var adler32Header = Adler32(headerBytes[..24]);
+    BinaryPrimitives.WriteInt32LittleEndian(headerBytes[24..], (int)adler32Header);
 
     // BSC_BLOCK_HEADER follows libbsc's public file envelope: original block
     // offset, record size 1 (no record reordering), and context order 1/2.
