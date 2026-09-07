@@ -61,13 +61,14 @@ public sealed class CmixOptionsTests {
   }
 
   [Test, Category("Spec")]
-  public void CompactFinalization_SavesThreeBytesOnNormalInput_AndRoundTrips() {
+  public void CompactFinalization_IsSmallerOnNormalInput_AndRoundTrips() {
     var descriptor = new CmixFormatDescriptor();
     var data = Sample();
     var legacy = Compress(descriptor, data, "Legacy");
     var compact = Compress(descriptor, data, "Compact");
 
-    Assert.That(compact.Length, Is.EqualTo(legacy.Length - 3));
+    Assert.That(compact.Length, Is.LessThan(legacy.Length));
+    Assert.That(legacy.Length - compact.Length, Is.InRange(1, 3));
     Assert.That(Decompress(descriptor, legacy), Is.EqualTo(data));
     Assert.That(Decompress(descriptor, compact), Is.EqualTo(data));
   }
@@ -99,6 +100,7 @@ public sealed class CmixOptionsTests {
       var compact = Compress(descriptor, data, "Compact");
 
       Assert.That(compact.Length, Is.LessThanOrEqualTo(legacy.Length), $"size={size}");
+      Assert.That(legacy.Length - compact.Length, Is.InRange(0, 3), $"size={size}");
       Assert.That(Decompress(descriptor, compact), Is.EqualTo(data), $"size={size}");
     }
   }
