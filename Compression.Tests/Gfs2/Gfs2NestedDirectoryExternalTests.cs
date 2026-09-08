@@ -43,14 +43,20 @@ public class Gfs2NestedDirectoryExternalTests {
   public void Writer_ExHashDirectory_LinuxKernelResolvesNamespaceAndPayload() {
     if (!FsInteropToolbox.WslAvailable)
       Assert.Ignore("A Linux environment is required for the GFS2 kernel namespace oracle.");
-    if (!FsInteropToolbox.WslHasPasswordlessSudo)
+    if (!FsInteropToolbox.WslHasPasswordlessSudo) {
+      if (OperatingSystem.IsLinux())
+        Assert.Fail("Linux GFS2 namespace verification requires passwordless sudo for the read-only loop mount.");
       Assert.Ignore("Passwordless sudo is required for the read-only loop mount namespace oracle.");
+    }
 
     var driver = FsInteropToolbox.RunWsl(
       "grep -qw gfs2 /proc/filesystems 2>/dev/null || " +
       "sudo -n modprobe gfs2 >/dev/null 2>&1");
-    if (driver.ExitCode != 0)
-      Assert.Ignore("The Linux GFS2 kernel driver is not available on this runner.");
+    if (driver.ExitCode != 0) {
+      if (OperatingSystem.IsLinux())
+        Assert.Fail("The Linux GFS2 kernel driver is unavailable; ExHash namespace verification did not run.");
+      Assert.Ignore("The Linux GFS2 kernel driver is not available in this WSL kernel.");
+    }
 
     var (imagePath, markerPath, markerPayloadPath) = BuildExHashImage();
     var image = FsInteropToolbox.WinToWsl(imagePath);
@@ -101,7 +107,10 @@ public class Gfs2NestedDirectoryExternalTests {
   private static void RequireGfs2Utils() {
     if (!FsInteropToolbox.WslAvailable)
       Assert.Ignore("A Linux environment is required for fsck.gfs2.");
-    if (!FsInteropToolbox.WslHasTool("fsck.gfs2"))
+    if (!FsInteropToolbox.WslHasTool("fsck.gfs2")) {
+      if (OperatingSystem.IsLinux())
+        Assert.Fail("fsck.gfs2 is missing; install gfs2-utils so the ExHash conformance gate actually runs.");
       Assert.Ignore("gfs2-utils not found. Install with `sudo apt install -y gfs2-utils`.");
+    }
   }
 }
