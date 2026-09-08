@@ -24,6 +24,37 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
+  package-readmes:
+    name: refresh archive package docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Build archive package for API documentation
+        run: dotnet build Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj --configuration Release
+
+      - name: Regenerate archive package documentation
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        with:
+          mode: write
+          project: Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj
+
+      - name: Commit regenerated archive README
+        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: Hawkynt.FileFormats.Archives/README.md
+          message: '* refresh archive package README'
+
+      - name: Commit regenerated archive API reference
+        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: Hawkynt.FileFormats.Archives/REFERENCE.md
+          message: '* refresh archive package API reference'
+
   screenshot:
     name: refresh the UI screenshot
     runs-on: windows-latest
@@ -107,28 +138,6 @@ jobs:
         with:
           file: screenshots/main-window.png
           message: '* refresh the application screenshot'
-
-      - name: Build archive package for API documentation
-        shell: pwsh
-        run: dotnet build Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj --configuration Release
-
-      - name: Regenerate archive package documentation
-        uses: Hawkynt/RepositoryTemplate/package-readme@v1
-        with:
-          mode: write
-          project: Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj
-
-      - name: Commit regenerated archive README
-        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
-        with:
-          file: Hawkynt.FileFormats.Archives/README.md
-          message: '* refresh archive package README'
-
-      - name: Commit regenerated archive API reference
-        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
-        with:
-          file: Hawkynt.FileFormats.Archives/REFERENCE.md
-          message: '* refresh archive package API reference'
 
       # GITHUB_TOKEN updates to an already-open PR intentionally create an approval-required
       # pull_request/synchronize run. workflow_dispatch is the documented exception that may start
