@@ -7,8 +7,8 @@ using FileFormat.Smk;
 namespace Compression.Tests.Audio;
 
 /// <summary>
-/// Pins the Smacker container descriptor and its packet-preserving mux/remux path. The tests use
-/// a hand-built minimal SMK4 so header, frame-table, packet-boundary and replacement behavior are
+/// Pins the Smacker container descriptor and its packet-preserving remux path. The tests use a
+/// hand-built minimal SMK4 so header, frame-table, packet-boundary and replacement behavior are
 /// deterministic without depending on a Smacker video encoder.
 /// </summary>
 [TestFixture]
@@ -41,48 +41,45 @@ public class SmkTests {
   }
 
   [Test]
-  public void Descriptor_AdvertisesCreationThroughTheCapabilityInterface() {
+  public void Descriptor_AdvertisesRemuxWithoutClaimingFreshCreationOrArchiveMutation() {
     var descriptor = new SmkFormatDescriptor();
     Assert.Multiple(() => {
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
-      Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanRemux), Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IContainerRemuxable>());
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IAudioMuxTarget>());
     });
   }
 
   [Test]
-  public void StructuralEntries_Create_RoundTripByteExact() {
+  public void Remux_WithoutReplacements_RoundTripsByteExact() {
     var smk = BuildSmk(22050, SmkAudPacked, BuildSmka8BitMono());
-    var names = new[] { "HEADER.bin", "FRAME_SIZES.bin", "FRAME_TYPES.bin", "HUFFMAN.bin", "VIDEO.bin" };
-    var inputs = names.Select(name => ArchiveInputInfo.InMemory(name, Extract(smk, name))).ToArray();
 
-    var rebuilt = Create(inputs);
+    var rebuilt = Remux(smk, []);
 
     Assert.That(rebuilt, Is.EqualTo(smk));
   }
 
   [Test]
-  public void FullContainer_WithUnchangedPacketBundle_RemainsByteExact() {
+  public void Remux_WithUnchangedPacketBundle_RemainsByteExact() {
     var smk = BuildSmk(22050, SmkAudPacked, BuildSmka8BitMono());
     var packets = Extract(smk, "TRACK0.packets");
 
-    var rebuilt = Create([
-      ArchiveInputInfo.InMemory("FULL.smk", smk),
-      ArchiveInputInfo.InMemory("TRACK0.packets", packets),
-    ]);
+    var rebuilt = Remux(smk, [ArchiveInputInfo.InMemory("TRACK0.packets", packets)]);
 
     Assert.That(rebuilt, Is.EqualTo(smk));
   }
 
   [Test]
-  public void FullContainer_WithReplacementPacket_RebuildsFrameAndAudioSize() {
+  public void Remux_WithReplacementPacket_RebuildsFrameAndAudioSize() {
     var smk = BuildSmk(22050, SmkAudPacked, BuildSmka8BitMono());
     var replacement = BuildSmka8BitMono().Concat(new byte[] { 0xAA, 0x55, 0x11 }).ToArray();
     var packets = BuildPacketBundle((0, replacement));
 
-    var rebuilt = Create([
-      ArchiveInputInfo.InMemory("FULL.smk", smk),
-      ArchiveInputInfo.InMemory("TRACK0.packets", packets),
-    ]);
+    var rebuilt = Remux(smk, [ArchiveInputInfo.InMemory("TRACK0.packets", packets)]);
 
     Assert.Multiple(() => {
       Assert.That(Extract(rebuilt, "TRACK0.bin"), Is.EqualTo(replacement));
@@ -97,10 +94,7 @@ public class SmkTests {
   [Test]
   public void EmptyPacketBundle_RemovesTrackPacketsWithoutInventingAHeaderTrack() {
     var smk = BuildSmk(22050, SmkAudPacked, BuildSmka8BitMono());
-    var rebuilt = Create([
-      ArchiveInputInfo.InMemory("FULL.smk", smk),
-      ArchiveInputInfo.InMemory("TRACK0.packets", BuildPacketBundle()),
-    ]);
+    var rebuilt = Remux(smk, [ArchiveInputInfo.InMemory("TRACK0.packets", BuildPacketBundle())]);
 
     Assert.Multiple(() => {
       Assert.That(Extract(rebuilt, "TRACK0.bin"), Is.Empty);
@@ -113,14 +107,14 @@ public class SmkTests {
   public void PacketOverride_ForUndeclaredTrack_IsRejected() {
     var payload = BuildSmka8BitMono();
     var smk = BuildSmk(22050, SmkAudPacked, payload);
-    var inputs = new ArchiveInputInfo[] {
-      ArchiveInputInfo.InMemory("FULL.smk", smk),
+    var replacements = new ArchiveInputInfo[] {
       ArchiveInputInfo.InMemory("TRACK1.packets", BuildPacketBundle((0, payload))),
     };
 
     using var output = new MemoryStream();
-    var creator = (IArchiveCreatable)new SmkFormatDescriptor();
-    var exception = Assert.Throws<InvalidDataException>(() => creator.Create(output, inputs, new FormatCreateOptions()));
+    var remuxer = (IContainerRemuxable)new SmkFormatDescriptor();
+    var exception = Assert.Throws<InvalidDataException>(() => remuxer.Remux(
+      new MemoryStream(smk, writable: false), output, replacements, new FormatCreateOptions()));
     Assert.That(exception!.Message, Does.Contain("track 1").IgnoreCase);
   }
 
@@ -128,15 +122,31 @@ public class SmkTests {
   public void PacketBundle_WithDuplicateFrame_IsRejected() {
     var payload = BuildSmka8BitMono();
     var smk = BuildSmk(22050, SmkAudPacked, payload);
-    var inputs = new ArchiveInputInfo[] {
-      ArchiveInputInfo.InMemory("FULL.smk", smk),
+    var replacements = new ArchiveInputInfo[] {
       ArchiveInputInfo.InMemory("TRACK0.packets", BuildPacketBundle((0, payload), (0, payload))),
     };
 
     using var output = new MemoryStream();
-    var creator = (IArchiveCreatable)new SmkFormatDescriptor();
-    var exception = Assert.Throws<InvalidDataException>(() => creator.Create(output, inputs, new FormatCreateOptions()));
+    var remuxer = (IContainerRemuxable)new SmkFormatDescriptor();
+    var exception = Assert.Throws<InvalidDataException>(() => remuxer.Remux(
+      new MemoryStream(smk, writable: false), output, replacements, new FormatCreateOptions()));
     Assert.That(exception!.Message, Does.Contain("more packets than the container has frames").Or.Contain("more than once"));
+  }
+
+  [Test]
+  public void UnknownReplacementSurface_IsRejected() {
+    var smk = BuildSmk(22050, SmkAudPacked, BuildSmka8BitMono());
+    using var output = new MemoryStream();
+    var remuxer = (IContainerRemuxable)new SmkFormatDescriptor();
+
+    var exception = Assert.Throws<InvalidDataException>(() => remuxer.Remux(
+      new MemoryStream(smk, writable: false),
+      output,
+      [ArchiveInputInfo.InMemory("VIDEO.bin", [1, 2, 3])],
+      new FormatCreateOptions()
+    ));
+
+    Assert.That(exception!.Message, Does.Contain("TRACK0.packets"));
   }
 
   [Test]
@@ -147,9 +157,10 @@ public class SmkTests {
     Assert.That(entries.Any(e => e.Name == "FULL.smk"), Is.True);
   }
 
-  private static byte[] Create(IReadOnlyList<ArchiveInputInfo> inputs) {
+  private static byte[] Remux(byte[] source, IReadOnlyList<ArchiveInputInfo> replacements) {
     using var output = new MemoryStream();
-    ((IArchiveCreatable)new SmkFormatDescriptor()).Create(output, inputs, new FormatCreateOptions());
+    ((IContainerRemuxable)new SmkFormatDescriptor()).Remux(
+      new MemoryStream(source, writable: false), output, replacements, new FormatCreateOptions());
     return output.ToArray();
   }
 
