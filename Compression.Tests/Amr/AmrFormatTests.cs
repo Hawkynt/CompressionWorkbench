@@ -10,8 +10,8 @@ namespace Compression.Tests.Amr;
 
 /// <summary>
 /// Pins the 3GPP AMR container descriptor: magic detection for NB/WB/multi-channel, frame-walk
-/// counts, valid RIFF MONO/per-channel WAVs at the right rate, metadata, graceful handling of
-/// malformed input and the read-only contract.
+/// counts, valid RIFF MONO/per-channel WAVs at the right rate, metadata, malformed-input handling
+/// and the create/audio-conversion capability contract.
 /// </summary>
 [TestFixture]
 public class AmrFormatTests {
@@ -68,18 +68,13 @@ public class AmrFormatTests {
   }
 
   [Test]
-  public void Nb_MonoWav_IsValidRiffAt8kHz() {
-    AssertWav(NbFile(2), "MONO.wav", 8000);
-  }
+  public void Nb_MonoWav_IsValidRiffAt8kHz() => AssertWav(NbFile(2), "MONO.wav", 8000);
 
   [Test]
-  public void Wb_MonoWav_IsValidRiffAt16kHz() {
-    AssertWav(WbFile(2), "MONO.wav", 16000);
-  }
+  public void Wb_MonoWav_IsValidRiffAt16kHz() => AssertWav(WbFile(2), "MONO.wav", 16000);
 
   [Test]
   public void MultiChannel_Nb_SplitsIntoPerChannelWavs() {
-    // #!AMR_MC1.0\n + channel count (2), then interleaved NB frames (4 → 2 per channel)
     using var ms = new MemoryStream();
     ms.Write(MagicNbMc);
     var ch = new byte[4];
@@ -95,15 +90,14 @@ public class AmrFormatTests {
   }
 
   [Test]
-  public void Metadata_ReportsCodecAndFrameCount() {
-    using var ms = new MemoryStream(NbFile(5));
+  public void Metadata_ReportsCodecFrameCountAndWriteSupport() {
     var output = new MemoryStream();
     new AmrFormatDescriptor().ExtractEntry(new MemoryStream(NbFile(5)), "metadata.ini", output, null);
     var text = Encoding.UTF8.GetString(output.ToArray());
     Assert.That(text, Does.Contain("codec=AMR-NB"));
     Assert.That(text, Does.Contain("frames_total=5"));
     Assert.That(text, Does.Contain("sample_rate=8000"));
-    Assert.That(text, Does.Contain("note=decode-only"));
+    Assert.That(text, Does.Contain("encode/mux/demux enabled"));
   }
 
   [Test]
@@ -117,11 +111,17 @@ public class AmrFormatTests {
   }
 
   [Test]
-  public void IsReadOnly_HasNoCreateCapability() {
+  public void ExposesCreateAndAudioConversionCapabilities() {
     var desc = new AmrFormatDescriptor();
-    Assert.That(desc, Is.Not.InstanceOf<IArchiveCreatable>(), "AMR has no encoder → read-only");
-    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanList), Is.True);
-    Assert.That(desc.MagicSignatures.Count, Is.GreaterThan(0));
+    Assert.Multiple(() => {
+      Assert.That(desc, Is.InstanceOf<IArchiveCreatable>());
+      Assert.That(desc, Is.InstanceOf<IAudioPcmSource>());
+      Assert.That(desc, Is.InstanceOf<IAudioPcmTarget>());
+      Assert.That(desc, Is.InstanceOf<IAudioDemuxSource>());
+      Assert.That(desc, Is.InstanceOf<IAudioMuxTarget>());
+      Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+      Assert.That(desc.MagicSignatures.Count, Is.GreaterThan(0));
+    });
   }
 
   [Test]

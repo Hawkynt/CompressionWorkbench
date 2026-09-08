@@ -23,9 +23,10 @@ namespace FileFormat.Amr;
 /// frame-by-frame, matching the ffmpeg AMR demuxer.
 /// <para>The archive view surfaces <c>FULL.amr</c>/<c>FULL.awb</c> (byte-exact stream, Kind
 /// <c>Container</c>), a decoded <c>MONO.wav</c> (or one WAV per channel for MC files, Kind
-/// <c>Channel</c>) and <c>metadata.ini</c> (Kind <c>Tag</c>). Read-only: AMR has no encoder here.</para>
+/// <c>Channel</c>) and <c>metadata.ini</c> (Kind <c>Tag</c>). The audio conversion surface also
+/// supports PCM16 encoding/decoding and packet-preserving demux/mux for NB/WB and MC1.0.</para>
 /// </summary>
-public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+public sealed partial class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract {
 
   private static readonly byte[] MagicNb = "#!AMR\n"u8.ToArray();
@@ -49,7 +50,7 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -73,7 +74,11 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("amr", "3GPP AMR")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("amr", "3GPP AMR (select NB/WB by sample rate)"),
+    new("amr-nb", "AMR narrowband"),
+    new("amr-wb", "AMR wideband")
+  ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -85,7 +90,8 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "3GPP AMR narrowband/wideband speech container; full file + decoded PCM WAV(s).";
+  public string Description =>
+    "3GPP AMR narrowband/wideband speech container; RFC 4867 mono/MC1.0 decode, encode, demux and mux.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -121,7 +127,9 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private static int ReadChannels(byte[] blob, int offset) =>
-    offset + 4 <= blob.Length ? BinaryPrimitives.ReadInt32LittleEndian(blob.AsSpan(offset, 4)) : 1;
+    offset + 4 <= blob.Length
+      ? (int)(BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(offset, 4)) & 0x0F)
+      : 0;
 
   private static bool StartsWith(byte[] blob, byte[] magic) {
     if (blob.Length < magic.Length)
@@ -155,8 +163,14 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return entries;
     }
 
-    if (isMc && channels < 1)
-      channels = 1;
+    if (isMc && channels is < 1 or > 6) {
+      var invalidMeta = new StringBuilder();
+      invalidMeta.AppendLine($"codec=AMR-{(isWb ? "WB" : "NB")}");
+      invalidMeta.AppendLine($"variant={variant}");
+      invalidMeta.AppendLine($"note=invalid MC1.0 channel count {channels}; expected 1-6.");
+      entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(invalidMeta.ToString())));
+      return entries;
+    }
     var channelCount = isMc ? channels : 1;
 
     var sampleRate = isWb ? AmrWbCodec.SampleRate : AmrNbCodec.SampleRate;
@@ -195,7 +209,7 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     meta.AppendLine($"frame_samples={samplesPerFrame}");
     meta.AppendLine($"frames_total={totalFrames}");
     meta.AppendLine($"duration_seconds={durationSeconds:0.###}");
-    meta.AppendLine("note=decode-only; AMR has no encoder.");
+    meta.AppendLine("note=RFC 4867 encode/mux/demux enabled for mono and MC1.0 (1-6 channels).");
     meta.AppendLine("note=SID/NO_DATA frames render as silence (DTX comfort noise not synthesized).");
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
 
@@ -212,17 +226,16 @@ public sealed class AmrFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var pos = 0;
     var ch = 0;
     while (pos < body.Length) {
-      var frameType = (body[pos] >> 3) & 0x0F;
-      var size = isWb ? AmrWbCodec.FrameBytes(frameType) : 1 + AmrNbCodec.PayloadBytes(frameType);
-      if (size <= 0)
-        size = 1;
+      var size = StorageFrameSize(body[pos], isWb);
       if (pos + size > body.Length)
-        break;
+        throw new InvalidDataException("Truncated AMR storage frame.");
       for (var i = 0; i < size; i++)
         builders[ch].Add(body[pos + i]);
       pos += size;
       ch = (ch + 1) % channelCount;
     }
+    if (ch != 0)
+      throw new InvalidDataException("AMR file ends inside a multi-channel frame-block.");
 
     var result = new byte[channelCount][];
     for (var i = 0; i < channelCount; i++)
