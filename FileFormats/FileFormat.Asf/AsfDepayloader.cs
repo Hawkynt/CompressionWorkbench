@@ -24,15 +24,18 @@ namespace FileFormat.Asf;
 ///     sub-payloads.</item>
 /// </list>
 /// Fragments are stitched back together per media object (by stream and offset) and the
-/// completed media objects are concatenated per stream in occurrence order. Parsing is
-/// defensive: any inconsistency stops the walk and whatever reassembled cleanly so far
-/// is returned.
+/// completed media objects are concatenated per stream in occurrence order. Their ASF
+/// presentation times are retained in the same order so packet-preserving remux can keep
+/// timing as well as codec bytes. Parsing is defensive: any inconsistency stops the walk
+/// and whatever reassembled cleanly so far is returned.
 /// </summary>
 internal static class AsfDepayloader {
 
-  /// <summary>One stream's reassembled elementary bitstream plus its completed-object boundaries.</summary>
+  /// <summary>One stream's reassembled elementary bitstream plus its completed-object boundaries and presentation times.</summary>
   internal sealed class StreamData {
     public readonly List<byte[]> Objects = [];
+    public readonly List<uint> PresentationTimesMs = [];
+
     public byte[] ToBlob() {
       var total = 0;
       foreach (var o in this.Objects) total += o.Length;
@@ -48,6 +51,7 @@ internal static class AsfDepayloader {
     public int ObjectNumber = -1;
     public byte[] Buffer = [];
     public int FragOffset;
+    public uint PresentationTimeMs;
   }
 
   /// <summary>
@@ -157,6 +161,7 @@ internal static class AsfDepayloader {
       // Normal fragment: replicated data starts with {media object size, presentation time}.
       if (p + replicatedLength > dataEnd) return false;
       var mediaObjectSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
+      var presentationTime = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p + 4));
       p += replicatedLength; // skip the whole replicated-data block
 
       int fragLen;
@@ -167,7 +172,8 @@ internal static class AsfDepayloader {
       }
       if (fragLen < 0 || p + fragLen > dataEnd) return false;
 
-      AppendFragment(streams, pending, streamNumber, mediaObjectNumber, mediaObjectSize, offsetOrTime, b, p, fragLen);
+      AppendFragment(streams, pending, streamNumber, mediaObjectNumber, mediaObjectSize, offsetOrTime,
+        presentationTime, b, p, fragLen);
       p += fragLen;
       return true;
     }
@@ -175,8 +181,8 @@ internal static class AsfDepayloader {
     if (replicatedLength == 1) {
       // Compressed payload: 'offsetOrTime' was the presentation time; one presentation-
       // time-delta byte (the replicated byte), then a run of length-prefixed sub-payloads.
-      var presentationTimeDelta = b[p++]; // the single replicated byte
-      _ = presentationTimeDelta;
+      var presentationTimeDelta = b[p++];
+      var presentationTime = offsetOrTime < 0 ? 0u : (uint)offsetOrTime;
 
       int blockLen;
       if (multiplePayloads) {
@@ -188,12 +194,15 @@ internal static class AsfDepayloader {
       if (blockLen < 0 || blockEnd > dataEnd) return false;
 
       // Each sub-payload: 1-byte length prefix then that many bytes; each is a complete
-      // media object for the stream.
+      // media object for the stream. Presentation times advance by the replicated delta.
       while (p < blockEnd) {
         var subLen = b[p++];
         if (p + subLen > blockEnd) return false;
-        AppendCompleteObject(streams, streamNumber, b, p, subLen);
+        AppendCompleteObject(streams, streamNumber, presentationTime, b, p, subLen);
         p += subLen;
+        presentationTime = presentationTime > uint.MaxValue - presentationTimeDelta
+          ? uint.MaxValue
+          : presentationTime + presentationTimeDelta;
       }
       p = blockEnd;
       return true;
@@ -209,18 +218,24 @@ internal static class AsfDepayloader {
       fl = dataEnd - p;
     }
     if (fl < 0 || p + fl > dataEnd) return false;
-    AppendCompleteObject(streams, streamNumber, b, p, fl);
+    AppendCompleteObject(streams, streamNumber, 0, b, p, fl);
     p += fl;
     return true;
   }
 
   private static void AppendFragment(Dictionary<int, StreamData> streams, Dictionary<int, Pending> pending,
-      int streamNumber, int objectNumber, int objectSize, int fragOffset, byte[] src, int srcPos, int len) {
+      int streamNumber, int objectNumber, int objectSize, int fragOffset, uint presentationTimeMs,
+      byte[] src, int srcPos, int len) {
     if (!pending.TryGetValue(streamNumber, out var pend) || pend.ObjectNumber != objectNumber || fragOffset == 0 && pend.FragOffset != 0) {
       // Finalise any complete previous object before starting a new one.
       if (pend != null && pend.FragOffset > 0 && pend.FragOffset == pend.Buffer.Length)
-        Stream(streams, streamNumber).Objects.Add(pend.Buffer);
-      pend = new Pending { ObjectNumber = objectNumber, Buffer = new byte[Math.Max(objectSize, fragOffset + len)], FragOffset = 0 };
+        AppendCompletedPending(streams, streamNumber, pend);
+      pend = new Pending {
+        ObjectNumber = objectNumber,
+        Buffer = new byte[Math.Max(objectSize, fragOffset + len)],
+        FragOffset = 0,
+        PresentationTimeMs = presentationTimeMs,
+      };
       pending[streamNumber] = pend;
     }
 
@@ -233,15 +248,24 @@ internal static class AsfDepayloader {
     pend.FragOffset = Math.Max(pend.FragOffset, fragOffset + len);
 
     if (pend.FragOffset >= pend.Buffer.Length) {
-      Stream(streams, streamNumber).Objects.Add(pend.Buffer);
+      AppendCompletedPending(streams, streamNumber, pend);
       pending.Remove(streamNumber);
     }
   }
 
-  private static void AppendCompleteObject(Dictionary<int, StreamData> streams, int streamNumber, byte[] src, int srcPos, int len) {
+  private static void AppendCompletedPending(Dictionary<int, StreamData> streams, int streamNumber, Pending pending) {
+    var target = Stream(streams, streamNumber);
+    target.Objects.Add(pending.Buffer);
+    target.PresentationTimesMs.Add(pending.PresentationTimeMs);
+  }
+
+  private static void AppendCompleteObject(Dictionary<int, StreamData> streams, int streamNumber,
+      uint presentationTimeMs, byte[] src, int srcPos, int len) {
     var obj = new byte[len];
     Array.Copy(src, srcPos, obj, 0, len);
-    Stream(streams, streamNumber).Objects.Add(obj);
+    var target = Stream(streams, streamNumber);
+    target.Objects.Add(obj);
+    target.PresentationTimesMs.Add(presentationTimeMs);
   }
 
   private static StreamData Stream(Dictionary<int, StreamData> streams, int n) {
