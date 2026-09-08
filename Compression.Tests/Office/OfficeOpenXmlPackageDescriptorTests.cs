@@ -53,9 +53,9 @@ public sealed class OfficeOpenXmlPackageDescriptorTests {
       Assert.That(names, Does.Contain("word/document.xml"));
       Assert.That(names, Does.Contain("word/media/animated.gif"));
       Assert.That(names.Count(name => name == "word/media/animated.gif"), Is.EqualTo(1));
-      Assert.That(names, Has.None.Contains("frame_"));
-      Assert.That(names, Has.None.Contains("page_"));
-      Assert.That(names, Has.None.Contains("image_000"));
+      Assert.That(names.Any(name => name.Contains("frame_", StringComparison.Ordinal)), Is.False);
+      Assert.That(names.Any(name => name.Contains("page_", StringComparison.Ordinal)), Is.False);
+      Assert.That(names.Any(name => name.Contains("image_000", StringComparison.Ordinal)), Is.False);
     });
   }
 
