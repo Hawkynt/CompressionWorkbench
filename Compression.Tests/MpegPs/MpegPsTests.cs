@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Registry;
 using FileFormat.MpegPs;
 
 namespace Compression.Tests.MpegPs;
@@ -200,6 +201,122 @@ public class MpegPsTests {
     Assert.That(output.ToArray(), Is.EqualTo(Audio));
   }
 
+  [Test, Category("HappyPath")]
+  public void Descriptor_AdvertisesMuxAndPacketRemux() {
+    var descriptor = new MpegPsFormatDescriptor();
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(descriptor, Is.InstanceOf<IAudioMuxTarget>());
+    Assert.That(descriptor.SupportedMuxCodecs, Does.Contain("aac"));
+    Assert.That(descriptor.SupportedMuxCodecs, Does.Contain("mp2"));
+    Assert.That(descriptor.SupportedMuxCodecs, Does.Contain("mp3"));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Create_RoundTripsElementaryStreamsAndPreservesExplicitIds() {
+    var video = Concat(VideoA, VideoB);
+    var inputs = new[] {
+      ArchiveInputInfo.InMemory("metadata.ini", "[mpegps]\nmpeg_version = 2\n"u8.ToArray()),
+      ArchiveInputInfo.InMemory("stream_E2_mpeg2video.m2v", video),
+      ArchiveInputInfo.InMemory("stream_C3_mpegaudio.mp2", Audio),
+    };
+    using var output = new MemoryStream();
+    new MpegPsFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
+
+    var ps = MpegPsReader.Read(output.ToArray());
+    Assert.That(ps.MpegVersion, Is.EqualTo(2));
+    Assert.That(ps.HasProgramEnd, Is.True);
+    Assert.That(ps.Streams.Single(s => s.StreamId == 0xE2).Payload, Is.EqualTo(video));
+    Assert.That(ps.Streams.Single(s => s.StreamId == 0xC3).Payload, Is.EqualTo(Audio));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Create_ProgramStreamMapDeclaresModernCodecsAndHasValidCrc() {
+    var h264 = new byte[] { 0x00, 0x00, 0x00, 0x01, 0x67, 0x64, 0x00, 0x28 };
+    var aac = new byte[] { 0xFF, 0xF1, 0x4C, 0x80, 0x01, 0x5F, 0xFC, 0x11, 0x22, 0x33 };
+    using var output = new MemoryStream();
+    new MpegPsFormatDescriptor().Create(output, [
+      ArchiveInputInfo.InMemory("video.h264", h264),
+      ArchiveInputInfo.InMemory("audio.aac", aac),
+    ], new FormatCreateOptions());
+
+    var file = output.ToArray();
+    var ps = MpegPsReader.Read(file);
+    Assert.That(ps.Streams.Single(s => s.StreamId == 0xE0).Kind, Is.EqualTo("h264"));
+    Assert.That(ps.Streams.Single(s => s.StreamId == 0xC0).Kind, Is.EqualTo("aac_adts"));
+
+    var psmOffset = FindStartCode(file, MpegPsReader.ProgramStreamMapId);
+    Assert.That(psmOffset, Is.GreaterThanOrEqualTo(0));
+    var psmLength = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(psmOffset + 4, 2));
+    Assert.That(Mpeg2CrcRemainder(file.AsSpan(psmOffset, 6 + psmLength)), Is.Zero,
+      "PSM CRC must produce the zero remainder specified by ISO/IEC 13818-1");
+  }
+
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void Create_SplitsLargeElementaryStreamIntoBoundedPesPackets() {
+    var payload = new byte[140_000];
+    for (var i = 0; i < payload.Length; ++i)
+      payload[i] = (byte)(i * 31 + 7);
+
+    using var output = new MemoryStream();
+    new MpegPsFormatDescriptor().Create(output,
+      [ArchiveInputInfo.InMemory("video.m2v", payload)], new FormatCreateOptions());
+
+    var video = MpegPsReader.Read(output.ToArray()).Streams.Single();
+    Assert.That(video.PacketCount, Is.EqualTo(3));
+    Assert.That(video.Payload, Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Mux_Mp2_PreservesPacketsAndGeneratesPts() {
+    var packet2 = new byte[] { 0xFF, 0xFD, 0x90, 0x00, 0xBB };
+    var encoded = new AudioEncodedStream(
+      new AudioStreamFormat("mp2", 48_000, 2, Properties: new Dictionary<string, string> {
+        ["mpeg-version"] = "1",
+      }),
+      [new AudioPacket(Audio, 1152), new AudioPacket(packet2, 1152)]);
+
+    using var output = new MemoryStream();
+    new MpegPsFormatDescriptor().Mux(output, encoded, new FormatCreateOptions());
+    var ps = MpegPsReader.Read(output.ToArray());
+    var audio = ps.Streams.Single(s => s.StreamId == 0xC0);
+
+    Assert.That(audio.Payload, Is.EqualTo(Concat(Audio, packet2)));
+    Assert.That(audio.FirstPts, Is.Zero);
+    Assert.That(audio.LastPts, Is.EqualTo(2160));
+    Assert.That(ps.PackCount, Is.EqualTo(2));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Mux_Aac_RebuildsAdtsInsideProgramStream() {
+    var accessUnit = new byte[] { 0x11, 0x22, 0x33 };
+    var encoded = new AudioEncodedStream(
+      new AudioStreamFormat("aac", 48_000, 2, Properties: new Dictionary<string, string> {
+        ["object-type"] = "2",
+        ["sample-rate-index"] = "3",
+        ["adts-mpeg2"] = "0",
+      }),
+      [new AudioPacket(accessUnit, 1024)]);
+
+    using var output = new MemoryStream();
+    new MpegPsFormatDescriptor().Mux(output, encoded, new FormatCreateOptions());
+    var audio = MpegPsReader.Read(output.ToArray()).Streams.Single(s => s.StreamId == 0xC0);
+
+    Assert.That(audio.Kind, Is.EqualTo("aac_adts"));
+    Assert.That(audio.Payload, Is.EqualTo(new byte[] {
+      0xFF, 0xF1, 0x4C, 0x80, 0x01, 0x5F, 0xFC, 0x11, 0x22, 0x33,
+    }));
+    Assert.That(audio.FirstPts, Is.Zero);
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Create_RejectsPrivateStreamInputsThatCannotBeFaithfullyReauthored() {
+    var descriptor = new MpegPsFormatDescriptor();
+    var input = ArchiveInputInfo.InMemory("stream_BD_80_ac3.ac3", Ac3);
+    Assert.That(descriptor.CanAccept(input, out var reason), Is.False);
+    Assert.That(reason, Does.Contain("unsupported MPEG-PS mux input"));
+  }
+
   [Test, Category("ErrorHandling")]
   public void Read_WithoutPackHeader_Throws() {
     Assert.Throws<InvalidDataException>(() => MpegPsReader.Read([0x00, 0x00, 0x01, 0xB3, 0x00]));
@@ -210,5 +327,26 @@ public class MpegPsTests {
     var full = BuildMpeg2File();
     var ps = MpegPsReader.Read(full.AsSpan(0, full.Length - 12));
     Assert.That(ps.Streams.Any(s => s.StreamId == 0xE0), Is.True);
+  }
+
+  private static int FindStartCode(ReadOnlySpan<byte> data, byte code) {
+    var offset = 0;
+    while ((offset = MpegPsReader.FindStartCode(data, offset)) >= 0) {
+      if (data[offset + 3] == code)
+        return offset;
+      offset += 4;
+    }
+    return -1;
+  }
+
+  private static uint Mpeg2CrcRemainder(ReadOnlySpan<byte> data) {
+    const uint polynomial = 0x04C11DB7;
+    var crc = uint.MaxValue;
+    foreach (var value in data) {
+      crc ^= (uint)value << 24;
+      for (var bit = 0; bit < 8; ++bit)
+        crc = (crc & 0x8000_0000) != 0 ? (crc << 1) ^ polynomial : crc << 1;
+    }
+    return crc;
   }
 }
