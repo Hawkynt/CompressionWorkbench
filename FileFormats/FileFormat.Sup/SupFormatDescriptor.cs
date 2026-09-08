@@ -227,11 +227,10 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     Path.GetFileName(archiveName.Replace('\\', '/')).Equals("metadata.ini", StringComparison.OrdinalIgnoreCase);
 
   private static bool TryGetGeneratedSubtitleIndex(string archiveName, out int index) {
+    index = 0;
     var fileName = Path.GetFileName(archiveName.Replace('\\', '/'));
-    if (!fileName.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)) {
-      index = 0;
+    if (!fileName.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
       return false;
-    }
     var stem = Path.GetFileNameWithoutExtension(fileName);
     return stem.StartsWith("subtitle_", StringComparison.OrdinalIgnoreCase)
       && int.TryParse(stem.AsSpan("subtitle_".Length), NumberStyles.None, CultureInfo.InvariantCulture, out index);
