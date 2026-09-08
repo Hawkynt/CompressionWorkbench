@@ -87,7 +87,7 @@ public sealed class AsfAudioAdapter : IAudioDemuxSource, IAudioMuxTarget {
     var sampleRate = source.SampleRate.Value;
     var totalBytes = sourceData.Objects.Sum(static data => (long)data.Length);
     var totalSamples = EffectiveDurationSamples(parsed, sampleRate);
-    var packets = BuildPackets(sourceData.Objects, sampleRate, source.ByteRate, totalBytes, totalSamples);
+    var packets = BuildPackets(sourceData, sampleRate, parsed.Preroll ?? 0, source.ByteRate, totalBytes, totalSamples);
     if (packets.Count == 0)
       return false;
 
@@ -115,35 +115,60 @@ public sealed class AsfAudioAdapter : IAudioDemuxSource, IAudioMuxTarget {
   }
 
   private static List<AudioPacket> BuildPackets(
-    IReadOnlyList<byte[]> objects,
+    AsfDepayloader.StreamData sourceData,
     int sampleRate,
+    ulong prerollMs,
     long? byteRate,
     long totalBytes,
     long totalSamples
   ) {
-    var packets = new List<AudioPacket>(objects.Count);
+    var packets = new List<AudioPacket>(sourceData.Objects.Count);
     long cursor = 0;
     long consumedBytes = 0;
 
-    foreach (var data in objects) {
-      long end;
-      if (totalSamples > 0 && totalBytes > 0) {
-        consumedBytes = checked(consumedBytes + data.LongLength);
-        var scaled = (UInt128)(ulong)consumedBytes * (ulong)totalSamples / (ulong)totalBytes;
-        end = scaled > (UInt128)long.MaxValue ? long.MaxValue : (long)scaled;
-      } else if (byteRate is > 0) {
-        var duration = (UInt128)(uint)data.Length * (uint)sampleRate / (ulong)byteRate.Value;
-        var durationSamples = duration > (UInt128)long.MaxValue ? long.MaxValue : (long)duration;
-        end = durationSamples > long.MaxValue - cursor ? long.MaxValue : cursor + durationSamples;
-      } else {
-        end = cursor;
+    for (var index = 0; index < sourceData.Objects.Count; ++index) {
+      var data = sourceData.Objects[index];
+      var start = index < sourceData.PresentationTimesMs.Count
+        ? PresentationSamples(sourceData.PresentationTimesMs[index], prerollMs, sampleRate)
+        : cursor;
+      start = Math.Max(start, cursor);
+
+      consumedBytes = checked(consumedBytes + data.LongLength);
+      long end = start;
+
+      if (index + 1 < sourceData.PresentationTimesMs.Count) {
+        var next = PresentationSamples(sourceData.PresentationTimesMs[index + 1], prerollMs, sampleRate);
+        if (next > start)
+          end = next;
       }
 
-      packets.Add(new AudioPacket(data.ToArray(), Math.Max(0, end - cursor), cursor));
+      if (end == start && index == sourceData.Objects.Count - 1 && totalSamples > start)
+        end = totalSamples;
+
+      if (end == start && totalSamples > 0 && totalBytes > 0) {
+        var scaled = (UInt128)(ulong)consumedBytes * (ulong)totalSamples / (ulong)totalBytes;
+        var weightedEnd = scaled > (UInt128)long.MaxValue ? long.MaxValue : (long)scaled;
+        if (weightedEnd > start)
+          end = weightedEnd;
+      }
+
+      if (end == start && byteRate is > 0) {
+        var duration = (UInt128)(uint)data.Length * (uint)sampleRate / (ulong)byteRate.Value;
+        var durationSamples = duration > (UInt128)long.MaxValue ? long.MaxValue : (long)duration;
+        end = durationSamples > long.MaxValue - start ? long.MaxValue : start + durationSamples;
+      }
+
+      packets.Add(new AudioPacket(data.ToArray(), Math.Max(0, end - start), start));
       cursor = Math.Max(cursor, end);
     }
 
     return packets;
+  }
+
+  private static long PresentationSamples(uint presentationTimeMs, ulong prerollMs, int sampleRate) {
+    var normalizedMs = (ulong)presentationTimeMs > prerollMs ? (ulong)presentationTimeMs - prerollMs : 0;
+    var scaled = (UInt128)normalizedMs * (uint)sampleRate / 1000u;
+    return scaled > (UInt128)long.MaxValue ? long.MaxValue : (long)scaled;
   }
 
   private static long EffectiveDurationSamples(AsfReader.Parsed parsed, int sampleRate) {
