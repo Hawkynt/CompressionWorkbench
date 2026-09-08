@@ -6,11 +6,21 @@ using Compression.Registry;
 
 namespace FileFormat.Mp4;
 
-/// <summary>Minimal standards-based audio-only ISO BMFF writer for AAC and MPEG-1/2 Layer II/III packets.</summary>
+/// <summary>Minimal standards-based audio-only ISO BMFF writer for AAC, MPEG-1/2 Layer II/III and ALAC packets.</summary>
 internal static class Mp4AudioMuxer {
-  private static readonly string[] MuxCodecs = ["aac", "mp3", "mp2"];
+  private static readonly string[] MuxCodecs = ["aac", "mp3", "mp2", "alac"];
   private static readonly int[] Mpeg1SampleRates = [32_000, 44_100, 48_000];
   private static readonly int[] Mpeg2SampleRates = [16_000, 22_050, 24_000];
+  private static readonly uint[] AlacChannelLayoutTags = [
+    (100u << 16) | 1, // mono
+    (101u << 16) | 2, // stereo
+    (113u << 16) | 3, // MPEG 3.0 B
+    (116u << 16) | 4, // MPEG 4.0 B
+    (120u << 16) | 5, // MPEG 5.0 D
+    (124u << 16) | 6, // MPEG 5.1 D
+    (142u << 16) | 7, // AAC 6.1
+    (127u << 16) | 8, // MPEG 7.1 B
+  ];
 
   internal static IReadOnlyList<string> SupportedCodecs => MuxCodecs;
 
@@ -21,8 +31,26 @@ internal static class Mp4AudioMuxer {
       reason = $"the audio-only MP4 writer cannot carry codec '{format.CodecId}'";
       return false;
     }
+
+    if (format.CodecId.Equals("alac", StringComparison.OrdinalIgnoreCase)) {
+      if (format.SampleRate <= 0) {
+        reason = "ALAC in MP4 requires a positive sample rate";
+        return false;
+      }
+      if (format.Channels is < 1 or > 8) {
+        reason = "ALAC in MP4 supports one through eight channels";
+        return false;
+      }
+      if (format.BitsPerSample is not (16 or 20 or 24 or 32)) {
+        reason = "ALAC in MP4 requires a 16, 20, 24 or 32-bit source depth";
+        return false;
+      }
+      reason = null;
+      return true;
+    }
+
     if (format.SampleRate <= 0 || format.SampleRate > ushort.MaxValue || format.Channels is < 1 or > 2) {
-      reason = "MP4 audio muxing requires mono/stereo, a positive sample rate, and a version-0 mp4a-compatible sample rate no greater than 65535 Hz";
+      reason = "MP4 AAC/MPEG audio muxing requires mono/stereo, a positive sample rate, and a version-0 mp4a-compatible sample rate no greater than 65535 Hz";
       return false;
     }
     if (format.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase)) {
@@ -103,7 +131,16 @@ internal static class Mp4AudioMuxer {
     if (stream.Format.CodecId.Equals("aac", StringComparison.OrdinalIgnoreCase)) {
       if (stream.CodecPrivateData is not { Length: >= 2 } asc)
         throw new ArgumentException("AAC MP4 muxing requires AudioSpecificConfig codec-private data.", nameof(stream));
-      return new CodecConfiguration(0x40, asc, 1_024);
+      return new CodecConfiguration(0x40, asc, 1_024, false);
+    }
+
+    if (stream.Format.CodecId.Equals("alac", StringComparison.OrdinalIgnoreCase)) {
+      if (!TryExtractAlacSpecificConfig(stream.CodecPrivateData, out var config))
+        throw new ArgumentException("ALAC MP4 muxing requires a 24-byte ALACSpecificConfig magic cookie.", nameof(stream));
+      var defaultDuration = BinaryPrimitives.ReadUInt32BigEndian(config);
+      if (defaultDuration is 0 or > 16_384)
+        throw new ArgumentException($"ALAC magic cookie declares an unsupported packet length of {defaultDuration} frames.", nameof(stream));
+      return new CodecConfiguration(0, config, defaultDuration, true);
     }
 
     if (!TryGetMpegVersion(stream.Format, out var version) || version is not (1 or 2))
@@ -113,7 +150,33 @@ internal static class Mp4AudioMuxer {
 
     var objectType = version == 1 ? (byte)0x6B : (byte)0x69;
     var defaultDuration = layer == 2 || version == 1 ? 1_152u : 576u;
-    return new CodecConfiguration(objectType, null, defaultDuration);
+    return new CodecConfiguration(objectType, null, defaultDuration, false);
+  }
+
+  private static bool TryExtractAlacSpecificConfig(byte[]? data, out byte[] config) {
+    config = [];
+    if (data is not { Length: >= 24 })
+      return false;
+
+    if (data.Length is 24 or 48) {
+      config = data.AsSpan(0, 24).ToArray();
+      return true;
+    }
+    if (data.Length >= 28 && BinaryPrimitives.ReadUInt32BigEndian(data) == 0) {
+      config = data.AsSpan(4, 24).ToArray();
+      return true;
+    }
+
+    for (var offset = 0; offset + 36 <= data.Length; ++offset) {
+      if (!data.AsSpan(offset + 4, 4).SequenceEqual("alac"u8))
+        continue;
+      var size = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4));
+      if (size < 36 || offset + size > data.Length)
+        continue;
+      config = data.AsSpan(offset + 12, 24).ToArray();
+      return true;
+    }
+    return false;
   }
 
   private static bool TryGetMpegVersion(AudioStreamFormat format, out int version) {
@@ -168,17 +231,17 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildMvhd(uint timescale, uint duration) {
     using var body = new MemoryStream();
-    WriteUInt32(body, 0); // version + flags
-    WriteUInt32(body, 0); // creation
-    WriteUInt32(body, 0); // modification
+    WriteUInt32(body, 0);
+    WriteUInt32(body, 0);
+    WriteUInt32(body, 0);
     WriteUInt32(body, timescale);
     WriteUInt32(body, duration);
-    WriteUInt32(body, 0x0001_0000); // rate 1.0
-    WriteUInt16(body, 0x0100); // volume 1.0
+    WriteUInt32(body, 0x0001_0000);
+    WriteUInt16(body, 0x0100);
     body.Write(new byte[10]);
     WriteUnityMatrix(body);
     body.Write(new byte[24]);
-    WriteUInt32(body, 2); // next track id
+    WriteUInt32(body, 2);
     return Box("mvhd", body.ToArray());
   }
 
@@ -198,17 +261,17 @@ internal static class Mp4AudioMuxer {
 
   private static byte[] BuildTkhd(uint movieDuration) {
     using var body = new MemoryStream();
-    WriteUInt32(body, 0x0000_0007); // enabled + in movie + in preview
+    WriteUInt32(body, 0x0000_0007);
     WriteUInt32(body, 0);
     WriteUInt32(body, 0);
-    WriteUInt32(body, 1); // track id
+    WriteUInt32(body, 1);
     WriteUInt32(body, 0);
     WriteUInt32(body, movieDuration);
     WriteUInt32(body, 0);
     WriteUInt32(body, 0);
-    WriteUInt16(body, 0); // layer
-    WriteUInt16(body, 0); // alternate group
-    WriteUInt16(body, 0x0100); // audio volume
+    WriteUInt16(body, 0);
+    WriteUInt16(body, 0);
+    WriteUInt16(body, 0x0100);
     WriteUInt16(body, 0);
     WriteUnityMatrix(body);
     WriteUInt32(body, 0);
@@ -237,7 +300,7 @@ internal static class Mp4AudioMuxer {
     WriteUInt32(body, 0);
     WriteUInt32(body, timescale);
     WriteUInt32(body, duration);
-    WriteUInt16(body, 0x55C4); // und
+    WriteUInt16(body, 0x55C4);
     WriteUInt16(body, 0);
     return Box("mdhd", body.ToArray());
   }
@@ -266,7 +329,7 @@ internal static class Mp4AudioMuxer {
   }
 
   private static byte[] BuildDinf() {
-    var url = FullBox("url ", 1, []); // self-contained media data
+    var url = FullBox("url ", 1, []);
     using var drefBody = new MemoryStream();
     WriteUInt32(drefBody, 0);
     WriteUInt32(drefBody, 1);
@@ -290,33 +353,81 @@ internal static class Mp4AudioMuxer {
   }
 
   private static byte[] BuildStsd(AudioStreamFormat format, CodecConfiguration codec, uint averageBitrate) {
-    var esds = BuildEsds(codec.ObjectType, codec.DecoderSpecificInfo, averageBitrate);
-    using var entry = new MemoryStream();
-    entry.Write(new byte[6]);
-    WriteUInt16(entry, 1); // data reference index
-    WriteUInt16(entry, 0); // version
-    WriteUInt16(entry, 0); // revision level
-    WriteUInt32(entry, 0); // vendor
-    WriteUInt16(entry, checked((ushort)format.Channels));
-    WriteUInt16(entry, 16);
-    WriteUInt16(entry, 0); // compression id
-    WriteUInt16(entry, 0); // packet size
-    WriteUInt32(entry, checked((uint)format.SampleRate * 0x1_0000u));
-    entry.Write(esds);
-    var mp4a = Box("mp4a", entry.ToArray());
+    var sampleEntry = codec.IsAlac
+      ? BuildAlacSampleEntry(format, codec.DecoderSpecificInfo!, codec.DefaultPacketDuration)
+      : BuildMp4aSampleEntry(format, codec, averageBitrate);
 
     using var stsdBody = new MemoryStream();
     WriteUInt32(stsdBody, 0);
     WriteUInt32(stsdBody, 1);
-    stsdBody.Write(mp4a);
+    stsdBody.Write(sampleEntry);
     return Box("stsd", stsdBody.ToArray());
+  }
+
+  private static byte[] BuildMp4aSampleEntry(AudioStreamFormat format, CodecConfiguration codec, uint averageBitrate) {
+    var esds = BuildEsds(codec.ObjectType, codec.DecoderSpecificInfo, averageBitrate);
+    using var entry = new MemoryStream();
+    entry.Write(new byte[6]);
+    WriteUInt16(entry, 1);
+    WriteUInt16(entry, 0);
+    WriteUInt16(entry, 0);
+    WriteUInt32(entry, 0);
+    WriteUInt16(entry, checked((ushort)format.Channels));
+    WriteUInt16(entry, 16);
+    WriteUInt16(entry, 0);
+    WriteUInt16(entry, 0);
+    WriteUInt32(entry, checked((uint)format.SampleRate * 0x1_0000u));
+    entry.Write(esds);
+    return Box("mp4a", entry.ToArray());
+  }
+
+  private static byte[] BuildAlacSampleEntry(AudioStreamFormat format, byte[] config, uint framesPerPacket) {
+    using var entry = new MemoryStream();
+    entry.Write(new byte[6]);
+    WriteUInt16(entry, 1);
+
+    // QuickTime sound description v2 is required for >2 channels and removes the 16.16
+    // sample-rate ceiling. Its first fields deliberately look conservative to old readers;
+    // the authoritative values follow in the v2 extension fields.
+    WriteUInt16(entry, 2);
+    WriteUInt16(entry, 0);
+    WriteUInt32(entry, 0);
+    WriteUInt16(entry, 3);
+    WriteUInt16(entry, 16);
+    WriteUInt16(entry, 0xFFFE);
+    WriteUInt16(entry, 0);
+    WriteUInt32(entry, 0x0001_0000);
+    WriteUInt32(entry, 72);
+    WriteDouble(entry, format.SampleRate);
+    WriteUInt32(entry, checked((uint)format.Channels));
+    WriteUInt32(entry, 0x7F00_0000);
+    WriteUInt32(entry, 0); // compressed: no constant bits/channel
+    WriteUInt32(entry, format.BitsPerSample switch { 16 => 1u, 20 => 2u, 24 => 3u, 32 => 4u, _ => 0u });
+    WriteUInt32(entry, 0); // variable bytes/audio packet
+    WriteUInt32(entry, framesPerPacket);
+
+    using var alacBody = new MemoryStream();
+    WriteUInt32(alacBody, 0);
+    alacBody.Write(config);
+    entry.Write(Box("alac", alacBody.ToArray()));
+    entry.Write(BuildChannelLayoutAtom(format.Channels));
+    return Box("alac", entry.ToArray());
+  }
+
+  private static byte[] BuildChannelLayoutAtom(int channels) {
+    using var body = new MemoryStream();
+    WriteUInt32(body, 0);
+    WriteUInt32(body, AlacChannelLayoutTags[channels - 1]);
+    WriteUInt32(body, 0);
+    WriteUInt32(body, 0);
+    return Box("chan", body.ToArray());
   }
 
   private static byte[] BuildEsds(byte objectType, byte[]? decoderSpecificInfo, uint averageBitrate) {
     using var decoderConfigBody = new MemoryStream();
     decoderConfigBody.WriteByte(objectType);
-    decoderConfigBody.WriteByte(0x15); // AudioStream, upstream=0, reserved=1
-    decoderConfigBody.Write([0, 0, 0]); // bufferSizeDB
+    decoderConfigBody.WriteByte(0x15);
+    decoderConfigBody.Write([0, 0, 0]);
     WriteUInt32(decoderConfigBody, averageBitrate);
     WriteUInt32(decoderConfigBody, averageBitrate);
     if (decoderSpecificInfo is { Length: > 0 })
@@ -325,8 +436,8 @@ internal static class Mp4AudioMuxer {
     var slConfig = Descriptor(0x06, [0x02]);
 
     using var esBody = new MemoryStream();
-    WriteUInt16(esBody, 1); // ES_ID
-    esBody.WriteByte(0); // flags
+    WriteUInt16(esBody, 1);
+    esBody.WriteByte(0);
     esBody.Write(decoderConfig);
     esBody.Write(slConfig);
     var esDescriptor = Descriptor(0x03, esBody.ToArray());
@@ -453,8 +564,15 @@ internal static class Mp4AudioMuxer {
     output.Write(bytes);
   }
 
+  private static void WriteDouble(Stream output, double value) {
+    Span<byte> bytes = stackalloc byte[8];
+    BinaryPrimitives.WriteDoubleBigEndian(bytes, value);
+    output.Write(bytes);
+  }
+
   private readonly record struct CodecConfiguration(
     byte ObjectType,
     byte[]? DecoderSpecificInfo,
-    uint DefaultPacketDuration);
+    uint DefaultPacketDuration,
+    bool IsAlac);
 }
