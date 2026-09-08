@@ -6,9 +6,11 @@ namespace FileFormat.Matroska;
 
 /// <summary>
 /// Surfaces a Matroska/WebM file as an archive: one entry per demuxed track,
-/// plus attachments, plus chapters XML when present.
+/// plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can
+/// additionally be packet-preserving demuxed and muxed through the audio pipeline.
 /// </summary>
-public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
+public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+  IFileInternalLayoutMap, IFileInternalChunkMover, IAudioContainerFormat, IAudioDemuxSource, IAudioMuxTarget {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -16,7 +18,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the display name.
   /// </summary>
-  public string DisplayName => "MKV / WebM (demuxed)";
+  public string DisplayName => "MKV / WebM";
   /// <summary>
   /// Gets the category.
   /// </summary>
@@ -48,7 +50,11 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("stored", "Stored"),
+    new("opus", "WebM Opus audio"),
+    new("vorbis", "WebM Vorbis audio"),
+  ];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -60,7 +66,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Matroska / WebM container; tracks + attachments + chapters extractable.";
+  public string Description => "Matroska / WebM container; tracks + attachments + chapters extractable, with packet-preserving WebM Opus/Vorbis audio mux/remux.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -95,6 +101,24 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
+
+  /// <inheritdoc />
+  public IReadOnlyList<string> SupportedMuxCodecs => WebmAudioAdapter.SupportedCodecs;
+
+  /// <inheritdoc />
+  public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
+    ArgumentNullException.ThrowIfNull(options);
+    return WebmAudioAdapter.CanMux(stream, out reason);
+  }
+
+  /// <inheritdoc />
+  public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    WebmAudioAdapter.Mux(output, stream);
+  }
+
+  /// <inheritdoc />
+  public bool TryDemux(Stream input, out AudioEncodedStream? stream) => WebmAudioAdapter.TryDemux(input, out stream);
 
   private readonly MkvCuesFrontOptimizer _optimizer = new();
 
