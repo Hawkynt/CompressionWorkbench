@@ -15,6 +15,7 @@ namespace Compression.Tests.Optimizer;
 public class BscOptionsTests {
   private const int FileHeaderSize = 8;
   private const int FileBlockHeaderSize = 10;
+  private const int InternalBlockHeaderSize = 28;
 
   private static byte[] CompressibleSample() {
     using var ms = new MemoryStream();
@@ -67,6 +68,17 @@ public class BscOptionsTests {
     return result;
   }
 
+  private static uint Adler32(ReadOnlySpan<byte> data) {
+    const uint modulus = 65521;
+    uint a = 1;
+    uint b = 0;
+    foreach (var value in data) {
+      a = (a + value) % modulus;
+      b = (b + a) % modulus;
+    }
+    return b << 16 | a;
+  }
+
   [Test, Category("Spec")]
   public void Bsc_ExposesSearchableOptimizationAxes() {
     var descriptor = new BscFormatDescriptor();
@@ -92,6 +104,23 @@ public class BscOptionsTests {
     Assert.That(compressed, Has.Length.EqualTo(FileHeaderSize));
     Assert.That(BinaryPrimitives.ReadInt32LittleEndian(compressed.AsSpan(4, 4)), Is.Zero);
     Assert.That(Decompress(descriptor, compressed), Is.Empty);
+  }
+
+  [Test, Category("Spec")]
+  public void Bsc_ModeZeroIsStrictlyRawStored() {
+    var descriptor = new BscFormatDescriptor();
+    var compressed = CompressAt(descriptor, System.Text.Encoding.ASCII.GetBytes("stored"), "16384", "Following");
+    var internalHeaderOffset = FileHeaderSize + FileBlockHeaderSize;
+    var internalHeader = compressed.AsSpan(internalHeaderOffset, InternalBlockHeaderSize);
+
+    Assert.That(BinaryPrimitives.ReadInt32LittleEndian(internalHeader[8..]), Is.Zero,
+      "tiny blocks should use libbsc's raw/stored mode");
+
+    BinaryPrimitives.WriteInt32LittleEndian(internalHeader[12..], 1);
+    BinaryPrimitives.WriteInt32LittleEndian(internalHeader[24..], unchecked((int)Adler32(internalHeader[..24])));
+
+    var exception = Assert.Throws<InvalidDataException>(() => Decompress(descriptor, compressed));
+    Assert.That(exception!.Message, Does.Contain("malformed stored block"));
   }
 
   [Test, Category("Spec")]
