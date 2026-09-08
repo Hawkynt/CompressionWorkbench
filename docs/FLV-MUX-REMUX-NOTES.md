@@ -17,5 +17,3 @@ Normative/reference material:
 - Adobe Flash Video File Format Specification v10.1, Annex E
 - Adobe AMF0 File Format Specification
 - ISO/IEC 14496-3 AudioSpecificConfig / ADTS
-
-The package support matrix still needs to be regenerated/updated so its FLV row reflects the descriptor capabilities after this branch lands.
