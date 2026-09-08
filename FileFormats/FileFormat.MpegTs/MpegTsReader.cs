@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Globalization;
 
 namespace FileFormat.MpegTs;
 
@@ -17,8 +18,9 @@ namespace FileFormat.MpegTs;
 /// <para>
 /// The reader walks the stream, parses PAT (PID 0x0000) and PMT (PID from the PAT) once,
 /// and for every other PID concatenates the payload portions of all packets to produce
-/// the reassembled elementary-stream bytes. PES header parsing within those streams is
-/// out of scope — callers that want the raw PES will get raw PES.
+/// the reassembled elementary-stream bytes. PES headers remain part of those bytes; PUSI
+/// offsets and their global encounter order are retained so a mux/remux can restore packet-unit
+/// boundaries without parsing codec payloads.
 /// </para>
 /// <para>Skipped/intentional simplifications:</para>
 /// <list type="bullet">
@@ -81,8 +83,45 @@ public sealed class MpegTsReader {
     _ => $"st{type:X2}",
   };
 
+  /// <summary>Maps a descriptor stream-type filename token back to its PMT stream_type byte.</summary>
+  public static bool TryParseStreamTypeName(string name, out byte type) {
+    type = 0;
+    if (string.IsNullOrWhiteSpace(name)) return false;
+    type = name.ToLowerInvariant() switch {
+      "mpeg1video" => 0x01,
+      "mpeg2video" => 0x02,
+      "mpeg1audio" => 0x03,
+      "mpeg2audio" => 0x04,
+      "private" => 0x06,
+      "aac_adts" => 0x0F,
+      "mpeg4video" => 0x10,
+      "aac_latm" => 0x11,
+      "metadata" => 0x15,
+      "h264" => 0x1B,
+      "aac_raw" => 0x1C,
+      "jpeg2000" => 0x21,
+      "h265" => 0x24,
+      "h265_temporal" => 0x25,
+      "lpcm_or_ac3" => 0x80,
+      "ac3" => 0x81,
+      "dts" => 0x82,
+      "truehd" => 0x83,
+      "ac3_plus" => 0x84,
+      "dts_hd" => 0x85,
+      "dts_hd_master" => 0x86,
+      _ => 0,
+    };
+    if (type != 0) return true;
+    return name.Length == 4
+           && name.StartsWith("st", StringComparison.OrdinalIgnoreCase)
+           && byte.TryParse(name.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out type);
+  }
+
   /// <summary>One detected elementary stream within the TS file.</summary>
-  public sealed record ElementaryStream(int Pid, byte StreamType, int ProgramNumber, byte[] Payload);
+  public sealed record ElementaryStream(int Pid, byte StreamType, int ProgramNumber, byte[] Payload) {
+    /// <summary>Offsets into <see cref="Payload"/> that began in a TS packet with payload_unit_start_indicator set.</summary>
+    public IReadOnlyList<int> PayloadUnitStarts { get; init; } = [];
+  }
 
   /// <summary>One program from the Program Association Table.</summary>
   public sealed record Program(int ProgramNumber, int PmtPid);
@@ -92,7 +131,10 @@ public sealed class MpegTsReader {
     int PacketCount,
     int PacketSizeUsed,
     IReadOnlyList<Program> Programs,
-    IReadOnlyList<ElementaryStream> Streams);
+    IReadOnlyList<ElementaryStream> Streams) {
+    /// <summary>Elementary PIDs in the order their payload-unit-start packets were encountered.</summary>
+    public IReadOnlyList<int> PayloadUnitOrder { get; init; } = [];
+  }
 
   /// <summary>
   /// Parses a complete TS file. Auto-detects 188 vs 192 byte packet stride from the
@@ -108,6 +150,8 @@ public sealed class MpegTsReader {
     var pmtPidsByProgramNumber = new Dictionary<int, int>();
     var pmtBuffers = new Dictionary<int, MemoryStream>(); // pid → assembled PSI bytes (incomplete sections still ok for first-section-only parse)
     var streamPayloads = new Dictionary<int, MemoryStream>(); // pid → concatenated PES bytes
+    var streamPayloadUnitStarts = new Dictionary<int, List<int>>();
+    var payloadUnitOrder = new List<int>();
     var programByPid = new Dictionary<int, int>();          // pid → program number
     var streamTypeByPid = new Dictionary<int, byte>();      // pid → stream_type
 
@@ -168,10 +212,19 @@ public sealed class MpegTsReader {
         continue;
       }
 
-      // Elementary-stream payload — accumulate.
+      // Elementary-stream payload — accumulate while retaining PUSI boundaries for remux.
       if (!streamPayloads.TryGetValue(pid, out var sb)) {
         sb = new MemoryStream();
         streamPayloads[pid] = sb;
+      }
+      if (payloadUnitStart) {
+        if (!streamPayloadUnitStarts.TryGetValue(pid, out var starts)) {
+          starts = [];
+          streamPayloadUnitStarts[pid] = starts;
+        }
+        var offset = checked((int)sb.Length);
+        if (starts.Count == 0 || starts[^1] != offset) starts.Add(offset);
+        payloadUnitOrder.Add(pid);
       }
       sb.Write(payload);
     }
@@ -186,11 +239,15 @@ public sealed class MpegTsReader {
         Pid: kv.Key,
         StreamType: streamTypeByPid.TryGetValue(kv.Key, out var st) ? st : (byte)0,
         ProgramNumber: programByPid.TryGetValue(kv.Key, out var prog) ? prog : 0,
-        Payload: kv.Value.ToArray()))
+        Payload: kv.Value.ToArray()) {
+        PayloadUnitStarts = streamPayloadUnitStarts.TryGetValue(kv.Key, out var starts) ? [.. starts] : [],
+      })
       .OrderBy(s => s.Pid)
       .ToList();
 
-    return new TransportStream(packetCount, stride, programs, streams);
+    return new TransportStream(packetCount, stride, programs, streams) {
+      PayloadUnitOrder = [.. payloadUnitOrder],
+    };
   }
 
   /// <summary>Detects whether the file uses 188- or 192-byte stride.</summary>
