@@ -5,17 +5,14 @@ namespace FileFormat.Bik;
 
 /// <summary>
 /// Surfaces a Bink video container (<c>.bik</c>, Bink 1 'BIK?' and Bink 2 'KB2?') as a
-/// pseudo-archive that extracts only its audio. The byte-exact original is
-/// <c>FULL.bik</c> (Kind <c>Container</c>). The video data region is surfaced as
-/// <c>VIDEO.bin</c> (Kind <c>Track</c>, Method <c>Stored</c>) and the header is summarised
-/// in <c>metadata.ini</c> (Kind <c>Tag</c>). Each audio track's concatenated packets are
-/// surfaced as <c>TRACKn.bin</c> (Kind <c>Stream</c>, Method = the Bink Audio flavour) and,
-/// for Bink 1, decoded to per-channel mono WAVs <c>TRACKn_&lt;CHANNEL&gt;.wav</c>
-/// (Kind <c>Channel</c>) via <c>Codec.BinkAudio</c> — both RDFT and DCT flavours — with a
-/// graceful fallback to the raw blob on any decode failure. Bink 2 audio is not decoded and
-/// remains blob-only. Read-only; parsing degrades gracefully.
+/// packet-aware pseudo-archive. <c>FULL.bik</c> is the byte-exact original;
+/// <c>VIDEO.bin</c> and <c>TRACKn.bin</c> are encoded elementary streams, while
+/// <c>metadata.ini</c> preserves the container/header fields and per-frame packet boundaries
+/// required for packet-preserving mux/remux. Bink 1 audio is additionally decoded to
+/// per-channel mono WAV views where supported; Bink 2 audio remains blob-only.
 /// </summary>
-public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+  IArchiveInMemoryExtract, IArchiveCreatable {
 
   /// <summary>
   /// Gets the id.
@@ -33,7 +30,7 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -51,14 +48,12 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Bink 1: 'BIK' + revision letter b/f/g/h/i/k.
     new("BIKb"u8.ToArray(), Confidence: 0.95),
     new("BIKf"u8.ToArray(), Confidence: 0.95),
     new("BIKg"u8.ToArray(), Confidence: 0.95),
     new("BIKh"u8.ToArray(), Confidence: 0.95),
     new("BIKi"u8.ToArray(), Confidence: 0.95),
     new("BIKk"u8.ToArray(), Confidence: 0.95),
-    // Bink 2: 'KB2' + revision letter a/d/f/g/h/i/j/k (audio surfaced as blob only).
     new("KB2a"u8.ToArray(), Confidence: 0.9),
     new("KB2d"u8.ToArray(), Confidence: 0.9),
     new("KB2f"u8.ToArray(), Confidence: 0.9),
@@ -71,7 +66,7 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("Stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("Stored", "Stored / packet-preserving remux")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -83,7 +78,7 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Bink video container (.bik/.bk2); full file + video blob + per-track Bink Audio channels.";
+  public string Description => "Bink video container (.bik/.bk2); packet-aware demux plus encoded-stream mux/remux without codec re-encoding.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -102,6 +97,16 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  /// <summary>
+  /// Creates a Bink container either as a byte-exact <c>FULL.bik</c> passthrough or by
+  /// packet-preserving mux of <c>metadata.ini</c>, <c>VIDEO.bin</c>, and the referenced
+  /// <c>TRACKn.bin</c> streams.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    BikWriter.Create(output, inputs);
+  }
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
