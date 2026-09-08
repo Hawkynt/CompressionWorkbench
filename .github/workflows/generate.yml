@@ -50,12 +50,12 @@ jobs:
             [Text.UTF8Encoding]::new($false)
           )
           [IO.File]::WriteAllText(
-            (Join-Path $demoRoot 'docs\format-notes.txt'),
+            (Join-Path $demoRoot 'docs\\format-notes.txt'),
             "Deterministic archive contents for the README screenshot.`n",
             [Text.UTF8Encoding]::new($false)
           )
           [IO.File]::WriteAllBytes(
-            (Join-Path $demoRoot 'images\preview.bin'),
+            (Join-Path $demoRoot 'images\\preview.bin'),
             [byte[]](0..255)
           )
 
@@ -107,6 +107,28 @@ jobs:
         with:
           file: screenshots/main-window.png
           message: '* refresh the application screenshot'
+
+      - name: Build archive package for API documentation
+        shell: pwsh
+        run: dotnet build Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj --configuration Release
+
+      - name: Regenerate archive package documentation
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        with:
+          mode: write
+          project: Hawkynt.FileFormats.Archives/Hawkynt.FileFormats.Archives.csproj
+
+      - name: Commit regenerated archive README
+        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: Hawkynt.FileFormats.Archives/README.md
+          message: '* refresh archive package README'
+
+      - name: Commit regenerated archive API reference
+        uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: Hawkynt.FileFormats.Archives/REFERENCE.md
+          message: '* refresh archive package API reference'
 
       # GITHUB_TOKEN updates to an already-open PR intentionally create an approval-required
       # pull_request/synchronize run. workflow_dispatch is the documented exception that may start
