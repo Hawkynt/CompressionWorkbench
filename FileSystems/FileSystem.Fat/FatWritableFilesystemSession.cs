@@ -30,10 +30,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private bool _volumeDirty;
   private bool _hardError;
 
-  public FatWritableFilesystemSession(
-      Stream image,
-      FilesystemDriverProfile profile,
-      bool leaveOpen) {
+  public FatWritableFilesystemSession(Stream image, FilesystemDriverProfile profile, bool leaveOpen) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(profile);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
@@ -64,7 +61,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       []);
     _nodes.Add(root.Id, root);
     _children.Add(root.Id, new Dictionary<string, FilesystemNodeId>(StringComparer.OrdinalIgnoreCase));
-    IndexDirectory(root, new HashSet<int>());
+    IndexDirectory(root, []);
   }
 
   public FilesystemDriverProfile Profile { get; }
@@ -137,9 +134,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
         PatchShortEntry(encoded, 0, 0, AttrArchive);
         WriteSlotBlob(slots, encoded);
         FlushBacking();
-
-        var state = AddState(parent, name, isDirectory: false, 0, 0, AttrArchive, slots);
-        return state.Id;
+        return AddState(parent, name, isDirectory: false, 0, 0, AttrArchive, slots).Id;
       });
     }
   }
@@ -152,7 +147,13 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
         ValidateNewName(parent, name);
         var slots = ReserveSlots(parent, name, excluded: null, out var encoded);
         var cluster = AllocateClusters(1)[0];
+
+        // Initialize detached storage first, then reserve it in the FAT, and only
+        // then publish the directory entry. A crash cannot expose uninitialized data.
         InitializeDirectoryCluster(cluster, parent);
+        FlushBacking();
+        WriteFatEntryAll(cluster, EndOfChain());
+        AdjustFsInfo(-1, cluster + 1);
         FlushBacking();
 
         PatchShortEntry(encoded, cluster, 0, AttrDirectory);
@@ -160,6 +161,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
         FlushBacking();
 
         var state = AddState(parent, name, isDirectory: true, cluster, 0, AttrDirectory, slots);
+        state.Chain = [cluster];
         _children.Add(state.Id, new Dictionary<string, FilesystemNodeId>(StringComparer.OrdinalIgnoreCase));
         return state.Id;
       });
@@ -172,8 +174,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       Mutate(() => {
         var parent = RequireDirectory(parentDirectory);
         var state = RequireChild(parent, name);
-        if (state.IsDirectory)
-          throw new UnauthorizedAccessException($"'{name}' is a directory.");
+        if (state.IsDirectory) throw new UnauthorizedAccessException($"'{name}' is a directory.");
         Unlink(state);
       });
     }
@@ -185,10 +186,8 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       Mutate(() => {
         var parent = RequireDirectory(parentDirectory);
         var state = RequireChild(parent, name);
-        if (!state.IsDirectory)
-          throw new UnauthorizedAccessException($"'{name}' is not a directory.");
-        if (_children[state.Id].Count != 0)
-          throw new IOException($"FAT directory '{name}' is not empty.");
+        if (!state.IsDirectory) throw new UnauthorizedAccessException($"'{name}' is not a directory.");
+        if (_children[state.Id].Count != 0) throw new IOException($"FAT directory '{name}' is not empty.");
         Unlink(state);
         _children.Remove(state.Id);
       });
@@ -209,6 +208,9 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
         var source = RequireChild(sourceParent, oldName);
         ValidateName(newName);
 
+        if (source.IsDirectory && (targetParent.Id == source.Id || IsDescendantOf(targetParent, source)))
+          throw new IOException("A FAT directory cannot be moved into itself or one of its descendants.");
+
         var target = _children[targetParent.Id].TryGetValue(newName, out var targetId)
           ? RequireState(targetId)
           : null;
@@ -216,42 +218,46 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
           if (string.Equals(source.Name, newName, StringComparison.Ordinal)) return;
           target = null;
         }
-        if (target != null && !replace)
-          throw new IOException($"FAT entry '{newName}' already exists.");
+        if (target != null && !replace) throw new IOException($"FAT entry '{newName}' already exists.");
         if (target != null && target.IsDirectory != source.IsDirectory)
           throw new IOException("FAT rename replacement requires source and target to have the same node kind.");
         if (target is { IsDirectory: true } && _children[target.Id].Count != 0)
           throw new IOException($"FAT target directory '{newName}' is not empty.");
 
-        // Publish the new name first. A crash can leave two aliases, but never an
-        // unreferenced source; FAT has no journal capable of making rename atomic.
+        // Publish the new name first. FAT has no journal; the safe failure mode is
+        // two aliases, never a source that disappears before its replacement exists.
         var slots = ReserveSlots(targetParent, newName, source, out var encoded);
         PatchShortEntry(encoded, source.FirstCluster, source.Size, source.Attributes);
         WriteSlotBlob(slots, encoded);
         FlushBacking();
 
         var oldSlots = source.SlotOffsets.ToArray();
-        var oldParentState = source.ParentId;
+        var oldParentId = source.ParentId;
         var oldNameCanonical = source.Name;
+
+        // For a cross-directory directory move, make '..' agree with the already
+        // published new alias before removing the old alias.
+        if (source.IsDirectory && oldParentId != targetParent.Id)
+          RewriteDotDot(source, targetParent);
+
         source.ParentId = targetParent.Id;
         source.Name = newName;
-        source.SlotOffsets = slots;
+        source.SlotOffsets = slots.ToList();
         source.Modified = DateTimeOffset.Now;
         _children[sourceParent.Id].Remove(oldNameCanonical);
         _children[targetParent.Id][newName] = source.Id;
 
-        MarkSlotsDeleted(oldSlots);
+        var reused = slots.ToHashSet();
+        MarkSlotsDeleted(oldSlots.Where(offset => !reused.Contains(offset)));
         if (target != null) {
           MarkSlotsDeleted(target.SlotOffsets);
           target.Linked = false;
           _children[targetParent.Id].Remove(target.Name);
           _children[targetParent.Id][newName] = source.Id;
+          if (target.IsDirectory) _children.Remove(target.Id);
           FinalizeUnlinkedIfPossible(target);
         }
         FlushBacking();
-
-        if (source.IsDirectory && oldParentState != targetParent.Id)
-          RewriteDotDot(source, targetParent);
       });
     }
   }
@@ -271,8 +277,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       ThrowIfDisposed();
       Mutate(() => {
         var state = RequireState(nodeId);
-        if (!state.Linked)
-          throw new FileNotFoundException("Cannot update metadata for an unlinked FAT node.");
+        if (!state.Linked) throw new FileNotFoundException("Cannot update metadata for an unlinked FAT node.");
         if (state.Id == RootNodeId)
           throw new NotSupportedException("Generic FAT root metadata updates are not represented by a normal directory entry.");
 
@@ -359,10 +364,10 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     var slots = GetDirectorySlots(directory);
     var lfn = new SortedDictionary<int, string>();
     var lfnOffsets = new List<long>();
+    Span<byte> entry = stackalloc byte[32];
 
-    for (var i = 0; i < slots.Count; ++i) {
-      Span<byte> entry = stackalloc byte[32];
-      ReadAt(slots[i], entry);
+    foreach (var slot in slots) {
+      ReadAt(slot, entry);
       var first = entry[0];
       if (first == 0x00) break;
       if (first == 0xE5) {
@@ -373,9 +378,8 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
       var attr = entry[11];
       if ((attr & 0x3F) == AttrLongName) {
-        var sequence = first & 0x3F;
-        lfn[sequence] = DecodeLfnFragment(entry);
-        lfnOffsets.Add(slots[i]);
+        lfn[first & 0x3F] = DecodeLfnFragment(entry);
+        lfnOffsets.Add(slot);
         continue;
       }
       if ((attr & AttrVolume) != 0) {
@@ -388,7 +392,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       var name = lfn.Count == 0
         ? shortName
         : string.Concat(lfn.OrderBy(static pair => pair.Key).Select(static pair => pair.Value)).TrimEnd('\0', '\xFFFF');
-      var allSlots = lfnOffsets.Append(slots[i]).ToList();
+      var allSlots = lfnOffsets.Append(slot).ToList();
       lfn.Clear();
       lfnOffsets.Clear();
       if (name is "." or "..") continue;
@@ -420,9 +424,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private IReadOnlyList<long> GetDirectorySlots(NodeState directory) {
     if (directory.Id == RootNodeId && _geometry.FatType != 32) {
       var rootStart = checked(((long)_geometry.ReservedSectors + (long)_geometry.FatCount * _geometry.FatSize) * _geometry.BytesPerSector);
-      return Enumerable.Range(0, _rootEntryCount)
-        .Select(i => checked(rootStart + i * 32L))
-        .ToArray();
+      return Enumerable.Range(0, _rootEntryCount).Select(i => checked(rootStart + i * 32L)).ToArray();
     }
 
     if (directory.FirstCluster < 2)
@@ -438,11 +440,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     return result;
   }
 
-  private IReadOnlyList<long> ReserveSlots(
-      NodeState directory,
-      string name,
-      NodeState? excluded,
-      out byte[] encoded) {
+  private IReadOnlyList<long> ReserveSlots(NodeState directory, string name, NodeState? excluded, out byte[] encoded) {
     var shortNames = CollectShortNames(directory, excluded);
     encoded = FatWriter.BuildDirentSlots(name, shortNames, DateTime.Now, enableLfn: true, attr: AttrArchive);
     var needed = encoded.Length / 32;
@@ -450,8 +448,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     while (true) {
       var slots = GetDirectorySlots(directory);
       var runStart = FindFreeRun(slots, needed, excluded?.SlotOffsets);
-      if (runStart >= 0)
-        return slots.Skip(runStart).Take(needed).ToArray();
+      if (runStart >= 0) return slots.Skip(runStart).Take(needed).ToArray();
       if (directory.Id == RootNodeId && _geometry.FatType != 32)
         throw new IOException($"FAT fixed root directory has no run of {needed} free slot(s).");
       GrowDirectory(directory);
@@ -459,10 +456,10 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   }
 
   private int FindFreeRun(IReadOnlyList<long> slots, int needed, IReadOnlyList<long>? additionallyFree) {
-    var reusable = additionallyFree is null ? null : additionallyFree.ToHashSet();
+    var reusable = additionallyFree?.ToHashSet();
     var consecutive = 0;
+    Span<byte> first = stackalloc byte[1];
     for (var i = 0; i < slots.Count; ++i) {
-      Span<byte> first = stackalloc byte[1];
       ReadAt(slots[i], first);
       var free = first[0] is 0x00 or 0xE5 || reusable?.Contains(slots[i]) == true;
       consecutive = free ? consecutive + 1 : 0;
@@ -473,10 +470,10 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
   private HashSet<string> CollectShortNames(NodeState directory, NodeState? excluded) {
     var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    Span<byte> entry = stackalloc byte[32];
     foreach (var childId in _children[directory.Id].Values) {
       var child = RequireState(childId);
       if (child == excluded || child.SlotOffsets.Count == 0) continue;
-      Span<byte> entry = stackalloc byte[32];
       ReadAt(child.SlotOffsets[^1], entry);
       result.Add(DecodeShortName(entry));
     }
@@ -485,14 +482,19 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
   private void GrowDirectory(NodeState directory) {
     var chain = GetChain(directory).ToList();
-    if (chain.Count == 0)
-      throw new InvalidDataException("Cannot grow a FAT directory without a first cluster.");
+    if (chain.Count == 0) throw new InvalidDataException("Cannot grow a FAT directory without a first cluster.");
     var newCluster = AllocateClusters(1)[0];
+
     ZeroCluster(newCluster);
+    FlushBacking();
+    WriteFatEntryAll(newCluster, EndOfChain());
+    AdjustFsInfo(-1, newCluster + 1);
     FlushBacking();
     WriteFatEntryAll(chain[^1], newCluster);
     FlushBacking();
-    directory.Chain = [.. chain, newCluster];
+
+    chain.Add(newCluster);
+    directory.Chain = chain;
   }
 
   private void InitializeDirectoryCluster(int cluster, NodeState parent) {
@@ -535,6 +537,12 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     BinaryPrimitives.WriteUInt16LittleEndian(entry[26..28], (ushort)firstCluster);
   }
 
+  private bool IsDescendantOf(NodeState candidate, NodeState ancestor) {
+    for (var current = candidate; current.Id != RootNodeId; current = RequireState(current.ParentId))
+      if (current.Id == ancestor.Id) return true;
+    return false;
+  }
+
   private void Unlink(NodeState state) {
     if (!state.Linked) throw new FileNotFoundException(state.Name);
     MarkSlotsDeleted(state.SlotOffsets);
@@ -547,11 +555,10 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private void FinalizeUnlinkedIfPossible(NodeState state) {
     if (state.Linked || state.OpenHandles != 0) return;
     var chain = GetChain(state).ToArray();
-    if (chain.Length != 0) {
-      FreeClusters(chain);
-      state.FirstCluster = 0;
-      state.Chain = [];
-    }
+    if (chain.Length == 0) return;
+    FreeClusters(chain);
+    state.FirstCluster = 0;
+    state.Chain = [];
   }
 
   private void HandleClosed(NodeState state) {
@@ -588,26 +595,22 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private void WriteFile(NodeState state, long offset, ReadOnlySpan<byte> source) {
     lock (_gate) {
       ThrowIfDisposed();
-      if ((state.Attributes & AttrReadOnly) != 0)
-        throw new UnauthorizedAccessException($"FAT entry '{state.Name}' is read-only.");
+      if ((state.Attributes & AttrReadOnly) != 0) throw new UnauthorizedAccessException($"FAT entry '{state.Name}' is read-only.");
       if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
       if (source.Length == 0) return;
       var end = checked(offset + source.Length);
-      if (end > uint.MaxValue)
-        throw new IOException("FAT file size is limited to 4 GiB - 1 byte.");
+      if (end > uint.MaxValue) throw new IOException("FAT file size is limited to 4 GiB - 1 byte.");
 
       Mutate(() => {
         var oldSize = (long)state.Size;
         EnsureCapacity(state, end);
-        if (offset > oldSize)
-          ZeroLogicalRange(state, oldSize, offset - oldSize);
+        if (offset > oldSize) ZeroLogicalRange(state, oldSize, offset - oldSize);
         WriteLogicalRange(state, offset, source);
-        if (end > oldSize) {
-          FlushBacking();
-          state.Size = (uint)end;
-          PublishShortEntry(state);
-          FlushBacking();
-        }
+        if (end <= oldSize) return;
+        FlushBacking();
+        state.Size = (uint)end;
+        PublishShortEntry(state);
+        FlushBacking();
       });
     }
   }
@@ -615,10 +618,8 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private void SetFileLength(NodeState state, long length) {
     lock (_gate) {
       ThrowIfDisposed();
-      if ((state.Attributes & AttrReadOnly) != 0)
-        throw new UnauthorizedAccessException($"FAT entry '{state.Name}' is read-only.");
-      if (length < 0 || length > uint.MaxValue)
-        throw new ArgumentOutOfRangeException(nameof(length));
+      if ((state.Attributes & AttrReadOnly) != 0) throw new UnauthorizedAccessException($"FAT entry '{state.Name}' is read-only.");
+      if (length < 0 || length > uint.MaxValue) throw new ArgumentOutOfRangeException(nameof(length));
       if (length == state.Size) return;
 
       Mutate(() => {
@@ -633,25 +634,25 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
           return;
         }
 
-        // Publish the shorter logical size before releasing any tail clusters.
+        // Capture ownership before changing FirstCluster. Publish the smaller
+        // logical size before releasing storage, so a crash cannot expose freed data.
+        var chain = GetChain(state).ToList();
+        var keep = length == 0 ? 0 : checked((int)((length + _geometry.ClusterSize - 1) / _geometry.ClusterSize));
         state.Size = (uint)length;
         if (length == 0) state.FirstCluster = 0;
         PublishShortEntry(state);
         FlushBacking();
 
-        var chain = GetChain(state).ToList();
-        var keep = length == 0 ? 0 : checked((int)((length + _geometry.ClusterSize - 1) / _geometry.ClusterSize));
         if (keep < chain.Count) {
+          if (keep > 0) {
+            WriteFatEntryAll(chain[keep - 1], EndOfChain());
+            FlushBacking();
+          }
           var released = chain.Skip(keep).ToArray();
-          if (keep > 0) WriteFatEntryAll(chain[keep - 1], EndOfChain());
           FreeClusters(released);
           chain.RemoveRange(keep, chain.Count - keep);
-          state.Chain = chain;
         }
-        if (length == 0) {
-          if (chain.Count != 0) FreeClusters(chain);
-          state.Chain = [];
-        }
+        state.Chain = chain;
         FlushBacking();
       });
     }
@@ -666,26 +667,26 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     foreach (var cluster in added) ZeroCluster(cluster);
     FlushBacking();
 
-    for (var i = 0; i < added.Count - 1; ++i)
-      WriteFatEntryAll(added[i], added[i + 1]);
-    if (added.Count != 0)
-      WriteFatEntryAll(added[^1], EndOfChain());
-    if (chain.Count != 0)
-      WriteFatEntryAll(chain[^1], added[0]);
+    for (var i = 0; i < added.Count - 1; ++i) WriteFatEntryAll(added[i], added[i + 1]);
+    WriteFatEntryAll(added[^1], EndOfChain());
+    AdjustFsInfo(-added.Count, added[^1] + 1);
     FlushBacking();
 
-    if (chain.Count == 0) state.FirstCluster = added[0];
+    if (chain.Count != 0) {
+      WriteFatEntryAll(chain[^1], added[0]);
+      FlushBacking();
+    } else {
+      state.FirstCluster = added[0];
+    }
     chain.AddRange(added);
     state.Chain = chain;
-    AdjustFsInfo(-added.Count, added[^1] + 1);
   }
 
   private List<int> AllocateClusters(int count) {
     if (count <= 0) return [];
     var result = new List<int>(count);
     for (var cluster = 2; cluster < _geometry.TotalDataClusters + 2 && result.Count < count; ++cluster) {
-      var value = ReadFatEntryVerified(cluster);
-      if (value != 0) continue;
+      if (ReadFatEntryVerified(cluster) != 0) continue;
       result.Add(cluster);
     }
     if (result.Count != count)
@@ -759,14 +760,12 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   private void WriteSlotBlob(IReadOnlyList<long> slots, ReadOnlySpan<byte> encoded) {
     if (slots.Count * 32 != encoded.Length)
       throw new InvalidOperationException("FAT directory slot reservation does not match encoded entry size.");
-    for (var i = 0; i < slots.Count; ++i)
-      WriteAt(slots[i], encoded.Slice(i * 32, 32));
+    for (var i = 0; i < slots.Count; ++i) WriteAt(slots[i], encoded.Slice(i * 32, 32));
   }
 
   private void MarkSlotsDeleted(IEnumerable<long> offsets) {
     Span<byte> entry = stackalloc byte[32];
     foreach (var offset in offsets) {
-      ReadAt(offset, entry);
       entry.Clear();
       entry[0] = 0xE5;
       WriteAt(offset, entry);
@@ -814,8 +813,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
   }
 
   private void WriteFatEntryAll(int cluster, int value) {
-    for (var copy = 0; copy < _geometry.FatCount; ++copy)
-      WriteFatEntry(copy, cluster, value);
+    for (var copy = 0; copy < _geometry.FatCount; ++copy) WriteFatEntry(copy, cluster, value);
   }
 
   private void WriteFatEntry(int copy, int cluster, int value) {
@@ -869,7 +867,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
     var free = BinaryPrimitives.ReadUInt32LittleEndian(fsInfo[488..492]);
     if (free != uint.MaxValue) {
-      var updated = Math.Clamp((long)free + freeDelta, 0, _geometry.TotalDataClusters);
+      var updated = Math.Clamp((long)free + freeDelta, 0L, _geometry.TotalDataClusters);
       BinaryPrimitives.WriteUInt32LittleEndian(fsInfo[488..492], (uint)updated);
     }
     var hint = nextHint >= 2 && nextHint < _geometry.TotalDataClusters + 2 ? (uint)nextHint : 2U;
@@ -879,8 +877,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
   private void MarkVolumeDirty() {
     if (_volumeDirty) return;
-    if (_geometry.FatType is 16 or 32)
-      SetCleanFlag(clean: false, hardErrorFree: true);
+    if (_geometry.FatType is 16 or 32) SetCleanFlag(clean: false, hardErrorFree: true);
     FlushBacking();
     _volumeDirty = true;
   }
@@ -950,23 +947,19 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
   private NodeState RequireDirectory(FilesystemNodeId id) {
     var state = RequireState(id);
-    if (!state.Linked && id != RootNodeId)
-      throw new DirectoryNotFoundException(state.Name);
-    if (!state.IsDirectory)
-      throw new DirectoryNotFoundException($"FAT node '{state.Name}' is not a directory.");
+    if (!state.Linked && id != RootNodeId) throw new DirectoryNotFoundException(state.Name);
+    if (!state.IsDirectory) throw new DirectoryNotFoundException($"FAT node '{state.Name}' is not a directory.");
     return state;
   }
 
   private NodeState RequireChild(NodeState parent, string name) {
-    if (!_children[parent.Id].TryGetValue(name, out var id))
-      throw new FileNotFoundException(name);
+    if (!_children[parent.Id].TryGetValue(name, out var id)) throw new FileNotFoundException(name);
     return RequireState(id);
   }
 
   private void ValidateNewName(NodeState parent, string name) {
     ValidateName(name);
-    if (_children[parent.Id].ContainsKey(name))
-      throw new IOException($"FAT entry '{name}' already exists.");
+    if (_children[parent.Id].ContainsKey(name)) throw new IOException($"FAT entry '{name}' already exists.");
   }
 
   private static void ValidateName(string name) {
@@ -974,8 +967,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     if (name is "." or "..") throw new ArgumentException("FAT dot entries are reserved.", nameof(name));
     if (name.IndexOfAny(['/', '\\', '\0']) >= 0)
       throw new ArgumentException("FAT entry names cannot contain path separators or NUL.", nameof(name));
-    if (name.Length > 255)
-      throw new ArgumentException("VFAT long names are limited to 255 UTF-16 code units.", nameof(name));
+    if (name.Length > 255) throw new ArgumentException("VFAT long names are limited to 255 UTF-16 code units.", nameof(name));
   }
 
   private static string DecodeLfnFragment(ReadOnlySpan<byte> entry) {
@@ -1084,22 +1076,19 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
 
     public int Read(long offset, Span<byte> destination) {
       ThrowIfDisposed();
-      if (_access == FileAccess.Write)
-        throw new NotSupportedException("This FAT handle was opened write-only.");
+      if (_access == FileAccess.Write) throw new NotSupportedException("This FAT handle was opened write-only.");
       return _session.ReadFile(_state, offset, destination);
     }
 
     public void Write(long offset, ReadOnlySpan<byte> source) {
       ThrowIfDisposed();
-      if (_access == FileAccess.Read)
-        throw new NotSupportedException("This FAT handle was opened read-only.");
+      if (_access == FileAccess.Read) throw new NotSupportedException("This FAT handle was opened read-only.");
       _session.WriteFile(_state, offset, source);
     }
 
     public void SetLength(long length) {
       ThrowIfDisposed();
-      if (_access == FileAccess.Read)
-        throw new NotSupportedException("This FAT handle was opened read-only.");
+      if (_access == FileAccess.Read) throw new NotSupportedException("This FAT handle was opened read-only.");
       _session.SetFileLength(_state, length);
     }
 
