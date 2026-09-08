@@ -106,6 +106,9 @@ internal static class WebmAudioAdapter {
     var codecPrivate = codecId == "A_OPUS"
       ? PrepareOpusPrivate(stream)
       : PrepareVorbisPrivate(stream);
+    var codecDelayNanoseconds = codecId == "A_OPUS"
+      ? GetOpusCodecDelayNanoseconds(codecPrivate)
+      : 0;
 
     var packets = stream.Packets.Where(static packet => !packet.IsHeader).ToArray();
     if (packets.Length == 0)
@@ -127,7 +130,7 @@ internal static class WebmAudioAdapter {
     var ebml = BuildEbmlHeader();
     var info = BuildInfo(timestamp);
     var tracks = BuildTracks(stream.Format, codecId, codecPrivate);
-    var clusters = BuildClusters(timedPackets);
+    var clusters = BuildClusters(timedPackets, codecDelayNanoseconds);
 
     // SeekPosition is fixed to eight payload bytes, making SeekHead's encoded length
     // independent of the actual offsets. One dry build therefore fixes both offsets.
@@ -328,6 +331,11 @@ internal static class WebmAudioAdapter {
     return checked(samplesAt48k * sampleRate / OpusClockRate);
   }
 
+  private static long GetOpusCodecDelayNanoseconds(ReadOnlySpan<byte> codecPrivate) {
+    var preSkip = BinaryPrimitives.ReadUInt16LittleEndian(codecPrivate.Slice(10, 2));
+    return preSkip * (long)NanosecondsPerSecond / OpusClockRate;
+  }
+
   private static long SamplesToNanoseconds(long samples, int sampleRate) {
     var seconds = samples / sampleRate;
     var remainder = samples % sampleRate;
@@ -367,8 +375,7 @@ internal static class WebmAudioAdapter {
     };
 
     if (codecId == "A_OPUS") {
-      var preSkip = BinaryPrimitives.ReadUInt16LittleEndian(codecPrivate.AsSpan(10, 2));
-      fields.Add(UInt(IdCodecDelay, (ulong)(preSkip * (long)NanosecondsPerSecond / OpusClockRate)));
+      fields.Add(UInt(IdCodecDelay, (ulong)GetOpusCodecDelayNanoseconds(codecPrivate)));
       fields.Add(UInt(IdSeekPreRoll, OpusSeekPreRollNanoseconds));
     }
 
@@ -391,18 +398,24 @@ internal static class WebmAudioAdapter {
     Binary(IdSeekId, IdBytes(targetId)),
     UInt(IdSeekPosition, position, width: 8));
 
-  private static byte[] BuildClusters(IReadOnlyList<TimedPacket> packets) {
+  private static byte[] BuildClusters(IReadOnlyList<TimedPacket> packets, long codecDelayNanoseconds) {
     using var output = new MemoryStream();
+    var codecDelayTicks = codecDelayNanoseconds == 0
+      ? 0
+      : checked((codecDelayNanoseconds + TimestampScaleNanoseconds - 1) / TimestampScaleNanoseconds);
     var packetIndex = 0;
     while (packetIndex < packets.Count) {
-      var clusterStartTick = packets[packetIndex].TimestampNanoseconds / TimestampScaleNanoseconds;
+      // CodecDelay is subtracted from the raw block timestamp by readers. WebM's
+      // 1 ms TimestampScale cannot represent every Opus pre-skip exactly, so round
+      // the raw offset up to keep the resulting presentation timestamp non-negative.
+      var clusterStartTick = checked(packets[packetIndex].TimestampNanoseconds / TimestampScaleNanoseconds + codecDelayTicks);
       using var body = new MemoryStream();
       body.Write(UInt(IdClusterTimestamp, clusterStartTick));
       var framesInCluster = 0;
 
       while (packetIndex < packets.Count) {
         var packet = packets[packetIndex];
-        var tick = packet.TimestampNanoseconds / TimestampScaleNanoseconds;
+        var tick = checked(packet.TimestampNanoseconds / TimestampScaleNanoseconds + codecDelayTicks);
         var relative = tick - clusterStartTick;
         if (framesInCluster > 0 && (relative > MaxClusterDurationTicks || relative > short.MaxValue))
           break;
@@ -563,7 +576,7 @@ internal static class WebmAudioAdapter {
       }
 
       case 3: { // EBML lacing.
-        if (!TryReadVint(payload, ref pos, out var firstSize, out _ ) || firstSize > int.MaxValue) return false;
+        if (!TryReadVint(payload, ref pos, out var firstSize, out _) || firstSize > int.MaxValue) return false;
         sizes[0] = (int)firstSize;
         var previous = (long)firstSize;
         for (var i = 1; i < count - 1; ++i) {
