@@ -53,7 +53,7 @@ public sealed class ArchivesReadmeStateTests {
       Check("Optimize", caps.HasFlag(FormatCapabilities.SupportsOptimize));
       Check("Demux", caps.HasFlag(FormatCapabilities.CanExtract));
       Check("Mux", caps.HasFlag(FormatCapabilities.CanCreate));
-      Check("Remux / edit", caps.HasFlag(FormatCapabilities.CanModify) || ops is IFileInternalChunkMover || ops is IAudioMuxTarget);
+      Check("Remux", caps.HasFlag(FormatCapabilities.CanRemux));
 
       var maintenance = columns.IndexOf("Maintenance");
       if (maintenance >= 0) {
