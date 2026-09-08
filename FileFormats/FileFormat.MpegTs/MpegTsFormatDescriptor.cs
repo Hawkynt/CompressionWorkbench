@@ -9,15 +9,17 @@ namespace FileFormat.MpegTs;
 /// <summary>
 /// Pseudo-archive descriptor for MPEG-2 Transport Streams. Each detected elementary
 /// stream is exposed as <c>stream_&lt;PID&gt;_&lt;type&gt;.bin</c> containing the
-/// concatenated PES payload bytes for that PID.
+/// concatenated raw PES bytes for that PID. The same representation can be muxed back
+/// into TS/M2TS and edited through the archive rebuild contract without transcoding.
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.itu.int/rec/T-REC-H.222.0</c> — ITU-T H.222.0 / ISO/IEC 13818-1 — MPEG-2 Systems (transport stream) standard</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/MPEG_transport_stream</c> — Wikipedia</description></item>
+///   <item><description><c>https://ffmpeg.org/doxygen/trunk/mpegtsenc_8c_source.html</c> — FFmpeg MPEG-TS muxer, used as an LGPL-2.1+ behavioral interoperability oracle</description></item>
 /// </list>
 /// </summary>
-public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+  IArchiveCreatable, IArchiveModifiable, IArchiveWriteConstraints {
 
   /// <summary>
   /// Gets the id.
@@ -35,8 +37,8 @@ public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -73,7 +75,37 @@ public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "MPEG-2 Transport Stream container demuxed into per-PID elementary streams.";
+  public string Description => "MPEG-2 Transport Stream container demuxed/muxed as per-PID raw PES streams.";
+
+  /// <summary>Maximum cumulative raw-PES input size; TS itself has no descriptor-imposed ceiling.</summary>
+  public long? MaxTotalArchiveSize => null;
+
+  /// <summary>Describes the typed pseudo-archive inputs accepted by the muxer.</summary>
+  public string AcceptedInputsDescription =>
+    "accepts: optional metadata.ini plus stream_XXXX_<type>.bin raw-PES entries (XXXX = elementary PID)";
+
+  /// <summary>Checks whether an input belongs to the descriptor's raw-PES mux representation.</summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    if (input.IsDirectory) {
+      reason = "MPEG-TS is a stream container and does not accept directory entries.";
+      return false;
+    }
+
+    var leaf = Path.GetFileName(input.ArchiveName.Replace('\\', '/'));
+    if (leaf.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase)
+        || MpegTsWriter.TryParseStreamFileName(leaf, out _, out _)) {
+      reason = null;
+      return true;
+    }
+
+    reason = "Expected metadata.ini or stream_XXXX_<type>.bin containing raw PES bytes.";
+    return false;
+  }
+
+  /// <summary>Builds a fresh TS/M2TS container from the descriptor's raw-PES entries.</summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => MpegTsWriter.Write(output, inputs);
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -148,9 +180,18 @@ public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     sb.Append("stream_count = ").Append(ts.Streams.Count).Append('\n');
     foreach (var p in ts.Programs)
       sb.Append(CultureInfo.InvariantCulture, $"program {p.ProgramNumber} -> PMT PID 0x{p.PmtPid:X4}\n");
-    foreach (var s in ts.Streams)
+    foreach (var s in ts.Streams) {
       sb.Append(CultureInfo.InvariantCulture,
         $"stream PID 0x{s.Pid:X4} type 0x{s.StreamType:X2} ({MpegTsReader.StreamTypeName(s.StreamType)}) program {s.ProgramNumber} bytes {s.Payload.Length}\n");
+      if (s.PayloadUnitStarts.Count > 0)
+        sb.Append(CultureInfo.InvariantCulture, $"pusi_offsets 0x{s.Pid:X4} = ")
+          .Append(string.Join(",", s.PayloadUnitStarts))
+          .Append('\n');
+    }
+    if (ts.PayloadUnitOrder.Count > 0)
+      sb.Append("pusi_order = ")
+        .Append(string.Join(",", ts.PayloadUnitOrder.Select(static pid => $"0x{pid:X4}")))
+        .Append('\n');
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }
