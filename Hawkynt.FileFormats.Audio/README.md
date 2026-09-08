@@ -159,7 +159,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Aiff` | AIFF / AIFC (Apple audio) | WORM | ✅ | ✅ | ✅ | ✅ | AIFF/AIFC; multi-channel assembly from channel WAVs |
 | `Akb` | Square Enix AKB | WORM | — | — | — | — | Square Enix audio bank |
 | `Alac` | ALAC (Apple Lossless) | R | — | — | — | — | Apple Lossless inside MP4 atoms |
-| `Amf` | AMF (DSMI Advanced Module Format) | R | — | — | — | — | DSMI AMF sample archive |
+| `Amf` | AMF (DSMI Advanced Module Format) | WORM | — | — | — | — | DSMI AMF 0.1/0.8-1.4; sample WAV authoring/demux + byte-exact `FULL.amf` remux |
 | `Amr` | 3GPP AMR | R | — | — | — | — | 3GPP AMR NB/WB, including MC1.0 multichannel surface |
 | `AmrNb` | AMR-NB | R | ✅ | ✅ | ✅ | ✅ | AMR-NB |
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | AMR-WB |
