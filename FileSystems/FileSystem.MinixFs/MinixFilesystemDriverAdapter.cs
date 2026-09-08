@@ -53,7 +53,10 @@ public sealed class MinixFilesystemDriverAdapter :
         geometry.Version == MinixMountedVersion.V1
           ? "MINIX v1 has one shared inode timestamp; mounted atime/mtime updates therefore refer to the same on-disk field."
           : "MINIX v2/v3 preserve separate atime, mtime and ctime fields.",
-        "Durability is direct bitmap/inode/zone writeback with fsck-based recovery; MINIX has no journal transaction API.",
+        geometry.Version == MinixMountedVersion.V3
+          ? "MINIX v3 removed s_state; durability is direct bitmap/inode/zone writeback with fsck-based recovery."
+          : "Writable MINIX v1/v2 mounts clear MINIX_VALID_FS while active and restore the saved mount state only on clean session disposal.",
+        "MINIX exposes no journal transaction API; BeginTransaction remains unsupported.",
       };
       if (!writable)
         limitations.Add("The MINIX superblock carries MINIX_ERROR_FS; writable mounting is disabled until fsck.minix repairs the volume.");
@@ -88,7 +91,13 @@ public sealed class MinixFilesystemDriverAdapter :
       throw new InvalidDataException("MINIX image is not mountable: " + string.Join("; ", profile.Limitations));
     if (!options.ReadOnly && !profile.CanMountWritable)
       throw new NotSupportedException("MINIX image is not safe for writable mounting: " + string.Join("; ", profile.Limitations));
-    return new MinixFilesystemSession(image, profile, options.ReadOnly, options.LeaveOpen);
+    if (options.ReadOnly)
+      return new MinixFilesystemSession(image, profile, readOnly: true, options.LeaveOpen);
+
+    var geometry = MinixMountedGeometry.Parse(image);
+    return geometry.Version == MinixMountedVersion.V3
+      ? new MinixFilesystemSession(image, profile, readOnly: false, options.LeaveOpen)
+      : MinixWritableMountStateSession.Open(image, profile, geometry, options.LeaveOpen);
   }
 
   public FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device) {
