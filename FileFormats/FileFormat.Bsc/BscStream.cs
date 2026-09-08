@@ -1,6 +1,5 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using Compression.Core.Transforms;
 
 namespace FileFormat.Bsc;
 
@@ -120,30 +119,12 @@ public static class BscStream {
       if (BscBlockCodec.Adler32(payload) != compressedChecksum)
         throw new InvalidDataException("BSC: compressed payload checksum mismatch");
 
-      // Workbench historically emitted a private BWT+MTF+zero-run payload while
-      // claiming libbsc mode 0. Keep those already-created files readable, but
-      // distinguish them from a genuine stored block by mode-0's invariants.
-      var genuineStoredBlock = mode == 0
-        && primaryIndex == 0
-        && payloadSize == dataSize
-        && dataChecksum == compressedChecksum;
-      var legacyManagedBlock = mode == 0 && !genuineStoredBlock;
-
-      byte[] decoded;
-      if (legacyManagedBlock) {
-        decoded = DecodeLegacyManagedBlock(payload, dataSize, primaryIndex);
-        if (sortingContexts == BscSortingContexts.Preceding)
-          Array.Reverse(decoded);
-        if (BscBlockCodec.Adler32(decoded) != dataChecksum)
-          throw new InvalidDataException("BSC: original data checksum mismatch");
-      } else {
-        decoded = BscBlockCodec.Decode(payload, mode, primaryIndex, dataSize);
-        // libbsc checks adler32_data before the outer preceding-context reversal.
-        if (BscBlockCodec.Adler32(decoded) != dataChecksum)
-          throw new InvalidDataException("BSC: original data checksum mismatch");
-        if (sortingContexts == BscSortingContexts.Preceding)
-          Array.Reverse(decoded);
-      }
+      var decoded = BscBlockCodec.Decode(payload, mode, primaryIndex, dataSize);
+      // libbsc checks adler32_data before the outer preceding-context reversal.
+      if (BscBlockCodec.Adler32(decoded) != dataChecksum)
+        throw new InvalidDataException("BSC: original data checksum mismatch");
+      if (sortingContexts == BscSortingContexts.Preceding)
+        Array.Reverse(decoded);
 
       if (output.CanSeek)
         output.Position = blockOffset;
@@ -183,38 +164,6 @@ public static class BscStream {
     output.Write(fileHeader);
     output.Write(blockHeader);
     output.Write(encoded.Payload);
-  }
-
-  private static byte[] DecodeLegacyManagedBlock(ReadOnlySpan<byte> payload, int dataSize, int primaryIndex) {
-    if (primaryIndex < 0 || (dataSize != 0 && primaryIndex >= dataSize))
-      throw new InvalidDataException($"BSC: invalid legacy BWT primary index {primaryIndex}");
-
-    var mtfData = LegacyZeroRunDecode(payload, dataSize);
-    if (mtfData.Length != dataSize)
-      throw new InvalidDataException($"BSC: legacy block decoded {mtfData.Length} bytes, expected {dataSize}");
-    var bwtData = MoveToFrontTransform.Decode(mtfData);
-    return BurrowsWheelerTransform.Inverse(bwtData, primaryIndex);
-  }
-
-  private static byte[] LegacyZeroRunDecode(ReadOnlySpan<byte> data, int expectedSize) {
-    var result = new List<byte>(expectedSize);
-    for (var i = 0; i < data.Length;) {
-      if (data[i] != 0) {
-        if (result.Count >= expectedSize)
-          throw new InvalidDataException("BSC: legacy zero-run payload expands beyond the declared data size");
-        result.Add(data[i++]);
-        continue;
-      }
-
-      if (i + 1 >= data.Length)
-        throw new InvalidDataException("BSC: truncated legacy zero-run escape sequence");
-      var runLength = (int)data[i + 1] + 1;
-      if (runLength > expectedSize - result.Count)
-        throw new InvalidDataException("BSC: legacy zero-run payload expands beyond the declared data size");
-      result.AddRange(Enumerable.Repeat((byte)0, runLength));
-      i += 2;
-    }
-    return [.. result];
   }
 
   private static byte[] ReadRemaining(Stream stream) {
