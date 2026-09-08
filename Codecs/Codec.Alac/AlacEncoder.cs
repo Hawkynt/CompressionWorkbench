@@ -77,6 +77,7 @@ public static class AlacEncoder {
     var frameBytes = checked(bytesPerSample * channels);
     if (pcmInterleaved.Length % frameBytes != 0)
       throw new ArgumentException("PCM length is not aligned to the sample × channel frame size.", nameof(pcmInterleaved));
+    ValidateSamplePacking(pcmInterleaved, bitsPerSample);
 
     var pcm = pcmInterleaved.ToArray();
     var totalSamples = pcm.Length / frameBytes;
@@ -112,6 +113,20 @@ public static class AlacEncoder {
       MaxFrameBytes: checked((uint)maxFrameBytes),
       AvgBitRate: averageBitRate,
       SampleRate: checked((uint)sampleRate)));
+  }
+
+  private static void ValidateSamplePacking(ReadOnlySpan<byte> pcmInterleaved, int bitsPerSample) {
+    if (bitsPerSample != 20)
+      return;
+
+    // ALAC's 20-bit PCM convention is a signed 20-bit sample left-justified in a
+    // three-byte little-endian container. Silently shifting arbitrary 24-bit input by
+    // four would discard information, so reject non-canonical packing instead.
+    for (var offset = 0; offset < pcmInterleaved.Length; offset += 3)
+      if ((pcmInterleaved[offset] & 0x0F) != 0)
+        throw new ArgumentException(
+          "20-bit ALAC PCM must be left-justified in 24-bit containers; the low four bits of every sample must be zero.",
+          nameof(pcmInterleaved));
   }
 
   private static byte[] EncodeFrame(
