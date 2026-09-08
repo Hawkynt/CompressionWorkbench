@@ -53,14 +53,17 @@ internal static class FatSharedDataOptimization {
 
       var aliases = groups.SelectMany(g => g.Aliases).Select(a => a.Name)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
-      foreach (var alias in groups.SelectMany(g => g.Aliases))
-        File.WriteAllBytes(alias.TempPath, []);
+      var emptyPlaceholder = Path.Combine(tempDir, "empty-placeholder.bin");
+      File.WriteAllBytes(emptyPlaceholder, []);
 
       var inputs = new List<ArchiveInputInfo>();
       foreach (var entry in entries.Where(e => e.IsDirectory))
         inputs.Add(new ArchiveInputInfo("", entry.Name, true));
       foreach (var file in files)
-        inputs.Add(new ArchiveInputInfo(file.TempPath, file.Name, false));
+        inputs.Add(new ArchiveInputInfo(
+          aliases.Contains(file.Name) ? emptyPlaceholder : file.TempPath,
+          file.Name,
+          false));
 
       var createOptions = ToCreateOptions(options);
       target.Position = 0;
@@ -202,9 +205,8 @@ internal static class FatSharedDataOptimization {
     var reserved = BinaryPrimitives.ReadUInt16LittleEndian(bpb[14..]);
     var fatCount = bpb[16];
     var rootEntries = BinaryPrimitives.ReadUInt16LittleEndian(bpb[17..]);
-    var total = BinaryPrimitives.ReadUInt16LittleEndian(bpb[19..]);
-    if (total == 0) total = checked((ushort)0); // keep the 16-bit read explicit below
-    var totalSectors = total != 0 ? total : BinaryPrimitives.ReadInt32LittleEndian(bpb[32..]);
+    var total16 = BinaryPrimitives.ReadUInt16LittleEndian(bpb[19..]);
+    var totalSectors = total16 != 0 ? total16 : BinaryPrimitives.ReadInt32LittleEndian(bpb[32..]);
     var fat16 = BinaryPrimitives.ReadUInt16LittleEndian(bpb[22..]);
     var fatSize = fat16 != 0 ? fat16 : BinaryPrimitives.ReadInt32LittleEndian(bpb[36..]);
     var rootDirSectors = (rootEntries * 32 + bps - 1) / bps;
