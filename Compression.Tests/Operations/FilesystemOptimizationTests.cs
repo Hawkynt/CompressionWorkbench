@@ -8,12 +8,20 @@ namespace Compression.Tests.Operations;
 
 [TestFixture]
 public class FilesystemOptimizationTests {
+  static FilesystemOptimizationTests()
+    => FilesystemOptimizationAdapters.RegisterCompression<ProbeFilesystem>(
+      transparentCompression: true,
+      new FilesystemCompressionParameter("Compression"));
+
   [Test]
   public void SupportedFeatures_AreDerivedFromWriterCapabilities() {
-    var ext = FilesystemOptimization.GetSupportedFeatures(new ExtFormatDescriptor());
+    var extDescriptor = new ExtFormatDescriptor();
+    var ext = FilesystemOptimization.GetSupportedFeatures(extDescriptor);
     Assert.Multiple(() => {
       Assert.That(ext.HasFlag(FilesystemOptimizationFeatures.SparseFiles), Is.True);
       Assert.That(ext.HasFlag(FilesystemOptimizationFeatures.HardLinkDeduplication), Is.True);
+      Assert.That(FilesystemOptimization.GetHardLinkDeduplicationSemantics(extDescriptor),
+        Is.EqualTo(HardLinkDeduplicationSemantics.Native));
       Assert.That(ext.HasFlag(FilesystemOptimizationFeatures.SymbolicLinkDeduplication), Is.False,
         "reading symlinks is not enough: the ext writer does not yet create them during deduplication");
       Assert.That(ext.HasFlag(FilesystemOptimizationFeatures.TransparentCompression), Is.False);
@@ -22,7 +30,7 @@ public class FilesystemOptimizationTests {
     var ntfs = FilesystemOptimization.GetSupportedFeatures(new NtfsFormatDescriptor());
     Assert.Multiple(() => {
       Assert.That(ntfs.HasFlag(FilesystemOptimizationFeatures.TransparentCompression), Is.True,
-        "NTFS publishes the writer-honoured Compression=Off/LZNT1 schema axis");
+        "NTFS explicitly registers the writer-honoured Compression=Off/LZNT1 axis");
       Assert.That(ntfs.HasFlag(FilesystemOptimizationFeatures.CompressionParameterSearch), Is.True);
     });
 
