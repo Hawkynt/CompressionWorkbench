@@ -39,7 +39,7 @@ public static class WavChannelMux {
       throw new InvalidOperationException(
         "All channel WAVs must be mono and share sample rate + bit depth.");
 
-    var bytesPerSample = first.BitsPerSample / 8;
+    var bytesPerSample = (first.BitsPerSample + 7) / 8;
     var frameCount = first.InterleavedPcm.Length / bytesPerSample;
     if (channels.Any(c => c.InterleavedPcm.Length / bytesPerSample != frameCount))
       throw new InvalidOperationException("All channel WAVs must have the same frame count.");
