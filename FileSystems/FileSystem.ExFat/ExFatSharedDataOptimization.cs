@@ -52,14 +52,19 @@ internal static class ExFatSharedDataOptimization {
         return;
       }
 
-      foreach (var alias in groups.SelectMany(g => g.Aliases))
-        File.WriteAllBytes(alias.TempPath, []);
+      var aliases = groups.SelectMany(g => g.Aliases).Select(a => a.Name)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+      var emptyPlaceholder = Path.Combine(tempDir, "empty-placeholder.bin");
+      File.WriteAllBytes(emptyPlaceholder, []);
 
       var inputs = new List<ArchiveInputInfo>();
       foreach (var entry in entries.Where(e => e.IsDirectory))
         inputs.Add(new ArchiveInputInfo("", entry.Name, true));
       foreach (var file in files)
-        inputs.Add(new ArchiveInputInfo(file.TempPath, file.Name, false));
+        inputs.Add(new ArchiveInputInfo(
+          aliases.Contains(file.Name) ? emptyPlaceholder : file.TempPath,
+          file.Name,
+          false));
 
       target.Position = 0;
       target.SetLength(0);
