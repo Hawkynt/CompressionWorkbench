@@ -7,11 +7,12 @@ namespace FileSystem.Fat;
 /// <summary>
 /// Secure-remove implementation for FAT12/16/32 images. Resolves a path that
 /// may include subdirectory components (separated by <c>/</c>), finds the leaf
-/// entry — matching either its short 8.3 name or its long filename — zeros
-/// every cluster the file occupies (including trailing cluster-tip slack past
-/// <c>i_size</c>), zeros the on-disk directory entry bytes (LFN slots plus the
-/// short entry), and frees its clusters in every FAT copy. After the operation
-/// no bytes of the filename or content remain recoverable from the image.
+/// entry — matching either its short 8.3 name or its long filename — zeros every
+/// cluster that is exclusively owned by the removed entry (including trailing
+/// cluster-tip slack), wipes the on-disk directory entry bytes (LFN slots plus
+/// the short entry), and frees only unreferenced clusters in every FAT copy.
+/// Shared/cross-linked clusters are deliberately preserved while any other live
+/// directory entry still references them.
 /// </summary>
 public static class FatRemover {
 
@@ -54,18 +55,27 @@ public static class FatRemover {
       throw new InvalidOperationException(
         $"'{filePath}' is a directory; directory removal is not yet implemented.");
 
-    // Zero the file's data clusters + their trailing slack.
+    // FAT has no native link count. Optimized read-only images may deliberately
+    // cross-link identical files, and damaged legacy images can contain accidental
+    // cross-links too. Determine every cluster reachable from every OTHER live
+    // directory entry before touching allocation state. A cluster is freeable only
+    // when the removed entry is its last live reference.
     var chain = WalkChain(image, leaf.FirstCluster, fs);
-    foreach (var cluster in chain) {
+    var referencedElsewhere = CollectReferencedClusters(image, fs, leaf.EntryImageOffset);
+    var freeable = chain.Where(cluster => !referencedElsewhere.Contains(cluster)).ToArray();
+
+    // Zero only exclusively-owned file clusters + their trailing slack. Shared
+    // bytes must stay intact because another live filename still exposes them.
+    foreach (var cluster in freeable) {
       var dataOffset = ClusterByteOffset(fs, cluster);
       if (dataOffset + fs.ClusterSize <= image.Length)
         image.AsSpan(dataOffset, fs.ClusterSize).Clear();
     }
 
-    // Zero FAT entries in every FAT copy.
+    // Clear only exclusively-owned FAT entries in every FAT copy.
     for (var fatIdx = 0; fatIdx < fs.FatCount; ++fatIdx) {
       var fatStart = (fs.ReservedSectors + fatIdx * fs.FatSize) * fs.BytesPerSector;
-      foreach (var cluster in chain)
+      foreach (var cluster in freeable)
         ClearFatEntry(image, fatStart, cluster, fs.FatType);
     }
 
@@ -79,8 +89,9 @@ public static class FatRemover {
       image[off] = 0xE5;
     }
 
-    // Update FAT32 FSInfo free-count hint (best-effort).
-    if (fs.FatType == 32) {
+    // Update FAT32 FSInfo free-count hint (best-effort) by the number of clusters
+    // actually released, not the logical chain length when storage is shared.
+    if (fs.FatType == 32 && freeable.Length > 0) {
       var fsInfoSector = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(48));
       if (fsInfoSector != 0 && fsInfoSector < fs.TotalSectors) {
         var fsInfoOffset = fsInfoSector * fs.BytesPerSector;
@@ -90,7 +101,7 @@ public static class FatRemover {
           if (currentFree != 0xFFFFFFFF)
             BinaryPrimitives.WriteUInt32LittleEndian(
               image.AsSpan(fsInfoOffset + 488),
-              currentFree + (uint)chain.Count);
+              currentFree + (uint)freeable.Length);
         }
       }
     }
@@ -123,7 +134,7 @@ public static class FatRemover {
     var rootDirSectors = (rootEntries * 32 + bps - 1) / bps;
     var firstDataSector = reserved + fatCount * fatSize + rootDirSectors;
     var dataClusters = (total - firstDataSector) / spc;
-    var fatType = dataClusters < 4085 ? 12 : dataClusters < 65525 ? 16 : 32;
+    var fatType = fatSize16 == 0 ? 32 : dataClusters < 4085 ? 12 : dataClusters < 65525 ? 16 : 32;
     var rootCluster = fatType == 32 ? BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(44)) : 0;
     return new FatGeom(bps, spc, reserved, fatCount, rootEntries, total, fatSize,
       firstDataSector, dataClusters, fatType, rootCluster);
@@ -239,13 +250,65 @@ public static class FatRemover {
     return ext.Length == 0 ? baseName : $"{baseName}.{ext}";
   }
 
+  /// <summary>
+  /// Finds every cluster reachable from a live directory entry other than the one
+  /// being removed. The scan is recursive and includes directory chains themselves,
+  /// so malformed cross-links into metadata are protected conservatively too.
+  /// </summary>
+  private static HashSet<int> CollectReferencedClusters(byte[] image, FatGeom fs, int excludedEntryOffset) {
+    var referenced = new HashSet<int>();
+    var visitedDirectories = new HashSet<int>();
+    if (fs.FatType == 32) {
+      foreach (var cluster in WalkChain(image, fs.RootCluster, fs)) referenced.Add(cluster);
+      visitedDirectories.Add(fs.RootCluster);
+    }
+    ScanDirectoryReferences(image, fs, OpenRootDir(image, fs), excludedEntryOffset, referenced, visitedDirectories);
+    return referenced;
+  }
+
+  private static void ScanDirectoryReferences(
+      byte[] image,
+      FatGeom fs,
+      DirAccess dir,
+      int excludedEntryOffset,
+      HashSet<int> referenced,
+      HashSet<int> visitedDirectories) {
+    for (var slot = 0; slot < dir.SlotCount; ++slot) {
+      var off = dir.SlotImageOffset(slot);
+      var first = image[off];
+      if (first == 0x00) break;
+      if (first == 0xE5) continue;
+      var attr = image[off + 11];
+      if ((attr & 0x3F) == 0x0F || (attr & 0x08) != 0) continue;
+
+      var firstClusterLow = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + 26));
+      var firstClusterHigh = fs.FatType == 32
+        ? BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(off + 20))
+        : (ushort)0;
+      var firstCluster = (firstClusterHigh << 16) | firstClusterLow;
+      var shortName = DecodeShortName(image.AsSpan(off, 11));
+      var isDirectory = (attr & 0x10) != 0;
+
+      if (off != excludedEntryOffset && firstCluster >= 2)
+        foreach (var cluster in WalkChain(image, firstCluster, fs))
+          referenced.Add(cluster);
+
+      if (isDirectory && shortName is not "." and not ".." && firstCluster >= 2
+          && visitedDirectories.Add(firstCluster))
+        ScanDirectoryReferences(image, fs, OpenSubDir(image, fs, firstCluster),
+          excludedEntryOffset, referenced, visitedDirectories);
+    }
+  }
+
   // ── FAT chain walking + clearing ─────────────────────────────────────────
 
   private static List<int> WalkChain(byte[] image, int startCluster, FatGeom fs) {
     var chain = new List<int>();
     var cluster = startCluster;
     var fatStart = fs.ReservedSectors * fs.BytesPerSector;
-    while (cluster >= 2 && cluster < fs.TotalDataClusters + 2 && chain.Count <= fs.TotalDataClusters) {
+    var seen = new HashSet<int>();
+    while (cluster >= 2 && cluster < fs.TotalDataClusters + 2
+           && chain.Count <= fs.TotalDataClusters && seen.Add(cluster)) {
       chain.Add(cluster);
       cluster = ReadFatEntry(image, fatStart, cluster, fs.FatType);
       if (IsEndOfChain(cluster, fs.FatType)) break;
