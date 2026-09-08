@@ -157,8 +157,9 @@ public static class FilesystemOptimization {
     var linkSemantics = options.DeduplicateWithHardLinks
       ? GetHardLinkDeduplicationSemantics(layout)
       : HardLinkDeduplicationSemantics.None;
+    FilesystemOptimizationAdapters.HardLinkDeduplicator? hardLinkRebuild = null;
     var hasRegisteredHardLinkBackend = options.DeduplicateWithHardLinks
-      && FilesystemOptimizationAdapters.TryGetHardLinkDeduplicator(layout, out _, out var hardLinkRebuild);
+      && FilesystemOptimizationAdapters.TryGetHardLinkDeduplicator(layout, out _, out hardLinkRebuild);
 
     using var best = RebuildVerb.CreateScratchStream();
     var bestLength = input.Length;
