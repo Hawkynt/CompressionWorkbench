@@ -1,5 +1,6 @@
 using Compression.Registry;
 using FileSystem.Gfs2;
+using System.Text;
 
 namespace Compression.Tests.Gfs2;
 
@@ -83,13 +84,70 @@ public class Gfs2NestedDirectoryTests {
     }
   }
 
-  [Test, Category("Boundary")]
-  public void Writer_DirectoryPastStuffedCapacity_FailsClosedInsteadOfEmittingInvalidDirents() {
+  [Test, Category("RoundTrip")]
+  public void Writer_DirectoryPastStuffedCapacity_PromotesToExHash() {
+    var expected = new Dictionary<string, byte[]>(StringComparer.Ordinal);
     var writer = new Gfs2Writer();
-    for (var i = 0; i < 64; ++i)
-      writer.AddFile($"crowded/file-{i:D2}-{new string('x', 32)}.bin", []);
+    for (var i = 0; i < 96; ++i) {
+      var path = $"crowded/file-{i:D2}-{new string('x', 32)}.bin";
+      var payload = Payload(i, 3 + i % 13);
+      expected.Add(path, payload);
+      writer.AddFile(path, payload);
+    }
 
-    Assert.That(() => writer.Build(),
-      Throws.InstanceOf<NotSupportedException>().With.Message.Contains("ExHash"));
+    using var image = new MemoryStream(writer.Build());
+    using var reader = new Gfs2Reader(image);
+    var files = reader.Entries.Where(static e => !e.IsDirectory)
+      .ToDictionary(static e => e.Name, StringComparer.Ordinal);
+
+    Assert.That(files.Keys, Is.EquivalentTo(expected.Keys));
+    foreach (var (path, payload) in expected)
+      Assert.That(reader.Extract(files[path]), Is.EqualTo(payload), path);
+  }
+
+  [Test, Category("Boundary")]
+  public void Writer_ExHashCollisionSplit_GrowsHashTableIntoJournalDataBlocks() {
+    var names = FindNamesWithSameTopHashByte(72);
+    var writer = new Gfs2Writer(sizeBytes: 64L * 1024 * 1024);
+    foreach (var name in names)
+      writer.AddFile($"collision/{name}", Encoding.ASCII.GetBytes(name));
+
+    var bytes = writer.Build();
+    using var image = new MemoryStream(bytes);
+    using var reader = new Gfs2Reader(image);
+    var files = reader.Entries.Where(static e => !e.IsDirectory).ToArray();
+
+    Assert.That(files.Select(static e => e.Name),
+      Is.EquivalentTo(names.Select(static name => $"collision/{name}")));
+    foreach (var entry in files) {
+      var leafName = entry.Name[(entry.Name.LastIndexOf('/') + 1)..];
+      Assert.That(reader.Extract(entry), Is.EqualTo(Encoding.ASCII.GetBytes(leafName)), entry.Name);
+    }
+  }
+
+  private static string[] FindNamesWithSameTopHashByte(int count) {
+    var groups = new Dictionary<byte, List<string>>();
+    for (var i = 0; i < 100_000; ++i) {
+      var name = $"hash-{i:D6}-{i * 2654435761u:X8}.bin";
+      var hash = Crc32(Encoding.ASCII.GetBytes(name));
+      var prefix = (byte)(hash >> 24);
+      if (!groups.TryGetValue(prefix, out var list))
+        groups[prefix] = list = [];
+      list.Add(name);
+      if (list.Count == count)
+        return [.. list];
+    }
+
+    throw new InvalidOperationException($"Could not find {count} names sharing one GFS2 hash prefix.");
+  }
+
+  private static uint Crc32(ReadOnlySpan<byte> bytes) {
+    var crc = 0xFFFF_FFFFu;
+    foreach (var value in bytes) {
+      crc ^= value;
+      for (var bit = 0; bit < 8; ++bit)
+        crc = (crc & 1) != 0 ? 0xEDB8_8320u ^ (crc >> 1) : crc >> 1;
+    }
+    return crc ^ 0xFFFF_FFFFu;
   }
 }
