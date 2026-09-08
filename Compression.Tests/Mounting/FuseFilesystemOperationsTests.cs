@@ -169,7 +169,7 @@ public sealed class FuseFilesystemOperationsTests {
   }
 
   [Test]
-  public void BackendAdvertisesReadOnlyOnly() {
+  public void BackendAdvertisesReadWrite() {
     var backend = new FuseFilesystemMountBackend(
       new FuseRuntimeStatus(true, "libfuse3.so.3", "/usr/bin/fusermount3", null)
     );
@@ -180,7 +180,7 @@ public sealed class FuseFilesystemOperationsTests {
       Assert.That(profile.Id, Is.EqualTo("fuse3"));
       Assert.That(profile.IsAvailable, Is.True);
       Assert.That(profile.SupportsReadOnly, Is.True);
-      Assert.That(profile.SupportsReadWrite, Is.False);
+      Assert.That(profile.SupportsReadWrite, Is.True);
     });
   }
 
@@ -190,15 +190,12 @@ public sealed class FuseFilesystemOperationsTests {
       Assert.That(Marshal.SizeOf<LinuxStat>(), Is.EqualTo(144));
       Assert.That(Marshal.SizeOf<FuseFileInfo>(), Is.EqualTo(64));
       Assert.That(Marshal.SizeOf<FuseEntryParam>(), Is.EqualTo(176));
-      Assert.That(Marshal.SizeOf<FuseLowLevelOps>(), Is.EqualTo(30 * IntPtr.Size));
+      Assert.That(Marshal.SizeOf<FuseLowLevelOps>(), Is.EqualTo(31 * IntPtr.Size));
     });
   }
 
   [Test]
   public void DirectoryStatsExposePosixMinimumLinkCount() {
-    // FuseStatFactory.Create fills the owning uid and gid from geteuid/getegid, so building a
-    // Linux stat struct needs libc. The rest of this fixture is pure managed code and runs
-    // everywhere; only this one crosses into the platform it describes.
     if (!OperatingSystem.IsLinux()) Assert.Ignore("A Linux stat struct is built through libc.");
 
     var stat = FuseStatFactory.Create(

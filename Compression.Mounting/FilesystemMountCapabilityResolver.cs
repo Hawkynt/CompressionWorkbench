@@ -9,13 +9,17 @@ public static class FilesystemMountCapabilityResolver {
     FilesystemDriverCapabilities.RandomAccess |
     FilesystemDriverCapabilities.StableNodeIds;
 
+  /// <summary>
+  /// Minimum mutation surface required for a writable mounted namespace.
+  /// Directory creation/removal is deliberately not part of the baseline: flat
+  /// filesystems such as CBM DOS can provide a fully writable file namespace
+  /// without ever being able to create a subdirectory.
+  /// </summary>
   public const FilesystemDriverCapabilities CoreWriteCapabilities =
     FilesystemDriverCapabilities.WriteData |
     FilesystemDriverCapabilities.Truncate |
     FilesystemDriverCapabilities.CreateFile |
     FilesystemDriverCapabilities.DeleteFile |
-    FilesystemDriverCapabilities.CreateDirectory |
-    FilesystemDriverCapabilities.RemoveDirectory |
     FilesystemDriverCapabilities.Rename |
     FilesystemDriverCapabilities.Flush;
 
