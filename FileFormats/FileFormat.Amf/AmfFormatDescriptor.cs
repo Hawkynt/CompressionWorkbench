@@ -391,6 +391,8 @@ public sealed class AmfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       Require(blob, offset, 3, $"track {track + 1} header");
       var eventCount = blob[offset] | (blob[offset + 1] << 8) | (blob[offset + 2] << 16);
       offset += 3;
+      // AMF 0.1 stores the number of real events and omits the terminator from that
+      // count, but a zero-count track contains no terminator either (libxmp's size!=0 rule).
       if (version == 1 && eventCount > 0) ++eventCount;
       var trackBytes = checked(eventCount * 3);
       Require(blob, offset, trackBytes, $"track {track + 1} events");
@@ -508,7 +510,12 @@ public sealed class AmfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       output.WriteByte(item.Command);
       output.WriteByte(item.Value);
     }
-    output.Write([0xFF, 0xFF, 0xFF]);
+
+    // Version 0.1's size excludes the terminator, and the historical reader rule
+    // only adds that terminator back for non-empty tracks. Emitting one after a
+    // zero-sized track shifts every following track header and ultimately sample PCM.
+    if (version != 1 || events.Count != 0)
+      output.Write([0xFF, 0xFF, 0xFF]);
   }
 
   private static byte ParseVersion(string value) => value.Trim() switch {
