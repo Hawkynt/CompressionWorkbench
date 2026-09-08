@@ -2,10 +2,10 @@
 namespace Codec.WsAdpcm;
 
 /// <summary>
-/// Standard IMA ADPCM with a single, continuous predictor/step-index state — the form
-/// used by Westwood <c>.aud</c> (codec id 99) and CRYO <c>.apc</c> streams, where the
-/// adaptive state runs across the whole stream rather than resetting per WAV block.
-/// Nibbles are read <b>low nibble first</b> within each byte, matching both formats.
+/// Standard IMA ADPCM with a single, continuous predictor/step-index state. Westwood
+/// <c>.aud</c> codec 99 uses the low-nibble-first byte helpers exposed here; formats with
+/// another packing order, notably CRYO <c>.apc</c>, use the per-nibble operations and impose
+/// their own byte/channel ordering around the same state machine.
 /// <para>
 /// This complements <c>Codec.ImaAdpcm.ImaAdpcmCodec</c>, whose public surface only
 /// covers the block-structured WAV and QuickTime packet layouts. The encoder mirrors
@@ -78,11 +78,17 @@ public static class StandardImaCodec {
   }
 
   /// <summary>
-  /// Decodes a single IMA nibble against <paramref name="state"/>, returning the new
-  /// 16-bit sample. Exposed for stereo streams that interleave nibbles per channel
-  /// (e.g. CRYO APC: low nibble left, high nibble right) and so need per-nibble control.
+  /// Decodes one IMA nibble and advances <paramref name="state"/>. Container codecs use this
+  /// when their byte order or channel interleave differs from the low-first bulk helper.
   /// </summary>
   public static short DecodeOneNibble(byte nibble, ref State state) => DecodeNibble(nibble, ref state);
+
+  /// <summary>
+  /// Encodes one signed PCM16 sample as an IMA nibble and advances <paramref name="state"/>.
+  /// Container codecs use this when their byte order or channel interleave differs from the
+  /// low-first bulk helper.
+  /// </summary>
+  public static byte EncodeOneNibble(short sample, ref State state) => EncodeNibble(sample, ref state);
 
   private static short DecodeNibble(byte nibble, ref State state) {
     var step = StepTable[state.StepIndex];
@@ -90,16 +96,16 @@ public static class StandardImaCodec {
     if ((nibble & 1) != 0) diff += step >> 2;
     if ((nibble & 2) != 0) diff += step >> 1;
     if ((nibble & 4) != 0) diff += step;
-    if ((nibble & 8) != 0) state.Predictor -= diff;
-    else state.Predictor += diff;
-    state.Predictor = Math.Clamp(state.Predictor, -32768, 32767);
+
+    var predictor = (long)state.Predictor + ((nibble & 8) != 0 ? -diff : diff);
+    state.Predictor = (int)Math.Clamp(predictor, short.MinValue, short.MaxValue);
     state.StepIndex = Math.Clamp(state.StepIndex + IndexAdjust[nibble & 0x07], 0, 88);
     return (short)state.Predictor;
   }
 
   private static byte EncodeNibble(short sample, ref State state) {
     var step = StepTable[state.StepIndex];
-    var diff = sample - state.Predictor;
+    var diff = (long)sample - state.Predictor;
 
     byte nibble = 0;
     if (diff < 0) {
