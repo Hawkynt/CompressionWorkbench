@@ -7,5 +7,7 @@ namespace FileSystem.SquashFs;
 internal static class SquashFsOptimizationRegistration {
   [ModuleInitializer]
   internal static void Register()
-    => FilesystemOptimizationAdapters.RegisterTransparentCompression<SquashFsFormatDescriptor>();
+    => FilesystemOptimizationAdapters.RegisterCompression<SquashFsFormatDescriptor>(
+      transparentCompression: true,
+      new FilesystemCompressionParameter("BlockSize"));
 }
