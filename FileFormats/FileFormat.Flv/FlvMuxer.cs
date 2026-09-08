@@ -240,13 +240,14 @@ public static class FlvMuxer {
     var version = data[3];
     var flags = data[4];
     var dataOffset = BinaryPrimitives.ReadUInt32BigEndian(data[5..9]);
-    if (dataOffset < FlvReader.HeaderSize || dataOffset > int.MaxValue || dataOffset + 4 > data.Length)
+    if (dataOffset < FlvReader.HeaderSize || dataOffset > (uint)(data.Length - 4))
       throw new InvalidDataException("FLV: DataOffset is out of range.");
-    if (BinaryPrimitives.ReadUInt32BigEndian(data.Slice((int)dataOffset, 4)) != 0)
+    var offset = checked((int)dataOffset);
+    if (BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset, 4)) != 0)
       throw new InvalidDataException("FLV: PreviousTagSize0 must be zero.");
 
     var tags = new List<FlvRawTag>();
-    var p = checked((int)dataOffset + 4);
+    var p = offset + 4;
     while (p < data.Length) {
       if (data.Length - p < 15)
         throw new InvalidDataException("FLV: truncated tag header or PreviousTagSize.");
@@ -254,7 +255,7 @@ public static class FlvMuxer {
       var size = ReadUInt24(data.Slice(p + 1, 3));
       var bodyStart = p + 11;
       var bodyEnd = checked(bodyStart + (int)size);
-      if (bodyEnd + 4 > data.Length)
+      if (bodyEnd > data.Length - 4)
         throw new InvalidDataException("FLV: tag body overruns the input.");
 
       var timestamp = ReadUInt24(data.Slice(p + 4, 3)) | ((uint)data[p + 7] << 24);
