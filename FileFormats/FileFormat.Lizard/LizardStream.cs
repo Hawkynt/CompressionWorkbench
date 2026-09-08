@@ -197,12 +197,21 @@ public static class LizardStream {
   }
 
   private static byte[] CompressDataBlock(ReadOnlySpan<byte> source, int compressionLevel) {
+    var data = source.ToArray();
+    var lizV1 = IsLizV1(compressionLevel);
+    int[] heads = [];
+    int[] previous = [];
+    if (lizV1)
+      CreateMatchTables(Math.Min(data.Length, MaxLizOffset + 1), out heads, out previous);
+
     using var output = new MemoryStream();
     output.WriteByte((byte)compressionLevel);
-    for (var offset = 0; offset < source.Length; offset += RawBlockSize) {
-      var count = Math.Min(RawBlockSize, source.Length - offset);
-      var block = source.Slice(offset, count);
-      var compressed = CompressRawBlock(block, compressionLevel);
+    for (var offset = 0; offset < data.Length; offset += RawBlockSize) {
+      var count = Math.Min(RawBlockSize, data.Length - offset);
+      var block = data.AsSpan(offset, count);
+      var compressed = lizV1
+        ? CompressLizV1Block(data, offset, count, compressionLevel, heads, previous)
+        : CompressFastBlock(block, compressionLevel);
       if (compressed.Length == 0 || compressed.Length >= count + 4) {
         output.WriteByte(FlagUncompressed);
         WriteUInt24(output, count);
@@ -213,11 +222,6 @@ public static class LizardStream {
     }
     return output.ToArray();
   }
-
-  private static byte[] CompressRawBlock(ReadOnlySpan<byte> source, int compressionLevel) =>
-    IsLizV1(compressionLevel)
-      ? CompressLizV1Block(source, compressionLevel)
-      : CompressFastBlock(source, compressionLevel);
 
   private static byte[] CompressFastBlock(ReadOnlySpan<byte> source, int compressionLevel) {
     if (source.Length < MatchFindLimit)
@@ -265,51 +269,54 @@ public static class LizardStream {
     return BuildCompressedBlock(tokens.ToArray(), literals.ToArray(), [], [], compressionLevel);
   }
 
-  private static byte[] CompressLizV1Block(ReadOnlySpan<byte> source, int compressionLevel) {
-    if (source.Length < MatchFindLimit)
+  private static byte[] CompressLizV1Block(byte[] source, int blockStart, int blockLength, int compressionLevel,
+      int[] heads, int[] previous) {
+    if (blockLength < MatchFindLimit)
       return [];
 
-    var data = source.ToArray();
-    CreateMatchTables(data.Length, out var heads, out var previous);
     using var tokens = new MemoryStream();
     using var literals = new MemoryStream();
     using var offsets16 = new MemoryStream();
     using var offsets24 = new MemoryStream();
 
-    var anchor = 0;
-    var position = 0;
+    var blockEnd = blockStart + blockLength;
+    var anchor = blockStart;
+    var position = blockStart;
     var lastOffset = 0;
-    var matchStartLimit = data.Length - MatchFindLimit;
+    var matchStartLimit = blockEnd - MatchFindLimit;
     var searchDepth = GetSearchDepth(compressionLevel);
     var lazy = GetStrength(compressionLevel) >= 6;
 
     while (position <= matchStartLimit) {
-      var match = FindBestMatch(data, position, heads, previous, searchDepth, MaxLizOffset, lastOffset);
+      var match = FindBestMatch(source, position, heads, previous, searchDepth, MaxLizOffset, lastOffset, blockEnd);
       if (match.Length < MinMatch) {
-        Insert(data, position, heads, previous);
+        Insert(source, position, heads, previous);
         ++position;
         continue;
       }
 
       if (lazy && position < matchStartLimit) {
-        Insert(data, position, heads, previous);
-        var next = FindBestMatch(data, position + 1, heads, previous, searchDepth, MaxLizOffset, lastOffset);
+        Insert(source, position, heads, previous);
+        var next = FindBestMatch(source, position + 1, heads, previous, searchDepth, MaxLizOffset, lastOffset, blockEnd);
         if (next.Length > match.Length + 1) {
           ++position;
           continue;
         }
       }
 
-      EmitLizV1Sequence(tokens, literals, offsets16, offsets24, data, anchor, position,
+      EmitLizV1Sequence(tokens, literals, offsets16, offsets24, source, anchor, position,
         match.Offset, match.Length, ref lastOffset);
       var end = position + match.Length;
       for (var p = lazy ? position + 1 : position; p < end && p <= matchStartLimit; ++p)
-        Insert(data, p, heads, previous);
+        Insert(source, p, heads, previous);
       position = end;
       anchor = position;
     }
 
-    literals.Write(data.AsSpan(anchor));
+    for (var p = matchStartLimit + 1; p + MinMatch <= blockEnd; ++p)
+      Insert(source, p, heads, previous);
+
+    literals.Write(source.AsSpan(anchor, blockEnd - anchor));
     if (tokens.Length == 0)
       return [];
     return BuildCompressedBlock(tokens.ToArray(), literals.ToArray(), offsets16.ToArray(), offsets24.ToArray(), compressionLevel);
@@ -553,21 +560,23 @@ public static class LizardStream {
   }
 
   private static (int Length, int Offset) FindBestMatch(byte[] source, int position, int[] heads, int[] previous,
-      int searchDepth, int maxOffset, int lastOffset) {
-    if (position + MinMatch > source.Length)
+      int searchDepth, int maxOffset, int lastOffset, int matchEnd = -1) {
+    if (matchEnd < 0)
+      matchEnd = source.Length;
+    if (position + MinMatch > matchEnd)
       return (0, 0);
 
     var candidate = heads[Hash4(source, position)];
     var bestLength = 0;
     var bestOffset = 0;
-    var maxLength = source.Length - LastLiterals - position;
+    var maxLength = matchEnd - LastLiterals - position;
     var attempts = 0;
     while (candidate >= 0 && attempts < searchDepth) {
       var offset = position - candidate;
       if (offset > maxOffset)
         break;
       if (offset < MinOffset) {
-        candidate = previous[candidate];
+        candidate = previous[candidate % previous.Length];
         continue;
       }
       ++attempts;
@@ -578,7 +587,7 @@ public static class LizardStream {
         while (length < maxLength && source[candidate + length] == source[position + length])
           ++length;
         if (offset >= LongOffsetThreshold && offset != lastOffset && length < LongOffsetMinMatch) {
-          candidate = previous[candidate];
+          candidate = previous[candidate % previous.Length];
           continue;
         }
         if (length > bestLength || length == bestLength && offset == lastOffset) {
@@ -588,7 +597,7 @@ public static class LizardStream {
             break;
         }
       }
-      candidate = previous[candidate];
+      candidate = previous[candidate % previous.Length];
     }
     return (bestLength, bestOffset);
   }
@@ -604,7 +613,7 @@ public static class LizardStream {
     if (position + MinMatch > source.Length)
       return;
     var hash = Hash4(source, position);
-    previous[position] = heads[hash];
+    previous[position % previous.Length] = heads[hash];
     heads[hash] = position;
   }
 
