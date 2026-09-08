@@ -8,18 +8,15 @@ using Compression.Registry;
 namespace FileFormat.Smk;
 
 /// <summary>
-/// Read-only walker for the Smacker container (<c>.smk</c>), porting the header and frame
-/// layout of FFmpeg's <c>libavformat/smacker.c</c> (<c>smacker_read_header</c>/
-/// <c>smacker_read_packet</c>). All multi-byte integers are little-endian. Smacker carries
-/// one video track plus up to 7 audio tracks; each frame's payload is a palette block
-/// (optional) followed by the per-track audio chunks (each a 4-byte length prefix + chunk)
-/// and then the video block. This reader surfaces only audio: the video data region is a
-/// raw track blob, and each compressed Smacker-audio (SMKA) track is decoded to per-channel
-/// WAVs (<see cref="SmackerAudioCodec"/>) with a graceful fallback to the raw concatenated
-/// chunk blob. PCM (uncompressed) tracks are also surfaced. Parsing degrades gracefully.
+/// Walker for the Smacker container (<c>.smk</c>), following the header and frame layout used
+/// by the FFmpeg demuxer and the public reverse-engineered format description. All multi-byte
+/// integers are little-endian. Smacker carries one video track plus up to seven audio tracks;
+/// each frame's payload is an optional palette block, the per-track audio chunks, and then the
+/// encoded video data.
 /// </summary>
 internal static class SmkReader {
 
+  private const int HeaderSize = 104;
   private const int FlagRingFrame = 0x01;
   private const int SmkAudPacked = 0x80;
   private const int SmkAud16Bits = 0x20;
@@ -37,12 +34,12 @@ internal static class SmkReader {
     public bool Packed => (this.Flags & SmkAudPacked) != 0;
     public bool BinkAudio => (this.Flags & SmkAudBinkAud) != 0;
     public bool UseDct => (this.Flags & SmkAudUseDct) != 0;
-    public readonly List<byte[]> Chunks = [];
+    public readonly List<(int FrameIndex, byte[] Payload)> Packets = [];
   }
 
   public static void BuildEntries(byte[] b, List<AudioPseudoArchive.Entry> entries) {
     try {
-      if (b.Length < 104)
+      if (b.Length < HeaderSize)
         return;
 
       var magic = Encoding.ASCII.GetString(b, 0, 4);
@@ -59,11 +56,14 @@ internal static class SmkReader {
       if (frames is < 0 or > 0xFFFFFF)
         return;
 
-      // 28 bytes of (skipped) audio-size data, then the Huffman tree blob size.
-      var treesize = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(52));
+      // AudioSize[7] occupies bytes 24..51, followed by the global Huffman tree blob size.
+      var treeSizeRaw = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(52));
+      if (treeSizeRaw > int.MaxValue)
+        return;
+      var treeSize = (int)treeSizeRaw;
 
-      // The 16-byte extradata (mmap/mclr/full/type tree sizes) at offset 56 is video-only.
-      // Audio track descriptors: 7 × (u24 rate + u8 flags) starting at offset 72.
+      // The four video-tree allocation sizes occupy bytes 56..71. Audio descriptors are
+      // seven packed u24 sample rates plus one flag byte, followed by a dummy u32.
       var tracks = new AudioTrack[7];
       var ap = 72;
       for (var i = 0; i < 7; ++i) {
@@ -77,28 +77,52 @@ internal static class SmkReader {
           Present = rate != 0,
         };
       }
-      ap += 4; // padding u32 → frame-size table
+      ap += 4;
 
-      // Frame sizes (u32 × frames) then frame flags (u8 × frames).
-      if (ap + 4 * frames + frames > b.Length)
+      // Frame sizes (u32 × physical frames) then frame types (u8 × physical frames).
+      var frameSizeBytes = checked(4 * frames);
+      if (ap > b.Length - frameSizeBytes || ap + frameSizeBytes > b.Length - frames)
         return;
+      var frameSizesStart = ap;
       var frmSize = new int[frames];
       for (var i = 0; i < frames; ++i) {
-        frmSize[i] = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(ap));
+        var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(ap));
+        if ((rawSize & ~3u) > int.MaxValue)
+          return;
+        frmSize[i] = (int)rawSize;
         ap += 4;
       }
+      var frameTypesStart = ap;
       var frmFlags = new byte[frames];
       for (var i = 0; i < frames; ++i)
         frmFlags[i] = b[ap++];
 
-      // The remaining tree blob (treesize bytes) precedes the frame data.
-      var dataStart = ap + treesize;
+      var treeStart = ap;
+      var dataStart = checked(treeStart + treeSize);
       if (dataStart > b.Length)
+        return;
+
+      long totalFrameBytes = 0;
+      foreach (var size in frmSize) {
+        totalFrameBytes += (uint)size & ~3u;
+        if (totalFrameBytes > int.MaxValue)
+          return;
+      }
+      var dataEnd = checked(dataStart + (int)totalFrameBytes);
+      if (dataEnd > b.Length)
         return;
 
       CollectAudio(b, dataStart, frmSize, frmFlags, tracks);
 
-      // Metadata.
+      // Exact structural pieces make the demux surface lossless enough to rebuild a container
+      // without needing a Smacker video encoder. VIDEO.bin intentionally names the complete
+      // physical frame-data region for compatibility with the older surface: it therefore
+      // contains palette/audio/video bytes, not just the encoded video remainder.
+      entries.Add(new("HEADER.bin", "Structure", b[..HeaderSize], Method: "Stored"));
+      entries.Add(new("FRAME_SIZES.bin", "Structure", b.AsSpan(frameSizesStart, frameSizeBytes).ToArray(), Method: "Stored"));
+      entries.Add(new("FRAME_TYPES.bin", "Structure", b.AsSpan(frameTypesStart, frames).ToArray(), Method: "Stored"));
+      entries.Add(new("HUFFMAN.bin", "Structure", b.AsSpan(treeStart, treeSize).ToArray(), Method: "Stored"));
+
       var sb = new StringBuilder();
       sb.AppendLine("[Smacker]");
       sb.AppendLine($"magic = {magic}");
@@ -115,14 +139,14 @@ internal static class SmkReader {
         sb.AppendLine($"channels = {(t.Stereo ? 2 : 1)}");
         sb.AppendLine($"bits = {(t.Is16Bit ? 16 : 8)}");
         sb.AppendLine($"codec = {DescribeCodec(t)}");
-        sb.AppendLine($"chunks = {t.Chunks.Count}");
+        sb.AppendLine($"chunks = {t.Packets.Count}");
       }
       entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(sb.ToString())));
 
-      // VIDEO track: raw stored blob over the frame data region.
-      var end = Math.Min(dataStart + frmSize.Sum(s => s & ~3), b.Length);
-      if (dataStart < end)
-        entries.Add(new("VIDEO.bin", "Track", b[dataStart..end], Method: "Stored"));
+      if (dataStart < dataEnd)
+        entries.Add(new("VIDEO.bin", "Track", b[dataStart..dataEnd], Method: "Stored"));
+      else
+        entries.Add(new("VIDEO.bin", "Track", [], Method: "Stored"));
 
       for (var i = 0; i < 7; ++i)
         if (tracks[i].Present)
@@ -143,36 +167,31 @@ internal static class SmkReader {
     var pos = dataStart;
     for (var f = 0; f < frmSize.Length; ++f) {
       var frameSize = frmSize[f] & ~3;
-      var frameEnd = Math.Min(pos + frameSize, b.Length);
+      var frameEnd = checked(pos + frameSize);
       var p = pos;
 
-      var trackFlags = frmFlags[f] >> 1; // bits 1-7 of frm_flags → audio tracks 0-6
+      var trackFlags = frmFlags[f] >> 1;
       var paletteChange = (frmFlags[f] & FlagRingFrame) != 0;
 
-      // Palette block: 1-byte size-in-dwords; skip size*4 - 1 trailing bytes.
       if (paletteChange && p < frameEnd) {
-        var palSize = b[p] * 4;
-        p += palSize;
-        if (p > frameEnd)
-          p = frameEnd;
+        var paletteSize = b[p] * 4;
+        if (paletteSize <= 0 || paletteSize > frameEnd - p)
+          return;
+        p += paletteSize;
       }
 
-      // Per audio track present this frame: 4-byte total chunk size (incl. the length).
       for (var i = 0; i < 7; ++i) {
         if ((trackFlags & (1 << i)) == 0)
           continue;
-        if (p + 4 > frameEnd)
-          break;
-        var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
-        if (size < 4 || p + size > frameEnd)
-          break;
-        // The chunk payload (size - 4 bytes after the length) is the audio data, which for
-        // compressed tracks itself begins with a 4-byte unpacked-length prefix. Surface the
-        // payload including that inner prefix so the decoder can consume it directly.
-        tracks[i].Chunks.Add(b[(p + 4)..(p + size)]);
+        if (p > frameEnd - 4)
+          return;
+        var sizeRaw = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
+        if (sizeRaw < 4 || sizeRaw > int.MaxValue || sizeRaw > (uint)(frameEnd - p))
+          return;
+        var size = (int)sizeRaw;
+        tracks[i].Packets.Add((f, b[(p + 4)..(p + size)]));
         p += size;
       }
-      // Remaining bytes are the video block — ignored for audio extraction.
 
       pos = frameEnd;
     }
@@ -183,40 +202,43 @@ internal static class SmkReader {
     var channels = track.Stereo ? 2 : 1;
     var bits = track.Is16Bit ? 16 : 8;
 
+    entries.Add(new(
+      $"{baseName}.packets",
+      "PacketStream",
+      SmkWriter.EncodeAudioPacketBundle(track.Packets),
+      Method: DescribeCodec(track)
+    ));
+
     using (var ms = new MemoryStream()) {
-      foreach (var c in track.Chunks)
-        ms.Write(c);
-      var raw = ms.ToArray();
-      entries.Add(new($"{baseName}.bin", "Stream", raw, Method: DescribeCodec(track)));
+      foreach (var (_, payload) in track.Packets)
+        ms.Write(payload);
+      entries.Add(new($"{baseName}.bin", "Stream", ms.ToArray(), Method: DescribeCodec(track)));
     }
 
-    if (track.Chunks.Count == 0)
+    if (track.Packets.Count == 0)
       return;
 
-    // Compressed Smacker audio (SMKA): decode to per-channel WAVs.
     if (track.Packed && !track.BinkAudio && !track.UseDct) {
       try {
         var codec = new SmackerAudioCodec(track.SampleRate, channels, bits);
-        var interleaved = codec.DecodeStream(track.Chunks);
+        var interleaved = codec.DecodeStream(track.Packets.Select(static packet => packet.Payload));
         if (interleaved.Length == 0)
           return;
         var split = SplitNative(interleaved, channels, track.SampleRate, bits);
         foreach (var (name, wav) in split)
           entries.Add(new($"{baseName}_{name}.wav", "Channel", wav, Method: "pcm"));
       } catch {
-        // Undecodable SMKA track — keep the raw blob only.
+        // Undecodable SMKA track — keep the packet/raw surfaces.
       }
       return;
     }
 
-    // Uncompressed PCM track: each chunk's payload (after its own 4-byte length prefix that
-    // the demuxer keeps) is raw PCM. For PCM the inner prefix is the byte count, so strip it.
     if (!track.Packed && !track.BinkAudio && !track.UseDct) {
       try {
         using var ms = new MemoryStream();
-        foreach (var c in track.Chunks)
-          if (c.Length > 4)
-            ms.Write(c.AsSpan(4)); // drop the 4-byte unpacked-size prefix
+        foreach (var (_, payload) in track.Packets)
+          if (payload.Length > 4)
+            ms.Write(payload.AsSpan(4));
         var raw = ms.ToArray();
         if (raw.Length == 0)
           return;
@@ -224,16 +246,13 @@ internal static class SmkReader {
         foreach (var (name, wav) in split)
           entries.Add(new($"{baseName}_{name}.wav", "Channel", wav, Method: "pcm"));
       } catch {
-        // Keep the raw blob only.
+        // Keep the packet/raw surfaces.
       }
     }
-    // Bink-audio-in-Smacker tracks remain blob-only here (handled by FileFormat.Bik).
   }
 
   private static IReadOnlyList<(string Name, byte[] Wav)> SplitNative(byte[] interleaved, int channels, int sampleRate, int bits) {
-    // 8-bit Smacker PCM is unsigned; the WAV PCM format code 1 with 8-bit is unsigned, so
-    // the bytes pass through unchanged. 16-bit is signed little-endian.
     var split = PcmCodec.SplitInterleavedPcm(interleaved, channels, sampleRate, bits);
-    return split.Select(s => (s.Name, s.WavBlob)).ToList();
+    return split.Select(static s => (s.Name, s.WavBlob)).ToList();
   }
 }
