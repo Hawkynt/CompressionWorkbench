@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using Codec.AdpcmX;
 using Codec.Pcm;
@@ -42,12 +43,16 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Codec", "Codec", FormatOptionKind.Enum, "Pcm16Be", ["Pcm16Be", "Afc"],
       "AST codec: lossless planar PCM16 big-endian or Nintendo AFC ADPCM."),
-    new("BlockSize", "Bytes per channel per BLCK", FormatOptionKind.Integer, AstWriter.BlockSize.ToString(CultureInfo.InvariantCulture),
+    new("BlockSize", "Bytes per channel per BLCK", FormatOptionKind.Integer,
+      AstWriter.BlockSize.ToString(CultureInfo.InvariantCulture),
       Description: "Positive byte count; PCM must be divisible by 2, AFC by 9. 0x2760 (10080) is conventional."),
     new("Loop", "Loop", FormatOptionKind.Boolean, "false", Description: "Set the AST loop flag."),
-    new("LoopStart", "Loop start (samples)", FormatOptionKind.Integer, "0", Description: "AFC loop starts must be 16-sample aligned.", DependsOn: "Loop=true"),
-    new("LoopEnd", "Loop end (samples)", FormatOptionKind.Integer, "0", Description: "Exclusive loop end; 0 means end of stream.", DependsOn: "Loop=true"),
-    new("Volume", "Volume byte", FormatOptionKind.Integer, "127", Description: "Value stored at STRM offset 0x28; Nintendo files conventionally use 127."),
+    new("LoopStart", "Loop start (samples)", FormatOptionKind.Integer, "0",
+      Description: "AFC loop starts must be 16-sample aligned.", DependsOn: "Loop=true"),
+    new("LoopEnd", "Loop end (samples)", FormatOptionKind.Integer, "0",
+      Description: "Exclusive loop end; 0 means end of stream.", DependsOn: "Loop=true"),
+    new("Volume", "Volume byte", FormatOptionKind.Integer, "127",
+      Description: "Value stored at STRM offset 0x28; Nintendo files conventionally use 127."),
   ];
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
@@ -108,6 +113,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       reason = null;
       return true;
     }
+
     reason = $"not an AST input (got {input.ArchiveName}); {this.AcceptedInputsDescription}";
     return false;
   }
@@ -121,14 +127,17 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       reason = $"AST does not support codec '{codecId}'";
       return false;
     }
+
     if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
       reason = "AST encoding requires signed PCM16 input";
       return false;
     }
+
     if (format.SampleRate <= 0 || format.Channels is < 1 or > ushort.MaxValue) {
       reason = "AST requires a positive sample rate and 1..65535 channels";
       return false;
     }
+
     if (codec == AstCodec.Afc && format.Channels > 6) {
       reason = "AST AFC BLCK histories are defined for at most six channels";
       return false;
@@ -166,6 +175,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var channels = new short[pcm.Format.Channels][];
     for (var channel = 0; channel < channels.Length; ++channel)
       channels[channel] = new short[frameCount];
+
     for (var frame = 0; frame < frameCount; ++frame)
       for (var channel = 0; channel < channels.Length; ++channel) {
         var offset = checked((frame * channels.Length + channel) * sizeof(short));
@@ -198,18 +208,22 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       reason = $"AST cannot mux codec '{stream.CodecId}'";
       return false;
     }
+
     if (stream.SampleRate <= 0 || stream.Channels is < 1 or > ushort.MaxValue) {
       reason = "AST requires a positive sample rate and 1..65535 channels";
       return false;
     }
+
     if (codec == AstCodec.Afc && stream.Channels > 6) {
       reason = "AST AFC BLCK histories are defined for at most six channels";
       return false;
     }
+
     if (stream.BitsPerSample is not (0 or 16)) {
-      reason = "AST carries 16-bit PCM or 4-bit AFC reconstructed to 16-bit samples";
+      reason = "AST carries 16-bit PCM or AFC reconstructed to 16-bit samples";
       return false;
     }
+
     reason = null;
     return true;
   }
@@ -234,6 +248,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var payload = new byte[checked(block.SizePerChannel * parsed.Info.NumChannels)];
       for (var channel = 0; channel < parsed.Info.NumChannels; ++channel)
         block.Channels[channel].CopyTo(payload, channel * block.SizePerChannel);
+
       var capacity = parsed.Info.Codec == (int)AstCodec.Afc
         ? block.SizePerChannel / Thp.AfcBytesPerFrame * Thp.AfcSamplesPerFrame
         : block.SizePerChannel / sizeof(short);
@@ -290,16 +305,16 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var capacity = codec == AstCodec.Afc
       ? (long)encodedLength / Thp.AfcBytesPerFrame * Thp.AfcSamplesPerFrame
       : (long)encodedLength / sizeof(short);
-    var sampleCount = PropertyInt(stream.Format, "ast-sample-count")
+    var sampleCountProperty = PropertyInt(stream.Format, "ast-sample-count");
+    var sampleCount = sampleCountProperty
       ?? (packets.Length > 0 && packets.All(static packet => packet.DurationSamples > 0)
         ? checked((int)packets.Sum(static packet => packet.DurationSamples))
         : checked((int)capacity));
     if (sampleCount < 0 || sampleCount > capacity)
       throw new InvalidDataException("AST sample count exceeds the encoded packet capacity.");
 
-    var defaultBlockSize = PropertyInt(stream.Format, "ast-block-size") is > 0 and var inheritedBlockSize
-      ? inheritedBlockSize
-      : AstWriter.BlockSize;
+    var inheritedBlockSize = PropertyInt(stream.Format, "ast-block-size");
+    var defaultBlockSize = inheritedBlockSize is > 0 ? inheritedBlockSize.Value : AstWriter.BlockSize;
     var targetBlockSize = options.GetOptionInt("BlockSize", defaultBlockSize);
     ValidateEncodedBlockSize(codec, targetBlockSize);
 
@@ -346,7 +361,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       memory.Write(header);
 
       for (var channel = 0; channel < stream.Format.Channels; ++channel)
-        memory.Write(CollectionsMarshalAsSpan(channelData[channel]).Slice(encodedOffset, blockSize));
+        memory.Write(CollectionsMarshal.AsSpan(channelData[channel]).Slice(encodedOffset, blockSize));
       encodedOffset += blockSize;
     }
 
@@ -414,7 +429,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         }
       }
       entries.Add(new("metadata.ini", "Tag", BuildMetadata(parsed)));
-    } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or OverflowException or IndexOutOfRangeException or ArgumentOutOfRangeException) {
+    } catch (Exception ex) when (ex is InvalidDataException or ArgumentException or OverflowException or IndexOutOfRangeException) {
       // Invalid input still has a useful FULL.ast pseudo-entry.
     }
     return entries;
@@ -428,11 +443,18 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       _ => $"unknown({info.Codec})",
     };
     var blockSize = parsed.Blocks.Count > 0 ? parsed.Blocks[0].SizePerChannel : info.FirstBlockSize;
-    var text = string.Create(CultureInfo.InvariantCulture, $"[ast]\n" +
-      $"sampleRate={info.SampleRate}\nchannels={info.NumChannels}\ncodec={codecName}\n" +
-      $"sampleCount={info.SampleCount}\nblockSize={blockSize}\nvolume={info.Volume}\n" +
-      $"loop={(info.Loop ? 1 : 0)}\nloopStart={info.LoopStart}\nloopEnd={info.LoopEnd}\n");
-    return Encoding.UTF8.GetBytes(text);
+    var builder = new StringBuilder();
+    builder.Append("[ast]\n");
+    builder.Append(CultureInfo.InvariantCulture, $"sampleRate={info.SampleRate}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"channels={info.NumChannels}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"codec={codecName}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"sampleCount={info.SampleCount}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"blockSize={blockSize}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"volume={info.Volume}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"loop={(info.Loop ? 1 : 0)}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"loopStart={info.LoopStart}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"loopEnd={info.LoopEnd}\n");
+    return Encoding.UTF8.GetBytes(builder.ToString());
   }
 
   private static Dictionary<string, string> ParseMetadata(ReadOnlySpan<byte> data) {
@@ -442,7 +464,7 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var line = rawLine.Trim();
       if (line.Length == 0 || line[0] is ';' or '#')
         continue;
-      if (line is ['[', .., ']']) {
+      if (line.StartsWith('[', StringComparison.Ordinal) && line.EndsWith(']', StringComparison.Ordinal)) {
         section = line[1..^1].Trim();
         continue;
       }
@@ -463,8 +485,10 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => metadata.TryGetValue(key, out var value) ? value : null;
 
   private static int? MetadataInt(IReadOnlyDictionary<string, string> metadata, string key)
-    => metadata.TryGetValue(key, out var value) && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-      ? parsed : null;
+    => metadata.TryGetValue(key, out var value) && int.TryParse(value, NumberStyles.Integer,
+         CultureInfo.InvariantCulture, out var parsed)
+      ? parsed
+      : null;
 
   private static bool MetadataBool(IReadOnlyDictionary<string, string> metadata, string key)
     => metadata.TryGetValue(key, out var value) &&
@@ -515,9 +539,11 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var result = new byte[checked(PrivateHeaderBytes + parsed.Blocks.Count * 24)];
     "ASTP"u8.CopyTo(result);
     BinaryPrimitives.WriteUInt32BigEndian(result.AsSpan(4), checked((uint)parsed.Blocks.Count));
-    parsed.Info.ReservedHeader.AsSpan(0, Math.Min(28, parsed.Info.ReservedHeader.Length)).CopyTo(result.AsSpan(8, 28));
+    parsed.Info.ReservedHeader.AsSpan(0, Math.Min(28, parsed.Info.ReservedHeader.Length))
+      .CopyTo(result.AsSpan(8, 28));
     for (var i = 0; i < parsed.Blocks.Count; ++i)
-      parsed.Blocks[i].HeaderData.AsSpan(0, Math.Min(24, parsed.Blocks[i].HeaderData.Length)).CopyTo(result.AsSpan(PrivateHeaderBytes + i * 24, 24));
+      parsed.Blocks[i].HeaderData.AsSpan(0, Math.Min(24, parsed.Blocks[i].HeaderData.Length))
+        .CopyTo(result.AsSpan(PrivateHeaderBytes + i * 24, 24));
     return result;
   }
 
@@ -526,9 +552,11 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     reserved[4] = 0x7F;
     if (data is null || data.Length < PrivateHeaderBytes || !data.AsSpan(0, 4).SequenceEqual("ASTP"u8))
       return new PreservedContainerData(reserved, []);
+
     var count = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(4));
     if (count > int.MaxValue || PrivateHeaderBytes + (long)count * 24 != data.Length)
       return new PreservedContainerData(reserved, []);
+
     data.AsSpan(8, 28).CopyTo(reserved);
     var headers = new byte[(int)count][];
     for (var i = 0; i < headers.Length; ++i)
@@ -539,8 +567,12 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static void WriteAfcHistories(Span<byte> destination, short[][] decoded, int encodedOffset) {
     var sampleOffset = checked(encodedOffset / Thp.AfcBytesPerFrame * Thp.AfcSamplesPerFrame);
     for (var channel = 0; channel < decoded.Length; ++channel) {
-      var history1 = sampleOffset > 0 && sampleOffset <= decoded[channel].Length ? decoded[channel][sampleOffset - 1] : (short)0;
-      var history2 = sampleOffset > 1 && sampleOffset <= decoded[channel].Length ? decoded[channel][sampleOffset - 2] : (short)0;
+      var history1 = sampleOffset > 0 && sampleOffset <= decoded[channel].Length
+        ? decoded[channel][sampleOffset - 1]
+        : (short)0;
+      var history2 = sampleOffset > 1 && sampleOffset <= decoded[channel].Length
+        ? decoded[channel][sampleOffset - 2]
+        : (short)0;
       BinaryPrimitives.WriteInt16BigEndian(destination[(channel * 4)..], history1);
       BinaryPrimitives.WriteInt16BigEndian(destination[(channel * 4 + 2)..], history2);
     }
@@ -549,7 +581,8 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static int? PropertyInt(AudioStreamFormat format, string key)
     => format.Properties is { } properties && properties.TryGetValue(key, out var text) &&
        int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-      ? value : null;
+      ? value
+      : null;
 
   private static bool PropertyBool(AudioStreamFormat format, string key)
     => format.Properties is { } properties && properties.TryGetValue(key, out var value) &&
@@ -568,9 +601,6 @@ public sealed class AstFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       BinaryPrimitives.WriteInt16LittleEndian(result.AsSpan(i * sizeof(short)), samples[i]);
     return result;
   }
-
-  private static Span<byte> CollectionsMarshalAsSpan(List<byte> data)
-    => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(data);
 
   private static byte[] ReadAll(Stream input) {
     if (input.CanSeek)
