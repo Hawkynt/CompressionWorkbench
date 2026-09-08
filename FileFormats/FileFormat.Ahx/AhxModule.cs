@@ -3,6 +3,11 @@ using System.Text;
 
 namespace FileFormat.Ahx;
 
+/// <summary>
+/// Structural AHX0/AHX1 model implemented from the published format description.
+/// HivelyTracker's BSD-3-Clause reader/writer is used only as an interoperability oracle,
+/// notably for the timing-bit placement and track-zero storage convention.
+/// </summary>
 internal sealed class AhxModule {
   internal const int HeaderSize = 14;
   internal const int Channels = 4;
@@ -59,9 +64,13 @@ internal sealed class AhxModule {
     var declaredNamesOffset = BinaryPrimitives.ReadUInt16BigEndian(source[4..6]);
     var headerWord = BinaryPrimitives.ReadUInt16BigEndian(source[6..8]);
     var trackZeroStored = (headerWord & 0x8000) != 0;
-    var speedCode = (source[6] >> 4) & 0x07;
-    if (speedCode > 3)
-      return Fail($"AHX speed code {speedCode} is outside the defined 0..3 range.", out error);
+
+    // The published prose describes three top-nybble bits, but the compatible AHX
+    // exporter/replayer in HivelyTracker stores the defined 0..3 value in bits 6..5.
+    // Bit 4 is therefore reserved in interoperable AHX0/AHX1 files.
+    if ((source[6] & 0x10) != 0)
+      return Fail("AHX header uses reserved timing bit 4.", out error);
+    var speedCode = (source[6] >> 5) & 0x03;
     if (version == 0 && speedCode != 0)
       return Fail("AHX0 requires the 50 Hz speed code.", out error);
 
@@ -243,7 +252,7 @@ internal sealed class AhxModule {
     output[3] = version;
     BinaryPrimitives.WriteUInt16BigEndian(output.AsSpan(4, 2), unchecked((ushort)namesOffset));
     var speedCode = speedMultiplier - 1;
-    output[6] = (byte)((storeTrackZero ? 0x80 : 0) | (speedCode << 4) | ((this.PositionCount >> 8) & 0x0f));
+    output[6] = (byte)((storeTrackZero ? 0x80 : 0) | (speedCode << 5) | ((this.PositionCount >> 8) & 0x0f));
     output[7] = (byte)this.PositionCount;
     BinaryPrimitives.WriteUInt16BigEndian(output.AsSpan(8, 2), checked((ushort)this.RestartPosition));
     output[10] = checked((byte)this.TrackLength);
@@ -287,7 +296,10 @@ internal sealed class AhxModule {
 
   internal bool IsTrackZeroEmpty() {
     var length = checked(this.TrackLength * 3);
-    return this.LogicalTracks.AsSpan(0, length).IndexOfAnyExcept((byte)0) < 0;
+    foreach (var value in this.LogicalTracks.AsSpan(0, length))
+      if (value != 0)
+        return false;
+    return true;
   }
 
   private void ValidateAhx0Compatibility() {
@@ -314,7 +326,7 @@ internal sealed class AhxModule {
         var effect1 = (int)((value >> 26) & 0x07);
         var data1 = (byte)(value >> 8);
         var data2 = (byte)value;
-        if ((effect1 is 0 or 4) && data1 != 0 || (effect2 is 0 or 4) && data2 != 0)
+        if (((effect1 is 0 or 4) && data1 != 0) || ((effect2 is 0 or 4) && data2 != 0))
           throw new InvalidDataException($"Instrument {instrument + 1} playlist uses an AHX1-only filter/modulation effect.");
       }
     }
