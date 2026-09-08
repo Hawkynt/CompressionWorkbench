@@ -115,7 +115,7 @@ internal static class ApeContainer {
     var channels = BinaryPrimitives.ReadUInt16LittleEndian(header[18..]);
     var sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(header[20..]);
 
-    if ((ulong)seekTableLength < (ulong)totalFrames * sizeof(uint))
+    if (totalFrames > int.MaxValue || (ulong)seekTableLength < (ulong)totalFrames * sizeof(uint))
       return false;
 
     var frameDataStart = (int)frameDataStart64;
@@ -129,7 +129,7 @@ internal static class ApeContainer {
       return false;
     var tailEnd = (int)tailEnd64;
 
-    var frames = new List<Frame>(checked((int)totalFrames));
+    var frames = new List<Frame>((int)totalFrames);
     for (var index = 0; index < totalFrames; ++index) {
       var seekOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)seekStart + checked((int)index * 4), 4));
       var start64 = (ulong)macOffset + seekOffset;
