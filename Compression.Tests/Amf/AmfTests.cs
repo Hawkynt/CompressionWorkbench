@@ -56,6 +56,29 @@ public class AmfTests {
   }
 
   [Test]
+  public void Create_V01_EmptyTracks_OmitUncountedTerminators() {
+    var descriptor = new AmfFormatDescriptor();
+    var wav = PcmCodec.ToWavBlob(Sample8, 1, 16000, 8);
+
+    var amf = Create(
+      descriptor,
+      [ArchiveInputInfo.InMemory("tone.wav", wav)],
+      Options(("Version", "0.1")));
+
+    // v0.1: 40-byte header, 8 bytes of pattern track refs, 59-byte sample header,
+    // 8-byte logical->physical map. Track 1 has two events plus an uncounted terminator;
+    // tracks 2-4 are zero-count headers and must not carry stray terminators.
+    const int firstTrackOffset = 115;
+    Assert.Multiple(() => {
+      Assert.That(amf.AsSpan(firstTrackOffset, 3).ToArray(), Is.EqualTo(new byte[] { 2, 0, 0 }));
+      Assert.That(amf.AsSpan(firstTrackOffset + 12, 3).ToArray(), Is.EqualTo(new byte[] { 0, 0, 0 }));
+      Assert.That(amf.AsSpan(firstTrackOffset + 15, 3).ToArray(), Is.EqualTo(new byte[] { 0, 0, 0 }));
+      Assert.That(amf.AsSpan(firstTrackOffset + 18, 3).ToArray(), Is.EqualTo(new byte[] { 0, 0, 0 }));
+      Assert.That(amf.AsSpan(firstTrackOffset + 21, Sample8.Length).ToArray(), Is.EqualTo(Sample8));
+    });
+  }
+
+  [Test]
   public void Create_16BitPcm_RequantizesToUnsigned8() {
     var descriptor = new AmfFormatDescriptor();
     byte[] pcm16 = [0x00, 0x80, 0x00, 0x00, 0xFF, 0x7F];
