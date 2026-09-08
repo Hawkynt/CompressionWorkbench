@@ -14,6 +14,11 @@ namespace FileFormat.Flv;
 /// <c>metadata.ini</c> carrying the header flags and the decoded
 /// <c>onMetaData</c> values.
 ///
+/// The write path has two layers: <see cref="FlvMuxer"/> performs tag-preserving
+/// whole-container remuxing for arbitrary FLV audio/video/script tags, while the
+/// container-neutral audio surface muxes AAC or MP3 encoded packets without
+/// decoding and exposes AAC packets for cross-format remuxing.
+///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://rtmp.veriskope.com/pdf/video_file_format_spec_v10_1.pdf</c> — Adobe Flash Video File Format Specification v10.1, Annex E (FLV) and the AUDIODATA/VIDEODATA tag layouts</description></item>
@@ -21,13 +26,14 @@ namespace FileFormat.Flv;
 ///   <item><description>ISO/IEC 14496-15 §5.2.4 — <c>AVCDecoderConfigurationRecord</c>; ISO/IEC 14496-3 §1.6 — <c>AudioSpecificConfig</c> and ADTS</description></item>
 /// </list>
 /// </summary>
-public sealed class FlvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class FlvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+  IAudioContainerFormat, IAudioDemuxSource, IAudioMuxTarget {
 
   public string Id => "Flv";
   public string DisplayName => "Flash Video (FLV)";
   public FormatCategory Category => FormatCategory.Video;
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".flv";
   public IReadOnlyList<string> Extensions => [".flv"];
@@ -35,10 +41,13 @@ public sealed class FlvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new([(byte)'F', (byte)'L', (byte)'V', 0x01], Confidence: 0.95),
   ];
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("aac", "AAC in FLV"),
+    new("mp3", "MP3 in FLV"),
+  ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Flash Video container demuxed into per-codec elementary streams and script data.";
+  public string Description => "Flash Video container with elementary-stream demux, raw-tag remux and AAC/MP3 packet muxing.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) =>
     BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
@@ -62,6 +71,27 @@ public sealed class FlvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
+
+  public IReadOnlyList<string> SupportedMuxCodecs => FlvMuxer.SupportedAudioCodecs;
+
+  public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
+    ArgumentNullException.ThrowIfNull(options);
+    return FlvMuxer.CanMuxAudio(stream, out reason);
+  }
+
+  public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    FlvMuxer.MuxAudio(output, stream);
+  }
+
+  public bool TryDemux(Stream input, out AudioEncodedStream? stream)
+    => FlvMuxer.TryDemuxAudio(input, out stream);
+
+  /// <summary>
+  /// Rewrites a complete FLV container while preserving native tag payloads, timestamps and order.
+  /// This is the lossless container-level remux path for video, audio and script tags.
+  /// </summary>
+  public void Remux(Stream input, Stream output) => FlvMuxer.Remux(input, output);
 
   private static List<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
