@@ -37,7 +37,7 @@ namespace FileSystem.Gfs2;
 /// <c>statfs</c>, the <c>inum</c> next-formal-number) are all computed from the
 /// real layout so <c>check_statfs</c> passes.</para>
 /// </summary>
-public sealed class Gfs2Writer {
+public sealed partial class Gfs2Writer {
   private const int BlockSize = 4096;
   private const int BlockShift = 12;
 
@@ -729,8 +729,6 @@ public sealed class Gfs2Writer {
     }
   }
 
-
-
   private (long Total, long Free, long Dinodes) ComputeStatfs() {
     // Statfs counts span all resource groups (sum of every RG's data blocks).
     var total = 0L;
@@ -980,7 +978,7 @@ public sealed class Gfs2Writer {
 
     // A non-ExHash GFS2 directory is one stuffed dinode. Check the minimum
     // aligned record footprint before writing anything so a directory that
-    // requires ExHash fails closed instead of producing overlapping dirents.
+    // outgrows the inline area can be promoted atomically to ExHash.
     var all = new List<(string Name, ulong Fi, ulong Addr, ushort Type)> {
       (".", formalIno, (ulong)block, DtDir),
       ("..", parentFormalIno, parentAddr, DtDir),
@@ -996,9 +994,16 @@ public sealed class Gfs2Writer {
           $"GFS2 directory entry '{entry.Name}' has an invalid UTF-8 name length.");
       minimumBytes += (DirentSize + nameLen + 7) & ~7;
     }
-    if (minimumBytes > areaLen)
-      throw new NotSupportedException(
-        $"GFS2 directory at block {block} needs {minimumBytes} bytes, beyond the {areaLen}-byte stuffed-directory capacity; ExHash writing is not implemented.");
+    if (minimumBytes > areaLen) {
+      this.WriteExHashDirectory(
+        block,
+        formalIno,
+        system,
+        all,
+        nlink,
+        mode ?? (SIfDir | (system ? 0x1C0u : 0x1EDu)));
+      return;
+    }
 
     this.WriteDinode(
       block: block, formalIno: formalIno,
