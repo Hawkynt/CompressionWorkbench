@@ -26,7 +26,12 @@ public sealed class FilesystemOptimizationOptions {
   /// <summary>Replace all-zero allocation units with filesystem holes.</summary>
   public bool MakeSparse { get; init; }
 
-  /// <summary>Store identical regular files once and expose the other names as hard links.</summary>
+  /// <summary>
+  /// Store identical regular files once. Depending on the writer this is either a
+  /// native hard link or an explicitly read-only shared-data alias; query
+  /// <see cref="FilesystemOptimization.GetHardLinkDeduplicationSemantics"/> when the
+  /// distinction matters to a UI or caller.
+  /// </summary>
   public bool DeduplicateWithHardLinks { get; init; }
 
   /// <summary>Replace duplicate regular files with symbolic links to one canonical copy.</summary>
@@ -36,9 +41,8 @@ public sealed class FilesystemOptimizationOptions {
   public bool UseTransparentCompression { get; init; }
 
   /// <summary>
-  /// Probe the finite writer option schema and keep the smallest verified rebuild.
-  /// This includes compression method/level knobs and other encoding/layout parameters
-  /// whose values the descriptor explicitly declares as safe to try.
+  /// Probe explicitly registered writer compression parameters and keep the smallest
+  /// verified rebuild. No option is inferred merely from its name.
   /// </summary>
   public bool TryCompressionParameters { get; init; }
 
@@ -78,36 +82,47 @@ public interface ISymbolicLinkDeduplicationLayout {
 /// emitted; when no candidate improves on the input, the input is copied through.
 /// </summary>
 public static class FilesystemOptimization {
-  private static readonly string[] CompressionKeyHints = [
-    "Compression", "Compress", "Method", "Level", "Dictionary", "Window", "BlockSize"
-  ];
-
   private static readonly string[] DisabledCompressionValues = [
     "off", "none", "false", "store", "stored", "uncompressed", "disabled"
   ];
+
+  /// <summary>
+  /// Returns the exact hard-link-style semantics implemented by this writer.
+  /// Native <see cref="LayoutReclaim.HardLinks"/> wins when present; otherwise a
+  /// registered read-only shared-data backend can expose the same user option without
+  /// pretending that the underlying filesystem has native hard links.
+  /// </summary>
+  public static HardLinkDeduplicationSemantics GetHardLinkDeduplicationSemantics(object descriptor) {
+    ArgumentNullException.ThrowIfNull(descriptor);
+    if (descriptor is not ILayoutOptimizable layout)
+      return HardLinkDeduplicationSemantics.None;
+    if (layout.ReclaimSupport.HasFlag(LayoutReclaim.HardLinks))
+      return HardLinkDeduplicationSemantics.Native;
+    return FilesystemOptimizationAdapters.TryGetHardLinkDeduplicator(layout, out var semantics, out _)
+      ? semantics
+      : HardLinkDeduplicationSemantics.None;
+  }
 
   /// <summary>Returns only transforms the current repository writer can actually perform.</summary>
   public static FilesystemOptimizationFeatures GetSupportedFeatures(object descriptor) {
     ArgumentNullException.ThrowIfNull(descriptor);
 
     var result = FilesystemOptimizationFeatures.None;
-    if (descriptor is ILayoutOptimizable layout) {
-      if (layout.ReclaimSupport.HasFlag(LayoutReclaim.Sparse))
-        result |= FilesystemOptimizationFeatures.SparseFiles;
-      if (layout.ReclaimSupport.HasFlag(LayoutReclaim.HardLinks))
-        result |= FilesystemOptimizationFeatures.HardLinkDeduplication;
-      if (layout is ISymbolicLinkDeduplicationLayout
-          || FilesystemOptimizationAdapters.TryGetSymbolicLinkDeduplicator(layout, out _))
-        result |= FilesystemOptimizationFeatures.SymbolicLinkDeduplication;
-      if (FilesystemOptimizationAdapters.HasTransparentCompression(layout))
-        result |= FilesystemOptimizationFeatures.TransparentCompression;
-    }
+    if (descriptor is not ILayoutOptimizable layout)
+      return result;
 
-    if (descriptor is IFormatOptionsSchema schema) {
-      var axes = SearchAxes(schema).ToArray();
-      if (axes.Any(IsTransparentCompressionAxis))
+    if (layout.ReclaimSupport.HasFlag(LayoutReclaim.Sparse))
+      result |= FilesystemOptimizationFeatures.SparseFiles;
+    if (GetHardLinkDeduplicationSemantics(layout) != HardLinkDeduplicationSemantics.None)
+      result |= FilesystemOptimizationFeatures.HardLinkDeduplication;
+    if (layout is ISymbolicLinkDeduplicationLayout
+        || FilesystemOptimizationAdapters.TryGetSymbolicLinkDeduplicator(layout, out _))
+      result |= FilesystemOptimizationFeatures.SymbolicLinkDeduplication;
+
+    if (FilesystemOptimizationAdapters.TryGetCompressionProfile(layout, out var profile)) {
+      if (profile.TransparentCompression)
         result |= FilesystemOptimizationFeatures.TransparentCompression;
-      if (axes.Any(a => a.Values.Count > 1))
+      if (BuildCompressionAxes(layout, profile).Any(a => a.Values.Count > 1))
         result |= FilesystemOptimizationFeatures.CompressionParameterSearch;
     }
 
@@ -139,6 +154,12 @@ public static class FilesystemOptimization {
     if (probes.Length == 0)
       probes = [CopyParameters(options.FormatSpecific)];
 
+    var linkSemantics = options.DeduplicateWithHardLinks
+      ? GetHardLinkDeduplicationSemantics(layout)
+      : HardLinkDeduplicationSemantics.None;
+    var hasRegisteredHardLinkBackend = options.DeduplicateWithHardLinks
+      && FilesystemOptimizationAdapters.TryGetHardLinkDeduplicator(layout, out _, out var hardLinkRebuild);
+
     using var best = RebuildVerb.CreateScratchStream();
     var bestLength = input.Length;
     var haveBest = false;
@@ -151,7 +172,8 @@ public static class FilesystemOptimization {
         var rebuild = new LayoutRebuildOptions {
           Parameters = probes[index],
           MakeSparse = options.MakeSparse,
-          DeduplicateWithLinks = options.DeduplicateWithHardLinks,
+          DeduplicateWithLinks = options.DeduplicateWithHardLinks
+            && linkSemantics == HardLinkDeduplicationSemantics.Native,
         };
 
         if (options.DeduplicateWithSymbolicLinks) {
@@ -161,6 +183,8 @@ public static class FilesystemOptimization {
             registered(layout, input, candidate, rebuild);
           else
             throw new NotSupportedException("This filesystem writer does not support symbolic-link deduplication.");
+        } else if (hasRegisteredHardLinkBackend) {
+          hardLinkRebuild!(layout, input, candidate, rebuild);
         } else {
           layout.RebuildStreaming(input, candidate, rebuild);
         }
@@ -175,8 +199,8 @@ public static class FilesystemOptimization {
         bestLength = candidate.Length;
         haveBest = true;
       } catch (Exception ex) when (ex is InvalidOperationException or NotSupportedException or IOException or ArgumentException) {
-        // One invalid writer/schema combination is a rejected probe. Other candidates
-        // remain useful, and the untouched input is always the final fallback.
+        // One invalid writer/parameter combination is a rejected probe. Other
+        // candidates remain useful, and the untouched input is the final fallback.
       }
     }
 
@@ -196,10 +220,12 @@ public static class FilesystemOptimization {
   public static void ValidateRequested(ILayoutOptimizable layout, FilesystemOptimizationOptions options) {
     ArgumentNullException.ThrowIfNull(layout);
     ArgumentNullException.ThrowIfNull(options);
-    var supported = GetSupportedFeatures(layout);
+    if (options.DeduplicateWithHardLinks && options.DeduplicateWithSymbolicLinks)
+      throw new ArgumentException("Hard-link and symbolic-link deduplication are alternative transforms; request only one.", nameof(options));
 
+    var supported = GetSupportedFeatures(layout);
     Require(options.MakeSparse, FilesystemOptimizationFeatures.SparseFiles, "sparse files");
-    Require(options.DeduplicateWithHardLinks, FilesystemOptimizationFeatures.HardLinkDeduplication, "hard-link deduplication");
+    Require(options.DeduplicateWithHardLinks, FilesystemOptimizationFeatures.HardLinkDeduplication, "hard-link/shared-data deduplication");
     Require(options.DeduplicateWithSymbolicLinks, FilesystemOptimizationFeatures.SymbolicLinkDeduplication, "symbolic-link deduplication");
     Require(options.UseTransparentCompression, FilesystemOptimizationFeatures.TransparentCompression, "transparent compression");
     Require(options.TryCompressionParameters, FilesystemOptimizationFeatures.CompressionParameterSearch, "compression parameter search");
@@ -215,12 +241,12 @@ public static class FilesystemOptimization {
     ILayoutOptimizable layout,
     FilesystemOptimizationOptions options) {
     var seed = CopyParameters(options.FormatSpecific);
-    if (layout is not IFormatOptionsSchema schema) {
+    if (!FilesystemOptimizationAdapters.TryGetCompressionProfile(layout, out var profile)) {
       yield return seed;
       yield break;
     }
 
-    var axes = SearchAxes(schema).ToArray();
+    var axes = BuildCompressionAxes(layout, profile).ToArray();
     if (options.UseTransparentCompression)
       EnableTransparentCompression(seed, axes);
 
@@ -266,35 +292,37 @@ public static class FilesystemOptimization {
   }
 
   private static void EnableTransparentCompression(Dictionary<string, string> parameters, IReadOnlyList<Axis> axes) {
-    foreach (var axis in axes.Where(IsTransparentCompressionAxis)) {
+    foreach (var axis in axes) {
       if (parameters.ContainsKey(axis.Key)) continue;
+      if (!axis.Values.Any(IsDisabledCompressionValue)) continue;
       var enabled = axis.Values.FirstOrDefault(v => !IsDisabledCompressionValue(v));
       if (enabled != null) parameters[axis.Key] = enabled;
     }
   }
 
-  private static bool IsTransparentCompressionAxis(Axis axis) {
-    if (!axis.Key.Contains("compress", StringComparison.OrdinalIgnoreCase)) return false;
-    return axis.Values.Any(v => !IsDisabledCompressionValue(v))
-      && axis.Values.Any(IsDisabledCompressionValue);
-  }
-
   private static bool IsDisabledCompressionValue(string value)
     => DisabledCompressionValues.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase);
 
-  private static IEnumerable<Axis> SearchAxes(IFormatOptionsSchema schema) {
-    foreach (var option in schema.OptionsSchema) {
-      if (!CompressionKeyHints.Any(h => option.Key.Contains(h, StringComparison.OrdinalIgnoreCase)))
-        continue;
-
-      IReadOnlyList<string>? values = option.Kind switch {
-        FormatOptionKind.Enum or FormatOptionKind.Integer when option.AllowedValues is { Count: > 0 }
-          => option.AllowedValues,
-        FormatOptionKind.Boolean => ["false", "true"],
-        _ => null,
-      };
-      if (values is { Count: > 0 })
-        yield return new Axis(option.Key, values, option.Default);
+  private static IEnumerable<Axis> BuildCompressionAxes(
+    ILayoutOptimizable layout,
+    FilesystemCompressionProfile profile) {
+    var schema = layout as IFormatOptionsSchema;
+    foreach (var parameter in profile.Parameters) {
+      var descriptor = schema?.OptionsSchema.FirstOrDefault(o =>
+        string.Equals(o.Key, parameter.Key, StringComparison.OrdinalIgnoreCase));
+      IReadOnlyList<string>? values = parameter.Values is { Count: > 0 }
+        ? parameter.Values
+        : descriptor?.Kind switch {
+          FormatOptionKind.Enum or FormatOptionKind.Integer when descriptor.AllowedValues is { Count: > 0 }
+            => descriptor.AllowedValues,
+          FormatOptionKind.Boolean => ["false", "true"],
+          _ => null,
+        };
+      if (values is not { Count: > 0 }) continue;
+      var defaultValue = descriptor?.Default;
+      if (string.IsNullOrWhiteSpace(defaultValue) || !values.Contains(defaultValue, StringComparer.OrdinalIgnoreCase))
+        defaultValue = values[0];
+      yield return new Axis(parameter.Key, values, defaultValue);
     }
   }
 
