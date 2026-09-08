@@ -39,9 +39,9 @@ public sealed class MinixFilesystemDriverTests {
     var profile = FormatRegistry.ProbeFilesystem("MinixFs", image);
     Assert.That(profile.CanMountWritable, Is.True, string.Join("; ", profile.Limitations));
     Assert.That(profile.MutationModel, Is.EqualTo(FilesystemMutationModel.Direct));
-    Assert.That(profile.Capabilities, Has.Flag(FilesystemDriverCapabilities.SparseFiles));
-    Assert.That(profile.Capabilities, Has.Flag(FilesystemDriverCapabilities.HardLinks));
-    Assert.That(profile.Capabilities, Has.Flag(FilesystemDriverCapabilities.SymbolicLinks));
+    Assert.That(profile.Capabilities & FilesystemDriverCapabilities.SparseFiles, Is.Not.EqualTo(FilesystemDriverCapabilities.None));
+    Assert.That(profile.Capabilities & FilesystemDriverCapabilities.HardLinks, Is.Not.EqualTo(FilesystemDriverCapabilities.None));
+    Assert.That(profile.Capabilities & FilesystemDriverCapabilities.SymbolicLinks, Is.Not.EqualTo(FilesystemDriverCapabilities.None));
 
     var payload = Enumerable.Range(0, 600_000).Select(i => (byte)(i * 31 + 11)).ToArray();
     FilesystemNodeId stableId;
