@@ -154,7 +154,7 @@ public class AmfTests {
     var descriptor = new AmfFormatDescriptor();
     var input = ArchiveInputInfo.InMemory("tone.wav", PcmCodec.ToWavBlob(Sample8, 1, 8000, 8));
 
-    var exception = Assert.Throws<Exception>(() =>
+    var exception = Assert.Catch<Exception>(() =>
       Create(descriptor, [input], Options(("Version", version), ("Channels", channels))));
 
     Assert.That(exception!.Message, Does.Contain(message));
