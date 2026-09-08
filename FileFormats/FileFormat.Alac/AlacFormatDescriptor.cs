@@ -127,7 +127,7 @@ public sealed class AlacFormatDescriptor :
     ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
 
-    var files = FilesOnly(inputs).ToList();
+    var files = inputs.Where(static input => !input.IsDirectory).ToList();
     var full = files.FirstOrDefault(file =>
       file.ArchiveName.Equals("FULL.m4a", StringComparison.OrdinalIgnoreCase) ||
       file.ArchiveName.Equals("FULL.caf", StringComparison.OrdinalIgnoreCase));
