@@ -77,7 +77,15 @@ public static class KwajStream {
   /// Thrown when <paramref name="method"/> is not 0, 1, or 4.
   /// </exception>
   public static void Compress(Stream input, Stream output, int method = KwajConstants.MethodMsZip,
-    string? filename = null) {
+    string? filename = null) =>
+    Compress(input, output, method, filename, DeflateCompressionLevel.Default);
+
+  /// <summary>
+  /// Compresses with an explicit Deflate effort for the MSZIP method while keeping
+  /// the public KWAJ stream API's existing signature binary-compatible.
+  /// </summary>
+  internal static void Compress(Stream input, Stream output, int method, string? filename,
+    DeflateCompressionLevel level) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
@@ -87,7 +95,7 @@ public static class KwajStream {
         nameof(method));
 
     var plain = ReadAllBytes(input);
-    var compressed = CompressPayload((ushort)method, plain);
+    var compressed = CompressPayload((ushort)method, plain, level);
 
     WriteHeader(output, (ushort)method, compressed.Length, (uint)plain.Length, filename);
     output.Write(compressed);
@@ -214,11 +222,12 @@ public static class KwajStream {
   // Compression / decompression helpers
   // -------------------------------------------------------------------------
 
-  private static byte[] CompressPayload(ushort method, ReadOnlySpan<byte> plain) =>
+  private static byte[] CompressPayload(ushort method, ReadOnlySpan<byte> plain,
+    DeflateCompressionLevel level) =>
     method switch {
       KwajConstants.MethodStore  => plain.ToArray(),
       KwajConstants.MethodXor    => XorBytes(plain),
-      KwajConstants.MethodMsZip => MsZipCompressor.Compress(plain),
+      KwajConstants.MethodMsZip => MsZipCompressor.Compress(plain, level),
       KwajConstants.MethodLzss or KwajConstants.MethodLzHuffman =>
         throw new NotSupportedException($"KWAJ compression method {method} is not supported."),
       _ => throw new NotSupportedException($"Unknown KWAJ compression method {method}."),
