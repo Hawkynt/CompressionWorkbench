@@ -416,8 +416,10 @@ public sealed class AlacFormatDescriptor :
           break;
       }
 
-      if (description is not { FormatId: "alac" } desc || cookieBytes == null || audioData == null)
+      if (description == null || !description.FormatId.Equals("alac", StringComparison.Ordinal) ||
+          cookieBytes == null || audioData == null)
         return false;
+      var desc = description;
       var cookie = AlacCookie.Parse(cookieBytes);
       if (desc.SampleRate <= 0 || desc.Channels is < 1 or > 8)
         return false;
@@ -614,7 +616,7 @@ public sealed class AlacFormatDescriptor :
     if (sampleEntryOffset + 18 > entryEnd)
       return [];
     var version = BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(sampleEntryOffset + 16, 2));
-    var pos = sampleEntryOffset + version switch { 2 => 72, 1 => 52, _ => 36 };
+    var pos = sampleEntryOffset + (version switch { 2 => 72, 1 => 52, _ => 36 });
     while (pos + 8 <= entryEnd) {
       var size = checked((int)BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(pos)));
       if (size < 8 || pos + (long)size > entryEnd)
