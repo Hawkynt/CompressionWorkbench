@@ -377,7 +377,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [MPEG transport stream](https://en.wikipedia.org/wiki/MPEG_transport_stream) | `MpegTs` | `.ts` `.m2ts` `.mts` | ✅ | — | — | Per-PID elementary streams as raw PES | [ISO](https://www.iso.org/standard/75928.html) |
 | [RealMedia](https://en.wikipedia.org/wiki/RealMedia) | `RealMedia` | `.rm` `.rmvb` `.ra` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/RealMedia) |
 | [Smacker](https://en.wikipedia.org/wiki/Smacker_video) | `Smk` | `.smk` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Smacker) |
-| [Blu-ray PGS (.sup)](https://en.wikipedia.org/wiki/Presentation_Graphic_Stream) | `Sup` | `.sup` | ✅ | — | — | A single subtitle stream, not a multi-track container | [GitHub](https://github.com/mjuhasz/BDSup2Sub) |
+| [Blu-ray PGS (.sup)](https://en.wikipedia.org/wiki/Presentation_Graphic_Stream) | `Sup` | `.sup` | ✅ | ✅ | ✅ | Complete PCS-to-END display sets can be reassembled losslessly; bitmap/timing authoring is outside this pseudo-archive surface | [GitHub](https://github.com/mjuhasz/BDSup2Sub) |
 | [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | — | — | Index plus one sub-picture stream, not a multi-track container | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |
 
 ### 🛡️ Executable packers (descriptors)
