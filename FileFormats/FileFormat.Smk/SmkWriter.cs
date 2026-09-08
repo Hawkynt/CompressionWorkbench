@@ -5,9 +5,9 @@ using Compression.Registry;
 namespace FileFormat.Smk;
 
 /// <summary>
-/// Packet-preserving Smacker container writer. It rebuilds the container around already encoded
-/// Smacker video/Huffman data and can replace per-frame audio packets without decoding or
-/// re-encoding the video stream.
+/// Packet-preserving Smacker container remuxer. It rebuilds an existing container around already
+/// encoded Smacker video/Huffman data and can replace per-frame audio packets without decoding or
+/// re-encoding preserved payloads.
 /// </summary>
 internal static class SmkWriter {
 
@@ -16,41 +16,42 @@ internal static class SmkWriter {
   private const int SmkAudPacked = 0x80;
   private static ReadOnlySpan<byte> PacketBundleMagic => "SMKAPKT1"u8;
 
-  public static void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+  public static void Remux(
+      Stream sourceStream,
+      Stream output,
+      IReadOnlyList<ArchiveInputInfo> replacements,
+      FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(sourceStream);
     ArgumentNullException.ThrowIfNull(output);
-    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(replacements);
     ArgumentNullException.ThrowIfNull(options);
     _ = options;
 
-    var files = inputs.Where(static input => !input.IsDirectory).ToArray();
-    if (files.Length == 0)
-      throw new InvalidDataException("Smacker creation requires an existing SMK container or the extracted structural entries.");
+    using var sourceBuffer = new MemoryStream();
+    sourceStream.CopyTo(sourceBuffer);
+    var original = sourceBuffer.ToArray();
 
     var packetOverrides = new ArchiveInputInfo?[7];
-    for (var track = 0; track < packetOverrides.Length; ++track)
-      packetOverrides[track] = Find(files, $"TRACK{track}.packets");
+    foreach (var input in replacements) {
+      if (input.IsDirectory)
+        continue;
 
-    var full = Find(files, "FULL.smk")
-      ?? files.FirstOrDefault(static input => LeafName(input.ArchiveName).EndsWith(".smk", StringComparison.OrdinalIgnoreCase));
-
-    byte[]? original = null;
-    SmkSource source;
-    if (full is not null) {
-      original = full.ReadContent();
-      if (packetOverrides.All(static input => input is null)) {
-        output.Write(original);
-        return;
-      }
-      source = SmkSource.ParseFull(original);
-    } else {
-      var header = Required(files, "HEADER.bin").ReadContent();
-      var frameSizes = Required(files, "FRAME_SIZES.bin").ReadContent();
-      var frameTypes = Required(files, "FRAME_TYPES.bin").ReadContent();
-      var trees = Required(files, "HUFFMAN.bin").ReadContent();
-      var frameData = Required(files, "VIDEO.bin").ReadContent();
-      source = SmkSource.ParseParts(header, frameSizes, frameTypes, trees, frameData, allowTrailingFrameData: false);
+      var track = PacketTrackIndex(LeafName(input.ArchiveName));
+      if (track < 0)
+        throw new InvalidDataException(
+          $"Smacker remux only accepts TRACK0.packets through TRACK6.packets replacements; got '{input.ArchiveName}'."
+        );
+      if (packetOverrides[track] is not null)
+        throw new InvalidDataException($"Smacker remux received TRACK{track}.packets more than once.");
+      packetOverrides[track] = input;
     }
 
+    if (packetOverrides.All(static input => input is null)) {
+      output.Write(original);
+      return;
+    }
+
+    var source = SmkSource.ParseFull(original);
     var changed = false;
     for (var track = 0; track < packetOverrides.Length; ++track) {
       var input = packetOverrides[track];
@@ -65,7 +66,7 @@ internal static class SmkWriter {
       changed = true;
     }
 
-    if (!changed && original is not null) {
+    if (!changed) {
       output.Write(original);
       return;
     }
@@ -122,11 +123,10 @@ internal static class SmkWriter {
     return result;
   }
 
-  private static ArchiveInputInfo Required(IReadOnlyList<ArchiveInputInfo> files, string name)
-    => Find(files, name) ?? throw new InvalidDataException($"Smacker creation requires '{name}' when FULL.smk is not supplied.");
-
-  private static ArchiveInputInfo? Find(IReadOnlyList<ArchiveInputInfo> files, string name)
-    => files.FirstOrDefault(input => LeafName(input.ArchiveName).Equals(name, StringComparison.OrdinalIgnoreCase));
+  private static int PacketTrackIndex(string name)
+    => name is ['T' or 't', 'R' or 'r', 'A' or 'a', 'C' or 'c', 'K' or 'k', >= '0' and <= '6', '.', 'p' or 'P', 'a' or 'A', 'c' or 'C', 'k' or 'K', 'e' or 'E', 't' or 'T', 's' or 'S']
+      ? name[5] - '0'
+      : -1;
 
   private static string LeafName(string name) {
     var slash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
@@ -172,34 +172,26 @@ internal static class SmkWriter {
         data.AsSpan(HeaderSize, frameSizeBytes).ToArray(),
         data.AsSpan(HeaderSize + frameSizeBytes, frameCount).ToArray(),
         data.AsSpan(tablesEnd, treeSize).ToArray(),
-        data[dataStart..],
-        allowTrailingFrameData: true
+        data[dataStart..]
       );
     }
 
-    public static SmkSource ParseParts(
+    private static SmkSource ParseParts(
         byte[] header,
         byte[] frameSizes,
         byte[] frameTypes,
         byte[] trees,
-        byte[] frameData,
-        bool allowTrailingFrameData) {
-      ArgumentNullException.ThrowIfNull(header);
-      ArgumentNullException.ThrowIfNull(frameSizes);
-      ArgumentNullException.ThrowIfNull(frameTypes);
-      ArgumentNullException.ThrowIfNull(trees);
-      ArgumentNullException.ThrowIfNull(frameData);
-
+        byte[] frameData) {
       if (header.Length != HeaderSize)
-        throw new InvalidDataException($"Smacker HEADER.bin must be exactly {HeaderSize} bytes.");
+        throw new InvalidDataException($"Smacker header must be exactly {HeaderSize} bytes.");
 
       var (frameCount, treeSize) = ReadHeader(header);
       if (frameSizes.Length != checked(frameCount * 4))
-        throw new InvalidDataException("Smacker FRAME_SIZES.bin length does not match the physical frame count.");
+        throw new InvalidDataException("Smacker frame-size table length does not match the physical frame count.");
       if (frameTypes.Length != frameCount)
-        throw new InvalidDataException("Smacker FRAME_TYPES.bin length does not match the physical frame count.");
+        throw new InvalidDataException("Smacker frame-type table length does not match the physical frame count.");
       if (trees.Length != treeSize)
-        throw new InvalidDataException("Smacker HUFFMAN.bin length does not match TreesSize in HEADER.bin.");
+        throw new InvalidDataException("Smacker Huffman block length does not match TreesSize in the header.");
 
       var frames = new List<Frame>(frameCount);
       var offset = 0;
@@ -216,9 +208,6 @@ internal static class SmkWriter {
         ));
         offset += checked((int)frameLength);
       }
-
-      if (!allowTrailingFrameData && offset != frameData.Length)
-        throw new InvalidDataException("Smacker VIDEO.bin has bytes after the frame-size table's declared frame data.");
 
       return new SmkSource(header.ToArray(), trees.ToArray(), frames, frameData[offset..]);
     }
