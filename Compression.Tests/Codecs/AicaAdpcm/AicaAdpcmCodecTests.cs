@@ -17,7 +17,6 @@ public class AicaAdpcmCodecTests {
   /// </summary>
   [Test]
   public void Decode_KnownNibbleSequence_ProducesExpectedSamples() {
-    // 0x44 → low 0x4, high 0x4 ; 0x08 → low 0x8, high 0x0
     var data = new byte[] { 0x44, 0x08 };
     var pcm = AicaAdpcmCodec.Decode(data);
 
@@ -39,29 +38,24 @@ public class AicaAdpcmCodecTests {
 
   // ──────────── 2. Predictor + step clamping ────────────
 
-  /// <summary>A long run of maximum positive magnitudes (0x7) clamps the predictor at +32767.</summary>
   [Test]
   public void Decode_RunOfMaxPositiveNibbles_ClampsPredictor() {
     var data = new byte[256];
-    for (var i = 0; i < data.Length; ++i) data[i] = 0x77; // both nibbles 0x7 (max positive magnitude)
+    Array.Fill(data, (byte)0x77);
     var pcm = AicaAdpcmCodec.Decode(data);
     Assert.That(pcm[^1], Is.EqualTo(short.MaxValue));
   }
 
-  /// <summary>A long run of maximum negative magnitudes (0xF) clamps the predictor at -32768.</summary>
   [Test]
   public void Decode_RunOfMaxNegativeNibbles_ClampsPredictor() {
     var data = new byte[256];
-    for (var i = 0; i < data.Length; ++i) data[i] = 0xFF; // both nibbles 0xF (sign + max magnitude)
+    Array.Fill(data, (byte)0xFF);
     var pcm = AicaAdpcmCodec.Decode(data);
     Assert.That(pcm[^1], Is.EqualTo(short.MinValue));
   }
 
-  /// <summary>The step never decays below its floor: a run of zero-magnitude codes holds it at 127.</summary>
   [Test]
   public void Decode_ZeroMagnitudeRun_KeepsStepAtFloor() {
-    // nibble 0 keeps the predictor flat (diff = step>>3 each step) but the step adapts by 230/256<1,
-    // flooring at 127 — so each step adds the same minimum increment of 127>>3 = 15.
     var data = new byte[8];
     var pcm = AicaAdpcmCodec.Decode(data);
     Assert.That(pcm[0], Is.EqualTo(15));
@@ -69,7 +63,36 @@ public class AicaAdpcmCodecTests {
       Assert.That(pcm[i] - pcm[i - 1], Is.EqualTo(15), $"flat-step increment at {i}");
   }
 
-  // ──────────── 3. Encode → Decode round-trip (lossy) ────────────
+  // ──────────── 3. Encoder decisions from the AICA manual ────────────
+
+  /// <summary>
+  /// FQ8005 table 1 chooses the three magnitude bits at exact quarters of the
+  /// current quantizer width. The initial width is 127, so the first positive
+  /// code changes at ceil(127*n/4). This catches the old midpoint-style encoder,
+  /// which chose a self-consistent but non-AICA code at these boundaries.
+  /// </summary>
+  [TestCase(31, 0x0)]
+  [TestCase(32, 0x1)]
+  [TestCase(63, 0x1)]
+  [TestCase(64, 0x2)]
+  [TestCase(95, 0x2)]
+  [TestCase(96, 0x3)]
+  [TestCase(126, 0x3)]
+  [TestCase(127, 0x4)]
+  [TestCase(158, 0x4)]
+  [TestCase(159, 0x5)]
+  [TestCase(190, 0x5)]
+  [TestCase(191, 0x6)]
+  [TestCase(222, 0x6)]
+  [TestCase(223, 0x7)]
+  [TestCase(-31, 0x8)]
+  [TestCase(-32, 0x9)]
+  public void Encode_FirstSample_UsesOfficialQuarterStepThresholds(int sample, int expectedNibble) {
+    var encoded = AicaAdpcmCodec.Encode([(short)sample]);
+    Assert.That(encoded[0] & 0x0F, Is.EqualTo(expectedNibble));
+  }
+
+  // ──────────── 4. Encode → Decode round-trip (lossy) ────────────
 
   [Test]
   public void EncodeDecode_SineRamp_RoundTripsWithinTolerance() {
