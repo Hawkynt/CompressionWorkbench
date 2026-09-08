@@ -10,11 +10,11 @@ namespace FileFormat.Smk;
 /// <c>HUFFMAN.bin</c> and the physical frame-data region <c>VIDEO.bin</c>. Each audio track
 /// is additionally surfaced as a frame-addressed <c>TRACKn.packets</c> bundle and as the
 /// legacy concatenated <c>TRACKn.bin</c> stream, with SMKA/PCM tracks decoded to WAV channels
-/// when possible. Creation rebuilds the container around already encoded video/Huffman data
-/// and permits packet-preserving audio replacement; it deliberately does not claim to encode
-/// Smacker video.
+/// when possible. Remuxing requires an existing source container and can replace/remove
+/// frame-addressed audio packets while preserving encoded video/Huffman data. Fresh Smacker
+/// creation or Smacker video encoding is deliberately not claimed.
 /// </summary>
-public sealed class SmkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable {
+public sealed class SmkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IContainerRemuxable {
 
   /// <summary>
   /// Gets the id.
@@ -32,8 +32,8 @@ public sealed class SmkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanRemux | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -68,7 +68,7 @@ public sealed class SmkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Smacker video container (.smk); demux plus packet-preserving mux/remux over already encoded video and audio data.";
+  public string Description => "Smacker video container (.smk); demux plus packet-preserving remux of an existing SMK2/SMK4 container.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -89,11 +89,16 @@ public sealed class SmkFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
 
   /// <summary>
-  /// Creates or remuxes a Smacker container from FULL.smk plus optional TRACKn.packets
-  /// replacements, or from the lossless structural entries exposed by this descriptor.
+  /// Remuxes an existing Smacker container while preserving encoded video/Huffman data and all
+  /// non-replaced packet streams. <c>TRACKn.packets</c> entries replace that track's frame-addressed
+  /// audio packets; an empty packet bundle removes the track packets from all frames.
   /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
-    => SmkWriter.Create(output, inputs, options);
+  public void Remux(
+      Stream source,
+      Stream output,
+      IReadOnlyList<ArchiveInputInfo> replacements,
+      FormatCreateOptions options)
+    => SmkWriter.Remux(source, output, replacements, options);
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
