@@ -20,12 +20,11 @@ public sealed class AlacConversionTests {
   }
 
   private static IEnumerable<TestCaseData> ContainerProfileMatrix() {
-    foreach (var profile in ProfileMatrix()) {
-      var arguments = profile.Arguments;
-      foreach (var container in new[] { "M4A", "CAF" })
-        yield return new TestCaseData(arguments[0], arguments[1], container)
-          .SetName($"ALAC_{arguments[0]}bit_{arguments[1]}ch_{container}_RoundTrip");
-    }
+    foreach (var bits in new[] { 16, 20, 24, 32 })
+      for (var channels = 1; channels <= 8; ++channels)
+        foreach (var container in new[] { "M4A", "CAF" })
+          yield return new TestCaseData(bits, channels, container)
+            .SetName($"ALAC_{bits}bit_{channels}ch_{container}_RoundTrip");
   }
 
   [TestCaseSource(nameof(ContainerProfileMatrix))]
