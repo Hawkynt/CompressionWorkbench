@@ -51,7 +51,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | — |  | [sourceforge.net](https://sourceforge.net/projects/balz/) |
 | BCM | `Bcm` | `.bcm` | ✅ | ✅ | — |  | [GitHub](https://github.com/encode84/bcm) |
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
-| BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | — |  | [GitHub](https://github.com/jibsen/brieflz) |
+| BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | ✅ | Reference-compatible blzpack stream; optimizer compares managed effort levels 1–10 | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
 | BSC | `Bsc` | `.bsc` | ✅ | ✅ | — |  | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
 | [bzip2](https://en.wikipedia.org/wiki/Bzip2) | `Bzip2` | `.bz2` `.bzip2` | ✅ | ✅ | ✅ |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |

@@ -1,349 +1,477 @@
+/*
+ * Managed BriefLZ compatibility implementation for CompressionWorkbench.
+ *
+ * The on-disk payload syntax is based on Jørgen Ibsen's BriefLZ reference
+ * implementation (https://github.com/jibsen/brieflz), copyright (c) 2002-2020
+ * Joergen Ibsen, distributed under the zlib License:
+ *
+ * This software is provided 'as-is', without any express or implied warranty.
+ * In no event will the authors be held liable for any damages arising from the
+ * use of this software.
+ *
+ * Permission is granted to anyone to use this software for any purpose,
+ * including commercial applications, and to alter it and redistribute it
+ * freely, subject to the following restrictions:
+ *
+ * 1. The origin of this software must not be misrepresented; you must not claim
+ *    that you wrote the original software.
+ * 2. Altered source versions must be plainly marked as such, and must not be
+ *    misrepresented as being the original software.
+ * 3. This notice may not be removed or altered from any source distribution.
+ *
+ * This file is an altered, independently structured managed implementation; it
+ * is not the original BriefLZ source.
+ */
+
 using System.Buffers.Binary;
 using Compression.Core.Checksums;
 
 namespace FileFormat.BriefLz;
 
 /// <summary>
-/// Provides static methods for compressing and decompressing data using the BriefLZ algorithm
-/// with a blzpack container format.
+/// Reads and writes the <c>blzpack</c> container used by the BriefLZ reference
+/// distribution.
 /// </summary>
 /// <remarks>
-/// BriefLZ is an LZ77 variant that encodes match lengths and offsets using Elias gamma codes.
-/// The bitstream is written MSB-first. The blzpack container adds a 24-byte big-endian header
-/// with magic, version, sizes, and CRC-32 checksums.
+/// <para>
+/// A file is a sequence of independently compressed blocks. Each block has a
+/// 24-byte big-endian header containing magic, version, compressed/original
+/// sizes and optional CRC-32 values. The reference tool defaults to 1 MiB
+/// blocks, which this writer follows.
+/// </para>
+/// <para>
+/// The BriefLZ payload itself stores the first literal verbatim, then interleaves
+/// little-endian 16-bit tag words with literal/offset bytes. Matches use the
+/// reference gamma2 code for <c>length - 2</c> and the high offset bits.
+/// </para>
 /// </remarks>
 public static class BriefLzStream {
 
-  private const uint Magic = 0x626C7A1Au; // 'blz\x1A'
+  private const uint Magic = 0x626C7A1Au; // "blz\x1A"
+  private const uint Version = 1;
   private const int HeaderSize = 24;
-  private const int MaxWindowSize = 65536;
-  private const int MinMatchLength = 2;
-  private const int HashBits = 16;
+  private const int HashBits = 17;
   private const int HashSize = 1 << HashBits;
+  private const int MinimumMatchLength = 4;
+
+  /// <summary>The reference <c>blzpack</c> default block size.</summary>
+  public const int DefaultBlockSize = 1024 * 1024;
+
+  /// <summary>Fastest managed encoder effort.</summary>
+  public const int MinimumCompressionLevel = 1;
+
+  /// <summary>Highest managed encoder effort.</summary>
+  public const int MaximumCompressionLevel = 10;
+
+  // Level 1 deliberately examines only the latest hash hit, matching the
+  // reference packer's fast parser. Higher levels preserve the same decoder
+  // syntax while searching more same-hash candidates for a smaller stream.
+  private static readonly int[] SearchDepthByLevel = [1, 2, 4, 8, 16, 32, 64, 96, 224, 1024];
 
   /// <summary>
-  /// Compresses data from <paramref name="input"/> and writes a blzpack-format stream to <paramref name="output"/>.
+  /// Compresses with the reference-compatible fast parser (level 1).
   /// </summary>
-  /// <param name="input">The stream containing uncompressed data.</param>
-  /// <param name="output">The stream to which the compressed blzpack data is written.</param>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) =>
+    Compress(input, output, MinimumCompressionLevel);
+
+  /// <summary>
+  /// Compresses using a managed BriefLZ effort level from 1 (fastest) through
+  /// 10 (deepest candidate search).
+  /// </summary>
+  public static void Compress(Stream input, Stream output, int level) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    ValidateLevel(level);
 
-    // Read all input into a buffer.
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var src = ms.ToArray();
+    var blockBuffer = new byte[DefaultBlockSize];
+    while (true) {
+      var count = ReadBlock(input, blockBuffer);
+      if (count == 0)
+        break;
 
-    // Compute CRC of original data.
-    var originalCrc = Crc32.Compute(src);
-
-    // Compress the data.
-    var compressed = CompressBlock(src);
-
-    // Compute CRC of compressed payload.
-    var compressedCrc = Crc32.Compute(compressed);
-
-    // Write the 24-byte header (all big-endian).
-    Span<byte> header = stackalloc byte[HeaderSize];
-    BinaryPrimitives.WriteUInt32BigEndian(header, Magic);
-    BinaryPrimitives.WriteUInt32BigEndian(header[4..], 1); // version
-    BinaryPrimitives.WriteUInt32BigEndian(header[8..], (uint)compressed.Length);
-    BinaryPrimitives.WriteUInt32BigEndian(header[12..], compressedCrc);
-    BinaryPrimitives.WriteUInt32BigEndian(header[16..], (uint)src.Length);
-    BinaryPrimitives.WriteUInt32BigEndian(header[20..], originalCrc);
-    output.Write(header);
-
-    // Write compressed payload.
-    output.Write(compressed);
+      var source = blockBuffer.AsSpan(0, count).ToArray();
+      WriteBlock(output, source, level);
+    }
   }
 
   /// <summary>
-  /// Decompresses a blzpack-format stream from <paramref name="input"/> and writes the result to <paramref name="output"/>.
+  /// Tries every managed effort level and writes the smallest complete
+  /// <c>blzpack</c> stream.
   /// </summary>
-  /// <param name="input">The stream containing blzpack-compressed data.</param>
-  /// <param name="output">The stream to which the decompressed data is written.</param>
-  /// <exception cref="InvalidDataException">
-  /// Thrown when the magic bytes are invalid, the version is unsupported, or a CRC check fails.
-  /// </exception>
+  public static void CompressOptimal(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    using var raw = new MemoryStream();
+    input.CopyTo(raw);
+    var source = raw.ToArray();
+
+    byte[]? best = null;
+    for (var level = MinimumCompressionLevel; level <= MaximumCompressionLevel; ++level) {
+      using var candidateInput = new MemoryStream(source, writable: false);
+      using var candidateOutput = new MemoryStream();
+      Compress(candidateInput, candidateOutput, level);
+      var bytes = candidateOutput.ToArray();
+      if (best is null || bytes.Length < best.Length)
+        best = bytes;
+    }
+
+    output.Write(best ?? []);
+  }
+
+  /// <summary>
+  /// Decompresses all concatenated <c>blzpack</c> blocks from
+  /// <paramref name="input"/> into <paramref name="output"/>.
+  /// </summary>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    // Read header.
     Span<byte> header = stackalloc byte[HeaderSize];
-    input.ReadExactly(header);
+    while (TryReadHeader(input, header)) {
+      var magic = BinaryPrimitives.ReadUInt32BigEndian(header);
+      if (magic != Magic)
+        throw new InvalidDataException($"Invalid BriefLZ magic: 0x{magic:X8}, expected 0x{Magic:X8}.");
 
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(header);
-    if (magic != Magic)
-      throw new InvalidDataException($"Invalid BriefLZ magic: 0x{magic:X8}, expected 0x{Magic:X8}.");
+      var version = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
+      if (version != Version)
+        throw new InvalidDataException($"Unsupported BriefLZ version: {version}.");
 
-    var version = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
-    if (version != 1)
-      throw new InvalidDataException($"Unsupported BriefLZ version: {version}.");
+      var compressedSize = BinaryPrimitives.ReadUInt32BigEndian(header[8..]);
+      var expectedCompressedCrc = BinaryPrimitives.ReadUInt32BigEndian(header[12..]);
+      var uncompressedSize = BinaryPrimitives.ReadUInt32BigEndian(header[16..]);
+      var expectedOriginalCrc = BinaryPrimitives.ReadUInt32BigEndian(header[20..]);
 
-    var compressedSize = BinaryPrimitives.ReadUInt32BigEndian(header[8..]);
-    var expectedCompressedCrc = BinaryPrimitives.ReadUInt32BigEndian(header[12..]);
-    var uncompressedSize = BinaryPrimitives.ReadUInt32BigEndian(header[16..]);
-    var expectedOriginalCrc = BinaryPrimitives.ReadUInt32BigEndian(header[20..]);
+      if (compressedSize > int.MaxValue || uncompressedSize > int.MaxValue)
+        throw new InvalidDataException("BriefLZ block exceeds the managed implementation's 2 GiB block limit.");
 
-    // Read compressed payload.
-    var compressed = new byte[compressedSize];
-    input.ReadExactly(compressed);
+      var compressed = new byte[(int)compressedSize];
+      try {
+        input.ReadExactly(compressed);
+      } catch (EndOfStreamException ex) {
+        throw new InvalidDataException("Truncated BriefLZ compressed block.", ex);
+      }
 
-    // Verify compressed CRC.
-    var actualCompressedCrc = Crc32.Compute(compressed);
-    if (actualCompressedCrc != expectedCompressedCrc)
-      throw new InvalidDataException($"Compressed data CRC mismatch: 0x{actualCompressedCrc:X8} != 0x{expectedCompressedCrc:X8}.");
+      if (expectedCompressedCrc != 0) {
+        var actualCompressedCrc = Crc32.Compute(compressed);
+        if (actualCompressedCrc != expectedCompressedCrc)
+          throw new InvalidDataException(
+            $"Compressed data CRC mismatch: 0x{actualCompressedCrc:X8} != 0x{expectedCompressedCrc:X8}.");
+      }
 
-    // Decompress.
-    var decompressed = DecompressBlock(compressed, (int)uncompressedSize);
+      var decompressed = DecompressBlock(compressed, (int)uncompressedSize);
 
-    // Verify original CRC.
-    var actualOriginalCrc = Crc32.Compute(decompressed);
-    if (actualOriginalCrc != expectedOriginalCrc)
-      throw new InvalidDataException($"Decompressed data CRC mismatch: 0x{actualOriginalCrc:X8} != 0x{expectedOriginalCrc:X8}.");
+      if (expectedOriginalCrc != 0) {
+        var actualOriginalCrc = Crc32.Compute(decompressed);
+        if (actualOriginalCrc != expectedOriginalCrc)
+          throw new InvalidDataException(
+            $"Decompressed data CRC mismatch: 0x{actualOriginalCrc:X8} != 0x{expectedOriginalCrc:X8}.");
+      }
 
-    output.Write(decompressed);
+      output.Write(decompressed);
+    }
   }
 
-  private static byte[] CompressBlock(byte[] src) {
-    if (src.Length == 0)
+  private static int ReadBlock(Stream input, byte[] buffer) {
+    var count = 0;
+    while (count < buffer.Length) {
+      var read = input.Read(buffer, count, buffer.Length - count);
+      if (read == 0)
+        break;
+      count += read;
+    }
+
+    return count;
+  }
+
+  private static bool TryReadHeader(Stream input, Span<byte> header) {
+    var first = input.ReadByte();
+    if (first < 0)
+      return false;
+
+    header[0] = (byte)first;
+    try {
+      input.ReadExactly(header[1..]);
+    } catch (EndOfStreamException ex) {
+      throw new InvalidDataException("Truncated BriefLZ block header.", ex);
+    }
+
+    return true;
+  }
+
+  private static void WriteBlock(Stream output, byte[] source, int level) {
+    var payload = CompressBlock(source, level);
+    Span<byte> header = stackalloc byte[HeaderSize];
+
+    BinaryPrimitives.WriteUInt32BigEndian(header, Magic);
+    BinaryPrimitives.WriteUInt32BigEndian(header[4..], Version);
+    BinaryPrimitives.WriteUInt32BigEndian(header[8..], (uint)payload.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(header[12..], Crc32.Compute(payload));
+    BinaryPrimitives.WriteUInt32BigEndian(header[16..], (uint)source.Length);
+    BinaryPrimitives.WriteUInt32BigEndian(header[20..], Crc32.Compute(source));
+
+    output.Write(header);
+    output.Write(payload);
+  }
+
+  private static byte[] CompressBlock(byte[] source, int level) {
+    if (source.Length == 0)
       return [];
 
-    var writer = new BitWriter();
+    var writer = new PayloadWriter(source.Length + source.Length / 8 + 64);
+    writer.WriteRawByte(source[0]);
+    if (source.Length == 1)
+      return writer.FinishWithoutTag();
 
-    // Hash table: maps 3-byte hash to most recent position.
-    var hashTable = new int[HashSize];
-    Array.Fill(hashTable, -1);
+    writer.StartTags();
 
-    // Chain table for finding longer matches.
-    var chain = new int[src.Length];
+    var hashHead = new int[HashSize];
+    Array.Fill(hashHead, -1);
+    var chain = new int[source.Length];
     Array.Fill(chain, -1);
 
-    // First literal is always emitted directly (no bit prefix).
-    writer.WriteByte(src[0]);
+    if (source.Length >= MinimumMatchLength)
+      InsertHash(source, 0, hashHead, chain);
 
-    if (src.Length >= 3)
-      InsertHash(hashTable, chain, src, 0);
+    var searchDepth = SearchDepthByLevel[level - 1];
+    var position = 1;
+    while (position < source.Length) {
+      var (matchLength, matchDistance) =
+        FindMatch(source, position, hashHead, chain, searchDepth);
 
-    var pos = 1;
-    while (pos < src.Length) {
-      var bestLen = 0;
-      var bestOff = 0;
-
-      if (pos + MinMatchLength <= src.Length) {
-        // Find match.
-        FindMatch(src, pos, hashTable, chain, out bestLen, out bestOff);
-      }
-
-      if (bestLen >= MinMatchLength) {
-        // Emit match: bit 1, then gamma(length - 2 + 1) = gamma(length - 1), then gamma(offset).
+      if (ShouldEmitMatch(matchLength, matchDistance)) {
         writer.WriteBit(1);
-        WriteGamma(writer, bestLen - 2 + 1); // length - 2, stored as value >= 1
-        WriteGamma(writer, bestOff); // offset, already >= 1
+        writer.WriteGamma2((uint)(matchLength - 2));
 
-        // Insert all positions covered by the match into the hash table.
-        for (var i = 0; i < bestLen && pos + i + 2 < src.Length; i++)
-          InsertHash(hashTable, chain, src, pos + i);
+        var offsetMinusOne = (uint)(matchDistance - 1);
+        writer.WriteGamma2((offsetMinusOne >> 8) + 2);
+        writer.WriteRawByte((byte)offsetMinusOne);
 
-        pos += bestLen;
-      } else {
-        // Emit literal: bit 0, then 8 bits of the byte.
-        writer.WriteBit(0);
-        writer.WriteByte(src[pos]);
-
-        if (pos + 2 < src.Length)
-          InsertHash(hashTable, chain, src, pos);
-
-        pos++;
-      }
-    }
-
-    return writer.ToArray();
-  }
-
-  private static void FindMatch(byte[] src, int pos, int[] hashTable, int[] chain, out int bestLen, out int bestOff) {
-    bestLen = 0;
-    bestOff = 0;
-
-    if (pos + 2 >= src.Length)
-      return;
-
-    var h = Hash3(src, pos);
-    var candidate = hashTable[h];
-    var maxLen = Math.Min(src.Length - pos, 256); // cap match length
-    var minPos = Math.Max(0, pos - MaxWindowSize);
-    var attempts = 64; // limit chain traversal
-
-    while (candidate >= minPos && attempts-- > 0) {
-      if (src[candidate + bestLen] == src[pos + bestLen]) {
-        var len = 0;
-        var limit = Math.Min(maxLen, pos - candidate > MaxWindowSize ? 0 : maxLen);
-        while (len < limit && src[candidate + len] == src[pos + len])
-          len++;
-
-        if (len >= MinMatchLength && len > bestLen) {
-          bestLen = len;
-          bestOff = pos - candidate;
-          if (len == maxLen)
-            break;
-        }
+        InsertCoveredPositions(source, position, matchLength, hashHead, chain);
+        position += matchLength;
+        continue;
       }
 
-      var prev = chain[candidate];
-      if (prev >= candidate) // prevent infinite loops
-        break;
-      candidate = prev;
-    }
-  }
-
-  private static int Hash3(byte[] data, int pos) =>
-    ((data[pos] << 8 | data[pos + 1]) * 0x9E37 + data[pos + 2]) & (HashSize - 1);
-
-  private static void InsertHash(int[] hashTable, int[] chain, byte[] data, int pos) {
-    var h = Hash3(data, pos);
-    chain[pos] = hashTable[h];
-    hashTable[h] = pos;
-  }
-
-  /// <summary>
-  /// Writes an Elias gamma code for value v (v >= 1) MSB-first.
-  /// Encoding: floor(log2(v)) zero bits, then v in binary (floor(log2(v))+1 bits).
-  /// </summary>
-  private static void WriteGamma(BitWriter writer, int v) {
-    // Determine number of bits needed (floor(log2(v)) + 1).
-    var bits = 0;
-    var tmp = v;
-    while (tmp > 1) {
-      bits++;
-      tmp >>= 1;
-    }
-
-    // Write 'bits' zero bits.
-    for (var i = 0; i < bits; i++)
       writer.WriteBit(0);
+      writer.WriteRawByte(source[position]);
+      if (position + MinimumMatchLength <= source.Length)
+        InsertHash(source, position, hashHead, chain);
+      ++position;
+    }
 
-    // Write v in binary, MSB-first, using bits+1 bits.
-    for (var i = bits; i >= 0; i--)
-      writer.WriteBit((v >> i) & 1);
+    return writer.Finish();
+  }
+
+  private static (int Length, int Distance) FindMatch(
+      byte[] source,
+      int position,
+      int[] hashHead,
+      int[] chain,
+      int searchDepth) {
+    if (position + MinimumMatchLength > source.Length)
+      return (0, 0);
+
+    var candidate = hashHead[Hash4(source, position)];
+    var maximumLength = source.Length - position;
+    var bestLength = 0;
+    var bestDistance = 0;
+
+    while (candidate >= 0 && searchDepth-- > 0) {
+      var length = 0;
+      while (length < maximumLength && source[candidate + length] == source[position + length])
+        ++length;
+
+      var distance = position - candidate;
+      if (length > bestLength || length == bestLength && length >= MinimumMatchLength && distance < bestDistance) {
+        bestLength = length;
+        bestDistance = distance;
+        if (bestLength == maximumLength)
+          break;
+      }
+
+      var previous = chain[candidate];
+      if (previous >= candidate)
+        break;
+      candidate = previous;
+    }
+
+    return bestLength >= MinimumMatchLength ? (bestLength, bestDistance) : (0, 0);
+  }
+
+  private static bool ShouldEmitMatch(int length, int distance) {
+    if (length > MinimumMatchLength)
+      return true;
+    if (length != MinimumMatchLength || distance <= 0)
+      return false;
+
+    // Same level-1 heuristic as the reference implementation: a far four-byte
+    // match can cost more than literals and may obscure a better next match.
+    return distance - 1 < 0x7E00;
+  }
+
+  private static void InsertCoveredPositions(
+      byte[] source,
+      int position,
+      int length,
+      int[] hashHead,
+      int[] chain) {
+    var endExclusive = Math.Min(position + length, source.Length - MinimumMatchLength + 1);
+    for (var i = position; i < endExclusive; ++i)
+      InsertHash(source, i, hashHead, chain);
+  }
+
+  private static void InsertHash(byte[] source, int position, int[] hashHead, int[] chain) {
+    var hash = Hash4(source, position);
+    chain[position] = hashHead[hash];
+    hashHead[hash] = position;
+  }
+
+  private static int Hash4(byte[] source, int position) {
+    var value = (uint)(
+      source[position]
+      | source[position + 1] << 8
+      | source[position + 2] << 16
+      | source[position + 3] << 24);
+    return (int)(value * 2654435761u >> (32 - HashBits));
   }
 
   private static byte[] DecompressBlock(byte[] compressed, int uncompressedSize) {
     if (uncompressedSize == 0)
       return [];
+    if (compressed.Length == 0)
+      throw new InvalidDataException("BriefLZ block has output bytes but no compressed payload.");
 
-    var reader = new BitReader(compressed);
-    var dst = new byte[uncompressedSize];
-    var pos = 0;
+    var reader = new PayloadReader(compressed);
+    var destination = new byte[uncompressedSize];
+    var position = 0;
 
-    // First byte is always a literal (no bit prefix).
-    dst[pos++] = reader.ReadByte();
-
-    while (pos < uncompressedSize) {
-      var bit = reader.ReadBit();
-      if (bit == 0) {
-        // Literal.
-        dst[pos++] = reader.ReadByte();
-      } else {
-        // Match.
-        var lengthCode = ReadGamma(reader); // >= 1, represents length - 2
-        var length = lengthCode + 2 - 1;    // actual length = code + 1 (min 2)
-        var offset = ReadGamma(reader);      // >= 1
-
-        if (offset > pos)
-          throw new InvalidDataException($"BriefLZ match offset {offset} exceeds current position {pos}.");
-
-        // Copy match bytes, handling overlapping copies.
-        for (var i = 0; i < length; i++) {
-          if (pos >= uncompressedSize)
-            throw new InvalidDataException("BriefLZ decompressed data exceeds expected size.");
-          dst[pos] = dst[pos - offset];
-          pos++;
-        }
+    while (position < destination.Length) {
+      if (reader.ReadBit() == 0) {
+        destination[position++] = reader.ReadRawByte();
+        continue;
       }
+
+      var lengthCode = reader.ReadGamma2();
+      var offsetCode = reader.ReadGamma2();
+      if (lengthCode > int.MaxValue - 2u)
+        throw new InvalidDataException("BriefLZ match length exceeds the supported range.");
+
+      var length = (int)lengthCode + 2;
+      var offsetHigh = offsetCode - 2u;
+      var offsetLow = reader.ReadRawByte();
+      var distance = ((ulong)offsetHigh << 8) + offsetLow + 1u;
+
+      if (distance == 0 || distance > (ulong)position)
+        throw new InvalidDataException($"BriefLZ match offset {distance} exceeds current position {position}.");
+      if (length > destination.Length - position)
+        throw new InvalidDataException("BriefLZ match exceeds the declared decompressed block size.");
+
+      var sourcePosition = position - (int)distance;
+      for (var i = 0; i < length; ++i)
+        destination[position++] = destination[sourcePosition + i];
     }
 
-    return dst;
+    return destination;
   }
 
-  /// <summary>
-  /// Reads an Elias gamma coded value from the bitstream.
-  /// Decoding: count leading zero bits (n), then read n+1 bits as the value.
-  /// </summary>
-  private static int ReadGamma(BitReader reader) {
-    var zeros = 0;
-    while (reader.ReadBit() == 0)
-      zeros++;
-
-    // The leading 1 bit is already consumed. Read the remaining 'zeros' bits.
-    var value = 1;
-    for (var i = 0; i < zeros; i++)
-      value = (value << 1) | reader.ReadBit();
-
-    return value;
+  private static void ValidateLevel(int level) {
+    if (level is < MinimumCompressionLevel or > MaximumCompressionLevel)
+      throw new ArgumentOutOfRangeException(
+        nameof(level), level, $"BriefLZ level must be between {MinimumCompressionLevel} and {MaximumCompressionLevel}.");
   }
 
-  /// <summary>
-  /// MSB-first bit writer that accumulates bits into a byte buffer.
-  /// </summary>
-  private sealed class BitWriter {
-    private readonly MemoryStream _buffer = new();
-    private int _currentByte;
-    private int _bitsUsed; // number of bits written into _currentByte (0..8)
+  private sealed class PayloadWriter(int capacity) {
+    private readonly List<byte> _buffer = new(capacity);
+    private int _tagPosition = -1;
+    private uint _tag;
+    private int _bitsLeft;
+
+    public void WriteRawByte(byte value) => this._buffer.Add(value);
+
+    public void StartTags() => this.ReserveTag();
 
     public void WriteBit(int bit) {
-      _currentByte = (_currentByte << 1) | (bit & 1);
-      _bitsUsed++;
-      if (_bitsUsed == 8) {
-        _buffer.WriteByte((byte)_currentByte);
-        _currentByte = 0;
-        _bitsUsed = 0;
+      if (this._bitsLeft == 0) {
+        this.FlushTag();
+        this.ReserveTag();
+      }
+
+      this._tag = (this._tag << 1) | (uint)(bit & 1);
+      --this._bitsLeft;
+    }
+
+    public void WriteGamma2(uint value) {
+      if (value < 2)
+        throw new ArgumentOutOfRangeException(nameof(value), value, "BriefLZ gamma2 values start at 2.");
+
+      var highestBit = 31 - System.Numerics.BitOperations.LeadingZeroCount(value);
+      for (var bit = highestBit - 1; bit >= 0; --bit) {
+        this.WriteBit((int)(value >> bit) & 1);
+        this.WriteBit(bit == 0 ? 0 : 1);
       }
     }
 
-    public void WriteByte(byte b) {
-      for (var i = 7; i >= 0; i--)
-        WriteBit((b >> i) & 1);
+    public byte[] Finish() {
+      this.WriteBit(1); // delimiter for any remaining literal tags
+      this._tag <<= this._bitsLeft;
+      this.FlushTag();
+      return [.. this._buffer];
     }
 
-    public byte[] ToArray() {
-      // Flush any remaining bits, padding with zeros on the right.
-      if (_bitsUsed > 0) {
-        _currentByte <<= (8 - _bitsUsed);
-        _buffer.WriteByte((byte)_currentByte);
-      }
+    public byte[] FinishWithoutTag() => [.. this._buffer];
 
-      return _buffer.ToArray();
+    private void ReserveTag() {
+      this._tagPosition = this._buffer.Count;
+      this._buffer.Add(0);
+      this._buffer.Add(0);
+      this._tag = 0;
+      this._bitsLeft = 16;
+    }
+
+    private void FlushTag() {
+      if (this._tagPosition < 0)
+        return;
+      this._buffer[this._tagPosition] = (byte)this._tag;
+      this._buffer[this._tagPosition + 1] = (byte)(this._tag >> 8);
     }
   }
 
-  /// <summary>
-  /// MSB-first bit reader that reads bits from a byte array.
-  /// </summary>
-  private sealed class BitReader(byte[] data) {
-    private int _bytePos;
-    private int _bitPos = 8; // force load on first read
+  private sealed class PayloadReader(byte[] source) {
+    private int _position;
+    private uint _tag = 0x4000;
+    private int _bitsLeft = 1;
 
     public int ReadBit() {
-      if (_bitPos >= 8) {
-        if (_bytePos >= data.Length)
-          throw new InvalidDataException("Unexpected end of BriefLZ compressed data.");
-        _bitPos = 0;
-        _bytePos++;
+      if (this._bitsLeft == 0) {
+        if (this._position + 2 > source.Length)
+          throw new InvalidDataException("Unexpected end of BriefLZ tag stream.");
+
+        this._tag = (uint)(source[this._position] | source[this._position + 1] << 8);
+        this._position += 2;
+        this._bitsLeft = 16;
       }
 
-      // Read MSB-first from current byte.
-      var bit = (data[_bytePos - 1] >> (7 - _bitPos)) & 1;
-      _bitPos++;
+      var bit = (this._tag & 0x8000) != 0 ? 1 : 0;
+      this._tag = this._tag << 1 & 0xFFFF;
+      --this._bitsLeft;
       return bit;
     }
 
-    public byte ReadByte() {
-      var value = 0;
-      for (var i = 0; i < 8; i++)
-        value = (value << 1) | ReadBit();
-      return (byte)value;
+    public byte ReadRawByte() {
+      if (this._position >= source.Length)
+        throw new InvalidDataException("Unexpected end of BriefLZ payload.");
+      return source[this._position++];
+    }
+
+    public uint ReadGamma2() {
+      uint result = 1;
+      do {
+        if (result > uint.MaxValue >> 1)
+          throw new InvalidDataException("BriefLZ gamma2 value overflows UInt32.");
+        result = result << 1 | (uint)this.ReadBit();
+      } while (this.ReadBit() != 0);
+
+      return result;
     }
   }
 }

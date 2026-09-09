@@ -3731,9 +3731,9 @@ Implements `IEquatable<Item>`.
 
 #### `BriefLzFormatDescriptor`
 
-Describes brief lz format.
+Describes the BriefLZ `blzpack` stream format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3749,18 +3749,26 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder effort is not serialized: all ten choices produce the same decoder-compatible BriefLZ syntax, so the generic compression optimizer can exhaustively compare them on the caller's actual bytes. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest result. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes using the reference-compatible fast parser. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes using the requested managed effort level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `BriefLzStream`
 
-Provides static methods for compressing and decompressing data using the BriefLZ algorithm with a blzpack container format.
+Reads and writes the `blzpack` container used by the BriefLZ reference distribution.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes a blzpack-format stream to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a blzpack-format stream from `input` and writes the result to `output`. |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The reference `blzpack` default block size. |
+| `MaximumCompressionLevel` | `const int MaximumCompressionLevel` | Highest managed encoder effort. |
+| `MinimumCompressionLevel` | `const int MinimumCompressionLevel` | Fastest managed encoder effort. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every managed effort level and writes the smallest complete `blzpack` stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the reference-compatible fast parser (level 1). |
+| `Compress` | `static void Compress(Stream input, Stream output, int level)` | Compresses using a managed BriefLZ effort level from 1 (fastest) through 10 (deepest candidate search). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses all concatenated `blzpack` blocks from `input` into `output`. |
 
 ### Namespace `FileFormat.Brotli`
 
