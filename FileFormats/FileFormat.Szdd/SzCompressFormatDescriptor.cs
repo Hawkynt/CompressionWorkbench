@@ -29,7 +29,8 @@ public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamForma
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -50,7 +51,7 @@ public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamForma
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzss", "LZSS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzss", "LZSS", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -62,7 +63,7 @@ public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamForma
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Old Microsoft 'SZ ' COMPRESS LZSS (pre-SZDD / QBasic era), read + write";
+  public string Description => "Old Microsoft 'SZ ' COMPRESS LZSS (pre-SZDD / QBasic era), read + write + optimal parse";
 
   /// <summary>
   /// Decodes the supplied input.
@@ -72,4 +73,8 @@ public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamForma
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => SzddStream.CompressQBasic(input, output);
+  /// <summary>
+  /// Encodes the supplied input with the size-optimal LZSS token parse.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => SzCompressOptimizer.Compress(input, output);
 }

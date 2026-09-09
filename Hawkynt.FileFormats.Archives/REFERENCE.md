@@ -17204,7 +17204,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Szdd`
 
-[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
+[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzCompressOptimizer`](#szcompressoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
 
 #### `SzCompressFormatDescriptor`
 
@@ -17227,8 +17227,18 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the size-optimal LZSS token parse. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `SzCompressOptimizer`
+
+Size optimizer for the older Microsoft `"SZ "` COMPRESS stream used by the QBasic-era tooling. The emitted stream remains the original 12-byte header plus SZDD-compatible LZSS body; only the token parse is improved.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses `input` as an optimized legacy `"SZ "` stream and returns the complete encoded file. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as an optimized legacy `"SZ "` stream and writes it to `output`. |
 
 #### `SzddFormatDescriptor`
 
