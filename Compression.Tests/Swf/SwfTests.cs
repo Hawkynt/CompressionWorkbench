@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using Compression.Registry;
 using FileFormat.Swf;
 
 namespace Compression.Tests.Swf;
@@ -9,12 +10,12 @@ public class SwfTests {
   // ── Helpers ────────────────────────────────────────────────────────────
 
   /// <summary>Builds a valid uncompressed FWS SWF with the given body bytes.</summary>
-  private static byte[] BuildFws(byte[] body) {
+  private static byte[] BuildFws(byte[] body, byte version = 10) {
     var header = new byte[8];
     header[0] = (byte)'F';
     header[1] = (byte)'W';
     header[2] = (byte)'S';
-    header[3] = 10; // version
+    header[3] = version;
     BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(4), (uint)(8 + body.Length));
     var result = new byte[8 + body.Length];
     Buffer.BlockCopy(header, 0, result, 0, 8);
@@ -36,6 +37,20 @@ public class SwfTests {
     using (var zlib = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
       zlib.Write(body);
     return ms.ToArray();
+  }
+
+  private static byte[] Optimize(byte[] fws) {
+    using var input = new MemoryStream(fws, writable: false);
+    using var output = new MemoryStream();
+    SwfStream.CompressOptimal(input, output);
+    return output.ToArray();
+  }
+
+  private static byte[] Decompress(byte[] swf) {
+    using var input = new MemoryStream(swf, writable: false);
+    using var output = new MemoryStream();
+    SwfStream.Decompress(input, output);
+    return output.ToArray();
   }
 
   // ── FWS (uncompressed) ────────────────────────────────────────────────
@@ -71,7 +86,6 @@ public class SwfTests {
     Assert.That(result[0], Is.EqualTo((byte)'F'));
     Assert.That(result[1], Is.EqualTo((byte)'W'));
     Assert.That(result[2], Is.EqualTo((byte)'S'));
-    // Body should match
     Assert.That(result.AsSpan(8).ToArray(), Is.EqualTo(body));
   }
 
@@ -83,7 +97,6 @@ public class SwfTests {
     new Random(123).NextBytes(body);
     var fws = BuildFws(body);
 
-    // Compress FWS → CWS
     using var compInput = new MemoryStream(fws);
     using var compOutput = new MemoryStream();
     SwfStream.Compress(compInput, compOutput);
@@ -93,12 +106,87 @@ public class SwfTests {
     Assert.That(cws[1], Is.EqualTo((byte)'W'));
     Assert.That(cws[2], Is.EqualTo((byte)'S'));
 
-    // Decompress CWS → FWS
     using var decInput = new MemoryStream(cws);
     using var decOutput = new MemoryStream();
     SwfStream.Decompress(decInput, decOutput);
 
     Assert.That(decOutput.ToArray(), Is.EqualTo(fws));
+  }
+
+  // ── Optimization ──────────────────────────────────────────────────────
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Optimize_Version13_LongRangeDuplicate_UsesZws_AndRoundTrips() {
+    // The duplicate starts just beyond Deflate's 32 KiB window. LZMA's larger dictionary can
+    // reference the first block directly, making this a deterministic case where ZWS should win.
+    var block = new byte[33_000];
+    new Random(0x5A17).NextBytes(block);
+    var body = new byte[block.Length * 2];
+    block.CopyTo(body, 0);
+    block.CopyTo(body, block.Length);
+    var fws = BuildFws(body, version: 13);
+
+    var optimized = Optimize(fws);
+
+    Assert.That(optimized.AsSpan(0, 3).ToArray(), Is.EqualTo("ZWS"u8.ToArray()));
+    Assert.That(optimized.Length, Is.LessThan(fws.Length));
+    Assert.That(
+      BinaryPrimitives.ReadUInt32LittleEndian(optimized.AsSpan(8, 4)),
+      Is.EqualTo((uint)(optimized.Length - 17)),
+      "ZWS compressed length excludes the 12-byte SWF prefix and 5-byte LZMA properties.");
+    Assert.That(Decompress(optimized), Is.EqualTo(fws));
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Optimize_Version5_KeepsFws() {
+    var body = Enumerable.Repeat((byte)0x41, 4096).ToArray();
+    var fws = BuildFws(body, version: 5);
+
+    var optimized = Optimize(fws);
+
+    Assert.That(optimized, Is.EqualTo(fws));
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Optimize_Version10_NeverUsesZws() {
+    var body = Enumerable.Repeat("SWF optimizer payload "u8.ToArray(), 512)
+      .SelectMany(static bytes => bytes)
+      .ToArray();
+    var fws = BuildFws(body, version: 10);
+
+    var optimized = Optimize(fws);
+
+    Assert.That(optimized[0], Is.Not.EqualTo((byte)'Z'));
+    Assert.That(optimized.Length, Is.LessThanOrEqualTo(fws.Length));
+    Assert.That(Decompress(optimized), Is.EqualTo(fws));
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Optimize_IncompressibleInput_NeverGetsLarger() {
+    var body = new byte[4096];
+    new Random(0xC0DE).NextBytes(body);
+    var fws = BuildFws(body, version: 13);
+
+    var optimized = Optimize(fws);
+
+    Assert.That(optimized.Length, Is.LessThanOrEqualTo(fws.Length));
+    Assert.That(Decompress(optimized), Is.EqualTo(fws));
+  }
+
+  [Category("EdgeCase")]
+  [Test]
+  public void Optimize_NonFws_Throws() {
+    var cws = BuildCws(new byte[16]);
+    using var input = new MemoryStream(cws);
+    using var output = new MemoryStream();
+
+    Assert.Throws<InvalidDataException>(() => SwfStream.CompressOptimal(input, output));
   }
 
   // ── Edge cases ────────────────────────────────────────────────────────
@@ -142,6 +230,8 @@ public class SwfTests {
     Assert.That(desc.Id, Is.EqualTo("Swf"));
     Assert.That(desc.DefaultExtension, Is.EqualTo(".swf"));
     Assert.That(desc.MagicSignatures.Count, Is.GreaterThanOrEqualTo(2));
+    Assert.That(desc.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(desc.Methods.Single().SupportsOptimize, Is.True);
   }
 
   [Category("HappyPath")]

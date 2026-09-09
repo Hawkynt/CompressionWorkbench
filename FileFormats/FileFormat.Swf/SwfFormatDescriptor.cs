@@ -23,7 +23,8 @@ public sealed class SwfFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -47,7 +48,7 @@ public sealed class SwfFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("swf", "SWF")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("swf", "SWF", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -69,4 +70,8 @@ public sealed class SwfFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => SwfStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using the smallest legal SWF compression envelope found.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => SwfStream.CompressOptimal(input, output);
 }

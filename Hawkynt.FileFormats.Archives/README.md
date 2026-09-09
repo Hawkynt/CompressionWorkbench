@@ -53,7 +53,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
 | BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | — |  | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
-| BSC | `Bsc` | `.bsc` | ✅ | ✅ | — |  | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
+| BSC | `Bsc` | `.bsc` | ✅ | ✅ | — |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |
 | [bzip2](https://en.wikipedia.org/wiki/Bzip2) | `Bzip2` | `.bz2` `.bzip2` | ✅ | ✅ | ✅ |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |
 | cmix | `Cmix` | `.cmix` | ✅ | ✅ | — |  | [GitHub](https://github.com/byronknoll/cmix) |
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
@@ -85,12 +85,12 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | — |  | [rzip.samba.org](https://rzip.samba.org/) |
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | — |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
-| [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | — | FWS/CWS envelope; compress and decompress the body, no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
+| [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
-| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
+| [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
 | Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | — |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
 | [zlib](https://en.wikipedia.org/wiki/Zlib) | `Zlib` | `.zlib` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1950) |
 | Zling | `Zling` | `.zling` | ✅ | ✅ | — |  | [GitHub](https://github.com/richox/libzling) |
