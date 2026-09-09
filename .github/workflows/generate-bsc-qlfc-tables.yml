@@ -18,8 +18,9 @@ jobs:
         with:
           ref: feature/bsc-optimizer
       - name: Generate managed libbsc tables
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           import base64
           import pathlib
           import re
@@ -52,52 +53,53 @@ jobs:
               return base64.b64encode(bytes(items)).decode("ascii")
 
           def literal(value):
-              width = 120
-              chunks = [value[i:i + width] for i in range(0, len(value), width)]
+              chunks = [value[i:i + 120] for i in range(0, len(value), 120)]
               return "\n      + ".join(f'"{chunk}"' for chunk in chunks)
 
           source = f'''// Generated from libbsc coder/common/tables.h at {commit} (Apache-2.0).
-// Copyright (c) 2009-2024 Ilya Grebnov <ilya.grebnov@gmail.com>
-// See THIRD-PARTY-NOTICE.libbsc.txt in this directory.
-using System.Buffers.Binary;
+          // Copyright (c) 2009-2024 Ilya Grebnov <ilya.grebnov@gmail.com>
+          // See THIRD-PARTY-NOTICE.libbsc.txt in this directory.
+          using System.Buffers.Binary;
 
-namespace FileFormat.Bsc;
+          namespace FileFormat.Bsc;
 
-internal static class BscQlfcTables {{
-  internal static readonly short[] Stretch = DecodeShorts(
-      {literal(shorts(stretch))});
+          internal static class BscQlfcTables {{
+            internal static readonly short[] Stretch = DecodeShorts(
+                {literal(shorts(stretch))});
 
-  internal static readonly short[] Squash = DecodeShorts(
-      {literal(shorts(squash))});
+            internal static readonly short[] Squash = DecodeShorts(
+                {literal(shorts(squash))});
 
-  internal static readonly byte[] RankState = Convert.FromBase64String(
-      {literal(bytes_(rank_state))});
+            internal static readonly byte[] RankState = Convert.FromBase64String(
+                {literal(bytes_(rank_state))});
 
-  internal static readonly byte[] RunState = Convert.FromBase64String(
-      {literal(bytes_(run_state))});
+            internal static readonly byte[] RunState = Convert.FromBase64String(
+                {literal(bytes_(run_state))});
 
-  internal static int RankStateFor(int contextRank4, int contextRun, int rankSizeHistory)
-    => RankState[(contextRun << 11) | (contextRank4 << 3) | rankSizeHistory];
+            internal static int RankStateFor(int contextRank4, int contextRun, int rankSizeHistory)
+              => RankState[(contextRun << 11) | (contextRank4 << 3) | rankSizeHistory];
 
-  internal static int RunStateFor(int contextRank0, int contextRun, int rank, int runSizeHistory)
-    => RunState[(contextRank0 << 10) | (contextRun << 6) | (Math.Min(rank, 7) << 3) | Math.Min(runSizeHistory, 7)];
+            internal static int RunStateFor(int contextRank0, int contextRun, int rank, int runSizeHistory)
+              => RunState[(contextRank0 << 10) | (contextRun << 6) | (Math.Min(rank, 7) << 3) | Math.Min(runSizeHistory, 7)];
 
-  internal static int StretchProbability(int probability) => Stretch[probability];
+            internal static int StretchProbability(int probability) => Stretch[probability];
 
-  internal static int SquashProbability(int stretched) => Squash[2048 + stretched];
+            internal static int SquashProbability(int stretched) => Squash[2048 + stretched];
 
-  private static short[] DecodeShorts(string encoded) {{
-    var bytes = Convert.FromBase64String(encoded);
-    if ((bytes.Length & 1) != 0)
-      throw new InvalidDataException("BSC: invalid generated QLFC short table");
-    var result = new short[bytes.Length / sizeof(short)];
-    for (var i = 0; i < result.Length; ++i)
-      result[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(i * sizeof(short), sizeof(short)));
-    return result;
-  }}
-}}
-'''
+            private static short[] DecodeShorts(string encoded) {{
+              var bytes = Convert.FromBase64String(encoded);
+              if ((bytes.Length & 1) != 0)
+                throw new InvalidDataException("BSC: invalid generated QLFC short table");
+              var result = new short[bytes.Length / sizeof(short)];
+              for (var i = 0; i < result.Length; ++i)
+                result[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(i * sizeof(short), sizeof(short)));
+              return result;
+            }}
+          }}
+          '''
+          source = "\n".join(line[10:] if line.startswith("          ") else line for line in source.splitlines()) + "\n"
           pathlib.Path("FileFormats/FileFormat.Bsc/BscQlfcTables.cs").write_text(source, encoding="utf-8", newline="\n")
+          PY
       - name: Commit generated table data
         shell: bash
         run: |
