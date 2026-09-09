@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using Compression.Registry;
 using FileFormat.Yaz0;
 
 namespace Compression.Tests.Yaz0;
@@ -141,5 +142,62 @@ public class Yaz0Tests {
     Yaz0Stream.Decompress(compressed, decompressed);
 
     Assert.That(decompressed.ToArray(), Is.EqualTo(data));
+  }
+
+  [Category("Optimizer")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Optimize_RoundTrip_RepetitiveData() {
+    var data = new byte[8192];
+    for (var i = 0; i < data.Length; ++i)
+      data[i] = (byte)(i % 31);
+
+    using var compressed = new MemoryStream();
+    Yaz0Optimizer.Optimize(new MemoryStream(data), compressed);
+
+    compressed.Position = 0;
+    using var decompressed = new MemoryStream();
+    Yaz0Stream.Decompress(compressed, decompressed);
+
+    Assert.That(decompressed.ToArray(), Is.EqualTo(data));
+  }
+
+  [Category("Optimizer")]
+  [Category("RoundTrip")]
+  [Test]
+  public void Optimize_FlagAwareParse_BeatsGreedy() {
+    var data = "DAAADAADAC"u8.ToArray();
+
+    using var greedy = new MemoryStream();
+    Yaz0Stream.Compress(new MemoryStream(data), greedy);
+    using var optimal = new MemoryStream();
+    Yaz0Optimizer.Optimize(new MemoryStream(data), optimal);
+
+    optimal.Position = 0;
+    using var decompressed = new MemoryStream();
+    Yaz0Stream.Decompress(optimal, decompressed);
+
+    Assert.Multiple(() => {
+      Assert.That(greedy.Length, Is.EqualTo(26));
+      Assert.That(optimal.Length, Is.EqualTo(25));
+      Assert.That(optimal.Length, Is.LessThan(greedy.Length));
+      Assert.That(decompressed.ToArray(), Is.EqualTo(data));
+    });
+  }
+
+  [Category("Optimizer")]
+  [Test]
+  public void Descriptor_AdvertisesAndUsesOptimizer() {
+    var descriptor = new Yaz0FormatDescriptor();
+    var data = "DAAADAADAC"u8.ToArray();
+
+    using var optimal = new MemoryStream();
+    descriptor.CompressOptimal(new MemoryStream(data), optimal);
+
+    Assert.Multiple(() => {
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+      Assert.That(descriptor.Methods[0].SupportsOptimize, Is.True);
+      Assert.That(optimal.Length, Is.EqualTo(25));
+    });
   }
 }

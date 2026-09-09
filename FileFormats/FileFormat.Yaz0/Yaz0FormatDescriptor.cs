@@ -23,7 +23,8 @@ public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -43,7 +44,7 @@ public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("yaz0", "Yaz0")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("yaz0", "Yaz0", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -65,4 +66,8 @@ public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => Yaz0Stream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using the size-optimal Yaz0 parser.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => Yaz0Optimizer.Optimize(input, output);
 }

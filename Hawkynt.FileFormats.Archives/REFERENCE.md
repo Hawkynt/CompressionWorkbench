@@ -20260,7 +20260,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 ### Namespace `FileFormat.Yaz0`
 
-[`Yaz0FormatDescriptor`](#yaz0formatdescriptor) · [`Yaz0Stream`](#yaz0stream)
+[`Yaz0FormatDescriptor`](#yaz0formatdescriptor) · [`Yaz0Optimizer`](#yaz0optimizer) · [`Yaz0Stream`](#yaz0stream)
 
 #### `Yaz0FormatDescriptor`
 
@@ -20283,8 +20283,17 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using the size-optimal Yaz0 parser. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `Yaz0Optimizer`
+
+Finds the smallest Yaz0 token stream for the supplied input.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Optimize` | `static void Optimize(Stream input, Stream output)` | Compresses all bytes from `input` to `output` using an exact minimum-size Yaz0 parse. |
 
 #### `Yaz0Stream`
 
