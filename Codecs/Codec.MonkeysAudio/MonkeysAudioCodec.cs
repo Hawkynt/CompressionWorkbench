@@ -28,8 +28,8 @@ namespace Codec.MonkeysAudio;
 /// coder, <c>EncodeValue</c>, <c>CPredictorCompressNormal</c> and <c>CPrepare</c>
 /// — so a stream this codec writes is the byte-stream the reference encoder would
 /// produce for the same input at the same level and round-trips losslessly through
-/// the reference decoder (this one or ffmpeg). The encoder emits levels 1000–4000
-/// (the level-5000 "insane" filter cascade decodes but is not used for encoding).
+/// the reference decoder (this one or ffmpeg). The encoder emits all five reference
+/// compression levels 1000–5000.
 /// </para>
 /// <para>
 /// Pre-3.95 (&lt; 3950) files use older entropy/predictor variants this port does not
@@ -267,9 +267,9 @@ public static class MonkeysAudioCodec {
     if (sampleRate < 1) throw new ArgumentOutOfRangeException(nameof(sampleRate));
     if (bitsPerSample is not (8 or 16 or 24))
       throw new ArgumentOutOfRangeException(nameof(bitsPerSample), "Monkey's Audio encoder supports 8, 16 or 24 bits per sample.");
-    if (compressionLevel is not (CompressionFast or CompressionNormal or CompressionHigh or CompressionExtraHigh))
+    if (compressionLevel is not (CompressionFast or CompressionNormal or CompressionHigh or CompressionExtraHigh or CompressionInsane))
       throw new ArgumentOutOfRangeException(nameof(compressionLevel),
-        "Monkey's Audio encoder supports levels 1000, 2000, 3000 or 4000.");
+        "Monkey's Audio encoder supports levels 1000, 2000, 3000, 4000 or 5000.");
 
     using var ms = new MemoryStream();
     pcmIn.CopyTo(ms);
@@ -437,7 +437,7 @@ public static class MonkeysAudioCodec {
     BinaryPrimitives.WriteUInt32LittleEndian(hdr[20..], (uint)sampleRate);
     output.Write(hdr);
 
-    // Seek table: absolute byte offset of each frame from the start of the file.
+    // Seek table: absolute byte offset of each frame from the start of the MAC container.
     var frameDataStart = (uint)(DescriptorBytes + HeaderBytes + seekTableBytes);
     Span<byte> seek = stackalloc byte[4];
     var running = frameDataStart;

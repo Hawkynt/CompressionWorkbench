@@ -205,6 +205,7 @@ public class MonkeysAudioCodecTests {
   [TestCase(MonkeysAudioCodec.CompressionNormal)]
   [TestCase(MonkeysAudioCodec.CompressionHigh)]
   [TestCase(MonkeysAudioCodec.CompressionExtraHigh)]
+  [TestCase(MonkeysAudioCodec.CompressionInsane)]
   public void RoundTrip_HigherLevel_16BitStereo_IsLossless(int level) {
     const int frames = 12000;
     var rng = new Random(4242 + level);
@@ -226,6 +227,8 @@ public class MonkeysAudioCodecTests {
 
   [TestCase(MonkeysAudioCodec.CompressionNormal)]
   [TestCase(MonkeysAudioCodec.CompressionHigh)]
+  [TestCase(MonkeysAudioCodec.CompressionExtraHigh)]
+  [TestCase(MonkeysAudioCodec.CompressionInsane)]
   public void RoundTrip_HigherLevel_24BitMono_IsLossless(int level) {
     const int frames = 8000;
     var rng = new Random(77 + level);
@@ -256,14 +259,6 @@ public class MonkeysAudioCodecTests {
     using var input = new MemoryStream(ape);
     using var output = new MemoryStream();
     Assert.That(() => MonkeysAudioCodec.Decompress(input, output), Throws.TypeOf<NotSupportedException>());
-  }
-
-  [Test]
-  public void EncoderRejectsInsaneLevel() {
-    using var input = new MemoryStream(new byte[16]);
-    using var output = new MemoryStream();
-    Assert.That(() => MonkeysAudioCodec.Compress(input, output, 2, 44100, 16, MonkeysAudioCodec.CompressionInsane),
-      Throws.TypeOf<ArgumentOutOfRangeException>());
   }
 
   [Test]
