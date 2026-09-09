@@ -122,6 +122,49 @@ public class CrunchTests {
   }
 
   [Test, Category("HappyPath")]
+  public void Descriptor_AdvertisesOptimize() {
+    var desc = new CrunchFormatDescriptor();
+
+    Assert.That(desc.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(desc.Methods, Has.Count.EqualTo(1));
+    Assert.That(desc.Methods[0].SupportsOptimize, Is.True);
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_CompressOptimal_IsNoLargerAndRoundTrips() {
+    var original = new byte[12_000];
+    var rng = new Random(77);
+    var pos = 0;
+    while (pos < original.Length) {
+      if (rng.Next(3) == 0 && pos + 80 <= original.Length) {
+        ReadOnlySpan<byte> pattern = "XYZXYZ"u8;
+        for (var i = 0; i < 80; ++i)
+          original[pos++] = pattern[i % pattern.Length];
+      }
+      else
+        original[pos++] = (byte)rng.Next(256);
+    }
+
+    var desc = new CrunchFormatDescriptor();
+    Compression.Registry.IStreamFormatOperations ops = desc;
+    using var regular = new MemoryStream();
+    using (var input = new MemoryStream(original, writable: false))
+      ops.Compress(input, regular);
+
+    using var optimized = new MemoryStream();
+    using (var input = new MemoryStream(original, writable: false))
+      ops.CompressOptimal(input, optimized);
+
+    Assert.That(optimized.Length, Is.LessThanOrEqualTo(regular.Length),
+      "Optimal Crunch parsing must never be larger than the default greedy parse.");
+
+    optimized.Position = 0;
+    using var roundTrip = new MemoryStream();
+    ops.Decompress(optimized, roundTrip);
+    Assert.That(roundTrip.ToArray(), Is.EqualTo(original));
+  }
+
+  [Test, Category("HappyPath")]
   public void Descriptor_Decompress() {
     var original = "Descriptor test"u8.ToArray();
 

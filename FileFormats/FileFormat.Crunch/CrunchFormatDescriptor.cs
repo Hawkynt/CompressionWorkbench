@@ -1,4 +1,6 @@
 #pragma warning disable CS1591
+using Compression.Core.Dictionary.Lzw;
+using Compression.Core.Streams;
 using Compression.Registry;
 
 namespace FileFormat.Crunch;
@@ -23,7 +25,8 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -44,7 +47,7 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW (9-12 bit)")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzw", "LZW (9-12 bit)", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -62,7 +65,7 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// Decodes the supplied input.
   /// </summary>
   public void Decompress(Stream input, Stream output) {
-    using var ds = new CrunchStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
+    using var ds = new CrunchStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
     ds.CopyTo(output);
   }
 
@@ -70,7 +73,19 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) {
-    using var cs = new CrunchStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
+    using var cs = new CrunchStream(output, CompressionStreamMode.Compress, leaveOpen: true);
+    input.CopyTo(cs);
+  }
+
+  /// <summary>
+  /// Encodes the supplied input using the LZW encoder's optimal parse. The core
+  /// encoder compares its dynamic-programming candidate with the normal greedy
+  /// parse and emits whichever is smaller, so optimization can never regress
+  /// compressed size for the same Crunch wire parameters.
+  /// </summary>
+  void IStreamFormatOperations.CompressOptimal(Stream input, Stream output) {
+    using var cs = new CrunchStream(output, CompressionStreamMode.Compress,
+      originalName: null, leaveOpen: true, compressionLevel: LzwCompressionLevel.Optimal);
     input.CopyTo(cs);
   }
 
@@ -78,11 +93,11 @@ public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOpe
   /// Performs the wrap decompress operation.
   /// </summary>
   public Stream? WrapDecompress(Stream input) =>
-    new CrunchStream(input, Compression.Core.Streams.CompressionStreamMode.Decompress, leaveOpen: true);
+    new CrunchStream(input, CompressionStreamMode.Decompress, leaveOpen: true);
 
   /// <summary>
   /// Performs the wrap compress operation.
   /// </summary>
   public Stream? WrapCompress(Stream output) =>
-    new CrunchStream(output, Compression.Core.Streams.CompressionStreamMode.Compress, leaveOpen: true);
+    new CrunchStream(output, CompressionStreamMode.Compress, leaveOpen: true);
 }

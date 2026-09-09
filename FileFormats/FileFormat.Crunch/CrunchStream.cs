@@ -19,6 +19,7 @@ public sealed class CrunchStream : CompressionStream {
   private bool _finished;
   private MemoryStream? _compressBuffer;
   private readonly string? _originalName;
+  private readonly LzwCompressionLevel _compressionLevel;
 
   /// <summary>
   /// Gets the original filename stored in the Crunch header (only set during decompression).
@@ -34,8 +35,13 @@ public sealed class CrunchStream : CompressionStream {
   /// <param name="leaveOpen">Whether to leave the inner stream open.</param>
   public CrunchStream(Stream stream, CompressionStreamMode mode,
     string? originalName = null, bool leaveOpen = false)
+    : this(stream, mode, originalName, leaveOpen, LzwCompressionLevel.FirstMatch) { }
+
+  internal CrunchStream(Stream stream, CompressionStreamMode mode,
+    string? originalName, bool leaveOpen, LzwCompressionLevel compressionLevel)
     : base(stream, mode, leaveOpen) {
     _originalName = originalName;
+    _compressionLevel = compressionLevel;
     if (mode == CompressionStreamMode.Compress)
       _compressBuffer = new MemoryStream();
   }
@@ -87,7 +93,8 @@ public sealed class CrunchStream : CompressionStream {
       maxBits: CrunchConstants.MaxBits,
       useClearCode: true,
       useStopCode: true,
-      bitOrder: BitOrder.MsbFirst);
+      bitOrder: BitOrder.MsbFirst,
+      level: _compressionLevel);
     encoder.Encode(data);
   }
 
