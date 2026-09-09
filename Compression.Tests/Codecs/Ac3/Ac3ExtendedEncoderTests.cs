@@ -92,6 +92,94 @@ public sealed class Ac3ExtendedEncoderTests {
     Assert.That(output.Length, Is.EqualTo((long)samplesPerChannel * 2 * sizeof(short)));
   }
 
+  [TestCase(24_000, 0)]
+  [TestCase(22_050, 1)]
+  [TestCase(16_000, 2)]
+  [Category("Regression")]
+  public void EnhancedEncoder_ReducedRate_WritesFscod2SixBlocksAndDecodes(int sampleRate, int expectedFsCod2) {
+    const int samplesPerChannel = 1536;
+    var encoded = Ac3Codec.EncodeEnhanced(
+      Signal(samplesPerChannel, 1, sampleRate),
+      new Eac3EncoderOptions(
+        SampleRate: sampleRate,
+        Bitrate: 96_000,
+        Acmod: 1,
+        PadFinalFrame: false));
+
+    var header = Ac3FrameHeader.TryParse(encoded, 0);
+    Assert.That(header, Is.Not.Null);
+    Assert.Multiple(() => {
+      Assert.That(header!.Value.IsEnhanced, Is.True);
+      Assert.That(header.Value.FsCod, Is.EqualTo(3), "reduced rate must use fscod=3");
+      Assert.That(header.Value.FsCod2, Is.EqualTo(expectedFsCod2));
+      Assert.That(header.Value.SampleRate, Is.EqualTo(sampleRate));
+      Assert.That(header.Value.NumBlocks, Is.EqualTo(6), "fscod=3 implies six blocks");
+      Assert.That(header.Value.FrameSize, Is.EqualTo(encoded.Length));
+    });
+    AssertEnhancedCrc(encoded);
+
+    using var input = new MemoryStream(encoded, writable: false);
+    using var output = new MemoryStream();
+    Ac3Codec.Decompress(input, output);
+    Assert.That(output.Length, Is.EqualTo(samplesPerChannel * sizeof(short)));
+  }
+
+  [Test]
+  [Category("EdgeCase")]
+  public void EnhancedEncoder_ReducedRate_RejectsNonSixBlockSyncframe() {
+    Assert.That(
+      () => Ac3Codec.EncodeEnhanced(
+        new short[256],
+        new Eac3EncoderOptions(
+          SampleRate: 24_000,
+          Bitrate: 96_000,
+          Acmod: 1,
+          PadFinalFrame: false,
+          BlocksPerFrame: 1)),
+      Throws.TypeOf<ArgumentOutOfRangeException>().With.Message.Contains("six audio blocks"));
+  }
+
+  [TestCase(4, 30)] // 24 kHz: band 47 >> 1 = 23, hth[23,48k] = 0x350 -> address 30
+  [TestCase(5, 29)] // 22.05 kHz: hth[23,44.1k] = 0x360 -> address 29
+  [TestCase(6, 28)] // 16 kHz: hth[23,32k] = 0x390 -> address 28
+  [Category("KnownAnswer")]
+  public void BitAllocation_ReducedRate_UsesBaseFamilyWithShiftedCriticalBand(int reducedRateSelector, int expectedAddress) {
+    // Clean-room KAT from A/52 Table 7.15 plus Annex E sr_shift=1 behavior. Coupling mode with very
+    // large decay/gain values makes the hearing threshold dominate the mask. An identity bap table
+    // then exposes the exact post-mask address rather than hiding it behind the normal bap LUT.
+    var exp = Enumerable.Repeat((byte)10, 256).ToArray(); // psd = 3072 - 10*128 = 1792
+    var bap = new byte[256];
+    var identity = Enumerable.Range(0, 64).Select(static value => (byte)value).ToArray();
+    var p = new Ac3BitAllocation.AllocParams(4096, 4096, 4096, 0, 0);
+
+    Ac3BitAllocation.ComputeBap(
+      exp, bap, start: 181, end: 205, p,
+      fgain: 4096, snrOffset: 0, fscod: reducedRateSelector,
+      isCoupling: true, cplFastLeak: 0, cplSlowLeak: 0,
+      deltas: null, bapTable: identity);
+
+    Assert.That(bap[181], Is.EqualTo(expectedAddress));
+  }
+
+  [Test]
+  [Category("Regression")]
+  public void BitAllocation_ReducedRate_DoesNotFallBackToRawFscodThreeAs32Khz() {
+    var exp = Enumerable.Repeat((byte)10, 256).ToArray();
+    var reduced = new byte[256];
+    var oldFallback = new byte[256];
+    var identity = Enumerable.Range(0, 64).Select(static value => (byte)value).ToArray();
+    var p = new Ac3BitAllocation.AllocParams(4096, 4096, 4096, 0, 0);
+
+    Ac3BitAllocation.ComputeBap(exp, reduced, 181, 205, p, 4096, 0, 6, true, 0, 0, null, identity);
+    Ac3BitAllocation.ComputeBap(exp, oldFallback, 181, 205, p, 4096, 0, 3, true, 0, 0, null, identity);
+
+    Assert.Multiple(() => {
+      Assert.That(reduced[181], Is.EqualTo(28));
+      Assert.That(oldFallback[181], Is.EqualTo(22));
+      Assert.That(reduced[181], Is.Not.EqualTo(oldFallback[181]));
+    });
+  }
+
   [Test]
   [Category("HappyPath")]
   public void EnhancedEncoder_CoversEveryAcmodAndLfeCombination() {
@@ -154,29 +242,29 @@ public sealed class Ac3ExtendedEncoderTests {
   }
 
   private static byte[] BuildDualMonoSilenceFrame() {
-    const int frameBytes = 768; // 192 kbit/s @ 48 kHz, frmsizecod 20
+    const int frameBytes = 768;
     var w = new BitWriter();
     w.Put(0x0B77, 16);
     w.Put(0, 16);
-    w.Put(0, 2);       // fscod 48 kHz
-    w.Put(20, 6);      // 192 kbit/s
-    w.Put(8, 5);       // bsid
-    w.Put(0, 3);       // bsmod
-    w.Put(0, 3);       // acmod 1+1
-    w.Flag(false);     // lfeon
-    w.Put(31, 5);      // dialnorm program 1
-    w.Flag(false);     // compre
-    w.Flag(false);     // langcode
-    w.Flag(false);     // audprodie
-    w.Put(27, 5);      // mandatory dialnorm2
-    w.Flag(false);     // compr2e
-    w.Flag(false);     // langcod2e
-    w.Flag(false);     // audprodi2e
-    w.Flag(false);     // copyrightb
-    w.Flag(false);     // origbs
-    w.Flag(false);     // timecod1e
-    w.Flag(false);     // timecod2e
-    w.Flag(false);     // addbsie
+    w.Put(0, 2);
+    w.Put(20, 6);
+    w.Put(8, 5);
+    w.Put(0, 3);
+    w.Put(0, 3);
+    w.Flag(false);
+    w.Put(31, 5);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Put(27, 5);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
 
     for (var block = 0; block < 6; ++block)
       WriteDualMonoSilenceBlock(w, block);
@@ -184,49 +272,47 @@ public sealed class Ac3ExtendedEncoderTests {
   }
 
   private static void WriteDualMonoSilenceBlock(BitWriter w, int block) {
-    w.Flag(false); w.Flag(false); // blksw[2]
-    w.Flag(false); w.Flag(false); // dithflag[2]
-    w.Flag(false);                // dynrnge
-    w.Flag(false);                // dynrng2e
+    w.Flag(false); w.Flag(false);
+    w.Flag(false); w.Flag(false);
+    w.Flag(false);
+    w.Flag(false);
 
     if (block == 0) {
-      w.Flag(true);               // cplstre
-      w.Flag(false);              // cplinu
-      w.Put(1, 2); w.Put(1, 2);   // D15 exponent strategy
-      w.Put(0, 6); w.Put(0, 6);   // chbwcod
+      w.Flag(true);
+      w.Flag(false);
+      w.Put(1, 2); w.Put(1, 2);
+      w.Put(0, 6); w.Put(0, 6);
       WriteFlatExponents(w);
       WriteFlatExponents(w);
-      w.Flag(true);               // baie
+      w.Flag(true);
       w.Put(0, 2); w.Put(0, 2); w.Put(0, 2); w.Put(0, 2); w.Put(0, 3);
-      w.Flag(true);               // snroffste
-      w.Put(0, 6);                // csnroffst -> all bap zero
+      w.Flag(true);
+      w.Put(0, 6);
       w.Put(0, 4); w.Put(0, 3);
       w.Put(0, 4); w.Put(0, 3);
     } else {
-      w.Flag(false);              // cplstre
-      w.Put(0, 2); w.Put(0, 2);   // exponent reuse
-      w.Flag(false);              // baie reuse
-      w.Flag(false);              // snroffste reuse
+      w.Flag(false);
+      w.Put(0, 2); w.Put(0, 2);
+      w.Flag(false);
+      w.Flag(false);
     }
-    w.Flag(false);                // deltbaie
-    w.Flag(false);                // skiple
+    w.Flag(false);
+    w.Flag(false);
   }
 
   private static void WriteFlatExponents(BitWriter w) {
     w.Put(15, 4);
-    for (var group = 0; group < 12; ++group) // GroupCount(37, D15)
-      w.Put(62, 7);                         // delta codes 2,2,2 -> flat exponent
-    w.Put(0, 2);                            // gainrng
+    for (var group = 0; group < 12; ++group)
+      w.Put(62, 7);
+    w.Put(0, 2);
   }
 
-  // A/52 Annex E: crc2 covers the frame from just after the sync word up to the CRC field itself.
   private static void AssertEnhancedCrc(byte[] frame) {
     var expected = Crc16(frame.AsSpan(2, frame.Length - 4));
     var actual = (ushort)((frame[^2] << 8) | frame[^1]);
     Assert.That(actual, Is.EqualTo(expected));
   }
 
-  // A/52 CRC-16: x^16 + x^15 + x^2 + 1, processed most-significant bit first, zero seed.
   private static ushort Crc16(ReadOnlySpan<byte> data) {
     var crc = 0;
     foreach (var value in data) {
