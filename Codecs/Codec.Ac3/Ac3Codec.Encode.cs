@@ -5,11 +5,12 @@ namespace Codec.Ac3;
 /// <summary>Controls legacy ATSC A/52 AC-3 encoding.</summary>
 /// <param name="SampleRate">32000, 44100 or 48000 Hz.</param>
 /// <param name="Bitrate">One of the standard AC-3 bitrates from 32 to 640 kbit/s.</param>
-/// <param name="Acmod">A/52 audio coding mode 1..7. The input channel order follows that mode.</param>
+/// <param name="Acmod">A/52 audio coding mode 0..7. The input channel order follows that mode.</param>
 /// <param name="LowFrequencyEffects">When true, the final interleaved input channel is encoded as LFE.</param>
-/// <param name="DialNorm">Dialogue normalization metadata in dB, -31..-1.</param>
+/// <param name="DialNorm">Primary-program dialogue normalization metadata in dB, -31..-1.</param>
 /// <param name="Cutoff">Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value.</param>
 /// <param name="PadFinalFrame">Pad an incomplete 1536-sample final frame with its last sample.</param>
+/// <param name="DialNorm2">Dual-mono second-program dialogue normalization; null reuses <paramref name="DialNorm"/>.</param>
 public sealed record Ac3EncoderOptions(
   int SampleRate = 48000,
   int Bitrate = 192000,
@@ -17,7 +18,8 @@ public sealed record Ac3EncoderOptions(
   bool LowFrequencyEffects = false,
   int DialNorm = -31,
   int Cutoff = 0,
-  bool PadFinalFrame = true
+  bool PadFinalFrame = true,
+  int? DialNorm2 = null
 );
 
 /// <summary>
@@ -184,7 +186,7 @@ public static partial class Ac3Codec {
       var writer = new Ac3BitWriter(65536);
       WriteFrameHeader(writer, options, layout);
       for (var block = 0; block < BlocksPerFrame; ++block)
-        WriteAudioBlock(writer, block, channels, fullBandwidthChannels, lfeIndex, bandwidthCode,
+        WriteAudioBlock(writer, block, options.Acmod, channels, fullBandwidthChannels, lfeIndex, bandwidthCode,
           coding, baps, coefficients, coarseSnr, fineSnr,
           slowDecayCode, fastDecayCode, slowGainCode, dbPerBitCode, floorCode, fastGainCode);
 
@@ -314,6 +316,12 @@ public static partial class Ac3Codec {
     writer.WriteBits(0, 1); // compre
     writer.WriteBits(0, 1); // langcode
     writer.WriteBits(0, 1); // audprodie
+    if (options.Acmod == 0) {
+      writer.WriteBits((uint)-(options.DialNorm2 ?? options.DialNorm), 5); // dialnorm2
+      writer.WriteBits(0, 1); // compr2e
+      writer.WriteBits(0, 1); // langcod2e
+      writer.WriteBits(0, 1); // audprodi2e
+    }
     writer.WriteBits(0, 1); // copyright
     writer.WriteBits(1, 1); // original bitstream
     writer.WriteBits(0, 1); // timecod1e
@@ -324,6 +332,7 @@ public static partial class Ac3Codec {
   private static void WriteAudioBlock(
     Ac3BitWriter writer,
     int block,
+    int acmod,
     int channels,
     int fullBandwidthChannels,
     int lfeIndex,
@@ -345,12 +354,13 @@ public static partial class Ac3Codec {
     for (var ch = 0; ch < fullBandwidthChannels; ++ch)
       writer.WriteBits(0, 1); // no dither for bap zero
     writer.WriteBits(0, 1);   // dynrnge
+    if (acmod == 0)
+      writer.WriteBits(0, 1); // dynrng2e
 
     writer.WriteBits(1, 1);   // new coupling strategy
     writer.WriteBits(0, 1);   // coupling disabled
 
-    // acmod is implied by the number/layout of full-band channels. Rematrix syntax only exists for 2/0.
-    if (fullBandwidthChannels == 2 && channels - (lfeIndex >= 0 ? 1 : 0) == 2)
+    if (acmod == 2)
       writer.WriteBits(0, 1); // rematstr
 
     for (var ch = 0; ch < fullBandwidthChannels; ++ch)
@@ -533,8 +543,8 @@ public static partial class Ac3Codec {
   }
 
   private static int ValidateEncoder(int sampleCount, Ac3EncoderOptions options) {
-    if (options.Acmod is < 1 or > 7)
-      throw new ArgumentOutOfRangeException(nameof(options), "AC-3 acmod 1..7 is supported; dual-mono acmod 0 remains decoder-incomplete.");
+    if (options.Acmod is < 0 or > 7)
+      throw new ArgumentOutOfRangeException(nameof(options), "AC-3 acmod must be in the range 0..7.");
     var channels = Ac3FrameHeader.AcmodChannelCount(options.Acmod) + (options.LowFrequencyEffects ? 1 : 0);
     if (channels is < 1 or > 6)
       throw new ArgumentOutOfRangeException(nameof(options), "Invalid AC-3 channel layout.");
@@ -546,6 +556,10 @@ public static partial class Ac3Codec {
       throw new ArgumentOutOfRangeException(nameof(options), "Bitrate must be a standard AC-3 rate from 32 to 640 kbit/s.");
     if (options.DialNorm is < -31 or > -1)
       throw new ArgumentOutOfRangeException(nameof(options), "dialnorm must be in the range -31..-1 dB.");
+    if (options.DialNorm2 is < -31 or > -1)
+      throw new ArgumentOutOfRangeException(nameof(options), "dialnorm2 must be null or in the range -31..-1 dB.");
+    if (options.DialNorm2 is not null && options.Acmod != 0)
+      throw new ArgumentException("dialnorm2 is only valid for AC-3 acmod 0 (1+1 dual mono).", nameof(options));
     if (options.Cutoff < 0 || options.Cutoff > options.SampleRate / 2)
       throw new ArgumentOutOfRangeException(nameof(options), "Cutoff must be zero (automatic) or within the Nyquist limit.");
     if (!options.PadFinalFrame && sampleCount / channels % SamplesPerFrame != 0)
