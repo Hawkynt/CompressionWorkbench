@@ -91,7 +91,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
 | [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
-| Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | — |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
+| Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | ✅ |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
 | [zlib](https://en.wikipedia.org/wiki/Zlib) | `Zlib` | `.zlib` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1950) |
 | Zling | `Zling` | `.zling` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/richox/libzling) |
 | [Zstandard](https://en.wikipedia.org/wiki/Zstd) | `Zstd` | `.zst` `.zstd` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc8878) |
@@ -305,7 +305,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Format | Id | Extensions | State | Test | Maintenance | Notes | Reference |
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [PE resources (.rsrc)](https://en.wikipedia.org/wiki/Portable_Executable) | `PeResources` | `.dll` `.exe` `.ocx` `.cpl` … | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
-| [Resource-only DLL](https://en.wikipedia.org/wiki/Dynamic-link_library) | `ResourceDll` |  | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
+| [Resource-only DLL](https://en.wikipedia.org/wiki/Dynamic_link_library) | `ResourceDll` |  | WORM | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/windows/win32/debug/pe-format) |
 | [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) | `Elf` | `.elf` `.so` `.o` `.ko` | R | ✅ | — |  | [sco.com](https://www.sco.com/developers/gabi/) |
 | [Mach-O](https://en.wikipedia.org/wiki/Mach-O) | `MachO` | `.macho` `.dylib` `.bundle` `.o` | R | ✅ | — |  | [GitHub](https://github.com/apple-oss-distributions/xnu) |
 | [DOS MZ executable](https://en.wikipedia.org/wiki/DOS_MZ_executable) | `Mz` | `.exe` `.com` `.ovl` `.bin` | R | ✅ | — |  | [Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) |
