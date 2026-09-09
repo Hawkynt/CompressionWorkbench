@@ -17235,17 +17235,18 @@ Writes a minimal StuffIt X header. Full element-stream emission with P2 varint e
 
 ### Namespace `FileFormat.Sup`
 
-[`SupFormatDescriptor`](#supformatdescriptor) · [`SupReader`](#supreader) · [`SupReader.Epoch`](#supreaderepoch) · [`SupReader.Segment`](#supreadersegment) · [`SupReader.Stream`](#supreaderstream)
+[`SupFormatDescriptor`](#supformatdescriptor) · [`SupReader`](#supreader) · [`SupReader.Epoch`](#supreaderepoch) · [`SupReader.Segment`](#supreadersegment) · [`SupReader.Stream`](#supreaderstream) · [`SupWriter`](#supwriter)
 
 #### `SupFormatDescriptor`
 
-Pseudo-archive descriptor for Blu-ray PGS (`.sup`) subtitle bitmap streams. Each subtitle epoch (PCS through END inclusive) is exposed as one entry, plus a `metadata.ini` describing the overall stream. References: `https://github.com/mjuhasz/BDSup2Sub` — BDSup2Sub — canonical open tool for PGS (.sup) subtitle streamsPGS is defined in the Blu-ray Disc Read-Only Format specifications (BDA, not public); segment layout community-documented
+Pseudo-archive descriptor for Blu-ray PGS (`.sup`) subtitle bitmap streams. Each subtitle epoch (PCS through END inclusive) is exposed as one entry, plus a `metadata.ini` describing the overall stream. References: `https://patents.google.com/patent/US20080050091A1/en` — public Blu-ray presentation-graphics stream/display-set description`https://ffmpeg.org/doxygen/trunk/pgssubdec_8c_source.html` — FFmpeg PGS decoder, used as an interoperability oracle`https://github.com/mjuhasz/BDSup2Sub` — Apache-2.0 BDSup2Sub, established SUP reader/writer interoperability referencePGS is defined in the Blu-ray Disc Read-Only Format specifications (BDA, not public); the standalone SUP envelope is community-documented
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SupFormatDescriptor` | `SupFormatDescriptor()` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | SUP has no standalone zero-segment representation accepted by its own reader. Individual display sets can be removed, but the final one cannot be purged. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -17258,6 +17259,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Muxes one or more complete PGS display-set streams into a standalone SUP file. The derived `metadata.ini` entry is ignored when a previously demuxed SUP is fed back through the generic archive rebuild path. A `.sup` file is one subtitle stream, not a container that can hold a file tree, so every input must already be a complete PCS-to-END display-set stream. Anything else is refused through the declared-constraint path the other single-stream descriptors use. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -17276,6 +17278,7 @@ Reader for Blu-ray PGS (Presentation Graphic Stream) subtitle bitmap streams (`.
 | `SegPaletteDefinition` | `const byte SegPaletteDefinition` | Defines the seg palette definition constant value. |
 | `SegPresentationComposition` | `const byte SegPresentationComposition` | Defines the seg presentation composition constant value. |
 | `SegWindowDefinition` | `const byte SegWindowDefinition` | Defines the seg window definition constant value. |
+| `ReadStrict` | `static Stream ReadStrict(ReadOnlySpan<byte> data)` | Parses an entire `.sup` stream and rejects any malformed or trailing bytes. This is the validation path used before muxing/remuxing data back to disk. |
 | `Read` | `static Stream Read(ReadOnlySpan<byte> data)` | Parses an entire `.sup` stream. Stops at first malformed segment without throwing, so partially-recovered files still yield their leading well-formed epochs. |
 
 #### `SupReader.Epoch`
@@ -17318,6 +17321,15 @@ Implements `IEquatable<Stream>`.
 | `Stream` | `Stream(IReadOnlyList<Segment> Segments, IReadOnlyList<Epoch> Epochs)` | The full parsed file: every segment plus the derived epoch grouping. |
 | `Epochs` | `IReadOnlyList<Epoch> Epochs { get; init; }` |  |
 | `Segments` | `IReadOnlyList<Segment> Segments { get; init; }` |  |
+
+#### `SupWriter`
+
+Writes Blu-ray PGS (`.sup`) segment envelopes while preserving the raw presentation/decode timestamps, segment type and body bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static byte[] Write(IReadOnlyList<Segment> segments)` | Serializes the supplied PGS segments into a new byte array. |
+| `Write` | `static void Write(Stream output, IEnumerable<Segment> segments)` | Writes the supplied PGS segments to `output`. |
 
 ### Namespace `FileFormat.Swf`
 

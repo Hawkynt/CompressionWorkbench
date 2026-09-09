@@ -13,11 +13,13 @@ namespace FileFormat.Sup;
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/mjuhasz/BDSup2Sub</c> — BDSup2Sub — canonical open tool for PGS (.sup) subtitle streams</description></item>
-///   <item><description>PGS is defined in the Blu-ray Disc Read-Only Format specifications (BDA, not public); segment layout community-documented</description></item>
+///   <item><description><c>https://patents.google.com/patent/US20080050091A1/en</c> — public Blu-ray presentation-graphics stream/display-set description</description></item>
+///   <item><description><c>https://ffmpeg.org/doxygen/trunk/pgssubdec_8c_source.html</c> — FFmpeg PGS decoder, used as an interoperability oracle</description></item>
+///   <item><description><c>https://github.com/mjuhasz/BDSup2Sub</c> — Apache-2.0 BDSup2Sub, established SUP reader/writer interoperability reference</description></item>
+///   <item><description>PGS is defined in the Blu-ray Disc Read-Only Format specifications (BDA, not public); the standalone SUP envelope is community-documented</description></item>
 /// </list>
 /// </summary>
-public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IArchiveModifiable {
 
   /// <summary>
   /// Gets the id.
@@ -36,6 +38,7 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
+    FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -71,6 +74,12 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the description.
   /// </summary>
   public string Description => "Blu-ray Presentation Graphic Stream subtitle bitmap segments grouped by epoch.";
+
+  /// <summary>
+  /// SUP has no standalone zero-segment representation accepted by its own reader.
+  /// Individual display sets can be removed, but the final one cannot be purged.
+  /// </summary>
+  public bool CanPurgeToEmpty => false;
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -129,6 +138,118 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         return;
       }
     throw new FileNotFoundException($"Entry not found: {entryName}");
+  }
+
+  /// <summary>
+  /// Muxes one or more complete PGS display-set streams into a standalone SUP file.
+  /// The derived <c>metadata.ini</c> entry is ignored when a previously demuxed SUP is
+  /// fed back through the generic archive rebuild path.
+  /// <para>
+  /// A <c>.sup</c> file is one subtitle stream, not a container that can hold a file tree, so every
+  /// input must already be a complete PCS-to-END display-set stream. Anything else is refused
+  /// through the declared-constraint path the other single-stream descriptors use.
+  /// </para>
+  /// </summary>
+  /// <exception cref="InvalidOperationException">An input is not a complete PGS display-set stream.</exception>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!output.CanWrite) throw new ArgumentException("SUP output stream must be writable.", nameof(output));
+
+    var payloads = inputs
+      .Where(input => !input.IsDirectory && !IsDerivedMetadata(input.ArchiveName))
+      .ToList();
+    if (payloads.Count == 0)
+      throw new InvalidOperationException(MuxContract + " No display-set payload was supplied.");
+
+    if (payloads.All(input => TryGetGeneratedSubtitleIndex(input.ArchiveName, out _)))
+      payloads.Sort(static (left, right) => {
+        _ = TryGetGeneratedSubtitleIndex(left.ArchiveName, out var leftIndex);
+        _ = TryGetGeneratedSubtitleIndex(right.ArchiveName, out var rightIndex);
+        return leftIndex.CompareTo(rightIndex);
+      });
+
+    var parsedPayloads = new List<SupReader.Stream>(payloads.Count);
+    foreach (var input in payloads)
+      parsedPayloads.Add(ParseMuxPayload(input.ArchiveName, input.ReadContent()));
+
+    if (output.CanSeek) {
+      output.Position = 0;
+      output.SetLength(0);
+    }
+    foreach (var payload in parsedPayloads)
+      SupWriter.Write(output, payload.Segments);
+  }
+
+  /// <summary>
+  /// What the SUP writer accepts, quoted verbatim in every refusal so a caller handed an
+  /// arbitrary file learns the contract rather than a parser's offset complaint.
+  /// </summary>
+  private const string MuxContract =
+    "SUP creation needs complete Blu-ray PGS display-set streams (PCS through END), " +
+    "such as the subtitle_NNN.bin entries a SUP demux produces; a .sup file is a single " +
+    "subtitle stream and cannot represent an arbitrary file tree.";
+
+  private static SupReader.Stream ParseMuxPayload(string name, ReadOnlySpan<byte> data) {
+    SupReader.Stream parsed;
+    try {
+      parsed = SupReader.ReadStrict(data);
+    } catch (InvalidDataException ex) {
+      throw new InvalidOperationException(
+        $"{MuxContract} Input '{name}' is not a complete SUP segment stream: {ex.Message}", ex);
+    }
+
+    var inDisplaySet = false;
+    var displaySetCount = 0;
+    foreach (var segment in parsed.Segments) {
+      switch (segment.Type) {
+        case SupReader.SegPresentationComposition:
+          if (inDisplaySet)
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' starts a new PCS before the previous display set ended.");
+          inDisplaySet = true;
+          break;
+
+        case SupReader.SegEnd:
+          if (!inDisplaySet)
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains END outside a display set.");
+          if (segment.Body.Length != 0)
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains an END segment with a non-empty body.");
+          inDisplaySet = false;
+          ++displaySetCount;
+          break;
+
+        case SupReader.SegPaletteDefinition or
+             SupReader.SegObjectDefinition or
+             SupReader.SegWindowDefinition:
+          if (!inDisplaySet)
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains segment 0x{segment.Type:X2} before a PCS.");
+          break;
+
+        default:
+          throw new InvalidOperationException($"{MuxContract} Input '{name}' contains unsupported segment type 0x{segment.Type:X2}.");
+      }
+    }
+
+    if (inDisplaySet)
+      throw new InvalidOperationException($"{MuxContract} Input '{name}' ends before its display set END segment.");
+    if (displaySetCount == 0)
+      throw new InvalidOperationException($"{MuxContract} Input '{name}' contains no complete PCS-to-END display set.");
+
+    return parsed;
+  }
+
+  private static bool IsDerivedMetadata(string archiveName) =>
+    Path.GetFileName(archiveName.Replace('\\', '/')).Equals("metadata.ini", StringComparison.OrdinalIgnoreCase);
+
+  private static bool TryGetGeneratedSubtitleIndex(string archiveName, out int index) {
+    index = 0;
+    var fileName = Path.GetFileName(archiveName.Replace('\\', '/'));
+    if (!fileName.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
+      return false;
+    var stem = Path.GetFileNameWithoutExtension(fileName);
+    return stem.StartsWith("subtitle_", StringComparison.OrdinalIgnoreCase)
+      && int.TryParse(stem.AsSpan("subtitle_".Length), NumberStyles.None, CultureInfo.InvariantCulture, out index);
   }
 
   private static List<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {

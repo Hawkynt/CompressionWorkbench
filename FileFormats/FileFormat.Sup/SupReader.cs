@@ -59,7 +59,15 @@ public sealed class SupReader {
   /// Parses an entire <c>.sup</c> stream. Stops at first malformed segment without throwing,
   /// so partially-recovered files still yield their leading well-formed epochs.
   /// </summary>
-  public static Stream Read(ReadOnlySpan<byte> data) {
+  public static Stream Read(ReadOnlySpan<byte> data) => ReadCore(data, strict: false);
+
+  /// <summary>
+  /// Parses an entire <c>.sup</c> stream and rejects any malformed or trailing bytes.
+  /// This is the validation path used before muxing/remuxing data back to disk.
+  /// </summary>
+  public static Stream ReadStrict(ReadOnlySpan<byte> data) => ReadCore(data, strict: true);
+
+  private static Stream ReadCore(ReadOnlySpan<byte> data, bool strict) {
     if (data.Length < 13) throw new InvalidDataException("PGS: file shorter than minimum 13-byte header.");
     if (data[0] != (byte)'P' || data[1] != (byte)'G')
       throw new InvalidDataException($"PGS: expected magic 'PG' at offset 0, got 0x{data[0]:X2}{data[1]:X2}.");
@@ -67,19 +75,30 @@ public sealed class SupReader {
     var segments = new List<Segment>();
     var pos = 0;
     while (pos + 13 <= data.Length) {
-      // Magic check — silently stop on garbage tail rather than throwing mid-stream.
-      if (data[pos] != (byte)'P' || data[pos + 1] != (byte)'G') break;
+      if (data[pos] != (byte)'P' || data[pos + 1] != (byte)'G') {
+        if (strict)
+          throw new InvalidDataException($"PGS: expected magic 'PG' at offset {pos}.");
+        break;
+      }
 
       var pts = BinaryPrimitives.ReadUInt32BigEndian(data[(pos + 2)..]);
       var dts = BinaryPrimitives.ReadUInt32BigEndian(data[(pos + 6)..]);
       var type = data[pos + 10];
       var size = BinaryPrimitives.ReadUInt16BigEndian(data[(pos + 11)..]);
 
-      if (pos + 13 + size > data.Length) break;
+      if (pos + 13 + size > data.Length) {
+        if (strict)
+          throw new InvalidDataException($"PGS: segment at offset {pos} declares {size} body bytes beyond end of stream.");
+        break;
+      }
+
       var body = data.Slice(pos + 13, size).ToArray();
       segments.Add(new Segment(pts, dts, type, body, pos));
       pos += 13 + size;
     }
+
+    if (strict && pos != data.Length)
+      throw new InvalidDataException($"PGS: {data.Length - pos} trailing byte(s) remain after the last complete segment at offset {pos}.");
 
     return new Stream(segments, GroupEpochs(segments, data));
   }
