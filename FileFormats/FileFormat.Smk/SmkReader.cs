@@ -221,7 +221,7 @@ internal static class SmkReader {
     if (track.Packed && !track.BinkAudio && !track.UseDct) {
       try {
         var codec = new SmackerAudioCodec(track.SampleRate, channels, bits);
-        var interleaved = codec.DecodeStream(track.Packets.Select(static packet => packet.Payload));
+        var interleaved = codec.DecodeStream(track.Packets.Select(static packet => packet.Payload).ToArray());
         if (interleaved.Length == 0)
           return;
         var split = SplitNative(interleaved, channels, track.SampleRate, bits);
