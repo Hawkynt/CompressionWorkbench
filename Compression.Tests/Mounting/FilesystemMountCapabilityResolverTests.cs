@@ -22,9 +22,28 @@ public sealed class FilesystemMountCapabilityResolverTests {
   }
 
   [Test]
-  public void WholeImageRebuildNeverGrantsWritableMount() {
-    var plan = Resolve(Profile(mutationModel: FilesystemMutationModel.WholeImageRebuild), MountAccessMode.ReadWrite, sourceCanWrite: true);
-    Assert.That(plan.Reasons.Select(static reason => reason.Code), Does.Contain(MountSupportReasonCode.UnsupportedMutationModel));
+  public void AbsentMutationModelNeverGrantsWritableMount() {
+    var plan = Resolve(Profile(mutationModel: FilesystemMutationModel.None), MountAccessMode.ReadWrite, sourceCanWrite: true);
+    Assert.Multiple(() => {
+      Assert.That(plan.IsSupported, Is.False);
+      Assert.That(plan.Reasons.Select(static reason => reason.Code), Does.Contain(MountSupportReasonCode.UnsupportedMutationModel));
+    });
+  }
+
+  [Test]
+  public void WholeImageRebuildGrantsWritableMountOnlyWhenTheProfileQualifiesIt() {
+    var qualified = Resolve(Profile(mutationModel: FilesystemMutationModel.WholeImageRebuild), MountAccessMode.ReadWrite, sourceCanWrite: true);
+    var unqualified = Resolve(
+      Profile(mutationModel: FilesystemMutationModel.WholeImageRebuild, canMountWritable: false),
+      MountAccessMode.ReadWrite,
+      sourceCanWrite: true
+    );
+    Assert.Multiple(() => {
+      Assert.That(qualified.IsSupported, Is.True);
+      Assert.That(qualified.Reasons.Select(static reason => reason.Code), Does.Not.Contain(MountSupportReasonCode.UnsupportedMutationModel));
+      Assert.That(unqualified.IsSupported, Is.False);
+      Assert.That(unqualified.Reasons.Select(static reason => reason.Code), Does.Contain(MountSupportReasonCode.FilesystemProfileNotWritable));
+    });
   }
 
   [Test]

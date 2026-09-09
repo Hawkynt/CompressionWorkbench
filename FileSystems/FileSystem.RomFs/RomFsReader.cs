@@ -25,6 +25,14 @@ public sealed class RomFsReader {
   public string VolumeName { get; }
 
   /// <summary>
+  /// True when traversal encountered a ROMFS object kind that this reader does
+  /// not currently project (hard link, symlink, device, socket, or FIFO).
+  /// Writable rebuild adapters use this to fail closed rather than silently
+  /// dropping an object that the existing writer cannot reproduce.
+  /// </summary>
+  public bool HasUnsupportedNodeTypes { get; private set; }
+
+  /// <summary>
   /// Parses a ROMFS image from <paramref name="stream"/>.
   /// Throws <see cref="InvalidDataException"/> on bad magic or truncated data.
   /// </summary>
@@ -124,8 +132,12 @@ public sealed class RomFsReader {
             HeaderOffset = offset,
             IsDirectory = false
           });
+        } else {
+          // Types 0,3-7 are hardlinks, symlinks, devices, sockets and FIFOs.
+          // The reader has historically skipped them, but a whole-image writer
+          // must know that they existed so it cannot accidentally discard them.
+          HasUnsupportedNodeTypes = true;
         }
-        // Types 0,3-7 (hardlinks, symlinks, devices, sockets, fifos) are skipped
       }
 
       if (next == 0) break;

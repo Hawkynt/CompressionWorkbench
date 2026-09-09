@@ -7,6 +7,7 @@ internal sealed class FuseNativeSession : IDisposable {
   private FuseArgs _args;
   private IntPtr _session;
   private Task? _loopTask;
+  private string? _mountPoint;
   private int _mounted;
   private int _disposed;
 
@@ -36,17 +37,12 @@ internal sealed class FuseNativeSession : IDisposable {
     }
   }
 
-  public async ValueTask UnmountAsync(CancellationToken cancellationToken = default) {
+  public ValueTask UnmountAsync(CancellationToken cancellationToken = default) {
     ObjectDisposedException.ThrowIf(Volatile.Read(ref this._disposed) != 0, this);
     var session = this._session;
-    if (session == IntPtr.Zero)
-      return;
-
-    LibFuseNative.fuse_session_exit(session);
-    if (Interlocked.Exchange(ref this._mounted, 0) != 0)
-      LibFuseNative.fuse_session_unmount(session);
-    if (this._loopTask is { } loopTask)
-      await loopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+    return session == IntPtr.Zero
+      ? ValueTask.CompletedTask
+      : this.StopSessionAsync(session, cancellationToken);
   }
 
   public void Dispose() {
@@ -55,15 +51,14 @@ internal sealed class FuseNativeSession : IDisposable {
     var session = Interlocked.Exchange(ref this._session, IntPtr.Zero);
     try {
       if (session != IntPtr.Zero) {
-        LibFuseNative.fuse_session_exit(session);
-        if (Interlocked.Exchange(ref this._mounted, 0) != 0)
-          LibFuseNative.fuse_session_unmount(session);
         try {
-          this._loopTask?.Wait(TimeSpan.FromSeconds(5));
-        } catch (AggregateException) {
-          // Native teardown still has to release the session after loop failure.
+          this.StopSessionAsync(session, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+        } catch {
+          // Destruction must still release native state if the loop itself failed.
+          // StopSessionAsync always unmounts before surfacing that failure.
+        } finally {
+          LibFuseNative.fuse_session_destroy(session);
         }
-        LibFuseNative.fuse_session_destroy(session);
       }
     } finally {
       try { LibFuseNative.fuse_opt_free_args(ref this._args); }
@@ -93,6 +88,7 @@ internal sealed class FuseNativeSession : IDisposable {
     if (mountResult != 0)
       throw new IOException($"libfuse3 failed to mount '{mountPoint}' (error {mountResult}).");
 
+    Volatile.Write(ref this._mountPoint, mountPoint);
     Volatile.Write(ref this._mounted, 1);
     var session = this._session;
     this._loopTask = Task.Factory.StartNew(
@@ -105,6 +101,39 @@ internal sealed class FuseNativeSession : IDisposable {
       TaskCreationOptions.LongRunning,
       TaskScheduler.Default
     );
+  }
+
+  private async ValueTask StopSessionAsync(IntPtr session, CancellationToken cancellationToken) {
+    Task? wakeTask = null;
+    try {
+      if (this._loopTask is { } loopTask) {
+        if (!loopTask.IsCompleted) {
+          LibFuseNative.fuse_session_exit(session);
+          wakeTask = Task.Run(this.WakeSingleThreadedLoop);
+        }
+
+        await loopTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+      }
+    } finally {
+      if (Interlocked.Exchange(ref this._mounted, 0) != 0)
+        LibFuseNative.fuse_session_unmount(session);
+    }
+
+    if (wakeTask is not null)
+      await wakeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+  }
+
+  private void WakeSingleThreadedLoop() {
+    var mountPoint = Volatile.Read(ref this._mountPoint);
+    if (mountPoint is null)
+      return;
+
+    // The legacy fuse_session_loop ABI blocks in read(/dev/fuse) and an external
+    // fuse_session_exit only flips the exit flag. A unique child lookup cannot be
+    // satisfied from the positive/negative dentry cache, so it reliably wakes the
+    // receive loop; the loop handles that one request and then observes the flag.
+    var wakePath = Path.Combine(mountPoint, $".cwb-fuse-exit-{Guid.NewGuid():N}");
+    _ = File.Exists(wakePath);
   }
 
   private void AddArgument(string argument) {

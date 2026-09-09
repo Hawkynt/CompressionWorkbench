@@ -61,8 +61,13 @@ public static class FilesystemMountCapabilityResolver {
       if (!sourceCanWrite)
         reasons.Add(new(MountSupportReasonCode.SourceIsReadOnly, "The backing image or an outer container layer is read-only."));
 
-      if (driverProfile.MutationModel is FilesystemMutationModel.None or FilesystemMutationModel.WholeImageRebuild)
-        reasons.Add(new(MountSupportReasonCode.UnsupportedMutationModel, $"Mutation model '{driverProfile.MutationModel}' is not suitable for mounted random writes."));
+      // WholeImageRebuild is suitable only when an explicit driver profile has
+      // already qualified it as writable. Such a driver must provide the same
+      // positional handle semantics as a direct allocator and make Flush a
+      // verified transactional publication boundary. MutationModel.None is the
+      // only model that categorically has no write path.
+      if (driverProfile.MutationModel == FilesystemMutationModel.None)
+        reasons.Add(new(MountSupportReasonCode.UnsupportedMutationModel, "The filesystem profile has no mutation model."));
 
       var missingWrite = (CoreWriteCapabilities | backend.RequiredWriteCapabilities) & ~driverProfile.Capabilities;
       if (missingWrite != FilesystemDriverCapabilities.None)
