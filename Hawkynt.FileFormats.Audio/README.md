@@ -165,7 +165,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | AMR-WB |
 | `Apc` | CRYO APC | WORM | ✅ | ✅ | ✅ | ✅ | CRYO APC seeded IMA; high-nibble-first mono/stereo with configurable version and predictor seeds |
 | `Ape` | Monkey's Audio (.ape) | R | — | — | — | — | Monkey's Audio container |
-| `Asf` | ASF (Advanced Systems Format) | R | — | — | — | — | Microsoft ASF, WMA-family audio depayload/decode routes + tags |
+| `Asf` | ASF (Advanced Systems Format) | R | — | — | ✅ | ✅ | Microsoft ASF, WMA-family audio depayload/decode routes + tags; packet-preserving demux/mux of a single unencrypted audio stream |
 | `Ast` | AST (GameCube/Wii stream) | WORM | — | — | — | — | GameCube/Wii AST |
 | `Au` | Sun/NeXT .au (.snd) | WORM | ✅ | ✅ | ✅ | ✅ | Sun/NeXT `.au` / `.snd` |
 | `Aud` | Westwood AUD (Command & Conquer) | WORM | — | — | — | — | Westwood AUD / WS-ADPCM + IMA |

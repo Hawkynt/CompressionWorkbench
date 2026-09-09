@@ -4843,7 +4843,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.Asf`
 
-[`AsfFormatDescriptor`](#asfformatdescriptor)
+[`AsfAudioAdapter`](#asfaudioadapter) · [`AsfFormatDescriptor`](#asfformatdescriptor)
+
+#### `AsfAudioAdapter`
+
+Packet-preserving audio adapter for Advanced Systems Format. Demuxing is intentionally limited to a single unencrypted audio stream because `AudioEncodedStream` represents one stream; refusing multi-stream ASF prevents a remux from silently discarding video or sibling audio. Muxing rebuilds only ASF/WAVEFORMATEX framing and never invokes an audio codec.
+
+Implements `IAudioDemuxSource`, `IAudioMuxTarget`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AsfAudioAdapter` | `AsfAudioAdapter()` |  |
+| `Instance` | `static AsfAudioAdapter Instance { get; }` | Shared stateless adapter instance. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `AsfFormatDescriptor`
 
