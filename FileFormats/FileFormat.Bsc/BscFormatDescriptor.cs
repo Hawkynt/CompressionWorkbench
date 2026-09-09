@@ -57,12 +57,11 @@ public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Ilya Grebnov's libbsc block sorting compressor (BWT+MTF+RLE)";
+  public string Description => "Ilya Grebnov's libbsc block sorting compressor (BWT+QLFC with optional LZP)";
 
   /// <summary>
-  /// Searchable BSC creation parameters. The block-size axis follows libbsc's
-  /// 25 MiB default and legal byte-sized block framing; context order maps to
-  /// libbsc's following/preceding block transform.
+  /// Searchable BSC creation parameters. The defaults and coder identifiers map
+  /// to libbsc's command-line defaults and LIBBSC_CODER_QLFC_* constants.
   /// </summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new(
@@ -79,6 +78,13 @@ public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
       Default: "Following",
       AllowedValues: ["Following", "Preceding"],
       Description: "Context direction for block sorting. Preceding reverses each block before BWT and reverses it back after decode, matching libbsc -cp."),
+    new(
+      Key: "EntropyCoder",
+      DisplayName: "QLFC entropy coder",
+      Kind: FormatOptionKind.Enum,
+      Default: "Static",
+      AllowedValues: ["Fast", "Static", "Adaptive"],
+      Description: "libbsc QLFC coder: fast (-c0), static/default (-c1), or adaptive (-c2)."),
   ];
 
   internal static int ParseBlockSize(FormatCreateOptions options)
@@ -91,6 +97,13 @@ public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
       ? BscSortingContexts.Preceding
       : BscSortingContexts.Following;
 
+  internal static BscEntropyCoder ParseEntropyCoder(FormatCreateOptions options)
+    => options.GetString("EntropyCoder")?.ToUpperInvariant() switch {
+      "FAST" => BscEntropyCoder.Fast,
+      "ADAPTIVE" => BscEntropyCoder.Adaptive,
+      _ => BscEntropyCoder.Static,
+    };
+
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
@@ -100,7 +113,12 @@ public sealed class BscFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// Encodes the supplied input using the selected optimizer parameters.
   /// </summary>
   public void Compress(Stream input, Stream output, FormatCreateOptions options)
-    => BscStream.Compress(input, output, ParseBlockSize(options), ParseSortingContexts(options));
+    => BscStream.Compress(
+      input,
+      output,
+      ParseBlockSize(options),
+      ParseSortingContexts(options),
+      ParseEntropyCoder(options));
 
   /// <summary>
   /// Decodes the supplied input.
