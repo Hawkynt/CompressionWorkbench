@@ -9019,9 +9019,9 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `SmkFormatDescriptor`
 
-Surfaces a Smacker container (`.smk`, 'SMK2'/'SMK4') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.smk` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each present audio track's concatenated chunks are surfaced as `TRACKn.bin` (Kind `Stream`) and, for compressed Smacker audio (SMKA) or uncompressed PCM, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.SmackerAudio` / PCM, with a graceful fallback to the raw blob on any decode failure. Bink-audio-in-Smacker tracks remain blob-only. Read-only; parsing degrades gracefully.
+Surfaces a Smacker container (`.smk`, 'SMK2'/'SMK4') as a pseudo-archive. The byte-exact original is `FULL.smk` (Kind `Container`); lossless remux structure is exposed through `HEADER.bin`, `FRAME_SIZES.bin`, `FRAME_TYPES.bin`, `HUFFMAN.bin` and the physical frame-data region `VIDEO.bin`. Each audio track is additionally surfaced as a frame-addressed `TRACKn.packets` bundle and as the legacy concatenated `TRACKn.bin` stream, with SMKA/PCM tracks decoded to WAV channels when possible. Remuxing requires an existing source container and can replace/remove frame-addressed audio packets while preserving encoded video/Huffman data. Fresh Smacker creation or Smacker video encoding is deliberately not claimed.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IContainerRemuxable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9041,6 +9041,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remux` | `void Remux(Stream source, Stream output, IReadOnlyList<ArchiveInputInfo> replacements, FormatCreateOptions options)` | Remuxes an existing Smacker container while preserving encoded video/Huffman data and all non-replaced packet streams. `TRACKn.packets` entries replace that track's frame-addressed audio packets; an empty packet bundle removes the track packets from all frames. |
 
 ### Namespace `FileFormat.Smp`
 
