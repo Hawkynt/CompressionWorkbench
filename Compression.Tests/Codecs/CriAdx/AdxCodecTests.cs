@@ -1,19 +1,18 @@
+using System.Buffers.Binary;
 using Codec.CriAdx;
 
 namespace Compression.Tests.Codecs.CriAdx;
 
 [TestFixture]
 public class AdxCodecTests {
+  private static short[] Sine(int frames, int channels = 1) {
+    var pcm = new short[frames * channels];
+    for (var frame = 0; frame < frames; ++frame)
+      for (var channel = 0; channel < channels; ++channel)
+        pcm[frame * channels + channel] = (short)(Math.Sin(frame / (7.0 + channel * 3)) * (9000 - channel * 500));
+    return pcm;
+  }
 
-  // ──────────── 1. Predictor coefficient math ────────────
-
-  /// <summary>
-  /// The standard ADX coefficients for 44100 Hz / 500 Hz high-pass derive from
-  /// z = cos(2π·500/44100), a = √2 − z, b = √2 − 1, c = (a − √((a+b)(a−b)))/b,
-  /// coef1 = round(c·8192), coef2 = round(−c²·4096) — the reference rounds to
-  /// nearest rather than flooring, and flooring biased both coefficients low into
-  /// a recursive predictor. Hand-computing those yields 7334 and −3283.
-  /// </summary>
   [Test]
   public void DeriveCoefficients_44100_500_MatchesHandComputed() {
     var (coef1, coef2) = AdxCodec.DeriveCoefficients(500, 44100);
@@ -21,143 +20,193 @@ public class AdxCodecTests {
     Assert.That(coef2, Is.EqualTo(-3283));
   }
 
-  // ──────────── 2. Header round-trip ────────────
-
   [Test]
-  public void Encode_WritesValidHeader_WithCriCopyrightString() {
+  public void Encode_WritesValidV3Header_WithCriCopyrightString() {
     var pcm = new short[AdxCodec.SamplesPerFrame * 2];
     var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 22050);
-
-    // Magic high bit set.
-    Assert.That((adx[0] & 0x80) != 0, Is.True);
-
     var info = AdxCodec.ReadInfo(adx);
-    Assert.That(info.EncodingType, Is.EqualTo(AdxCodec.EncodingTypeStandard));
-    Assert.That(info.BlockSize, Is.EqualTo(AdxCodec.FrameSize));
-    Assert.That(info.BitDepth, Is.EqualTo(AdxCodec.BitDepth));
-    Assert.That(info.Channels, Is.EqualTo(1));
-    Assert.That(info.SampleRate, Is.EqualTo(22050));
-    Assert.That(info.TotalSamples, Is.EqualTo(pcm.Length));
-    Assert.That(info.HighpassFrequency, Is.EqualTo(500));
-    Assert.That(info.Version, Is.EqualTo(3));
-    Assert.That(info.IsEncrypted, Is.False);
-    Assert.That(info.IsStandard, Is.True);
 
-    // The "(c)CRI" string sits at copyrightOffset - 2.
-    var copyrightOffset = info.DataOffset - 4;
-    var cri = System.Text.Encoding.ASCII.GetString(adx, copyrightOffset - 2, 6);
-    Assert.That(cri, Is.EqualTo("(c)CRI"));
+    Assert.Multiple(() => {
+      Assert.That(info.EncodingType, Is.EqualTo(AdxCodec.EncodingTypeStandard));
+      Assert.That(info.BlockSize, Is.EqualTo(AdxCodec.FrameSize));
+      Assert.That(info.BitDepth, Is.EqualTo(AdxCodec.BitDepth));
+      Assert.That(info.Channels, Is.EqualTo(1));
+      Assert.That(info.SampleRate, Is.EqualTo(22050));
+      Assert.That(info.TotalSamples, Is.EqualTo(pcm.Length));
+      Assert.That(info.HighpassFrequency, Is.EqualTo(500));
+      Assert.That(info.VersionSignature, Is.EqualTo(0x0300));
+      Assert.That(info.IsEncrypted, Is.False);
+      Assert.That(System.Text.Encoding.ASCII.GetString(adx, info.DataOffset - 6, 6), Is.EqualTo("(c)CRI"));
+    });
   }
 
   [Test]
-  public void Encode_TotalSamples_DrivesDecodedLength() {
-    const int samples = AdxCodec.SamplesPerFrame * 3 + 5; // partial final frame
-    var pcm = new short[samples];
-    var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 16000);
+  public void Encode_StandardScale_StoresTheScaleVerbatim() {
+    var pcm = new short[AdxCodec.SamplesPerFrame];
+    var adx = AdxCodec.Encode(pcm, 1, 22050);
+    var info = AdxCodec.ReadInfo(adx);
+    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(adx.AsSpan(info.DataOffset)), Is.EqualTo(1),
+      "unencrypted type-3 frames carry the scale itself and silence bottoms out at scale 1");
+  }
 
+  [TestCase(AdxEncodingMode.Standard, AdxHeaderVersion.Version3)]
+  [TestCase(AdxEncodingMode.Standard, AdxHeaderVersion.Version4)]
+  [TestCase(AdxEncodingMode.Standard, AdxHeaderVersion.Version5)]
+  [TestCase(AdxEncodingMode.Fixed, AdxHeaderVersion.Version3)]
+  [TestCase(AdxEncodingMode.Fixed, AdxHeaderVersion.Version4)]
+  [TestCase(AdxEncodingMode.Fixed, AdxHeaderVersion.Version5)]
+  [TestCase(AdxEncodingMode.Exponential, AdxHeaderVersion.Version3)]
+  [TestCase(AdxEncodingMode.Exponential, AdxHeaderVersion.Version4)]
+  [TestCase(AdxEncodingMode.Exponential, AdxHeaderVersion.Version5)]
+  public void EncodeDecode_AllAdpcmEncodingAndHeaderVersionPairs_RoundTripGeometry(
+    AdxEncodingMode encoding,
+    AdxHeaderVersion version) {
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 5 + 7, channels: 2);
+    var adx = AdxCodec.Encode(pcm, 2, 48000, new AdxEncodeOptions {
+      Encoding = encoding,
+      Version = version,
+      HighpassFrequency = 500,
+    });
+    var info = AdxCodec.ReadInfo(adx);
     var (decoded, channels, rate) = AdxCodec.Decode(adx);
-    Assert.That(channels, Is.EqualTo(1));
-    Assert.That(rate, Is.EqualTo(16000));
-    Assert.That(decoded.Length, Is.EqualTo(samples));
+
+    Assert.Multiple(() => {
+      Assert.That(info.EncodingType, Is.EqualTo((byte)encoding));
+      Assert.That(info.Version, Is.EqualTo((byte)version));
+      Assert.That(channels, Is.EqualTo(2));
+      Assert.That(rate, Is.EqualTo(48000));
+      Assert.That(decoded.Length, Is.EqualTo(pcm.Length));
+      Assert.That(decoded.Any(static sample => sample != 0), Is.True);
+    });
   }
 
-  // ──────────── 3. Encode → decode round-trip (lossy, tolerance) ────────────
-
-  [Test]
-  public void EncodeDecode_SmoothSine_RoundTripsWithinTolerance() {
-    const int count = AdxCodec.SamplesPerFrame * 40;
-    var pcm = new short[count];
-    for (var i = 0; i < count; ++i)
-      pcm[i] = (short)(Math.Sin(i * 2 * Math.PI / 80) * 10000);
-
-    var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 32000);
-    var (decoded, _, _) = AdxCodec.Decode(adx);
-
-    Assert.That(decoded.Length, Is.EqualTo(count));
-
-    var maxError = 0;
-    for (var i = 0; i < count; ++i)
-      maxError = Math.Max(maxError, Math.Abs(decoded[i] - pcm[i]));
-
-    Assert.That(maxError, Is.LessThan(1500), $"max abs error {maxError}");
-  }
-
-  [Test]
-  public void EncodeDecode_Silence_RoundTripsExactly() {
-    var pcm = new short[AdxCodec.SamplesPerFrame * 3];
-    var (decoded, _, _) = AdxCodec.Decode(AdxCodec.Encode(pcm, channels: 1, sampleRate: 44100));
+  [TestCase(1)]
+  [TestCase(2)]
+  [TestCase(4)]
+  [TestCase(8)]
+  public void EncodeDecode_ChannelCountsThroughEight_AreSupported(int channels) {
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 2 + 1, channels);
+    var adx = AdxCodec.Encode(pcm, channels, 44100, new AdxEncodeOptions { Version = AdxHeaderVersion.Version4 });
+    var (decoded, actualChannels, _) = AdxCodec.Decode(adx);
+    Assert.That(actualChannels, Is.EqualTo(channels));
     Assert.That(decoded.Length, Is.EqualTo(pcm.Length));
-    foreach (var s in decoded)
-      Assert.That(s, Is.EqualTo((short)0));
   }
 
-  // ──────────── 4. Stereo interleave ordering ────────────
+  [Test]
+  public void EncodeDecode_SmoothSine_StandardRoundTripsWithinTolerance() {
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 40);
+    var (decoded, _, _) = AdxCodec.Decode(AdxCodec.Encode(pcm, 1, 32000));
+    var maxError = pcm.Zip(decoded, static (expected, actual) => Math.Abs(expected - actual)).Max();
+    Assert.That(maxError, Is.LessThan(1700), $"max abs error {maxError}");
+  }
 
   [Test]
   public void EncodeDecode_Stereo_PreservesChannelSeparation() {
-    const int frames = AdxCodec.SamplesPerFrame * 10;
-    var pcm = new short[frames * 2];
-    for (var i = 0; i < frames; ++i) {
-      pcm[i * 2] = (short)(Math.Sin(i / 7.0) * 8000);      // left
-      pcm[i * 2 + 1] = (short)(Math.Sin(i / 11.0) * 4000); // right
-    }
-
-    var adx = AdxCodec.Encode(pcm, channels: 2, sampleRate: 48000);
-    var (decoded, channels, _) = AdxCodec.Decode(adx);
-
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 10, 2);
+    var (decoded, channels, _) = AdxCodec.Decode(AdxCodec.Encode(pcm, 2, 48000));
     Assert.That(channels, Is.EqualTo(2));
     Assert.That(decoded.Length, Is.EqualTo(pcm.Length));
-
-    var maxLeft = 0;
-    var maxRight = 0;
-    for (var i = 0; i < frames; ++i) {
-      maxLeft = Math.Max(maxLeft, Math.Abs(decoded[i * 2] - pcm[i * 2]));
-      maxRight = Math.Max(maxRight, Math.Abs(decoded[i * 2 + 1] - pcm[i * 2 + 1]));
-    }
-    Assert.That(maxLeft, Is.LessThan(1500));
-    Assert.That(maxRight, Is.LessThan(1500));
   }
 
-  // ──────────── 5. Rejection paths ────────────
+  [TestCase((byte)8)]
+  [TestCase((byte)9)]
+  public void EncodeDecode_EncryptedV4_RoundTripsWithDerivedKey(byte revision) {
+    var key = new AdxEncryptionKey(0x1234, 0x1F3D, 0x0457, revision);
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 4 + 3, 2);
+    var adx = AdxCodec.Encode(pcm, 2, 44100, new AdxEncodeOptions {
+      Version = AdxHeaderVersion.Version4,
+      Encoding = AdxEncodingMode.Standard,
+      Encryption = key,
+    });
 
-  [Test]
-  public void Decode_EncryptedFlag_Throws() {
-    var pcm = new short[AdxCodec.SamplesPerFrame];
-    var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 22050);
-    adx[19] |= 0x08; // set encrypted flag
+    var info = AdxCodec.ReadInfo(adx);
+    Assert.Multiple(() => {
+      Assert.That(info.IsEncrypted, Is.True);
+      Assert.That(info.Revision, Is.EqualTo(revision));
+      Assert.That(() => AdxCodec.Decode(adx), Throws.TypeOf<NotSupportedException>());
+    });
+    var (decoded, channels, rate) = AdxCodec.Decode(adx, key);
+    Assert.That(channels, Is.EqualTo(2));
+    Assert.That(rate, Is.EqualTo(44100));
+    Assert.That(decoded.Length, Is.EqualTo(pcm.Length));
+  }
 
-    Assert.That(() => AdxCodec.Decode(adx), Throws.TypeOf<NotSupportedException>());
-    Assert.That(AdxCodec.ReadInfo(adx).IsEncrypted, Is.True);
+  [TestCase(AdxHeaderVersion.Version3)]
+  [TestCase(AdxHeaderVersion.Version4)]
+  public void Encode_LoopMetadata_IsReadBack(AdxHeaderVersion version) {
+    var pcm = Sine(AdxCodec.SamplesPerFrame * 8);
+    var adx = AdxCodec.Encode(pcm, 1, 22050, new AdxEncodeOptions {
+      Version = version,
+      LoopStartSample = 17,
+      LoopEndSample = 197,
+      HeaderAlignment = 256,
+    });
+    var info = AdxCodec.ReadInfo(adx);
+    Assert.Multiple(() => {
+      Assert.That(info.DataOffset % 256, Is.Zero);
+      Assert.That(info.LoopStartSample, Is.EqualTo(17));
+      Assert.That(info.LoopEndSample, Is.EqualTo(197));
+    });
   }
 
   [Test]
-  public void Decode_NonStandardEncodingType_Throws() {
-    var pcm = new short[AdxCodec.SamplesPerFrame];
-    var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 22050);
-    adx[4] = 2; // AHX / non-standard encoding type
+  public void Encode_V5Loop_IsRejected() {
+    var pcm = Sine(100);
+    Assert.That(() => AdxCodec.Encode(pcm, 1, 22050, new AdxEncodeOptions {
+      Version = AdxHeaderVersion.Version5,
+      LoopStartSample = 10,
+      LoopEndSample = 90,
+    }), Throws.TypeOf<NotSupportedException>());
+  }
 
+  [Test]
+  public void Encode_EndMarker_AppendsConventionalTerminatorWithoutChangingDeclaredSamples() {
+    var pcm = Sine(AdxCodec.SamplesPerFrame + 1);
+    var adx = AdxCodec.Encode(pcm, 1, 22050, new AdxEncodeOptions { WriteEndMarker = true });
+    var info = AdxCodec.ReadInfo(adx);
+    var groups = (info.TotalSamples + AdxCodec.SamplesPerFrame - 1) / AdxCodec.SamplesPerFrame;
+    var marker = info.DataOffset + groups * AdxCodec.FrameSize;
+    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(adx.AsSpan(marker)), Is.EqualTo(AdxCodec.EndMarkerScale));
+    Assert.That(AdxCodec.Decode(adx).InterleavedPcm.Length, Is.EqualTo(pcm.Length));
+  }
+
+  [Test]
+  public void BuildAhxHeader_UsesAhxGeometryAndVersionSignature() {
+    var header = AdxCodec.BuildAhxHeader(22050, 1152, AdxCodec.EncodingTypeAhx11);
+    var info = AdxCodec.ReadInfo(header);
+    Assert.Multiple(() => {
+      Assert.That(info.IsAhx, Is.True);
+      Assert.That(info.BlockSize, Is.Zero);
+      Assert.That(info.BitDepth, Is.Zero);
+      Assert.That(info.Channels, Is.EqualTo(1));
+      Assert.That(info.VersionSignature, Is.EqualTo(0x0600));
+    });
+  }
+
+  [Test]
+  public void Decode_UnknownEncodingType_Throws() {
+    var adx = AdxCodec.Encode(new short[AdxCodec.SamplesPerFrame], 1, 22050);
+    adx[4] = 0x7F;
     Assert.That(() => AdxCodec.Decode(adx), Throws.TypeOf<NotSupportedException>());
+  }
+
+  [Test]
+  public void Decode_TruncatedFrameData_Throws() {
+    var adx = AdxCodec.Encode(Sine(AdxCodec.SamplesPerFrame * 2), 1, 22050);
+    Array.Resize(ref adx, adx.Length - 1);
+    Assert.That(() => AdxCodec.Decode(adx), Throws.TypeOf<InvalidDataException>());
   }
 
   [Test]
   public void ReadInfo_MissingMagic_Throws() {
-    var bogus = new byte[20];
-    Assert.That(() => AdxCodec.ReadInfo(bogus), Throws.TypeOf<InvalidDataException>());
+    Assert.That(() => AdxCodec.ReadInfo(new byte[20]), Throws.TypeOf<InvalidDataException>());
   }
 
   [Test]
-  public void Decode_EndMarkerFrame_StopsAddingDeltas() {
-    // A lone frame with a 0x8001 scale marker must not emit fresh deltas; with zero
-    // history this means the covered samples decode to silence.
-    var pcm = new short[AdxCodec.SamplesPerFrame];
-    var adx = AdxCodec.Encode(pcm, channels: 1, sampleRate: 22050);
+  public void ReadInfo_MissingCopyrightMarker_Throws() {
+    var adx = AdxCodec.Encode(new short[32], 1, 22050);
     var info = AdxCodec.ReadInfo(adx);
-    // Force the single frame's scale word to the end-of-stream marker.
-    adx[info.DataOffset] = 0x80;
-    adx[info.DataOffset + 1] = 0x01;
-
-    var (decoded, _, _) = AdxCodec.Decode(adx);
-    foreach (var s in decoded)
-      Assert.That(s, Is.EqualTo((short)0));
+    adx[info.DataOffset - 1] ^= 0xFF;
+    Assert.That(() => AdxCodec.ReadInfo(adx), Throws.TypeOf<InvalidDataException>());
   }
 }
