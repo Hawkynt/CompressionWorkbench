@@ -1,236 +1,188 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using Compression.Core.Transforms;
 
 namespace FileFormat.Bsc;
 
+internal enum BscSortingContexts : byte {
+  Following = 1,
+  Preceding = 2,
+}
+
+internal enum BscEntropyCoder : byte {
+  Static = 1,
+  Adaptive = 2,
+  Fast = 3,
+}
+
 /// <summary>
-/// BSC (libbsc) stream implementation.
-///
-/// File layout:
-///   [0..3]  magic "bsc1" (0x62 0x73 0x63 0x31)
-///   [4..7]  int32 LE: block count
-///   Per block:
-///     BSC_BLOCK_HEADER (10 bytes):
-///       [0..7]  int64 LE: blockOffset
-///       [8]     int8:  recordSize
-///       [9]     int8:  sortingContexts
-///     Internal header (28 bytes = 7 × int32 LE):
-///       blockSize, dataSize, mode, index,
-///       adler32_data, adler32_compressed, adler32_header
-///     Compressed payload bytes
+/// BSC (libbsc) file-stream framing around <see cref="BscBlockCodec"/>.
 /// </summary>
 public static class BscStream {
-  // -------------------------------------------------------------------------
-  // Constants
-  // -------------------------------------------------------------------------
   private static readonly byte[] Magic = [0x62, 0x73, 0x63, 0x31]; // "bsc1"
-  private const int BscBlockHeaderSize = 10;   // offset(8) + recordSize(1) + sortingContexts(1)
-  private const int InternalHeaderSize = 28;   // 7 × int32 LE
-  private const int ModeStoreRle = 0;          // sorter=0 (BWT), coder=0 (none/RLE)
+  private const int BscBlockHeaderSize = 10;
+  private const int InternalHeaderSize = 28;
+  private const int MinimumEncodedBlockSize = BscBlockHeaderSize + InternalHeaderSize;
 
-  // -------------------------------------------------------------------------
-  // Public API
-  // -------------------------------------------------------------------------
-  /// <summary>
-  /// Encodes the supplied input.
-  /// </summary>
-  public static void Compress(Stream input, Stream output) {
-    var data = ReadAll(input);
+  internal const int MinimumBlockSize = 10_000;
+  internal const int DefaultBlockSize = 25 * 1024 * 1024;
+  internal const int MaximumBlockSize = 2047 * 1024 * 1024;
 
-    // --- Apply pipeline: BWT → MTF → zero-run-length encode ---
-    var (bwtData, primaryIndex) = BurrowsWheelerTransform.Forward(data);
-    var mtfData = MoveToFrontTransform.Encode(bwtData);
-    var payload = ZeroRunEncode(mtfData);
+  /// <summary>Encodes using libbsc's default 25 MiB block size, following contexts and QLFC-static coder.</summary>
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, DefaultBlockSize, BscSortingContexts.Following, BscEntropyCoder.Static);
 
-    // --- Build mode bitfield (sorter=0 BWT, coder=0, lzpMinLen=0, lzpHashSize=0) ---
-    var mode = ModeStoreRle;
+  internal static void Compress(
+      Stream input,
+      Stream output,
+      int blockSize,
+      BscSortingContexts sortingContexts,
+      BscEntropyCoder entropyCoder) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (blockSize is < MinimumBlockSize or > MaximumBlockSize)
+      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
+        $"BSC block size must be between {MinimumBlockSize} and {MaximumBlockSize} bytes.");
+    if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
+      throw new ArgumentOutOfRangeException(nameof(sortingContexts));
+    if (entropyCoder is not (BscEntropyCoder.Static or BscEntropyCoder.Adaptive or BscEntropyCoder.Fast))
+      throw new ArgumentOutOfRangeException(nameof(entropyCoder));
 
-    // --- Adler-32 checksums ---
-    var adler32Data       = Adler32(data);
-    var adler32Compressed = Adler32(payload);
+    var data = ReadRemaining(input);
+    var blockCount = data.Length == 0 ? 0 : ((data.Length - 1) / blockSize) + 1;
 
-    // --- Build internal header (first 24 bytes, then checksum of those) ---
-    var blockSize = InternalHeaderSize + payload.Length; // total compressed including header
-    var dataSize  = data.Length;
-
-    var headerBytes = new byte[InternalHeaderSize];
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(0),  blockSize);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(4),  dataSize);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(8),  mode);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(12), primaryIndex);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(16), (int)adler32Data);
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(20), (int)adler32Compressed);
-    var adler32Header = Adler32(headerBytes.AsSpan(0, 24)); // checksum of first 24 bytes
-    BinaryPrimitives.WriteInt32LittleEndian(headerBytes.AsSpan(24), (int)adler32Header);
-
-    // --- Write file ---
     output.Write(Magic);
+    Span<byte> countBytes = stackalloc byte[sizeof(int)];
+    BinaryPrimitives.WriteInt32LittleEndian(countBytes, blockCount);
+    output.Write(countBytes);
 
-    // Block count
-    var blockCountBytes = new byte[4];
-    BinaryPrimitives.WriteInt32LittleEndian(blockCountBytes, 1);
-    output.Write(blockCountBytes);
-
-    // BSC_BLOCK_HEADER: offset=0, recordSize=1, sortingContexts=1
-    var bscBlockHeader = new byte[BscBlockHeaderSize];
-    BinaryPrimitives.WriteInt64LittleEndian(bscBlockHeader.AsSpan(0), 0L);
-    bscBlockHeader[8] = 1; // recordSize
-    bscBlockHeader[9] = 1; // sortingContexts
-    output.Write(bscBlockHeader);
-
-    // Internal header + payload
-    output.Write(headerBytes);
-    output.Write(payload);
+    var offset = 0;
+    for (var block = 0; block < blockCount; ++block) {
+      var length = Math.Min(blockSize, data.Length - offset);
+      WriteBlock(data.AsSpan(offset, length), output, offset, sortingContexts, entropyCoder);
+      offset += length;
+    }
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Decodes a bsc1 stream.</summary>
   public static void Decompress(Stream input, Stream output) {
-    // --- Verify magic ---
-    var magic = new byte[4];
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    Span<byte> magic = stackalloc byte[4];
     input.ReadExactly(magic);
-    if (magic[0] != 0x62 || magic[1] != 0x73 || magic[2] != 0x63 || magic[3] != 0x31)
+    if (!magic.SequenceEqual(Magic))
       throw new InvalidDataException("Not a BSC stream: invalid magic bytes");
 
-    // --- Block count ---
-    var blockCountBytes = new byte[4];
-    input.ReadExactly(blockCountBytes);
-    var nBlocks = BinaryPrimitives.ReadInt32LittleEndian(blockCountBytes);
-    if (nBlocks < 0 || nBlocks > 65536)
-      throw new InvalidDataException($"BSC: invalid block count {nBlocks}");
+    Span<byte> countBytes = stackalloc byte[sizeof(int)];
+    input.ReadExactly(countBytes);
+    var blockCount = BinaryPrimitives.ReadInt32LittleEndian(countBytes);
+    if (blockCount < 0)
+      throw new InvalidDataException($"BSC: invalid block count {blockCount}");
 
-    for (var b = 0; b < nBlocks; b++) {
-      // --- BSC_BLOCK_HEADER (10 bytes) ---
-      var bscBlockHeader = new byte[BscBlockHeaderSize];
-      input.ReadExactly(bscBlockHeader);
-      // offset, recordSize, sortingContexts — read but not validated further for round-trip
+    if (input.CanSeek) {
+      var remaining = input.Length - input.Position;
+      if ((long)blockCount * MinimumEncodedBlockSize > remaining)
+        throw new InvalidDataException($"BSC: block count {blockCount} exceeds the available stream data");
+    }
 
-      // --- Internal header (28 bytes) ---
-      var headerBytes = new byte[InternalHeaderSize];
-      input.ReadExactly(headerBytes);
+    Span<byte> fileHeader = stackalloc byte[BscBlockHeaderSize];
+    Span<byte> blockHeader = stackalloc byte[InternalHeaderSize];
+    long expectedSequentialOffset = 0;
 
-      var blockSize         = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(0));
-      var dataSize          = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(4));
-      // mode                = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(8));
-      var primaryIndex      = BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(12));
-      var adler32Data       = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(16));
-      var adler32Compressed = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(20));
-      var adler32Header     = (uint)BinaryPrimitives.ReadInt32LittleEndian(headerBytes.AsSpan(24));
+    for (var block = 0; block < blockCount; ++block) {
+      input.ReadExactly(fileHeader);
+      var blockOffset = BinaryPrimitives.ReadInt64LittleEndian(fileHeader);
+      var recordSize = fileHeader[8];
+      var sortingContexts = (BscSortingContexts)fileHeader[9];
 
-      // Verify header checksum (first 24 bytes of header)
-      var expectedHeaderChecksum = Adler32(headerBytes.AsSpan(0, 24));
-      if (expectedHeaderChecksum != adler32Header)
+      if (blockOffset < 0)
+        throw new InvalidDataException($"BSC: invalid negative block offset {blockOffset}");
+      if (recordSize != 1)
+        throw new NotSupportedException($"BSC: record reordering (record size {recordSize}) is not supported");
+      if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
+        throw new InvalidDataException($"BSC: invalid sorting-context order {(byte)sortingContexts}");
+
+      input.ReadExactly(blockHeader);
+      var encodedBlockSize = BinaryPrimitives.ReadInt32LittleEndian(blockHeader);
+      var dataSize = BinaryPrimitives.ReadInt32LittleEndian(blockHeader[4..]);
+      var mode = BinaryPrimitives.ReadInt32LittleEndian(blockHeader[8..]);
+      var primaryIndex = BinaryPrimitives.ReadInt32LittleEndian(blockHeader[12..]);
+      var dataChecksum = (uint)BinaryPrimitives.ReadInt32LittleEndian(blockHeader[16..]);
+      var compressedChecksum = (uint)BinaryPrimitives.ReadInt32LittleEndian(blockHeader[20..]);
+      var headerChecksum = (uint)BinaryPrimitives.ReadInt32LittleEndian(blockHeader[24..]);
+
+      if (BscBlockCodec.Adler32(blockHeader[..24]) != headerChecksum)
         throw new InvalidDataException("BSC: header checksum mismatch");
+      if (encodedBlockSize is < InternalHeaderSize or > MaximumBlockSize + InternalHeaderSize)
+        throw new InvalidDataException($"BSC: invalid block size {encodedBlockSize}");
+      if (dataSize < 0 || dataSize > MaximumBlockSize)
+        throw new InvalidDataException($"BSC: invalid data size {dataSize}");
+      if (blockOffset > long.MaxValue - dataSize)
+        throw new InvalidDataException("BSC: block range overflows the output address space");
 
-      // Read payload
-      var payloadSize = blockSize - InternalHeaderSize;
-      if (payloadSize < 0)
-        throw new InvalidDataException($"BSC: invalid block size {blockSize}");
+      var payloadSize = encodedBlockSize - InternalHeaderSize;
+      if (mode != 0 && payloadSize > dataSize)
+        throw new InvalidDataException("BSC: compressed block is larger than its decoded data");
+      if (input.CanSeek && payloadSize > input.Length - input.Position)
+        throw new InvalidDataException("BSC: truncated block payload");
 
       var payload = new byte[payloadSize];
-      if (payloadSize > 0)
+      if (payloadSize != 0)
         input.ReadExactly(payload);
-
-      // Verify compressed payload checksum
-      var actualCompressedChecksum = Adler32(payload);
-      if (actualCompressedChecksum != adler32Compressed)
+      if (BscBlockCodec.Adler32(payload) != compressedChecksum)
         throw new InvalidDataException("BSC: compressed payload checksum mismatch");
 
-      // --- Reverse pipeline: zero-run decode → MTF inverse → BWT inverse ---
-      var mtfData = ZeroRunDecode(payload, dataSize);
-      var bwtData = MoveToFrontTransform.Decode(mtfData);
-      var original = BurrowsWheelerTransform.Inverse(bwtData, primaryIndex);
-
-      // Verify original data checksum
-      var actualDataChecksum = Adler32(original);
-      if (actualDataChecksum != adler32Data)
+      var decoded = BscBlockCodec.Decode(payload, mode, primaryIndex, dataSize);
+      // libbsc checks adler32_data before the outer preceding-context reversal.
+      if (BscBlockCodec.Adler32(decoded) != dataChecksum)
         throw new InvalidDataException("BSC: original data checksum mismatch");
+      if (sortingContexts == BscSortingContexts.Preceding)
+        Array.Reverse(decoded);
 
-      output.Write(original);
-    }
-  }
+      if (output.CanSeek)
+        output.Position = blockOffset;
+      else if (blockOffset != expectedSequentialOffset)
+        throw new NotSupportedException("BSC: out-of-order blocks require a seekable output stream");
 
-  // -------------------------------------------------------------------------
-  // Zero-run-length encoding
-  // Zeros are encoded as: 0x00 followed by a byte giving (run_length - 1).
-  // Non-zero bytes pass through unchanged.
-  // This avoids reserving an escape byte since MTF output concentrates zeros.
-  // -------------------------------------------------------------------------
-  private static byte[] ZeroRunEncode(ReadOnlySpan<byte> data) {
-    if (data.Length == 0)
-      return [];
-
-    var result = new List<byte>(data.Length);
-    var i = 0;
-    while (i < data.Length) {
-      if (data[i] != 0) {
-        result.Add(data[i]);
-        i++;
-      } else {
-        // Count consecutive zeros
-        var runStart = i;
-        while (i < data.Length && data[i] == 0)
-          i++;
-        var runLen = i - runStart;
-
-        // Emit runs in chunks of max 256 (run byte = runLen-1, fits in one byte)
-        while (runLen > 0) {
-          var chunk = Math.Min(runLen, 256);
-          result.Add(0x00);
-          result.Add((byte)(chunk - 1));
-          runLen -= chunk;
-        }
-      }
+      output.Write(decoded);
+      expectedSequentialOffset = blockOffset + decoded.LongLength;
     }
 
-    return [.. result];
+    if (output.CanSeek)
+      output.Position = output.Length;
   }
 
-  private static byte[] ZeroRunDecode(ReadOnlySpan<byte> data, int expectedSize) {
-    if (data.Length == 0)
-      return [];
+  private static void WriteBlock(
+      ReadOnlySpan<byte> data,
+      Stream output,
+      long blockOffset,
+      BscSortingContexts sortingContexts,
+      BscEntropyCoder entropyCoder) {
+    var encoded = BscBlockCodec.Encode(data, sortingContexts, entropyCoder);
+    var compressedChecksum = BscBlockCodec.Adler32(encoded.Payload);
 
-    var result = new List<byte>(expectedSize);
-    var i = 0;
-    while (i < data.Length) {
-      if (data[i] != 0) {
-        result.Add(data[i]);
-        i++;
-      } else {
-        if (i + 1 >= data.Length)
-          throw new InvalidDataException("BSC: truncated zero-run escape sequence");
-        var runLen = (int)data[i + 1] + 1;
-        for (var r = 0; r < runLen; r++)
-          result.Add(0x00);
-        i += 2;
-      }
-    }
+    Span<byte> blockHeader = stackalloc byte[InternalHeaderSize];
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader, checked(InternalHeaderSize + encoded.Payload.Length));
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[4..], data.Length);
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[8..], encoded.Mode);
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[12..], encoded.PrimaryIndex);
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[16..], (int)encoded.DataChecksum);
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[20..], (int)compressedChecksum);
+    BinaryPrimitives.WriteInt32LittleEndian(blockHeader[24..], (int)BscBlockCodec.Adler32(blockHeader[..24]));
 
-    return [.. result];
+    Span<byte> fileHeader = stackalloc byte[BscBlockHeaderSize];
+    BinaryPrimitives.WriteInt64LittleEndian(fileHeader, blockOffset);
+    fileHeader[8] = 1;
+    fileHeader[9] = (byte)encoded.SortingContexts;
+
+    output.Write(fileHeader);
+    output.Write(blockHeader);
+    output.Write(encoded.Payload);
   }
 
-  // -------------------------------------------------------------------------
-  // Adler-32
-  // -------------------------------------------------------------------------
-  private static uint Adler32(ReadOnlySpan<byte> data) {
-    uint a = 1, b = 0;
-    foreach (var x in data) {
-      a = (a + x) % 65521;
-      b = (b + a) % 65521;
-    }
-    return (b << 16) | a;
-  }
-
-  // -------------------------------------------------------------------------
-  // Helpers
-  // -------------------------------------------------------------------------
-  private static byte[] ReadAll(Stream stream) {
-    if (stream is MemoryStream ms)
-      return ms.ToArray();
-    using var buf = new MemoryStream();
-    stream.CopyTo(buf);
-    return buf.ToArray();
+  private static byte[] ReadRemaining(Stream stream) {
+    using var buffer = new MemoryStream();
+    stream.CopyTo(buffer);
+    return buffer.ToArray();
   }
 }

@@ -3909,7 +3909,7 @@ Implements `IDisposable`.
 
 Describes bsc format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3925,18 +3925,20 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Searchable BSC creation parameters. The defaults and coder identifiers map to libbsc's command-line defaults and LIBBSC_CODER_QLFC_* constants. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `BscStream`
 
-BSC (libbsc) stream implementation. File layout: [0..3] magic "bsc1" (0x62 0x73 0x63 0x31) [4..7] int32 LE: block count Per block: BSC_BLOCK_HEADER (10 bytes): [0..7] int64 LE: blockOffset [8] int8: recordSize [9] int8: sortingContexts Internal header (28 bytes = 7 × int32 LE): blockSize, dataSize, mode, index, adler32_data, adler32_compressed, adler32_header Compressed payload bytes
+BSC (libbsc) file-stream framing around `BscBlockCodec`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes using libbsc's default 25 MiB block size, following contexts and QLFC-static coder. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes a bsc1 stream. |
 
 ### Namespace `FileFormat.Bzip2`
 
