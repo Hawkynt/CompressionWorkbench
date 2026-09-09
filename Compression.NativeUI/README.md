@@ -20,8 +20,13 @@ backends, initialises the format registry, and then offers exactly the mount
 backend the host can actually provide: `DokanFilesystemMountBackend` on Windows,
 `FuseFilesystemMountBackend` on Linux — and each only if its own runtime probe
 reports the dependency present. A backend whose probe fails is not listed, so the
-UI never invents Dokan or FUSE availability. Both are read-only today; neither
-advertises `SupportsReadWrite`.
+UI never invents Dokan or FUSE availability. Dokan and FUSE both advertise
+read-write mounting; the capability resolver still admits that mode only for an
+exact filesystem profile whose backing source is writable and whose driver
+provides the required mount-grade file mutation primitives. D64/CBM DOS is the
+first qualified end-to-end writable profile; its flat namespace intentionally
+returns unsupported for directory creation/removal rather than disabling file
+writes for the whole mount.
 
 `MainForm` receives the resolved backends and a `RegistryMountLauncher` over
 `FilesystemMountLauncher`, so mount and unmount are driven through

@@ -5,77 +5,50 @@ namespace Compression.Mounting.Fuse;
 
 /// <summary>
 /// Narrow libfuse3 ABI surface derived from the public low-level API headers.
-/// The numeric/layout data here is interoperability data; no libfuse
-/// implementation code is copied. The first qualified ABI is Linux x86-64.
+/// Numeric/layout data is interoperability data; no libfuse implementation code
+/// is copied. The first qualified ABI is Linux x86-64.
 /// </summary>
 internal static class LibFuseNative {
   private const string Library = FuseRuntimeProbe.RuntimeLibrary;
 
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-  internal static extern int fuse_opt_add_arg(
-    ref FuseArgs args,
-    [MarshalAs(UnmanagedType.LPUTF8Str)] string arg
-  );
-
+  internal static extern int fuse_opt_add_arg(ref FuseArgs args, [MarshalAs(UnmanagedType.LPUTF8Str)] string arg);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern void fuse_opt_free_args(ref FuseArgs args);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-  internal static extern IntPtr fuse_session_new(
-    ref FuseArgs args,
-    ref FuseLowLevelOps operations,
-    nuint operationSize,
-    IntPtr userData
-  );
-
+  internal static extern IntPtr fuse_session_new(ref FuseArgs args, ref FuseLowLevelOps operations, nuint operationSize, IntPtr userData);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-  internal static extern int fuse_session_mount(
-    IntPtr session,
-    [MarshalAs(UnmanagedType.LPUTF8Str)] string mountPoint
-  );
-
+  internal static extern int fuse_session_mount(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string mountPoint);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_session_loop(IntPtr session);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern void fuse_session_exit(IntPtr session);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_session_exited(IntPtr session);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern void fuse_session_unmount(IntPtr session);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern void fuse_session_destroy(IntPtr session);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern IntPtr fuse_req_userdata(IntPtr request);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_reply_err(IntPtr request, int error);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern void fuse_reply_none(IntPtr request);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_reply_entry(IntPtr request, ref FuseEntryParam entry);
-
+  [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+  internal static extern int fuse_reply_create(IntPtr request, ref FuseEntryParam entry, ref FuseFileInfo fileInfo);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_reply_attr(IntPtr request, ref LinuxStat attributes, double timeout);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-  internal static extern int fuse_reply_readlink(
-    IntPtr request,
-    [MarshalAs(UnmanagedType.LPUTF8Str)] string target
-  );
-
+  internal static extern int fuse_reply_readlink(IntPtr request, [MarshalAs(UnmanagedType.LPUTF8Str)] string target);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_reply_open(IntPtr request, ref FuseFileInfo fileInfo);
-
+  [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+  internal static extern int fuse_reply_write(IntPtr request, nuint count);
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern int fuse_reply_buf(IntPtr request, IntPtr buffer, nuint size);
-
   [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
   internal static extern nuint fuse_add_direntry(
     IntPtr request,
@@ -90,7 +63,6 @@ internal static class LibFuseNative {
 internal static class LibCNative {
   [DllImport("libc", CallingConvention = CallingConvention.Cdecl)]
   internal static extern uint geteuid();
-
   [DllImport("libc", CallingConvention = CallingConvention.Cdecl)]
   internal static extern uint getegid();
 }
@@ -102,6 +74,11 @@ internal struct FuseArgs {
   public int Allocated;
 }
 
+/// <summary>
+/// Prefix of <c>struct fuse_lowlevel_ops</c> through <c>create</c>. libfuse accepts
+/// the supplied structure size, so later callbacks may be omitted while this
+/// ABI slice remains stable and explicit.
+/// </summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct FuseLowLevelOps {
   public IntPtr Init;
@@ -134,6 +111,7 @@ internal struct FuseLowLevelOps {
   public IntPtr ListXAttr;
   public IntPtr RemoveXAttr;
   public IntPtr Access;
+  public IntPtr Create;
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -196,19 +174,18 @@ internal static class FuseStatFactory {
   private const uint Fifo = 0x1000;
   private const uint Socket = 0xC000;
   private const uint ReadOnlyFilePermissions = 0x124; // 0444
+  private const uint WritableFilePermissions = 0x1B6; // 0666
   private const uint ReadOnlyDirectoryPermissions = 0x16D; // 0555
+  private const uint WritableDirectoryPermissions = 0x1ED; // 0755
   private const uint SymbolicLinkPermissions = 0x1FF; // 0777
 
-  public static LinuxStat Create(ulong inode, FilesystemNodeInfo node) {
+  public static LinuxStat Create(ulong inode, FilesystemNodeInfo node, bool writable = false) {
     var allocated = Math.Max(0, node.AllocatedSize);
-    var linkCount = node.Kind == FilesystemNodeKind.Directory
-      ? Math.Max(2U, node.LinkCount)
-      : Math.Max(1U, node.LinkCount);
-
+    var linkCount = node.Kind == FilesystemNodeKind.Directory ? Math.Max(2U, node.LinkCount) : Math.Max(1U, node.LinkCount);
     return new() {
       Inode = inode,
       LinkCount = linkCount,
-      Mode = ToMode(node.Kind),
+      Mode = ToMode(node.Kind, writable),
       UserId = LibCNative.geteuid(),
       GroupId = LibCNative.getegid(),
       Size = node.Kind == FilesystemNodeKind.RegularFile ? Math.Max(0, node.Size) : 0,
@@ -220,19 +197,19 @@ internal static class FuseStatFactory {
     };
   }
 
-  public static FuseEntryParam CreateEntry(FuseNodeSnapshot snapshot)
+  public static FuseEntryParam CreateEntry(FuseNodeSnapshot snapshot, bool writable = false)
     => new() {
       Inode = snapshot.Inode,
       Generation = snapshot.Node.NodeId.Generation,
-      Attributes = Create(snapshot.Inode, snapshot.Node),
+      Attributes = Create(snapshot.Inode, snapshot.Node, writable),
       AttributeTimeout = 1,
       EntryTimeout = 1,
     };
 
-  private static uint ToMode(FilesystemNodeKind kind)
+  private static uint ToMode(FilesystemNodeKind kind, bool writable)
     => kind switch {
-      FilesystemNodeKind.RegularFile => RegularFile | ReadOnlyFilePermissions,
-      FilesystemNodeKind.Directory => Directory | ReadOnlyDirectoryPermissions,
+      FilesystemNodeKind.RegularFile => RegularFile | (writable ? WritableFilePermissions : ReadOnlyFilePermissions),
+      FilesystemNodeKind.Directory => Directory | (writable ? WritableDirectoryPermissions : ReadOnlyDirectoryPermissions),
       FilesystemNodeKind.SymbolicLink => SymbolicLink | SymbolicLinkPermissions,
       FilesystemNodeKind.BlockDevice => BlockDevice | ReadOnlyFilePermissions,
       FilesystemNodeKind.CharacterDevice => CharacterDevice | ReadOnlyFilePermissions,
@@ -244,17 +221,12 @@ internal static class FuseStatFactory {
   private static LinuxTimespec ToTimespec(DateTimeOffset? value) {
     if (value is null)
       return default;
-
     var ticksSinceEpoch = value.Value.UtcDateTime.Ticks - DateTime.UnixEpoch.Ticks;
     var seconds = Math.DivRem(ticksSinceEpoch, TimeSpan.TicksPerSecond, out var remainder);
     if (remainder < 0) {
       --seconds;
       remainder += TimeSpan.TicksPerSecond;
     }
-
-    return new() {
-      Seconds = seconds,
-      Nanoseconds = remainder * 100,
-    };
+    return new() { Seconds = seconds, Nanoseconds = remainder * 100 };
   }
 }
