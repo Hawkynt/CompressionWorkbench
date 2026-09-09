@@ -164,8 +164,8 @@ public sealed class AcmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       reason = "ACM channels/sample rate must fit unsigned 16-bit header fields";
       return false;
     }
-    var level = PropertyInt(stream.Format, "level") ?? options.GetOptionInt("Level", 7);
-    var rows = PropertyInt(stream.Format, "rows") ?? options.GetOptionInt("Rows", 16);
+    var level = PropertyInt(stream, "level") ?? options.GetOptionInt("Level", 7);
+    var rows = PropertyInt(stream, "rows") ?? options.GetOptionInt("Rows", 16);
     if (!InterplayAcmEncoder.IsGeometryEncodable(level, rows)) {
       reason = $"ACM level={level}, rows={rows} cannot fit mandatory block framing";
       return false;
@@ -250,7 +250,7 @@ public sealed class AcmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     output.Write(blob);
   }
 
-  private static (byte[] Pcm, int Channels, int SampleRate) ReadWavInputs(IReadOnlyList<ArchiveInputInfo> files) {
+  private static (byte[] Pcm, int Channels, int SampleRate) ReadWavInputs(IReadOnlyList<(string Name, byte[] Data)> files) {
     if (files.Count == 1) {
       var wav = new WavReader().ReadCanonicalPcm(files[0].Data);
       if (wav.FormatCode != 1 || wav.BitsPerSample is not (8 or 16 or 24 or 32))
@@ -294,11 +294,17 @@ public sealed class AcmFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return result;
   }
 
-  private static bool TryMetadataInt(IReadOnlyDictionary<string, string> metadata, string key, out int value) =>
-    metadata.TryGetValue(key, out var text) && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+  private static bool TryMetadataInt(IReadOnlyDictionary<string, string> metadata, string key, out int value) {
+    value = 0;
+    return metadata.TryGetValue(key, out var text) &&
+           int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+  }
 
-  private static bool TryMetadataUInt(IReadOnlyDictionary<string, string> metadata, string key, out uint value) =>
-    metadata.TryGetValue(key, out var text) && uint.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+  private static bool TryMetadataUInt(IReadOnlyDictionary<string, string> metadata, string key, out uint value) {
+    value = 0;
+    return metadata.TryGetValue(key, out var text) &&
+           uint.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+  }
 
   private static int? PropertyInt(AudioStreamFormat format, string key) =>
     format.Properties is { } properties && properties.TryGetValue(key, out var text) &&

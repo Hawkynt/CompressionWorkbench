@@ -1651,7 +1651,7 @@ IMA ADPCM (Interactive Multimedia Association Adaptive Differential PCM) codec. 
 
 ### Namespace `Codec.InterplayAcm`
 
-[`InterplayAcmCodec`](#interplayacmcodec) · [`InterplayAcmCodec.Header`](#interplayacmcodecheader)
+[`InterplayAcmCodec`](#interplayacmcodec) · [`InterplayAcmCodec.Header`](#interplayacmcodecheader) · [`InterplayAcmEncoder`](#interplayacmencoder)
 
 #### `InterplayAcmCodec`
 
@@ -1678,6 +1678,16 @@ Implements `IEquatable<Header>`.
 | `Rows` | `int Rows { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 | `TotalSamples` | `uint TotalSamples { get; init; }` |  |
+
+#### `InterplayAcmEncoder`
+
+Clean-room Interplay ACM encoder derived from the public decoder transform. The synthesis stage used by Interplay/FFmpeg is inverted with a regularized least-squares analysis filter, then quantized into the format's amplitude table and universally-defined zero/linear filler modes. No historical encoder implementation is copied or translated.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> samples, int channels, int sampleRate, int level = 7, int rows = 16)` | Encodes interleaved signed PCM16 samples as a standalone Interplay ACM file. |
+| `Encode` | `static void Encode(ReadOnlySpan<short> samples, Stream output, int channels, int sampleRate, int level = 7, int rows = 16)` | Encodes interleaved signed PCM16 samples as a standalone Interplay ACM file. |
+| `IsGeometryEncodable` | `static bool IsGeometryEncodable(int level, int rows)` | Returns whether this header geometry can carry at least a zero block within FFmpeg's block buffer. |
 
 ### Namespace `Codec.Lpc10`
 
@@ -4285,28 +4295,41 @@ Implements `IEquatable<Ac3SyncFrame>`.
 
 #### `AcmFormatDescriptor`
 
-Surfaces an Interplay ACM file (Fallout, Baldur's Gate, … — magic `0x01032897`) as a pseudo-archive: the byte-exact `FULL.acm` container, one decoded mono `<CHANNEL>.wav` per channel (via `InterplayAcmCodec`), and a `metadata.ini` carrying the parsed header. The format is read-only (there is no published ACM encoder). Interplay assets are quirky: the header's channel field is often `1` even for material that ships interleaved as stereo (and many ACMs are wrapped inside `.bif` archives). The descriptor surfaces the raw header value verbatim in `metadata.ini` and splits exactly that many channels — callers that know an asset is really stereo can re-interpret the single decoded stream. Inputs the decoder can't handle fall back to `FULL.acm` + metadata only.
+Interplay ACM audio (Fallout / Baldur's Gate era). The pseudo-archive exposes the byte-exact `FULL.acm`, decoded mono channel WAVs and `metadata.ini`. Creation accepts the original container for packet-preserving remux or PCM WAV input for managed encoding. ACM geometry (`level`/`rows`) is configurable over the complete encodable header range.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AcmFormatDescriptor` | `AcmFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Adx`
 
