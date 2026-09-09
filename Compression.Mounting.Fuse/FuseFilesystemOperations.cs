@@ -285,7 +285,7 @@ internal sealed class FuseFilesystemOperations : IDisposable {
     if (!Has(FilesystemDriverCapabilities.CreateFile))
       return FuseErrno.NotSupported;
 
-    FilesystemNodeId parentNodeId;
+    FilesystemNodeId parentNodeId = default;
     FilesystemNodeId nodeId = default;
     ulong inode = 0;
     var created = false;

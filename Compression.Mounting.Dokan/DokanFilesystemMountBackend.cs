@@ -56,7 +56,9 @@ public sealed class DokanFilesystemMountBackend : IFilesystemMountBackend {
 
     var readOnly = request.Plan.AccessMode == MountAccessMode.ReadOnly;
     var operations = new DokanFilesystemOperations(request.Filesystem, readOnly);
-    var options = readOnly ? DokanOptions.WriteProtection : DokanOptions.None;
+    // DokanOptions is a flag set without a zero-named member; a writable mount simply
+    // clears WriteProtection.
+    var options = readOnly ? DokanOptions.WriteProtection : default;
     if (request.Filesystem.Profile.Capabilities.HasFlag(FilesystemDriverCapabilities.CaseSensitiveNames))
       options |= DokanOptions.CaseSensitive;
 

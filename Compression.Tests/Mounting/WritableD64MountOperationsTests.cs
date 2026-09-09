@@ -2,9 +2,11 @@ using System.Security.Principal;
 using Compression.Mounting;
 using Compression.Mounting.Dokan;
 using Compression.Mounting.Fuse;
+using Compression.Registry;
 using DokanNet;
 using FileSystem.D64;
 using DokanAccess = DokanNet.FileAccess;
+using HostAccess = System.IO.FileAccess;
 
 namespace Compression.Tests.Mounting;
 
@@ -128,7 +130,7 @@ public sealed class WritableD64MountOperationsTests {
     });
 
     var renamedId = reopened.Lookup(reopened.RootNodeId, "RENAMED")!.Value;
-    using var file = reopened.OpenFile(renamedId, FileAccess.Read);
+    using var file = reopened.OpenFile(renamedId, HostAccess.Read);
     var data = new byte[12];
     Assert.That(file.Read(0, data), Is.EqualTo(data.Length));
     Assert.That(data, Is.EqualTo(new byte[] {
