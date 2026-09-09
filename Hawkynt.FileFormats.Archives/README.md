@@ -62,7 +62,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Density | `Density` | `.density` | ✅ | ✅ | — |  | [GitHub](https://github.com/k0dai/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
-| ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
+| ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
 | KWAJ | `Kwaj` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/KWAJ) |
 | Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | — |  | [GitHub](https://github.com/inikep/lizard) |
 | [LZ4 frame](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | `Lz4` | `.lz4` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
