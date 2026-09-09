@@ -87,7 +87,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
-| SZDD | `Szdd` |  | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
+| SZDD | `Szdd` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | [uuencode](https://en.wikipedia.org/wiki/Uuencoding) | `UuEncoding` | `.uue` `.uu` | ✅ | ✅ | — |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/uuencode.html) |
 | [XZ](https://en.wikipedia.org/wiki/XZ_Utils) | `Xz` | `.xz` | ✅ | ✅ | ✅ |  | [tukaani.org](https://tukaani.org/xz/xz-file-format.txt) |
 | [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` `.uu` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |

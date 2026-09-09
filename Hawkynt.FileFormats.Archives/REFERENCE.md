@@ -17448,6 +17448,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using the size-optimal SZDD parser. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 

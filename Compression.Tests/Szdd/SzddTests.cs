@@ -1,3 +1,4 @@
+using Compression.Registry;
 using FileFormat.Szdd;
 
 namespace Compression.Tests.Szdd;
@@ -141,5 +142,93 @@ public class SzddTests {
     using var ms = new MemoryStream(compressed);
     var missing = SzddStream.GetMissingChar(ms);
     Assert.That(missing, Is.EqualTo('_'));
+  }
+
+  // ── Size-optimal parser ───────────────────────────────────────────────────
+
+  [Category("HappyPath")]
+  [Test]
+  public void Descriptor_AdvertisesOptimize() {
+    var descriptor = new SzddFormatDescriptor();
+
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
+  }
+
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [TestCaseSource(nameof(OptimizerCorpus))]
+  public void CompressOptimal_IsNoLargerThanGreedy_AndRoundTrips(byte[] input) {
+    var greedy = SzddStream.Compress(input);
+    var optimal = CompressOptimal(input);
+
+    Assert.That(optimal.Length, Is.LessThanOrEqualTo(greedy.Length),
+      "The optimal parse must never encode more bytes than the greedy one.");
+    Assert.That(SzddStream.Decompress(optimal), Is.EqualTo(input),
+      "Optimally parsed output must be read by the ordinary SZDD decoder.");
+  }
+
+  [Category("HappyPath")]
+  [Test]
+  public void CompressOptimal_BeatsGreedy_OnOverlappingPhrases() {
+    // Phrases of differing lengths recur in random order, so a longest-match-now
+    // choice repeatedly hides a better token immediately after it. The planner
+    // sees past that; the greedy parse does not.
+    var input = PhraseCorpus(seed: 47);
+
+    var greedy = SzddStream.Compress(input).Length;
+    var optimal = CompressOptimal(input).Length;
+
+    Assert.That(optimal, Is.LessThan(greedy),
+      $"Optimal parse produced {optimal} bytes, greedy {greedy}.");
+    Assert.That(SzddStream.Decompress(CompressOptimal(input)), Is.EqualTo(input));
+  }
+
+  private static byte[] PhraseCorpus(int seed) {
+    var rng = new Random(seed);
+    var phrases = new List<byte[]>();
+    for (var i = 0; i < 12; ++i) {
+      var phrase = new byte[rng.Next(3, 14)];
+      rng.NextBytes(phrase);
+      phrases.Add(phrase);
+    }
+
+    var buffer = new List<byte>();
+    while (buffer.Count < 6000) {
+      buffer.AddRange(phrases[rng.Next(phrases.Count)]);
+      if (rng.Next(4) == 0)
+        buffer.Add((byte)rng.Next(256));
+    }
+
+    return [.. buffer];
+  }
+
+  [Category("EdgeCase")]
+  [Category("RoundTrip")]
+  [Test]
+  public void CompressOptimal_Empty() {
+    var optimal = CompressOptimal([]);
+
+    Assert.That(optimal.Length, Is.EqualTo(14), "Only the SZDD header is emitted.");
+    Assert.That(SzddStream.Decompress(optimal), Is.Empty);
+  }
+
+  private static IEnumerable<byte[]> OptimizerCorpus() {
+    yield return "Hello, SZDD World!"u8.ToArray();
+    yield return [(byte)'A'];
+    yield return [.. Enumerable.Repeat((byte)'Z', 5000)];
+    yield return [.. Enumerable.Range(0, 4096).Select(i => (byte)i)];
+    yield return [.. Enumerable.Range(0, 20000).Select(i => (byte)((i * 31 + i / 7) & 0xff))];
+
+    var rng = new Random(4711);
+    yield return [.. Enumerable.Range(0, 30000).Select(_ => (byte)rng.Next(256))];
+  }
+
+  private static byte[] CompressOptimal(byte[] input) {
+    IStreamFormatOperations operations = new SzddFormatDescriptor();
+    using var source = new MemoryStream(input, writable: false);
+    using var destination = new MemoryStream();
+    operations.CompressOptimal(source, destination);
+    return destination.ToArray();
   }
 }
