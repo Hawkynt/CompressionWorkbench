@@ -7,7 +7,7 @@ namespace FileSystem.Gfs2;
 
 /// <summary>
 /// Clean-room GFS2 (Global File System 2) image writer producing a minimal,
-/// empty, standalone (<c>lock_nolock</c>, single-journal) volume that real
+/// standalone (<c>lock_nolock</c>, single-journal) volume that real
 /// <c>fsck.gfs2</c> (gfs2-utils) accepts without errors.
 ///
 /// <para>The output mirrors the on-disk structures defined in the public Linux
@@ -29,14 +29,15 @@ namespace FileSystem.Gfs2;
 ///   <item><description><c>per_node</c> system inodes <c>inum_range0</c>,
 ///   <c>statfs_change0</c>, <c>quota_change0</c> (the latter a 1&#160;MB file of
 ///   empty quota-change blocks).</description></item>
-///   <item><description>The root directory dinode with <c>.</c> and <c>..</c>.</description></item>
+///   <item><description>The root directory dinode plus native nested stuffed
+///   directory dinodes inferred from caller paths.</description></item>
 /// </list>
 ///
 /// <para>Block-accounting fields (<c>rg_free</c>, <c>rg_dinodes</c>, the master
 /// <c>statfs</c>, the <c>inum</c> next-formal-number) are all computed from the
 /// real layout so <c>check_statfs</c> passes.</para>
 /// </summary>
-public sealed class Gfs2Writer {
+public sealed partial class Gfs2Writer {
   private const int BlockSize = 4096;
   private const int BlockShift = 12;
 
@@ -127,7 +128,7 @@ public sealed class Gfs2Writer {
                       FiInumRange = 5, FiStatfsChange = 6, FiQuotaChange = 7,
                       FiInum = 8, FiStatfs = 9, FiRindex = 10, FiQuota = 11,
                       FiRoot = 12;
-  private const ulong NextFreeFormalIno = 13;
+  private const ulong FirstUserFormalIno = 13;
 
   // Cluster lock-table name written to sb_locktable (read back as Gfs2Reader.LockTable).
   private readonly string _lockTable;
@@ -140,6 +141,8 @@ public sealed class Gfs2Writer {
   private readonly List<(string Name, FilePayload Payload)> _files = [];
   private readonly List<FilePlan> _filePlans = [];
   private readonly DeferredPayloads _payloads = new();
+  private DirectoryPlan? _rootPlan;
+  private ulong _nextFreeFormalIno = FirstUserFormalIno;
 
   /// <summary>Data blocks one resource group covers. gfs2-utils keeps a group at or under 256 MB.</summary>
   private const long MaxRgData = 256L * 1024 * 1024 / BlockSize - 4;
@@ -149,6 +152,16 @@ public sealed class Gfs2Writer {
 
   /// <summary>Block pointers the dinode's own area holds, and one indirect block holds.</summary>
   private const int PointersPerDinode = (BlockSize - DinodeHeaderSize) / 8; // 483
+
+  /// <summary>What one directory gets: its dinode, children and parent link.</summary>
+  private sealed class DirectoryPlan {
+    public required string Name;
+    public DirectoryPlan? Parent;
+    public required ulong FormalIno;
+    public long Dinode;
+    public readonly List<DirectoryPlan> Directories = [];
+    public readonly List<FilePlan> Files = [];
+  }
 
   /// <summary>What one file gets: its dinode, the tree above its data, and its blocks.</summary>
   private sealed class FilePlan {
@@ -163,9 +176,9 @@ public sealed class Gfs2Writer {
   }
 
   /// <summary>
-  /// Adds a regular file to the root directory. Bodies up to
-  /// <c>BlockSize - 232</c> are stuffed in the dinode; longer ones get a
-  /// metadata tree of indirect blocks.
+  /// Adds a regular file. Forward slashes and backslashes delimit nested native
+  /// directories. Bodies up to <c>BlockSize - 232</c> are stuffed in the dinode;
+  /// longer ones get a metadata tree of indirect blocks.
   /// </summary>
   public void AddFile(string name, byte[] data) {
     ArgumentException.ThrowIfNullOrEmpty(name);
@@ -199,7 +212,8 @@ public sealed class Gfs2Writer {
       }
     }
     // Bitmaps take a block per ~16 000 data blocks, and a twentieth again keeps
-    // the last group from running right to its end.
+    // the last group from running right to its end. The same slack also covers
+    // the path-derived directory dinodes for ordinary archive layouts.
     blocks += blocks / (RbBitmapBytes * 4) + 8;
     blocks += blocks / 20;
     var bytes = blocks * BlockSize;
@@ -248,7 +262,7 @@ public sealed class Gfs2Writer {
     this.WriteSuperblock();
     this.WriteJournal();
     this.WriteMasterTree();
-    this.WriteRoot();
+    this.WriteUserTree();
     // Block accounting (statfs + rgrp free/dinode counts) must reflect the
     // complete layout, so fill these once every dinode/used block is marked.
     this.WriteStatfsPayload();
@@ -329,8 +343,9 @@ public sealed class Gfs2Writer {
     this._rg2Data0 = first.Data0;
     this._rg2Data = first.Data;
 
-    // System inodes, the root, then the caller files — all from a cursor that
-    // walks the data areas in order, stepping over each group's bitmap blocks.
+    // System inodes, the root, then path-derived directories and caller files —
+    // all from a cursor that walks the data areas in order, stepping over each
+    // group's bitmap blocks.
     this._cursorRg = 0;
     this._cursorBlock = first.Data0;
     this._perNodeDinode = this.AllocBlock();
@@ -344,7 +359,7 @@ public sealed class Gfs2Writer {
     this._quotaDinode = this.AllocBlock();
     this._rootDinode = this.AllocBlock();
 
-    this.PlanFiles();
+    this.PlanTree();
   }
 
   // Allocation cursor over the data resource groups.
@@ -383,39 +398,110 @@ public sealed class Gfs2Writer {
   }
 
   /// <summary>
-  /// Gives every caller file a dinode and, when its body does not fit stuffed in
-  /// that dinode, the data blocks plus the levels of indirect blocks the metadata
-  /// tree needs. di_height counts those levels: at height 1 the dinode's own
-  /// pointer area addresses the data blocks, and each level above multiplies the
-  /// reach by the pointers one indirect block holds.
+  /// Builds the native directory tree implied by caller paths, gives every
+  /// directory and file a formal inode number and dinode, then plans non-stuffed
+  /// file data and indirect metadata blocks.
   /// </summary>
-  private void PlanFiles() {
-    var formalIno = NextFreeFormalIno;
-    foreach (var (name, payload) in this._files) {
-      var plan = new FilePlan { Name = name, Payload = payload, FormalIno = formalIno++ };
-      plan.Dinode = this.AllocBlock();
-      this._filePlans.Add(plan);
+  private void PlanTree() {
+    this._filePlans.Clear();
+    this._nextFreeFormalIno = FirstUserFormalIno;
 
-      if (payload.Size <= BlockSize - DinodeHeaderSize)
-        continue;  // stuffed: height 0, body inline in the dinode
+    var root = new DirectoryPlan {
+      Name = "",
+      Parent = null,
+      FormalIno = FiRoot,
+      Dinode = this._rootDinode,
+    };
+    this._rootPlan = root;
+    var directories = new Dictionary<string, DirectoryPlan>(StringComparer.Ordinal) { [""] = root };
 
-      var dataCount = (payload.Size + BlockSize - 1) / BlockSize;
-      for (var i = 0L; i < dataCount; ++i)
-        plan.DataBlocks.Add(this.AllocBlock());
+    foreach (var (rawPath, payload) in this._files) {
+      var parts = SplitPath(rawPath);
+      var parent = root;
+      var directoryPath = "";
 
-      // Levels are built innermost-first: the level directly above the data, then
-      // the level above that, until one level fits the dinode's own pointers.
-      var below = dataCount;
-      plan.Height = 1;
-      while (below > PointersPerDinode) {
-        var count = (below + PointersPerIndirect - 1) / PointersPerIndirect;
-        var level = new List<long>((int)count);
-        for (var i = 0L; i < count; ++i)
-          level.Add(this.AllocBlock());
-        plan.Levels.Add(level);
-        below = count;
-        ++plan.Height;
+      for (var i = 0; i < parts.Length - 1; ++i) {
+        var segment = parts[i];
+        directoryPath = directoryPath.Length == 0 ? segment : $"{directoryPath}/{segment}";
+        if (directories.TryGetValue(directoryPath, out var existing)) {
+          parent = existing;
+          continue;
+        }
+        if (parent.Files.Any(file => file.Name == segment))
+          throw new InvalidDataException($"GFS2 path '{rawPath}' uses file '{segment}' as a directory.");
+
+        var directory = new DirectoryPlan {
+          Name = segment,
+          Parent = parent,
+          FormalIno = this._nextFreeFormalIno++,
+          Dinode = this.AllocBlock(),
+        };
+        directories.Add(directoryPath, directory);
+        parent.Directories.Add(directory);
+        parent = directory;
       }
+
+      var leaf = parts[^1];
+      if (parent.Files.Any(file => file.Name == leaf) || parent.Directories.Any(dir => dir.Name == leaf))
+        throw new InvalidDataException($"GFS2 contains more than one entry at '{rawPath}'.");
+
+      var plan = new FilePlan {
+        Name = leaf,
+        Payload = payload,
+        FormalIno = this._nextFreeFormalIno++,
+        Dinode = this.AllocBlock(),
+      };
+      parent.Files.Add(plan);
+      this._filePlans.Add(plan);
+      this.PlanFileBlocks(plan);
+    }
+  }
+
+  /// <summary>Splits one archive path into canonical GFS2 name components.</summary>
+  private static string[] SplitPath(string name) {
+    if (name.IndexOf('\0') >= 0)
+      throw new InvalidDataException("GFS2 entry names cannot contain NUL.");
+
+    var parts = name.Replace('\\', '/').Split('/', StringSplitOptions.None);
+    if (parts.Length == 0 || parts.Any(static part => part.Length == 0 || part is "." or ".."))
+      throw new InvalidDataException($"GFS2 path '{name}' is not a relative canonical path.");
+    if (parts.Length > 256)
+      throw new NotSupportedException("GFS2 paths deeper than 256 components are not emitted by this writer.");
+
+    foreach (var part in parts)
+      if (Encoding.UTF8.GetByteCount(part) > 255)
+        throw new InvalidDataException($"GFS2 name '{part}' exceeds the 255-byte directory-entry limit.");
+
+    return parts;
+  }
+
+  /// <summary>
+  /// When a file body does not fit stuffed in its dinode, assigns the data blocks
+  /// plus the levels of indirect blocks the metadata tree needs. di_height counts
+  /// those levels: at height 1 the dinode's own pointer area addresses the data
+  /// blocks, and each level above multiplies the reach by the pointers one indirect
+  /// block holds.
+  /// </summary>
+  private void PlanFileBlocks(FilePlan plan) {
+    if (plan.Payload.Size <= BlockSize - DinodeHeaderSize)
+      return;  // stuffed: height 0, body inline in the dinode
+
+    var dataCount = (plan.Payload.Size + BlockSize - 1) / BlockSize;
+    for (var i = 0L; i < dataCount; ++i)
+      plan.DataBlocks.Add(this.AllocBlock());
+
+    // Levels are built innermost-first: the level directly above the data, then
+    // the level above that, until one level fits the dinode's own pointers.
+    var below = dataCount;
+    plan.Height = 1;
+    while (below > PointersPerDinode) {
+      var count = (below + PointersPerIndirect - 1) / PointersPerIndirect;
+      var level = new List<long>((int)count);
+      for (var i = 0L; i < count; ++i)
+        level.Add(this.AllocBlock());
+      plan.Levels.Add(level);
+      below = count;
+      ++plan.Height;
     }
   }
 
@@ -533,7 +619,7 @@ public sealed class Gfs2Writer {
 
     // inum: single u64 == next free formal inode number.
     this.WriteSystemFile(this._inumDinode, FiInum, size: 8, payloadFormat: 0,
-      fill: span => BinaryPrimitives.WriteUInt64BigEndian(span, NextFreeFormalIno));
+      fill: span => BinaryPrimitives.WriteUInt64BigEndian(span, this._nextFreeFormalIno));
 
     // statfs: gfs2_statfs_change { sc_total, sc_free, sc_dinodes }. The dinode is
     // written here (to reserve/mark the block); its payload is filled later by
@@ -643,8 +729,6 @@ public sealed class Gfs2Writer {
     }
   }
 
-
-
   private (long Total, long Free, long Dinodes) ComputeStatfs() {
     // Statfs counts span all resource groups (sum of every RG's data blocks).
     var total = 0L;
@@ -664,31 +748,40 @@ public sealed class Gfs2Writer {
     BinaryPrimitives.WriteUInt64BigEndian(Span(o + 16, 8), (ulong)dinodes); // sc_dinodes
   }
 
-  // ── Root directory ────────────────────────────────────────────────────────
+  // ── User directory tree ───────────────────────────────────────────────────
 
-  private void WriteRoot() {
-    // The root names every caller file; "." and ".." point at root itself.
-    var children = new (string Name, ulong Fi, ulong Addr, ushort Type)[this._filePlans.Count];
-    for (var i = 0; i < this._filePlans.Count; ++i) {
-      var plan = this._filePlans[i];
-      children[i] = (LeafName(plan.Name), plan.FormalIno, (ulong)plan.Dinode, DtRegular);
-    }
-
-    this.WriteDirectory(this._rootDinode, FiRoot, parentFormalIno: FiRoot,
-      parentAddr: (ulong)this._rootDinode, system: false, children: children,
-      nlinkOverride: 2, mode: SIfDir | 0x1ED /* 0755 */);
+  private void WriteUserTree() {
+    var root = this._rootPlan
+      ?? throw new InvalidOperationException("GFS2 user tree was not planned.");
+    this.WriteDirectoryPlan(root);
 
     foreach (var plan in this._filePlans)
       this.WriteFile(plan);
   }
 
-  /// <summary>
-  /// A GFS2 directory here is a single stuffed block, so a nested path is stored
-  /// under its leaf name rather than fabricating a subdirectory tree.
-  /// </summary>
-  private static string LeafName(string name) {
-    var slash = name.LastIndexOfAny(['/', '\\']);
-    return slash < 0 ? name : name[(slash + 1)..];
+  /// <summary>Writes one native stuffed directory and then its child directories.</summary>
+  private void WriteDirectoryPlan(DirectoryPlan plan) {
+    var children = new (string Name, ulong Fi, ulong Addr, ushort Type)[
+      plan.Directories.Count + plan.Files.Count];
+    var index = 0;
+    foreach (var directory in plan.Directories)
+      children[index++] = (directory.Name, directory.FormalIno, (ulong)directory.Dinode, DtDir);
+    foreach (var file in plan.Files)
+      children[index++] = (file.Name, file.FormalIno, (ulong)file.Dinode, DtRegular);
+
+    var parent = plan.Parent ?? plan;
+    this.WriteDirectory(
+      plan.Dinode,
+      plan.FormalIno,
+      parentFormalIno: parent.FormalIno,
+      parentAddr: (ulong)parent.Dinode,
+      system: false,
+      children: children,
+      nlinkOverride: 2 + plan.Directories.Count,
+      mode: SIfDir | 0x1ED /* 0755 */);
+
+    foreach (var child in plan.Directories)
+      this.WriteDirectoryPlan(child);
   }
 
   /// <summary>
@@ -883,6 +976,35 @@ public sealed class Gfs2Writer {
     // the root uses JDATA (0x1).
     var flags = DifJData | (system ? DifSystem : 0u);
 
+    // A non-ExHash GFS2 directory is one stuffed dinode. Check the minimum
+    // aligned record footprint before writing anything so a directory that
+    // outgrows the inline area can be promoted atomically to ExHash.
+    var all = new List<(string Name, ulong Fi, ulong Addr, ushort Type)> {
+      (".", formalIno, (ulong)block, DtDir),
+      ("..", parentFormalIno, parentAddr, DtDir),
+    };
+    all.AddRange(children);
+
+    var areaLen = BlockSize - DinodeHeaderSize;
+    var minimumBytes = 0;
+    foreach (var entry in all) {
+      var nameLen = Encoding.UTF8.GetByteCount(entry.Name);
+      if (nameLen is <= 0 or > 255)
+        throw new InvalidDataException(
+          $"GFS2 directory entry '{entry.Name}' has an invalid UTF-8 name length.");
+      minimumBytes += (DirentSize + nameLen + 7) & ~7;
+    }
+    if (minimumBytes > areaLen) {
+      this.WriteExHashDirectory(
+        block,
+        formalIno,
+        system,
+        all,
+        nlink,
+        mode ?? (SIfDir | (system ? 0x1C0u : 0x1EDu)));
+      return;
+    }
+
     this.WriteDinode(
       block: block, formalIno: formalIno,
       mode: mode ?? (SIfDir | (system ? 0x1C0u : 0x1EDu)), // system 0700, root 0755
@@ -895,14 +1017,7 @@ public sealed class Gfs2Writer {
     // Write dirents inline starting at offset 232. Each record is sized to fit
     // its name; the final record's rec_len extends to end-of-block.
     var areaStart = block * BlockSize + DinodeHeaderSize;
-    var areaLen = BlockSize - DinodeHeaderSize;
     var pos = 0;
-
-    var all = new List<(string Name, ulong Fi, ulong Addr, ushort Type)> {
-      (".", formalIno, (ulong)block, DtDir),
-      ("..", parentFormalIno, parentAddr, DtDir),
-    };
-    all.AddRange(children);
 
     for (var i = 0; i < all.Count; i++) {
       var (name, fi, addr, type) = all[i];

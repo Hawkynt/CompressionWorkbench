@@ -15,15 +15,15 @@ namespace FileSystem.Gfs2;
 ///   <c>mh_magic = 0x01161970</c> at the start of the gfs2_meta_header.</description></item>
 ///   <item><description>Block size from <c>sb_bsize</c>, root + master inum from
 ///   <c>sb_root_dir</c> / <c>sb_master_dir</c>.</description></item>
-///   <item><description>Root inode (<c>gfs2_dinode</c>) and any <c>gfs2_dirent</c>
-///   records living inline in the inode block (single-leaf directories).</description></item>
+///   <item><description>Root and nested stuffed or ExHash directories, including
+///   journal-data-backed hash tables, leaf blocks and overflow chains.</description></item>
+///   <item><description>Regular files stored inline or through the multi-level
+///   indirect tree named by <c>di_height</c>.</description></item>
 /// </list>
 ///
 /// What we deliberately skip (multi-week effort each):
 /// <list type="bullet">
-///   <item><description>ExHash directories (multi-level leaf blocks)</description></item>
-///   <item><description>Multi-level block indirection (di_height > 0)</description></item>
-///   <item><description>Journal recovery, cluster lock manager state</description></item>
+///   <item><description>Journal recovery and cluster lock manager state</description></item>
 ///   <item><description>Extended attributes</description></item>
 /// </list>
 ///
@@ -61,6 +61,13 @@ public sealed class Gfs2Reader : IDisposable {
   /// metadata struct (sb, dinode, leaf, rgrp, log header) embeds it at offset 0.
   /// </summary>
   public const int MetaHeaderSize = 24;
+
+  private const uint DifExHash = 0x00000002;
+  private const uint MetaTypeLeaf = 6;
+  private const uint MetaTypeJournalData = 7;
+  private const uint DirentFormat = 1200;
+  private const int LeafHeaderSize = 104;
+  private const int MaxExHashDepth = 17;
 
   private readonly ImageAccessor _image;
   private readonly List<Gfs2Entry> _entries = new();
@@ -183,25 +190,35 @@ public sealed class Gfs2Reader : IDisposable {
     if (sb.Length >= 256 + 16)
       this.UuidHex = Convert.ToHexString(sb.Slice(256, 16));
 
-    // Walk the root inode. Errors are non-fatal — we still surface the
-    // superblock metadata.
+    // Walk the root inode and every nested stuffed/ExHash directory. Errors are
+    // non-fatal — we still surface the superblock metadata.
     if (this.BlockSize is >= 512 and <= 65536) {
       try {
-        this.WalkRoot();
+        this.WalkDirectory(this.RootInodeBlock, "", new HashSet<ulong>(), 0);
       } catch {
         // Eat — read-only best-effort walker.
       }
     }
   }
 
-  private void WalkRoot() {
-    var bs = (long)this.BlockSize;
-    var rootBlock = this.Block((long)this.RootInodeBlock).AsSpan();
-    if (rootBlock.IsEmpty)
+  /// <summary>
+  /// Walks one native directory and descends into child directories. Stuffed
+  /// dirents live after the dinode header; ExHash directories store a BE64 hash
+  /// table in the directory file and dirents in leaf metadata blocks.
+  /// A global visited set and a conservative depth cap prevent malformed cycles.
+  /// </summary>
+  private void WalkDirectory(ulong inodeBlock, string prefix, HashSet<ulong> visited, int depth) {
+    const int maxDepth = 256;
+    if (depth > maxDepth || inodeBlock == 0 || !visited.Add(inodeBlock))
       return;
-    _ = bs;
-    var mhMagic = BinaryPrimitives.ReadUInt32BigEndian(rootBlock[..4]);
-    var mhType = BinaryPrimitives.ReadUInt32BigEndian(rootBlock[4..8]);
+
+    var directoryBytes = this.Block((long)inodeBlock);
+    var directoryBlock = directoryBytes.AsSpan();
+    if (directoryBlock.Length < DinodeHeaderSize)
+      return;
+
+    var mhMagic = BinaryPrimitives.ReadUInt32BigEndian(directoryBlock[..4]);
+    var mhType = BinaryPrimitives.ReadUInt32BigEndian(directoryBlock[4..8]);
     if (mhMagic != MetaMagic || mhType != MetaTypeDinode)
       return;
 
@@ -231,33 +248,135 @@ public sealed class Gfs2Reader : IDisposable {
     // u32 di_entries           @148
     // The dinode header is 232 bytes (sizeof gfs2_dinode). Inline directory
     // entries (or inline data) follow at offset 232.
-    var diMode = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(40, 4));
-    var diSize = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(56, 8));
-    var diMtime = BinaryPrimitives.ReadUInt64BigEndian(rootBlock.Slice(80, 8));
-    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(rootBlock.Slice(138, 2));
-    var diEntries = BinaryPrimitives.ReadUInt32BigEndian(rootBlock.Slice(148, 4));
+    var diMode = BinaryPrimitives.ReadUInt32BigEndian(directoryBlock.Slice(40, 4));
+    var diMtime = BinaryPrimitives.ReadUInt64BigEndian(directoryBlock.Slice(80, 8));
+    var diFlags = BinaryPrimitives.ReadUInt32BigEndian(directoryBlock.Slice(128, 4));
+    var diHeight = BinaryPrimitives.ReadUInt16BigEndian(directoryBlock.Slice(138, 2));
+    var diDepth = BinaryPrimitives.ReadUInt16BigEndian(directoryBlock.Slice(146, 2));
+    var diEntries = BinaryPrimitives.ReadUInt32BigEndian(directoryBlock.Slice(148, 4));
 
-    // S_IFDIR check — must be a directory for root.
-    var isDir = (diMode & 0xF000) == 0x4000;
-    if (!isDir)
+    // S_IFDIR check — only native directory dinodes are traversed.
+    if ((diMode & 0xF000) != 0x4000)
       return;
 
-    // Single-leaf inline directory only (di_height == 0). Multi-level ExHash
-    // is multi-week work and out of scope.
-    if (diHeight != 0)
+    if ((diFlags & DifExHash) != 0) {
+      this.WalkExHashDirectory(
+        inodeBlock,
+        directoryBytes,
+        diMtime,
+        diHeight,
+        diDepth,
+        diEntries,
+        prefix,
+        visited,
+        depth);
+      return;
+    }
+
+    // A stuffed directory has no metadata tree. A non-ExHash directory with
+    // non-zero height is not a layout this walker can safely interpret.
+    if (diHeight != 0 || directoryBlock.Length <= DinodeHeaderSize)
       return;
 
-    // Inline directory entries (gfs2_dirent) start at offset 232 and run to
-    // end-of-block. Each dirent is variable length, rec_len-terminated.
-    const int dinodeHeaderSize = 232;
-    if (rootBlock.Length <= dinodeHeaderSize)
-      return;
-
-    var dentries = rootBlock[dinodeHeaderSize..];
-    this.ParseDentries(dentries, diMtime, (uint)Math.Min(diEntries, 4096u));
+    this.ParseDentries(
+      directoryBlock[DinodeHeaderSize..],
+      diMtime,
+      (uint)Math.Min(diEntries, 4096u),
+      prefix,
+      visited,
+      depth);
   }
 
-  private void ParseDentries(ReadOnlySpan<byte> area, ulong dirMtimeBe, uint maxEntries) {
+  /// <summary>Reads and walks one extendible-hash directory.</summary>
+  private void WalkExHashDirectory(
+      ulong inodeBlock,
+      byte[] directoryBlock,
+      ulong diMtime,
+      ushort diHeight,
+      ushort diDepth,
+      uint diEntries,
+      string prefix,
+      HashSet<ulong> visited,
+      int depth) {
+    if (diDepth is 0 or > MaxExHashDepth)
+      return;
+
+    var tableSize = checked((1 << diDepth) * sizeof(ulong));
+    var onDiskSize = BinaryPrimitives.ReadUInt64BigEndian(directoryBlock.AsSpan(56, 8));
+    if (onDiskSize != (ulong)tableSize)
+      return;
+
+    var table = this.ReadExHashTable(directoryBlock, diHeight, tableSize);
+    if (table.Length != tableSize)
+      return;
+
+    var seenLeaves = new HashSet<ulong>();
+    var leafBudget = Math.Min(
+      1_000_000L,
+      Math.Max((long)tableSize / sizeof(ulong) * 4, (long)diEntries + tableSize / sizeof(ulong) + 1));
+    var leavesRead = 0L;
+
+    for (var offset = 0; offset < table.Length && leavesRead < leafBudget; offset += sizeof(ulong)) {
+      var leafAddress = BinaryPrimitives.ReadUInt64BigEndian(table.AsSpan(offset, sizeof(ulong)));
+      while (leafAddress != 0 && leavesRead < leafBudget && seenLeaves.Add(leafAddress)) {
+        ++leavesRead;
+        var leaf = this.Block((long)leafAddress).AsSpan();
+        if (leaf.Length < LeafHeaderSize)
+          break;
+        if (BinaryPrimitives.ReadUInt32BigEndian(leaf[..4]) != MetaMagic ||
+            BinaryPrimitives.ReadUInt32BigEndian(leaf.Slice(4, 4)) != MetaTypeLeaf)
+          break;
+
+        var leafDepth = BinaryPrimitives.ReadUInt16BigEndian(leaf.Slice(24, 2));
+        var leafEntries = BinaryPrimitives.ReadUInt16BigEndian(leaf.Slice(26, 2));
+        var direntFormat = BinaryPrimitives.ReadUInt32BigEndian(leaf.Slice(28, 4));
+        var nextLeaf = BinaryPrimitives.ReadUInt64BigEndian(leaf.Slice(32, 8));
+        var owner = BinaryPrimitives.ReadUInt64BigEndian(leaf.Slice(40, 8));
+        if (leafDepth > diDepth || direntFormat != DirentFormat || owner != inodeBlock)
+          break;
+
+        if (leafEntries > 0)
+          this.ParseDentries(leaf[LeafHeaderSize..], diMtime, leafEntries, prefix, visited, depth);
+
+        leafAddress = nextLeaf;
+      }
+    }
+  }
+
+  /// <summary>
+  /// Materialises the ExHash pointer table. GFS2 keeps small tables stuffed in
+  /// the dinode; larger ones use journal-data blocks whose first 24 bytes are a
+  /// metadata header and whose remaining bytes form the logical directory file.
+  /// </summary>
+  private byte[] ReadExHashTable(byte[] directoryBlock, ushort diHeight, int tableSize) {
+    var table = new byte[tableSize];
+    if (diHeight == 0) {
+      if (directoryBlock.Length - DinodeHeaderSize < tableSize)
+        return [];
+      directoryBlock.AsSpan(DinodeHeaderSize, tableSize).CopyTo(table);
+      return table;
+    }
+
+    var copied = 0;
+    foreach (var dataBlock in this.WalkTree(directoryBlock, DinodeHeaderSize, diHeight)) {
+      var block = this.Block(dataBlock).AsSpan();
+      if (block.Length < MetaHeaderSize ||
+          BinaryPrimitives.ReadUInt32BigEndian(block[..4]) != MetaMagic ||
+          BinaryPrimitives.ReadUInt32BigEndian(block.Slice(4, 4)) != MetaTypeJournalData)
+        return [];
+
+      var count = Math.Min(block.Length - MetaHeaderSize, tableSize - copied);
+      block.Slice(MetaHeaderSize, count).CopyTo(table.AsSpan(copied));
+      copied += count;
+      if (copied == tableSize)
+        break;
+    }
+
+    return copied == tableSize ? table : [];
+  }
+
+  private void ParseDentries(ReadOnlySpan<byte> area, ulong dirMtimeBe, uint maxEntries,
+                             string prefix, HashSet<ulong> visited, int depth) {
     // gfs2_dirent layout (BE) — sizeof on disk is 40 bytes (verified against
     // real mkfs.gfs2 output, gfs2-utils 3.5.1):
     // gfs2_inum de_inum     @0   (u64 no_formal_ino, u64 no_addr) - 16 bytes
@@ -284,11 +403,14 @@ public sealed class Gfs2Reader : IDisposable {
       if (recLen < direntHeaderSize + nameLen || off + recLen > area.Length ||
           (recLen & 7) != 0)
         break;
-      if (nameLen == 0 || nameLen > 255) {
-        off += recLen;
-        continue;
-      }
-      if (noAddr == 0) {
+
+      // Deleted/sentinel records have a zero inode or zero name and do not count
+      // toward di_entries/lf_entries. A malformed live name still consumes one
+      // advertised entry so corrupt metadata cannot make this scan run past it.
+      var live = noAddr != 0 && nameLen != 0;
+      if (live)
+        ++count;
+      if (!live || nameLen > 255) {
         off += recLen;
         continue;
       }
@@ -296,23 +418,25 @@ public sealed class Gfs2Reader : IDisposable {
       var nameBytes = de.Slice(direntHeaderSize, nameLen);
       var name = Encoding.UTF8.GetString(nameBytes);
 
-      // Skip "." and ".."
+      // Skip "." and ".." but count them toward the live-entry total above.
       if (name is "." or "..") {
         off += recLen;
         continue;
       }
 
+      var fullName = prefix.Length == 0 ? name : $"{prefix}/{name}";
+      var isDirectory = deType == 4; // DT_DIR
       var entry = new Gfs2Entry {
-        Name = name,
+        Name = fullName,
         InodeBlock = noAddr,
         FormalIno = formalIno,
-        IsDirectory = deType == 4, // DT_DIR
+        IsDirectory = isDirectory,
         LastModified = TryGetTime(dirMtimeBe),
       };
       // For regular files, also try to read di_size from the target dinode.
       if (!entry.IsDirectory && this.TryReadDinodeSize(noAddr, out var size, out var mtime)) {
         entry = new Gfs2Entry {
-          Name = name,
+          Name = fullName,
           InodeBlock = noAddr,
           FormalIno = formalIno,
           IsDirectory = false,
@@ -321,7 +445,10 @@ public sealed class Gfs2Reader : IDisposable {
         };
       }
       this._entries.Add(entry);
-      count++;
+
+      if (isDirectory)
+        this.WalkDirectory(noAddr, fullName, visited, depth + 1);
+
       off += recLen;
     }
   }
