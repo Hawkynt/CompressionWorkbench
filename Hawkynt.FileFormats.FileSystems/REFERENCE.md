@@ -8915,7 +8915,23 @@ Builds Acorn MFS-1 (Master File System v1) disk images. MFS-1 inherits the DFS o
 
 ### Namespace `FileSystem.MinixFs`
 
-[`MinixFsBlockMover`](#minixfsblockmover) · [`MinixFsEntry`](#minixfsentry) · [`MinixFsExtentMap`](#minixfsextentmap) · [`MinixFsFormatDescriptor`](#minixfsformatdescriptor) · [`MinixFsInPlaceModifier`](#minixfsinplacemodifier) · [`MinixFsReader`](#minixfsreader) · [`MinixFsWriter`](#minixfswriter)
+[`MinixFilesystemDriverAdapter`](#minixfilesystemdriveradapter) · [`MinixFsBlockMover`](#minixfsblockmover) · [`MinixFsEntry`](#minixfsentry) · [`MinixFsExtentMap`](#minixfsextentmap) · [`MinixFsFormatDescriptor`](#minixfsformatdescriptor) · [`MinixFsInPlaceModifier`](#minixfsinplacemodifier) · [`MinixFsReader`](#minixfsreader) · [`MinixFsWriter`](#minixfswriter)
+
+#### `MinixFilesystemDriverAdapter`
+
+Native mounted filesystem adapter for canonical MINIX v1/v2/v3 volumes. The mounted path uses inode and zone bitmaps directly and never falls back to the archive-level whole-image rebuild path.
+
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MinixFilesystemDriverAdapter` | `MinixFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `MinixFsBlockMover`
 
@@ -8999,16 +9015,16 @@ TRUE in-place R/W modifier for Minix v1/v2/v3 filesystem images. Performs O(touc
 
 #### `MinixFsReader`
 
-Reads Minix filesystem images (v1, v2, v3). Parses the superblock, inode table, and directory entries. Supports direct, single-indirect, double-indirect, and triple-indirect zone pointers (v3). V1/V2 support direct and single/double indirect.
+Reads MINIX v1/v2/v3 filesystem images. V1 uses 32-byte inodes with 16-bit zone pointers; v2/v3 use 64-byte inodes with 32-bit zone pointers. All three block-map depths defined by their respective on-disk inode layouts are read.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MinixFsReader` | `MinixFsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `MinixFsReader`. |
-| `Entries` | `IReadOnlyList<MinixFsEntry> Entries { get; }` | Gets the entries. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(MinixFsEntry entry)` | Decodes the supplied input. |
+| `MinixFsReader` | `MinixFsReader(Stream stream, bool leaveOpen = false)` |  |
+| `Entries` | `IReadOnlyList<MinixFsEntry> Entries { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(MinixFsEntry entry)` |  |
 
 #### `MinixFsWriter`
 
