@@ -126,13 +126,16 @@ internal sealed class FrameDecoder {
     r.SkipBits(1);                 // lfeon
     r.SkipBits(5);                 // dialnorm
 
-    void OneSet() {
+    void OptionalProgramFields() {
       if (r.ReadFlag()) r.SkipBits(8);  // compre → compr
       if (r.ReadFlag()) r.SkipBits(8);  // langcode → langcod
       if (r.ReadFlag()) r.SkipBits(7);  // audprodie → mixlevel(5)+roomtyp(2)
     }
-    OneSet();
-    if (acmod == 0) OneSet();      // 1+1 dual-mono second set
+    OptionalProgramFields();
+    if (acmod == 0) {
+      r.SkipBits(5);               // dialnorm2 (mandatory in 1+1 dual mono)
+      OptionalProgramFields();     // compr2/langcod2/audprodi2
+    }
     r.SkipBits(1);                 // copyrightb
     r.SkipBits(1);                 // origbs
     if (r.ReadFlag()) r.SkipBits(14);  // timecod1e → timecod1
