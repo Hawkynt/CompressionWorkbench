@@ -12,7 +12,7 @@ namespace FileFormat.Bik;
 /// per-channel mono WAV views where supported; Bink 2 audio remains blob-only.
 /// </summary>
 public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-  IArchiveInMemoryExtract, IArchiveCreatable {
+  IArchiveInMemoryExtract, IArchiveCreatable, IArchiveWriteConstraints {
 
   /// <summary>
   /// Gets the id.
@@ -104,8 +104,68 @@ public sealed class BikFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <c>TRACKn.bin</c> streams.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
     ArgumentNullException.ThrowIfNull(options);
+
+    foreach (var input in inputs)
+      if (!this.CanAccept(input, out var reason))
+        throw new ArgumentException(reason, nameof(inputs));
+
     BikWriter.Create(output, inputs);
+  }
+
+  // ── IArchiveWriteConstraints ──────────────────────────────────────────────
+
+  /// <summary>
+  /// Gets the max total archive size.
+  /// </summary>
+  public long? MaxTotalArchiveSize => null;
+
+  /// <summary>
+  /// Gets the accepted inputs description.
+  /// </summary>
+  public string AcceptedInputsDescription =>
+    "Bink archive accepts: FULL.bik, metadata.ini, VIDEO.bin, TRACKn.bin";
+
+  /// <summary>
+  /// Performs the can accept operation.
+  /// </summary>
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+
+    var name = input.ArchiveName.Replace('\\', '/');
+    var accepted = !input.IsDirectory && !name.Contains('/') && IsAcceptedLeafName(name);
+    if (accepted) {
+      reason = null;
+      return true;
+    }
+
+    reason = $"not a Bink-archive input (got {input.ArchiveName}); {this.AcceptedInputsDescription}";
+    return false;
+  }
+
+  private static bool IsAcceptedLeafName(string name) {
+    if (name.Equals("FULL.bik", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase) ||
+        name.Equals("VIDEO.bin", StringComparison.OrdinalIgnoreCase))
+      return true;
+
+    const string prefix = "TRACK";
+    const string suffix = ".bin";
+    if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+        !name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+      return false;
+
+    var trackNumberLength = name.Length - prefix.Length - suffix.Length;
+    if (trackNumberLength <= 0)
+      return false;
+
+    for (var index = prefix.Length; index < prefix.Length + trackNumberLength; ++index)
+      if (name[index] is < '0' or > '9')
+        return false;
+
+    return true;
   }
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
