@@ -15657,13 +15657,27 @@ Reads RPG Maker RGSSAD / RGSS2A / RGSS3A encrypted archives. v1 ("RGSSAD\0\1"): 
 
 ### Namespace `FileFormat.Rnc`
 
-[`RncFormatDescriptor`](#rncformatdescriptor) · [`RncStream`](#rncstream)
+[`RncCompressionOptions`](#rnccompressionoptions) · [`RncFormatDescriptor`](#rncformatdescriptor) · [`RncParseStrategy`](#rncparsestrategy) · [`RncStream`](#rncstream)
+
+#### `RncCompressionOptions`
+
+Encoder controls for RNC ProPack Method 1.
+
+Implements `IEquatable<RncCompressionOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RncCompressionOptions` | `RncCompressionOptions()` |  |
+| `BlockSize` | `int BlockSize { get; init; }` | Maximum uncompressed bytes represented by one Huffman-table block. |
+| `DictionarySize` | `int DictionarySize { get; init; }` | Sliding dictionary size in bytes. Method 1 permits up to 32768 bytes. |
+| `ParseStrategy` | `RncParseStrategy ParseStrategy { get; init; }` | LZ parsing strategy. |
+| `SearchDepth` | `int SearchDepth { get; init; }` | Maximum hash-chain candidates examined at each input position. |
 
 #### `RncFormatDescriptor`
 
-Describes rnc format.
+Describes the RNC ProPack stream format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15679,19 +15693,32 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The encoder axes searched by `CompressionOptimizer`. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the widest dictionary and the deepest search this codec offers. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the ProPack default settings. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the requested dictionary, block size, search depth and parser. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `RncParseStrategy`
+
+Parser strategy used by the RNC Method 1 encoder.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Greedy` | `0` | Emit the longest match found at the current position immediately. |
+| `Lazy` | `1` | Prefer a literal when the next position has a longer match, matching ProPack's one-byte look-ahead. |
 
 #### `RncStream`
 
-Compressor and decompressor for the Rob Northen Compression (RNC) format. RNC is a Huffman + LZSS scheme used in many classic Amiga and DOS games. This implementation supports Method 1 (Huffman + LZSS).
+Compressor and decompressor for Rob Northen Computing's RNC ProPack stream format. Method 1 is the Huffman-coded LZ77 variant used by many Amiga, DOS and console games.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses raw data into the RNC Method 1 format and writes the result to `output`. |
-| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | Computes the RNC CRC-16 checksum using the custom polynomial 0xCC01. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RNC-compressed stream and writes the original data to `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses using the ProPack-compatible Method 1 defaults. |
+| `Compress` | `static void Compress(Stream input, Stream output, RncCompressionOptions options)` | Compresses using the supplied Method 1 encoder settings. |
+| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | Computes the RNC CRC-16 (CRC-16/ARC, polynomial 0xA001, initial value 0). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RNC stream. |
 
 ### Namespace `FileFormat.Rpa`
 
