@@ -1502,6 +1502,7 @@ Implements `IBuildingBlock`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, int windowSize, int searchDepth)` | Compresses with explicit match-finder limits. The limits affect only how aggressively matches are searched; they are not stored in or required by the decoder. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
 #### `LzhamDecoder`
@@ -1519,7 +1520,10 @@ LZHAM encoder: LZ77 with Huffman-coded literals, lengths, and distances. Inspire
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `LzhamEncoder` | `LzhamEncoder()` |  |
+| `LzhamEncoder` | `LzhamEncoder(int windowSize = 32768, int searchDepth = 64)` | Creates an encoder with the requested match-finder limits. These affect only compression decisions; the resulting stream remains self-contained and is decoded without knowing the selected values. |
+| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Historical/default number of hash-chain candidates inspected per position. |
+| `DefaultWindowSize` | `const int DefaultWindowSize` | Historical/default match window used by the managed encoder. |
+| `MaxWindowSize` | `const int MaxWindowSize` | Largest distance representable by the encoder's 30 distance codes. |
 | `Encode` | `byte[] Encode(ReadOnlySpan<byte> data)` | Compresses data using LZ77 + Huffman. Returns the serialized bitstream including embedded frequency tables. |
 
 ### Namespace `Compression.Core.Dictionary.Lzjb`
