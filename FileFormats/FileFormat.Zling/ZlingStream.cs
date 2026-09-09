@@ -15,13 +15,30 @@ public static class ZlingStream {
   private const int MaxMatch = 258;
   private const int BlockSize = 65536;
 
+  // libzling defines levels 0..4 with progressively deeper ROLZ searches
+  // (2, 4, 6, 8, 16 candidates respectively). Its higher levels also perform
+  // additional lazy matching; this managed encoder currently varies the search
+  // depth only, which is the tuning dimension its existing token format supports.
+  private static readonly int[] MatchDepthByLevel = [2, 4, 6, 8, 16];
+
   // Token encoding: values 0..255 = literals, 256..511 = match (len-3 encoded in low 8 bits),
   // distances are encoded separately as 16-bit values following the match token.
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the historical maximum-depth search.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, 4);
+
+  /// <summary>
+  /// Encodes the supplied input with a zling-style effort level from 0 through 4.
+  /// Higher levels inspect more ROLZ candidates and are therefore slower but can
+  /// find longer matches. Level 4 preserves the encoder's historical behaviour.
+  /// </summary>
+  public static void Compress(Stream input, Stream output, int level) {
+    ArgumentOutOfRangeException.ThrowIfNegative(level);
+    if (level >= MatchDepthByLevel.Length)
+      throw new ArgumentOutOfRangeException(nameof(level), level, "Zling compression level must be in the range 0..4.");
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -36,7 +53,7 @@ public static class ZlingStream {
       // ROLZ compress this block
       var tokens = new List<ushort>();
       var dists = new List<ushort>();
-      RolzCompress(data, blockStart, blockEnd, tokens, dists);
+      RolzCompress(data, blockStart, blockEnd, tokens, dists, MatchDepthByLevel[level]);
 
       // Huffman encode tokens + dists
       var encoded = HuffmanEncode(tokens, dists);
@@ -77,7 +94,7 @@ public static class ZlingStream {
 
   // ── ROLZ Compress ────────────────────────────────────────────────────────
 
-  private static void RolzCompress(byte[] data, int start, int end, List<ushort> tokens, List<ushort> dists) {
+  private static void RolzCompress(byte[] data, int start, int end, List<ushort> tokens, List<ushort> dists, int matchDepth) {
     // tables[ctx][slot] = absolute position
     var tables = new int[CtxCount, TabLen];
     var heads = new int[CtxCount];
@@ -92,8 +109,9 @@ public static class ZlingStream {
       var bestLen = 0;
       var bestSlot = 0;
 
-      // Search context table
-      for (var j = 0; j < TabLen; j++) {
+      // Search as many context-table candidates as the selected level permits.
+      // Level 4 searches all 16 slots, exactly like the historical encoder.
+      for (var j = 0; j < matchDepth; j++) {
         var pos = tables[ctx, j];
         if (pos < 0) continue;
         // Bound both i+mlen and pos+mlen to stay within [start, end)
