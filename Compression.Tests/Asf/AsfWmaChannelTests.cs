@@ -35,8 +35,8 @@ public class AsfWmaChannelTests {
 
     Assert.That(entries.Any(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_01/")), Is.True,
       "expected decoded per-channel WAV entries for the WMA v2 stream");
-    // No raw fallback blob when decoding succeeded.
-    Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin"), Is.False);
+    // The encoded blob stays alongside the decoded channels; a remux needs it back.
+    Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True);
   }
 
   [Test]

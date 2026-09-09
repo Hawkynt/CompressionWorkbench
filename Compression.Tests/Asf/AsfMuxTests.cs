@@ -3,6 +3,9 @@ using System.Text;
 using Compression.Lib;
 using Compression.Registry;
 using FileFormat.Asf;
+// Compression.Lib carries an ASF adapter of the same name for the PCM routes. These cases exercise
+// the packet-preserving demux/mux adapter, so name it explicitly rather than leaving it ambiguous.
+using AsfAudioAdapter = FileFormat.Asf.AsfAudioAdapter;
 
 namespace Compression.Tests.Asf;
 
