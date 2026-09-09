@@ -1,5 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using Compression.Core.Checksums;
+using Compression.Core.Deflate;
 using Compression.Core.Dictionary.Lzma;
 
 namespace FileFormat.Swf;
@@ -21,12 +23,11 @@ namespace FileFormat.Swf;
 /// </remarks>
 public static class SwfStream {
   private const int HeaderSize = 8;
-
-  // Compressed-size field for ZWS (4 bytes at offset 8, before LZMA properties)
   private const int ZwsCompressedSizeFieldSize = 4;
-
-  // LZMA properties block is 5 bytes (properties byte + 4-byte dict size)
   private const int LzmaPropertiesSize = 5;
+  private const int MinimumZlibVersion = 6;
+  private const int MinimumLzmaVersion = 13;
+  private const int OptimizedLzmaDictionarySize = 1 << 23;
 
   /// <summary>
   /// Decompresses an SWF file from <paramref name="input"/> and writes the uncompressed result
@@ -52,57 +53,41 @@ public static class SwfStream {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    // Read the 8-byte header.
     Span<byte> header = stackalloc byte[HeaderSize];
     input.ReadExactly(header);
-
     ValidateSignature(header);
 
-    var sig0 = (char)header[0];
-    var sig1 = (char)header[1];
-    var sig2 = (char)header[2];
-
-    if (sig0 == 'F') {
-      // FWS — uncompressed: write header then stream remaining bytes directly.
+    var signature = (char)header[0];
+    if (signature == 'F') {
       output.Write(header);
       input.CopyTo(output);
       return;
     }
 
-    // Both CWS and ZWS produce an uncompressed FWS output.
-    // Build the output header with the "FWS" signature; version and FileLength are preserved.
     Span<byte> outHeader = stackalloc byte[HeaderSize];
     header.CopyTo(outHeader);
     outHeader[0] = (byte)'F';
-    outHeader[1] = (byte)'W';
-    outHeader[2] = (byte)'S';
     output.Write(outHeader);
 
-    if (sig0 == 'C') {
-      // CWS — zlib-compressed body.
+    if (signature == 'C') {
       using var zlib = new ZLibStream(input, CompressionMode.Decompress, leaveOpen: true);
       zlib.CopyTo(output);
-    } else {
-      // ZWS — LZMA-compressed body.
-      // Bytes 8-11: compressed payload size (uint32 LE) — not needed for decoding.
-      Span<byte> compSizeBytes = stackalloc byte[ZwsCompressedSizeFieldSize];
-      input.ReadExactly(compSizeBytes);
-
-      // Bytes 12-16: 5-byte LZMA properties (properties byte + dict size uint32 LE).
-      var props = new byte[LzmaPropertiesSize];
-      input.ReadExactly(props);
-
-      // The uncompressed size stored in the SWF FileLength field (bytes 4-7 of the header)
-      // minus the 8-byte header gives the size of the decompressed body.
-      var fileLength = (long)BinaryPrimitives.ReadUInt32LittleEndian(header[4..]);
-      var uncompressedBodySize = fileLength - HeaderSize;
-
-      var decoder = new LzmaDecoder(input, props, uncompressedBodySize);
-      decoder.Decode(output);
+      return;
     }
 
-    _ = sig1; // suppress unused-variable warning (consumed for validation only)
-    _ = sig2;
+    Span<byte> compressedSize = stackalloc byte[ZwsCompressedSizeFieldSize];
+    input.ReadExactly(compressedSize);
+
+    var properties = new byte[LzmaPropertiesSize];
+    input.ReadExactly(properties);
+
+    var fileLength = (long)BinaryPrimitives.ReadUInt32LittleEndian(header[4..]);
+    var uncompressedBodySize = fileLength - HeaderSize;
+    if (uncompressedBodySize < 0)
+      throw new InvalidDataException($"Invalid SWF FileLength {fileLength}: it is smaller than the {HeaderSize}-byte header.");
+
+    var decoder = new LzmaDecoder(input, properties, uncompressedBodySize);
+    decoder.Decode(output);
   }
 
   /// <summary>
@@ -112,7 +97,7 @@ public static class SwfStream {
   /// <remarks>
   /// The input must be a valid uncompressed SWF starting with the "FWS" signature.
   /// The output uses the "CWS" signature with the body bytes (after the 8-byte header)
-  /// compressed using zlib.  The FileLength field in the output header retains the
+  /// compressed using zlib. The FileLength field in the output header retains the
   /// original uncompressed size as required by the SWF specification.
   /// </remarks>
   /// <param name="input">A readable stream positioned at the start of an uncompressed ("FWS") SWF.</param>
@@ -127,42 +112,135 @@ public static class SwfStream {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    // Read the 8-byte header.
     Span<byte> header = stackalloc byte[HeaderSize];
     input.ReadExactly(header);
+    ValidateUncompressedSignature(header);
 
-    ValidateSignature(header);
-
-    if ((char)header[0] != 'F')
-      throw new InvalidDataException(
-          $"Input must be an uncompressed SWF (\"FWS\" signature); got \"{(char)header[0]}{(char)header[1]}{(char)header[2]}\".");
-
-    // Emit the CWS header: change "FWS" → "CWS", keep version and FileLength.
     Span<byte> outHeader = stackalloc byte[HeaderSize];
     header.CopyTo(outHeader);
     outHeader[0] = (byte)'C';
-    outHeader[1] = (byte)'W';
-    outHeader[2] = (byte)'S';
     output.Write(outHeader);
 
-    // Compress the body (everything after the 8-byte header) with zlib.
     using var zlib = new ZLibStream(output, CompressionLevel.Optimal, leaveOpen: true);
     input.CopyTo(zlib);
   }
 
+  /// <summary>
+  /// Re-encodes an uncompressed SWF into the smallest legal envelope this implementation can
+  /// produce: FWS, maximum-effort CWS/Deflate, or ZWS/LZMA.
+  /// </summary>
+  /// <remarks>
+  /// CWS is considered only for SWF 6 or later and ZWS only for SWF 13 or later. The original
+  /// uncompressed FWS representation is always a candidate, so optimization never makes the file
+  /// larger merely to add a compression envelope. The SWF body itself is not parsed or modified.
+  /// </remarks>
+  /// <param name="input">A readable stream positioned at an uncompressed FWS file.</param>
+  /// <param name="output">The stream that receives the smallest representation found.</param>
+  public static void CompressOptimal(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    Span<byte> header = stackalloc byte[HeaderSize];
+    input.ReadExactly(header);
+    ValidateUncompressedSignature(header);
+
+    using var bodyBuffer = new MemoryStream();
+    input.CopyTo(bodyBuffer);
+    var body = bodyBuffer.ToArray();
+
+    var bestSize = HeaderSize + (long)body.Length;
+    byte[]? best = null;
+    var version = header[3];
+
+    if (version >= MinimumZlibVersion) {
+      var cws = CreateOptimizedCws(header, body);
+      if (cws.LongLength < bestSize) {
+        best = cws;
+        bestSize = cws.LongLength;
+      }
+    }
+
+    if (version >= MinimumLzmaVersion) {
+      var zws = CreateOptimizedZws(header, body);
+      if (zws.LongLength < bestSize)
+        best = zws;
+    }
+
+    if (best is null) {
+      output.Write(header);
+      output.Write(body);
+      return;
+    }
+
+    output.Write(best);
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
+
+  private static byte[] CreateOptimizedCws(ReadOnlySpan<byte> header, ReadOnlySpan<byte> body) {
+    using var output = new MemoryStream();
+
+    Span<byte> cwsHeader = stackalloc byte[HeaderSize];
+    header.CopyTo(cwsHeader);
+    cwsHeader[0] = (byte)'C';
+    output.Write(cwsHeader);
+
+    // RFC 1950: Deflate, 32 KiB window, no preset dictionary, maximum compression hint.
+    // 0x78DA satisfies FCHECK and is the conventional zlib header for this combination.
+    ReadOnlySpan<byte> zlibHeader = [0x78, 0xDA];
+    output.Write(zlibHeader);
+    output.Write(DeflateCompressor.Compress(body, DeflateCompressionLevel.Maximum));
+
+    Span<byte> trailer = stackalloc byte[sizeof(uint)];
+    BinaryPrimitives.WriteUInt32BigEndian(trailer, Adler32.Compute(body));
+    output.Write(trailer);
+    return output.ToArray();
+  }
+
+  private static byte[] CreateOptimizedZws(ReadOnlySpan<byte> header, ReadOnlySpan<byte> body) {
+    var encoder = new LzmaEncoder(
+      dictionarySize: OptimizedLzmaDictionarySize,
+      level: LzmaCompressionLevel.Best);
+
+    using var compressed = new MemoryStream();
+    encoder.Encode(compressed, body, writeEndMarker: true);
+    if (compressed.Length > uint.MaxValue)
+      throw new InvalidDataException("The LZMA payload is too large for the SWF ZWS compressed-length field.");
+
+    using var output = new MemoryStream();
+    Span<byte> zwsHeader = stackalloc byte[HeaderSize];
+    header.CopyTo(zwsHeader);
+    zwsHeader[0] = (byte)'Z';
+    output.Write(zwsHeader);
+
+    Span<byte> compressedSize = stackalloc byte[ZwsCompressedSizeFieldSize];
+    BinaryPrimitives.WriteUInt32LittleEndian(compressedSize, (uint)compressed.Length);
+    output.Write(compressedSize);
+    output.Write(encoder.Properties);
+
+    compressed.Position = 0;
+    compressed.CopyTo(output);
+    return output.ToArray();
+  }
+
+  private static void ValidateUncompressedSignature(ReadOnlySpan<byte> header) {
+    ValidateSignature(header);
+    if (header[0] != (byte)'F')
+      throw new InvalidDataException(
+        $"Input must be an uncompressed SWF (\"FWS\" signature); got \"{(char)header[0]}{(char)header[1]}{(char)header[2]}\".");
+  }
 
   private static void ValidateSignature(ReadOnlySpan<byte> header) {
     if (header.Length < HeaderSize)
       throw new InvalidDataException(
-          $"SWF header is too short: expected {HeaderSize} bytes, got {header.Length}.");
+        $"SWF header is too short: expected {HeaderSize} bytes, got {header.Length}.");
 
     var s0 = (char)header[0];
     var s1 = (char)header[1];
     var s2 = (char)header[2];
 
-    if (s1 != 'W' || s2 != 'S' || (s0 != 'F' && s0 != 'C' && s0 != 'Z'))
+    if (s1 != 'W' || s2 != 'S' || s0 is not ('F' or 'C' or 'Z'))
       throw new InvalidDataException(
-          $"Unrecognised SWF signature \"{s0}{s1}{s2}\". Expected \"FWS\", \"CWS\", or \"ZWS\".");
+        $"Unrecognised SWF signature \"{s0}{s1}{s2}\". Expected \"FWS\", \"CWS\", or \"ZWS\".");
   }
 }

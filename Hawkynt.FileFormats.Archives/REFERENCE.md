@@ -17199,6 +17199,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using the smallest legal SWF compression envelope found. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
@@ -17208,6 +17209,7 @@ Provides static methods for reading and writing SWF (Adobe Flash) files.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Re-encodes an uncompressed SWF into the smallest legal envelope this implementation can produce: FWS, maximum-effort CWS/Deflate, or ZWS/LZMA. |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses an uncompressed SWF from `input` to a CWS (zlib-compressed) SWF written to `output`. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an SWF file from `input` and writes the uncompressed result to `output`. |
 
