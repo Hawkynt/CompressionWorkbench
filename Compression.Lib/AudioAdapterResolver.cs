@@ -1,4 +1,5 @@
 using Compression.Registry;
+using FileFormat.Asf;
 
 namespace Compression.Lib;
 
@@ -8,6 +9,7 @@ internal static class AudioAdapterResolver {
   private static readonly CafAudioAdapter Caf = new();
   private static readonly Ac3AudioAdapter Ac3 = new();
   private static readonly DtsAudioAdapter Dts = new();
+  private static readonly AsfAudioAdapter Asf = AsfAudioAdapter.Instance;
 
   public static IAudioPcmSource? ResolvePcmSource(IFormatDescriptor descriptor)
     => descriptor as IAudioPcmSource ?? descriptor.Id switch {
@@ -35,6 +37,7 @@ internal static class AudioAdapterResolver {
       "Caf" => Caf,
       "Mp3" => Mp3AudioPacketAdapter.Instance,
       "WavPack" => WavPackAudioPacketAdapter.Instance,
+      "Asf" => Asf,
       _ => null,
     };
 
@@ -46,6 +49,7 @@ internal static class AudioAdapterResolver {
       "Caf" => Caf,
       "Mp3" => Mp3AudioPacketAdapter.Instance,
       "WavPack" => WavPackAudioPacketAdapter.Instance,
+      "Asf" => Asf,
       _ => null,
     };
 
