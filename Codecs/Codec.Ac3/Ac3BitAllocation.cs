@@ -46,19 +46,25 @@ public static class Ac3BitAllocation {
 
   /// <summary>
   /// Computes the bit-allocation pointers for one full-rate AC-3 channel over bins
-  /// <paramref name="start"/>..<paramref name="end"/>-1. <paramref name="fscod"/> is the legacy
-  /// 48/44.1/32-kHz sample-rate code 0..2. E-AC-3 reduced-rate callers use the internal overload so
-  /// the Annex E critical-band shift is retained alongside the base sample-rate family.
+  /// <paramref name="start"/>..<paramref name="end"/>-1. Public callers use the legacy
+  /// <paramref name="fscod"/> values 0..2; internal enhanced-decoder callers additionally use
+  /// selectors 4..6 for 24/22.05/16-kHz reduced-rate E-AC-3.
   /// </summary>
   public static void ComputeBap(
       byte[] exp, byte[] bap, int start, int end,
       AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling,
       int cplFastLeak, int cplSlowLeak,
       DeltaSegment[]? deltas,
-      byte[]? bapTable = null)
-    => ComputeBap(exp, bap, start, end, p, fgain, snrOffset,
-      new SampleRateContext(Math.Clamp(fscod, 0, 2), 0), isCoupling,
+      byte[]? bapTable = null) {
+    var sampleRate = fscod switch {
+      4 => new SampleRateContext(0, 1),
+      5 => new SampleRateContext(1, 1),
+      6 => new SampleRateContext(2, 1),
+      _ => new SampleRateContext(Math.Clamp(fscod, 0, 2), 0),
+    };
+    ComputeBap(exp, bap, start, end, p, fgain, snrOffset, sampleRate, isCoupling,
       cplFastLeak, cplSlowLeak, deltas, bapTable);
+  }
 
   /// <summary>
   /// Shared AC-3/E-AC-3 bit-allocation implementation. Reduced-rate E-AC-3 uses the corresponding
