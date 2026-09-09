@@ -126,6 +126,50 @@ public sealed class MkvAudioMuxTests {
     });
   }
 
+  [Test, Category("Regression")]
+  public void OpusTimingUses48KhzPacketClockIndependentlyOfInputSampleRate() {
+    const uint originalInputRate = 44_100;
+    var head = BuildOpusHead(channels: 2, preSkip: 312, inputRate: originalInputRate);
+    var packets = Enumerable.Range(0, 251)
+      .Select(static _ => new AudioPacket([0xF8, 0xFF], DurationSamples: 960))
+      .ToArray();
+    var encoded = new AudioEncodedStream(
+      new AudioStreamFormat("opus", (int)originalInputRate, 2),
+      packets,
+      head);
+
+    using var output = new MemoryStream();
+    new MkvFormatDescriptor().Mux(output, encoded, new FormatCreateOptions());
+
+    var reader = new EbmlReader(output.ToArray());
+    var segment = Segment(reader);
+    var children = reader.Children(segment).ToArray();
+
+    var info = children.Single(static element => element.Id == 0x1549A966);
+    var durationElement = reader.Children(info).Single(static element => element.Id == 0x4489);
+    var duration = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64BigEndian(reader.Body(durationElement)));
+
+    var tracks = children.Single(static element => element.Id == 0x1654AE6B);
+    var track = reader.Children(tracks).Single(static element => element.Id == 0xAE);
+    var audio = reader.Children(track).Single(static element => element.Id == 0xE1);
+    var samplingFrequencyElement = reader.Children(audio).Single(static element => element.Id == 0xB5);
+    var samplingFrequency = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64BigEndian(reader.Body(samplingFrequencyElement)));
+
+    var clusterTimestamps = children
+      .Where(static element => element.Id == 0x1F43B675)
+      .Select(cluster => reader.ReadUnsigned(reader.Children(cluster).Single(static element => element.Id == 0xE7)))
+      .ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(samplingFrequency, Is.EqualTo(originalInputRate),
+        "Matroska A_OPUS SamplingFrequency must retain the OpusHead input-rate metadata");
+      Assert.That(duration, Is.EqualTo(5_020d),
+        "251 20-ms Opus packets are 5.02 seconds on the mandatory 48 kHz packet clock");
+      Assert.That(clusterTimestamps, Is.EqualTo(new ulong[] { 0, 5_000 }),
+        "cluster timestamps must use the 48 kHz Opus packet clock, not the original input sample rate");
+    });
+  }
+
   [Test, Category("Validation")]
   public void AacWithoutAudioSpecificConfigIsRejected() {
     var encoded = new AudioEncodedStream(
