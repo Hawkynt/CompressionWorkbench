@@ -58,7 +58,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | cmix | `Cmix` | `.cmix` | ✅ | ✅ | — |  | [GitHub](https://github.com/byronknoll/cmix) |
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
 | CP/M Crunch | `Crunch` | `.cru` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Crunch) |
-| CSC | `Csc` | `.csc` | ✅ | ✅ | — |  | [GitHub](https://github.com/fusiyuan2010/CSC) |
+| CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/fusiyuan2010/CSC) |
 | Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
 | Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
