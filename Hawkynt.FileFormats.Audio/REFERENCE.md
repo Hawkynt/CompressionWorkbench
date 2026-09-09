@@ -4724,13 +4724,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `AmrFormatDescriptor`
 
-3GPP AMR storage container (the `.amr` / `.awb` file format, RFC 4867 storage mode). The leading magic selects the variant: `#!AMR\n` — AMR narrowband, mono 8 kHz.`#!AMR-WB\n` — AMR wideband, mono 16 kHz.`#!AMR_MC1.0\n` + a 4-byte little-endian channel count — multi-channel NB.`#!AMR-WB_MC1.0\n` + a 4-byte channel count — multi-channel WB. After the header the body is a sequence of frames; each frame's first byte carries the mode in bits 3..6, which sizes the frame (NB payload bytes {12,13,15,17,19,20,26,31}; WB {17,23,32,36,40,46,50,58,60}). For a multi-channel file the per-channel frames are interleaved frame-by-frame, matching the ffmpeg AMR demuxer. The archive view surfaces `FULL.amr`/`FULL.awb` (byte-exact stream, Kind `Container`), a decoded `MONO.wav` (or one WAV per channel for MC files, Kind `Channel`) and `metadata.ini` (Kind `Tag`). Read-only: AMR has no encoder here.
+3GPP AMR storage container (the `.amr` / `.awb` file format, RFC 4867 storage mode). The leading magic selects the variant: `#!AMR\n` — AMR narrowband, mono 8 kHz.`#!AMR-WB\n` — AMR wideband, mono 16 kHz.`#!AMR_MC1.0\n` + a 4-byte little-endian channel count — multi-channel NB.`#!AMR-WB_MC1.0\n` + a 4-byte channel count — multi-channel WB. After the header the body is a sequence of frames; each frame's first byte carries the mode in bits 3..6, which sizes the frame (NB payload bytes {12,13,15,17,19,20,26,31}; WB {17,23,32,36,40,46,50,58,60}). For a multi-channel file the per-channel frames are interleaved frame-by-frame, matching the ffmpeg AMR demuxer. The archive view surfaces `FULL.amr`/`FULL.awb` (byte-exact stream, Kind `Container`), a decoded `MONO.wav` (or one WAV per channel for MC files, Kind `Channel`) and `metadata.ini` (Kind `Tag`). The audio conversion surface also supports PCM16 encoding/decoding and packet-preserving demux/mux for NB/WB and MC1.0.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AmrFormatDescriptor` | `AmrFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -4741,11 +4742,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.AmrNb`
 
