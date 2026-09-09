@@ -120,10 +120,10 @@ public static class AdxCodec {
         _ => -1,
       };
       if (loopOffset >= 0 && dataOffset - 6 >= loopOffset + 0x18) {
-        var loopFlag = BinaryPrimitives.ReadInt32BigEndian(file[loopOffset + 4..]);
+        var loopFlag = BinaryPrimitives.ReadInt32BigEndian(file[(loopOffset + 4)..]);
         if (loopFlag != 0) {
-          loopStart = BinaryPrimitives.ReadInt32BigEndian(file[loopOffset + 8..]);
-          loopEnd = BinaryPrimitives.ReadInt32BigEndian(file[loopOffset + 0x10..]);
+          loopStart = BinaryPrimitives.ReadInt32BigEndian(file[(loopOffset + 8)..]);
+          loopEnd = BinaryPrimitives.ReadInt32BigEndian(file[(loopOffset + 0x10)..]);
           if (loopStart < 0 || loopEnd <= loopStart || loopEnd > totalSamples)
             throw new InvalidDataException("ADX loop metadata is outside the sample range.");
         }
@@ -147,9 +147,10 @@ public static class AdxCodec {
     var (coef1, coef2) = info.EncodingType == EncodingTypeFixed
       ? (0, 0)
       : DeriveCoefficients(info.HighpassFrequency, info.SampleRate);
-    var histories = ReadInitialHistories(file, info);
-    var hist1 = histories.Hist1;
-    var hist2 = histories.Hist2;
+    // Every header version starts the predictor from silence; the four bytes per
+    // channel a version-4 header reserves at 0x18 are padding, not seed history.
+    var hist1 = new int[info.Channels];
+    var hist2 = new int[info.Channels];
     var pcm = new short[checked(info.TotalSamples * info.Channels)];
     var groups = info.TotalSamples == 0 ? 0 : (info.TotalSamples + SamplesPerFrame - 1) / SamplesPerFrame;
     var required = checked(info.DataOffset + groups * FrameSize * info.Channels);
@@ -179,7 +180,9 @@ public static class AdxCodec {
             break;
           }
           case EncodingTypeStandard:
-            scale = info.IsEncrypted ? ((word ^ xor) & 0x1FFF) + 1 : (word & 0x7FFF) + 1;
+            // Unencrypted type-3 frames carry the scale verbatim; only the encrypted
+            // revisions pack it into 13 bits after the XOR, biased by one.
+            scale = info.IsEncrypted ? ((word ^ xor) & 0x1FFF) + 1 : word;
             break;
           case EncodingTypeExponential:
             if (word > 12)
@@ -196,9 +199,10 @@ public static class AdxCodec {
           var packed = file[frameStart + 2 + (i >> 1)];
           var nibble = (i & 1) == 0 ? packed >> 4 : packed & 0x0F;
           var delta = SignExtend4(nibble);
-          var prediction = info.Version == 3
-            ? ((frameCoef1 * h1) >> 12) + ((frameCoef2 * h2) >> 12)
-            : (frameCoef1 * h1 + frameCoef2 * h2) >> 12;
+          // The shift covers the whole sum in every header version; rounding each
+          // predictor term separately loses up to one per sample and the predictor
+          // feeds that error back.
+          var prediction = (frameCoef1 * h1 + frameCoef2 * h2) >> 12;
           var sample = Clamp16(delta * scale + prediction);
           pcm[(samplesDone + i) * info.Channels + ch] = (short)sample;
           h2 = h1;
@@ -225,9 +229,8 @@ public static class AdxCodec {
     ArgumentNullException.ThrowIfNull(options);
     ValidateEncodeArguments(interleaved, channels, sampleRate, options);
     var totalSamples = interleaved.Length / channels;
-    var histories = BuildInitialHistories(interleaved, channels, options.Version);
-    var header = BuildAdpcmHeader(channels, sampleRate, totalSamples, options, histories);
-    var data = EncodeFrames(interleaved, channels, sampleRate, options, histories);
+    var header = BuildAdpcmHeader(channels, sampleRate, totalSamples, options);
+    var data = EncodeFrames(interleaved, channels, sampleRate, options);
     var markerLength = options.WriteEndMarker ? FrameSize : 0;
     var file = new byte[checked(header.Length + data.Length + markerLength)];
     header.CopyTo(file, 0);
@@ -275,8 +278,7 @@ public static class AdxCodec {
     int channels,
     int sampleRate,
     int totalSamples,
-    AdxEncodeOptions options,
-    (short[] Hist1, short[] Hist2) histories) {
+    AdxEncodeOptions options) {
     var version = (byte)options.Version;
     var histSize = version == 4 ? Math.Max(8, channels * 4) : 0;
     var loop = options.LoopStartSample.HasValue;
@@ -301,14 +303,6 @@ public static class AdxCodec {
     var header = new byte[dataOffset];
     WriteCommonHeader(header, (byte)options.Encoding, FrameSize, BitDepth, channels,
       sampleRate, totalSamples, options.HighpassFrequency, version, revision);
-
-    if (version == 4) {
-      for (var ch = 0; ch < channels; ++ch) {
-        var offset = 0x18 + ch * 4;
-        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(offset), histories.Hist1[ch]);
-        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(offset + 2), histories.Hist2[ch]);
-      }
-    }
 
     if (loop) {
       var start = options.LoopStartSample!.Value;
@@ -353,13 +347,12 @@ public static class AdxCodec {
     ReadOnlySpan<short> interleaved,
     int channels,
     int sampleRate,
-    AdxEncodeOptions options,
-    (short[] Hist1, short[] Hist2) histories) {
+    AdxEncodeOptions options) {
     var totalSamples = interleaved.Length / channels;
     var groups = totalSamples == 0 ? 0 : (totalSamples + SamplesPerFrame - 1) / SamplesPerFrame;
     var data = new byte[checked(groups * FrameSize * channels)];
-    var hist1 = histories.Hist1.Select(static value => (int)value).ToArray();
-    var hist2 = histories.Hist2.Select(static value => (int)value).ToArray();
+    var hist1 = new int[channels];
+    var hist2 = new int[channels];
     var derived = options.Encoding == AdxEncodingMode.Fixed
       ? (Coef1: 0, Coef2: 0)
       : DeriveCoefficients(options.HighpassFrequency, sampleRate);
@@ -382,9 +375,7 @@ public static class AdxCodec {
           var nibble = 0;
           if (i < count) {
             var target = interleaved[(samplesDone + i) * channels + ch];
-            var prediction = options.Version == AdxHeaderVersion.Version3
-              ? ((choice.Coef1 * h1) >> 12) + ((choice.Coef2 * h2) >> 12)
-              : (choice.Coef1 * h1 + choice.Coef2 * h2) >> 12;
+            var prediction = (choice.Coef1 * h1 + choice.Coef2 * h2) >> 12;
             var quant = Quantize(target - prediction, choice.Scale);
             var sample = Clamp16(prediction + quant * choice.Scale);
             h2 = h1;
@@ -422,10 +413,10 @@ public static class AdxCodec {
       FrameChoice? best = null;
       for (var predictor = 0; predictor < FixedCoefficients.Length; ++predictor) {
         var (c1, c2) = FixedCoefficients[predictor];
-        var scale = ChooseLinearScale(samples, channels, channel, firstSample, count, c1, c2, initialH1, initialH2, options.Version);
+        var scale = ChooseLinearScale(samples, channels, channel, firstSample, count, c1, c2, initialH1, initialH2);
         scale = Math.Min(scale, 0x2000);
         var word = (ushort)((predictor << 13) | (scale - 1));
-        var candidate = EvaluateFrame(samples, channels, channel, firstSample, count, c1, c2, scale, word, initialH1, initialH2, options.Version);
+        var candidate = EvaluateFrame(samples, channels, channel, firstSample, count, c1, c2, scale, word, initialH1, initialH2);
         if (best is null || candidate.Error < best.Value.Error)
           best = candidate;
       }
@@ -434,7 +425,7 @@ public static class AdxCodec {
 
     if (options.Encoding == AdxEncodingMode.Exponential) {
       var desired = ChooseLinearScale(samples, channels, channel, firstSample, count,
-        derived.Coef1, derived.Coef2, initialH1, initialH2, options.Version);
+        derived.Coef1, derived.Coef2, initialH1, initialH2);
       var scale = 1;
       var exponent = 12;
       while (scale < desired && exponent > 0) {
@@ -442,25 +433,27 @@ public static class AdxCodec {
         --exponent;
       }
       return EvaluateFrame(samples, channels, channel, firstSample, count,
-        derived.Coef1, derived.Coef2, scale, (ushort)exponent, initialH1, initialH2, options.Version);
+        derived.Coef1, derived.Coef2, scale, (ushort)exponent, initialH1, initialH2);
     }
 
-    var standardLimit = options.Encryption is null ? 0x8000 : 0x2000;
+    // Unencrypted type-3 stores the scale verbatim and reserves the top bit for the
+    // end marker; the encrypted revisions store scale-1 in the low 13 bits.
+    var encrypted = options.Encryption is not null;
+    var standardLimit = encrypted ? 0x2000 : 0x7FFF;
     var standardScale = Math.Min(ChooseLinearScale(samples, channels, channel, firstSample, count,
-      derived.Coef1, derived.Coef2, initialH1, initialH2, options.Version), standardLimit);
+      derived.Coef1, derived.Coef2, initialH1, initialH2), standardLimit);
+    var standardWord = (ushort)(encrypted ? standardScale - 1 : standardScale);
     return EvaluateFrame(samples, channels, channel, firstSample, count,
-      derived.Coef1, derived.Coef2, standardScale, (ushort)(standardScale - 1), initialH1, initialH2, options.Version);
+      derived.Coef1, derived.Coef2, standardScale, standardWord, initialH1, initialH2);
   }
 
   private static int ChooseLinearScale(
     ReadOnlySpan<short> samples, int channels, int channel, int firstSample, int count,
-    int coef1, int coef2, int h1, int h2, AdxHeaderVersion version) {
+    int coef1, int coef2, int h1, int h2) {
     var maxPositive = 0;
     var maxNegative = 0;
     for (var i = 0; i < count; ++i) {
-      var prediction = version == AdxHeaderVersion.Version3
-        ? ((coef1 * h1) >> 12) + ((coef2 * h2) >> 12)
-        : (coef1 * h1 + coef2 * h2) >> 12;
+      var prediction = (coef1 * h1 + coef2 * h2) >> 12;
       var target = samples[(firstSample + i) * channels + channel];
       var residual = target - prediction;
       if (residual >= 0) maxPositive = Math.Max(maxPositive, residual);
@@ -475,12 +468,10 @@ public static class AdxCodec {
 
   private static FrameChoice EvaluateFrame(
     ReadOnlySpan<short> samples, int channels, int channel, int firstSample, int count,
-    int coef1, int coef2, int scale, ushort word, int h1, int h2, AdxHeaderVersion version) {
+    int coef1, int coef2, int scale, ushort word, int h1, int h2) {
     long error = 0;
     for (var i = 0; i < count; ++i) {
-      var prediction = version == AdxHeaderVersion.Version3
-        ? ((coef1 * h1) >> 12) + ((coef2 * h2) >> 12)
-        : (coef1 * h1 + coef2 * h2) >> 12;
+      var prediction = (coef1 * h1 + coef2 * h2) >> 12;
       var target = samples[(firstSample + i) * channels + channel];
       var quant = Quantize(target - prediction, scale);
       var reconstructed = Clamp16(prediction + quant * scale);
@@ -495,34 +486,6 @@ public static class AdxCodec {
   private static int Quantize(int residual, int scale) {
     var quant = (int)Math.Round((double)residual / scale, MidpointRounding.AwayFromZero);
     return Math.Clamp(quant, -8, 7);
-  }
-
-  private static (short[] Hist1, short[] Hist2) BuildInitialHistories(
-    ReadOnlySpan<short> interleaved,
-    int channels,
-    AdxHeaderVersion version) {
-    var h1 = new short[channels];
-    var h2 = new short[channels];
-    if (version == AdxHeaderVersion.Version4 && interleaved.Length >= channels) {
-      for (var ch = 0; ch < channels; ++ch)
-        h1[ch] = h2[ch] = interleaved[ch];
-    }
-    return (h1, h2);
-  }
-
-  private static (int[] Hist1, int[] Hist2) ReadInitialHistories(ReadOnlySpan<byte> file, AdxInfo info) {
-    var h1 = new int[info.Channels];
-    var h2 = new int[info.Channels];
-    if (info.Version != 4)
-      return (h1, h2);
-    var historyEnd = 0x18 + Math.Max(8, info.Channels * 4);
-    if (historyEnd > info.DataOffset - 6)
-      return (h1, h2);
-    for (var ch = 0; ch < info.Channels; ++ch) {
-      h1[ch] = BinaryPrimitives.ReadInt16BigEndian(file[(0x18 + ch * 4)..]);
-      h2[ch] = BinaryPrimitives.ReadInt16BigEndian(file[(0x1A + ch * 4)..]);
-    }
-    return (h1, h2);
   }
 
   private static void ValidateAdpcmHeader(AdxInfo info) {

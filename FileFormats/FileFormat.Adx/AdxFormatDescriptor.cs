@@ -433,7 +433,7 @@ public sealed class AdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static void AddAhxEntries(byte[] blob, AdxCodec.AdxInfo info, List<AudioPseudoArchive.Entry> entries) {
     var meta = new StringBuilder(BuildMetadata(info));
     meta.AppendLine("codec=ahx");
-    meta.AppendLine("payload=mpeg-layer2");
+    meta.AppendLine("payload=mpeg2-layer2");
     var payload = info.DataOffset < blob.Length ? blob[info.DataOffset..] : [];
     try {
       if (info.Revision != 0)

@@ -912,49 +912,102 @@ Reorders carried RealAudio audio packets into the codec's coded-frame byte order
 
 ### Namespace `Codec.CriAdx`
 
-[`AdxCodec`](#adxcodec) · [`AdxCodec.AdxInfo`](#adxcodecadxinfo)
+[`AdxCodec`](#adxcodec) · [`AdxCodec.AdxInfo`](#adxcodecadxinfo) · [`AdxEncodeOptions`](#adxencodeoptions) · [`AdxEncodingMode`](#adxencodingmode) · [`AdxEncryptionKey`](#adxencryptionkey) · [`AdxHeaderVersion`](#adxheaderversion)
 
 #### `AdxCodec`
 
-CRI ADX ADPCM encoder and decoder. ADX is a fixed-block ADPCM stream used by many console games (CRI Middleware). The container is a big-endian header followed by interleaved per-channel frames: Header: `u16 magic 0x8000 | u16 copyrightOffset` — coded sample data starts at `copyrightOffset + 4`, and the six bytes ending at `copyrightOffset - 2` hold the ASCII string `"(c)CRI"`.`u8 encodingType` (3 = standard ADX, the only type decoded here), `u8 blockSize` (18), `u8 bitDepth` (4), `u8 channelCount`, `u32 sampleRate`, `u32 totalSamples`, `u16 highpassFrequency`, `u8 version` (3 or 4), `u8 flags` (0x08 = encrypted). Each 18-byte frame carries a big-endian `u16` scale followed by 32 signed 4-bit nibbles (high nibble first), one per sample. A sample is reconstructed as `predicted + signExtend4(nibble) * scale`, where `predicted = (coef1 * hist1 + coef2 * hist2) >> 12` and the two predictor coefficients are derived once from the high-pass cutoff. A scale word of `0x8001` marks an end-of-stream padding frame.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BitDepth` | `const byte BitDepth` | ADPCM nibble bit depth. |
-| `EncodingTypeAhx11` | `const byte EncodingTypeAhx11` | AHX encoding type (MPEG-2 Layer II payload), version 11 — decoded by the MP3 path, not this codec. |
-| `EncodingTypeAhx` | `const byte EncodingTypeAhx` | AHX encoding type (MPEG-2 Layer II payload), version 10 — decoded by the MP3 path, not this codec. |
-| `EncodingTypeStandard` | `const byte EncodingTypeStandard` | Standard ADX ADPCM encoding type (the only type this codec encodes/decodes). |
-| `EndMarkerScale` | `const ushort EndMarkerScale` | End-of-stream marker carried in a frame's scale word. |
-| `FrameSize` | `const int FrameSize` | Bytes per ADX frame (1 channel): a 2-byte scale plus 32 4-bit nibbles. |
-| `Magic` | `const ushort Magic` | ADX header magic word (big-endian). The copyright offset is a separate field at byte 2. |
-| `SamplesPerFrame` | `const int SamplesPerFrame` | PCM samples carried by one 18-byte frame. |
-| `Decode` | `static ValueTuple<short[], int, int> Decode(ReadOnlySpan<byte> file)` | Decodes a complete standard ADX file to interleaved 16-bit PCM. Throws `NotSupportedException` for encrypted streams or non-standard encoding types, which the container layer treats as a FULL-only fallback. |
-| `DeriveCoefficients` | `static ValueTuple<int, int> DeriveCoefficients(int highpassFrequency, int sampleRate)` | Derives the two fixed-point predictor coefficients from a high-pass cutoff and sample rate. The prediction term is `(coef1*h1 + coef2*h2) >> 12`, so the coefficients use the standard 8192 / 4096 fixed-point scaling. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int sampleRate)` | Encodes interleaved 16-bit PCM into a complete standard ADX file (version 3, encoding type 3, high-pass 500 Hz). The encoder reconstructs each sample exactly as `Decode` will, so the two stay bit-exact for the chosen scale convention. |
-| `ReadInfo` | `static AdxInfo ReadInfo(ReadOnlySpan<byte> file)` | Reads and validates an ADX header from the start of `file`. |
+| `BitDepth` | `const byte BitDepth` |  |
+| `EncodingTypeAhx11` | `const byte EncodingTypeAhx11` |  |
+| `EncodingTypeAhx` | `const byte EncodingTypeAhx` |  |
+| `EncodingTypeExponential` | `const byte EncodingTypeExponential` |  |
+| `EncodingTypeFixed` | `const byte EncodingTypeFixed` |  |
+| `EncodingTypeStandard` | `const byte EncodingTypeStandard` |  |
+| `EndMarkerScale` | `const ushort EndMarkerScale` |  |
+| `FrameSize` | `const int FrameSize` |  |
+| `Magic` | `const ushort Magic` |  |
+| `MaxChannels` | `const int MaxChannels` |  |
+| `SamplesPerFrame` | `const int SamplesPerFrame` |  |
+| `BuildAhxHeader` | `static byte[] BuildAhxHeader(int sampleRate, int totalSamples, byte encodingType = 17, byte encryptionRevision = 0, int headerAlignment = 1)` |  |
+| `Decode` | `static ValueTuple<short[], int, int> Decode(ReadOnlySpan<byte> file, AdxEncryptionKey? encryptionKey = null)` |  |
+| `DeriveCoefficients` | `static ValueTuple<int, int> DeriveCoefficients(int highpassFrequency, int sampleRate)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int sampleRate)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, int channels, int sampleRate, AdxEncodeOptions options)` |  |
+| `ReadInfo` | `static AdxInfo ReadInfo(ReadOnlySpan<byte> file)` |  |
+| `RebuildHeader` | `static byte[] RebuildHeader(AdxInfo info, int dataOffset)` |  |
 
 #### `AdxCodec.AdxInfo`
-
-Parsed ADX header fields plus where the coded sample data begins.
 
 Implements `IEquatable<AdxInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset)` | Parsed ADX header fields plus where the coded sample data begins. |
+| `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset, int? LoopStartSample = null, int? LoopEndSample = null)` |  |
 | `BitDepth` | `int BitDepth { get; init; }` |  |
 | `BlockSize` | `int BlockSize { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
 | `DataOffset` | `int DataOffset { get; init; }` |  |
 | `EncodingType` | `byte EncodingType { get; init; }` |  |
 | `Flags` | `byte Flags { get; init; }` |  |
+| `HasLoop` | `bool HasLoop { get; }` |  |
 | `HighpassFrequency` | `int HighpassFrequency { get; init; }` |  |
-| `IsAhx` | `bool IsAhx { get; }` | True for AHX streams (encoding type 0x10 / 0x11): the payload after the header is an MPEG-2 Layer II (22.05 kHz mono) elementary stream rather than ADX ADPCM. AHX is decoded via the MP3 codec at the container layer, not by `AdxCodec`. |
-| `IsEncrypted` | `bool IsEncrypted { get; }` | True when the stream is flagged encrypted (flag bit 0x08) — not decodable here. |
-| `IsStandard` | `bool IsStandard { get; }` | True for standard ADX ADPCM (encoding type 3) — the only decodable form. |
+| `IsAdxAdpcm` | `bool IsAdxAdpcm { get; }` |  |
+| `IsAhx` | `bool IsAhx { get; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; }` |  |
+| `IsStandard` | `bool IsStandard { get; }` |  |
+| `LoopEndSample` | `int? LoopEndSample { get; init; }` |  |
+| `LoopStartSample` | `int? LoopStartSample { get; init; }` |  |
+| `Revision` | `byte Revision { get; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
 | `TotalSamples` | `int TotalSamples { get; init; }` |  |
+| `VersionSignature` | `ushort VersionSignature { get; }` |  |
 | `Version` | `int Version { get; init; }` |  |
+
+#### `AdxEncodeOptions`
+
+Implements `IEquatable<AdxEncodeOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdxEncodeOptions` | `AdxEncodeOptions()` |  |
+| `Encoding` | `AdxEncodingMode Encoding { get; init; }` |  |
+| `Encryption` | `AdxEncryptionKey? Encryption { get; init; }` |  |
+| `HeaderAlignment` | `int HeaderAlignment { get; init; }` |  |
+| `HighpassFrequency` | `int HighpassFrequency { get; init; }` |  |
+| `LoopEndSample` | `int? LoopEndSample { get; init; }` |  |
+| `LoopStartSample` | `int? LoopStartSample { get; init; }` |  |
+| `Version` | `AdxHeaderVersion Version { get; init; }` |  |
+| `WriteEndMarker` | `bool WriteEndMarker { get; init; }` |  |
+
+#### `AdxEncodingMode`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Fixed` | `2` |  |
+| `Standard` | `3` |  |
+| `Exponential` | `4` |  |
+
+#### `AdxEncryptionKey`
+
+Implements `IEquatable<AdxEncryptionKey>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AdxEncryptionKey` | `AdxEncryptionKey(ushort Start, ushort Multiplier, ushort Addend, byte Revision = 8)` |  |
+| `Addend` | `ushort Addend { get; init; }` |  |
+| `Multiplier` | `ushort Multiplier { get; init; }` |  |
+| `Revision` | `byte Revision { get; init; }` |  |
+| `Start` | `ushort Start { get; init; }` |  |
+| `Next` | `ushort Next(ushort value)` |  |
+
+#### `AdxHeaderVersion`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Version3` | `3` |  |
+| `Version4` | `4` |  |
+| `Version5` | `5` |  |
 
 ### Namespace `Codec.CriHca`
 
@@ -4260,32 +4313,41 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `AdxFormatDescriptor`
 
-Archive-shaped view of a CRI ADX file (`.adx`, big-endian `0x8000` magic): a byte-exact `FULL.adx` container plus one decoded mono PCM WAV per channel (named per `ChannelLayout`) and a `metadata.ini` carrying the stream's sample rate, channel count, version and high-pass cutoff. Decoding goes through the in-repo `AdxCodec`; when the codec cannot handle the input (encrypted streams, AHX/non-standard encoding types, malformed headers) the view degrades gracefully to `FULL.adx` only.
+CRI ADX/AHX audio container. Standard ADX, fixed-coefficient ADX and exponential-scale ADX can be decoded and encoded; v3/v4/v5 headers, loop metadata, header alignment and v4 type-8/ type-9 scale encryption are selectable. The canonical audio interfaces expose PCM conversion plus packet-preserving ADX/AHX demux/mux for lossless remuxing.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AdxFormatDescriptor` | `AdxFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Aea`
 

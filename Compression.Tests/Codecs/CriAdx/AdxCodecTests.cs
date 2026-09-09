@@ -41,12 +41,12 @@ public class AdxCodecTests {
   }
 
   [Test]
-  public void Encode_StandardScale_StoresScaleMinusOne() {
+  public void Encode_StandardScale_StoresTheScaleVerbatim() {
     var pcm = new short[AdxCodec.SamplesPerFrame];
     var adx = AdxCodec.Encode(pcm, 1, 22050);
     var info = AdxCodec.ReadInfo(adx);
-    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(adx.AsSpan(info.DataOffset)), Is.Zero,
-      "silence uses scale 1, therefore the type-3 frame stores scale-1 == 0");
+    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(adx.AsSpan(info.DataOffset)), Is.EqualTo(1),
+      "unencrypted type-3 frames carry the scale itself and silence bottoms out at scale 1");
   }
 
   [TestCase(AdxEncodingMode.Standard, AdxHeaderVersion.Version3)]
