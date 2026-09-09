@@ -177,7 +177,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Ast` | AST (GameCube/Wii stream) | WORM | — | — | — | — | — | GameCube/Wii AST |
 | `Au` | Sun/NeXT .au (.snd) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] probes and decodes ours | Sun/NeXT `.au` / `.snd` |
 | `Aud` | Westwood AUD (Command & Conquer) | WORM | — | — | — | — | — | Westwood AUD / WS-ADPCM + IMA |
-| `Avi` | AVI (RIFF video) | R | — | — | — | — | — | AVI `auds` stream routing including PCM/ADPCM/MPEG Audio/AC-3/G.711 variants |
+| `Avi` | AVI (RIFF video) | WORM | — | — | — | — | — | AVI `auds` stream routing including PCM/ADPCM/MPEG Audio/AC-3/G.711 variants |
 | `Avr` | AVR (Audio Visual Research) | WORM | — | — | — | — | — | AVR / Atari ST big-endian PCM |
 | `Awb` | CRI Audio Wave Bank | WORM | — | — | — | — | — | CRI Audio Wave Bank |
 | `Ay` | ZX Spectrum AY | R | — | — | — | — | — | ZX Spectrum AY via Z80+AY-3-8910 |
