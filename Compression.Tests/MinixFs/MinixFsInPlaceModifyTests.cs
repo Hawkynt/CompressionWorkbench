@@ -295,7 +295,10 @@ public class MinixFsInPlaceModifyTests {
     const int totalZones = 64;
     const int imapBlocks = 1;
     const int zmapBlocks = 1;
-    const int inodeSize = 32;
+    // V1 uses the 32-byte inode; V2 uses the same 64-byte inode as V3, with
+    // 32-bit zone pointers. Verified against an image from `mkfs.minix -2`.
+    var isV2 = version is V1V2Version.V2_14 or V1V2Version.V2_30;
+    var inodeSize = isV2 ? 64 : 32;
     var inodesPerBlock = blockSize / inodeSize;
     var inodeTableBlocks = (totalInodes + inodesPerBlock - 1) / inodesPerBlock;
     // boot(1) + sb(1) + imap + zmap + inode_table = firstDataZone
@@ -314,16 +317,21 @@ public class MinixFsInPlaceModifyTests {
       _ => throw new ArgumentOutOfRangeException(nameof(version)),
     };
 
-    // V1/V2 superblock @ offset 1024
+    // V1/V2 superblock @ offset 1024. V1 counts zones in the 16-bit s_nzones;
+    // V2 leaves that zero and carries the count in the 32-bit s_zones, as
+    // `mkfs.minix -2` does.
+    var zoneCount = (uint)(diskSize / blockSize);
     var sb = disk.AsSpan(1024);
     BinaryPrimitives.WriteUInt16LittleEndian(sb,             (ushort)totalInodes);
-    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(2),    (ushort)(diskSize / blockSize));
+    BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(2),    isV2 ? (ushort)0 : (ushort)zoneCount);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(4),    imapBlocks);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(6),    zmapBlocks);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(8),    (ushort)firstDataZone);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(10),   0); // log_zone_size
     BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(12),   (uint)diskSize);
     BinaryPrimitives.WriteUInt16LittleEndian(sb.Slice(16),   (ushort)magic);
+    if (isV2)
+      BinaryPrimitives.WriteUInt32LittleEndian(sb.Slice(20), zoneCount); // s_zones
 
     var imapOff = 2 * blockSize;
     var zmapOff = 3 * blockSize;
@@ -341,13 +349,22 @@ public class MinixFsInPlaceModifyTests {
     var rootZone = firstDataZone;
     disk[zmapOff] = 0x03;
 
-    // Root inode (inode 1) — V1 32-byte layout (modifier convention).
-    // mode (2) | uid (2) | size (4) | time (4) | gid (1) | nlinks (1) | zones[9] (18)
+    // Root inode (inode 1).
     var inodeOff = inodeTableOff + (1 - 1) * inodeSize;
-    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(inodeOff),     0x41ED); // S_IFDIR | 0755
-    BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOff + 4), (uint)blockSize); // size
-    disk[inodeOff + 13] = 2; // nlinks
-    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(inodeOff + 14), (ushort)rootZone);
+    BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(inodeOff), 0x41ED); // S_IFDIR | 0755
+    if (isV2) {
+      // V2/V3 64-byte layout:
+      // mode(0) | nlinks(2) | uid(4) | gid(6) | size(8) | atime(12) | mtime(16) | ctime(20) | zone[10](24)
+      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(inodeOff + 2), 2); // nlinks
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOff + 8), (uint)blockSize); // size
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOff + 24), (uint)rootZone);
+    } else {
+      // V1 32-byte layout:
+      // mode(0) | uid(2) | size(4) | time(8) | gid(12) | nlinks(13) | zone[9](14)
+      BinaryPrimitives.WriteUInt32LittleEndian(disk.AsSpan(inodeOff + 4), (uint)blockSize); // size
+      disk[inodeOff + 13] = 2; // nlinks
+      BinaryPrimitives.WriteUInt16LittleEndian(disk.AsSpan(inodeOff + 14), (ushort)rootZone);
+    }
 
     // Root directory data block: write "." and ".." entries.
     var nameLen = version is V1V2Version.V1_30 or V1V2Version.V2_30 ? 30 : 14;

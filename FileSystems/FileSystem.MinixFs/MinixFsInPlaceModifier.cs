@@ -48,13 +48,17 @@ public static class MinixFsInPlaceModifier {
 
   private enum Version { V1_14, V1_30, V2_14, V2_30, V3 }
 
+  // V2 and V3 share the same 64-byte inode structure; only the superblock and the
+  // directory-entry shape differ between them. V1 alone uses the 32-byte inode.
+  private static bool HasModernInode(Version version) => version != Version.V1_14 && version != Version.V1_30;
+
   private sealed record class Geometry(
     Version Version,
     int BlockSize,
     int InodeSize,        // 32 for V1, 64 for V2/V3
     int DirEntrySize,     // 16/32/64 depending on variant
     int NameLen,          // 14/30/60
-    int ZonePtrSize,      // 2 for V1/V2 (per existing reader convention), 4 for V3
+    int ZonePtrSize,      // 2 for V1, 4 for V2/V3
     int DirInoFieldSize,  // 2 for V1/V2, 4 for V3
     uint TotalInodes,
     ushort ImapBlocks,
@@ -180,8 +184,8 @@ public static class MinixFsInPlaceModifier {
     if (inodeZones.Length > directCount + 1 && inodeZones[directCount + 1] != 0)
       FreeIndirect(image, geom, zmapBuf, inodeZones[directCount + 1], level: 2, wipeData);
 
-    // Triple indirect (V3 only).
-    if (geom.Version == Version.V3 && inodeZones.Length > directCount + 2 && inodeZones[directCount + 2] != 0)
+    // Triple indirect: present in the 10-slot V2/V3 inode, absent from V1's 9 slots.
+    if (HasModernInode(geom.Version) && inodeZones.Length > directCount + 2 && inodeZones[directCount + 2] != 0)
       FreeIndirect(image, geom, zmapBuf, inodeZones[directCount + 2], level: 3, wipeData);
 
     ClearBit(imapBuf, (int)targetInodeNum);
@@ -313,22 +317,25 @@ public static class MinixFsInPlaceModifier {
         MagicV2_14 => Version.V2_14,
         _ => Version.V2_30,
       };
-      // The existing reader/writer convention in this codebase treats V1 and
-      // V2 identically: 32-byte inodes with 16-bit zone pointers. We match
-      // that convention so the on-disk artefacts we mutate read back through
-      // the existing MinixFsReader unchanged.
-      inodeSize = 32;
-      zonePtrSize = 2;
+      // V1 uses the 32-byte inode with 16-bit zone pointers; V2 uses the same
+      // 64-byte inode as V3 with 32-bit zone pointers. Only the superblock and
+      // the directory-entry shape separate V2 from V3.
+      var modernInode = HasModernInode(version);
+      inodeSize = modernInode ? 64 : 32;
+      zonePtrSize = modernInode ? 4 : 2;
       dirInoFieldSize = 2;
       nameLen = version is Version.V1_30 or Version.V2_30 ? 30 : 14;
       dirEntrySize = 2 + nameLen;
       totalInodes = BinaryPrimitives.ReadUInt16LittleEndian(sb);
-      var nzones = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(2));
       imapBlocks = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(4));
       zmapBlocks = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(6));
       firstDataZone = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(8));
       blockSize = 1024;
-      totalZones = nzones;
+      // V1 counts zones in the 16-bit s_nzones; V2 leaves that field zero and
+      // carries the count in the 32-bit s_zones instead (mkfs.minix -2 does this).
+      var shortZones = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(2));
+      var longZones = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(20));
+      totalZones = modernInode ? (longZones != 0 ? longZones : shortZones) : shortZones;
     } else {
       throw new InvalidDataException(
         $"MinixFs: invalid magic. Got 0x{magic16:X4} at offset 16, 0x{magic24:X4} at offset 24.");
@@ -357,13 +364,13 @@ public static class MinixFsInPlaceModifier {
     image.Write(data, 0, geom.InodeSize);
   }
 
-  // V3 inode zone pointer count = 10; V1/V2 (per this codebase) = 9.
+  // The 64-byte V2/V3 inode holds 10 zone pointers; the 32-byte V1 inode holds 9.
   private static int InodeZoneSlotCount(Geometry geom) =>
-    geom.Version == Version.V3 ? 10 : 9;
+    HasModernInode(geom.Version) ? 10 : 9;
 
   // Layout-aware zone-pointer field offset within an inode.
   private static int InodeZoneFieldOffset(Geometry geom) =>
-    geom.Version == Version.V3 ? 24 : 14;
+    HasModernInode(geom.Version) ? 24 : 14;
 
   private static uint[] ReadInodeZones(Geometry geom, byte[] inode) {
     var slots = InodeZoneSlotCount(geom);
@@ -384,22 +391,21 @@ public static class MinixFsInPlaceModifier {
       : BinaryPrimitives.ReadUInt16LittleEndian(inode.AsSpan(off));
   }
 
-  // Builds a brand-new inode with the supplied mode/size/zones. For V1/V2 we
-  // use the 32-byte layout (mode/uid/size/time/gid/nlinks/zones[9] as 16-bit);
-  // for V3 we use the 64-byte modern layout. Time fields are left zero — the
-  // reader does not surface them.
+  // Builds a brand-new inode with the supplied mode/size/zones. V1 uses the
+  // 32-byte layout (mode/uid/size/time/gid/nlinks/zones[9] as 16-bit); V2 and V3
+  // share the 64-byte layout. Time fields are left zero — the reader does not
+  // surface them.
   private static byte[] BuildInode(Geometry geom, ushort mode, uint size, List<int> directZones) {
     var inode = new byte[geom.InodeSize];
     BinaryPrimitives.WriteUInt16LittleEndian(inode, mode);
-    if (geom.Version == Version.V3) {
-      // V3 layout
+    if (HasModernInode(geom.Version)) {
+      // V2/V3 layout: mode(0) nlinks(2) uid(4) gid(6) size(8) atime(12) mtime(16) ctime(20) zone[10](24)
       BinaryPrimitives.WriteUInt16LittleEndian(inode.AsSpan(2), 1); // nlinks
       BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(8), size);
       for (var i = 0; i < directZones.Count; i++)
         BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(24 + i * 4), (uint)directZones[i]);
     } else {
-      // V1/V2 layout (codebase convention)
-      // uid (2..4), size (4..8), time (8..12), gid (12), nlinks (13), zones (14..32)
+      // V1 layout: mode(0) uid(2) size(4) time(8) gid(12) nlinks(13) zone[9](14)
       BinaryPrimitives.WriteUInt32LittleEndian(inode.AsSpan(4), size);
       inode[13] = 1; // nlinks
       for (var i = 0; i < directZones.Count; i++)
