@@ -1,170 +1,241 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using Compression.Registry;
 using FileFormat.Pak;
 
 namespace Compression.Tests.Pak;
 
 /// <summary>
-/// Locks the in-place contract for <see cref="PakInPlaceModifier"/>: PAK
-/// shares the ARC binary layout (entry-chain terminated by a 2-byte
-/// end-of-archive marker), so Add overwrites only the old EOA marker and
-/// re-writes a fresh one after the new entry. Bytes before the old EOA
-/// are byte-identical after the operation.
+/// Changed-byte tests for real Quake PACK archives. The physical contract is a
+/// trailing directory, not ARC's entry-chain/EOA layout.
 /// </summary>
 [TestFixture]
 public class PakInPlaceModifyTests {
-
-  // ARC/PAK end-of-archive marker: 0x1A 0x00.
-  private const int EoaMarkerBytes = 2;
+  private const long IoBudget = 128 * 1024;
 
   [Test, Category("ByteIdentity")]
-  public void AddFile_PreservesBytesBeforeOldEoaMarker() {
-    var seed = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    var oldBytes = seed.ToArray();
-    var oldEoaOffset = oldBytes.Length - EoaMarkerBytes;
+  public void AddFile_WritesPayloadAtOldDirectoryOffset_AndKeepsExistingOffset() {
+    var keep = Pattern(8192, 17);
+    var original = BuildSeedPak(("keep.bin", keep));
+    var oldDirectoryOffset = DirectoryOffset(original);
+    var oldKeepOffset = EntryMap(original)["keep.bin"].FileOffset;
 
-    using var ms = new MemoryStream();
-    ms.Write(oldBytes);
-    PakInPlaceModifier.AddFile(ms, "added.txt", "appended"u8.ToArray());
+    using var stream = Load(original);
+    PakInPlaceModifier.AddFile(stream, "new.bin", "small"u8.ToArray());
+    var result = stream.ToArray();
+    var entries = EntryMap(result);
 
-    var newBytes = ms.ToArray();
-    Assert.That(newBytes.Length, Is.GreaterThan(oldBytes.Length),
-      "Add must grow the archive (new entry + fresh EOA).");
-
-    AssertBytesEqual(oldBytes.AsSpan(0, oldEoaOffset),
-      newBytes.AsSpan(0, oldEoaOffset),
-      "Bytes before the old end-of-archive marker must be untouched.");
-  }
-
-  [Test, Category("ByteIdentity")]
-  public void AddFile_MultipleAppends_PreservesAllPriorEntryBytes() {
-    var seed = BuildSeedPak(
-      ("one.txt", "first"u8.ToArray()),
-      ("two.txt", "second"u8.ToArray()));
-    var oldBytes = seed.ToArray();
-    var oldEoaOffset = oldBytes.Length - EoaMarkerBytes;
-
-    using var ms = new MemoryStream();
-    ms.Write(oldBytes);
-    PakInPlaceModifier.AddFile(ms, "three.txt", "third"u8.ToArray());
-
-    var afterFirst = ms.ToArray();
-    AssertBytesEqual(oldBytes.AsSpan(0, oldEoaOffset),
-      afterFirst.AsSpan(0, oldEoaOffset),
-      "First Add must not touch any pre-existing entry bytes.");
-
-    var midEoaOffset = afterFirst.Length - EoaMarkerBytes;
-    PakInPlaceModifier.AddFile(ms, "four.txt", "fourth"u8.ToArray());
-
-    var afterSecond = ms.ToArray();
-    AssertBytesEqual(afterFirst.AsSpan(0, midEoaOffset),
-      afterSecond.AsSpan(0, midEoaOffset),
-      "Second Add must not touch any bytes written by the first Add.");
-  }
-
-  [Test, Category("RoundTrip")]
-  public void AddFile_ReadsBack() {
-    using var ms = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    PakInPlaceModifier.AddFile(ms, "added.txt", "hello-pak"u8.ToArray());
-
-    ms.Position = 0;
-    var entries = ReadAll(ms);
-    Assert.That(entries["added.txt"], Is.EqualTo("hello-pak"));
-    Assert.That(entries["seed.txt"], Is.EqualTo("seed-content"));
-  }
-
-  [Test, Category("RoundTrip")]
-  public void RemoveFile_DropsEntry() {
-    using var ms = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    PakInPlaceModifier.AddFile(ms, "victim.txt", "delete-me"u8.ToArray());
-    PakInPlaceModifier.AddFile(ms, "keeper.txt", "keep-me"u8.ToArray());
-    Assert.That(PakInPlaceModifier.RemoveFile(ms, "victim.txt"), Is.True);
-
-    ms.Position = 0;
-    var entries = ReadAll(ms);
-    Assert.That(entries.ContainsKey("victim.txt"), Is.False);
-    Assert.That(entries.ContainsKey("keeper.txt"), Is.True);
-    Assert.That(entries["keeper.txt"], Is.EqualTo("keep-me"));
-    Assert.That(entries["seed.txt"], Is.EqualTo("seed-content"));
-  }
-
-  [Test, Category("RoundTrip")]
-  public void RemoveFile_NotFound_ReturnsFalse() {
-    using var ms = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    Assert.That(PakInPlaceModifier.RemoveFile(ms, "ghost.txt"), Is.False);
-  }
-
-  [Test, Category("RoundTrip")]
-  public void MutateThenExtract_PreservesCallerPayload() {
-    using var ms = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    var payload = new byte[1024];
-    for (var i = 0; i < payload.Length; ++i) payload[i] = (byte)((i * 11 + 1) & 0xFF);
-    PakInPlaceModifier.AddFile(ms, "payload.bin", payload);
-
-    ms.Position = 0;
-    var entries = ReadAll(ms);
-    Assert.That(entries.ContainsKey("payload.bin"), Is.True);
-    Assert.That(System.Text.Encoding.Latin1.GetBytes(entries["payload.bin"]), Is.EqualTo(payload));
-  }
-
-  [Test, Category("HappyPath")]
-  public void Descriptor_AdvertisesCanModify_AndImplementsIArchiveModifiable() {
-    var d = new PakFormatDescriptor();
     Assert.Multiple(() => {
-      Assert.That(d.Capabilities & FormatCapabilities.CanModify, Is.EqualTo(FormatCapabilities.CanModify),
-        "Descriptor must advertise CanModify.");
-      Assert.That(d, Is.InstanceOf<IArchiveModifiable>(),
-        "Descriptor must implement IArchiveModifiable.");
+      Assert.That(entries["new.bin"].FileOffset, Is.EqualTo(oldDirectoryOffset));
+      Assert.That(entries["keep.bin"].FileOffset, Is.EqualTo(oldKeepOffset));
+      Assert.That(ReadEntry(result, "keep.bin"), Is.EqualTo(keep));
+      Assert.That(ReadEntry(result, "new.bin"), Is.EqualTo("small"u8.ToArray()));
+    });
+  }
+
+  [Test, Category("Performance")]
+  public void DescriptorAdd_LeavesFourMiBUntouched_AndStaysUnderIoBudget() {
+    var keep = Pattern(4 * 1024 * 1024, 23);
+    var original = BuildSeedPak(("large/keep.bin", keep), ("small.txt", "seed"u8.ToArray()));
+    var oldOffset = EntryMap(original)["large/keep.bin"].FileOffset;
+
+    using var inner = Load(original);
+    using var counted = new CountingStream(inner);
+    new PakFormatDescriptor().Add(counted, [ArchiveInputInfo.InMemory("added.txt", "tiny"u8.ToArray())]);
+    var reads = counted.BytesRead;
+    var writes = counted.BytesWritten;
+    var result = inner.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(reads, Is.LessThan(IoBudget), $"add read {reads} archive bytes");
+      Assert.That(writes, Is.LessThan(IoBudget), $"add wrote {writes} archive bytes");
+      Assert.That(EntryMap(result)["large/keep.bin"].FileOffset, Is.EqualTo(oldOffset));
+      Assert.That(ReadEntry(result, "large/keep.bin"), Is.EqualTo(keep));
+      Assert.That(ReadEntry(result, "added.txt"), Is.EqualTo("tiny"u8.ToArray()));
+    });
+  }
+
+  [Test, Category("Performance")]
+  public void DescriptorReplace_DoesNotReadLargeSibling_AndWipesOldPayload() {
+    var keep = Pattern(4 * 1024 * 1024, 31);
+    var victim = Pattern(4096, 7);
+    var original = BuildSeedPak(("keep.bin", keep), ("victim.bin", victim));
+    var before = EntryMap(original);
+    var oldKeepOffset = before["keep.bin"].FileOffset;
+    var oldVictim = before["victim.bin"];
+
+    using var inner = Load(original);
+    using var counted = new CountingStream(inner);
+    new PakFormatDescriptor().Add(counted, [ArchiveInputInfo.InMemory("victim.bin", "replacement"u8.ToArray())]);
+    var reads = counted.BytesRead;
+    var writes = counted.BytesWritten;
+    var result = inner.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(reads, Is.LessThan(IoBudget));
+      Assert.That(writes, Is.LessThan(IoBudget));
+      Assert.That(EntryMap(result)["keep.bin"].FileOffset, Is.EqualTo(oldKeepOffset));
+      Assert.That(ReadEntry(result, "keep.bin"), Is.EqualTo(keep));
+      Assert.That(ReadEntry(result, "victim.bin"), Is.EqualTo("replacement"u8.ToArray()));
+      Assert.That(result.AsSpan(oldVictim.FileOffset, oldVictim.Size).ToArray(), Is.All.EqualTo((byte)0));
+    });
+  }
+
+  [Test, Category("Performance")]
+  public void DescriptorRemove_RewritesOnlyDirectoryAndRemovedPayload() {
+    var keep = Pattern(4 * 1024 * 1024, 43);
+    var victim = Pattern(4096, 11);
+    var original = BuildSeedPak(("keep.bin", keep), ("victim.bin", victim));
+    var before = EntryMap(original);
+    var oldKeepOffset = before["keep.bin"].FileOffset;
+    var oldVictim = before["victim.bin"];
+
+    using var inner = Load(original);
+    using var counted = new CountingStream(inner);
+    new PakFormatDescriptor().Remove(counted, ["victim.bin"]);
+    var reads = counted.BytesRead;
+    var writes = counted.BytesWritten;
+    var result = inner.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(reads, Is.LessThan(IoBudget));
+      Assert.That(writes, Is.LessThan(IoBudget));
+      Assert.That(EntryMap(result).ContainsKey("victim.bin"), Is.False);
+      Assert.That(EntryMap(result)["keep.bin"].FileOffset, Is.EqualTo(oldKeepOffset));
+      Assert.That(ReadEntry(result, "keep.bin"), Is.EqualTo(keep));
+      Assert.That(result.AsSpan(oldVictim.FileOffset, oldVictim.Size).ToArray(), Is.All.EqualTo((byte)0));
+    });
+  }
+
+  [Test, Category("EdgeCase")]
+  public void RemoveMissingName_PerformsZeroWrites() {
+    var original = BuildSeedPak(("keep.bin", Pattern(1024, 5)));
+    using var inner = Load(original);
+    using var counted = new CountingStream(inner);
+
+    Assert.That(PakInPlaceModifier.RemoveFile(counted, "ghost.bin"), Is.False);
+    Assert.That(counted.BytesWritten, Is.Zero);
+    Assert.That(inner.ToArray(), Is.EqualTo(original));
+  }
+
+  [Test, Category("EdgeCase")]
+  public void RemovingAlias_DoesNotWipeSharedPayload() {
+    var original = BuildAliasedPak();
+    var before = EntryMap(original);
+    Assert.That(before["a.bin"].FileOffset, Is.EqualTo(before["b.bin"].FileOffset));
+
+    using var stream = Load(original);
+    Assert.That(PakInPlaceModifier.RemoveFile(stream, "a.bin", wipeData: true), Is.True);
+    var result = stream.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(EntryMap(result).ContainsKey("a.bin"), Is.False);
+      Assert.That(ReadEntry(result, "b.bin"), Is.EqualTo("shared-payload"u8.ToArray()));
     });
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_AddViaInterface_UsesInPlacePath() {
-    using var ms = BuildSeedPak(("seed.txt", "seed-content"u8.ToArray()));
-    var tmp = Path.GetTempFileName();
-    try {
-      File.WriteAllBytes(tmp, "via-if"u8.ToArray());
-      ((IArchiveModifiable)new PakFormatDescriptor()).Add(ms,
-        [new ArchiveInputInfo(tmp, "viaif.txt", false)]);
-
-      ms.Position = 0;
-      var entries = ReadAll(ms);
-      Assert.That(entries["viaif.txt"], Is.EqualTo("via-if"));
-    } finally { File.Delete(tmp); }
+  public void Descriptor_AdvertisesCanModify_AndImplementsIArchiveModifiable() {
+    var descriptor = new PakFormatDescriptor();
+    Assert.Multiple(() => {
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveModifiable>());
+    });
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────
-
-  private static MemoryStream BuildSeedPak(params (string Name, byte[] Data)[] entries) {
-    var ms = new MemoryStream();
-    var w = new PakWriter(ms);
-    foreach (var (name, data) in entries)
-      w.AddEntry(name, data);
-    w.Finish();
-    ms.Position = 0;
-    var copy = new MemoryStream();
-    ms.CopyTo(copy);
-    copy.Position = 0;
-    return copy;
-  }
-
-  private static Dictionary<string, string> ReadAll(Stream s) {
-    s.Position = 0;
-    var r = new PakReader(s);
-    var result = new Dictionary<string, string>();
-    while (r.GetNextEntry() is { } e) {
-      var data = r.ReadEntryData();
-      result[e.FileName] = System.Text.Encoding.Latin1.GetString(data);
+  private static byte[] BuildSeedPak(params (string Name, byte[] Data)[] entries) {
+    using var stream = new MemoryStream();
+    using (var writer = new PakWriter(stream)) {
+      foreach (var (name, data) in entries)
+        writer.AddEntry(name, data);
+      writer.Finish();
     }
+    return stream.ToArray();
+  }
+
+  private static byte[] BuildAliasedPak() {
+    var bytes = BuildSeedPak(("a.bin", "shared-payload"u8.ToArray()));
+    var directoryOffset = DirectoryOffset(bytes);
+    var originalLength = bytes.Length;
+    Array.Resize(ref bytes, originalLength + PakReader.DirectoryEntrySize);
+    bytes.AsSpan(directoryOffset, PakReader.DirectoryEntrySize)
+      .CopyTo(bytes.AsSpan(directoryOffset + PakReader.DirectoryEntrySize, PakReader.DirectoryEntrySize));
+    bytes.AsSpan(directoryOffset + PakReader.DirectoryEntrySize, PakReader.NameFieldSize).Clear();
+    "b.bin"u8.CopyTo(bytes.AsSpan(directoryOffset + PakReader.DirectoryEntrySize, PakReader.NameFieldSize));
+    BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8, 4), 2 * PakReader.DirectoryEntrySize);
+    return bytes;
+  }
+
+  private static int DirectoryOffset(byte[] archive)
+    => BinaryPrimitives.ReadInt32LittleEndian(archive.AsSpan(4, 4));
+
+  private static Dictionary<string, PakEntry> EntryMap(byte[] archive) {
+    using var stream = new MemoryStream(archive, writable: false);
+    using var reader = new PakReader(stream);
+    return reader.Entries.ToDictionary(entry => entry.FileName, StringComparer.OrdinalIgnoreCase);
+  }
+
+  private static byte[] ReadEntry(byte[] archive, string name) {
+    using var stream = new MemoryStream(archive, writable: false);
+    using var reader = new PakReader(stream);
+    while (reader.GetNextEntry() is { } entry)
+      if (string.Equals(entry.FileName, name, StringComparison.OrdinalIgnoreCase))
+        return reader.ReadEntryData();
+    throw new AssertionException($"Entry '{name}' not found.");
+  }
+
+  private static byte[] Pattern(int size, int seed) {
+    var result = new byte[size];
+    for (var i = 0; i < result.Length; ++i)
+      result[i] = (byte)((i * 131 + seed) & 0xFF);
     return result;
   }
 
-  private static void AssertBytesEqual(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual, string message) {
-    if (expected.Length != actual.Length)
-      Assert.Fail($"{message} (length: expected {expected.Length}, got {actual.Length})");
-    for (var i = 0; i < expected.Length; ++i) {
-      if (expected[i] != actual[i])
-        Assert.Fail($"{message} (first difference at offset {i}: expected 0x{expected[i]:X2}, got 0x{actual[i]:X2})");
+  private static MemoryStream Load(byte[] bytes) {
+    var stream = new MemoryStream();
+    stream.Write(bytes);
+    stream.Position = 0;
+    return stream;
+  }
+
+  private sealed class CountingStream(Stream inner) : Stream {
+    public long BytesRead { get; private set; }
+    public long BytesWritten { get; private set; }
+    public override bool CanRead => inner.CanRead;
+    public override bool CanSeek => inner.CanSeek;
+    public override bool CanWrite => inner.CanWrite;
+    public override long Length => inner.Length;
+    public override long Position { get => inner.Position; set => inner.Position = value; }
+    public override void Flush() => inner.Flush();
+    public override long Seek(long offset, SeekOrigin origin) => inner.Seek(offset, origin);
+    public override void SetLength(long value) => inner.SetLength(value);
+    public override int Read(byte[] buffer, int offset, int count) {
+      var read = inner.Read(buffer, offset, count);
+      this.BytesRead += read;
+      return read;
     }
+    public override int Read(Span<byte> buffer) {
+      var read = inner.Read(buffer);
+      this.BytesRead += read;
+      return read;
+    }
+    public override int ReadByte() {
+      var value = inner.ReadByte();
+      if (value >= 0) ++this.BytesRead;
+      return value;
+    }
+    public override void Write(byte[] buffer, int offset, int count) {
+      inner.Write(buffer, offset, count);
+      this.BytesWritten += count;
+    }
+    public override void Write(ReadOnlySpan<byte> buffer) {
+      inner.Write(buffer);
+      this.BytesWritten += buffer.Length;
+    }
+    public override void WriteByte(byte value) {
+      inner.WriteByte(value);
+      ++this.BytesWritten;
+    }
+    protected override void Dispose(bool disposing) { }
   }
 }

@@ -13657,11 +13657,22 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Pak`
 
-[`PakFormatDescriptor`](#pakformatdescriptor) · [`PakInPlaceModifier`](#pakinplacemodifier) · [`PakReader`](#pakreader) · [`PakWriter`](#pakwriter)
+[`PakEntry`](#pakentry) · [`PakFormatDescriptor`](#pakformatdescriptor) · [`PakInPlaceModifier`](#pakinplacemodifier) · [`PakReader`](#pakreader) · [`PakWriter`](#pakwriter)
+
+#### `PakEntry`
+
+One directory entry in a Quake PACK archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PakEntry` | `PakEntry()` |  |
+| `FileName` | `string FileName { get; init; }` | Gets the archive-relative file name. |
+| `FileOffset` | `int FileOffset { get; init; }` | Gets the absolute byte offset of the stored payload. |
+| `Size` | `int Size { get; init; }` | Gets the stored payload length in bytes. |
 
 #### `PakFormatDescriptor`
 
-id Software Quake PAK resource archive ('PACK' header + 64-byte-entry directory). References: `https://github.com/id-Software/Quake` — released Quake source — the pakfile code is the canonical definitionUnofficial Quake Specs (Olivier Montanuy et al.) — long-standing community format documentation
+id Software Quake PAK resource archive: a 12-byte `PACK` header, verbatim file payloads, and a 64-byte-per-entry directory referenced by the header. Canonical archives place that directory at EOF. References: `https://github.com/id-Software/Quake` — released Quake source; `dpackheader_t`/`dpackfile_t` are the canonical definitionUnofficial Quake Specs (Olivier Montanuy et al.) — long-standing community format documentation
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -13680,51 +13691,60 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing PAK archive. PAK shares the ARC binary layout so this delegates to `PakInPlaceModifier`, which itself wraps `ArcModifier`. Add overwrites only the trailing end-of-archive marker; Remove walks the entry chain and shifts trailing bytes (no central directory). |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or same-name replaces files. Canonical trailing-directory archives use `PakInPlaceModifier`: new bytes overwrite the old directory, then a regenerated directory is appended. Unsupported non-canonical layouts fall back to the verified rebuild. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a canonical Quake PACK archive. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the PAK archive in listing order. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the PAK archive per the requested mode. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts matching entries. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single PAK entry as a bounded read-only stream. PAK shares the ARC binary layout: a forward-iterating reader produces per-entry bytes (decompressed if the entry was stored compressed). The bytes are wrapped in a `BoundedEntryStream` sized to the entry's original length — adjacent entries and trailing padding are physically unreachable. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries via `PakInPlaceModifier`. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens one PAK entry as a bounded read-only stream. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named files by rewriting only the trailing directory and wiping unreferenced removed payload ranges. Non-canonical layouts rebuild. |
 
 #### `PakInPlaceModifier`
 
-Random-access in-place modifier for Quake PAK archives. PAK shares the ARC binary layout (chain of entry blocks terminated by a 2-byte 0x1A 0x00 end-of-archive marker), so this wrapper delegates straight to `ArcModifier`. Add overwrites the old EOA marker with a new Stored entry plus a fresh EOA — bytes before the old EOA are untouched. Remove walks the entry chain, locates the target, and shifts trailing bytes forward to compact (no central directory).
+Changed-byte editor for canonical Quake PACK archives whose directory is the exact physical trailer. New/replacement payload bytes reuse the old directory position and a regenerated directory is appended after them. Removal rewrites only that directory and optionally wipes payload ranges no surviving entry references. Untouched payloads never move.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream pak, string name, byte[] data)` | Appends a Stored entry to a PAK archive. Bytes before the old end-of-archive marker are not modified. |
-| `RemoveFile` | `static bool RemoveFile(Stream pak, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. |
+| `AddFile` | `static void AddFile(Stream pak, string name, byte[] data)` | Adds or same-name replaces one entry. |
+| `AddFiles` | `static void AddFiles(Stream pak, IReadOnlyList<ValueTuple<string, byte[]>> files, bool wipeReplacedData = true)` | Adds or same-name replaces entries in one trailer rewrite. All structural validation and directory serialization complete before the first archive write. |
+| `RemoveFile` | `static bool RemoveFile(Stream pak, string name, bool wipeData = true)` | Removes one named entry. Returns false without writing if absent. |
+| `RemoveFiles` | `static int RemoveFiles(Stream pak, IReadOnlyCollection<string> names, bool wipeData = true)` | Removes all requested full-path or leaf-name matches in one directory rewrite. Payloads are left in place; unreferenced removed ranges are zeroed when requested. |
 
 #### `PakReader`
 
-Reads PAK archives. PAK is an ARC-compatible format (same binary layout). Delegates to `ArcReader` for all operations.
+Reads id Software Quake PACK archives: a 12-byte `PACK` header followed by stored file payloads and a 64-byte-per-entry directory referenced by the header. The directory may be physically anywhere in a readable archive; the in-place modifier deliberately requires the canonical trailing-directory form.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PakReader` | `PakReader(Stream stream)` | Reads a PAK archive from a stream. |
+| `PakReader` | `PakReader(Stream stream)` | Reads a PAK archive from a seekable stream. |
+| `DirectoryEntrySize` | `const int DirectoryEntrySize` | Size of one PACK directory record in bytes. |
+| `HeaderSize` | `const int HeaderSize` | Size of the fixed PACK header in bytes. |
+| `MaxEntries` | `const int MaxEntries` | Maximum directory entries accepted by the original Quake engine. |
+| `NameFieldSize` | `const int NameFieldSize` | Size of the NUL-padded file-name field in one directory record. |
+| `DirectoryLength` | `int DirectoryLength { get; }` | Gets the directory length in bytes. |
+| `DirectoryOffset` | `int DirectoryOffset { get; }` | Gets the byte offset of the PACK directory. |
+| `Entries` | `IReadOnlyList<PakEntry> Entries { get; }` | Gets all directory entries in on-disk order. |
 | `Dispose` | `void Dispose()` |  |
-| `GetNextEntry` | `ArcEntry GetNextEntry()` | Gets the next entry, or null if no more entries. |
-| `ReadEntryData` | `byte[] ReadEntryData()` | Reads the data of the current entry. |
+| `GetNextEntry` | `PakEntry GetNextEntry()` | Gets the next directory entry, or null after the last one. |
+| `ReadEntryData` | `byte[] ReadEntryData()` | Reads the stored bytes of the current entry. |
 
 #### `PakWriter`
 
-Creates PAK archives. PAK is ARC-compatible (same binary layout). Delegates to `ArcWriter` for all operations.
+Writes canonical Quake PACK archives: payloads first, one trailing directory, then patches the 12-byte header with the directory offset and length. Entries are stored verbatim; Quake PAK defines no per-entry compression.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PakWriter` | `PakWriter(Stream stream)` | Creates a new PAK archive writer. |
-| `AddEntry` | `void AddEntry(string fileName, byte[] data)` | Adds a file entry. |
+| `PakWriter` | `PakWriter(Stream stream)` | Creates a new PACK archive on a seekable writable stream. |
+| `AddEntry` | `void AddEntry(string fileName, byte[] data)` | Adds one stored file payload. |
 | `Dispose` | `void Dispose()` |  |
-| `Finish` | `void Finish()` | Writes the archive end marker. |
+| `Finish` | `void Finish()` | Writes the trailing directory and patches the PACK header. |
 
 ### Namespace `FileFormat.Paq8`
 
