@@ -175,7 +175,9 @@ public sealed class FatFilesystemDriverTests {
     var writer = new FatWriter();
     writer.SetVolumeSerial(0x40506070);
     writer.AddFile("A.TXT", "abc"u8.ToArray());
-    var bytes = writer.Build(totalSectors: 8192, forcedFatType: 16);
+    // One sector per cluster: FAT16 is decided by the data-cluster count, and the
+    // auto-chosen four-sector cluster on an 8192-sector volume lands under its floor.
+    var bytes = writer.Build(totalSectors: 8192, requestedClusterSize: 512, forcedFatType: 16);
 
     var bytesPerSector = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(11, 2));
     var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(14, 2));

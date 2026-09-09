@@ -397,7 +397,7 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       lfnOffsets.Clear();
       if (name is "." or "..") continue;
 
-      var firstCluster = BinaryPrimitives.ReadUInt16LittleEndian(entry[26..28]);
+      var firstCluster = (int)BinaryPrimitives.ReadUInt16LittleEndian(entry[26..28]);
       if (_geometry.FatType == 32)
         firstCluster |= BinaryPrimitives.ReadUInt16LittleEndian(entry[20..22]) << 16;
       var isDirectory = (attr & AttrDirectory) != 0;
@@ -601,11 +601,11 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
       var end = checked(offset + source.Length);
       if (end > uint.MaxValue) throw new IOException("FAT file size is limited to 4 GiB - 1 byte.");
 
-      Mutate(() => {
+      Mutate(source, payload => {
         var oldSize = (long)state.Size;
         EnsureCapacity(state, end);
         if (offset > oldSize) ZeroLogicalRange(state, oldSize, offset - oldSize);
-        WriteLogicalRange(state, offset, source);
+        WriteLogicalRange(state, offset, payload);
         if (end <= oldSize) return;
         FlushBacking();
         state.Size = (uint)end;
@@ -922,6 +922,22 @@ internal sealed class FatWritableFilesystemSession : IFilesystemSession {
     action();
     return true;
   });
+
+  private delegate void SpanMutation(ReadOnlySpan<byte> source);
+
+  /// <summary>
+  /// Same dirty-flag and hard-error contract as <see cref="Mutate(Action)"/>, but the payload
+  /// is handed through as a parameter: a ref-like span cannot be captured by a closure.
+  /// </summary>
+  private void Mutate(ReadOnlySpan<byte> source, SpanMutation action) {
+    MarkVolumeDirty();
+    try {
+      action(source);
+    } catch (IOException) {
+      MarkHardError();
+      throw;
+    }
+  }
 
   private void ReadAt(long offset, Span<byte> destination) {
     if (offset < 0 || offset > _geometry.DataLength - destination.Length)

@@ -16,6 +16,17 @@ public sealed class FatFilesystemDriverAdapter :
 
   public string FormatId => "Fat";
 
+  private const FilesystemDriverCapabilities WritableCapabilities =
+    FilesystemDriverCapabilities.WriteData |
+    FilesystemDriverCapabilities.Truncate |
+    FilesystemDriverCapabilities.CreateFile |
+    FilesystemDriverCapabilities.DeleteFile |
+    FilesystemDriverCapabilities.CreateDirectory |
+    FilesystemDriverCapabilities.RemoveDirectory |
+    FilesystemDriverCapabilities.Rename |
+    FilesystemDriverCapabilities.SetMetadata |
+    FilesystemDriverCapabilities.Flush;
+
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var original = image.CanSeek ? image.Position : 0;
@@ -33,18 +44,7 @@ public sealed class FatFilesystemDriverAdapter :
         FilesystemDriverCapabilities.RandomAccess |
         FilesystemDriverCapabilities.StableNodeIds |
         FilesystemDriverCapabilities.CasePreservingNames;
-      if (canWrite) {
-        capabilities |=
-          FilesystemDriverCapabilities.WriteData |
-          FilesystemDriverCapabilities.Truncate |
-          FilesystemDriverCapabilities.CreateFile |
-          FilesystemDriverCapabilities.DeleteFile |
-          FilesystemDriverCapabilities.CreateDirectory |
-          FilesystemDriverCapabilities.RemoveDirectory |
-          FilesystemDriverCapabilities.Rename |
-          FilesystemDriverCapabilities.SetMetadata |
-          FilesystemDriverCapabilities.Flush;
-      }
+      if (canWrite) capabilities |= WritableCapabilities;
 
       var limitations = new List<string> {
         "Native positional reads and mounted writes use FAT chains directly; no whole-file or whole-volume materialization is required.",
@@ -84,13 +84,27 @@ public sealed class FatFilesystemDriverAdapter :
     if (!profile.CanMount)
       throw new InvalidDataException("FAT image is not mountable: " + string.Join("; ", profile.Limitations));
     if (options.ReadOnly)
-      return new FatReadOnlyFilesystemSession(image, profile, options.LeaveOpen);
+      return new FatReadOnlyFilesystemSession(image, WithoutWriteAccess(profile), options.LeaveOpen);
     if (!image.CanWrite)
       throw new ArgumentException("Writable FAT mounting requires a writable backing stream.", nameof(image));
     if (!profile.CanMountWritable)
       throw new NotSupportedException("FAT image is not safely writable: " + string.Join("; ", profile.Limitations));
     return new FatWritableFilesystemSession(image, profile, options.LeaveOpen);
   }
+
+  /// <summary>
+  /// A session opened read-only reports a read-only profile: the image may well be
+  /// writable, but this session will never mutate it, and the mount layer decides what
+  /// it may offer from the session's own profile.
+  /// </summary>
+  private static FilesystemDriverProfile WithoutWriteAccess(FilesystemDriverProfile profile)
+    => profile.CanMountWritable
+      ? profile with {
+        Capabilities = profile.Capabilities & ~WritableCapabilities,
+        MutationModel = FilesystemMutationModel.None,
+        CanMountWritable = false,
+      }
+      : profile;
 
   public FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device) {
     ArgumentNullException.ThrowIfNull(device);

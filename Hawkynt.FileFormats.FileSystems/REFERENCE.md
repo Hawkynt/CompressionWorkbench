@@ -6078,7 +6078,7 @@ Walks a FAT12/16/32 image and yields the actual on-disk byte layout — reserved
 
 #### `FatFilesystemDriverAdapter`
 
-Native FAT12/16/32 driver sidecar. The current milestone is a validated, positional read-only mount over the real FAT chains; writable mounting stays fail-closed until the existing offline mutators are converted to bounded block-device operations with complete directory/durability semantics.
+Native FAT12/16/32 filesystem sidecar. Clean ordinary FAT profiles support bounded direct writes while retaining stable node identities for the mounted session. Profiles needing TFAT semantics, recovery, or non-mirrored FAT32 behavior remain fail-closed for writes.
 
 Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
