@@ -158,7 +158,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | Id | Format | State | Decode | Encode | Demux | Mux | Oracle | Notes |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | --- | --- |
 | `Aac` | AAC (ADTS) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] ADTS stream | AAC ADTS route; ADTS remux in both directions; codec profile limits apply |
-| `Ac3` | AC-3 / E-AC-3 | R | ✅ | ✅ | — | — | [ffmpeg][ffmpeg] stream converts to its declared length | Raw AC-3/E-AC-3 independent substreams |
+| `Ac3` | AC-3 / E-AC-3 | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] stream converts to its declared length | Raw AC-3/E-AC-3 independent substreams |
 | `Acm` | Interplay ACM (Fallout / Baldur's Gate audio) | WORM | ✅ | ✅ | ✅ | ✅ | — | Interplay ACM; PCM encode/decode and packet-preserving standalone remux |
 | `Adx` | CRI ADX | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] stream, byte-exact | CRI ADX/AHX paths |
 | `Aea` | Sony ATRAC1 / MiniDisc (.aea) | R | — | — | — | — | — | Sony MiniDisc AEA / ATRAC1 |
