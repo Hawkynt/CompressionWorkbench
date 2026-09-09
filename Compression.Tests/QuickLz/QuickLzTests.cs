@@ -12,6 +12,11 @@ public sealed class QuickLzTests {
   private static readonly byte[] OracleRepetitivePacket = Convert.FromHexString(
     "471B0000002C01000030000080414141415055FF50552541414141");
 
+  // Independently derived from the published QuickLZ 1.5.0 level-3 token grammar and
+  // frozen as wire-format data. It exercises the long four-byte relative-offset form.
+  private static readonly byte[] Level3RepetitivePacket = Convert.FromHexString(
+    "4F1C0000002C0100001800008041414103FE01008391010041414141");
+
   // Published QuickLZ 1.5.0 documentation example: a long-header compressed packet whose
   // control word describes ten literal tokens carrying bytes 0..9.
   private static readonly byte[] PublishedLiteralPacket = Convert.FromHexString(
@@ -31,6 +36,21 @@ public sealed class QuickLzTests {
     Assert.That(Decompress(packet), Is.EqualTo(data));
   }
 
+  [TestCase(0)]
+  [TestCase(1)]
+  [TestCase(215)]
+  [TestCase(216)]
+  [TestCase(256)]
+  [TestCase(4096)]
+  [TestCase(65536)]
+  public void RoundTrip_Level3DeterministicData(int size) {
+    var data = Enumerable.Range(0, size).Select(i => (byte)((i * 37 + i / 11) & 0xff)).ToArray();
+    var packet = Compress(data, QuickLzCompressionLevel.Level3);
+
+    Assert.That((packet[0] >> 2) & 0x03, Is.EqualTo(3));
+    Assert.That(Decompress(packet), Is.EqualTo(data));
+  }
+
   [Test]
   public void Decompress_PublishedLiteralVector() {
     Assert.That(Decompress(PublishedLiteralPacket), Is.EqualTo(Enumerable.Range(0, 10).Select(i => (byte)i)));
@@ -39,6 +59,14 @@ public sealed class QuickLzTests {
   [Test]
   public void Decompress_IndependentOracleCompressedVector() {
     Assert.That(Decompress(OracleRepetitivePacket), Is.EqualTo(Enumerable.Repeat((byte)'A', 300)));
+  }
+
+  [Test]
+  public void Level3_KnownAnswerVector_RoundTripsAndMatchesEncoder() {
+    var data = Enumerable.Repeat((byte)'A', 300).ToArray();
+
+    Assert.That(Decompress(Level3RepetitivePacket), Is.EqualTo(data));
+    Assert.That(Compress(data, QuickLzCompressionLevel.Level3), Is.EqualTo(Level3RepetitivePacket));
   }
 
   [Test]
@@ -77,6 +105,14 @@ public sealed class QuickLzTests {
 
     var invalid = Convert.FromHexString("010000800300");
     Assert.Throws<InvalidDataException>(() => QuickLzDecompressor.Decompress(invalid, 3));
+  }
+
+  [Test]
+  public void CoreLevel3_RejectsInvalidRelativeOffset() {
+    var invalid = Convert.FromHexString("0100008004");
+
+    Assert.Throws<InvalidDataException>(() =>
+      QuickLzDecompressor.Decompress(invalid, 3, QuickLzCompressionLevel.Level3));
   }
 
   [TestCase("00")]
@@ -125,10 +161,10 @@ public sealed class QuickLzTests {
     Assert.Throws<InvalidDataException>(() => block.Decompress([0xFF, 0xFF, 0xFF, 0xFF]));
   }
 
-  private static byte[] Compress(byte[] data) {
+  private static byte[] Compress(byte[] data, QuickLzCompressionLevel level = QuickLzCompressionLevel.Level1) {
     using var input = new MemoryStream(data);
     using var output = new MemoryStream();
-    QuickLzStream.Compress(input, output);
+    QuickLzStream.Compress(input, output, level);
     return output.ToArray();
   }
 

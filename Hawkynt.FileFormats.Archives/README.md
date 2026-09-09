@@ -79,7 +79,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
 | [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | — |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
-| QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | — |  | [quicklz.com](http://www.quicklz.com/) |
+| QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
 | RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | — |  | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | — |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
 | [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ |  | [rzip.samba.org](https://rzip.samba.org/) |
