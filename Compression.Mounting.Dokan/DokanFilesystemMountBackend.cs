@@ -82,6 +82,7 @@ public sealed class DokanFilesystemMountBackend : IFilesystemMountBackend {
         operations,
         request.Filesystem,
         request.Target,
+        request.Plan.AccessMode,
         request.OwnsFilesystemSession
       );
       return ValueTask.FromResult(session);
