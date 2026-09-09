@@ -65,7 +65,7 @@ public sealed class ExtFilesystemDriverTests {
     var profile = FormatRegistry.ProbeFilesystem("Ext", stream);
     Assert.That(profile.CanMountWritable, Is.True, string.Join("; ", profile.Limitations));
     Assert.That(profile.MutationModel, Is.EqualTo(FilesystemMutationModel.Direct));
-    Assert.That(profile.Capabilities, Has.Flag(FilesystemDriverCapabilities.SparseFiles));
+    Assert.That(profile.Capabilities.HasFlag(FilesystemDriverCapabilities.SparseFiles), Is.True);
 
     FilesystemNodeId movedId;
     var prefix = Enumerable.Range(0, 18_000).Select(i => (byte)(i * 17 + 3)).ToArray();

@@ -15,6 +15,34 @@ public sealed class ExtFilesystemDriverAdapter :
 
   public string FormatId => "Ext";
 
+  private const FilesystemDriverCapabilities WritableCapabilities =
+    FilesystemDriverCapabilities.WriteData |
+    FilesystemDriverCapabilities.Truncate |
+    FilesystemDriverCapabilities.CreateFile |
+    FilesystemDriverCapabilities.DeleteFile |
+    FilesystemDriverCapabilities.CreateDirectory |
+    FilesystemDriverCapabilities.RemoveDirectory |
+    FilesystemDriverCapabilities.Rename |
+    FilesystemDriverCapabilities.HardLinks |
+    FilesystemDriverCapabilities.SymbolicLinks |
+    FilesystemDriverCapabilities.SetMetadata |
+    FilesystemDriverCapabilities.SparseFiles |
+    FilesystemDriverCapabilities.Flush;
+
+  /// <summary>
+  /// A session opened read-only reports a read-only profile: the image may well be
+  /// writable, but this session will never mutate it, and the mount layer decides what
+  /// it may offer from the session's own profile.
+  /// </summary>
+  private static FilesystemDriverProfile WithoutWriteAccess(FilesystemDriverProfile profile)
+    => profile.CanMountWritable
+      ? profile with {
+        Capabilities = profile.Capabilities & ~WritableCapabilities,
+        MutationModel = FilesystemMutationModel.None,
+        CanMountWritable = false,
+      }
+      : profile;
+
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     var original = image.CanSeek ? image.Position : 0;
@@ -34,21 +62,7 @@ public sealed class ExtFilesystemDriverAdapter :
         FilesystemDriverCapabilities.StableNodeIds |
         FilesystemDriverCapabilities.CaseSensitiveNames |
         FilesystemDriverCapabilities.CasePreservingNames;
-      if (canWrite) {
-        capabilities |=
-          FilesystemDriverCapabilities.WriteData |
-          FilesystemDriverCapabilities.Truncate |
-          FilesystemDriverCapabilities.CreateFile |
-          FilesystemDriverCapabilities.DeleteFile |
-          FilesystemDriverCapabilities.CreateDirectory |
-          FilesystemDriverCapabilities.RemoveDirectory |
-          FilesystemDriverCapabilities.Rename |
-          FilesystemDriverCapabilities.HardLinks |
-          FilesystemDriverCapabilities.SymbolicLinks |
-          FilesystemDriverCapabilities.SetMetadata |
-          FilesystemDriverCapabilities.SparseFiles |
-          FilesystemDriverCapabilities.Flush;
-      }
+      if (canWrite) capabilities |= WritableCapabilities;
 
       var limitations = new List<string> {
         "Native inode+i_generation identities and hard-link aliasing are preserved.",
@@ -90,7 +104,7 @@ public sealed class ExtFilesystemDriverAdapter :
     if (!profile.CanMount)
       throw new InvalidDataException("ext image is not mountable: " + string.Join("; ", profile.Limitations));
     if (options.ReadOnly)
-      return new ExtReadOnlyFilesystemSession(image, profile, options.LeaveOpen);
+      return new ExtReadOnlyFilesystemSession(image, WithoutWriteAccess(profile), options.LeaveOpen);
     if (!profile.CanMountWritable)
       throw new NotSupportedException("ext image is not safe for writable mounting: " + string.Join("; ", profile.Limitations));
     if (!image.CanWrite)

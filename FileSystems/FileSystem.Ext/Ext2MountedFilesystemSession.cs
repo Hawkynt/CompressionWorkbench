@@ -17,6 +17,22 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
   private const uint CompatHasJournal = 0x0004;
   private const uint RoCompatSparseSuper = 0x0001;
   private const uint RoCompatLargeFile = 0x0002;
+  private const uint RoCompatHugeFile = 0x0008;
+  private const uint RoCompatDirNlink = 0x0020;
+  private const uint RoCompatExtraIsize = 0x0040;
+
+  /// <summary>
+  /// The read-only-compatible bits a mounted writer may leave in place. Each one says
+  /// the volume <em>may</em> contain a construct, not that it does: HUGE_FILE only
+  /// changes the unit of <c>i_blocks</c> for inodes flagged huge, DIR_NLINK only lets a
+  /// directory past 65,000 subdirectories record a link count of one, and EXTRA_ISIZE
+  /// only says inodes larger than 128 bytes carry an extra-field header. This writer
+  /// creates none of those, and preserves the bytes of the inodes it does not own, so
+  /// leaving the bits set is honest. Every mke2fs-made volume — and every volume this
+  /// repository's own ext writer makes — carries all three.
+  /// </summary>
+  private const uint WritableRoCompat =
+    RoCompatSparseSuper | RoCompatLargeFile | RoCompatHugeFile | RoCompatDirNlink | RoCompatExtraIsize;
   private const uint InodeFlagIndex = 0x00001000;
   private const uint InodeFlagExtents = 0x00080000;
   private const ushort ModeTypeMask = 0xF000;
@@ -67,7 +83,7 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
     var unsupportedIncompat = super.FeatureIncompat & ~IncompatFileType;
     if (unsupportedIncompat != 0)
       limitations.Add($"Mounted ext2 writes reject incompat feature bits 0x{unsupportedIncompat:X8}; classic block maps + FILETYPE are the writable subset.");
-    var unsupportedRoCompat = super.FeatureRoCompat & ~(RoCompatSparseSuper | RoCompatLargeFile);
+    var unsupportedRoCompat = super.FeatureRoCompat & ~WritableRoCompat;
     if (unsupportedRoCompat != 0)
       limitations.Add($"Mounted ext2 writes reject read-only-compatible feature bits 0x{unsupportedRoCompat:X8}; metadata checksum/btree variants are not mutated.");
     if ((super.State & 0x0001) == 0)
@@ -278,10 +294,10 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
         if (destination.Kind == FilesystemNodeKind.Directory) {
           if (ReadDirectoryEntries(destination).Any(e => e.Name is not "." and not ".."))
             throw new IOException("Destination directory is not empty.");
-          RemoveDirectory(destinationParent, newName);
+          RemoveDirectory(ToNodeId(destinationParent), newName);
           destinationParent = ReadInode(destinationParent.Number);
         } else {
-          DeleteFile(destinationParent, newName);
+          DeleteFile(ToNodeId(destinationParent), newName);
           destinationParent = ReadInode(destinationParent.Number);
         }
       }
@@ -372,7 +388,7 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
         throw new InvalidOperationException("Node is not a symbolic link.");
       if (inode.Size > int.MaxValue) throw new NotSupportedException("Symbolic link target is too large.");
       var bytes = new byte[(int)inode.Size];
-      if (inode.Sectors == 0 && bytes.Length <= FastSymlinkCapacity)
+      if (IsFastSymlink(inode))
         inode.Bytes.AsSpan(InodeBlockOffset, bytes.Length).CopyTo(bytes);
       else
         ReadFileBytes(inode, 0, bytes);
@@ -479,8 +495,8 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
       throw new InvalidDataException($"ext2 directory inode {directory.Number} has non-block-aligned size {directory.Size}.");
 
     var result = new List<DirectoryEntry>();
-    var blocks = checked((int)(directory.Size / _geometry.BlockSize));
-    for (var logical = 0; logical < blocks; ++logical) {
+    var blocks = checked((ulong)(directory.Size / _geometry.BlockSize));
+    for (var logical = 0UL; logical < blocks; ++logical) {
       var physical = GetLogicalDataBlock(directory, logical);
       if (physical == 0)
         throw new InvalidDataException($"ext2 directory inode {directory.Number} has a sparse data block.");
@@ -514,8 +530,8 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
   private void InsertDirectoryEntry(Inode directory, string name, uint inodeNumber, byte fileType) {
     var encoded = Encoding.UTF8.GetBytes(name);
     var required = DirectoryRecordSize(encoded.Length);
-    var blocks = checked((int)(directory.Size / _geometry.BlockSize));
-    for (var logical = 0; logical < blocks; ++logical) {
+    var blocks = checked((ulong)(directory.Size / _geometry.BlockSize));
+    for (var logical = 0UL; logical < blocks; ++logical) {
       var physical = GetLogicalDataBlock(directory, logical);
       var entries = ParseDirectoryBlock(ReadBlock(physical)).ToList();
       var used = entries.Sum(e => DirectoryRecordSize(Encoding.UTF8.GetByteCount(e.Name)));
@@ -536,8 +552,8 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
   }
 
   private void RemoveDirectoryEntry(Inode directory, string name, uint expectedInode) {
-    var blocks = checked((int)(directory.Size / _geometry.BlockSize));
-    for (var logical = 0; logical < blocks; ++logical) {
+    var blocks = checked((ulong)(directory.Size / _geometry.BlockSize));
+    for (var logical = 0UL; logical < blocks; ++logical) {
       var physical = GetLogicalDataBlock(directory, logical);
       var entries = ParseDirectoryBlock(ReadBlock(physical)).ToList();
       var index = entries.FindIndex(e => e.Inode == expectedInode && string.Equals(e.Name, name, StringComparison.Ordinal));
@@ -553,7 +569,7 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
   }
 
   private void TrimTrailingEmptyDirectoryBlocks(Inode directory) {
-    var blocks = checked((int)(directory.Size / _geometry.BlockSize));
+    var blocks = checked((ulong)(directory.Size / _geometry.BlockSize));
     while (blocks > 1) {
       var physical = GetLogicalDataBlock(directory, blocks - 1);
       if (physical == 0) {
@@ -564,7 +580,7 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
       if (ParseDirectoryBlock(ReadBlock(physical)).Any()) break;
       --blocks;
       directory.Size -= _geometry.BlockSize;
-      TrimInodeToBlockCount(directory, (ulong)blocks);
+      TrimInodeToBlockCount(directory, blocks);
     }
   }
 
@@ -896,7 +912,24 @@ internal sealed class Ext2MountedFilesystemSession : IFilesystemSession {
     AddSectors(inode, -_geometry.SectorsPerBlock);
   }
 
+  /// <summary>
+  /// A fast symlink stores its target in the fifteen block-pointer slots themselves and
+  /// owns no data block, which <c>i_blocks == 0</c> records. Walking those slots as block
+  /// numbers reads the target's own bytes as an allocation map.
+  /// </summary>
+  private static bool IsFastSymlink(Inode inode)
+    => inode.Kind == FilesystemNodeKind.SymbolicLink
+      && inode.Sectors == 0
+      && inode.Size <= FastSymlinkCapacity;
+
   private void FreeAllDataBlocks(Inode inode) {
+    if (IsFastSymlink(inode)) {
+      Array.Clear(inode.Bytes, InodeBlockOffset, FastSymlinkCapacity);
+      inode.Size = 0;
+      WriteInode(inode);
+      return;
+    }
+
     for (var i = 0; i < DirectPointerCount; ++i) {
       var block = inode.GetBlockPointer(i);
       if (block == 0) continue;
