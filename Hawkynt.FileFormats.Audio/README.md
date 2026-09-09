@@ -391,6 +391,22 @@ Every public and protected member of all 1259 types, generated from the built as
 - Tracker/chiptune/game-audio coverage includes emulation/synthesis-oriented components whose behavior is more nuanced than a single “supports format X” flag.
 - External validation or an internal round trip is evidence for the tested path, not a blanket claim over every producer/profile/version of a codec.
 
+## 📖 References to learn from
+
+These upstream inventories are used to audit the audio ledger for missing codecs, containers,
+framing variants, and long-tail game-audio formats. They are coverage and interoperability
+references, not runtime dependencies or evidence that a format is already implemented here.
+
+- **[FFmpeg](https://ffmpeg.org/)** — broad codec and container reference; its
+  [supported formats/codecs](https://ffmpeg.org/general.html) and
+  [libavformat muxer/demuxer documentation](https://ffmpeg.org/ffmpeg-formats.html) are used to
+  find mainstream and specialist audio gaps and to provide interoperability oracles where suitable.
+- **[vgmstream](https://github.com/vgmstream/vgmstream)** — long-tail video-game audio reference;
+  its [supported-format and codec inventory](https://github.com/vgmstream/vgmstream/blob/master/doc/FORMATS.md)
+  is used to find game-audio gaps, companion-file cases, subsongs, loop metadata, and unusual
+  container/codec combinations. vgmstream itself is decode-only, so encoder/muxer work requires
+  independent format evidence rather than assuming a reverse path exists upstream.
+
 ## ❤️ Support
 
 If this project saves you time or money, consider supporting its development:
