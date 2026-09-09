@@ -23,12 +23,17 @@ internal static class BscBlockCodec {
 
   /// <summary>
   /// Encodes a logical file block. New output is always genuine libbsc syntax:
-  /// QLFC-fast+BWT (optionally preceded by LZP), or mode 0 raw storage when the
-  /// compressed representation would not be smaller.
+  /// BWT + the selected QLFC coder (optionally preceded by LZP), or mode 0 raw
+  /// storage when the compressed representation would not be smaller.
   /// </summary>
-  public static EncodedBlock Encode(ReadOnlySpan<byte> logicalData, BscSortingContexts requestedContexts) {
+  public static EncodedBlock Encode(
+      ReadOnlySpan<byte> logicalData,
+      BscSortingContexts requestedContexts,
+      BscEntropyCoder entropyCoder) {
     if (logicalData.IsEmpty)
       throw new ArgumentException("BSC memory blocks cannot be empty", nameof(logicalData));
+    if (entropyCoder is not (BscEntropyCoder.Static or BscEntropyCoder.Adaptive or BscEntropyCoder.Fast))
+      throw new ArgumentOutOfRangeException(nameof(entropyCoder));
 
     var contextData = logicalData.ToArray();
     if (requestedContexts == BscSortingContexts.Preceding)
@@ -47,10 +52,16 @@ internal static class BscBlockCodec {
     ReadOnlySpan<byte> bwtInput = lzpEnabled ? lzpData : contextData;
 
     var (bwtData, zeroBasedPrimaryIndex) = BurrowsWheelerTransform.Forward(bwtInput);
-    var coderData = BscQlfcFast.Compress(bwtData);
+    var coderData = entropyCoder switch {
+      BscEntropyCoder.Static => BscQlfcModel.Compress(bwtData, adaptive: false),
+      BscEntropyCoder.Adaptive => BscQlfcModel.Compress(bwtData, adaptive: true),
+      BscEntropyCoder.Fast => BscQlfcFast.Compress(bwtData),
+      _ => throw new ArgumentOutOfRangeException(nameof(entropyCoder)),
+    };
 
-    // libbsc appends one byte containing the number of optional BWT auxiliary
-    // indexes. Zero is fully conforming; the indexes only accelerate inverse BWT.
+    // libbsc appends zero or more little-endian BWT auxiliary indexes followed
+    // by their one-byte count. They accelerate inverse BWT only; emitting zero
+    // indexes is fully conforming and keeps the managed representation compact.
     var payload = new byte[coderData.Length + 1];
     coderData.CopyTo(payload, 0);
     payload[^1] = 0;
@@ -58,7 +69,7 @@ internal static class BscBlockCodec {
     if (payload.Length >= logicalData.Length)
       return Store(logicalData);
 
-    var mode = BlockSorterBwt | (CoderQlfcFast << 5);
+    var mode = BlockSorterBwt | ((int)entropyCoder << 5);
     if (lzpEnabled)
       mode |= DefaultLzpMinimumLength << 8 | DefaultLzpHashSize << 16;
 
@@ -94,8 +105,8 @@ internal static class BscBlockCodec {
 
     if (blockSorter != BlockSorterBwt)
       throw new NotSupportedException($"BSC: block sorter {blockSorter} is not supported yet");
-    if (coder != CoderQlfcFast)
-      throw new NotSupportedException($"BSC: QLFC coder {coder} is not supported yet");
+    if (coder is not (CoderQlfcStatic or CoderQlfcAdaptive or CoderQlfcFast))
+      throw new NotSupportedException($"BSC: QLFC coder {coder} is not supported");
     if ((lzpMinimumLength == 0) != (lzpHashSize == 0))
       throw new InvalidDataException("BSC: incomplete LZP mode parameters");
 
@@ -109,7 +120,12 @@ internal static class BscBlockCodec {
     // Auxiliary indexes are an inverse-BWT acceleration only. Ignoring them and
     // using the primary index is explicitly supported by libbsc's own decoder.
     var coderPayload = payload[..^auxiliaryBytes];
-    var bwtData = BscQlfcFast.Decompress(coderPayload, dataSize);
+    var bwtData = coder switch {
+      CoderQlfcStatic => BscQlfcModel.Decompress(coderPayload, dataSize, adaptive: false),
+      CoderQlfcAdaptive => BscQlfcModel.Decompress(coderPayload, dataSize, adaptive: true),
+      CoderQlfcFast => BscQlfcFast.Decompress(coderPayload, dataSize),
+      _ => throw new NotSupportedException($"BSC: QLFC coder {coder} is not supported"),
+    };
     if (bwtData.IsEmpty)
       throw new InvalidDataException("BSC: compressed block decoded to no BWT data");
     if (primaryIndex <= 0 || primaryIndex > bwtData.Length)
