@@ -270,7 +270,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Mass Effect TFC | `Tfc` | `.tfc` | WORM | ✅ | — | Entries are bundle_NNNNN.bin | [GitHub](https://github.com/ME3Tweaks/LegendaryExplorer) |
 | Nintendo U8 | `U8` | `.u8` `.arc` | R/W | ✅ | defrag · wipe |  | [wiibrew.org](https://wiibrew.org/wiki/U8_archive) |
 | Unreal UMX | `Umx` | `.umx` | WORM | ✅ | wipe | Header/package shell output only; the export table is not encoded | [wiki.beyondunreal.com](https://wiki.beyondunreal.com/Legacy:Package_File_Format) |
-| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | WORM | ✅ | defrag · optimize |  | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
+| Unity asset bundle | `UnityBundle` | `.bundle` `.unity3d` `.assetbundle` | R/W | ✅ | defrag · optimize | BlocksInfo-at-end bundles edit in place by appending tail blocks; other layouts rebuild | [docs.unity3d.com](https://docs.unity3d.com/Manual/AssetBundlesIntro.html) |
 | Unreal .pak | `UnrealPak` | `.pak` | WORM | ✅ | defrag |  | [GitHub](https://github.com/panzi/u4pak) |
 | Valve VPK | `Vpk` | `.vpk` | R/W | ✅ | defrag · wipe |  | [developer.valvesoftware.com](https://developer.valvesoftware.com/wiki/VPK) |
 | Volition VPP v1 | `Vpp` | `.vpp` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/gibbed/Gibbed.Volition) |

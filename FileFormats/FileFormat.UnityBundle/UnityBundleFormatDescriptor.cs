@@ -41,7 +41,7 @@ public sealed class UnityBundleFormatDescriptor :
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
@@ -86,10 +86,10 @@ public sealed class UnityBundleFormatDescriptor :
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "Unity Engine asset bundle. UnityFS v6-v8 supports fresh Stored/LZMA/LZ4/LZ4HC creation; " +
-    "legacy UnityWeb/UnityRaw/UnityArchive signatures remain read-only because their container " +
-    "layout is distinct. Add/remove/purge/defrag are verified rebuild-backed WORM verbs for " +
-    "UnityFS only, so CanModify is intentionally not advertised.";
+    "Unity Engine asset bundle. UnityFS v6-v8 supports fresh Stored/LZMA/LZ4/LZ4HC creation. " +
+    "BlocksInfoAtEnd bundles support changed-byte pure append and whole-tail-block removal; " +
+    "front-metadata UnityFS and edits sharing storage blocks retain verified rebuild fallback. " +
+    "Legacy UnityWeb/UnityRaw/UnityArchive signatures remain read-only.";
 
   /// <summary>
   /// Gets the options schema.
@@ -156,10 +156,22 @@ public sealed class UnityBundleFormatDescriptor :
     => UnityBundleWriter.Write(output, inputs, options);
 
   /// <summary>
-  /// Adds or replaces nodes through the repository's verified extract/re-create path.
-  /// This is deliberately rebuild-backed WORM behavior, not a CanModify claim.
+  /// Adds new nodes through the trailer-only path for BlocksInfoAtEnd UnityFS
+  /// bundles. Existing storage blocks remain byte-identical and new content is
+  /// appended as independent Stored blocks before a regenerated BlocksInfo record.
+  /// Same-name replacement and unsupported layouts fall back to verified rebuild.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    try {
+      UnityFsTailModifier.Add(archive, inputs);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
     EnsureRebuildableUnityFs(archive);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       foreach (var input in inputs) {
@@ -174,12 +186,23 @@ public sealed class UnityBundleFormatDescriptor :
   }
 
   /// <summary>
-  /// Removes named nodes through verified rebuild, which also wipes stale container bytes
-  /// because the complete UnityFS image is replaced.
+  /// Removes zero-length nodes by metadata rewrite alone and non-empty nodes when
+  /// they occupy whole trailing storage blocks unused by survivors. Other removals
+  /// retain the verified rebuild fallback.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    try {
+      UnityFsTailModifier.Remove(archive, entryNames);
+      return;
+    } catch (NotSupportedException) {
+      if (archive.CanSeek)
+        archive.Position = 0;
+    }
+
     EnsureRebuildableUnityFs(archive);
-    var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    var remove = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var relative = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
