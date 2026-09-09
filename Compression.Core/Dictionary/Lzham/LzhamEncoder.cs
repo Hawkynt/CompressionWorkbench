@@ -7,9 +7,32 @@ namespace Compression.Core.Dictionary.Lzham;
 public sealed class LzhamEncoder {
   private const int MinMatchLen = 3;
   private const int MaxMatchLen = 258;
-  private const int WindowSize = 32768;
+  /// <summary>Historical/default match window used by the managed encoder.</summary>
+  public const int DefaultWindowSize = 32768;
+  /// <summary>Largest distance representable by the encoder's 30 distance codes.</summary>
+  public const int MaxWindowSize = 32768;
+  /// <summary>Historical/default number of hash-chain candidates inspected per position.</summary>
+  public const int DefaultSearchDepth = 64;
   private const int HashSize = 1 << 15;
   private const int HashMask = HashSize - 1;
+
+  private readonly int _windowSize;
+  private readonly int _searchDepth;
+
+  /// <summary>
+  /// Creates an encoder with the requested match-finder limits. These affect only
+  /// compression decisions; the resulting stream remains self-contained and is
+  /// decoded without knowing the selected values.
+  /// </summary>
+  /// <param name="windowSize">Maximum backward match distance, in bytes.</param>
+  /// <param name="searchDepth">Maximum hash-chain candidates tested at each position.</param>
+  public LzhamEncoder(int windowSize = DefaultWindowSize, int searchDepth = DefaultSearchDepth) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(windowSize, 1);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(windowSize, MaxWindowSize);
+    ArgumentOutOfRangeException.ThrowIfLessThan(searchDepth, 1);
+    this._windowSize = windowSize;
+    this._searchDepth = searchDepth;
+  }
 
   /// <summary>
   /// Compresses data using LZ77 + Huffman.
@@ -36,9 +59,9 @@ public sealed class LzhamEncoder {
         hashHead[h] = pos;
 
         var chainLen = 0;
-        while (chainPos >= 0 && chainLen < 64) {
+        while (chainPos >= 0 && chainLen < this._searchDepth) {
           var dist = pos - chainPos;
-          if (dist > WindowSize) break;
+          if (dist > this._windowSize) break;
 
           var len = 0;
           var maxLen = Math.Min(MaxMatchLen, data.Length - pos);
@@ -65,11 +88,9 @@ public sealed class LzhamEncoder {
         }
         pos += bestLen;
       } else {
-        if (pos + 2 < data.Length) {
-          var h = Hash3(data, pos);
-          hashPrev[pos] = hashHead[h];
-          hashHead[h] = pos;
-        }
+        // The current position was already linked into the hash chain above.
+        // Linking it a second time would make hashPrev[pos] point to pos itself,
+        // wasting every subsequent search-depth budget on a self-loop.
         tokens.Add((false, data[pos], 0, 0));
         pos++;
       }

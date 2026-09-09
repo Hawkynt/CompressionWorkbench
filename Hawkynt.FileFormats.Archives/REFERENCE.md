@@ -10057,7 +10057,7 @@ Walks an LHA/LZH archive and emits the byte-level layout: each entry's variable-
 
 Describes lzham format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10073,8 +10073,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder-only match-finder tunables. Neither value changes the bitstream grammar, so every candidate is decoded by the same decoder. The generic compression optimizer can therefore exhaustively try all 24 combinations and keep the smallest result for the actual input. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes using the strongest built-in match finder. Schema-aware callers use the generic optimizer to compare every candidate on the actual payload. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using format-specific optimizer tunables. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `LzhamStream`
@@ -10084,6 +10087,7 @@ LZHAM stream format: 4-byte magic "LZHM" followed by the raw LZHAM building bloc
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output, int windowSize, int searchDepth)` | Encodes the supplied input using explicit match-finder limits. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Lzip`

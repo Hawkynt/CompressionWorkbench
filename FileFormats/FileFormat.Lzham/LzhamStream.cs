@@ -14,7 +14,13 @@ public static class LzhamStream {
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, LzhamEncoder.DefaultWindowSize, LzhamEncoder.DefaultSearchDepth);
+
+  /// <summary>
+  /// Encodes the supplied input using explicit match-finder limits.
+  /// </summary>
+  public static void Compress(Stream input, Stream output, int windowSize, int searchDepth) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -22,7 +28,7 @@ public static class LzhamStream {
     output.Write(Magic);
 
     var bb = new LzhamBuildingBlock();
-    var compressed = bb.Compress(data);
+    var compressed = bb.Compress(data, windowSize, searchDepth);
     output.Write(compressed);
   }
 

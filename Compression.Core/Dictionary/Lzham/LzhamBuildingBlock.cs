@@ -18,7 +18,15 @@ public sealed class LzhamBuildingBlock : IBuildingBlock {
   public AlgorithmFamily Family => AlgorithmFamily.Dictionary;
 
   /// <inheritdoc/>
-  public byte[] Compress(ReadOnlySpan<byte> data) {
+  public byte[] Compress(ReadOnlySpan<byte> data)
+    => this.Compress(data, LzhamEncoder.DefaultWindowSize, LzhamEncoder.DefaultSearchDepth);
+
+  /// <summary>
+  /// Compresses with explicit match-finder limits. The limits affect only how
+  /// aggressively matches are searched; they are not stored in or required by
+  /// the decoder.
+  /// </summary>
+  public byte[] Compress(ReadOnlySpan<byte> data, int windowSize, int searchDepth) {
     using var ms = new MemoryStream();
 
     // Header: 4-byte LE original size.
@@ -28,7 +36,7 @@ public sealed class LzhamBuildingBlock : IBuildingBlock {
 
     if (data.Length == 0) return ms.ToArray();
 
-    var encoder = new LzhamEncoder();
+    var encoder = new LzhamEncoder(windowSize, searchDepth);
     var encoded = encoder.Encode(data);
 
     ms.Write(encoded);
