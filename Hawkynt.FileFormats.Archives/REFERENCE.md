@@ -17308,13 +17308,13 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Szdd`
 
-[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
+[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
 
 #### `SzCompressFormatDescriptor`
 
-The older "SZ " Microsoft COMPRESS variant (pre-SZDD; QBasic-era `COMPRESS.EXE`). Magic `53 5A 20 88 F0 27 33 D1`, a 12-byte header (8-byte magic + little-endian u32 uncompressed length) and the same 4096-byte ring LZSS body as `SzddFormatDescriptor`. Neither the legacy SZDD reader nor 7-Zip handles this variant; here it is fully read + write (`Compress` emits the "SZ " header, `Decompress` auto-detects either variant).
+The older "SZ " Microsoft COMPRESS variant (pre-SZDD; QBasic-era `COMPRESS.EXE`). Magic `53 5A 20 88 F0 27 33 D1`, a 12-byte header (8-byte magic + little-endian u32 uncompressed length) and a 4096-byte-ring LZSS body. Neither the legacy SZDD reader nor 7-Zip handles this variant; here it is fully read + write (`Compress` emits the "SZ " header, `Decompress` auto-detects either variant).
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17330,9 +17330,21 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The LZSS parsing strategy used when writing the SZ body. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the exact size-optimal parser. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input using the fast legacy parser. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested parse strategy. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `SzOptimizer`
+
+Size optimizer for the legacy `"SZ "` Microsoft COMPRESS stream.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses `input` to a size-optimal legacy `"SZ "` stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` to a size-optimal legacy `"SZ "` stream and writes it to `output`. |
 
 #### `SzddFormatDescriptor`
 
