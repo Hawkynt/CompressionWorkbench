@@ -84,7 +84,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | — |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
 | [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ |  | [rzip.samba.org](https://rzip.samba.org/) |
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
-| Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
+| Squeeze (SQ) | `Squeeze` | `.sqz` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SQ) |
 | [SWF](https://en.wikipedia.org/wiki/SWF) | `Swf` | `.swf` | ✅ | ✅ | ✅ | FWS/CWS/ZWS envelope optimizer; no tag-level parsing | [open-flash.github.io](https://open-flash.github.io/mirrors/swf-spec-19.pdf) |
 | SZ (MS COMPRESS, KWAJ-less) | `SzCompress` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
 | SZDD | `Szdd` |  | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/SZDD) |
