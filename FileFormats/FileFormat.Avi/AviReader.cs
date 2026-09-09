@@ -16,22 +16,31 @@ public sealed class AviReader {
   public sealed record ChunkEntry(string ChunkId, byte[] Data);
 
   /// <summary>
+  /// One movi chunk in file order. <paramref name="IndexFlags"/> is populated from
+  /// a matching legacy <c>idx1</c> entry when present.
+  /// </summary>
+  public sealed record InterleavedChunk(int StreamIndex, string ChunkId, byte[] Data, uint? IndexFlags = null);
+
+  /// <summary>
   /// Represents a track.
   /// </summary>
   public sealed record Track(
     int Index,
-    string StreamType,         // "vids" or "auds" (or raw FourCC)
-    uint Handler,              // codec FourCC for video, format tag for audio
-    byte[] Format,             // strf body (BITMAPINFOHEADER or WAVEFORMATEX)
-    int Width,                 // video only
-    int Height,                // video only
-    int AudioChannels,         // audio only
-    int AudioSampleRate,       // audio only
-    int AudioBitsPerSample,    // audio only
-    int AudioFormatTag,        // audio only (WAVEFORMATEX wFormatTag)
-    int AudioBlockAlign,       // audio only
+    string StreamType,
+    uint Handler,
+    byte[] Format,
+    int Width,
+    int Height,
+    int AudioChannels,
+    int AudioSampleRate,
+    int AudioBitsPerSample,
+    int AudioFormatTag,
+    int AudioBlockAlign,
     byte[] Data,
-    IReadOnlyList<ChunkEntry> Chunks);
+    IReadOnlyList<ChunkEntry> Chunks) {
+    /// <summary>Raw <c>strh</c> body, retained so a remux can preserve stream timing and flags.</summary>
+    public byte[] StreamHeader { get; init; } = [];
+  }
 
   /// <summary>
   /// Represents a parsed avi.
@@ -41,7 +50,13 @@ public sealed class AviReader {
     int Height,
     uint MicroSecPerFrame,
     uint TotalFrames,
-    IReadOnlyList<Track> Tracks);
+    IReadOnlyList<Track> Tracks) {
+    /// <summary>Raw <c>avih</c> body, retained so a remux can preserve non-derived header fields.</summary>
+    public byte[] MainHeader { get; init; } = [];
+
+    /// <summary>Recognised movi chunks in their original global interleave order.</summary>
+    public IReadOnlyList<InterleavedChunk> MoviChunks { get; init; } = [];
+  }
 
   /// <summary>
   /// Reads the value from the supplied input.
@@ -54,15 +69,17 @@ public sealed class AviReader {
     if (data[8] != 'A' || data[9] != 'V' || data[10] != 'I' || data[11] != ' ')
       throw new InvalidDataException("RIFF payload is not AVI.");
 
-    // Find LIST/hdrl and LIST/movi.
     var strls = new List<(int Off, int Size)>();
     ReadOnlySpan<byte> movi = default;
+    ReadOnlySpan<byte> idx1 = default;
     var avihBytes = ReadOnlySpan<byte>.Empty;
 
     var pos = 12;
     while (pos + 8 <= data.Length) {
       var id = Encoding.ASCII.GetString(data.Slice(pos, 4));
-      var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[(pos + 4)..]);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(data[(pos + 4)..]);
+      if (rawSize > int.MaxValue) break;
+      var size = (int)rawSize;
       var bodyStart = pos + 8;
       if (bodyStart + size > data.Length) break;
 
@@ -74,6 +91,8 @@ public sealed class AviReader {
         } else if (listType == "movi") {
           movi = listBody;
         }
+      } else if (id == "idx1") {
+        idx1 = data.Slice(bodyStart, size);
       }
       pos = bodyStart + size + (size & 1);
     }
@@ -87,7 +106,6 @@ public sealed class AviReader {
       height = (int)BinaryPrimitives.ReadUInt32LittleEndian(avihBytes[36..]);
     }
 
-    // Parse each strl; use absolute offsets we captured.
     var tracks = new List<Track>();
     for (var i = 0; i < strls.Count; ++i) {
       var (off, size) = strls[i];
@@ -95,9 +113,8 @@ public sealed class AviReader {
       tracks.Add(ParseStrl(i, body));
     }
 
-    // Walk movi and append data bytes into matching track buffers (by 2-digit stream id).
+    var interleaved = new List<InterleavedChunk>();
     if (!movi.IsEmpty) {
-      var mp = 0;
       var buffers = new Dictionary<int, MemoryStream>();
       var chunkLists = new Dictionary<int, List<ChunkEntry>>();
       for (var i = 0; i < tracks.Count; ++i) {
@@ -105,32 +122,18 @@ public sealed class AviReader {
         chunkLists[i] = new List<ChunkEntry>();
       }
 
-      while (mp + 8 <= movi.Length) {
-        var cid = Encoding.ASCII.GetString(movi.Slice(mp, 4));
-        var csize = (int)BinaryPrimitives.ReadUInt32LittleEndian(movi[(mp + 4)..]);
-        var cbodyStart = mp + 8;
-        if (cbodyStart + csize > movi.Length) break;
-
-        if (cid == "LIST" && csize >= 4) {
-          // rec-list: recurse into it as if it were movi.
-          var inner = movi.Slice(cbodyStart + 4, csize - 4);
-          AppendChunks(inner, tracks.Count, buffers, chunkLists);
-        } else if (cid.Length == 4 && char.IsDigit(cid[0]) && char.IsDigit(cid[1])) {
-          var streamIdx = (cid[0] - '0') * 10 + (cid[1] - '0');
-          if (buffers.TryGetValue(streamIdx, out var buf)) {
-            var chunkData = movi.Slice(cbodyStart, csize).ToArray();
-            buf.Write(chunkData);
-            chunkLists[streamIdx].Add(new ChunkEntry(cid, chunkData));
-          }
-        }
-        mp = cbodyStart + csize + (csize & 1);
-      }
+      AppendChunks(movi, tracks.Count, buffers, chunkLists, interleaved);
 
       for (var i = 0; i < tracks.Count; ++i)
         tracks[i] = tracks[i] with { Data = buffers[i].ToArray(), Chunks = chunkLists[i] };
     }
 
-    return new ParsedAvi(width, height, uspf, totalFrames, tracks);
+    ApplyLegacyIndexFlags(idx1, interleaved);
+
+    return new ParsedAvi(width, height, uspf, totalFrames, tracks) {
+      MainHeader = avihBytes.ToArray(),
+      MoviChunks = interleaved,
+    };
   }
 
   private static void ParseHdrl(ReadOnlySpan<byte> hdrl, List<(int, int)> strls,
@@ -139,17 +142,17 @@ public sealed class AviReader {
     var p = 0;
     while (p + 8 <= hdrl.Length) {
       var id = Encoding.ASCII.GetString(hdrl.Slice(p, 4));
-      var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(hdrl[(p + 4)..]);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(hdrl[(p + 4)..]);
+      if (rawSize > int.MaxValue) break;
+      var size = (int)rawSize;
       var bodyStart = p + 8;
       if (bodyStart + size > hdrl.Length) break;
       if (id == "avih") {
         avih = hdrl.Slice(bodyStart, size);
       } else if (id == "LIST" && size >= 4) {
         var listType = Encoding.ASCII.GetString(hdrl.Slice(bodyStart, 4));
-        if (listType == "strl") {
-          // Record absolute slice of strl body (4 bytes past "strl" tag, size-4 long).
+        if (listType == "strl")
           strls.Add((hdrlAbsoluteOffset + bodyStart + 4, size - 4));
-        }
       }
       p = bodyStart + size + (size & 1);
     }
@@ -158,29 +161,33 @@ public sealed class AviReader {
   private static Track ParseStrl(int index, ReadOnlySpan<byte> strl) {
     var streamType = "unk";
     uint handler = 0;
+    byte[] streamHeader = [];
     byte[] format = [];
     int w = 0, h = 0, ch = 0, sr = 0, bps = 0, fmtTag = 0, blockAlign = 0;
 
     var p = 0;
     while (p + 8 <= strl.Length) {
       var id = Encoding.ASCII.GetString(strl.Slice(p, 4));
-      var size = (int)BinaryPrimitives.ReadUInt32LittleEndian(strl[(p + 4)..]);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(strl[(p + 4)..]);
+      if (rawSize > int.MaxValue) break;
+      var size = (int)rawSize;
       var bodyStart = p + 8;
       if (bodyStart + size > strl.Length) break;
 
       if (id == "strh" && size >= 56) {
+        streamHeader = strl.Slice(bodyStart, size).ToArray();
         streamType = Encoding.ASCII.GetString(strl.Slice(bodyStart, 4));
         handler = BinaryPrimitives.ReadUInt32LittleEndian(strl[(bodyStart + 4)..]);
       } else if (id == "strf") {
         format = strl.Slice(bodyStart, size).ToArray();
         if (streamType == "vids" && format.Length >= 40) {
-          // BITMAPINFOHEADER: biSize(4) biWidth(4) biHeight(4) …
-          w = (int)BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(4));
-          h = (int)BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(8));
+          w = BinaryPrimitives.ReadInt32LittleEndian(format.AsSpan(4));
+          h = BinaryPrimitives.ReadInt32LittleEndian(format.AsSpan(8));
         } else if (streamType == "auds" && format.Length >= 16) {
           fmtTag = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(0));
           ch = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(2));
-          sr = (int)BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(4));
+          var sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(format.AsSpan(4));
+          sr = sampleRate > int.MaxValue ? int.MaxValue : (int)sampleRate;
           blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(12));
           bps = BinaryPrimitives.ReadUInt16LittleEndian(format.AsSpan(14));
         }
@@ -188,27 +195,69 @@ public sealed class AviReader {
       p = bodyStart + size + (size & 1);
     }
 
-    return new Track(index, streamType, handler, format, w, h, ch, sr, bps, fmtTag, blockAlign, [], []);
+    return new Track(index, streamType, handler, format, w, h, ch, sr, bps, fmtTag, blockAlign, [], []) {
+      StreamHeader = streamHeader,
+    };
   }
 
   private static void AppendChunks(ReadOnlySpan<byte> area, int trackCount,
                                     Dictionary<int, MemoryStream> buffers,
-                                    Dictionary<int, List<ChunkEntry>> chunkLists) {
+                                    Dictionary<int, List<ChunkEntry>> chunkLists,
+                                    List<InterleavedChunk> interleaved) {
     var mp = 0;
     while (mp + 8 <= area.Length) {
       var cid = Encoding.ASCII.GetString(area.Slice(mp, 4));
-      var csize = (int)BinaryPrimitives.ReadUInt32LittleEndian(area[(mp + 4)..]);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(area[(mp + 4)..]);
+      if (rawSize > int.MaxValue) break;
+      var csize = (int)rawSize;
       var cbodyStart = mp + 8;
       if (cbodyStart + csize > area.Length) break;
-      if (cid.Length == 4 && char.IsDigit(cid[0]) && char.IsDigit(cid[1])) {
-        var idx = (cid[0] - '0') * 10 + (cid[1] - '0');
-        if (idx < trackCount && buffers.TryGetValue(idx, out var buf)) {
-          var chunkData = area.Slice(cbodyStart, csize).ToArray();
-          buf.Write(chunkData);
-          chunkLists[idx].Add(new ChunkEntry(cid, chunkData));
-        }
+
+      if (cid == "LIST" && csize >= 4) {
+        var listType = Encoding.ASCII.GetString(area.Slice(cbodyStart, 4));
+        if (listType == "rec ")
+          AppendChunks(area.Slice(cbodyStart + 4, csize - 4), trackCount, buffers, chunkLists, interleaved);
+      } else if (TryGetStreamIndex(cid, trackCount, out var streamIdx)
+                 && buffers.TryGetValue(streamIdx, out var buf)) {
+        var chunkData = area.Slice(cbodyStart, csize).ToArray();
+        buf.Write(chunkData);
+        chunkLists[streamIdx].Add(new ChunkEntry(cid, chunkData));
+        interleaved.Add(new InterleavedChunk(streamIdx, cid, chunkData));
       }
+
       mp = cbodyStart + csize + (csize & 1);
+    }
+  }
+
+  private static bool TryGetStreamIndex(string chunkId, int trackCount, out int streamIndex) {
+    streamIndex = -1;
+    if (chunkId.Length != 4 || !char.IsAsciiDigit(chunkId[0]) || !char.IsAsciiDigit(chunkId[1]))
+      return false;
+    streamIndex = (chunkId[0] - '0') * 10 + chunkId[1] - '0';
+    return streamIndex < trackCount;
+  }
+
+  private static void ApplyLegacyIndexFlags(ReadOnlySpan<byte> idx1, List<InterleavedChunk> chunks) {
+    if (idx1.IsEmpty || chunks.Count == 0)
+      return;
+
+    var chunkIndex = 0;
+    for (var p = 0; p + 16 <= idx1.Length && chunkIndex < chunks.Count; p += 16) {
+      var chunkId = Encoding.ASCII.GetString(idx1.Slice(p, 4));
+      var flags = BinaryPrimitives.ReadUInt32LittleEndian(idx1[(p + 4)..]);
+      var size = BinaryPrimitives.ReadUInt32LittleEndian(idx1[(p + 12)..]);
+      if ((flags & 0x00000001) != 0)
+        continue;
+
+      for (; chunkIndex < chunks.Count; ++chunkIndex) {
+        var chunk = chunks[chunkIndex];
+        if (!chunk.ChunkId.Equals(chunkId, StringComparison.Ordinal)
+            || size != chunk.Data.LongLength)
+          continue;
+        chunks[chunkIndex] = chunk with { IndexFlags = flags };
+        ++chunkIndex;
+        break;
+      }
     }
   }
 }

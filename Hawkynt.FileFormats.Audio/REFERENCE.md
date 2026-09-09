@@ -5180,13 +5180,13 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.Avi`
 
-[`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack)
+[`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.InterleavedChunk`](#avireaderinterleavedchunk) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack) · [`AviWriter`](#aviwriter)
 
 #### `AviFormatDescriptor`
 
-Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info.
+Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info. Creation remuxes an existing AVI or rebuilds an AVI 1.0 file from the extracted metadata plus elementary video frames and PCM audio.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5203,6 +5203,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh AVI by genuinely remuxing an AVI input, or by muxing the descriptor's extracted `metadata.ini`, frame entries and PCM audio track. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -5251,6 +5252,20 @@ Implements `IEquatable<ChunkEntry>`.
 | `ChunkId` | `string ChunkId { get; init; }` |  |
 | `Data` | `byte[] Data { get; init; }` |  |
 
+#### `AviReader.InterleavedChunk`
+
+One movi chunk in file order. `IndexFlags` is populated from a matching legacy `idx1` entry when present.
+
+Implements `IEquatable<InterleavedChunk>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InterleavedChunk` | `InterleavedChunk(int StreamIndex, string ChunkId, byte[] Data, uint? IndexFlags = null)` | One movi chunk in file order. `IndexFlags` is populated from a matching legacy `idx1` entry when present. |
+| `ChunkId` | `string ChunkId { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IndexFlags` | `uint? IndexFlags { get; init; }` |  |
+| `StreamIndex` | `int StreamIndex { get; init; }` |  |
+
 #### `AviReader.ParsedAvi`
 
 Represents a parsed avi.
@@ -5261,7 +5276,9 @@ Implements `IEquatable<ParsedAvi>`.
 | --- | --- | --- |
 | `ParsedAvi` | `ParsedAvi(int Width, int Height, uint MicroSecPerFrame, uint TotalFrames, IReadOnlyList<Track> Tracks)` | Represents a parsed avi. |
 | `Height` | `int Height { get; init; }` |  |
+| `MainHeader` | `byte[] MainHeader { get; init; }` | Raw `avih` body, retained so a remux can preserve non-derived header fields. |
 | `MicroSecPerFrame` | `uint MicroSecPerFrame { get; init; }` |  |
+| `MoviChunks` | `IReadOnlyList<InterleavedChunk> MoviChunks { get; init; }` | Recognised movi chunks in their original global interleave order. |
 | `TotalFrames` | `uint TotalFrames { get; init; }` |  |
 | `Tracks` | `IReadOnlyList<Track> Tracks { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
@@ -5286,8 +5303,17 @@ Implements `IEquatable<Track>`.
 | `Handler` | `uint Handler { get; init; }` |  |
 | `Height` | `int Height { get; init; }` |  |
 | `Index` | `int Index { get; init; }` |  |
+| `StreamHeader` | `byte[] StreamHeader { get; init; }` | Raw `strh` body, retained so a remux can preserve stream timing and flags. |
 | `StreamType` | `string StreamType { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
+
+#### `AviWriter`
+
+AVI 1.0 RIFF muxer. Writes a canonical hdrl/movi/idx1 layout while preserving encoded packet bytes, stream format blocks, stream timing headers, interleave order, and legacy index flags whenever `AviReader` exposed them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, ParsedAvi avi)` | Writes `avi` to `output` as an AVI 1.0 RIFF file. |
 
 ### Namespace `FileFormat.Avr`
 

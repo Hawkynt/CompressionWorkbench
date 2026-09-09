@@ -9,9 +9,11 @@ namespace FileFormat.Avi;
 /// Exposes an AVI file as an archive: <c>FULL.avi</c>, one entry per demuxed
 /// stream (video blob with codec-FourCC extension, audio blob as either a
 /// synthesised WAV for PCM or raw bytes for compressed codecs), and
-/// <c>metadata.ini</c> with FourCC/dimensions/duration info.
+/// <c>metadata.ini</c> with FourCC/dimensions/duration info. Creation remuxes an
+/// existing AVI or rebuilds an AVI 1.0 file from the extracted metadata plus
+/// elementary video frames and PCM audio.
 /// </summary>
-public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFileInternalLayoutMap, IFileInternalChunkMover {
+public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveCreatable, IFileInternalLayoutMap, IFileInternalChunkMover {
 
   /// <summary>
   /// Gets the id.
@@ -29,7 +31,7 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -58,7 +60,7 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored / packet-preserving mux")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -70,7 +72,7 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "AVI video container; per-track video/audio demuxing + metadata.";
+  public string Description => "AVI video container; per-track demuxing, AVI 1.0 mux/remux, metadata and frame extraction.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -104,6 +106,21 @@ public sealed class AviFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
     }
     throw new FileNotFoundException($"Entry not found: {entryName}");
+  }
+
+  /// <summary>
+  /// Creates a fresh AVI by genuinely remuxing an AVI input, or by muxing the
+  /// descriptor's extracted <c>metadata.ini</c>, frame entries and PCM audio track.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (output.CanSeek) {
+      output.Position = 0;
+      output.SetLength(0);
+    }
+    AviMuxer.Create(output, inputs);
   }
 
   private readonly AviOptimizer _optimizer = new();
