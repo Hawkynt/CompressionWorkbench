@@ -62,6 +62,7 @@ public sealed class FuseFilesystemMountBackend : IFilesystemMountBackend {
         operations,
         request.Filesystem,
         request.Target,
+        request.Plan.AccessMode,
         request.OwnsFilesystemSession
       );
       return ValueTask.FromResult(session);
