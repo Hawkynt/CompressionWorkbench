@@ -11708,13 +11708,14 @@ Implements `IFileInternalLayoutMap`.
 
 #### `MpegPsFormatDescriptor`
 
-Pseudo-archive descriptor for MPEG program streams — `.mpg`/`.mpeg` (MPEG-1 system and MPEG-2 program streams), DVD-Video `.vob` and `.m2p`. Every elementary stream is exposed as one entry holding the raw stream with PES framing removed; the DVD private-stream-1 substreams (AC-3, DTS, LPCM, sub-pictures) become entries of their own. A `metadata.ini` summarises packs, packets and per-stream timestamps. References: ISO/IEC 13818-1 §2.5 — program stream, pack header, system header, PES packet and program stream map syntaxISO/IEC 11172-1 §2.4 — MPEG-1 system stream pack and packet layout`https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html` — DVD private stream 1 substream ids and headers
+Pseudo-archive descriptor for MPEG program streams — `.mpg`/`.mpeg` (MPEG-1 system and MPEG-2 program streams), DVD-Video `.vob` and `.m2p`. Every elementary stream is exposed as one entry holding the raw stream with PES framing removed; the DVD private-stream-1 substreams (AC-3, DTS, LPCM, sub-pictures) become entries of their own. A `metadata.ini` summarises packs, packets and per-stream timestamps. Creation rebuilds the systems layer as an MPEG-2 Program Stream and keeps the elementary-stream bytes opaque. The writer accepts MPEG-1/2 video, MPEG-4 Part 2, AVC/H.264, HEVC/H.265, MPEG audio and AAC/ADTS elementary streams. DVD private streams remain read-only because demuxing intentionally strips authoring metadata that is required to reconstruct their private-stream headers faithfully. References: ISO/IEC 13818-1 §2.5 — program stream, pack header, system header, PES packet and program stream map syntaxISO/IEC 11172-1 §2.4 — MPEG-1 system stream pack and packet layout`https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html` — DVD private stream 1 substream ids and headers
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioMuxTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MpegPsFormatDescriptor` | `MpegPsFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
 | `Category` | `FormatCategory Category { get; }` |  |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
@@ -11725,11 +11726,17 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 
 #### `MpegPsReader`
 
