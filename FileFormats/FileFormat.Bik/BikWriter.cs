@@ -48,14 +48,6 @@ internal static class BikWriter {
         return;
       }
 
-      if (files.Count == 1) {
-        var only = files.Values.Single().ReadContent();
-        if (HasBinkSignature(only)) {
-          WritePassthrough(output, only);
-          return;
-        }
-      }
-
       throw new InvalidDataException(
         "Bink muxing requires metadata.ini + VIDEO.bin (+ TRACKn.bin for audio), or a byte-exact FULL.bik passthrough.");
     }
@@ -71,7 +63,7 @@ internal static class BikWriter {
       var expected = header.Frames.Sum(frame => (long)frame.AudioSizes[trackIndex]);
       if (!files.TryGetValue($"TRACK{trackIndex}.bin", out var trackInput)) {
         if (expected != 0)
-          throw new InvalidDataException($"TRACK{trackIndex}.bin is required by metadata ({expected} bytes). ");
+          throw new InvalidDataException($"TRACK{trackIndex}.bin is required by metadata ({expected} bytes).");
         audio[trackIndex] = [];
         continue;
       }
@@ -309,9 +301,13 @@ internal static class BikWriter {
 
   private static ulong ParseUnsigned(string text) {
     var value = text.Trim();
-    if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-      return ulong.Parse(value.AsSpan(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
-    return ulong.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
+    try {
+      if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        return ulong.Parse(value.AsSpan(2), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture);
+      return ulong.Parse(value, NumberStyles.None, CultureInfo.InvariantCulture);
+    } catch (Exception exception) when (exception is FormatException or OverflowException) {
+      throw new InvalidDataException($"metadata.ini value '{text}' is not an unsigned integer.", exception);
+    }
   }
 
   private static void WritePassthrough(Stream output, byte[] data) {
@@ -323,15 +319,15 @@ internal static class BikWriter {
   }
 
   private static void WriteUInt16(Stream stream, ushort value) {
-    Span<byte> buffer = stackalloc byte[2];
-    BinaryPrimitives.WriteUInt16LittleEndian(buffer, value);
-    stream.Write(buffer);
+    stream.WriteByte((byte)value);
+    stream.WriteByte((byte)(value >> 8));
   }
 
   private static void WriteUInt32(Stream stream, uint value) {
-    Span<byte> buffer = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(buffer, value);
-    stream.Write(buffer);
+    stream.WriteByte((byte)value);
+    stream.WriteByte((byte)(value >> 8));
+    stream.WriteByte((byte)(value >> 16));
+    stream.WriteByte((byte)(value >> 24));
   }
 
   private static string LeafName(string name) {
@@ -339,9 +335,6 @@ internal static class BikWriter {
     var slash = normalized.LastIndexOf('/');
     return slash < 0 ? normalized : normalized[(slash + 1)..];
   }
-
-  private static bool HasBinkSignature(ReadOnlySpan<byte> data)
-    => data.Length >= 4 && IsSupportedSignature(Encoding.ASCII.GetString(data[..4]));
 
   private static bool IsSupportedSignature(string signature)
     => signature is "BIKb" or "BIKf" or "BIKg" or "BIKh" or "BIKi" or "BIKk"
