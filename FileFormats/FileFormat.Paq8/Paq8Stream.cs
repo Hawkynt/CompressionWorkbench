@@ -11,19 +11,31 @@ public static class Paq8Stream {
 
   // ── Container constants ────────────────────────────────────────────────────
 
-  private const string HeaderLine = "paq8l -5\r\n";
+  public const int MinLevel = 1;
+  public const int MaxLevel = 8;
+  public const int DefaultLevel = 5;
   private const byte CtrlZ = 0x1A;
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// <summary>Compresses <paramref name="input"/> into the PAQ8 container on <paramref name="output"/>.</summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, DefaultLevel);
+
+  /// <summary>
+  /// Compresses <paramref name="input"/> using the requested PAQ8L-inspired level.
+  /// Level 5 preserves the historical encoder behaviour; the other levels tune
+  /// the predictor's adaptation rate and are therefore useful optimizer candidates.
+  /// </summary>
+  public static void Compress(Stream input, Stream output, int level) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(level, MinLevel);
+    ArgumentOutOfRangeException.ThrowIfGreaterThan(level, MaxLevel);
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
 
-    // Header: "paq8l -5\r\n"
-    output.Write(Encoding.ASCII.GetBytes(HeaderLine));
+    // Header: "paq8l -N\r\n"
+    output.Write(Encoding.ASCII.GetBytes($"paq8l -{level}\r\n"));
 
     // File entry: "<size>\tdata\r\n"
     output.Write(Encoding.ASCII.GetBytes($"{data.Length}\tdata\r\n"));
@@ -33,7 +45,7 @@ public static class Paq8Stream {
 
     // Arithmetic-coded payload
     var encoder = new Paq8Encoder(output);
-    var model = new BitTreeModel();
+    var model = new BitTreeModel(level);
 
     foreach (var b in data)
       model.EncodeByte(encoder, b);
@@ -43,19 +55,22 @@ public static class Paq8Stream {
 
   /// <summary>Decompresses a PAQ8 container from <paramref name="input"/> into <paramref name="output"/>.</summary>
   public static void Decompress(Stream input, Stream output) {
-    // Read header line: "paq8l -N\r\n"
+    // Read header prefix: "paq8l -"
     var headerBytes = new byte[7];
     input.ReadExactly(headerBytes);
     if (headerBytes[0] != 0x70 || headerBytes[1] != 0x61 || headerBytes[2] != 0x71 ||
         headerBytes[3] != 0x38 || headerBytes[4] != 0x6C || headerBytes[5] != 0x20 || headerBytes[6] != 0x2D)
       throw new InvalidDataException("Not a PAQ8 stream.");
 
-    // Skip remainder of header line up to and including 0x1A
+    var levelByte = input.ReadByte();
+    if (levelByte is < '1' or > '8')
+      throw new InvalidDataException("PAQ8: unsupported compression level (expected 1-8).");
+    var level = levelByte - '0';
+
+    // Skip remainder of header line up to and including 0x1A.
     long fileSize = -1;
     var lineBuf = new StringBuilder();
     int ch;
-    // We've consumed "paq8l -" — finish the first line (level digit + \r\n)
-    // then read subsequent lines until 0x1A
     while ((ch = input.ReadByte()) != -1) {
       if (ch == CtrlZ) break;
       if (ch == '\n') {
@@ -76,7 +91,7 @@ public static class Paq8Stream {
 
     // Decode payload
     var decoder = new Paq8Decoder(input);
-    var model = new BitTreeModel();
+    var model = new BitTreeModel(level);
     var result = new byte[fileSize];
     for (long i = 0; i < fileSize; i++)
       result[i] = model.DecodeByte(decoder);
@@ -176,15 +191,19 @@ public static class Paq8Stream {
   // 255 nodes (indexed 1..255) per byte context.
   // Each node stores a 12-bit adaptive probability (p = Pr[next bit == 0] * 4096).
   // Encoding byte b: start at node 1, walk bit-by-bit from MSB to LSB.
-  // Update rule: if bit==0: p += (4096-p) >> 5; if bit==1: p -= p >> 5.
+  // Level controls the adaptation shift as 10-level. Thus the historical level 5
+  // keeps shift 5 exactly, lower levels adapt more slowly, and higher levels adapt
+  // more aggressively. The level is stored in the header, so decoding is symmetric.
 
   private sealed class BitTreeModel {
     // 255 nodes, 1-indexed (index 0 unused)
     private readonly int[] _prob = new int[256];
+    private readonly int _adaptationShift;
 
-    public BitTreeModel() {
+    public BitTreeModel(int level) {
       // Initialise to balanced (2048 = 0.5)
       Array.Fill(_prob, 2048);
+      this._adaptationShift = 10 - level;
     }
 
     public void EncodeByte(Paq8Encoder enc, byte b) {
@@ -210,9 +229,9 @@ public static class Paq8Stream {
 
     private void Update(int node, int bit) {
       if (bit == 0)
-        _prob[node] += (4096 - _prob[node]) >> 5;
+        _prob[node] += (4096 - _prob[node]) >> this._adaptationShift;
       else
-        _prob[node] -= _prob[node] >> 5;
+        _prob[node] -= _prob[node] >> this._adaptationShift;
     }
   }
 }
