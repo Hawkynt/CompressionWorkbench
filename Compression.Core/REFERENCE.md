@@ -2721,7 +2721,7 @@ Reads the data blocks of one folder, which share their models.
 
 ### Namespace `Compression.Core.Dictionary.QuickLz`
 
-[`QuickLzBuildingBlock`](#quicklzbuildingblock) · [`QuickLzCompressor`](#quicklzcompressor) · [`QuickLzDecompressor`](#quicklzdecompressor)
+[`QuickLzBuildingBlock`](#quicklzbuildingblock) · [`QuickLzCompressionLevel`](#quicklzcompressionlevel) · [`QuickLzCompressor`](#quicklzcompressor) · [`QuickLzDecompressor`](#quicklzdecompressor)
 
 #### `QuickLzBuildingBlock`
 
@@ -2739,21 +2739,33 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+#### `QuickLzCompressionLevel`
+
+QuickLZ 1.5.0 compression levels supported by the managed codec.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Level1` | `1` | Fastest-compression mode using one hash candidate. |
+| `Level3` | `3` | Best-ratio mode using relative-offset references and a deeper match search. |
+
 #### `QuickLzCompressor`
 
-Encodes the QuickLZ 1.5.0 level-1 payload format.
+Encodes QuickLZ 1.5.0 level-1 and level-3 payloads.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `Level3MaxSearchDepth` | `const int Level3MaxSearchDepth` | Maximum number of match candidates searched per hash in level 3. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses `data` as a QuickLZ 1.5.0 level-1 payload. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, QuickLzCompressionLevel level, int level3SearchDepth = 16)` | Compresses `data` using the selected QuickLZ level. |
 
 #### `QuickLzDecompressor`
 
-Decodes the QuickLZ 1.5.0 level-1 payload format.
+Decodes QuickLZ 1.5.0 level-1 and level-3 payloads.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength)` | Decompresses a QuickLZ level-1 payload to exactly `originalLength` bytes. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data, int originalLength, QuickLzCompressionLevel level)` | Decompresses a QuickLZ payload at the selected compression level. |
 
 ### Namespace `Compression.Core.Dictionary.Rar`
 

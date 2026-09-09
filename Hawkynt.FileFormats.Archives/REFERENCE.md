@@ -15199,7 +15199,7 @@ Reads a PyInstaller CArchive — the package that a "onefile" build appends to t
 
 Describes quick lz format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15215,18 +15215,23 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The QuickLZ encoder knobs searched by the generic compression optimizer. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Tries the supported QuickLZ encoder configurations and writes the smallest packet. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using format-specific optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `QuickLzStream`
 
-Reads and writes non-streaming QuickLZ 1.5.0 level-1 packets.
+Reads and writes non-streaming QuickLZ 1.5.0 level-1 and level-3 packets.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses one packet using QuickLZ 1.5.0 level 1 without streaming state. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one non-streaming QuickLZ 1.5.0 level-1 packet. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries level 1 and several legal level-3 match-search depths, then writes the smallest packet. Ties retain the earlier/faster candidate, starting with level 1. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses one packet using the historical QuickLZ 1.5.0 level-1 default. |
+| `Compress` | `static void Compress(Stream input, Stream output, QuickLzCompressionLevel level, int level3SearchDepth = 16)` | Compresses one packet using the selected QuickLZ level without streaming state. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses one non-streaming QuickLZ 1.5.0 level-1 or level-3 packet. |
 
 ### Namespace `FileFormat.Rar`
 
