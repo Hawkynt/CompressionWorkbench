@@ -1,0 +1,47 @@
+name: Patch VobSub support ledger
+
+on:
+  push:
+    branches:
+      - feat/vobsub-mux-remux
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Update VobSub support ledger
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("Hawkynt.FileFormats.Archives/README.md")
+          text = path.read_text(encoding="utf-8")
+
+          old_row = "| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | — | — | Index plus one sub-picture stream, not a multi-track container | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |"
+          new_row = "| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | ✅ | ✅ | Single subtitle stream; raw `.spu` muxes to 2 KiB MPEG-PS sectors, extracted `.bin` chunks remux byte-exact | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |"
+          if text.count(old_row) != 1:
+            raise SystemExit(f"expected exactly one old VobSub row, found {text.count(old_row)}")
+          text = text.replace(old_row, new_row)
+
+          old_gap = "M3U8, PGS `.sup` and VobSub are not container muxes at all: a playlist is a manifest referencing segments it does not contain, and the two subtitle formats are single streams."
+          new_gap = "M3U8 and PGS `.sup` are not container muxes at all: a playlist is a manifest referencing segments it does not contain, while PGS is a single stream. VobSub is handled as its paired single-subtitle stream: raw SPU is muxed into the MPEG-PS `.sub`, and extracted framed chunks remux byte-for-byte."
+          if text.count(old_gap) != 1:
+            raise SystemExit(f"expected exactly one old VobSub gap sentence, found {text.count(old_gap)}")
+          text = text.replace(old_gap, new_gap)
+          path.write_text(text, encoding="utf-8")
+      - name: Commit ledger update
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Hawkynt.FileFormats.Archives/README.md
+          git diff --cached --check
+          git commit -m "Update VobSub archive support ledger"
+          git push
