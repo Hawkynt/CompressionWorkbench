@@ -1948,11 +1948,11 @@ Decodes the LZRW3 control-word format produced by `Lzrw3Compressor`. Reference: 
 
 ### Namespace `Compression.Core.Dictionary.Lzs`
 
-[`LzsBuildingBlock`](#lzsbuildingblock)
+[`LzsBuildingBlock`](#lzsbuildingblock) · [`LzsCompressionLevel`](#lzscompressionlevel)
 
 #### `LzsBuildingBlock`
 
-Exposes Stac LZS (RFC 1967/1974) as a benchmarkable building block. An LZSS variant using 7-bit offsets (1-127) and 11-bit offsets (128-2047), with 2-bit or 8-bit match lengths. Used in Cisco IOS and Stac hardware compression.
+Exposes Stac LZS (RFC 1967/2395) as a benchmarkable building block. An LZSS variant using 7-bit offsets (1-127) and 11-bit offsets (128-2047), with variable-length match lengths. Used in Cisco IOS and Stac hardware compression.
 
 Implements `IBuildingBlock`.
 
@@ -1964,7 +1964,18 @@ Implements `IBuildingBlock`.
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data, LzsCompressionLevel level)` | Compresses `data` with the requested encoder effort. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `LzsCompressionLevel`
+
+Encoder effort used by the managed Stac LZS implementation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Fast` | `0` | Small hash-chain search for throughput-sensitive callers. |
+| `Balanced` | `1` | Balanced hash-chain search; this is the default. |
+| `Maximum` | `2` | Search the complete LZS history window and use one-byte lazy parsing. |
 
 ### Namespace `Compression.Core.Dictionary.Lzss`
 
