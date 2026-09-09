@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Compression.Registry;
 
 namespace FileSystem.Stacker;
@@ -10,7 +9,6 @@ namespace FileSystem.Stacker;
 /// as generic filesystem compression probe axes here.
 /// </summary>
 internal static class StackerOptimizationRegistration {
-  [ModuleInitializer]
   internal static void Register()
     => FilesystemOptimizationAdapters.RegisterCompression<StackerFormatDescriptor>(
       transparentCompression: true);

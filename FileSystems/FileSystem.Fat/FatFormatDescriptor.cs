@@ -16,6 +16,11 @@ namespace FileSystem.Fat;
 /// </summary>
 public sealed class FatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  // The optimization adapters are keyed on this descriptor's runtime type, so the
+  // registration has to have run before any instance can be looked up. Doing it from
+  // the type initializer gives exactly that guarantee without a module initializer.
+  static FatFormatDescriptor() => FatSharedDataOptimization.Register();
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>

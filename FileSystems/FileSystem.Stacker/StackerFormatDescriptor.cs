@@ -27,6 +27,11 @@ namespace FileSystem.Stacker;
 /// </list>
 /// </summary>
 public sealed class StackerFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+
+  // The optimization adapters are keyed on this descriptor's runtime type, so the
+  // registration has to have run before any instance can be looked up. Doing it from
+  // the type initializer gives exactly that guarantee without a module initializer.
+  static StackerFormatDescriptor() => StackerOptimizationRegistration.Register();
   // IArchiveShrinkable uses the interface default: a verified extract →
   // re-create rebuild that only replaces the image when the result round-trips
   // AND is smaller; otherwise the original bytes are copied through unchanged.

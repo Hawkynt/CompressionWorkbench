@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -24,7 +23,6 @@ internal static class FatSharedDataOptimization {
   }
   private readonly record struct DirEntry(long Offset, byte Attributes, int FirstCluster, uint Size);
 
-  [ModuleInitializer]
   internal static void Register()
     => FilesystemOptimizationAdapters.RegisterHardLinkDeduplicator<FatFormatDescriptor>(
       HardLinkDeduplicationSemantics.ReadOnlySharedData,
@@ -238,8 +236,8 @@ internal static class FatSharedDataOptimization {
     Dictionary<string, DirEntry> result,
     HashSet<int> seenDirectories) {
     var lfn = new SortedDictionary<int, string>();
+    Span<byte> entry = stackalloc byte[32];
     foreach (var offset in offsets) {
-      Span<byte> entry = stackalloc byte[32];
       image.Position = offset;
       image.ReadExactly(entry);
       if (entry[0] == 0x00) break;
@@ -261,7 +259,7 @@ internal static class FatSharedDataOptimization {
       lfn.Clear();
       if (name is "." or "..") continue;
       var fullName = string.IsNullOrEmpty(path) ? name : $"{path}/{name}";
-      var firstCluster = BinaryPrimitives.ReadUInt16LittleEndian(entry[26..]);
+      var firstCluster = (int)BinaryPrimitives.ReadUInt16LittleEndian(entry[26..]);
       if (geometry.FatType == 32)
         firstCluster |= BinaryPrimitives.ReadUInt16LittleEndian(entry[20..]) << 16;
       var size = BinaryPrimitives.ReadUInt32LittleEndian(entry[28..]);

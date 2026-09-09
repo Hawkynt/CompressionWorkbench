@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -10,7 +9,6 @@ namespace FileSystem.CramFs;
 /// symbolic-link inode semantics belong to the filesystem, not the generic registry.
 /// </summary>
 internal static class CramFsOptimizationRegistration {
-  [ModuleInitializer]
   internal static void Register() {
     FilesystemOptimizationAdapters.RegisterSymbolicLinkDeduplicator<CramFsFormatDescriptor>(RebuildWithSymlinks);
     FilesystemOptimizationAdapters.RegisterTransparentCompression<CramFsFormatDescriptor>();

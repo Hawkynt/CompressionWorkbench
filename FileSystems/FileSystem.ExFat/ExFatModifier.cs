@@ -400,11 +400,11 @@ public static class ExFatModifier {
       HashSet<uint> visitedDirectories) {
     if (firstCluster < 2 || !visitedDirectories.Add(firstCluster)) return;
     var directoryClusters = ResolveAllocation(image, l, firstCluster, streamFlags, Math.Max(dataLength, l.ClusterSize));
+    Span<byte> primary = stackalloc byte[32];
     foreach (var directoryCluster in directoryClusters) {
       var clusterAbsOff = l.ClusterHeapOffset + (long)(directoryCluster - 2) * l.ClusterSize;
       for (var off = 0; off < l.ClusterSize; off += 32) {
         var abs = clusterAbsOff + off;
-        Span<byte> primary = stackalloc byte[32];
         image.Position = abs;
         image.ReadExactly(primary);
         if (primary[0] == 0x00) return;

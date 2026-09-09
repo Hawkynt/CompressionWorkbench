@@ -21,6 +21,11 @@ namespace FileSystem.SquashFs;
 /// </summary>
 public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  // The optimization adapters are keyed on this descriptor's runtime type, so the
+  // registration has to have run before any instance can be looked up. Doing it from
+  // the type initializer gives exactly that guarantee without a module initializer.
+  static SquashFsFormatDescriptor() => SquashFsOptimizationRegistration.Register();
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>

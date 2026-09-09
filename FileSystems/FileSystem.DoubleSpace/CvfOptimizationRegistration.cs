@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Compression.Registry;
 
 namespace FileSystem.DoubleSpace;
@@ -10,12 +9,12 @@ namespace FileSystem.DoubleSpace;
 /// therefore safely probe it.
 /// </summary>
 internal static class CvfOptimizationRegistration {
-  [ModuleInitializer]
-  internal static void Register() {
-    FilesystemOptimizationAdapters.RegisterCompression<DoubleSpaceFormatDescriptor>(
+  internal static void RegisterDoubleSpace()
+    => FilesystemOptimizationAdapters.RegisterCompression<DoubleSpaceFormatDescriptor>(
       transparentCompression: true);
-    FilesystemOptimizationAdapters.RegisterCompression<DriveSpaceFormatDescriptor>(
+
+  internal static void RegisterDriveSpace()
+    => FilesystemOptimizationAdapters.RegisterCompression<DriveSpaceFormatDescriptor>(
       transparentCompression: true,
       new FilesystemCompressionParameter("Method"));
-  }
 }

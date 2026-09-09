@@ -20,6 +20,11 @@ namespace FileSystem.Ntfs;
 /// </summary>
 public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  // The optimization adapters are keyed on this descriptor's runtime type, so the
+  // registration has to have run before any instance can be looked up. Doing it from
+  // the type initializer gives exactly that guarantee without a module initializer.
+  static NtfsFormatDescriptor() => NtfsOptimizationRegistration.Register();
+
   // ── IFormatOptionsSchema ────────────────────────────────────────────────
 
   /// <summary>

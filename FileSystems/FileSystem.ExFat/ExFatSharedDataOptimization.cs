@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Text;
 using Compression.Registry;
@@ -25,7 +24,6 @@ internal static class ExFatSharedDataOptimization {
     uint FirstCluster,
     long DataLength);
 
-  [ModuleInitializer]
   internal static void Register()
     => FilesystemOptimizationAdapters.RegisterHardLinkDeduplicator<ExFatFormatDescriptor>(
       HardLinkDeduplicationSemantics.ReadOnlySharedData,
@@ -249,8 +247,8 @@ internal static class ExFatSharedDataOptimization {
     HashSet<uint> seenDirectories) {
     if (firstCluster < 2 || !seenDirectories.Add(firstCluster)) return;
     var slots = ChainSlotOffsets(image, layout, firstCluster);
+    Span<byte> primary = stackalloc byte[32];
     for (var index = 0; index < slots.Count;) {
-      Span<byte> primary = stackalloc byte[32];
       image.Position = slots[index];
       image.ReadExactly(primary);
       var type = primary[0];

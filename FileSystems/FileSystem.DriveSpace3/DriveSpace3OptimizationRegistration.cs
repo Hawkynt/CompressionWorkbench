@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using Compression.Registry;
 
 namespace FileSystem.DriveSpace3;
@@ -9,7 +8,6 @@ namespace FileSystem.DriveSpace3;
 /// filesystem rebuild does not advertise those values as probe axes.
 /// </summary>
 internal static class DriveSpace3OptimizationRegistration {
-  [ModuleInitializer]
   internal static void Register()
     => FilesystemOptimizationAdapters.RegisterCompression<DriveSpace3FormatDescriptor>(
       transparentCompression: true);
