@@ -861,15 +861,15 @@ Implements `IEquatable<BonkStreamInfo>`.
 
 #### `BrrCodec`
 
-Nintendo SNES S-DSP BRR (Bit Rate Reduction) encoder and decoder. The S-DSP plays audio in fixed 9-byte blocks, each yielding 16 mono 16-bit samples: byte 0 — header: high nibble = `range` (shift amount, valid 0..12), bits 2..3 = `filter` (0..3), bit 1 = loop flag, bit 0 = end flag.bytes 1..8 — 16 signed 4-bit nibbles, HIGH nibble of each byte first. Each nibble `n` is sign-extended to -8..7. For a valid `range <= 12` the scaled value is `v = (s << range) >> 1`; for the invalid ranges 13..15 the hardware effectively discards the shift and contributes `v = s >> 4` (so a negative nibble yields -1, everything else 0). A second-order predictor based on the two previous reconstructed samples is then added (integer math, arithmetic-shift floor): filter 0: + 0filter 1: + h1 * 15 / 16filter 2: + h1 * 61 / 32 − h2 * 15 / 16filter 3: + h1 * 115 / 64 − h2 * 13 / 16 The result is clamped to 16 bits and then wrapped to 15 bits exactly as the S-DSP does (`sample = (short)(v << 1) >> 1`), so a value that overflows the 15-bit range folds rather than saturates. The wrapped sample feeds the history for the next nibble.
+Nintendo SNES S-DSP BRR (Bit Rate Reduction) encoder and decoder. The S-DSP stores audio in fixed 9-byte blocks, each yielding 16 mono PCM samples: byte 0 — high nibble = range (0..15), bits 2..3 = filter (0..3), bit 1 = loop flag, bit 0 = end flag.bytes 1..8 — sixteen signed 4-bit nibbles, high nibble first. Internally the predictor runs in the S-DSP's signed 15-bit domain. Public PCM samples are that reconstructed value multiplied by two, matching the sample values produced by BRRtools. Arithmetic right shifts are intentional: replacing them with integer division changes negative predictor histories.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BlockSize` | `const int BlockSize` | Size in bytes of one BRR block (1 header byte + 8 data bytes). |
-| `MaxRange` | `const int MaxRange` | Highest legal range (shift) value; 13..15 are treated as the invalid case. |
+| `MaxRange` | `const int MaxRange` | Highest legal range value. Ranges 13..15 use the S-DSP invalid-range path. |
 | `SamplesPerBlock` | `const int SamplesPerBlock` | Number of PCM samples carried by one BRR block. |
-| `Decode` | `static short[] Decode(ReadOnlySpan<byte> blocks)` | Decodes a BRR stream to 16-bit PCM. Decoding stops after the first block whose end flag is set, or when the input runs out of whole 9-byte blocks (a trailing partial block is ignored). The predictor history starts at zero. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes mono 16-bit PCM into BRR blocks. Each group of `SamplesPerBlock` samples is encoded by brute-forcing every filter (0..3) and every legal range (0..12) and keeping the combination with the lowest reconstruction error, exactly tracking the decoder's history so playback matches. The final sample group is zero-padded to a full block; the last emitted block carries the end flag (and the loop flag is left clear). |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> blocks)` | Decodes a BRR stream to full-scale 16-bit PCM. Decoding stops after the first block whose end flag is set, or when the input runs out of whole 9-byte blocks. A trailing partial block is ignored and predictor history starts at zero. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes mono 16-bit PCM into BRR blocks. The stream uses BRRtools-compatible framing: a partial first group is zero-padded at the beginning and, when that first aligned group is non-zero, a silent predictor-primer block is emitted before the audio. The final data block carries the end flag. |
 
 ### Namespace `Codec.Cook`
 

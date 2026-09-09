@@ -488,6 +488,7 @@ compression families CompressionWorkbench deals with:
 - **[Wikipedia list of archive formats](https://en.wikipedia.org/wiki/List_of_archive_formats)**
 - **[ArchiveTeam — Just Solve The File Format Problem](http://fileformats.archiveteam.org/wiki/Compression)** — compression-format documentation
 - **[7-Zip](https://github.com/ip7z/7zip)** — multi-archiver reference implementation
+- **[BRRtools](https://github.com/Optiroc/BRRtools)** — SNES S-DSP BRR encoder/decoder and behavioral oracle for `Codec.Brr`; validation is pinned to BRRtools 3.15 at revision [`5b809f171d6a8fe436f09cd883f26994e58feb35`](https://github.com/Optiroc/BRRtools/commit/5b809f171d6a8fe436f09cd883f26994e58feb35). Upstream has no `LICENSE` file, so it is used as an oracle only and no implementation code is copied.
 - **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors and corpora
 - **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated executable-packer material
 
