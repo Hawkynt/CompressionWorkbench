@@ -23,7 +23,8 @@ public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -43,7 +44,7 @@ public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzss", "LZSS")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("lzss", "LZSS", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -65,4 +66,12 @@ public sealed class SzddFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => SzddStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using the size-optimal SZDD parser.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) {
+    using var buffer = new MemoryStream();
+    input.CopyTo(buffer);
+    output.Write(SzddOptimizer.Compress(buffer.ToArray()));
+  }
 }
