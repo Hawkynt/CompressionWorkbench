@@ -8,6 +8,12 @@ internal enum BscSortingContexts : byte {
   Preceding = 2,
 }
 
+internal enum BscEntropyCoder : byte {
+  Static = 1,
+  Adaptive = 2,
+  Fast = 3,
+}
+
 /// <summary>
 /// BSC (libbsc) file-stream framing around <see cref="BscBlockCodec"/>.
 /// </summary>
@@ -21,11 +27,16 @@ public static class BscStream {
   internal const int DefaultBlockSize = 25 * 1024 * 1024;
   internal const int MaximumBlockSize = 2047 * 1024 * 1024;
 
-  /// <summary>Encodes using libbsc's default 25 MiB file block size.</summary>
+  /// <summary>Encodes using libbsc's default 25 MiB block size, following contexts and QLFC-static coder.</summary>
   public static void Compress(Stream input, Stream output)
-    => Compress(input, output, DefaultBlockSize, BscSortingContexts.Following);
+    => Compress(input, output, DefaultBlockSize, BscSortingContexts.Following, BscEntropyCoder.Static);
 
-  internal static void Compress(Stream input, Stream output, int blockSize, BscSortingContexts sortingContexts) {
+  internal static void Compress(
+      Stream input,
+      Stream output,
+      int blockSize,
+      BscSortingContexts sortingContexts,
+      BscEntropyCoder entropyCoder) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     if (blockSize is < MinimumBlockSize or > MaximumBlockSize)
@@ -33,6 +44,8 @@ public static class BscStream {
         $"BSC block size must be between {MinimumBlockSize} and {MaximumBlockSize} bytes.");
     if (sortingContexts is not (BscSortingContexts.Following or BscSortingContexts.Preceding))
       throw new ArgumentOutOfRangeException(nameof(sortingContexts));
+    if (entropyCoder is not (BscEntropyCoder.Static or BscEntropyCoder.Adaptive or BscEntropyCoder.Fast))
+      throw new ArgumentOutOfRangeException(nameof(entropyCoder));
 
     var data = ReadRemaining(input);
     var blockCount = data.Length == 0 ? 0 : ((data.Length - 1) / blockSize) + 1;
@@ -45,7 +58,7 @@ public static class BscStream {
     var offset = 0;
     for (var block = 0; block < blockCount; ++block) {
       var length = Math.Min(blockSize, data.Length - offset);
-      WriteBlock(data.AsSpan(offset, length), output, offset, sortingContexts);
+      WriteBlock(data.AsSpan(offset, length), output, offset, sortingContexts, entropyCoder);
       offset += length;
     }
   }
@@ -143,8 +156,9 @@ public static class BscStream {
       ReadOnlySpan<byte> data,
       Stream output,
       long blockOffset,
-      BscSortingContexts sortingContexts) {
-    var encoded = BscBlockCodec.Encode(data, sortingContexts);
+      BscSortingContexts sortingContexts,
+      BscEntropyCoder entropyCoder) {
+    var encoded = BscBlockCodec.Encode(data, sortingContexts, entropyCoder);
     var compressedChecksum = BscBlockCodec.Adler32(encoded.Payload);
 
     Span<byte> blockHeader = stackalloc byte[InternalHeaderSize];
