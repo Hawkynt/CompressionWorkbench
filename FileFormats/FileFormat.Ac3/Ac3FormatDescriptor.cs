@@ -11,16 +11,15 @@ namespace FileFormat.Ac3;
 
 /// <summary>
 /// AC-3 / E-AC-3 (Dolby Digital / Dolby Digital Plus) elementary streams. Besides the
-/// pseudo-archive view, the descriptor can encode legacy AC-3 from canonical PCM, create an
+/// pseudo-archive view, the descriptor can encode AC-3 and E-AC-3 from canonical PCM, create an
 /// elementary stream from extracted mono WAV channels, and expose complete syncframes as encoded
-/// packets for byte-preserving demux/mux/remux. E-AC-3 remains decode/remux-only: it is preserved
-/// as E-AC-3 packets rather than being silently re-encoded as legacy AC-3.
+/// packets for byte-preserving demux/mux/remux.
 /// </summary>
 public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
   IArchiveInMemoryExtract, IArchiveWriteConstraints, IArchiveCreatable,
   IAudioContainerFormat, IAudioPcmSource, IAudioPcmTarget, IAudioDemuxSource, IAudioMuxTarget {
 
-  private static readonly string[] EncodeCodecs = ["ac3"];
+  private static readonly string[] EncodeCodecs = ["ac3", "eac3"];
   private static readonly string[] MuxCodecs = ["ac3", "eac3"];
   private static readonly int[] LegacyBitrates = [
     32_000, 40_000, 48_000, 56_000, 64_000, 80_000, 96_000, 112_000, 128_000, 160_000,
@@ -48,14 +47,14 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new(Ac3SyncFrame.SyncWord, Confidence: 0.60),
   ];
   /// <summary>Gets the methods.</summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("ac3", "AC-3")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("ac3", "AC-3"), new("eac3", "E-AC-3")];
   /// <summary>Gets the tar compression format id.</summary>
   public string? TarCompressionFormatId => null;
   /// <summary>Gets the family.</summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "AC-3 / E-AC-3 elementary audio; legacy AC-3 encode plus syncframe-preserving AC-3/E-AC-3 demux and remux.";
+    "AC-3 / E-AC-3 elementary audio; managed PCM encode/decode plus syncframe-preserving demux and remux.";
 
   /// <summary>Lists the entries in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
@@ -95,8 +94,8 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// Writes a byte-exact supplied FULL stream, or interleaves per-channel PCM16 WAVs and encodes
-  /// legacy AC-3. Ambiguous channel counts use the conventional default layout; every other legacy
-  /// layout can be selected explicitly with <c>acmod</c> and <c>lfe</c> format options.
+  /// AC-3/E-AC-3. Ambiguous channel counts use the conventional default layout; every other layout
+  /// including 1+1 dual mono can be selected explicitly with <c>acmod</c> and <c>lfe</c> options.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -141,42 +140,67 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Gets the codecs that can be encoded from PCM.</summary>
   public IReadOnlyList<string> SupportedEncodeCodecs => EncodeCodecs;
 
-  /// <summary>Reports whether the canonical PCM geometry and requested AC-3 options are encodable.</summary>
+  /// <summary>Reports whether the canonical PCM geometry and requested AC-3/E-AC-3 options are encodable.</summary>
   public bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string? reason) {
     ArgumentNullException.ThrowIfNull(format);
     ArgumentNullException.ThrowIfNull(options);
 
-    if (!codecId.Equals("ac3", StringComparison.OrdinalIgnoreCase)) {
-      reason = codecId.Equals("eac3", StringComparison.OrdinalIgnoreCase)
-        ? "E-AC-3 encoding is not implemented; E-AC-3 is supported losslessly through demux/mux/remux"
-        : $"codec '{codecId}' is not AC-3";
+    var enhanced = codecId.Equals("eac3", StringComparison.OrdinalIgnoreCase);
+    if (!enhanced && !codecId.Equals("ac3", StringComparison.OrdinalIgnoreCase)) {
+      reason = $"codec '{codecId}' is not AC-3/E-AC-3";
       return false;
     }
     if (format.Encoding != AudioPcmEncoding.SignedInteger || format.BitsPerSample != 16) {
-      reason = "AC-3 encoding requires signed PCM16 input";
+      reason = "AC-3/E-AC-3 encoding requires signed PCM16 input";
       return false;
     }
-    if (format.SampleRate is not (32_000 or 44_100 or 48_000)) {
-      reason = "legacy AC-3 encoding supports 32, 44.1, or 48 kHz";
+
+    var legalRate = enhanced
+      ? format.SampleRate is 32_000 or 44_100 or 48_000
+      : format.SampleRate is 32_000 or 44_100 or 48_000;
+    if (!legalRate) {
+      reason = enhanced
+        ? "E-AC-3 encoding currently supports 32, 44.1, or 48 kHz"
+        : "legacy AC-3 encoding supports 32, 44.1, or 48 kHz";
       return false;
     }
     if (format.Channels is < 1 or > 6) {
-      reason = "legacy AC-3 supports 1 to 6 coded channels";
+      reason = "AC-3/E-AC-3 supports 1 to 6 coded channels per independent stream";
       return false;
     }
-    if (!TryResolveLayout(format.Channels, options, out _, out _, out reason))
+    if (!TryResolveLayout(format.Channels, options, out var acmod, out _, out reason))
       return false;
 
     var bitrate = NormalizeBitrate(options.GetOptionInt("bitrate", DefaultBitrate(format.Channels)));
-    if (Array.IndexOf(LegacyBitrates, bitrate) < 0) {
+    if (!enhanced && Array.IndexOf(LegacyBitrates, bitrate) < 0) {
       reason = "AC-3 bitrate must be one of 32,40,48,56,64,80,96,112,128,160,192,224,256,320,384,448,512,576,640 kbit/s";
       return false;
+    }
+    if (enhanced) {
+      if (bitrate <= 0 || bitrate > 128L * format.SampleRate) {
+        reason = "E-AC-3 bitrate is outside the frame-size range representable at this sample rate";
+        return false;
+      }
+      if (options.TryGetInt("blocks-per-frame", out var blocks) && blocks is not (1 or 2 or 3 or 6)) {
+        reason = "E-AC-3 blocks-per-frame must be 1, 2, 3, or 6";
+        return false;
+      }
     }
 
     var dialNorm = options.GetOptionInt("dialnorm", -31);
     if (dialNorm is < -31 or > -1) {
       reason = "dialnorm must be -31..-1 dB";
       return false;
+    }
+    if (options.TryGetInt("dialnorm2", out var dialNorm2)) {
+      if (acmod != 0) {
+        reason = "dialnorm2 is only valid for acmod=0 dual mono";
+        return false;
+      }
+      if (dialNorm2 is < -31 or > -1) {
+        reason = "dialnorm2 must be -31..-1 dB";
+        return false;
+      }
     }
 
     var cutoff = options.GetOptionInt("cutoff", 0);
@@ -189,7 +213,7 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return true;
   }
 
-  /// <summary>Encodes interleaved canonical PCM16 to a legacy AC-3 elementary stream.</summary>
+  /// <summary>Encodes interleaved canonical PCM16 to an AC-3 or E-AC-3 elementary stream.</summary>
   public void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(pcm);
@@ -206,14 +230,31 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm.InterleavedData.AsSpan(i * 2, 2));
 
     var bitrate = NormalizeBitrate(options.GetOptionInt("bitrate", DefaultBitrate(pcm.Format.Channels)));
-    var encoded = Ac3Codec.Encode(samples, new Ac3EncoderOptions(
-      pcm.Format.SampleRate,
-      bitrate,
-      acmod,
-      lfe,
-      options.GetOptionInt("dialnorm", -31),
-      options.GetOptionInt("cutoff", 0),
-      PadFinalFrame: options.GetOptionBool("pad-final-frame", true)));
+    var dialNorm2 = options.TryGetInt("dialnorm2", out var secondDialNorm) ? secondDialNorm : (int?)null;
+    byte[] encoded;
+    if (codecId.Equals("eac3", StringComparison.OrdinalIgnoreCase)) {
+      var blocks = options.TryGetInt("blocks-per-frame", out var requestedBlocks) ? requestedBlocks : (int?)null;
+      encoded = Ac3Codec.EncodeEnhanced(samples, new Eac3EncoderOptions(
+        pcm.Format.SampleRate,
+        bitrate,
+        acmod,
+        lfe,
+        options.GetOptionInt("dialnorm", -31),
+        options.GetOptionInt("cutoff", 0),
+        options.GetOptionBool("pad-final-frame", true),
+        blocks,
+        dialNorm2));
+    } else {
+      encoded = Ac3Codec.Encode(samples, new Ac3EncoderOptions(
+        pcm.Format.SampleRate,
+        bitrate,
+        acmod,
+        lfe,
+        options.GetOptionInt("dialnorm", -31),
+        options.GetOptionInt("cutoff", 0),
+        options.GetOptionBool("pad-final-frame", true),
+        dialNorm2));
+    }
     output.Write(encoded);
   }
 
@@ -507,10 +548,8 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (options.TryGetInt("acmod", out var requestedAcmod)) {
       acmod = requestedAcmod;
       lfe = options.GetOptionBool("lfe", false);
-      if (acmod is < 1 or > 7) {
-        reason = acmod == 0
-          ? "dual-mono acmod=0 remains decode/remux-only; the managed encoder currently emits acmod 1..7"
-          : "legacy AC-3 acmod must be 1..7 for encoding";
+      if (acmod is < 0 or > 7) {
+        reason = "AC-3/E-AC-3 acmod must be 0..7";
         return false;
       }
       var expected = Ac3FrameHeader.AcmodChannelCount(acmod) + (lfe ? 1 : 0);
@@ -531,7 +570,7 @@ public sealed class Ac3FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       6 => (7, true),
       _ => (0, false),
     };
-    reason = acmod == 0 ? $"no default legacy AC-3 layout for {channels} channels" : null;
+    reason = acmod == 0 ? $"no default AC-3/E-AC-3 layout for {channels} channels" : null;
     return acmod != 0;
   }
 
