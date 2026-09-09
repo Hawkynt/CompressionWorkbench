@@ -16,6 +16,11 @@ namespace FileSystem.DoubleSpace;
 /// </summary>
 public sealed class DriveSpaceFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
+  // The optimization adapters are keyed on this descriptor's runtime type, so the
+  // registration has to have run before any instance can be looked up. Doing it from
+  // the type initializer gives exactly that guarantee without a module initializer.
+  static DriveSpaceFormatDescriptor() => CvfOptimizationRegistration.RegisterDriveSpace();
+
   /// <summary>
   /// Sole tunable the DriveSpace writer honours: the per-cluster compression
   /// method. "stored" forces uncompressed runs; the ds-lz77 family selects the

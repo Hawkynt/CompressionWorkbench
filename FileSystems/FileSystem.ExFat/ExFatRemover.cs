@@ -7,17 +7,29 @@ namespace FileSystem.ExFat;
 /// <summary>
 /// Secure-remove implementation for exFAT images. Finds a root-directory file's
 /// entry set (File <c>0x85</c> + Stream Extension <c>0xC0</c> + N × File Name <c>0xC1</c>),
-/// zeros every cluster in its allocation chain, clears its FAT entries, clears its bits
-/// in the allocation bitmap, and wipes the directory entry set itself — preserving only
-/// each entry's first byte with its <em>type bit</em> (bit 7) cleared so exFAT readers
-/// treat the slots as "unused in-use" instead of end-of-directory.
+/// wipes its directory entry set, then zeros and frees only clusters that are no
+/// longer referenced by any other live directory entry.
 /// <para>
-/// Root-directory-only for now; nested-directory removal is a follow-up. No set-checksum
-/// update is needed on removed entries — a cleared type bit makes readers skip them
-/// entirely, including their checksum field.
+/// This deliberately understands both FAT-described chains and <c>NoFatChain</c>
+/// contiguous allocations. That keeps read-only shared-data aliases emitted by the
+/// optimizer valid until their last directory entry is removed. The file selected
+/// for deletion is still root-directory-only; reference discovery recurses through
+/// all live subdirectories so a nested alias can keep a root file's allocation alive.
+/// </para>
+/// <para>
+/// No set-checksum update is needed on removed entries — clearing bit 7 of each
+/// EntryType makes readers ignore those slots, including their checksum field.
 /// </para>
 /// </summary>
 public static class ExFatRemover {
+  private readonly record struct DirectorySlot(int AbsOffset, byte Type, byte SecondaryCount);
+  private readonly record struct FileAllocation(
+    int EntryOffset,
+    int[] SetOffsets,
+    uint FirstCluster,
+    byte StreamFlags,
+    long DataLength);
+
   /// <summary>
   /// Removes <paramref name="fileName"/> from the in-memory exFAT image. Throws
   /// <see cref="FileNotFoundException"/> if no root-dir entry matches. The image is
@@ -40,41 +52,70 @@ public static class ExFatRemover {
     var fatOffset = (int)(fatOffsetSectors * (uint)bytesPerSector);
     var clusterHeapOffset = (int)(clusterHeapOffsetSectors * (uint)bytesPerSector);
 
-    // --- Read the root directory cluster chain into a buffer we can search. ---
-    // We deliberately read only one cluster at a time so we can compute absolute
-    // offsets in the source image for each directory entry we find.
-    var rootEntries = CollectDirectoryEntries(image, rootDirCluster, clusterHeapOffset, clusterSize, fatOffset, clusterCount);
+    var rootEntries = CollectDirectoryEntries(
+      image,
+      WalkChain(image, rootDirCluster, fatOffset, clusterCount),
+      clusterHeapOffset,
+      clusterSize);
 
-    // --- First pass: find the 0x81 Allocation Bitmap entry (for bit clearing). ---
+    // Allocation Bitmap is authoritative for allocated/free state in exFAT.
     var (bitmapFirstCluster, bitmapLength) = FindAllocationBitmap(image, rootEntries);
 
-    // --- Second pass: find the file's entry set by name. ---
-    var (fileEntryAbsOffset, firstCluster, setBytes) = FindFile(image, rootEntries, fileName);
-    if (fileEntryAbsOffset < 0)
+    var file = FindFile(image, rootEntries, fileName);
+    if (file is null)
       throw new FileNotFoundException($"File '{fileName}' not found in exFAT root directory.");
 
-    // --- Walk cluster chain. ---
-    var chain = WalkChain(image, firstCluster, fatOffset, clusterCount);
+    var allocation = file.Value;
+    var chain = ResolveAllocation(
+      image,
+      allocation.FirstCluster,
+      allocation.StreamFlags,
+      allocation.DataLength,
+      fatOffset,
+      clusterCount,
+      clusterSize);
 
-    // --- 1. Zero cluster data. ---
-    foreach (var cluster in chain) {
+    // Discover references before deleting the directory entry. In particular,
+    // another file may point at the same first cluster or may overlap only a suffix
+    // of this allocation. No cluster still reachable elsewhere may be wiped/freed.
+    var referencedElsewhere = CollectReferencedClusters(
+      image,
+      rootDirCluster,
+      allocation.EntryOffset,
+      clusterHeapOffset,
+      clusterSize,
+      fatOffset,
+      clusterCount);
+    var freeable = chain.Where(cluster => !referencedElsewhere.Contains(cluster)).ToArray();
+
+    // exFAT §8.1 recommends deleting/updating the directory entry before releasing
+    // its allocation. If a later write fails, that ordering leaks space rather than
+    // leaving a live name pointing at storage that has already been freed.
+    foreach (var off in allocation.SetOffsets) {
+      image[off] = (byte)(image[off] & 0x7F);
+      image.AsSpan(off + 1, 31).Clear();
+    }
+
+    // Securely wipe only clusters whose last live reference just disappeared.
+    foreach (var cluster in freeable) {
       var dataOffset = clusterHeapOffset + (long)(cluster - 2) * clusterSize;
       if (dataOffset < 0 || dataOffset + clusterSize > image.Length) continue;
       image.AsSpan((int)dataOffset, clusterSize).Clear();
     }
 
-    // --- 2. Zero FAT entries for this chain. ---
-    foreach (var cluster in chain) {
+    // FAT entries are meaningful for FAT-described allocations. Clearing an
+    // unreferenced entry is harmless even when this particular allocation used
+    // NoFatChain; another live FAT-chain allocation would have put the cluster in
+    // referencedElsewhere and prevented the clear.
+    foreach (var cluster in freeable) {
       var fatEntryOffset = fatOffset + (int)cluster * 4;
       if (fatEntryOffset + 4 > image.Length) continue;
       BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(fatEntryOffset), 0);
     }
 
-    // --- 3. Clear the allocation-bitmap bits for the freed clusters. ---
     if (bitmapFirstCluster >= 2) {
       var bitmapOffset = clusterHeapOffset + (int)(bitmapFirstCluster - 2) * clusterSize;
-      foreach (var cluster in chain) {
-        // Cluster numbering in the bitmap is 0-based starting at cluster 2.
+      foreach (var cluster in freeable) {
         var bitIndex = (int)(cluster - 2);
         var byteIdx = bitmapOffset + bitIndex / 8;
         if (byteIdx < 0 || byteIdx >= image.Length) continue;
@@ -83,19 +124,8 @@ public static class ExFatRemover {
       }
     }
 
-    // --- 4. Wipe the directory entry set itself. ---
-    // exFAT spec: clearing bit 7 of EntryType flips "in-use" → "unused". Readers stop
-    // at 0x00 (end-of-dir) but simply skip entries with the type-bit cleared, so we
-    // must preserve that first byte (with bit 7 cleared) and zero the other 31.
-    for (var off = fileEntryAbsOffset; off < fileEntryAbsOffset + setBytes; off += 32) {
-      image[off] = (byte)(image[off] & 0x7F);
-      image.AsSpan(off + 1, 31).Clear();
-    }
-
-    // --- 5. No SetChecksum update needed: cleared type bit makes readers ignore it. ---
-
-    // --- 6. Best-effort PercentInUse update in primary + backup VBR. ---
-    var freedClusters = (uint)chain.Count;
+    // Removed slots are ignored, so no SetChecksum rewrite is required.
+    var freedClusters = (uint)freeable.Length;
     UpdatePercentInUse(image, 0, clusterCount, freedClusters);
     var backupVbrOffset = 12 * bytesPerSector;
     if (backupVbrOffset + 512 <= image.Length &&
@@ -104,61 +134,57 @@ public static class ExFatRemover {
   }
 
   /// <summary>
-  /// Reads a directory's cluster chain and returns per-entry absolute-offset records
-  /// (into the source <paramref name="image"/>). Bounded to avoid infinite chains.
+  /// Returns per-slot absolute offsets for a logical directory allocation. Passing
+  /// explicit cluster indices keeps entry sets correct even when consecutive logical
+  /// directory slots live in physically non-contiguous clusters.
   /// </summary>
-  private static List<(int AbsOffset, byte Type, byte SecondaryCount)> CollectDirectoryEntries(
-      byte[] image, uint startCluster, int clusterHeapOffset, int clusterSize,
-      int fatOffset, uint clusterCount) {
-    var entries = new List<(int, byte, byte)>();
-    var cluster = startCluster;
-    var seen = new HashSet<uint>();
-    while (cluster >= 2 && cluster <= clusterCount + 1 && seen.Add(cluster)) {
-      var baseOffset = clusterHeapOffset + (int)(cluster - 2) * clusterSize;
-      if (baseOffset < 0 || baseOffset + clusterSize > image.Length) break;
+  private static List<DirectorySlot> CollectDirectoryEntries(
+      byte[] image,
+      IReadOnlyList<uint> clusters,
+      int clusterHeapOffset,
+      int clusterSize) {
+    var entries = new List<DirectorySlot>();
+    foreach (var cluster in clusters) {
+      var baseOffsetLong = clusterHeapOffset + (long)(cluster - 2) * clusterSize;
+      if (baseOffsetLong < 0 || baseOffsetLong + clusterSize > image.Length) break;
+      var baseOffset = (int)baseOffsetLong;
       for (var i = 0; i < clusterSize; i += 32) {
         var abs = baseOffset + i;
         var type = image[abs];
-        if (type == 0x00) return entries; // end-of-directory
-        entries.Add((abs, type, image[abs + 1]));
+        if (type == 0x00) return entries;
+        entries.Add(new DirectorySlot(abs, type, image[abs + 1]));
       }
-      var fatEntryOffset = fatOffset + (int)cluster * 4;
-      if (fatEntryOffset + 4 > image.Length) break;
-      cluster = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(fatEntryOffset));
-      if (cluster >= 0xFFFFFFF8) break;
     }
     return entries;
   }
 
   private static (uint FirstCluster, long Length) FindAllocationBitmap(
-      byte[] image, List<(int AbsOffset, byte Type, byte SecondaryCount)> entries) {
-    foreach (var (abs, type, _) in entries) {
-      // Allocation Bitmap directory entry type = 0x81. Also accept "unused" form 0x01
-      // defensively, though writer never emits it for bitmap.
-      if ((type & 0x7F) != 0x01) continue;
-      if ((type & 0x80) == 0) continue; // must be in-use
-      var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(abs + 20));
-      var length = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(abs + 24));
+      byte[] image, IReadOnlyList<DirectorySlot> entries) {
+    foreach (var entry in entries) {
+      if ((entry.Type & 0x7F) != 0x01) continue;
+      if ((entry.Type & 0x80) == 0) continue;
+      var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(entry.AbsOffset + 20));
+      var length = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(entry.AbsOffset + 24));
       return (firstCluster, length);
     }
     return (0, 0);
   }
 
-  private static (int FileEntryAbsOffset, uint FirstCluster, int SetBytes) FindFile(
-      byte[] image, List<(int AbsOffset, byte Type, byte SecondaryCount)> entries, string fileName) {
+  private static FileAllocation? FindFile(
+      byte[] image, IReadOnlyList<DirectorySlot> entries, string fileName) {
     for (var i = 0; i < entries.Count; ++i) {
-      var (abs, type, secondaryCount) = entries[i];
-      if (type != 0x85) continue; // in-use File entry
-      if (i + 1 + secondaryCount > entries.Count) continue;
+      var primary = entries[i];
+      if (primary.Type != 0x85) continue;
+      var secondaryCount = primary.SecondaryCount;
+      if (i + secondaryCount >= entries.Count) continue;
 
       var streamAbs = entries[i + 1].AbsOffset;
       if (image[streamAbs] != 0xC0) continue;
       var nameLength = image[streamAbs + 3];
-      var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(streamAbs + 20));
-
-      // Reconstruct the file name from the 0xC1 entries.
-      var sb = new StringBuilder();
       var nameEntries = (nameLength + 14) / 15;
+      if (nameEntries + 1 > secondaryCount) continue;
+
+      var sb = new StringBuilder(nameLength);
       for (var n = 0; n < nameEntries; ++n) {
         var nameAbs = entries[i + 2 + n].AbsOffset;
         if (image[nameAbs] != 0xC1) break;
@@ -170,12 +196,22 @@ public static class ExFatRemover {
         }
       }
 
-      if (!sb.ToString().Equals(fileName, StringComparison.OrdinalIgnoreCase)) continue;
+      if (!sb.ToString().Equals(fileName, StringComparison.OrdinalIgnoreCase)) {
+        i += secondaryCount;
+        continue;
+      }
 
-      var setBytes = 32 * (1 + secondaryCount);
-      return (abs, firstCluster, setBytes);
+      var setOffsets = new int[1 + secondaryCount];
+      for (var slot = 0; slot < setOffsets.Length; ++slot)
+        setOffsets[slot] = entries[i + slot].AbsOffset;
+      return new FileAllocation(
+        primary.AbsOffset,
+        setOffsets,
+        BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(streamAbs + 20)),
+        image[streamAbs + 1],
+        BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(streamAbs + 24)));
     }
-    return (-1, 0, 0);
+    return null;
   }
 
   private static List<uint> WalkChain(byte[] image, uint startCluster, int fatOffset, uint clusterCount) {
@@ -193,10 +229,135 @@ public static class ExFatRemover {
     return chain;
   }
 
+  private static List<uint> ResolveAllocation(
+      byte[] image,
+      uint firstCluster,
+      byte streamFlags,
+      long dataLength,
+      int fatOffset,
+      uint clusterCount,
+      int clusterSize) {
+    if (firstCluster < 2 || dataLength <= 0) return [];
+    if ((streamFlags & 0x02) == 0)
+      return WalkChain(image, firstCluster, fatOffset, clusterCount);
+
+    var count = checked((int)(((dataLength - 1) / clusterSize) + 1));
+    var result = new List<uint>(count);
+    for (var i = 0; i < count; ++i) {
+      var cluster = firstCluster + (uint)i;
+      if (cluster > clusterCount + 1) break;
+      result.Add(cluster);
+    }
+    return result;
+  }
+
+  /// <summary>
+  /// Collects every cluster reachable from another live file or directory. The
+  /// recursion intentionally follows nested directories even though Remove itself
+  /// currently accepts only a root file name.
+  /// </summary>
+  private static HashSet<uint> CollectReferencedClusters(
+      byte[] image,
+      uint rootDirCluster,
+      int excludedEntryOffset,
+      int clusterHeapOffset,
+      int clusterSize,
+      int fatOffset,
+      uint clusterCount) {
+    var referenced = new HashSet<uint>();
+    var visitedDirectories = new HashSet<uint>();
+
+    foreach (var cluster in WalkChain(image, rootDirCluster, fatOffset, clusterCount))
+      referenced.Add(cluster);
+
+    ScanDirectoryReferences(
+      image,
+      rootDirCluster,
+      0x01,
+      clusterSize,
+      excludedEntryOffset,
+      clusterHeapOffset,
+      clusterSize,
+      fatOffset,
+      clusterCount,
+      referenced,
+      visitedDirectories);
+    return referenced;
+  }
+
+  private static void ScanDirectoryReferences(
+      byte[] image,
+      uint firstCluster,
+      byte streamFlags,
+      long dataLength,
+      int excludedEntryOffset,
+      int clusterHeapOffset,
+      int clusterSize,
+      int fatOffset,
+      uint clusterCount,
+      HashSet<uint> referenced,
+      HashSet<uint> visitedDirectories) {
+    if (firstCluster < 2 || !visitedDirectories.Add(firstCluster)) return;
+
+    var directoryClusters = ResolveAllocation(
+      image, firstCluster, streamFlags, Math.Max(dataLength, clusterSize), fatOffset, clusterCount, clusterSize);
+    foreach (var cluster in directoryClusters)
+      referenced.Add(cluster);
+
+    var entries = CollectDirectoryEntries(image, directoryClusters, clusterHeapOffset, clusterSize);
+    for (var i = 0; i < entries.Count; ++i) {
+      var primary = entries[i];
+
+      // Allocation Bitmap and Up-case Table are root-level metadata allocations;
+      // keep them protected even in a damaged image where a file happens to overlap.
+      if (primary.Type is 0x81 or 0x82) {
+        var systemFirst = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(primary.AbsOffset + 20));
+        var systemLength = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(primary.AbsOffset + 24));
+        foreach (var cluster in WalkChain(image, systemFirst, fatOffset, clusterCount).Take(
+                   systemLength > 0 ? checked((int)(((systemLength - 1) / clusterSize) + 1)) : int.MaxValue))
+          referenced.Add(cluster);
+        continue;
+      }
+
+      if (primary.Type != 0x85) continue;
+      var secondaryCount = primary.SecondaryCount;
+      if (i + secondaryCount >= entries.Count) continue;
+      var streamAbs = entries[i + 1].AbsOffset;
+      if (image[streamAbs] != 0xC0) continue;
+
+      var attributes = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(primary.AbsOffset + 4));
+      var childFlags = image[streamAbs + 1];
+      var childFirst = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(streamAbs + 20));
+      var childLength = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(streamAbs + 24));
+      var childClusters = ResolveAllocation(
+        image, childFirst, childFlags, childLength, fatOffset, clusterCount, clusterSize);
+
+      if (primary.AbsOffset != excludedEntryOffset)
+        foreach (var cluster in childClusters)
+          referenced.Add(cluster);
+
+      if ((attributes & 0x0010) != 0 && childFirst >= 2)
+        ScanDirectoryReferences(
+          image,
+          childFirst,
+          childFlags,
+          childLength,
+          excludedEntryOffset,
+          clusterHeapOffset,
+          clusterSize,
+          fatOffset,
+          clusterCount,
+          referenced,
+          visitedDirectories);
+
+      i += secondaryCount;
+    }
+  }
+
   private static void UpdatePercentInUse(byte[] image, int vbrOffset, uint clusterCount, uint freedClusters) {
     if (vbrOffset + 113 > image.Length) return;
     var current = image[vbrOffset + 112];
-    if (current == 0xFF || clusterCount == 0) return; // unknown — leave untouched
+    if (current == 0xFF || clusterCount == 0) return;
     var freedPercent = (uint)(freedClusters * 100 / clusterCount);
     var updated = current > freedPercent ? current - freedPercent : 0;
     image[vbrOffset + 112] = (byte)updated;

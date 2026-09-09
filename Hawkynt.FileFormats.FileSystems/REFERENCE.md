@@ -5503,12 +5503,12 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `ExFatModifier`
 
-In-place exFAT modifier — true O(touched bytes) random-access I/O. Touches only: VBR primary+backup (3 bytes — PercentInUse), the FAT entries for the new/freed clusters, the allocation-bitmap byte(s) covering those clusters, the root-directory cluster(s) holding the entry-set, and the new file's data clusters. The up-case table and other files are never read. Layout reminders (matches `ExFatWriter`): VBR at sector 0; backup VBR at sector 12.FAT starts at `fatOffsetSectors`; 4 bytes per cluster, EOC = 0xFFFFFFFF.Cluster heap at `clusterHeapOffsetSectors`; cluster numbering starts at 2.Cluster 2 = root dir, cluster 3 = allocation bitmap, cluster 4 = up-case table.Root entry-set order: 0x83 VolumeLabel, 0x81 AllocationBitmap, 0x82 UpCase, then files.Per-file entry-set: 0x85 File + 0xC0 StreamExtension + N × 0xC1 FileName (15 UTF-16 chars each).Entry-set checksum per spec §7.4.3 — rotate-right-add over every byte except bytes 2-3 of the File entry.
+In-place exFAT modifier — true random-access I/O. Allocation changes update FAT entries, the allocation bitmap, directory entry sets and PercentInUse. Removal is cross-link aware: a cluster is zeroed/freed only when no other live directory entry still references it, which keeps read-only shared-data aliases produced by the optimizer valid until their last name is removed.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data)` | Adds a file with O(touched bytes) I/O. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file with O(touched bytes) I/O. Returns false if not found. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named root-directory file. Clusters still reachable from any other live exFAT directory entry are retained and, when requested, are not wiped. |
 
 #### `ExFatReader`
 
@@ -5525,7 +5525,7 @@ Implements `IDisposable`.
 
 #### `ExFatRemover`
 
-Secure-remove implementation for exFAT images. Finds a root-directory file's entry set (File `0x85` + Stream Extension `0xC0` + N × File Name `0xC1`), zeros every cluster in its allocation chain, clears its FAT entries, clears its bits in the allocation bitmap, and wipes the directory entry set itself — preserving only each entry's first byte with its type bit (bit 7) cleared so exFAT readers treat the slots as "unused in-use" instead of end-of-directory. Root-directory-only for now; nested-directory removal is a follow-up. No set-checksum update is needed on removed entries — a cleared type bit makes readers skip them entirely, including their checksum field.
+Secure-remove implementation for exFAT images. Finds a root-directory file's entry set (File `0x85` + Stream Extension `0xC0` + N × File Name `0xC1`), wipes its directory entry set, then zeros and frees only clusters that are no longer referenced by any other live directory entry. This deliberately understands both FAT-described chains and `NoFatChain` contiguous allocations. That keeps read-only shared-data aliases emitted by the optimizer valid until their last directory entry is removed. The file selected for deletion is still root-directory-only; reference discovery recurses through all live subdirectories so a nested alias can keep a root file's allocation alive. No set-checksum update is needed on removed entries — clearing bit 7 of each EntryType makes readers ignore those slots, including their checksum field.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6158,7 +6158,7 @@ Implements `IDisposable`.
 
 #### `FatRemover`
 
-Secure-remove implementation for FAT12/16/32 images. Resolves a path that may include subdirectory components (separated by `/`), finds the leaf entry — matching either its short 8.3 name or its long filename — zeros every cluster the file occupies (including trailing cluster-tip slack past `i_size`), zeros the on-disk directory entry bytes (LFN slots plus the short entry), and frees its clusters in every FAT copy. After the operation no bytes of the filename or content remain recoverable from the image.
+Secure-remove implementation for FAT12/16/32 images. Resolves a path that may include subdirectory components (separated by `/`), finds the leaf entry — matching either its short 8.3 name or its long filename — zeros every cluster that is exclusively owned by the removed entry (including trailing cluster-tip slack), wipes the on-disk directory entry bytes (LFN slots plus the short entry), and frees only unreferenced clusters in every FAT copy. Shared/cross-linked clusters are deliberately preserved while any other live directory entry still references them.
 
 | Member | Signature | Summary |
 | --- | --- | --- |

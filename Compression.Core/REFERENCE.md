@@ -6259,7 +6259,7 @@ Run-Length Encoding (RLE) transform. Encodes runs of identical bytes as (count, 
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult)
 
 #### `AlgorithmFamily`
 
@@ -6667,6 +6667,30 @@ Small helpers for writing FAT directory metadata (creation/modification timestam
 | `Parse` | `static DateTime Parse(string iso)` | Parses an ISO-8601 date/time string for a create-option; returns `default(DateTime)` (treated as "unset") when blank or unparsable. |
 | `WriteVolumeLabel` | `static void WriteVolumeLabel(byte[] img, int entryOffset, string label)` | Writes an 11-byte volume-label directory entry (attribute 0x08, no cluster, zero size) at `entryOffset`. The label is upper-cased and space-padded/truncated to 11 bytes, matching the FAT short-name field. |
 
+#### `FilesystemCompressionParameter`
+
+One compression/layout parameter that is safe and useful to probe while looking for a smaller filesystem representation. When `Values` is null or empty, finite values are taken from the descriptor's option schema.
+
+Implements `IEquatable<FilesystemCompressionParameter>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemCompressionParameter` | `FilesystemCompressionParameter(string Key, IReadOnlyList<string> Values = null)` | One compression/layout parameter that is safe and useful to probe while looking for a smaller filesystem representation. When `Values` is null or empty, finite values are taken from the descriptor's option schema. |
+| `Key` | `string Key { get; init; }` |  |
+| `Values` | `IReadOnlyList<string> Values { get; init; }` |  |
+
+#### `FilesystemCompressionProfile`
+
+Explicit writer-backed compression capabilities.
+
+Implements `IEquatable<FilesystemCompressionProfile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemCompressionProfile` | `FilesystemCompressionProfile(bool TransparentCompression, IReadOnlyList<FilesystemCompressionParameter> Parameters)` | Explicit writer-backed compression capabilities. |
+| `Parameters` | `IReadOnlyList<FilesystemCompressionParameter> Parameters { get; init; }` |  |
+| `TransparentCompression` | `bool TransparentCompression { get; init; }` |  |
+
 #### `FilesystemDirectoryEntry`
 
 Implements `IEquatable<FilesystemDirectoryEntry>`.
@@ -6886,6 +6910,82 @@ Implements `IEquatable<FilesystemOpenOptions>`.
 | `FilesystemOpenOptions` | `FilesystemOpenOptions(bool ReadOnly = true, bool LeaveOpen = true)` |  |
 | `LeaveOpen` | `bool LeaveOpen { get; init; }` |  |
 | `ReadOnly` | `bool ReadOnly { get; init; }` |  |
+
+#### `FilesystemOptimization`
+
+Shared implementation behind filesystem optimize and option-aware shrink. Candidates are always staged and only the smallest verified representation is emitted; when no candidate improves on the input, the input is copied through.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetHardLinkDeduplicationSemantics` | `static HardLinkDeduplicationSemantics GetHardLinkDeduplicationSemantics(object descriptor)` | Returns the exact hard-link-style semantics implemented by this writer. Native `HardLinks` wins when present; otherwise a registered read-only shared-data backend can expose the same user option without pretending that the underlying filesystem has native hard links. |
+| `GetSupportedFeatures` | `static FilesystemOptimizationFeatures GetSupportedFeatures(object descriptor)` | Returns only transforms the current repository writer can actually perform. |
+| `Optimize` | `static void Optimize(ILayoutOptimizable layout, Stream input, Stream output, FilesystemOptimizationOptions options = null)` | Rebuilds a layout with the requested transforms and parameter search, emitting the input unchanged when no verified candidate is smaller. |
+| `ValidateRequested` | `static void ValidateRequested(ILayoutOptimizable layout, FilesystemOptimizationOptions options)` | Throws before writing when a caller asks for a transform the writer does not advertise. |
+
+#### `FilesystemOptimizationAdapters`
+
+Registration point for format assemblies whose optimization transform needs writer-specific semantics that do not belong in the generic registry.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RegisterCompression` | `static void RegisterCompression<T>(bool transparentCompression, params FilesystemCompressionParameter[] parameters)` | Registers compression capabilities only when the concrete writer is known to honour them. This deliberately replaces name-based option-schema guessing. |
+| `RegisterHardLinkDeduplicator` | `static void RegisterHardLinkDeduplicator<T>(HardLinkDeduplicationSemantics semantics, HardLinkDeduplicator rebuild)` | Registers a writer-specific deduplication backend and explicitly states whether the result is a native hard link or a read-only shared-data alias. |
+| `RegisterSymbolicLinkDeduplicator` | `static void RegisterSymbolicLinkDeduplicator<T>(SymbolicLinkDeduplicator rebuild)` | Registers symbolic-link deduplication for one concrete descriptor type. Registration is idempotent; a later registration for the same type replaces the previous delegate, which keeps hot-reload/test assembly scenarios deterministic. |
+| `RegisterTransparentCompression` | `static void RegisterTransparentCompression<T>()` | Marks a writer whose normal rebuild already stores regular file payloads through the filesystem's transparent compression layer. For such formats the explicit compression option is idempotent rather than unsupported. |
+
+#### `FilesystemOptimizationAdapters.HardLinkDeduplicator`
+
+Writer-specific hard-link/shared-data deduplication rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HardLinkDeduplicator` | `void FilesystemOptimizationAdapters.HardLinkDeduplicator(ILayoutOptimizable layout, Stream source, Stream target, LayoutRebuildOptions options)` | Writer-specific hard-link/shared-data deduplication rebuild. |
+
+#### `FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`
+
+Writer-specific symbolic-link deduplication rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbolicLinkDeduplicator` | `void FilesystemOptimizationAdapters.SymbolicLinkDeduplicator(ILayoutOptimizable layout, Stream source, Stream target, LayoutRebuildOptions options)` | Writer-specific symbolic-link deduplication rebuild. |
+
+#### `FilesystemOptimizationExtensions`
+
+Convenience API for option-aware filesystem maintenance.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetOptimizationFeatures` | `static FilesystemOptimizationFeatures GetOptimizationFeatures(this ILayoutOptimizable layout)` | Returns the transforms the current writer can actually emit. |
+| `Optimize` | `static void Optimize(this ILayoutOptimizable layout, Stream input, Stream output, FilesystemOptimizationOptions options = null)` | Optimizes a filesystem layout with the requested sparse/link/compression transforms and emits the input unchanged when no candidate is smaller. |
+
+#### `FilesystemOptimizationFeatures`
+
+Optional space-saving transforms that a filesystem layout optimizer can expose. The flags describe writer capabilities, not merely features of the on-disk format. A filesystem may support symbolic links or compression in its specification while still omitting the corresponding flag until this repository's writer can emit it.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `SparseFiles` | `1` |  |
+| `HardLinkDeduplication` | `2` |  |
+| `SymbolicLinkDeduplication` | `4` |  |
+| `TransparentCompression` | `8` |  |
+| `CompressionParameterSearch` | `16` |  |
+
+#### `FilesystemOptimizationOptions`
+
+Options shared by filesystem optimize and shrink operations. All transforms are opt-in because hard/symbolic-link deduplication changes write semantics even though the bytes observed through the original names stay identical at the time of the rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemOptimizationOptions` | `FilesystemOptimizationOptions()` |  |
+| `DeduplicateWithHardLinks` | `bool DeduplicateWithHardLinks { get; init; }` | Store identical regular files once. Depending on the writer this is either a native hard link or an explicitly read-only shared-data alias; query `GetHardLinkDeduplicationSemantics` when the distinction matters to a UI or caller. |
+| `DeduplicateWithSymbolicLinks` | `bool DeduplicateWithSymbolicLinks { get; init; }` | Replace duplicate regular files with symbolic links to one canonical copy. |
+| `FormatSpecific` | `IReadOnlyDictionary<string, string> FormatSpecific { get; init; }` | Explicit format-specific options. These seed every probe and win over auto-selected values. |
+| `MakeSparse` | `bool MakeSparse { get; init; }` | Replace all-zero allocation units with filesystem holes. |
+| `MaxCompressionProbes` | `int MaxCompressionProbes { get; init; }` | Maximum number of parameter combinations attempted by one optimize/shrink pass. |
+| `OnProbeProgress` | `Action<int, int> OnProbeProgress { get; init; }` | Optional progress callback: completed probes, total planned probes. |
+| `TryCompressionParameters` | `bool TryCompressionParameters { get; init; }` | Probe explicitly registered writer compression parameters and keep the smallest verified rebuild. No option is inferred merely from its name. |
+| `UseTransparentCompression` | `bool UseTransparentCompression { get; init; }` | Enable the filesystem writer's transparent file compression, when available. |
 
 #### `FilesystemSchemaPresets`
 
@@ -7122,6 +7222,16 @@ Central registry of all format descriptors and their optional driver sidecars. P
 | `RegisterFilesystemDriver` | `static void RegisterFilesystemDriver(IFilesystemDriverAdapter driver)` | Registers one source-generated native filesystem-driver sidecar. Duplicate adapters for the same format ID are a build/runtime contract error rather than whichever registration happened to win. |
 | `Register` | `static void Register(IFormatDescriptor descriptor, bool isFilesystem = false)` | Register a format descriptor. Source-generated calls set `isFilesystem` for descriptors declared under a `FileSystem.*` namespace so filesystem coverage is explicit rather than inferred from extensions or display names. |
 
+#### `HardLinkDeduplicationSemantics`
+
+Describes what a hard-link-style deduplication transform actually means for a writer. Native links have filesystem-managed link semantics; read-only shared data deliberately aliases storage in a format that has no native link count.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No hard-link-style deduplication is implemented by this writer. |
+| `Native` | `1` | The filesystem natively represents several names for one file/inode. |
+| `ReadOnlySharedData` | `2` | Several read-only directory entries deliberately reference the same physical data. This is not a native hard link and writers/removers must preserve the shared allocation until the last directory entry stops referencing it. |
+
 #### `IArchiveCreatable`
 
 Opt-in capability: the descriptor can produce a fresh archive from a list of inputs (WORM). Descriptors that do not implement this interface cannot be created from scratch.
@@ -7198,6 +7308,7 @@ Opt-in capability: the descriptor can rebuild an archive into a new output strea
 | `CanonicalSizes` | `IReadOnlyList<long> CanonicalSizes { get; }` | Canonical image sizes in bytes, ascending. A 1.44 MB PC floppy descriptor returns `[737280, 1474560, 2949120]`; a filesystem without a disc-size concept returns an empty list (the default), meaning "rebuild tight / auto-fit to content". |
 | `ShrinkDefault` | `void ShrinkDefault(Stream input, Stream output)` | The default rebuild-or-copy-through shrink, exposed so a format-specific `Shrink` override (e.g. a genuine in-place shrinker) can fall back to it when the in-place path declines an image. Rebuilds into a buffer and emits the result only when it round-tripped AND is actually smaller; on any rebuild failure it copies the original through unchanged. Shrink is thus total — it never throws or damages the source. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds `input` into `output`, picking the smallest `CanonicalSizes` entry that holds the current content. Default implementation: any descriptor that also implements `IArchiveFormatOperations` + `IArchiveCreatable` (i.e. it can round-trip its own files) gets shrink for free — a verified extract → re-create rebuild via `RebuildToStream` that tight-packs the payload (auto-fit) and refuses to emit a lossy result. Formats with a fixed canonical-size ladder (floppy/disk images) override this to step down standard sizes. |
+| `Shrink` | `void Shrink(Stream input, Stream output, FilesystemOptimizationOptions options)` | Shrinks while applying optional filesystem-level space-saving transforms. With no requested transform this dispatches to the descriptor's existing `Shrink` implementation, preserving genuine in-place shrinkers and canonical-size ladders. Advanced requests are routed through the descriptor's `ILayoutOptimizable` writer and are capability-checked before any output is written. |
 
 #### `IArchiveWriteConstraints`
 
@@ -7557,6 +7668,14 @@ Operations for single-stream compression formats.
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decompress the input stream to the output stream. |
 | `WrapCompress` | `Stream WrapCompress(Stream output)` | Returns a compression wrapper stream, or null if the format doesn't support wrapping. |
 | `WrapDecompress` | `Stream WrapDecompress(Stream input)` | Returns a decompression wrapper stream, or null if the format doesn't support wrapping. Used for compound tar formats where the tar reader needs to read through the decompressor. |
+
+#### `ISymbolicLinkDeduplicationLayout`
+
+Optional capability for writers that can deliberately replace duplicate regular files with symbolic links. It is separate from merely being able to read symlinks: optimize must not claim this transform until the writer can create and round-trip it. Writer-specific implementations may alternatively register through `FilesystemOptimizationAdapters` when the format assembly owns the necessary entry semantics.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RebuildWithSymbolicLinkDeduplication` | `void RebuildWithSymbolicLinkDeduplication(Stream source, Stream target, LayoutRebuildOptions options)` |  |
 
 #### `ISyntheticEntryNames`
 

@@ -70,6 +70,51 @@ public class ExFatRemoverTests {
   }
 
   [Test]
+  public void SharedClusterChain_IsPreservedUntilLastRootReferenceIsRemoved() {
+    // exFAT has an 8 MiB auto-size floor. Two 5 MiB copies make the shared-chain
+    // optimization physically smaller, so FilesystemOptimization commits it.
+    var payload = new byte[5 * 1024 * 1024];
+    new Random(0xEFA7).NextBytes(payload);
+    var marker = payload[..64];
+
+    var writer = new ExFatWriter();
+    writer.AddFile("ONE.BIN", payload);
+    writer.AddFile("TWO.BIN", (byte[])payload.Clone());
+    using var source = new MemoryStream(writer.BuildAutoSized());
+    var sourceLength = source.Length;
+
+    using var optimized = new MemoryStream();
+    new ExFatFormatDescriptor().Optimize(source, optimized, new FilesystemOptimizationOptions {
+      DeduplicateWithHardLinks = true,
+    });
+    Assert.That(optimized.Length, Is.LessThan(sourceLength),
+      "precondition: optimizer must have committed the shared-cluster candidate");
+
+    var image = optimized.ToArray();
+    ExFatRemover.Remove(image, "ONE.BIN");
+
+    using (var afterFirst = new MemoryStream(image, writable: false)) {
+      using var reader = new ExFatReader(afterFirst);
+      var remaining = reader.Entries.Single(e => e.Name == "TWO.BIN");
+      Assert.Multiple(() => {
+        Assert.That(reader.Extract(remaining), Is.EqualTo(payload),
+          "removing one alias must not wipe/free a cluster chain still referenced by another live entry");
+        Assert.That(FindMarker(image, marker), Is.True,
+          "shared payload must remain physically present while another entry references it");
+      });
+    }
+
+    ExFatRemover.Remove(image, "TWO.BIN");
+    using var afterLast = new MemoryStream(image, writable: false);
+    using var finalReader = new ExFatReader(afterLast);
+    Assert.Multiple(() => {
+      Assert.That(finalReader.Entries.Any(e => e.Name == "TWO.BIN"), Is.False);
+      Assert.That(FindMarker(image, marker), Is.False,
+        "the final reference must release and securely wipe the shared allocation");
+    });
+  }
+
+  [Test]
   public void DescriptorAsModifiable_RemoveWorks() {
     var marker = System.Text.Encoding.ASCII.GetBytes("FORENSICS_BYTES");
     var buf = BuildImageWith(("SECRET.TXT", marker));

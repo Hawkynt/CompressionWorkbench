@@ -5,27 +5,14 @@ using System.Text;
 namespace FileSystem.ExFat;
 
 /// <summary>
-/// In-place exFAT modifier — true O(touched bytes) random-access I/O.
-/// Touches only: VBR primary+backup (3 bytes — PercentInUse), the FAT entries
-/// for the new/freed clusters, the allocation-bitmap byte(s) covering those
-/// clusters, the root-directory cluster(s) holding the entry-set, and the
-/// new file's data clusters. The up-case table and other files are never read.
-/// <para>
-/// Layout reminders (matches <see cref="ExFatWriter"/>):
-/// <list type="bullet">
-///   <item>VBR at sector 0; backup VBR at sector 12.</item>
-///   <item>FAT starts at <c>fatOffsetSectors</c>; 4 bytes per cluster, EOC = 0xFFFFFFFF.</item>
-///   <item>Cluster heap at <c>clusterHeapOffsetSectors</c>; cluster numbering starts at 2.</item>
-///   <item>Cluster 2 = root dir, cluster 3 = allocation bitmap, cluster 4 = up-case table.</item>
-///   <item>Root entry-set order: 0x83 VolumeLabel, 0x81 AllocationBitmap, 0x82 UpCase, then files.</item>
-///   <item>Per-file entry-set: 0x85 File + 0xC0 StreamExtension + N × 0xC1 FileName (15 UTF-16 chars each).</item>
-///   <item>Entry-set checksum per spec §7.4.3 — rotate-right-add over every byte except bytes 2-3 of the File entry.</item>
-/// </list></para>
+/// In-place exFAT modifier — true random-access I/O. Allocation changes update
+/// FAT entries, the allocation bitmap, directory entry sets and PercentInUse.
+/// Removal is cross-link aware: a cluster is zeroed/freed only when no other live
+/// directory entry still references it, which keeps read-only shared-data aliases
+/// produced by the optimizer valid until their last name is removed.
 /// </summary>
 public static class ExFatModifier {
   private const uint EocMarker = 0xFFFFFFFFu;
-
-  // ── VBR struct decoded once per call ─────────────────────────────────
 
   private readonly record struct Layout(
     int BytesPerSector,
@@ -34,8 +21,7 @@ public static class ExFatModifier {
     int FatOffset,
     int ClusterHeapOffset,
     uint ClusterCount,
-    uint RootDirCluster
-  );
+    uint RootDirCluster);
 
   private static Layout ReadLayout(Stream image) {
     Span<byte> hdr = stackalloc byte[120];
@@ -55,8 +41,6 @@ public static class ExFatModifier {
       (int)(clusterHeapOffsetSectors * (uint)bytesPerSector),
       clusterCount, rootDirCluster);
   }
-
-  // ── FAT helpers ──────────────────────────────────────────────────────
 
   private static uint ReadFatEntry(Stream image, Layout l, uint cluster) {
     Span<byte> buf = stackalloc byte[4];
@@ -85,13 +69,26 @@ public static class ExFatModifier {
     return chain;
   }
 
-  // ── Allocation-bitmap helpers ────────────────────────────────────────
+  private static List<uint> ResolveAllocation(
+      Stream image, Layout l, uint firstCluster, byte generalSecondaryFlags, long dataLength) {
+    if (firstCluster < 2 || dataLength <= 0) return [];
+    // exFAT §7.7.3.1: NoFatChain means one contiguous allocation extent whose
+    // length comes from DataLength; otherwise the FAT describes the chain.
+    if ((generalSecondaryFlags & 0x02) == 0)
+      return WalkChain(image, l, firstCluster);
+    var count = checked((int)((dataLength + l.ClusterSize - 1) / l.ClusterSize));
+    var result = new List<uint>(count);
+    for (var i = 0; i < count; ++i) {
+      var cluster = firstCluster + (uint)i;
+      if (cluster > l.ClusterCount + 1) break;
+      result.Add(cluster);
+    }
+    return result;
+  }
 
   private readonly record struct BitmapInfo(uint FirstCluster, long Length, int Offset);
 
   private static BitmapInfo FindBitmap(Stream image, Layout l) {
-    // Bitmap is one of the first three special root-dir entries (Volume/Bitmap/UpCase
-    // in any order). Scan the whole root chain conservatively.
     var rootChain = WalkChain(image, l, l.RootDirCluster);
     var entryBuf = new byte[32];
     foreach (var cluster in rootChain) {
@@ -100,7 +97,7 @@ public static class ExFatModifier {
         image.Position = clusterAbsOff + off;
         image.ReadExactly(entryBuf);
         var t = entryBuf[0];
-        if (t == 0x00) return new BitmapInfo(0, 0, -1); // end of dir
+        if (t == 0x00) return new BitmapInfo(0, 0, -1);
         if (t != 0x81) continue;
         var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(entryBuf.AsSpan(20));
         var length = BinaryPrimitives.ReadInt64LittleEndian(entryBuf.AsSpan(24));
@@ -130,13 +127,9 @@ public static class ExFatModifier {
     image.WriteByte(updated);
   }
 
-  // ── Cluster allocation ───────────────────────────────────────────────
-
   private static List<uint> AllocateClusters(Stream image, Layout l, BitmapInfo bmp, int count) {
     var allocated = new List<uint>(count);
     if (count == 0) return allocated;
-    // Linear scan from cluster 2 — simple but bounded by clusterCount, fine for
-    // small images where the touched-bytes target is dominant.
     uint c = 2;
     var bmpBuf = new byte[Math.Max(1, ((int)l.ClusterCount + 7) / 8)];
     image.Position = bmp.Offset;
@@ -147,13 +140,12 @@ public static class ExFatModifier {
       if (byteIdx >= bmpBuf.Length) break;
       if ((bmpBuf[byteIdx] & (1 << (bitIndex % 8))) == 0) {
         allocated.Add(c);
-        bmpBuf[byteIdx] |= (byte)(1 << (bitIndex % 8)); // claim locally so we don't pick again
+        bmpBuf[byteIdx] |= (byte)(1 << (bitIndex % 8));
       }
       c++;
     }
     if (allocated.Count < count)
       throw new IOException($"exFAT: not enough free clusters (needed {count}, got {allocated.Count}).");
-    // Persist bitmap bits + FAT chain.
     foreach (var cluster in allocated)
       SetBitmapBit(image, bmp, cluster, true);
     for (var i = 0; i < allocated.Count; i++) {
@@ -163,37 +155,11 @@ public static class ExFatModifier {
     return allocated;
   }
 
-  // ── Directory walking ────────────────────────────────────────────────
-
-  /// <summary>
-  /// Finds where to place a new entry set of <paramref name="entriesNeeded"/> 32-byte
-  /// slots in the root directory, returning the absolute file offset of the first slot.
-  /// <para>
-  /// exFAT directory layout rules this must respect:
-  /// <list type="bullet">
-  ///   <item>The first slot whose type byte is <c>0x00</c> is the <em>end-of-directory</em>
-  ///   marker; no in-use entry may follow it. So an entry set must never be placed in a
-  ///   way that leaves a <c>0x00</c> gap ahead of it.</item>
-  ///   <item>An entry set must lie wholly inside one cluster — a directory's clusters are
-  ///   not necessarily physically adjacent on disk, so a set may not straddle a boundary.</item>
-  /// </list>
-  /// Placement strategy: first try to reuse a run of <em>deleted</em> slots (type byte with
-  /// bit 7 cleared but not <c>0x00</c>) that fits inside a single cluster — those are not
-  /// end-markers, so reuse is safe. Otherwise append at the end-of-directory point. If the
-  /// set does not fit in the remaining slots of the cluster holding that point, allocate a
-  /// fresh cluster, link it onto the FAT chain, place the set at its start, and turn the
-  /// old end-marker into the chain continuation (the old trailing <c>0x00</c> slots become
-  /// the directory tail of an earlier cluster, which is legal only when no in-use entry
-  /// follows them in that cluster — guaranteed here because we append, never inserting a
-  /// gap before live entries).
-  /// </para>
-  /// </summary>
   private static long FindFreeRootDirSlots(Stream image, Layout l, BitmapInfo bmp, int entriesNeeded) {
     var slotBuf = new byte[32];
     var rootChain = WalkChain(image, l, l.RootDirCluster);
     var slotsPerCluster = l.ClusterSize / 32;
 
-    // Pass 1: reuse a run of deleted (bit-7-cleared, non-zero) slots inside one cluster.
     foreach (var cluster in rootChain) {
       var clusterAbsOff = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
       long? runStart = null;
@@ -203,7 +169,7 @@ public static class ExFatModifier {
         image.Position = abs;
         image.ReadExactly(slotBuf);
         var t = slotBuf[0];
-        if (t == 0x00) break; // end-of-directory within this cluster — stop reuse scan here
+        if (t == 0x00) break;
         var isDeleted = (t & 0x80) == 0;
         if (isDeleted) {
           runStart ??= abs;
@@ -216,8 +182,6 @@ public static class ExFatModifier {
       }
     }
 
-    // Pass 2: append at the end-of-directory point. Locate the cluster + slot holding the
-    // first 0x00 marker (or the implicit end past the last fully-used cluster).
     for (var ci = 0; ci < rootChain.Count; ci++) {
       var cluster = rootChain[ci];
       var clusterAbsOff = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
@@ -226,30 +190,15 @@ public static class ExFatModifier {
         image.Position = abs;
         image.ReadExactly(slotBuf);
         if (slotBuf[0] != 0x00) continue;
-        // Found end-of-directory at (ci, slot). Does the set fit in the rest of this cluster?
         if (slotsPerCluster - slot >= entriesNeeded)
           return abs;
-        // Doesn't fit in this cluster's tail. A non-last directory cluster must not carry
-        // a 0x00 end-marker (fsck stops there and treats everything in later clusters as
-        // orphaned), so fill the [slot, clusterEnd) gap with benign "unused" markers
-        // (type byte 0x05 = bit 7 cleared, non-zero → readers skip, not an end-marker),
-        // then place the set at the start of a fresh appended cluster.
         FillUnusedSlots(image, abs, slotsPerCluster - slot);
         return ExtendRootDir(image, l, bmp, rootChain);
       }
     }
-
-    // No 0x00 found anywhere — every cluster is packed full. Extend.
     return ExtendRootDir(image, l, bmp, rootChain);
   }
 
-  /// <summary>
-  /// Writes <paramref name="count"/> "unused" 32-byte directory slots starting at
-  /// <paramref name="absOffset"/>. Each slot's type byte is set to <c>0x05</c> — bit 7
-  /// (InUse) cleared and a non-zero type code, so an exFAT reader skips it without
-  /// treating it as the <c>0x00</c> end-of-directory marker. Used to pad a non-last
-  /// directory cluster's tail when an entry set is pushed to the next cluster.
-  /// </summary>
   private static void FillUnusedSlots(Stream image, long absOffset, int count) {
     var pad = new byte[count * 32];
     for (var i = 0; i < count; i++)
@@ -258,11 +207,6 @@ public static class ExFatModifier {
     image.Write(pad);
   }
 
-  /// <summary>
-  /// Allocates one cluster, links it onto the end of the directory chain, zero-fills it,
-  /// and returns its start offset. The fresh cluster's whole span (≤ 4 KB by typical
-  /// geometry, but always ≥ one entry set) holds any single entry set (max 18 × 32 B).
-  /// </summary>
   private static long ExtendRootDir(Stream image, Layout l, BitmapInfo bmp, List<uint> rootChain) {
     var newClusters = AllocateClusters(image, l, bmp, 1);
     var newCluster = newClusters[0];
@@ -274,8 +218,6 @@ public static class ExFatModifier {
     image.Write(zero);
     return l.ClusterHeapOffset + (long)(newCluster - 2) * l.ClusterSize;
   }
-
-  // ── Public API ───────────────────────────────────────────────────────
 
   /// <summary>Adds a file with O(touched bytes) I/O.</summary>
   public static void AddFile(Stream image, string name, byte[] data) {
@@ -289,58 +231,46 @@ public static class ExFatModifier {
     var bmp = FindBitmap(image, l);
     if (bmp.Offset < 0) throw new InvalidDataException("exFAT: allocation bitmap not found.");
 
-    // Allocate file data clusters.
     var clustersNeeded = data.Length == 0 ? 0 : (data.Length + l.ClusterSize - 1) / l.ClusterSize;
     var fileClusters = AllocateClusters(image, l, bmp, clustersNeeded);
     if (clustersNeeded > 0) {
-      // Write data into cluster heap.
       for (var i = 0; i < fileClusters.Count; i++) {
         var dst = l.ClusterHeapOffset + (long)(fileClusters[i] - 2) * l.ClusterSize;
         var srcStart = i * l.ClusterSize;
         var srcLen = Math.Min(l.ClusterSize, data.Length - srcStart);
         image.Position = dst;
         image.Write(data.AsSpan(srcStart, srcLen));
-        if (srcLen < l.ClusterSize) {
-          // Zero-pad cluster tail so leftover bytes can't leak.
-          var tail = new byte[l.ClusterSize - srcLen];
-          image.Write(tail);
-        }
+        if (srcLen < l.ClusterSize)
+          image.Write(new byte[l.ClusterSize - srcLen]);
       }
     }
 
-    // Build entry set.
     var nameChars = name.ToCharArray();
     var nameEntries = (nameChars.Length + 14) / 15;
     var secondaryCount = 1 + nameEntries;
     var totalEntries = 1 + secondaryCount;
     var setBytes = totalEntries * 32;
-
     var setStart = FindFreeRootDirSlots(image, l, bmp, totalEntries);
-
     var set = new byte[setBytes];
     var firstCluster = clustersNeeded > 0 ? fileClusters[0] : 0u;
     var nowStamp = BuildExFatTimestamp(DateTime.UtcNow);
 
-    // 0x85 File entry
     set[0] = 0x85;
     set[1] = (byte)secondaryCount;
-    // 2..3 = SetChecksum (filled at end)
-    BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(4), 0x0020); // archive
+    BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(4), 0x0020);
     BinaryPrimitives.WriteUInt32LittleEndian(set.AsSpan(8), nowStamp);
     BinaryPrimitives.WriteUInt32LittleEndian(set.AsSpan(12), nowStamp);
     BinaryPrimitives.WriteUInt32LittleEndian(set.AsSpan(16), nowStamp);
 
-    // 0xC0 Stream Extension
-    var streamOff = 32;
+    const int streamOff = 32;
     set[streamOff] = 0xC0;
-    set[streamOff + 1] = 0x01; // AllocationPossible; NoFatChain=0 → use FAT chain
+    set[streamOff + 1] = firstCluster == 0 ? (byte)0 : (byte)0x01;
     set[streamOff + 3] = (byte)nameChars.Length;
     BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(streamOff + 4), ComputeNameHash(name));
-    BinaryPrimitives.WriteInt64LittleEndian(set.AsSpan(streamOff + 8), data.Length);  // ValidDataLength
+    BinaryPrimitives.WriteInt64LittleEndian(set.AsSpan(streamOff + 8), data.Length);
     BinaryPrimitives.WriteUInt32LittleEndian(set.AsSpan(streamOff + 20), firstCluster);
-    BinaryPrimitives.WriteInt64LittleEndian(set.AsSpan(streamOff + 24), data.Length); // DataLength
+    BinaryPrimitives.WriteInt64LittleEndian(set.AsSpan(streamOff + 24), data.Length);
 
-    // N × 0xC1 File Name entries
     for (var n = 0; n < nameEntries; n++) {
       var off = 64 + n * 32;
       set[off] = 0xC1;
@@ -351,19 +281,16 @@ public static class ExFatModifier {
         BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(off + 2 + c * 2), nameChars[startChar + c]);
     }
 
-    // Compute and stamp set checksum.
-    var checksum = EntrySetChecksum(set);
-    BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(2), checksum);
-
-    // Write entry set.
+    BinaryPrimitives.WriteUInt16LittleEndian(set.AsSpan(2), EntrySetChecksum(set));
     image.Position = setStart;
     image.Write(set);
-
-    // Update PercentInUse on primary + backup VBR.
     UpdatePercentInUse(image, l, bmp);
   }
 
-  /// <summary>Removes a named file with O(touched bytes) I/O. Returns false if not found.</summary>
+  /// <summary>
+  /// Removes a named root-directory file. Clusters still reachable from any other
+  /// live exFAT directory entry are retained and, when requested, are not wiped.
+  /// </summary>
   public static bool RemoveFile(Stream image, string name, bool wipeData = true) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(name);
@@ -372,27 +299,22 @@ public static class ExFatModifier {
     var bmp = FindBitmap(image, l);
     if (bmp.Offset < 0) throw new InvalidDataException("exFAT: allocation bitmap not found.");
 
-    // Find file's entry set.
     var found = LocateFileEntry(image, l, name);
     if (found is null) return false;
-    var (entrySetOffset, setBytes, firstCluster) = found.Value;
+    var (entrySetOffset, setBytes, firstCluster, streamFlags, dataLength) = found.Value;
 
-    // Walk and free cluster chain.
-    if (firstCluster >= 2) {
-      var chain = WalkChain(image, l, firstCluster);
-      foreach (var cluster in chain) {
-        if (wipeData) {
-          var dst = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
-          var zero = new byte[l.ClusterSize];
-          image.Position = dst;
-          image.Write(zero);
-        }
-        WriteFatEntry(image, l, cluster, 0);
-        SetBitmapBit(image, bmp, cluster, false);
+    var chain = ResolveAllocation(image, l, firstCluster, streamFlags, dataLength);
+    var referencedElsewhere = CollectReferencedClusters(image, l, entrySetOffset);
+    foreach (var cluster in chain.Where(c => !referencedElsewhere.Contains(c))) {
+      if (wipeData) {
+        var dst = l.ClusterHeapOffset + (long)(cluster - 2) * l.ClusterSize;
+        image.Position = dst;
+        image.Write(new byte[l.ClusterSize]);
       }
+      WriteFatEntry(image, l, cluster, 0);
+      SetBitmapBit(image, bmp, cluster, false);
     }
 
-    // Wipe entry set: clear bit 7 of each EntryType byte (in-use → unused), zero rest.
     var wipeBuf = new byte[setBytes];
     image.Position = entrySetOffset;
     image.ReadExactly(wipeBuf);
@@ -407,11 +329,8 @@ public static class ExFatModifier {
     return true;
   }
 
-  /// <summary>
-  /// Locates a file's entry set in the root directory by name (case-insensitive).
-  /// Returns absolute offset, total set size in bytes, and first data cluster.
-  /// </summary>
-  private static (long EntrySetOffset, int SetBytes, uint FirstCluster)? LocateFileEntry(Stream image, Layout l, string name) {
+  private static (long EntrySetOffset, int SetBytes, uint FirstCluster, byte StreamFlags, long DataLength)? LocateFileEntry(
+      Stream image, Layout l, string name) {
     var slot = new byte[32];
     var rootChain = WalkChain(image, l, l.RootDirCluster);
     foreach (var cluster in rootChain) {
@@ -421,47 +340,100 @@ public static class ExFatModifier {
         image.Position = abs;
         image.ReadExactly(slot);
         var type = slot[0];
-        if (type == 0x00) return null; // end of directory
+        if (type == 0x00) return null;
         if (type != 0x85) continue;
         var secondaryCount = slot[1];
         var setBytes = 32 * (1 + secondaryCount);
-
-        // Read whole entry set (still within touch budget — small).
         var set = new byte[setBytes];
         image.Position = abs;
         image.ReadExactly(set);
-
-        if (set[32] != 0xC0) continue; // malformed — skip
-        var nameLength = set[32 + 3];
-        var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(set.AsSpan(32 + 20));
-
-        // Reconstruct file name from 0xC1 entries.
-        var sb = new StringBuilder();
-        var nameEntries = (nameLength + 14) / 15;
-        for (var n = 0; n < nameEntries; n++) {
-          var nameOff = 64 + n * 32;
-          if (nameOff + 32 > set.Length) break;
-          if (set[nameOff] != 0xC1) break;
-          var charsToRead = Math.Min(15, nameLength - n * 15);
-          for (var c = 0; c < charsToRead; c++) {
-            var ch = (char)BinaryPrimitives.ReadUInt16LittleEndian(set.AsSpan(nameOff + 2 + c * 2));
-            if (ch == 0) break;
-            sb.Append(ch);
-          }
-        }
-
-        if (string.Equals(sb.ToString(), name, StringComparison.OrdinalIgnoreCase))
-          return (abs, setBytes, firstCluster);
+        if (set.Length < 64 || set[32] != 0xC0) continue;
+        var nameLength = set[35];
+        var firstCluster = BinaryPrimitives.ReadUInt32LittleEndian(set.AsSpan(52));
+        var streamFlags = set[33];
+        var dataLength = BinaryPrimitives.ReadInt64LittleEndian(set.AsSpan(56));
+        if (string.Equals(DecodeName(set, nameLength), name, StringComparison.OrdinalIgnoreCase))
+          return (abs, setBytes, firstCluster, streamFlags, dataLength);
       }
     }
     return null;
   }
 
-  // ── PercentInUse update ──────────────────────────────────────────────
+  private static string DecodeName(ReadOnlySpan<byte> set, int nameLength) {
+    var sb = new StringBuilder(nameLength);
+    var nameEntries = (nameLength + 14) / 15;
+    for (var n = 0; n < nameEntries; n++) {
+      var nameOff = 64 + n * 32;
+      if (nameOff + 32 > set.Length || set[nameOff] != 0xC1) break;
+      var charsToRead = Math.Min(15, nameLength - n * 15);
+      for (var c = 0; c < charsToRead; c++) {
+        var ch = (char)BinaryPrimitives.ReadUInt16LittleEndian(set[(nameOff + 2 + c * 2)..]);
+        if (ch == 0) break;
+        sb.Append(ch);
+      }
+    }
+    return sb.ToString();
+  }
+
+  /// <summary>
+  /// Returns every cluster reachable from any live file/directory entry except the
+  /// entry set currently being removed. The recursion also sees nested aliases, so
+  /// deleting a root alias cannot free storage still referenced below a directory.
+  /// </summary>
+  private static HashSet<uint> CollectReferencedClusters(Stream image, Layout l, long excludedEntrySetOffset) {
+    var referenced = new HashSet<uint>();
+    var visitedDirectories = new HashSet<uint>();
+    foreach (var cluster in WalkChain(image, l, l.RootDirCluster)) referenced.Add(cluster);
+    ScanDirectoryReferences(image, l, l.RootDirCluster, 0x01, l.ClusterSize,
+      excludedEntrySetOffset, referenced, visitedDirectories);
+    return referenced;
+  }
+
+  private static void ScanDirectoryReferences(
+      Stream image,
+      Layout l,
+      uint firstCluster,
+      byte streamFlags,
+      long dataLength,
+      long excludedEntrySetOffset,
+      HashSet<uint> referenced,
+      HashSet<uint> visitedDirectories) {
+    if (firstCluster < 2 || !visitedDirectories.Add(firstCluster)) return;
+    var directoryClusters = ResolveAllocation(image, l, firstCluster, streamFlags, Math.Max(dataLength, l.ClusterSize));
+    Span<byte> primary = stackalloc byte[32];
+    foreach (var directoryCluster in directoryClusters) {
+      var clusterAbsOff = l.ClusterHeapOffset + (long)(directoryCluster - 2) * l.ClusterSize;
+      for (var off = 0; off < l.ClusterSize; off += 32) {
+        var abs = clusterAbsOff + off;
+        image.Position = abs;
+        image.ReadExactly(primary);
+        if (primary[0] == 0x00) return;
+        if (primary[0] != 0x85) continue;
+        var secondaryCount = primary[1];
+        var setBytes = 32 * (1 + secondaryCount);
+        var set = new byte[setBytes];
+        image.Position = abs;
+        image.ReadExactly(set);
+        if (set.Length < 64 || set[32] != 0xC0) continue;
+
+        var attributes = BinaryPrimitives.ReadUInt16LittleEndian(set.AsSpan(4));
+        var childFlags = set[33];
+        var childFirst = BinaryPrimitives.ReadUInt32LittleEndian(set.AsSpan(52));
+        var childLength = BinaryPrimitives.ReadInt64LittleEndian(set.AsSpan(56));
+        var childClusters = ResolveAllocation(image, l, childFirst, childFlags, childLength);
+        if (abs != excludedEntrySetOffset)
+          foreach (var cluster in childClusters) referenced.Add(cluster);
+
+        if ((attributes & 0x0010) != 0 && childFirst >= 2)
+          ScanDirectoryReferences(image, l, childFirst, childFlags, childLength,
+            excludedEntrySetOffset, referenced, visitedDirectories);
+        off += secondaryCount * 32;
+      }
+    }
+  }
 
   private static void UpdatePercentInUse(Stream image, Layout l, BitmapInfo bmp) {
     if (l.ClusterCount == 0) return;
-    // Count set bits in bitmap.
     var bmpLen = (int)Math.Min(bmp.Length, ((long)l.ClusterCount + 7) / 8);
     var bmpBuf = new byte[bmpLen];
     image.Position = bmp.Offset;
@@ -471,7 +443,6 @@ public static class ExFatModifier {
     var pct = (byte)Math.Min(100u, used * 100u / l.ClusterCount);
     image.Position = 112;
     image.WriteByte(pct);
-    // Backup VBR at sector 12.
     var backupVbrPos = 12L * l.BytesPerSector;
     if (backupVbrPos + 113 > image.Length) return;
     image.Position = backupVbrPos + 3;
@@ -481,8 +452,6 @@ public static class ExFatModifier {
     image.Position = backupVbrPos + 112;
     image.WriteByte(pct);
   }
-
-  // ── Checksum + name-hash + timestamp (mirrors ExFatWriter) ───────────
 
   private static ushort EntrySetChecksum(ReadOnlySpan<byte> set) {
     ushort checksum = 0;
