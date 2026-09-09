@@ -1471,7 +1471,7 @@ Represents a vdi entry.
 
 VirtualBox VDI virtual disk image — block-mapped sparse/fixed disk container. References: `https://www.virtualbox.org/` — VirtualBox — the VDI layout is defined by its open-source Storage/VDI code`https://en.wikipedia.org/wiki/VDI_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1498,6 +1498,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `VdiLayoutMap`
 
@@ -1509,27 +1510,28 @@ Walks a VDI image and emits the byte-level layout: pre-header, header, block all
 
 #### `VdiReader`
 
-Reads VirtualBox Disk Image (VDI) files. Layout: Offset 0: 64 bytes pre-header text (null-padded) Offset 64: uint32 LE signature = 0xBEDA107F Offset 68: uint32 version Offset 72: uint32 cbHeader (size of header, usually 400) Offset 76: uint32 uImageType (1=dynamic, 2=fixed) Offset 80: uint32 fFlags Offset 84: 256 bytes description (null-terminated) Offset 340: uint32 offsetBlocks Offset 344: uint32 offsetData Offset 348: uint32 cCylinders Offset 352: uint32 cHeads Offset 356: uint32 cSectors Offset 360: uint32 cbSector (512) Offset 364: uint32 unused Offset 368: uint64 cbDisk (virtual disk size in bytes) Offset 376: uint32 cbBlock (block size, typically 1MB) Offset 380: uint32 cbBlockExtra (usually 0) Offset 384: uint32 cBlocks (total number of blocks) Offset 388: uint32 cBlocksAllocated Offset 392: 16 bytes UUID image Offset 408: 16 bytes UUID last snapshot Offset 424: 16 bytes UUID link Offset 440: 16 bytes UUID parent Streams reads via `SectorCache` so opening a multi-TB image does not load the whole file into RAM — only the header, block map and (during `ExtractDisk`) the requested block bytes are fetched on demand.
+Reads VirtualBox Disk Image (VDI) files. Allocated map entries address data blocks; VDI_DISCARDED is guaranteed zero, while VDI_UNALLOCATED is tracked separately so canonical maintenance can refuse to manufacture semantics for an undefined never-allocated block.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VdiReader` | `VdiReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `VdiReader`. |
-| `VdiSignature` | `const uint VdiSignature` | Defines the vdi signature constant value. |
-| `AllocatedBlockCount` | `uint AllocatedBlockCount { get; }` | Number of allocated blocks. |
-| `BlockCount` | `uint BlockCount { get; }` | Total number of blocks (including unallocated). |
-| `BlockSize` | `uint BlockSize { get; }` | Block size in bytes. |
-| `ImageType` | `uint ImageType { get; }` | Image type: 1 = dynamic, 2 = fixed. |
-| `OffsetBlocks` | `uint OffsetBlocks { get; }` | Offset of the block allocation map. |
-| `OffsetData` | `uint OffsetData { get; }` | Offset of the first data block. |
-| `VirtualSize` | `long VirtualSize { get; }` | Virtual disk size in bytes. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractDisk` | `byte[] ExtractDisk()` | Reconstructs the full disk image by reading all blocks sequentially. Unallocated blocks (map entry = 0xFFFFFFFF) are returned as zeros. |
+| `VdiReader` | `VdiReader(Stream stream, bool leaveOpen = false)` |  |
+| `VdiSignature` | `const uint VdiSignature` |  |
+| `AllocatedBlockCount` | `uint AllocatedBlockCount { get; }` |  |
+| `BlockCount` | `uint BlockCount { get; }` |  |
+| `BlockSize` | `uint BlockSize { get; }` |  |
+| `HasUndefinedBlocks` | `bool HasUndefinedBlocks { get; }` | True when the map contains VDI_UNALLOCATED rather than VDI_DISCARDED. Those entries are not guaranteed to represent zero bytes by the format, so a canonical rebuild must not silently turn them into discarded zeros. |
+| `ImageType` | `uint ImageType { get; }` |  |
+| `OffsetBlocks` | `uint OffsetBlocks { get; }` |  |
+| `OffsetData` | `uint OffsetData { get; }` |  |
+| `VirtualSize` | `long VirtualSize { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractDisk` | `byte[] ExtractDisk()` |  |
 
 #### `VdiStream`
 
-Provides seekable read/write access to the virtual disk content of a VDI image. Translates virtual block offsets through the block allocation map (BAM). Reads from unallocated blocks (BAM entry = 0xFFFFFFFF) return zeros. Writes to unallocated blocks allocate new data blocks at EOF and update the BAM entry and allocated block count.
+Provides seekable read/write access to the virtual disk content of a VDI image. Translates virtual block offsets through the block allocation map (BAM). A BAM entry at or above VDI_DISCARDED (0xFFFFFFFE) has no physical block behind it — both VDI_DISCARDED and VDI_UNALLOCATED (0xFFFFFFFF) read as zeros, which is what VirtualBox and qemu do. Writing to such a block allocates a new data block at EOF and updates the BAM entry and the allocated block count.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
@@ -1550,15 +1552,15 @@ Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 #### `VdiWriter`
 
-Writes a dynamic VirtualBox Disk Image (VDI) file. Dynamic VDIs only allocate blocks for non-zero data; all-zero blocks are represented by the sentinel value 0xFFFFFFFF in the block map.
+Writes a dynamic VirtualBox Disk Image (VDI) file. Non-zero blocks are allocated; all-zero blocks use VDI_DISCARDED (0xFFFFFFFE), whose semantics are explicitly zero-filled rather than merely never-allocated/undefined.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VdiWriter` | `VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = 1048576)` | Initializes a new instance of `VdiWriter`. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Write` | `void Write(byte[] diskData)` | Writes a complete dynamic VDI image from the supplied raw disk data. |
+| `VdiWriter` | `VdiWriter(Stream output, bool leaveOpen = false, long virtualSize = 0, uint blockSize = 1048576)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Write` | `void Write(byte[] diskData)` |  |
 
 ### Namespace `FileFormat.Vhd`
 
@@ -1601,7 +1603,7 @@ Represents a vhd entry.
 
 Microsoft VHD virtual hard disk (fixed/dynamic/differencing; 512-byte footer). References: Microsoft, "Virtual Hard Disk Image Format Specification" v1.0 (2006, published under the Open Specification Promise)`https://github.com/libyal/libvhdi` — libvhdi — open implementation with format documentation`https://en.wikipedia.org/wiki/VHD_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IRandomAccessBlockDeviceProvider`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IRandomAccessBlockDeviceProvider`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1629,6 +1631,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)` | Exposes the VHD guest disk as 512-byte logical blocks. The VHD parser, BAT translation and dynamic-block allocation stay inside CompressionWorkbench; callers never need a loop device or host OS VHD mount. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `VhdLayoutMap`
 
@@ -1640,16 +1643,16 @@ Walks a VHD image and emits the byte-level layout of the container's own structu
 
 #### `VhdReader`
 
-Reader for Microsoft VHD images (fixed, dynamic and differencing). Streams reads via `SectorCache` so opening a multi-TB image does not load the whole file into RAM — only the footer, dynamic header, BAT and (during `Extract`) the requested block bytes are fetched on demand.
+Reader for standalone Microsoft VHD images (fixed and dynamic). Dynamic data blocks are resolved through both the BAT and the per-sector bitmap; a cleared bitmap bit is sparse in a dynamic VHD and therefore reads as zero rather than exposing stale bytes from the allocated block body. Differencing images are rejected until their parent chain can be resolved.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VhdReader` | `VhdReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `VhdReader`. |
-| `Entries` | `IReadOnlyList<VhdEntry> Entries { get; }` | Gets the entries. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(VhdEntry entry)` | Decodes the supplied input. |
+| `VhdReader` | `VhdReader(Stream stream, bool leaveOpen = false)` |  |
+| `Entries` | `IReadOnlyList<VhdEntry> Entries { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(VhdEntry entry)` |  |
 
 #### `VhdStream`
 
@@ -1689,9 +1692,9 @@ Creates fixed or dynamic VHD images.
 
 #### `VhdxFormatDescriptor`
 
-Descriptor for Hyper-V VHDX virtual hard-disk images (MS-VHDX v1). For fixed-payload VHDX images the descriptor delegates List, Extract, Add, Remove, and Defragment operations to the detected inner filesystem via `VhdxStream`. Falls back to structural metadata listing when the inner FS is not detected or the image uses dynamic/differencing layout. References: [MS-VHDX]: Virtual Hard Disk v2 (VHDX) File Format (Microsoft Open Specifications, learn.microsoft.com)`https://github.com/libyal/libvhdi` — libvhdi — open VHD/VHDX implementation with format documentation`https://en.wikipedia.org/wiki/VHD_(file_format)` — Wikipedia overview (covers VHDX)
+Descriptor for standalone Hyper-V VHDX virtual hard-disk images. Guest-file operations delegate through `VhdxStream`; container maintenance rebuilds the raw guest disk and verifies byte identity before committing. References: [MS-VHDX]: Virtual Hard Disk v2 (VHDX) File Format (Microsoft Open Specifications, learn.microsoft.com)`https://github.com/libyal/libvhdi` — libvhdi — open VHD/VHDX implementation with format documentation`https://en.wikipedia.org/wiki/VHD_(file_format)` — Wikipedia overview (covers VHDX)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1709,15 +1712,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Wraps the supplied input files into a fixed-payload VHDX container. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Wraps the supplied input files into a sparse standalone VHDX container. |
 | `Defragment` | `void Defragment(Stream archive)` |  |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
 | `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
+| `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `VhdxReader`
 
@@ -1778,35 +1782,38 @@ Implements `IEquatable<VhdxImage>`.
 
 #### `VhdxStream`
 
-Provides seekable read/write access to the virtual disk content of a VHDX (both fixed and dynamic). For a fixed VHDX (all BAT entries FULLY_PRESENT), the data blocks are mapped through the BAT. For a dynamic VHDX, blocks with state PAYLOAD_BLOCK_NOT_PRESENT return zeros on read and are allocated at EOF on write.
+Seekable read/write view of the logical disk stored in a standalone VHDX. Payload BAT entries are translated through the MS-VHDX chunk interleaving; sector-bitmap BAT entries are skipped because standalone fixed/dynamic VHDX files do not allocate sector bitmap blocks.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
-| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
-| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
-| `Length` | `override long Length { get; }` | Gets the length. |
-| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
-| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
-| `Flush` | `override void Flush()` | Performs the flush operation. |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
-| `SetLength` | `override void SetLength(long value)` | Sets the length. |
-| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Tries to open a `VhdxStream` for a VHDX image (fixed or dynamic). Returns `null` if the stream is not a valid VHDX (too small, bad signature, has parent locator, etc.). The caller owns the returned stream and must dispose it. |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `HasAmbiguousPayloadBlocks` | `bool HasAmbiguousPayloadBlocks { get; }` | True when at least one payload BAT entry has a state other than ZERO or FULLY_PRESENT. Those states do not provide a single canonical byte value for a standalone rebuild, so maintenance must fail closed instead of converting them into explicit zero blocks. |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static VhdxStream TryOpen(Stream stream)` | Opens a standalone VHDX guest disk. Differencing images are deliberately rejected because resolving parent chains is outside this stream's contract. |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `VhdxWriter`
 
-Writes spec-compliant Microsoft VHDX (MS-VHDX v2) virtual hard-disk images from a raw disk byte buffer. Produces a fixed-payload (non-differencing, no-log) container — every block is marked PAYLOAD_BLOCK_FULLY_PRESENT.
+Writes standalone dynamic VHDX images using the MS-VHDX layout and BAT semantics. Zero payload blocks are represented by PAYLOAD_BLOCK_ZERO and consume no payload space; non-zero blocks are FULLY_PRESENT.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VhdxWriter` | `VhdxWriter()` |  |
-| `Build` | `byte[] Build()` | Builds the VHDX container as a single byte array. |
-| `SetCreator` | `void SetCreator(string creator)` | Sets the Creator string written into the File Type Identifier (max 256 UTF-16LE chars). |
-| `SetDiskData` | `void SetDiskData(byte[] data)` | Sets the raw disk data to embed. Will be padded to the next 16 MiB boundary. |
+| `Build` | `byte[] Build()` | Builds a standalone dynamic VHDX image. |
+| `SetCreator` | `void SetCreator(string creator)` | Sets the creator string in the file-type identifier region. |
+| `SetDiskData` | `void SetDiskData(byte[] data)` | Sets the raw virtual-disk contents. |
 
 ### Namespace `FileFormat.Vmdk`
 
@@ -1827,7 +1834,7 @@ Represents a vmdk entry.
 
 VMware VMDK virtual disk (sparse extents with grain directories/tables). References: VMware, "Virtual Disk Format 5.0" technical note — the vendor VMDK specification`https://github.com/libyal/libvmdk` — libvmdk — open implementation with format documentation`https://en.wikipedia.org/wiki/VMDK` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1854,6 +1861,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `VmdkLayoutMap`
 
@@ -1865,16 +1873,16 @@ Walks a sparse VMDK image and emits the byte-level layout: sparse header, embedd
 
 #### `VmdkReader`
 
-Reader for VMware VMDK images (sparse and flat/descriptor). Streams reads via `SectorCache` so opening a multi-TB image does not load the whole file into RAM — only the header, grain directory and (during `Extract`) the requested grain bytes are fetched on demand.
+Reader for VMware VMDK images. Sparse extents honor the header's secondary grain-directory selector and zeroed-grain-table-entry flag.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `VmdkReader` | `VmdkReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `VmdkReader`. |
-| `Entries` | `IReadOnlyList<VmdkEntry> Entries { get; }` | Gets the entries. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(VmdkEntry entry)` | Decodes the supplied input. |
+| `VmdkReader` | `VmdkReader(Stream stream, bool leaveOpen = false)` |  |
+| `Entries` | `IReadOnlyList<VmdkEntry> Entries { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(VmdkEntry entry)` |  |
 
 #### `VmdkStream`
 

@@ -4,14 +4,13 @@ using System.Buffers.Binary;
 namespace FileFormat.Vhdx;
 
 /// <summary>
-/// Provides seekable read/write access to the virtual disk content of a VHDX
-/// (both fixed and dynamic). For a fixed VHDX (all BAT entries FULLY_PRESENT),
-/// the data blocks are mapped through the BAT. For a dynamic VHDX, blocks
-/// with state PAYLOAD_BLOCK_NOT_PRESENT return zeros on read and are allocated
-/// at EOF on write.
+/// Seekable read/write view of the logical disk stored in a standalone VHDX.
+/// Payload BAT entries are translated through the MS-VHDX chunk interleaving;
+/// sector-bitmap BAT entries are skipped because standalone fixed/dynamic VHDX
+/// files do not allocate sector bitmap blocks.
 /// </summary>
 public sealed class VhdxStream : Stream {
-  private const ulong StateNotPresent = 0;
+  private const ulong StateZero = 2;
   private const ulong StateFullyPresent = 6;
   private const long OneMib = 0x100000;
 
@@ -20,306 +19,335 @@ public sealed class VhdxStream : Stream {
   private readonly bool _leaveOpen;
   private readonly int _blockSize;
   private readonly long _batOffset;
-  private readonly ulong[] _batEntries;
+  private readonly int _chunkRatio;
+  private readonly ulong[] _payloadBatEntries;
   private long _position;
 
-  private VhdxStream(Stream backing, long dataLength, int blockSize,
-      long batOffset, ulong[] batEntries, bool leaveOpen) {
-    _backing = backing;
-    _dataLength = dataLength;
-    _leaveOpen = leaveOpen;
-    _blockSize = blockSize;
-    _batOffset = batOffset;
-    _batEntries = batEntries;
+  private VhdxStream(
+      Stream backing,
+      long dataLength,
+      int blockSize,
+      long batOffset,
+      int chunkRatio,
+      ulong[] payloadBatEntries,
+      bool hasAmbiguousPayloadBlocks,
+      bool leaveOpen) {
+    this._backing = backing;
+    this._dataLength = dataLength;
+    this._blockSize = blockSize;
+    this._batOffset = batOffset;
+    this._chunkRatio = chunkRatio;
+    this._payloadBatEntries = payloadBatEntries;
+    this.HasAmbiguousPayloadBlocks = hasAmbiguousPayloadBlocks;
+    this._leaveOpen = leaveOpen;
   }
 
   /// <summary>
-  /// Gets a value indicating whether can read.
+  /// True when at least one payload BAT entry has a state other than ZERO or
+  /// FULLY_PRESENT. Those states do not provide a single canonical byte value
+  /// for a standalone rebuild, so maintenance must fail closed instead of
+  /// converting them into explicit zero blocks.
   /// </summary>
-  public override bool CanRead => true;
-  /// <summary>
-  /// Gets a value indicating whether can seek.
-  /// </summary>
-  public override bool CanSeek => true;
-  /// <summary>
-  /// Gets a value indicating whether can write.
-  /// </summary>
-  public override bool CanWrite => _backing.CanWrite;
-  /// <summary>
-  /// Gets the length.
-  /// </summary>
-  public override long Length => _dataLength;
+  public bool HasAmbiguousPayloadBlocks { get; }
 
-  /// <summary>
-  /// Gets or sets the position.
-  /// </summary>
+  public override bool CanRead => true;
+  public override bool CanSeek => true;
+  public override bool CanWrite => this._backing.CanWrite;
+  public override long Length => this._dataLength;
+
   public override long Position {
-    get => _position;
+    get => this._position;
     set {
       if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
-      _position = value;
+      this._position = value;
     }
   }
 
-  /// <summary>
-  /// Reads the value from the supplied input.
-  /// </summary>
   public override int Read(byte[] buffer, int offset, int count) {
-    if (_position >= _dataLength) return 0;
-    var remaining = (int)Math.Min(count, _dataLength - _position);
+    ArgumentNullException.ThrowIfNull(buffer);
+    if (this._position >= this._dataLength || count <= 0) return 0;
+    var remaining = (int)Math.Min(count, this._dataLength - this._position);
     var totalRead = 0;
 
     while (remaining > 0) {
-      var blockIdx = (int)(_position / _blockSize);
-      var blockOff = (int)(_position % _blockSize);
-      var toRead = Math.Min(remaining, _blockSize - blockOff);
+      var blockIndex = checked((int)(this._position / this._blockSize));
+      var blockOffset = checked((int)(this._position % this._blockSize));
+      var take = Math.Min(remaining, this._blockSize - blockOffset);
 
-      if (blockIdx >= _batEntries.Length) {
-        Array.Clear(buffer, offset, toRead);
+      if (blockIndex >= this._payloadBatEntries.Length) {
+        Array.Clear(buffer, offset, take);
       } else {
-        var entry = _batEntries[blockIdx];
+        var entry = this._payloadBatEntries[blockIndex];
         var state = entry & 0x07;
-
         if (state == StateFullyPresent) {
           var fileOffsetMib = entry >> 20;
-          var physOffset = (long)fileOffsetMib * OneMib + blockOff;
-          _backing.Position = physOffset;
-          var n = _backing.Read(buffer, offset, toRead);
-          if (n < toRead) Array.Clear(buffer, offset + n, toRead - n);
+          var physicalOffset = checked((long)fileOffsetMib * OneMib + blockOffset);
+          if (physicalOffset < 0 || physicalOffset + take > this._backing.Length) {
+            Array.Clear(buffer, offset, take);
+          } else {
+            this._backing.Position = physicalOffset;
+            var read = 0;
+            while (read < take) {
+              var n = this._backing.Read(buffer, offset + read, take - read);
+              if (n <= 0) break;
+              read += n;
+            }
+            if (read < take) Array.Clear(buffer, offset + read, take - read);
+          }
         } else {
-          // NOT_PRESENT or any other state — return zeros
-          Array.Clear(buffer, offset, toRead);
+          // ZERO is explicitly zero. For ambiguous standalone states we keep
+          // the existing read behavior for compatibility, but callers can see
+          // HasAmbiguousPayloadBlocks and maintenance refuses to canonicalize.
+          Array.Clear(buffer, offset, take);
         }
       }
 
-      offset += toRead;
-      remaining -= toRead;
-      _position += toRead;
-      totalRead += toRead;
+      offset += take;
+      remaining -= take;
+      this._position += take;
+      totalRead += take;
     }
 
     return totalRead;
   }
 
-  /// <summary>
-  /// Writes the value to the supplied output.
-  /// </summary>
+  public override int Read(Span<byte> buffer) {
+    if (buffer.Length == 0 || this._position >= this._dataLength) return 0;
+    var temp = new byte[Math.Min(buffer.Length, 64 * 1024)];
+    var total = 0;
+    while (total < buffer.Length) {
+      var take = Math.Min(temp.Length, buffer.Length - total);
+      var n = this.Read(temp, 0, take);
+      if (n <= 0) break;
+      temp.AsSpan(0, n).CopyTo(buffer[total..]);
+      total += n;
+    }
+    return total;
+  }
+
   public override void Write(byte[] buffer, int offset, int count) {
-    if (!CanWrite) throw new NotSupportedException("Backing stream is not writable.");
-    if (_position + count > _dataLength)
+    ArgumentNullException.ThrowIfNull(buffer);
+    if (!this.CanWrite) throw new NotSupportedException("Backing stream is not writable.");
+    if (this._position + count > this._dataLength)
       throw new InvalidOperationException(
-        $"Write would exceed virtual disk size ({_dataLength} bytes). " +
-        $"Position={_position}, Count={count}.");
+        $"Write would exceed virtual disk size ({this._dataLength} bytes). Position={this._position}, Count={count}.");
 
     var remaining = count;
     while (remaining > 0) {
-      var blockIdx = (int)(_position / _blockSize);
-      var blockOff = (int)(_position % _blockSize);
-      var toWrite = Math.Min(remaining, _blockSize - blockOff);
+      var blockIndex = checked((int)(this._position / this._blockSize));
+      var blockOffset = checked((int)(this._position % this._blockSize));
+      var take = Math.Min(remaining, this._blockSize - blockOffset);
+      if (blockIndex >= this._payloadBatEntries.Length)
+        throw new InvalidOperationException($"Block index {blockIndex} is outside the VHDX BAT.");
 
-      if (blockIdx >= _batEntries.Length)
-        throw new InvalidOperationException($"Block index {blockIdx} out of BAT range.");
-
-      var entry = _batEntries[blockIdx];
-      var state = entry & 0x07;
-
-      if (state != StateFullyPresent) {
-        // Allocate new block at EOF
-        AllocateBlock(blockIdx);
-        entry = _batEntries[blockIdx];
+      var entry = this._payloadBatEntries[blockIndex];
+      if ((entry & 0x07) != StateFullyPresent) {
+        this.AllocateBlock(blockIndex);
+        entry = this._payloadBatEntries[blockIndex];
       }
 
       var fileOffsetMib = entry >> 20;
-      var physOffset = (long)fileOffsetMib * OneMib + blockOff;
-      _backing.Position = physOffset;
-      _backing.Write(buffer, offset, toWrite);
+      var physicalOffset = checked((long)fileOffsetMib * OneMib + blockOffset);
+      this._backing.Position = physicalOffset;
+      this._backing.Write(buffer, offset, take);
 
-      offset += toWrite;
-      remaining -= toWrite;
-      _position += toWrite;
+      offset += take;
+      remaining -= take;
+      this._position += take;
     }
   }
 
-  /// <summary>
-  /// Performs the seek operation.
-  /// </summary>
+  public override void Write(ReadOnlySpan<byte> buffer) {
+    if (buffer.Length == 0) return;
+    var temp = buffer.ToArray();
+    this.Write(temp, 0, temp.Length);
+  }
+
   public override long Seek(long offset, SeekOrigin origin) {
-    var newPos = origin switch {
+    var next = origin switch {
       SeekOrigin.Begin => offset,
-      SeekOrigin.Current => _position + offset,
-      SeekOrigin.End => _dataLength + offset,
-      _ => throw new ArgumentOutOfRangeException(nameof(origin))
+      SeekOrigin.Current => this._position + offset,
+      SeekOrigin.End => this._dataLength + offset,
+      _ => throw new ArgumentOutOfRangeException(nameof(origin)),
     };
-    if (newPos < 0) throw new IOException("Seek before beginning of stream.");
-    _position = newPos;
-    return _position;
+    if (next < 0) throw new IOException("Seek before beginning of stream.");
+    this._position = next;
+    return next;
   }
 
-  /// <summary>
-  /// Sets the length.
-  /// </summary>
   public override void SetLength(long value) {
-    if (value != _dataLength)
+    if (value != this._dataLength)
       throw new NotSupportedException(
-        $"Cannot change the length of a VHDX virtual disk stream " +
-        $"(current={_dataLength}, requested={value}).");
+        $"Cannot change a VHDX guest disk length (current={this._dataLength}, requested={value}).");
   }
 
-  /// <summary>
-  /// Performs the flush operation.
-  /// </summary>
-  public override void Flush() => _backing.Flush();
+  public override void Flush() => this._backing.Flush();
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   protected override void Dispose(bool disposing) {
-    if (disposing && !_leaveOpen)
-      _backing.Dispose();
+    if (disposing && !this._leaveOpen) this._backing.Dispose();
     base.Dispose(disposing);
   }
 
-  // ── Dynamic allocation ────────────────────────────────────────────────
+  private void AllocateBlock(int blockIndex) {
+    var aligned = checked((this._backing.Length + OneMib - 1) / OneMib * OneMib);
+    this._backing.SetLength(checked(aligned + this._blockSize));
 
-  /// <summary>
-  /// Allocates a new block at EOF (aligned to 1 MiB) for the given block index.
-  /// Zeros the block region, sets BAT entry to FULLY_PRESENT, and writes the
-  /// BAT entry to the backing stream.
-  /// </summary>
-  private void AllocateBlock(int blockIdx) {
-    // Align EOF up to 1 MiB boundary
-    var eof = _backing.Length;
-    var aligned = ((eof + OneMib - 1) / OneMib) * OneMib;
-
-    // Extend the backing stream to hold the new block
-    _backing.SetLength(aligned + _blockSize);
-
-    // Zero-fill the new block region
-    _backing.Position = aligned;
-    var zeros = new byte[Math.Min(_blockSize, 65536)];
-    var toZero = _blockSize;
-    while (toZero > 0) {
-      var chunk = Math.Min(toZero, zeros.Length);
-      _backing.Write(zeros, 0, chunk);
-      toZero -= chunk;
+    this._backing.Position = aligned;
+    var zeros = new byte[Math.Min(this._blockSize, 64 * 1024)];
+    var remaining = this._blockSize;
+    while (remaining > 0) {
+      var take = Math.Min(remaining, zeros.Length);
+      this._backing.Write(zeros, 0, take);
+      remaining -= take;
     }
 
-    // Update BAT entry: FULLY_PRESENT + file offset in MiB units
-    var fileOffsetMib = (ulong)aligned / (ulong)OneMib;
-    var newEntry = (fileOffsetMib << 20) | StateFullyPresent;
-    _batEntries[blockIdx] = newEntry;
-
-    // Write BAT entry to backing stream
-    _backing.Position = _batOffset + blockIdx * 8L;
-    Span<byte> batBuf = stackalloc byte[8];
-    BinaryPrimitives.WriteUInt64LittleEndian(batBuf, newEntry);
-    _backing.Write(batBuf);
+    var entry = checked(((ulong)(aligned / OneMib) << 20) | StateFullyPresent);
+    this._payloadBatEntries[blockIndex] = entry;
+    var rawBatIndex = VhdxWriter.PayloadBatIndex(blockIndex, this._chunkRatio);
+    this._backing.Position = checked(this._batOffset + rawBatIndex * 8L);
+    Span<byte> bytes = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt64LittleEndian(bytes, entry);
+    this._backing.Write(bytes);
   }
 
-  // ── Static factory ────────────────────────────────────────────────
-
   /// <summary>
-  /// Tries to open a <see cref="VhdxStream"/> for a VHDX image (fixed or dynamic).
-  /// Returns <c>null</c> if the stream is not a valid VHDX (too small, bad signature,
-  /// has parent locator, etc.). The caller owns the returned stream and must dispose it.
+  /// Opens a standalone VHDX guest disk. Differencing images are deliberately
+  /// rejected because resolving parent chains is outside this stream's contract.
   /// </summary>
   public static VhdxStream? TryOpen(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
     try {
-      if (stream.Length < 0x110000) return null; // need at least header + metadata + BAT
-
+      if (!stream.CanSeek || stream.Length < 0x110000) return null;
       stream.Position = 0;
       Span<byte> magic = stackalloc byte[8];
       stream.ReadExactly(magic);
-      if (!"vhdxfile"u8.SequenceEqual(magic))
+      if (!magic.SequenceEqual("vhdxfile"u8)) return null;
+
+      if (!TryReadRegions(stream, out var batOffset, out var batLength, out var metadataOffset))
         return null;
-
-      // Read region table 1 at 0x30000 to find BAT and Metadata regions
-      stream.Position = 0x30000;
-      Span<byte> regionHdr = stackalloc byte[16];
-      stream.ReadExactly(regionHdr);
-      if (regionHdr[0] != (byte)'r' || regionHdr[1] != (byte)'e' ||
-          regionHdr[2] != (byte)'g' || regionHdr[3] != (byte)'i')
+      if (!TryReadMetadata(stream, metadataOffset, out var blockSize, out var virtualDiskSize,
+            out var logicalSectorSize, out var hasParent))
         return null;
+      if (hasParent || blockSize <= 0 || virtualDiskSize <= 0 || logicalSectorSize <= 0) return null;
 
-      var entryCount = BinaryPrimitives.ReadUInt32LittleEndian(regionHdr[8..]);
+      var chunkBytes = checked((1L << 23) * logicalSectorSize);
+      if (chunkBytes % blockSize != 0) return null;
+      var chunkRatioLong = chunkBytes / blockSize;
+      if (chunkRatioLong <= 0 || chunkRatioLong > int.MaxValue) return null;
+      var chunkRatio = (int)chunkRatioLong;
 
-      long batOffset = 0, batLength = 0, metadataOffset = 0;
-      var batGuid = new Guid("2DC27766-F623-4200-9D64-115E9BFD4A08");
-      var metaGuid = new Guid("8B7CA206-4790-4B9A-B8FE-575F050F886E");
+      var payloadBlockCountLong = (virtualDiskSize + blockSize - 1) / blockSize;
+      if (payloadBlockCountLong <= 0 || payloadBlockCountLong > int.MaxValue) return null;
+      var payloadBlockCount = (int)payloadBlockCountLong;
+      var rawBatEntries = payloadBlockCount + (payloadBlockCount - 1) / chunkRatio;
+      if ((long)rawBatEntries * 8 > batLength) return null;
 
-      var entryBuf = new byte[32];
-      for (uint i = 0; i < entryCount && i < 2048; i++) {
-        stream.Position = 0x30000 + 16 + i * 32;
-        stream.ReadExactly(entryBuf);
-        var guid = new Guid(entryBuf.AsSpan(0, 16));
-        var offset = (long)BinaryPrimitives.ReadUInt64LittleEndian(entryBuf.AsSpan(16));
-        var length = BinaryPrimitives.ReadUInt32LittleEndian(entryBuf.AsSpan(24));
-
-        if (guid == batGuid) { batOffset = offset; batLength = length; }
-        else if (guid == metaGuid) { metadataOffset = offset; }
+      var payloadEntries = new ulong[payloadBlockCount];
+      var hasAmbiguousPayloadBlocks = false;
+      Span<byte> entryBytes = stackalloc byte[8];
+      for (var blockIndex = 0; blockIndex < payloadBlockCount; ++blockIndex) {
+        var rawIndex = VhdxWriter.PayloadBatIndex(blockIndex, chunkRatio);
+        var offset = checked(batOffset + rawIndex * 8L);
+        if (offset < 0 || offset + 8 > stream.Length) return null;
+        stream.Position = offset;
+        stream.ReadExactly(entryBytes);
+        var entry = BinaryPrimitives.ReadUInt64LittleEndian(entryBytes);
+        payloadEntries[blockIndex] = entry;
+        var state = entry & 0x07;
+        if (state is not (StateZero or StateFullyPresent))
+          hasAmbiguousPayloadBlocks = true;
       }
-
-      if (batOffset == 0 || metadataOffset == 0 || batLength == 0)
-        return null;
-
-      // Read metadata to get virtual disk size and block size
-      stream.Position = metadataOffset;
-      Span<byte> metaHdr = stackalloc byte[12];
-      stream.ReadExactly(metaHdr);
-      if (!"metadata"u8.SequenceEqual(metaHdr[..8]))
-        return null;
-
-      var metaEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(metaHdr[10..]);
-
-      var fileParamsGuid = new Guid("CAA16737-FA36-4D43-B3B6-33F0AA44E76B");
-      var vdiskSizeGuid = new Guid("2FA54224-CD1B-4876-B211-5DBED83BF4B8");
-
-      uint blockSize = 0;
-      ulong virtualDiskSize = 0;
-
-      var meBuf = new byte[32];
-      var valBuf = new byte[8];
-      for (int i = 0; i < metaEntryCount; i++) {
-        stream.Position = metadataOffset + 32 + i * 32;
-        stream.ReadExactly(meBuf);
-        var itemGuid = new Guid(meBuf.AsSpan(0, 16));
-        var itemOffset = BinaryPrimitives.ReadUInt32LittleEndian(meBuf.AsSpan(16));
-
-        if (itemGuid == fileParamsGuid) {
-          stream.Position = metadataOffset + itemOffset;
-          stream.ReadExactly(valBuf);
-          blockSize = BinaryPrimitives.ReadUInt32LittleEndian(valBuf);
-          var flags = BinaryPrimitives.ReadUInt32LittleEndian(valBuf.AsSpan(4));
-          // bit 1 = HasParent -> differencing image, not supported
-          if ((flags & 0x02) != 0) return null;
-        } else if (itemGuid == vdiskSizeGuid) {
-          stream.Position = metadataOffset + itemOffset;
-          stream.ReadExactly(valBuf);
-          virtualDiskSize = BinaryPrimitives.ReadUInt64LittleEndian(valBuf);
-        }
-      }
-
-      if (blockSize == 0 || virtualDiskSize == 0)
-        return null;
-
-      // Read all BAT entries
-      var blockCount = (long)((virtualDiskSize + blockSize - 1) / blockSize);
-      var maxBatEntries = batLength / 8;
-      if (blockCount > (long)maxBatEntries) blockCount = (long)maxBatEntries;
-
-      var batEntries = new ulong[blockCount];
-      var batByteBuf = new byte[blockCount * 8];
-      stream.Position = batOffset;
-      stream.ReadExactly(batByteBuf);
-      for (long i = 0; i < blockCount; i++)
-        batEntries[i] = BinaryPrimitives.ReadUInt64LittleEndian(batByteBuf.AsSpan((int)(i * 8)));
 
       stream.Position = 0;
-      return new VhdxStream(stream, (long)virtualDiskSize, (int)blockSize,
-        batOffset, batEntries, leaveOpen: true);
+      return new VhdxStream(stream, virtualDiskSize, blockSize, batOffset, chunkRatio,
+        payloadEntries, hasAmbiguousPayloadBlocks, leaveOpen: true);
     } catch {
-      stream.Position = 0;
+      if (stream.CanSeek) stream.Position = 0;
       return null;
     }
+  }
+
+  private static bool TryReadRegions(Stream stream, out long batOffset, out long batLength, out long metadataOffset) {
+    batOffset = 0;
+    batLength = 0;
+    metadataOffset = 0;
+    stream.Position = 0x30000;
+    Span<byte> header = stackalloc byte[16];
+    stream.ReadExactly(header);
+    if (!header[..4].SequenceEqual("regi"u8)) return false;
+    var count = BinaryPrimitives.ReadUInt32LittleEndian(header[8..12]);
+    if (count > 2047) return false;
+
+    var batGuid = new Guid("2DC27766-F623-4200-9D64-115E9BFD4A08");
+    var metadataGuid = new Guid("8B7CA206-4790-4B9A-B8FE-575F050F886E");
+    Span<byte> entry = stackalloc byte[32];
+    for (var i = 0u; i < count; ++i) {
+      stream.Position = 0x30000 + 16 + i * 32L;
+      stream.ReadExactly(entry);
+      var guid = new Guid(entry[..16]);
+      var offset = checked((long)BinaryPrimitives.ReadUInt64LittleEndian(entry[16..24]));
+      var length = BinaryPrimitives.ReadUInt32LittleEndian(entry[24..28]);
+      if (guid == batGuid) {
+        batOffset = offset;
+        batLength = length;
+      } else if (guid == metadataGuid) {
+        metadataOffset = offset;
+      }
+    }
+    return batOffset > 0 && batLength > 0 && metadataOffset > 0;
+  }
+
+  private static bool TryReadMetadata(
+      Stream stream,
+      long metadataOffset,
+      out int blockSize,
+      out long virtualDiskSize,
+      out int logicalSectorSize,
+      out bool hasParent) {
+    blockSize = 0;
+    virtualDiskSize = 0;
+    logicalSectorSize = 0;
+    hasParent = false;
+
+    stream.Position = metadataOffset;
+    Span<byte> header = stackalloc byte[12];
+    stream.ReadExactly(header);
+    if (!header[..8].SequenceEqual("metadata"u8)) return false;
+    var count = BinaryPrimitives.ReadUInt16LittleEndian(header[10..12]);
+
+    var fileParametersGuid = new Guid("CAA16737-FA36-4D43-B3B6-33F0AA44E76B");
+    var virtualDiskSizeGuid = new Guid("2FA54224-CD1B-4876-B211-5DBED83BF4B8");
+    var logicalSectorGuid = new Guid("8141BF1D-A96F-4709-BA47-F233A8FAAB5F");
+    Span<byte> entry = stackalloc byte[32];
+    Span<byte> value = stackalloc byte[8];
+
+    for (var i = 0; i < count; ++i) {
+      stream.Position = metadataOffset + 32 + i * 32L;
+      stream.ReadExactly(entry);
+      var guid = new Guid(entry[..16]);
+      var relativeOffset = BinaryPrimitives.ReadUInt32LittleEndian(entry[16..20]);
+      var length = BinaryPrimitives.ReadUInt32LittleEndian(entry[20..24]);
+      if (relativeOffset == 0 || length == 0) continue;
+      var valueOffset = checked(metadataOffset + relativeOffset);
+      if (valueOffset < 0 || valueOffset + length > stream.Length) return false;
+
+      if (guid == fileParametersGuid && length >= 8) {
+        stream.Position = valueOffset;
+        stream.ReadExactly(value);
+        blockSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(value[..4]));
+        var flags = BinaryPrimitives.ReadUInt32LittleEndian(value[4..8]);
+        hasParent = (flags & 0x02) != 0;
+      } else if (guid == virtualDiskSizeGuid && length >= 8) {
+        stream.Position = valueOffset;
+        stream.ReadExactly(value);
+        virtualDiskSize = checked((long)BinaryPrimitives.ReadUInt64LittleEndian(value));
+      } else if (guid == logicalSectorGuid && length >= 4) {
+        stream.Position = valueOffset;
+        stream.ReadExactly(value[..4]);
+        logicalSectorSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(value[..4]));
+      }
+    }
+
+    return blockSize > 0 && virtualDiskSize > 0 && logicalSectorSize > 0;
   }
 }

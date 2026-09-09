@@ -8,11 +8,9 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Vhdx;
 
 /// <summary>
-/// Descriptor for Hyper-V VHDX virtual hard-disk images (MS-VHDX v1).
-/// For fixed-payload VHDX images the descriptor delegates List, Extract, Add,
-/// Remove, and Defragment operations to the detected inner filesystem via
-/// <see cref="VhdxStream"/>. Falls back to structural metadata listing when
-/// the inner FS is not detected or the image uses dynamic/differencing layout.
+/// Descriptor for standalone Hyper-V VHDX virtual hard-disk images. Guest-file
+/// operations delegate through <see cref="VhdxStream"/>; container maintenance
+/// rebuilds the raw guest disk and verifies byte identity before committing.
 ///
 /// References:
 /// <list type="bullet">
@@ -21,7 +19,7 @@ namespace FileFormat.Vhdx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VHD_(file_format)</c> — Wikipedia overview (covers VHDX)</description></item>
 /// </list>
 /// </summary>
-public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -74,7 +72,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Microsoft Hyper-V VHDX virtual hard disk (MS-VHDX v1)";
+  public string Description => "Microsoft Hyper-V VHDX virtual hard disk (MS-VHDX)";
 
   // ── IArchiveFormatOperations ──────────────────────────────────────
 
@@ -100,7 +98,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       }
     }
 
-    // Fallback: structural metadata listing
     return BuildEntries(stream).Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Data.LongLength, e.Data.LongLength, "stored", false, false, null
     )).ToList();
@@ -136,7 +133,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Wraps the supplied input files into a fixed-payload VHDX container.
+  /// Wraps the supplied input files into a sparse standalone VHDX container.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var fat = FileSystem.Fat.FatWriter.BuildFromFiles(FlatFiles(inputs));
@@ -149,7 +146,6 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
-    // Simple: emit the entire file as metadata + payload
     yield return new DefragBlockInfo(0, Math.Min(0x100000, archive.Length),
       DefragBlockKind.MetadataReserved, FileName: "VHDX Headers + Region Tables");
     if (archive.Length > 0x100000)
@@ -238,7 +234,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ModifyRebuilder.Remove(archive, entryNames, ReadDiskEntries, BuildImage);
   }
 
-  // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
+  // ── Maintenance ────────────────────────────────────────────────────
 
   /// <inheritdoc />
   public void Defragment(Stream archive)
@@ -256,7 +252,7 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
             vhdxStream.Flush();
             return;
           } catch {
-            // fall through to rebuild
+            // fall through to raw-disk rebuild
           }
         }
       }
@@ -264,6 +260,19 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
   }
+
+  /// <inheritdoc />
+  public void Shrink(Stream input, Stream output)
+    => RawDiskShrinkRebuilder.Shrink(
+      input,
+      output,
+      ReadGuestDisk,
+      static disk => {
+        var writer = new VhdxWriter();
+        writer.SetDiskData(disk);
+        return writer.Build();
+      },
+      CanRebuildStandaloneVhdx);
 
   // ── Private helpers ────────────────────────────────────────────────
 
@@ -284,50 +293,60 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return false;
   }
 
-  // ── Rebuild-path delegates (fallback) ──────────────────────────────
+  private static bool CanRebuildStandaloneVhdx(Stream stream) {
+    using var guest = VhdxStream.TryOpen(stream);
+    if (guest is null || guest.HasAmbiguousPayloadBlocks) return false;
+
+    stream.Position = 0;
+    var headerLength = checked((int)Math.Min(stream.Length, 0x50000));
+    var headerBytes = new byte[headerLength];
+    stream.ReadExactly(headerBytes);
+    var image = VhdxReader.Read(headerBytes, stream.Length);
+    if (image.PrimaryHeaderInfo?.LogGuid != Guid.Empty || image.BackupHeaderInfo?.LogGuid != Guid.Empty)
+      return false;
+
+    var region = image.RegionTablePrimary;
+    if (region.Length < 80 || !region.AsSpan(0, 4).SequenceEqual("regi"u8)) return false;
+    var count = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(region.AsSpan(8, 4));
+    if (count != 2) return false; // do not discard optional/unknown regions during canonical rebuild
+
+    var batGuid = new Guid("2DC27766-F623-4200-9D64-115E9BFD4A08");
+    var metadataGuid = new Guid("8B7CA206-4790-4B9A-B8FE-575F050F886E");
+    var first = new Guid(region.AsSpan(16, 16));
+    var second = new Guid(region.AsSpan(48, 16));
+    return (first == batGuid && second == metadataGuid) || (first == metadataGuid && second == batGuid);
+  }
+
+  // ── Rebuild-path delegates ─────────────────────────────────────────
 
   private static IEnumerable<(string Name, byte[] Data)> ReadDiskEntries(Stream stream) {
-    // Try inner FS first
-    if (VhdxStream.TryOpen(stream) is { } vhdxStream) {
-      using (vhdxStream) {
-        var inner = InnerFsDetector.Detect(vhdxStream);
-        if (inner is IArchiveFormatOperations ops) {
-          vhdxStream.Position = 0;
-          var tmpDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-          try {
-            Directory.CreateDirectory(tmpDir);
-            ops.Extract(vhdxStream, tmpDir, null, null);
-            foreach (var f in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
-              var rel = Path.GetRelativePath(tmpDir, f);
-              yield return (rel, File.ReadAllBytes(f));
-            }
-            yield break;
-          } finally {
-            if (Directory.Exists(tmpDir)) Directory.Delete(tmpDir, true);
-          }
-        }
-      }
-    }
+    yield return ("disk.img", ReadGuestDisk(stream));
+  }
 
-    // Raw fallback
-    var entries = BuildEntries(stream);
-    foreach (var e in entries)
-      yield return (e.Name, e.Data);
+  private static byte[] ReadGuestDisk(Stream stream) {
+    using var guest = VhdxStream.TryOpen(stream)
+      ?? throw new InvalidDataException("Stream is not a supported standalone VHDX image.");
+    if (guest.HasAmbiguousPayloadBlocks)
+      throw new InvalidDataException("VHDX contains payload BAT states without canonical standalone bytes; refusing raw-disk rebuild.");
+    if (guest.Length > int.MaxValue)
+      throw new NotSupportedException("Buffered VHDX maintenance currently supports guest disks up to 2 GiB.");
+    var disk = new byte[checked((int)guest.Length)];
+    guest.Position = 0;
+    guest.ReadExactly(disk);
+    return disk;
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {
-    var fat = FileSystem.Fat.FatWriter.BuildFromFiles(files);
-    var w = new VhdxWriter();
-    w.SetDiskData(fat);
-    return w.Build();
+    var disk = files.Count > 0 ? files[0].Data : [];
+    var writer = new VhdxWriter();
+    writer.SetDiskData(disk);
+    return writer.Build();
   }
 
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {
-    // VHDX header region is the first 1 MiB. Only fetch that — never load the
-    // payload (which can be multi-TB).
     using var cache = new SectorCache(stream);
     var totalLen = stream.Length;
-    var headerLen = (int)Math.Min(totalLen, 0x100000); // 1 MiB
+    var headerLen = (int)Math.Min(totalLen, 0x100000);
     var headerBuf = cache.Read(0, headerLen);
     var img = VhdxReader.Read(headerBuf, totalLen);
 
@@ -356,21 +375,12 @@ public sealed class VhdxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // ── IPartitionEditable ─────────────────────────────────────────────
 
   /// <inheritdoc />
-  /// <remarks>
-  /// Returns a writable <see cref="VhdxStream"/> over the guest payload.
-  /// VHDX dynamic layouts are supported but block allocation happens on
-  /// first write, so callers should ensure the host stream has enough room
-  /// for any new partitions before adding them.
-  /// </remarks>
-  /// <summary>
-  /// Performs the open guest disk stream operation.
-  /// </summary>
   public Stream OpenGuestDiskStream(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanWrite)
       throw new NotSupportedException("Partition editing requires a writable VHDX stream.");
     return VhdxStream.TryOpen(image)
-      ?? throw new InvalidDataException("Stream is not a valid VHDX image.");
+      ?? throw new InvalidDataException("Stream is not a valid standalone VHDX image.");
   }
 
   private static void AppendHeader(StringBuilder sb, string prefix, VhdxReader.HeaderInfo? info) {
