@@ -1,6 +1,5 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.ComponentModel;
 using System.Diagnostics;
 using Compression.Registry;
 using FileFormat.Apc;
@@ -69,7 +68,7 @@ public sealed class ApcExternalInteropTests {
       var result = Run("ffmpeg", "-version");
       if (result.ExitCode != 0)
         Assert.Ignore($"ffmpeg is not usable on PATH: {result.StdErr}");
-    } catch (Win32Exception) {
+    } catch (System.ComponentModel.Win32Exception) {
       Assert.Ignore("ffmpeg is not installed or not on PATH.");
     }
   }
