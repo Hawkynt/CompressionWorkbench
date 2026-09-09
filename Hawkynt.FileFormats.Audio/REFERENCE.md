@@ -4574,28 +4574,33 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `AmfFormatDescriptor`
 
-Exposes a DSMI Advanced Module Format (`.amf`) file as a read-only pseudo-archive of `FULL.amf` (byte-exact original), `metadata.ini` and one playable mono WAV per sample under `samples/NN_{name}.wav`.
+DSMI Advanced Module Format (`.amf`) reader/writer.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AmfFormatDescriptor` | `AmfFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileFormat.Amr`
 
