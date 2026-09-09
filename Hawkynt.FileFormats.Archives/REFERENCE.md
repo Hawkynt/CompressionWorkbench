@@ -3326,7 +3326,7 @@ BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed s
 
 Describes bcm format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -3342,8 +3342,10 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Finite BWT block-size search space for the generic compression optimizer. The default remains 64 KiB for byte-compatible behaviour with streams produced by previous versions. The search is intentionally capped at 128 KiB because the current managed rotation sort becomes expensive as the block grows; callers can still use the lower-level stream overload directly. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the selected BWT block size. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `BcmStream`
@@ -3352,7 +3354,8 @@ BCM: Ilya Muravyov's BWT + MTF + Context Mixing compressor. Format: 4-byte magic
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the compatibility-default 64 KiB block size. |
+| `Compress` | `static void Compress(Stream input, Stream output, int blockSize)` | Encodes the supplied input using the requested BWT block size. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Big`

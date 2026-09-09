@@ -11,14 +11,27 @@ namespace FileFormat.Bcm;
 public static class BcmStream {
 
   private static readonly byte[] Magic = [0x42, 0x43, 0x4D, 0x21]; // "BCM!"
-  private const int BlockSize = 64 * 1024; // 64 KB blocks (larger blocks make BWT very slow)
+  internal const int DefaultBlockSize = 64 * 1024;
+  internal const int MaximumOptimizedBlockSize = 128 * 1024;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the compatibility-default 64 KiB block size.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, DefaultBlockSize);
+
+  /// <summary>
+  /// Encodes the supplied input using the requested BWT block size.
+  /// </summary>
+  /// <param name="input">Raw input stream.</param>
+  /// <param name="output">Destination BCM stream.</param>
+  /// <param name="blockSize">BWT block size in bytes. Must be positive.</param>
+  public static void Compress(Stream input, Stream output, int blockSize) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentOutOfRangeException.ThrowIfNegativeOrZero(blockSize);
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -30,7 +43,7 @@ public static class BcmStream {
     var pos = 0;
 
     while (pos < data.Length) {
-      var len = Math.Min(BlockSize, data.Length - pos);
+      var len = Math.Min(blockSize, data.Length - pos);
       var block = data.AsSpan(pos, len);
 
       rawCrc = Crc32Accumulate(rawCrc, block);
