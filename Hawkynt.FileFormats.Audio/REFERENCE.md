@@ -234,7 +234,7 @@ AC-3 parametric bit-allocation model (ATSC A/52 §7.2.2). Given a channel's deco
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BapTab` | `static readonly byte[] BapTab` | bap lookup table (A/52 Table 7.16, baptab[]). Indexed by the clamped (psd-mask)/32 address (0..63) → bit-allocation pointer 0..15. |
-| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, DeltaSegment[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one channel over bins `start`..`end`-1. `exp` holds the decoded exponents; `bap` (length ≥ end) receives the per-bin bap. `fgain` is the channel fast gain, `snrOffset` the combined coarse/fine SNR offset, `fscod` the sample-rate code (for the hearing threshold). `deltas` applies optional delta bit allocation; pass null for none. The coupling channel (`isCoupling`) skips the low-frequency excitation bootstrap and starts its leak integrators from `cplFastLeak` / `cplSlowLeak` instead. |
+| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, DeltaSegment[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one full-rate AC-3 channel over bins `start`..`end`-1. Public callers use the legacy `fscod` values 0..2; internal enhanced-decoder callers additionally use selectors 4..6 for 24/22.05/16-kHz reduced-rate E-AC-3. |
 | `Resolve` | `static AllocParams Resolve(int sdcycod, int fdcycod, int sgaincod, int dbpbcod, int floorcod)` | Resolves the coded allocation parameters (sdcycod/fdcycod/sgaincod/dbpbcod/floorcod) to their table values. |
 
 #### `Ac3BitAllocation.AllocParams`
@@ -286,7 +286,7 @@ Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companio
 | --- | --- | --- |
 | `EncoderDelaySamples` | `const int EncoderDelaySamples` | Long-block AC-3 analysis delay in samples per channel. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in the ITU/WAVE interleave order — front left, front right, front centre, LFE, then the surrounds — not the acmod order the bit stream uses. AC-3 (bsid ≤ 10) and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent substreams (frame type 1) are skipped. |
-| `EncodeEnhanced` | `static byte[] EncodeEnhanced(ReadOnlySpan<short> interleaved, Eac3EncoderOptions options = null)` | Encodes interleaved PCM16 as an E-AC-3 independent substream (strmtyp 0, substreamid 0, bsid 16). The Annex E framing is written independently from legacy AC-3 while reusing the shared long-block MDCT, exponent coding, parametric bit allocation and mantissa quantizers. Coupling, spectral extension, AHT, rematrixing and short-block switching are disabled; every full-bandwidth channel is coded independently. E-AC-3's 1/2/3/6-block syncframes are supported. |
+| `EncodeEnhanced` | `static byte[] EncodeEnhanced(ReadOnlySpan<short> interleaved, Eac3EncoderOptions options = null)` | Encodes interleaved PCM16 as an E-AC-3 independent substream (strmtyp 0, substreamid 0, bsid 16). The Annex E framing is written independently from legacy AC-3 while reusing the shared long-block MDCT, exponent coding, parametric bit allocation and mantissa quantizers. Coupling, spectral extension, AHT, rematrixing and short-block switching are disabled; every full-bandwidth channel is coded independently. Full-rate streams support 1/2/3/6-block syncframes; reduced 24/22.05/16-kHz streams use the Annex E six-block form. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, Ac3EncoderOptions options = null)` | Encodes interleaved PCM16 as legacy AC-3 (bsid 8). The implementation is a managed adaptation of FFmpeg's LGPL `ac3enc.c`: long-block MDCT analysis, D45 exponent grouping/reuse, standards-defined parametric bit allocation, coarse/fine SNR rate control, grouped and linear mantissa quantizers, 44.1-kHz alternating frame sizes, and both A/52 CRC fields. Coupling, rematrixing and short-block switching are deliberately disabled so the core path remains deterministic and every channel is coded independently. |
 | `ReadStreamInfo` | `static Ac3StreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first sync frame. |
 
@@ -444,13 +444,13 @@ Implements `IEquatable<Eac3EncoderOptions>`.
 | `Eac3EncoderOptions` | `Eac3EncoderOptions(int SampleRate = 48000, int Bitrate = 192000, int Acmod = 2, bool LowFrequencyEffects = false, int DialNorm = -31, int Cutoff = 0, bool PadFinalFrame = true, int? BlocksPerFrame = null, int? DialNorm2 = null)` | Controls ATSC A/52 Enhanced AC-3 encoding of an independent substream. |
 | `Acmod` | `int Acmod { get; init; }` | A/52 audio coding mode 0..7. The input channel order follows that mode. |
 | `Bitrate` | `int Bitrate { get; init; }` | Target average bitrate in bit/s. Frame sizes are word-aligned. |
-| `BlocksPerFrame` | `int? BlocksPerFrame { get; init; }` | 1, 2, 3 or 6; null selects the largest count compatible with the bitrate. |
+| `BlocksPerFrame` | `int? BlocksPerFrame { get; init; }` | 1, 2, 3 or 6; reduced-rate streams require 6; null selects automatically. |
 | `Cutoff` | `int Cutoff { get; init; }` | Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value. |
 | `DialNorm2` | `int? DialNorm2 { get; init; }` | Dual-mono second-program dialogue normalization; null reuses `DialNorm`. |
 | `DialNorm` | `int DialNorm { get; init; }` | Primary-program dialogue normalization metadata in dB, -31..-1. |
 | `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` | When true, the final interleaved input channel is encoded as LFE. |
 | `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete final frame with its last sample. |
-| `SampleRate` | `int SampleRate { get; init; }` | 32000, 44100 or 48000 Hz. |
+| `SampleRate` | `int SampleRate { get; init; }` | 16000, 22050, 24000, 32000, 44100 or 48000 Hz. |
 
 ### Namespace `Codec.AdpcmX`
 
