@@ -11,6 +11,7 @@ internal sealed class DokanMountSession(
   DokanFilesystemOperations operations,
   IFilesystemSession filesystem,
   string requestedTarget,
+  MountAccessMode accessMode,
   bool ownsFilesystem
 ) : IMountSession {
   private readonly SemaphoreSlim _lifecycle = new(1, 1);
@@ -19,12 +20,13 @@ internal sealed class DokanMountSession(
   private readonly DokanFilesystemOperations _operations = operations ?? throw new ArgumentNullException(nameof(operations));
   private readonly IFilesystemSession _filesystem = filesystem ?? throw new ArgumentNullException(nameof(filesystem));
   private readonly string _requestedTarget = requestedTarget ?? throw new ArgumentNullException(nameof(requestedTarget));
+  private readonly MountAccessMode _accessMode = accessMode;
   private readonly bool _ownsFilesystem = ownsFilesystem;
   private bool _disposed;
 
   public string BackendId => "dokan";
   public string Target => this._operations.MountedTarget ?? this._requestedTarget;
-  public MountAccessMode AccessMode => MountAccessMode.ReadOnly;
+  public MountAccessMode AccessMode => this._accessMode;
   public bool IsMounted => !this._disposed && this._instance.IsFileSystemRunning();
 
   public ValueTask FlushAsync(CancellationToken cancellationToken = default) {
