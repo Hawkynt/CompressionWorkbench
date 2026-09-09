@@ -11729,7 +11729,7 @@ Writes a SPEC-COMPLIANT ReiserFS v3.6 filesystem image. Multi-leaf S+tree with i
 
 ### Namespace `FileSystem.RomFs`
 
-[`RomFsBlockMover`](#romfsblockmover) · [`RomFsEntry`](#romfsentry) · [`RomFsExtentMap`](#romfsextentmap) · [`RomFsFormatDescriptor`](#romfsformatdescriptor) · [`RomFsModifier`](#romfsmodifier) · [`RomFsReader`](#romfsreader) · [`RomFsRecordMap`](#romfsrecordmap) · [`RomFsRecordMap.Record`](#romfsrecordmaprecord) · [`RomFsWriter`](#romfswriter)
+[`RomFsBlockMover`](#romfsblockmover) · [`RomFsEntry`](#romfsentry) · [`RomFsExtentMap`](#romfsextentmap) · [`RomFsFilesystemDriverAdapter`](#romfsfilesystemdriveradapter) · [`RomFsFormatDescriptor`](#romfsformatdescriptor) · [`RomFsModifier`](#romfsmodifier) · [`RomFsReader`](#romfsreader) · [`RomFsRecordMap`](#romfsrecordmap) · [`RomFsRecordMap.Record`](#romfsrecordmaprecord) · [`RomFsWriter`](#romfswriter)
 
 #### `RomFsBlockMover`
 
@@ -11769,6 +11769,20 @@ Walks a Linux ROMFS (romfs v1) image and yields its actual on-disk byte layout. 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Enumerates the value. |
+
+#### `RomFsFilesystemDriverAdapter`
+
+Explicit ROMFS mount driver. Read-only sessions are available for the regular file/directory subset decoded by `RomFsReader`. Writable mounting is deliberately narrower: only flat regular-file images whose complete namespace and metadata can be reproduced by the existing `RomFsWriter` are promoted to the transactional whole-image rebuild session.
+
+Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RomFsFilesystemDriverAdapter` | `RomFsFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `RomFsFormatDescriptor`
 
@@ -11823,6 +11837,7 @@ Reads Linux ROMFS filesystem images (romfs v1). Magic: "-rom1fs-" at offset 0. A
 | --- | --- | --- |
 | `RomFsReader` | `RomFsReader(Stream stream)` | Parses a ROMFS image from `stream`. Throws `InvalidDataException` on bad magic or truncated data. |
 | `Entries` | `IReadOnlyList<RomFsEntry> Entries { get; }` | All entries (files and directories) discovered in the image. |
+| `HasUnsupportedNodeTypes` | `bool HasUnsupportedNodeTypes { get; }` | True when traversal encountered a ROMFS object kind that this reader does not currently project (hard link, symlink, device, socket, or FIFO). Writable rebuild adapters use this to fail closed rather than silently dropping an object that the existing writer cannot reproduce. |
 | `VolumeName` | `string VolumeName { get; }` | Volume name read from the superblock. |
 | `Extract` | `byte[] Extract(RomFsEntry entry)` | Extracts the data for a regular file entry. |
 
