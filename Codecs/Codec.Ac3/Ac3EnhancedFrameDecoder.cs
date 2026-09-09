@@ -38,6 +38,7 @@ internal sealed class Ac3EnhancedFrameDecoder {
   // -- per-frame state --------------------------------------------------------
   private int _nfchans;
   private bool _lfeon;
+  // 0..2 are full-rate fscod values; 4..6 are internal reduced-rate selectors for 24/22.05/16 kHz.
   private int _fscod;
   private int _acmod;
   private int _numBlocks;
@@ -103,7 +104,7 @@ internal sealed class Ac3EnhancedFrameDecoder {
   /// </summary>
   public byte[]? DecodeFrame(byte[] data, int offset, Ac3FrameHeader header) {
     var r = new Ac3BitReader(data, offset, Math.Min(header.FrameSize, data.Length - offset));
-    this._fscod = header.FsCod;
+    this._fscod = header.SampleRate switch { 24_000 => 4, 22_050 => 5, 16_000 => 6, _ => header.FsCod };
     this._acmod = header.Acmod;
     this._nfchans = Ac3FrameHeader.AcmodChannelCount(header.Acmod);
     this._lfeon = header.LowFrequencyEffects;
@@ -248,9 +249,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
   private int _frameSizeMinus2;
 
   private void ParseAhtSelection(Ac3BitReader r, int numCplBlocks) {
-    // For AHT to apply, blocks 1..5 must reuse exponents (and the coupling channel additionally needs
-    // a consistent coupling strategy). The coupling-channel slot is checked first when every block
-    // couples; otherwise iteration is fbw 0..nfchans-1 then LFE.
     foreach (var ch in this.AhtChannelOrder(numCplBlocks)) {
       var useAht = true;
       for (var blk = 1; blk < 6; ++blk) {
@@ -274,33 +272,27 @@ internal sealed class Ac3EnhancedFrameDecoder {
       yield return LfeChannel;
   }
 
-  // -- per-block decode -------------------------------------------------------
   private bool DecodeAudioBlock(Ac3BitReader r, int blk, short[] pcm) {
     var nfchans = this._nfchans;
-
-    // block switch flags.
     var blksw = new bool[Slots];
     if (this._blkswe)
       for (var ch = 0; ch < nfchans; ++ch)
         blksw[ch] = r.ReadFlag();
 
-    // dither flags.
     var dithflag = new bool[Slots];
     if (this._dithflage) {
       for (var ch = 0; ch < nfchans; ++ch)
         dithflag[ch] = r.ReadFlag();
     } else {
       for (var ch = 0; ch < nfchans; ++ch)
-        dithflag[ch] = true;                    // default when syntax absent
+        dithflag[ch] = true;
     }
 
-    // dynamic range (1 set, 2 for dual mono).
     var sets = this._acmod == 0 ? 2 : 1;
     for (var i = 0; i < sets; ++i)
       if (r.ReadFlag())
         r.SkipBits(8);
 
-    // spectral extension strategy.
     if (blk == 0 || r.ReadFlag()) {
       this._spxInUse = r.ReadFlag();
       if (this._spxInUse)
@@ -311,56 +303,42 @@ internal sealed class Ac3EnhancedFrameDecoder {
         this._channelUsesSpx[ch] = false;
         this._firstSpxCoords[ch] = true;
       }
-
-    // spectral extension coordinates (parse-skip; reconstruction not synthesised).
     if (this._spxInUse)
       this.ParseSpxCoordinates(r);
 
-    // coupling strategy.
-    if (this._cplStrategyExists[blk]) {
-      if (!this.ParseCouplingStrategy(r, blk))
-        return false;
-    }
+    if (this._cplStrategyExists[blk] && !this.ParseCouplingStrategy(r, blk))
+      return false;
     var cplInUse = this._cplInUseBlk[blk];
-
-    // coupling coordinates.
     if (cplInUse)
       this.ParseCouplingCoordinates(r, blk);
 
-    // rematrixing.
     var rematflg = new bool[4];
     var numRematBands = 0;
-    if (this._acmod == 2) {
-      if (blk == 0 || r.ReadFlag()) {
-        numRematBands = 4;
-        if (cplInUse && this._startFreq[CplChannel] <= 61)
-          numRematBands -= 1 + (this._startFreq[CplChannel] == 37 ? 1 : 0);
-        else if (this._spxInUse && this._spxSrcStartFreq <= 61)
-          --numRematBands;
-        for (var bnd = 0; bnd < numRematBands; ++bnd)
-          rematflg[bnd] = r.ReadFlag();
-      }
+    if (this._acmod == 2 && (blk == 0 || r.ReadFlag())) {
+      numRematBands = 4;
+      if (cplInUse && this._startFreq[CplChannel] <= 61)
+        numRematBands -= 1 + (this._startFreq[CplChannel] == 37 ? 1 : 0);
+      else if (this._spxInUse && this._spxSrcStartFreq <= 61)
+        --numRematBands;
+      for (var bnd = 0; bnd < numRematBands; ++bnd)
+        rematflg[bnd] = r.ReadFlag();
     }
 
-    // exponent strategies are pre-decoded from the frame header (no per-block read for E-AC-3).
-    // channel bandwidth → end_freq when this block sets exponents.
     for (var ch = 0; ch < nfchans; ++ch) {
       this._startFreq[ch] = 0;
-      if (this._expStrategy[blk][ch] != Ac3Exponents.Strategy.Reuse) {
-        if (this._channelInCpl[ch])
-          this._endFreq[ch] = this._startFreq[CplChannel];
-        else if (this._channelUsesSpx[ch])
-          this._endFreq[ch] = this._spxSrcStartFreq;
-        else {
-          var bwcod = (int)r.ReadBits(6);
-          if (bwcod > 60) return false;
-          this._endFreq[ch] = bwcod * 3 + 73;
-        }
+      if (this._expStrategy[blk][ch] == Ac3Exponents.Strategy.Reuse)
+        continue;
+      if (this._channelInCpl[ch])
+        this._endFreq[ch] = this._startFreq[CplChannel];
+      else if (this._channelUsesSpx[ch])
+        this._endFreq[ch] = this._spxSrcStartFreq;
+      else {
+        var bwcod = (int)r.ReadBits(6);
+        if (bwcod > 60) return false;
+        this._endFreq[ch] = bwcod * 3 + 73;
       }
     }
-    // The coupling channel's start/end freq are already set by the coupling-strategy parse.
 
-    // decode exponents.
     if (cplInUse && this._expStrategy[blk][CplChannel] != Ac3Exponents.Strategy.Reuse) {
       var nmant = this._endFreq[CplChannel] - this._startFreq[CplChannel];
       var strat = this._expStrategy[blk][CplChannel];
@@ -374,7 +352,7 @@ internal sealed class Ac3EnhancedFrameDecoder {
       var ngrp = Ac3Exponents.GroupCount(this._endFreq[ch], strat);
       var absExp = (int)r.ReadBits(4);
       Ac3Exponents.Decode(r, this._exp[ch], 0, absExp, ngrp, strat);
-      r.SkipBits(2);                            // gainrng
+      r.SkipBits(2);
     }
     if (this._lfeon) {
       var strat = this._expStrategy[blk][LfeChannel];
@@ -386,7 +364,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
       }
     }
 
-    // bit-allocation parameters.
     if (this._bamode && r.ReadFlag()) {
       this._slowDecay = Ac3Tables.SlowDecay[(int)r.ReadBits(2)];
       this._fastDecay = Ac3Tables.FastDecay[(int)r.ReadBits(2)];
@@ -395,7 +372,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
       this._floor = Ac3Tables.Floor[(int)r.ReadBits(3)];
     }
 
-    // SNR offsets (block 0 only for E-AC-3, gated by snr_offset_strategy).
     if (blk == 0 && this._snrOffsetStrategy != 0 && r.ReadFlag()) {
       var csnr = ((int)r.ReadBits(6) - 15) << 4;
       var prev = 0;
@@ -408,7 +384,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
       }
     }
 
-    // fast gain (E-AC-3): gated by fast_gain_syntax, else default at block 0.
     if (this._frmfgaincode && r.ReadFlag()) {
       foreach (var ch in this.SnrChannelOrder(cplInUse))
         this._fastGain[ch] = Ac3Tables.FastGain[(int)r.ReadBits(3)];
@@ -417,11 +392,9 @@ internal sealed class Ac3EnhancedFrameDecoder {
         this._fastGain[ch] = Ac3Tables.FastGain[4];
     }
 
-    // E-AC-3 → AC-3 converter SNR offset (skip).
     if (r.ReadFlag())
       r.SkipBits(10);
 
-    // coupling leak.
     if (cplInUse) {
       if (this._firstCplLeak || r.ReadFlag()) {
         this._cplFastLeak = (int)r.ReadBits(3);
@@ -430,12 +403,11 @@ internal sealed class Ac3EnhancedFrameDecoder {
       this._firstCplLeak = false;
     }
 
-    // delta bit allocation.
     Array.Clear(this._deltas, 0, this._deltas.Length);
     if (this._dbaflde && r.ReadFlag()) {
       foreach (var ch in this.DbaChannelOrder(cplInUse)) {
         this._dbaMode[ch] = (int)r.ReadBits(2);
-        if (this._dbaMode[ch] == 3) return false;  // reserved
+        if (this._dbaMode[ch] == 3) return false;
       }
       foreach (var ch in this.DbaChannelOrder(cplInUse))
         if (this._dbaMode[ch] == 1)
@@ -447,41 +419,31 @@ internal sealed class Ac3EnhancedFrameDecoder {
 
     this.ComputeAllBap(cplInUse);
 
-    // skip field.
     if (this._skipflde && r.ReadFlag()) {
       var skipl = (int)r.ReadBits(9);
       r.SkipBits(skipl * 8);
     }
 
-    // mantissas / AHT.
     this.DecodeTransformCoeffs(r, blk, cplInUse, dithflag);
-
-    // coupling reconstruction.
     if (cplInUse)
       this.ApplyCoupling();
-
-    // rematrixing.
     if (this._acmod == 2)
       this.ApplyRematrix(rematflg, numRematBands);
 
-    // IMDCT + overlap-add.
     var totalChannels = nfchans + (this._lfeon ? 1 : 0);
     for (var ch = 0; ch < nfchans; ++ch)
       this.TransformChannel(ch, blksw[ch], blk, ch, totalChannels, pcm);
     if (this._lfeon)
       this.TransformChannel(LfeChannel, blockSwitch: false, blk, nfchans, totalChannels, pcm);
-
     return true;
   }
 
-  // -- spectral extension (parse only) ----------------------------------------
   private void ParseSpxStrategy(Ac3BitReader r, int blk) {
     if (this._acmod == 1)
       this._channelUsesSpx[0] = true;
-    else {
+    else
       for (var ch = 0; ch < this._nfchans; ++ch)
         this._channelUsesSpx[ch] = r.ReadFlag();
-    }
     var startSubband = (int)r.ReadBits(2) + 2;
     var endSubband = (int)r.ReadBits(3) + 5;
     this._spxSrcStartFreq = startSubband * 12 + 25;
@@ -496,12 +458,11 @@ internal sealed class Ac3EnhancedFrameDecoder {
       }
       if (this._firstSpxCoords[ch] || r.ReadFlag()) {
         this._firstSpxCoords[ch] = false;
-        r.SkipBits(5);                          // spxblnd
-        r.SkipBits(2);                          // mstrspxco
+        r.SkipBits(5);
+        r.SkipBits(2);
         for (var bnd = 0; bnd < this._numSpxBands; ++bnd) {
-          var exp = (int)r.ReadBits(4);
-          r.SkipBits(2);                        // spxcomant
-          _ = exp;
+          _ = r.ReadBits(4);
+          r.SkipBits(2);
         }
       }
     }
@@ -509,7 +470,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
 
   private int _numSpxBands;
 
-  // -- coupling ---------------------------------------------------------------
   private bool ParseCouplingStrategy(Ac3BitReader r, int blk) {
     if (!this._cplInUseBlk[blk]) {
       for (var ch = 0; ch < this._nfchans; ++ch) {
@@ -521,9 +481,8 @@ internal sealed class Ac3EnhancedFrameDecoder {
       return true;
     }
     if (this._acmod < 2)
-      return false;                             // coupling illegal in mono/dual-mono
-
-    if (r.ReadFlag())                            // ecplinu (enhanced coupling)
+      return false;
+    if (r.ReadFlag())
       throw new NotSupportedException("E-AC-3 enhanced coupling (ecplinu) is not supported.");
 
     if (this._acmod == 2) {
@@ -533,19 +492,15 @@ internal sealed class Ac3EnhancedFrameDecoder {
       for (var ch = 0; ch < this._nfchans; ++ch)
         this._channelInCpl[ch] = r.ReadFlag();
     }
-
     if (this._acmod == 2)
       this._phaseFlagsInUse = r.ReadFlag();
 
     var startSubband = (int)r.ReadBits(4);
-    var endSubband = this._spxInUse
-      ? (this._spxSrcStartFreq - 37) / 12
-      : (int)r.ReadBits(4) + 3;
+    var endSubband = this._spxInUse ? (this._spxSrcStartFreq - 37) / 12 : (int)r.ReadBits(4) + 3;
     if (startSubband >= endSubband)
       return false;
     this._startFreq[CplChannel] = startSubband * 12 + 37;
     this._endFreq[CplChannel] = endSubband * 12 + 37;
-
     DecodeBandStructure(r, blk, startSubband, endSubband, Ac3EnhancedTables.DefaultCplBandStruct,
       out this._numCplBands, this._cplBandSizes);
     return true;
@@ -577,11 +532,8 @@ internal sealed class Ac3EnhancedFrameDecoder {
           r.SkipBits(1);
   }
 
-  // -- transform coefficients --------------------------------------------------
   private void DecodeTransformCoeffs(Ac3BitReader r, int blk, bool cplInUse, bool[] dithflag) {
     var m = new Ac3Mantissas(r);
-
-    // full-bandwidth channels.
     for (var ch = 0; ch < this._nfchans; ++ch) {
       var end = this._channelInCpl[ch] ? this._startFreq[CplChannel] : this._endFreq[ch];
       var coeff = this._coeffs[ch];
@@ -597,7 +549,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
         coeff[bin] = 0f;
     }
 
-    // coupling channel.
     if (cplInUse) {
       var coeff = this._coeffs[CplChannel];
       Array.Clear(coeff, 0, coeff.Length);
@@ -613,7 +564,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
       }
     }
 
-    // LFE.
     if (this._lfeon) {
       var coeff = this._coeffs[LfeChannel];
       Array.Clear(coeff, 0, coeff.Length);
@@ -628,34 +578,27 @@ internal sealed class Ac3EnhancedFrameDecoder {
     }
   }
 
-  // Adaptive Hybrid Transform decode (A/52 Annex E §E.2.3.2, FFmpeg ff_eac3_decode_transform_coeffs_aht_ch).
   private void DecodeAht(Ac3BitReader r, int ch, bool dither) {
     var start = ch == CplChannel ? this._startFreq[CplChannel] : 0;
     var end = ch == CplChannel ? this._endFreq[CplChannel] : this._endFreq[ch];
     var bap = this._bap[ch];
-
     var gaqMode = (int)r.ReadBits(2);
     var endBap = gaqMode < 2 ? 12 : 17;
-
-    // GAQ gain codes.
     var gaqGain = new int[MaxBins];
     var gs = 0;
-    if (gaqMode is 1 or 2) {                     // EAC3_GAQ_12 / EAC3_GAQ_14
+    if (gaqMode is 1 or 2) {
       for (var bin = start; bin < end; ++bin)
         if (bap[bin] > 7 && bap[bin] < endBap)
           gaqGain[gs++] = (r.ReadFlag() ? 1 : 0) << (gaqMode - 1);
-    } else if (gaqMode == 3) {                   // EAC3_GAQ_124: 3 codes in 5 bits
+    } else if (gaqMode == 3) {
       var gc = 2;
       for (var bin = start; bin < end; ++bin)
-        if (bap[bin] > 7 && bap[bin] < 17) {
-          if (gc++ == 2) {
-            var group = (int)r.ReadBits(5);
-            if (group > 26) group = 26;
-            gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][0];
-            gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][1];
-            gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][2];
-            gc = 0;
-          }
+        if (bap[bin] > 7 && bap[bin] < 17 && gc++ == 2) {
+          var group = Math.Min((int)r.ReadBits(5), 26);
+          gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][0];
+          gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][1];
+          gaqGain[gs++] = Ac3EnhancedTables.Ungroup3In5[group][2];
+          gc = 0;
         }
     }
 
@@ -683,7 +626,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
 
   private uint _ahtDither = 1;
   private int NextAhtDither() {
-    // 23-bit signed dither matching the AHT zero-mantissa path domain.
     var state = this._ahtDither;
     var lsb = state & 1;
     state >>= 1;
@@ -692,11 +634,8 @@ internal sealed class Ac3EnhancedFrameDecoder {
     return (int)(state & 0x7FFFFF) - 0x400000;
   }
 
-  // Pre-mantissas carry a 24-bit fixed-point scale (1<<23 ↔ 1.0 mantissa) plus the idct6 gain;
-  // collapse that to the normalized mantissa domain the rest of the pipeline expects.
   private static float Exp2Pre(int e) => (float)Math.Pow(2.0, e) / (1 << 23);
 
-  // -- bit allocation ----------------------------------------------------------
   private void ComputeAllBap(bool cplInUse) {
     var p = new Ac3BitAllocation.AllocParams(this._slowDecay, this._fastDecay, this._slowGain, this._dbPerBit, this._floor);
     for (var ch = 0; ch < this._nfchans; ++ch) {
@@ -713,8 +652,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
         this._snrOffset[LfeChannel], this._fscod, this._channelUsesAht[LfeChannel], false, 0, 0, this._deltas[LfeChannel]);
   }
 
-  // Wraps Ac3BitAllocation.ComputeBap, remapping the bap address through the AHT hebap table when the
-  // channel uses AHT (the masking curve is identical; only the address→pointer LUT differs).
   private static void ComputeBapFor(byte[] exp, byte[] bap, int start, int end, Ac3BitAllocation.AllocParams p,
       int fgain, int snr, int fscod, bool usesAht, bool isCoupling, int cplFast, int cplSlow,
       Ac3BitAllocation.DeltaSegment[]? deltas) {
@@ -767,20 +704,15 @@ internal sealed class Ac3EnhancedFrameDecoder {
       Ac3Imdct.Short(coeff, this._delay[ch], output);
     else
       Ac3Imdct.Long(coeff, this._delay[ch], output);
-
     var baseOffset = blk * 256 * totalChannels + outChannel;
     for (var n = 0; n < 256; ++n) {
       var v = output[n] * 32768f;
-      var s = (int)Math.Round(v);
-      pcm[baseOffset + n * totalChannels] = (short)Math.Clamp(s, short.MinValue, short.MaxValue);
+      pcm[baseOffset + n * totalChannels] = (short)Math.Clamp((int)Math.Round(v), short.MinValue, short.MaxValue);
     }
   }
 
-  // -- band-structure decode --------------------------------------------------
   private readonly int[] _cplSubbandToBand = new int[18];
 
-  // Reads the per-boundary merge bits (from the bitstream in block 0 / when present, else from the
-  // default banding) and resolves them into bands via Ac3EnhancedBandStructure.Decode.
   private Ac3EnhancedBandStructure.Result DecodeBandStructure(
       Ac3BitReader r, int blk, int startSubband, int endSubband, byte[] defaultStruct) {
     var numSubbands = endSubband - startSubband;
@@ -806,7 +738,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
       Math.Min(result.SubbandToBand.Length, this._cplSubbandToBand.Length));
   }
 
-  // SPX variant: only the band count is needed (parse-only reconstruction).
   private void DecodeSpxBandStructure(Ac3BitReader r, int blk, int startSubband, int endSubband, byte[] defaultStruct) {
     this._numSpxBands = this.DecodeBandStructure(r, blk, startSubband, endSubband, defaultStruct).NumBands;
   }
@@ -823,7 +754,6 @@ internal sealed class Ac3EnhancedFrameDecoder {
     return result;
   }
 
-  // -- small helpers ----------------------------------------------------------
   private static float Exp2(int e) => (float)Math.Pow(2.0, e);
 
   private static int Log2(int v) {

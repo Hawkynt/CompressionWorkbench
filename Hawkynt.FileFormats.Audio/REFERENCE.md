@@ -216,7 +216,7 @@ Implements `IEquatable<AdtsHeader>`.
 
 ### Namespace `Codec.Ac3`
 
-[`Ac3Aht`](#ac3aht) · [`Ac3BitAllocation`](#ac3bitallocation) · [`Ac3BitAllocation.AllocParams`](#ac3bitallocationallocparams) · [`Ac3BitAllocation.DeltaSegment`](#ac3bitallocationdeltasegment) · [`Ac3BitReader`](#ac3bitreader) · [`Ac3Codec`](#ac3codec) · [`Ac3EncoderOptions`](#ac3encoderoptions) · [`Ac3EnhancedBandStructure`](#ac3enhancedbandstructure) · [`Ac3EnhancedBandStructure.Result`](#ac3enhancedbandstructureresult) · [`Ac3EnhancedTables`](#ac3enhancedtables) · [`Ac3Exponents`](#ac3exponents) · [`Ac3Exponents.Strategy`](#ac3exponentsstrategy) · [`Ac3FrameHeader`](#ac3frameheader) · [`Ac3Imdct`](#ac3imdct) · [`Ac3Mantissas`](#ac3mantissas) · [`Ac3StreamInfo`](#ac3streaminfo)
+[`Ac3Aht`](#ac3aht) · [`Ac3BitAllocation`](#ac3bitallocation) · [`Ac3BitAllocation.AllocParams`](#ac3bitallocationallocparams) · [`Ac3BitAllocation.DeltaSegment`](#ac3bitallocationdeltasegment) · [`Ac3BitReader`](#ac3bitreader) · [`Ac3Codec`](#ac3codec) · [`Ac3EncoderOptions`](#ac3encoderoptions) · [`Ac3EnhancedBandStructure`](#ac3enhancedbandstructure) · [`Ac3EnhancedBandStructure.Result`](#ac3enhancedbandstructureresult) · [`Ac3EnhancedTables`](#ac3enhancedtables) · [`Ac3Exponents`](#ac3exponents) · [`Ac3Exponents.Strategy`](#ac3exponentsstrategy) · [`Ac3FrameHeader`](#ac3frameheader) · [`Ac3Imdct`](#ac3imdct) · [`Ac3Mantissas`](#ac3mantissas) · [`Ac3StreamInfo`](#ac3streaminfo) · [`Eac3EncoderOptions`](#eac3encoderoptions)
 
 #### `Ac3Aht`
 
@@ -234,7 +234,7 @@ AC-3 parametric bit-allocation model (ATSC A/52 §7.2.2). Given a channel's deco
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BapTab` | `static readonly byte[] BapTab` | bap lookup table (A/52 Table 7.16, baptab[]). Indexed by the clamped (psd-mask)/32 address (0..63) → bit-allocation pointer 0..15. |
-| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, DeltaSegment[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one channel over bins `start`..`end`-1. `exp` holds the decoded exponents; `bap` (length ≥ end) receives the per-bin bap. `fgain` is the channel fast gain, `snrOffset` the combined coarse/fine SNR offset, `fscod` the sample-rate code (for the hearing threshold). `deltas` applies optional delta bit allocation; pass null for none. The coupling channel (`isCoupling`) skips the low-frequency excitation bootstrap and starts its leak integrators from `cplFastLeak` / `cplSlowLeak` instead. |
+| `ComputeBap` | `static void ComputeBap(byte[] exp, byte[] bap, int start, int end, AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak, DeltaSegment[] deltas, byte[] bapTable = null)` | Computes the bit-allocation pointers for one full-rate AC-3 channel over bins `start`..`end`-1. Public callers use the legacy `fscod` values 0..2; internal enhanced-decoder callers additionally use selectors 4..6 for 24/22.05/16-kHz reduced-rate E-AC-3. |
 | `Resolve` | `static AllocParams Resolve(int sdcycod, int fdcycod, int sgaincod, int dbpbcod, int floorcod)` | Resolves the coded allocation parameters (sdcycod/fdcycod/sgaincod/dbpbcod/floorcod) to their table values. |
 
 #### `Ac3BitAllocation.AllocParams`
@@ -286,6 +286,7 @@ Managed AC-3 / E-AC-3 codec. Legacy AC-3 encoding is implemented in the companio
 | --- | --- | --- |
 | `EncoderDelaySamples` | `const int EncoderDelaySamples` | Long-block AC-3 analysis delay in samples per channel. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes an AC-3 / E-AC-3 stream into raw interleaved little-endian signed 16-bit PCM on `output`. Channels are emitted in the ITU/WAVE interleave order — front left, front right, front centre, LFE, then the surrounds — not the acmod order the bit stream uses. AC-3 (bsid ≤ 10) and E-AC-3 independent substreams (bsid 11..16, frame type 0/2) decode; E-AC-3 dependent substreams (frame type 1) are skipped. |
+| `EncodeEnhanced` | `static byte[] EncodeEnhanced(ReadOnlySpan<short> interleaved, Eac3EncoderOptions options = null)` | Encodes interleaved PCM16 as an E-AC-3 independent substream (strmtyp 0, substreamid 0, bsid 16). The Annex E framing is written independently from legacy AC-3 while reusing the shared long-block MDCT, exponent coding, parametric bit allocation and mantissa quantizers. Coupling, spectral extension, AHT, rematrixing and short-block switching are disabled; every full-bandwidth channel is coded independently. Full-rate streams support 1/2/3/6-block syncframes; reduced 24/22.05/16-kHz streams use the Annex E six-block form. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> interleaved, Ac3EncoderOptions options = null)` | Encodes interleaved PCM16 as legacy AC-3 (bsid 8). The implementation is a managed adaptation of FFmpeg's LGPL `ac3enc.c`: long-block MDCT analysis, D45 exponent grouping/reuse, standards-defined parametric bit allocation, coarse/fine SNR rate control, grouped and linear mantissa quantizers, 44.1-kHz alternating frame sizes, and both A/52 CRC fields. Coupling, rematrixing and short-block switching are deliberately disabled so the core path remains deterministic and every channel is coded independently. |
 | `ReadStreamInfo` | `static Ac3StreamInfo ReadStreamInfo(Stream input)` | Reads stream-level info (sample rate, native channel count, bitrate, duration) from the first sync frame. |
 
@@ -297,11 +298,12 @@ Implements `IEquatable<Ac3EncoderOptions>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Ac3EncoderOptions` | `Ac3EncoderOptions(int SampleRate = 48000, int Bitrate = 192000, int Acmod = 2, bool LowFrequencyEffects = false, int DialNorm = -31, int Cutoff = 0, bool PadFinalFrame = true)` | Controls legacy ATSC A/52 AC-3 encoding. |
-| `Acmod` | `int Acmod { get; init; }` | A/52 audio coding mode 1..7. The input channel order follows that mode. |
+| `Ac3EncoderOptions` | `Ac3EncoderOptions(int SampleRate = 48000, int Bitrate = 192000, int Acmod = 2, bool LowFrequencyEffects = false, int DialNorm = -31, int Cutoff = 0, bool PadFinalFrame = true, int? DialNorm2 = null)` | Controls legacy ATSC A/52 AC-3 encoding. |
+| `Acmod` | `int Acmod { get; init; }` | A/52 audio coding mode 0..7. The input channel order follows that mode. |
 | `Bitrate` | `int Bitrate { get; init; }` | One of the standard AC-3 bitrates from 32 to 640 kbit/s. |
 | `Cutoff` | `int Cutoff { get; init; }` | Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value. |
-| `DialNorm` | `int DialNorm { get; init; }` | Dialogue normalization metadata in dB, -31..-1. |
+| `DialNorm2` | `int? DialNorm2 { get; init; }` | Dual-mono second-program dialogue normalization; null reuses `DialNorm`. |
+| `DialNorm` | `int DialNorm { get; init; }` | Primary-program dialogue normalization metadata in dB, -31..-1. |
 | `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` | When true, the final interleaved input channel is encoded as LFE. |
 | `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete 1536-sample final frame with its last sample. |
 | `SampleRate` | `int SampleRate { get; init; }` | 32000, 44100 or 48000 Hz. |
@@ -430,6 +432,25 @@ Implements `IEquatable<Ac3StreamInfo>`.
 | `IsEnhanced` | `bool IsEnhanced { get; init; }` |  |
 | `Lfe` | `bool Lfe { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `Eac3EncoderOptions`
+
+Controls ATSC A/52 Enhanced AC-3 encoding of an independent substream.
+
+Implements `IEquatable<Eac3EncoderOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Eac3EncoderOptions` | `Eac3EncoderOptions(int SampleRate = 48000, int Bitrate = 192000, int Acmod = 2, bool LowFrequencyEffects = false, int DialNorm = -31, int Cutoff = 0, bool PadFinalFrame = true, int? BlocksPerFrame = null, int? DialNorm2 = null)` | Controls ATSC A/52 Enhanced AC-3 encoding of an independent substream. |
+| `Acmod` | `int Acmod { get; init; }` | A/52 audio coding mode 0..7. The input channel order follows that mode. |
+| `Bitrate` | `int Bitrate { get; init; }` | Target average bitrate in bit/s. Frame sizes are word-aligned. |
+| `BlocksPerFrame` | `int? BlocksPerFrame { get; init; }` | 1, 2, 3 or 6; reduced-rate streams require 6; null selects automatically. |
+| `Cutoff` | `int Cutoff { get; init; }` | Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value. |
+| `DialNorm2` | `int? DialNorm2 { get; init; }` | Dual-mono second-program dialogue normalization; null reuses `DialNorm`. |
+| `DialNorm` | `int DialNorm { get; init; }` | Primary-program dialogue normalization metadata in dB, -31..-1. |
+| `LowFrequencyEffects` | `bool LowFrequencyEffects { get; init; }` | When true, the final interleaved input channel is encoded as LFE. |
+| `PadFinalFrame` | `bool PadFinalFrame { get; init; }` | Pad an incomplete final frame with its last sample. |
+| `SampleRate` | `int SampleRate { get; init; }` | 16000, 22050, 24000, 32000, 44100 or 48000 Hz. |
 
 ### Namespace `Codec.AdpcmX`
 
@@ -4251,13 +4272,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `Ac3FormatDescriptor`
 
-AC-3 / E-AC-3 (Dolby Digital / Dolby Digital Plus) elementary stream surfaced as a pseudo-archive. The descriptor parses the sync-frame headers (syncinfo + BSI: sample rate, frame size, channel arrangement via acmod, LFE, dialnorm) for `metadata.ini` and distinguishes AC-3 (bsid ≤ 10) from E-AC-3 (bsid = 16). The byte-exact `FULL.ac3` (Kind `Container`) always round-trips the stream unchanged. For both AC-3 and E-AC-3 the descriptor additionally decodes the stream (via `Codec.Ac3`) and surfaces one mono `<CHANNEL>.wav` per decoded channel, named via the acmod speaker layout (L/C/R → FRONT_LEFT/CENTER/FRONT_RIGHT, surrounds → BACK_*/SIDE_*, plus LFE last). For E-AC-3 only the primary independent substream (id 0) is decoded; dependent substreams are skipped (noted in `metadata.ini`). When the decoder can't handle the input (enhanced coupling, malformed, truncated) it falls back to the info-only layout (`FULL.ac3` + `metadata.ini`).
+AC-3 / E-AC-3 (Dolby Digital / Dolby Digital Plus) elementary streams. Besides the pseudo-archive view, the descriptor can encode AC-3 and E-AC-3 from canonical PCM, create an elementary stream from extracted mono WAV channels, and expose complete syncframes as encoded packets for byte-preserving demux/mux/remux.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Ac3FormatDescriptor` | `Ac3FormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -4268,11 +4290,22 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` | Gets the codecs that can be encoded from PCM. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the elementary codecs this raw syncframe stream can contain. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Reports whether an input can participate in AC-3 creation. |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` | Reports whether the canonical PCM geometry and requested AC-3/E-AC-3 options are encodable. |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` | Reports whether this raw elementary-stream target can carry the encoded stream. AC-3 syncframes are already codec access units, so muxing adds no wrapper bytes. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a byte-exact supplied FULL stream, or interleaves per-channel PCM16 WAVs and encodes AC-3/E-AC-3. Ambiguous channel counts use the conventional default layout; every other layout including 1+1 dual mono can be selected explicitly with `acmod` and `lfe` options. |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` | Decodes the primary AC-3/E-AC-3 programme to canonical interleaved PCM16. |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` | Encodes interleaved canonical PCM16 to an AC-3 or E-AC-3 elementary stream. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` | Concatenates validated complete AC-3/E-AC-3 syncframe packets byte for byte. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` | Splits a raw AC-3/E-AC-3 byte stream into complete syncframes without changing a byte. E-AC-3 dependent substreams are retained as packets; they are not discarded merely because the PCM decoder consumes only the primary programme. |
 
 #### `Ac3SyncFrame`
 
