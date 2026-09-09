@@ -214,8 +214,40 @@ public class SupTests {
 
     Assert.That(
       () => new SupFormatDescriptor().Create(output, [ArchiveInputInfo.InMemory("subtitle_000.bin", data)], new FormatCreateOptions()),
-      Throws.InstanceOf<InvalidDataException>());
+      Throws.InstanceOf<InvalidOperationException>());
     Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0xCA, 0xFE }));
+  }
+
+  /// <summary>
+  /// A .sup file is one subtitle stream, not a container for a file tree. The writer must say so
+  /// through the declared-constraint path the generic create/convert surfaces recognise —
+  /// <see cref="InvalidOperationException"/> — instead of leaking the parser's
+  /// <see cref="InvalidDataException"/>, which those surfaces read as a broken writer.
+  /// </summary>
+  [Test, Category("EdgeCase")]
+  public void Descriptor_Create_RefusesAnArbitraryFileTreeThroughTheDeclaredConstraintPath() {
+    using var output = new MemoryStream();
+
+    Assert.That(
+      () => new SupFormatDescriptor().Create(output, [
+        ArchiveInputInfo.InMemory("HELLO.TXT", "hello"u8.ToArray()),
+        ArchiveInputInfo.InMemory("DATA.BIN", new byte[] { 1, 2, 3, 4 }),
+      ], new FormatCreateOptions()),
+      Throws.InstanceOf<InvalidOperationException>()
+        .With.Message.Contains("SUP creation needs"));
+    Assert.That(output.Length, Is.Zero);
+  }
+
+  /// <summary>An input list holding nothing but the derived metadata entry carries no display set.</summary>
+  [Test, Category("EdgeCase")]
+  public void Descriptor_Create_RefusesMetadataOnlyInput() {
+    using var output = new MemoryStream();
+
+    Assert.That(
+      () => new SupFormatDescriptor().Create(output, [
+        ArchiveInputInfo.InMemory("metadata.ini", "[sup]\n"u8.ToArray()),
+      ], new FormatCreateOptions()),
+      Throws.InstanceOf<InvalidOperationException>());
   }
 
   [Test, Category("EdgeCase")]

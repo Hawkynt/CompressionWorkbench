@@ -144,7 +144,13 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Muxes one or more complete PGS display-set streams into a standalone SUP file.
   /// The derived <c>metadata.ini</c> entry is ignored when a previously demuxed SUP is
   /// fed back through the generic archive rebuild path.
+  /// <para>
+  /// A <c>.sup</c> file is one subtitle stream, not a container that can hold a file tree, so every
+  /// input must already be a complete PCS-to-END display-set stream. Anything else is refused
+  /// through the declared-constraint path the other single-stream descriptors use.
+  /// </para>
   /// </summary>
+  /// <exception cref="InvalidOperationException">An input is not a complete PGS display-set stream.</exception>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -155,7 +161,7 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       .Where(input => !input.IsDirectory && !IsDerivedMetadata(input.ArchiveName))
       .ToList();
     if (payloads.Count == 0)
-      throw new InvalidDataException("PGS mux requires at least one complete display-set payload.");
+      throw new InvalidOperationException(MuxContract + " No display-set payload was supplied.");
 
     if (payloads.All(input => TryGetGeneratedSubtitleIndex(input.ArchiveName, out _)))
       payloads.Sort(static (left, right) => {
@@ -176,12 +182,22 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       SupWriter.Write(output, payload.Segments);
   }
 
+  /// <summary>
+  /// What the SUP writer accepts, quoted verbatim in every refusal so a caller handed an
+  /// arbitrary file learns the contract rather than a parser's offset complaint.
+  /// </summary>
+  private const string MuxContract =
+    "SUP creation needs complete Blu-ray PGS display-set streams (PCS through END), " +
+    "such as the subtitle_NNN.bin entries a SUP demux produces; a .sup file is a single " +
+    "subtitle stream and cannot represent an arbitrary file tree.";
+
   private static SupReader.Stream ParseMuxPayload(string name, ReadOnlySpan<byte> data) {
     SupReader.Stream parsed;
     try {
       parsed = SupReader.ReadStrict(data);
     } catch (InvalidDataException ex) {
-      throw new InvalidDataException($"PGS mux input '{name}' is not a complete SUP segment stream: {ex.Message}", ex);
+      throw new InvalidOperationException(
+        $"{MuxContract} Input '{name}' is not a complete SUP segment stream: {ex.Message}", ex);
     }
 
     var inDisplaySet = false;
@@ -190,15 +206,15 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       switch (segment.Type) {
         case SupReader.SegPresentationComposition:
           if (inDisplaySet)
-            throw new InvalidDataException($"PGS mux input '{name}' starts a new PCS before the previous display set ended.");
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' starts a new PCS before the previous display set ended.");
           inDisplaySet = true;
           break;
 
         case SupReader.SegEnd:
           if (!inDisplaySet)
-            throw new InvalidDataException($"PGS mux input '{name}' contains END outside a display set.");
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains END outside a display set.");
           if (segment.Body.Length != 0)
-            throw new InvalidDataException($"PGS mux input '{name}' contains an END segment with a non-empty body.");
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains an END segment with a non-empty body.");
           inDisplaySet = false;
           ++displaySetCount;
           break;
@@ -207,18 +223,18 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
              SupReader.SegObjectDefinition or
              SupReader.SegWindowDefinition:
           if (!inDisplaySet)
-            throw new InvalidDataException($"PGS mux input '{name}' contains segment 0x{segment.Type:X2} before a PCS.");
+            throw new InvalidOperationException($"{MuxContract} Input '{name}' contains segment 0x{segment.Type:X2} before a PCS.");
           break;
 
         default:
-          throw new InvalidDataException($"PGS mux input '{name}' contains unsupported segment type 0x{segment.Type:X2}.");
+          throw new InvalidOperationException($"{MuxContract} Input '{name}' contains unsupported segment type 0x{segment.Type:X2}.");
       }
     }
 
     if (inDisplaySet)
-      throw new InvalidDataException($"PGS mux input '{name}' ends before its display set END segment.");
+      throw new InvalidOperationException($"{MuxContract} Input '{name}' ends before its display set END segment.");
     if (displaySetCount == 0)
-      throw new InvalidDataException($"PGS mux input '{name}' contains no complete PCS-to-END display set.");
+      throw new InvalidOperationException($"{MuxContract} Input '{name}' contains no complete PCS-to-END display set.");
 
     return parsed;
   }

@@ -17259,7 +17259,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Muxes one or more complete PGS display-set streams into a standalone SUP file. The derived `metadata.ini` entry is ignored when a previously demuxed SUP is fed back through the generic archive rebuild path. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Muxes one or more complete PGS display-set streams into a standalone SUP file. The derived `metadata.ini` entry is ignored when a previously demuxed SUP is fed back through the generic archive rebuild path. A `.sup` file is one subtitle stream, not a container that can hold a file tree, so every input must already be a complete PCS-to-END display-set stream. Anything else is refused through the declared-constraint path the other single-stream descriptors use. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
