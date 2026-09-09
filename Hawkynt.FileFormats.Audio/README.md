@@ -84,7 +84,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.MonkeysAudio` | Lossless/lossy | R/W ⚠️ | — | Monkey's Audio supported compression levels |
 | `Codec.Ra144` | Speech | R | `0x2002` | RealAudio 14.4 / lpcJ |
 | `Codec.TrueSpeech` | Speech | R | `0x0022` | DSP Group TrueSpeech WAV tag 0x0022 |
-| `Codec.InterplayAcm` | Lossy | R | — | Interplay ACM |
+| `Codec.InterplayAcm` | Lossy | R/W | — | Interplay ACM encode + decode; clean-room regularized sub-band analysis encoder |
 | `Codec.Nellymoser` | Lossy | R | — | Nellymoser / Flash |
 | `Codec.WsAdpcm` | ADPCM | R/W | — | Westwood WS ADPCM + continuous-IMA paths, encode + decode |
 | `Codec.RoqDpcm` | DPCM | R/W | — | id RoQ square-table DPCM |
@@ -151,7 +151,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | --- | --- | :---: | :---: | :---: | :---: | :---: | --- |
 | `Aac` | AAC (ADTS) | WORM | ✅ | ✅ | ✅ | ✅ | AAC ADTS route; ADTS remux in both directions; codec profile limits apply |
 | `Ac3` | AC-3 / E-AC-3 | R | ✅ | ✅ | — | — | Raw AC-3/E-AC-3 independent substreams |
-| `Acm` | Interplay ACM (Fallout / Baldur's Gate audio) | R | — | — | — | — | Interplay ACM |
+| `Acm` | Interplay ACM (Fallout / Baldur's Gate audio) | WORM | ✅ | ✅ | ✅ | ✅ | Interplay ACM; PCM encode/decode and packet-preserving standalone remux |
 | `Adx` | CRI ADX | WORM | ✅ | ✅ | ✅ | ✅ | CRI ADX/AHX paths |
 | `Aea` | Sony ATRAC1 / MiniDisc (.aea) | R | — | — | — | — | Sony MiniDisc AEA / ATRAC1 |
 | `Ahx` | AHX / THX Synth-Tracker | R | — | — | — | — | AHX / THX Synth-Tracker |
