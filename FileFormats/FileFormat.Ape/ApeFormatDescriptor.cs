@@ -464,12 +464,12 @@ public sealed class ApeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static bool TryGetCompressionLevel(FormatCreateOptions options, out int level, out string? reason) {
     var raw = options.GetString("CompressionLevel") ?? options.GetString("compression-level");
-    if (raw is not null && !int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out level)) {
+    if (raw is null)
+      level = options.Level ?? DefaultCompressionLevel;
+    else if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out level)) {
       reason = $"invalid Monkey's Audio compression level '{raw}'";
       return false;
     }
-    if (raw is null)
-      level = options.Level ?? DefaultCompressionLevel;
     if (level is >= 1 and <= 5)
       level *= 1000;
     if (!IsCompressionLevel(level)) {

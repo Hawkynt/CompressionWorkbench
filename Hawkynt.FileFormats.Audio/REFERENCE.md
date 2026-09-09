@@ -1783,7 +1783,7 @@ Standard MIDI File emitter for already-encoded `MTrk` payloads.
 
 #### `MonkeysAudioCodec`
 
-Monkey's Audio (.ape) lossless codec — a reference-faithful encoder and decoder for the version 3.99 (v3990) container and bitstream. The on-disk layout is the v3.98+ `APE_DESCRIPTOR` + 24-byte `APE_HEADER` + u32-per-frame seek table + range-coded frame data, exactly as the reference SDK writes it. PCM in and out is raw interleaved little-endian signed integers. The decode path is a byte-exact port of the reference SDK's `CUnBitArray` range coder, `DecodeValueRange` entropy stage (v3990), the order-4 dual cross-channel predictor (`CPredictorDecompress3950toCurrent`) and the level-dependent `CNNFilter` cascade, plus the X/Y → L/R decorrelation and 8/16/24-bit sample reconstruction (`CPrepare::Unprepare`) and the per-frame CRC32 / special-frame (silence, pseudo-stereo) handling. It is the same machinery ffmpeg's `libavcodec/apedec.c` implements, so it decodes real reference- or ffmpeg-produced files of compression levels 1000–5000 (verified byte-exact against ffmpeg). The container parser requires the v3.98+ `APE_DESCRIPTOR` layout, so files older than v3980 are rejected even though the bitstream port itself covers the v3.95+ predictor. The encode path is the exact forward inverse — the SDK's `CBitArray` range coder, `EncodeValue`, `CPredictorCompressNormal` and `CPrepare` — so a stream this codec writes is the byte-stream the reference encoder would produce for the same input at the same level and round-trips losslessly through the reference decoder (this one or ffmpeg). The encoder emits levels 1000–4000 (the level-5000 "insane" filter cascade decodes but is not used for encoding). Pre-3.95 (< 3950) files use older entropy/predictor variants this port does not implement and are rejected with `NotSupportedException` so container descriptors fall back gracefully.
+Monkey's Audio (.ape) lossless codec — a reference-faithful encoder and decoder for the version 3.99 (v3990) container and bitstream. The on-disk layout is the v3.98+ `APE_DESCRIPTOR` + 24-byte `APE_HEADER` + u32-per-frame seek table + range-coded frame data, exactly as the reference SDK writes it. PCM in and out is raw interleaved little-endian signed integers. The decode path is a byte-exact port of the reference SDK's `CUnBitArray` range coder, `DecodeValueRange` entropy stage (v3990), the order-4 dual cross-channel predictor (`CPredictorDecompress3950toCurrent`) and the level-dependent `CNNFilter` cascade, plus the X/Y → L/R decorrelation and 8/16/24-bit sample reconstruction (`CPrepare::Unprepare`) and the per-frame CRC32 / special-frame (silence, pseudo-stereo) handling. It is the same machinery ffmpeg's `libavcodec/apedec.c` implements, so it decodes real reference- or ffmpeg-produced files of compression levels 1000–5000 (verified byte-exact against ffmpeg). The container parser requires the v3.98+ `APE_DESCRIPTOR` layout, so files older than v3980 are rejected even though the bitstream port itself covers the v3.95+ predictor. The encode path is the exact forward inverse — the SDK's `CBitArray` range coder, `EncodeValue`, `CPredictorCompressNormal` and `CPrepare` — so a stream this codec writes is the byte-stream the reference encoder would produce for the same input at the same level and round-trips losslessly through the reference decoder (this one or ffmpeg). The encoder emits all five reference compression levels 1000–5000. Pre-3.95 (< 3950) files use older entropy/predictor variants this port does not implement and are rejected with `NotSupportedException` so container descriptors fall back gracefully.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4839,28 +4839,41 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `ApeFormatDescriptor`
 
-Surfaces a Monkey's Audio (.ape) file as a read-only archive of the container passthrough, the raw APE descriptor header, the preserved WAV header bytes, the concatenated frame data, the seek table, and a metadata.ini describing the stream parameters. When the stream is a compression-level-1000 ("fast") Monkey's Audio file the decoder can handle, the listing also gains one playable mono WAV per speaker (`LEFT.wav`/`RIGHT.wav`/`MONO.wav`/…, Kind `Channel`, method `pcm`), named per `ChannelLayout`. The decode is best-effort: higher compression levels, unsupported bit depths/channel counts or malformed input leave the container/metadata view intact rather than failing.
+Monkey's Audio (.ape) container with pseudo-archive inspection, canonical PCM encode/decode, packet-preserving demux/remux, and WORM creation from per-channel WAVs. Modern 3.98+ streams use the descriptor/header/seek-table model; legacy files remain readable as structural pseudo-archives but are not rewritten because their bitstream/header generations are not interchangeable with the checked-in v3.99 encoder.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApeFormatDescriptor` | `ApeFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Asf`
 

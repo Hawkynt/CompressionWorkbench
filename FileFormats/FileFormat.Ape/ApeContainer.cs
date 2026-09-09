@@ -115,9 +115,6 @@ internal static class ApeContainer {
     var channels = BinaryPrimitives.ReadUInt16LittleEndian(header[18..]);
     var sampleRate = BinaryPrimitives.ReadUInt32LittleEndian(header[20..]);
 
-    if (totalFrames > int.MaxValue || (ulong)seekTableLength < (ulong)totalFrames * sizeof(uint))
-      return false;
-
     var frameDataStart = (int)frameDataStart64;
     var frameDataEnd64 = (ulong)frameDataStart + audioDataLength;
     if (frameDataEnd64 > (ulong)file.Length || frameDataEnd64 > int.MaxValue)
@@ -129,24 +126,33 @@ internal static class ApeContainer {
       return false;
     var tailEnd = (int)tailEnd64;
 
-    var frames = new List<Frame>((int)totalFrames);
-    for (var index = 0; index < totalFrames; ++index) {
-      var seekOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)seekStart + checked((int)index * 4), 4));
-      var start64 = (ulong)macOffset + seekOffset;
-      ulong end64;
-      if (index + 1 < totalFrames) {
-        var next = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)seekStart + checked((int)(index + 1) * 4), 4));
-        end64 = (ulong)macOffset + next;
-      } else
-        end64 = (ulong)frameDataEnd;
+    // The packet index is best-effort. A seek table that cannot describe the declared frame
+    // count, or that points outside the audio region, costs the per-frame view but not the
+    // structural one, so a damaged file stays inspectable. The seek table lies inside the
+    // file, so its length also bounds the list that indexing it allocates.
+    var frames = new List<Frame>();
+    if (totalFrames <= int.MaxValue && (ulong)seekTableLength >= (ulong)totalFrames * sizeof(uint)) {
+      frames.Capacity = (int)totalFrames;
+      for (var index = 0; index < totalFrames; ++index) {
+        var seekOffset = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)seekStart + checked((int)index * 4), 4));
+        var start64 = (ulong)macOffset + seekOffset;
+        ulong end64;
+        if (index + 1 < totalFrames) {
+          var next = BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan((int)seekStart + checked((int)(index + 1) * 4), 4));
+          end64 = (ulong)macOffset + next;
+        } else
+          end64 = (ulong)frameDataEnd;
 
-      if (start64 < (ulong)frameDataStart || start64 > (ulong)frameDataEnd || end64 < start64 || end64 > (ulong)frameDataEnd)
-        return false;
+        if (start64 < (ulong)frameDataStart || start64 > (ulong)frameDataEnd || end64 < start64 || end64 > (ulong)frameDataEnd) {
+          frames.Clear();
+          break;
+        }
 
-      var start = (int)start64;
-      var end = (int)end64;
-      var duration = index + 1 == totalFrames ? finalFrameBlocks : blocksPerFrame;
-      frames.Add(new Frame(seekOffset, duration, file.AsSpan(start, end - start).ToArray()));
+        var start = (int)start64;
+        var end = (int)end64;
+        var duration = index + 1 == totalFrames ? finalFrameBlocks : blocksPerFrame;
+        frames.Add(new Frame(seekOffset, duration, file.AsSpan(start, end - start).ToArray()));
+      }
     }
 
     parsed = new Parsed {
