@@ -160,7 +160,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Akb` | Square Enix AKB | WORM | — | — | — | — | Square Enix audio bank |
 | `Alac` | ALAC (Apple Lossless) | WORM | ✅ | ✅ | ✅ | ✅ | Apple Lossless inside MP4 atoms |
 | `Amf` | AMF (DSMI Advanced Module Format) | WORM | — | — | — | — | DSMI AMF 0.1/0.8-1.4; sample WAV authoring/demux + byte-exact `FULL.amf` remux |
-| `Amr` | 3GPP AMR | R | — | — | — | — | 3GPP AMR NB/WB, including MC1.0 multichannel surface |
+| `Amr` | 3GPP AMR | WORM | ✅ | ✅ | ✅ | ✅ | 3GPP AMR NB/WB, including MC1.0 multichannel surface; PCM encode/decode and storage-frame remux |
 | `AmrNb` | AMR-NB | R | ✅ | ✅ | ✅ | ✅ | AMR-NB |
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | AMR-WB |
 | `Apc` | CRYO APC | WORM | ✅ | ✅ | ✅ | ✅ | CRYO APC seeded IMA; high-nibble-first mono/stereo with configurable version and predictor seeds |
