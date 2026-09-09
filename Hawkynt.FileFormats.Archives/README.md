@@ -47,7 +47,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 | Format | Id | Extensions | Compress | Decompress | Optimize | Notes | Reference |
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
-| aPLib | `ApLib` | `.aplib` | ✅ | ✅ | — | Self-framed stream; not byte-compatible with packer aPLib payloads (BB_Aplib decodes those) | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
+| aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | Standard 24-byte AP32 wrapper around a bare aPLib stream; older self-framed streams still read | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
 | BCM | `Bcm` | `.bcm` | ✅ | ✅ | ✅ | Block-size search (16–128 KiB) | [GitHub](https://github.com/encode84/bcm) |
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |

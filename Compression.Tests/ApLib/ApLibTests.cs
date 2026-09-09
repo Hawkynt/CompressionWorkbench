@@ -69,10 +69,15 @@ public class ApLibTests {
     FileFormat.ApLib.ApLibStream.Compress(input, compressed);
 
     var data = compressed.ToArray();
-    // Read original CRC from header (bytes 16..20, little-endian).
-    var headerCrc = (uint)(data[16] | (data[17] << 8) | (data[18] << 16) | (data[19] << 24));
+    // The AP32 header names the original size at bytes 16..19 and its CRC at
+    // bytes 20..23, both little-endian.
+    var headerSize = (uint)(data[16] | (data[17] << 8) | (data[18] << 16) | (data[19] << 24));
+    var headerCrc = (uint)(data[20] | (data[21] << 8) | (data[22] << 16) | (data[23] << 24));
     var expectedCrc = Compression.Core.Checksums.Crc32.Compute(original);
-    Assert.That(headerCrc, Is.EqualTo(expectedCrc));
+    Assert.Multiple(() => {
+      Assert.That(headerSize, Is.EqualTo((uint)original.Length));
+      Assert.That(headerCrc, Is.EqualTo(expectedCrc));
+    });
   }
 
   private static byte[] RoundTrip(byte[] original) {
