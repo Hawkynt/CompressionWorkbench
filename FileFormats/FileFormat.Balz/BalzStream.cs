@@ -8,8 +8,8 @@ namespace FileFormat.Balz;
 public static class BalzStream {
 
   // ROLZ parameters
-  private const int WindowSize = 65536;
   private const int TabSize = 256;        // entries per context table
+  private const int TabBits = 8;          // log2(TabSize)
   private const int MinMatch = 3;
   private const int MaxMatch = 258;
 
@@ -22,25 +22,43 @@ public static class BalzStream {
   // ── Public API ────────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the normal greedy parser.
   /// </summary>
   public static void Compress(Stream input, Stream output) {
     using var ms = new MemoryStream();
     input.CopyTo(ms);
-    var data = ms.ToArray();
+    Compress(ms.ToArray(), output, optimizeParsing: false);
+  }
 
-    // Write 4-byte big-endian uncompressed size
-    var size = data.Length;
-    output.WriteByte((byte)(size >> 24));
-    output.WriteByte((byte)(size >> 16));
-    output.WriteByte((byte)(size >> 8));
-    output.WriteByte((byte)size);
+  /// <summary>
+  /// Encodes the supplied input with BALZ-style flexible look-ahead parsing and
+  /// keeps it only when it is smaller than the normal greedy parse.
+  /// </summary>
+  /// <remarks>
+  /// Muravyov's public-domain BALZ encoder exposes a slower "max" mode that
+  /// evaluates shorter current matches against the match available immediately
+  /// afterwards instead of committing blindly to the longest current match.
+  /// This implementation applies that parsing principle to this stream's own
+  /// token grammar. Because this grammar stores the ROLZ slot in a fixed eight
+  /// coded bits, the historical slot-distance term is deliberately omitted from
+  /// the score: alternatives are ranked by bytes advanced over the next two
+  /// tokens. The fully encoded greedy and look-ahead candidates are then compared,
+  /// so optimal mode can never make the output larger.
+  /// </remarks>
+  public static void CompressOptimal(Stream input, Stream output) {
+    using var source = new MemoryStream();
+    input.CopyTo(source);
+    var data = source.ToArray();
 
-    if (data.Length == 0) return;
+    using var greedy = new MemoryStream();
+    Compress(data, greedy, optimizeParsing: false);
 
-    var enc = new ArithEncoder(output);
-    CompressRolz(data, enc);
-    enc.Flush();
+    using var lookAhead = new MemoryStream();
+    Compress(data, lookAhead, optimizeParsing: true);
+
+    var best = lookAhead.Length < greedy.Length ? lookAhead : greedy;
+    best.Position = 0;
+    best.CopyTo(output);
   }
 
   /// <summary>
@@ -59,9 +77,24 @@ public static class BalzStream {
     output.Write(result);
   }
 
+  private static void Compress(byte[] data, Stream output, bool optimizeParsing) {
+    // Write 4-byte big-endian uncompressed size
+    var size = data.Length;
+    output.WriteByte((byte)(size >> 24));
+    output.WriteByte((byte)(size >> 16));
+    output.WriteByte((byte)(size >> 8));
+    output.WriteByte((byte)size);
+
+    if (data.Length == 0) return;
+
+    var enc = new ArithEncoder(output);
+    CompressRolz(data, enc, optimizeParsing);
+    enc.Flush();
+  }
+
   // ── ROLZ Compress ────────────────────────────────────────────────────────
 
-  private static void CompressRolz(byte[] data, ArithEncoder enc) {
+  private static void CompressRolz(byte[] data, ArithEncoder enc, bool optimizeParsing) {
     // Per-context (previous byte) circular tables of positions
     var tables = new int[256][];
     var heads = new int[256];
@@ -75,41 +108,30 @@ public static class BalzStream {
     var probs = new int[25];
     Array.Fill(probs, ProbInit);
 
+    var bestSlotForLength = optimizeParsing ? new int[MaxMatch + 1] : null;
     var ctx = 0; // previous byte context (initially 0)
 
     var i = 0;
     while (i < data.Length) {
-      // Try to find best match in this context's table
       var tab = tables[ctx];
-      var bestLen = 0;
-      var bestIdx = 0;
+      var match = FindBestMatch(data, i, tab, bestSlotForLength);
+      if (optimizeParsing && match.Length >= MinMatch)
+        match = SelectLookAheadMatch(data, i, tables, match, bestSlotForLength!);
 
-      for (var j = 0; j < TabSize; j++) {
-        var pos = tab[j];
-        if (pos < 0) continue;
-        var maxLen = Math.Min(MaxMatch, data.Length - i);
-        var len = 0;
-        while (len < maxLen && data[pos + len] == data[i + len]) len++;
-        if (len > bestLen) {
-          bestLen = len;
-          bestIdx = j;
-          if (bestLen == MaxMatch) break;
-        }
-      }
-
-      // Store current position in table before encoding
+      // Store current position in table before encoding. Every parse alternative
+      // inserts the same current token start; only the next token boundary differs.
       tab[heads[ctx] & (TabSize - 1)] = i;
       heads[ctx] = (heads[ctx] + 1) & (TabSize - 1);
 
-      if (bestLen >= MinMatch) {
+      if (match.Length >= MinMatch) {
         // Encode match: bit 1
         enc.EncodeBit(1, ref probs[0]);
         // Encode 8-bit table index
-        EncodeUint8(enc, (byte)bestIdx, probs, 9);
+        EncodeUint8(enc, (byte)match.Slot, probs, 9);
         // Encode length - MinMatch as 8 bits (0..255 = MinMatch..MinMatch+255)
-        EncodeUint8(enc, (byte)(bestLen - MinMatch), probs, 17);
-        ctx = data[i + bestLen - 1];
-        i += bestLen;
+        EncodeUint8(enc, (byte)(match.Length - MinMatch), probs, 17);
+        ctx = data[i + match.Length - 1];
+        i += match.Length;
       } else {
         // Encode literal: bit 0
         enc.EncodeBit(0, ref probs[0]);
@@ -120,6 +142,93 @@ public static class BalzStream {
       }
     }
   }
+
+  /// <summary>
+  /// Finds the longest match in the current ROLZ table. When requested, records
+  /// a valid slot for every match length from <see cref="MinMatch"/> through the
+  /// longest match so the look-ahead parser can deliberately shorten it.
+  /// </summary>
+  private static Match FindBestMatch(byte[] data, int position, int[] table, int[]? bestSlotForLength = null) {
+    if (bestSlotForLength is not null)
+      Array.Clear(bestSlotForLength);
+
+    var bestLength = 0;
+    var bestSlot = 0;
+    var maxLength = Math.Min(MaxMatch, data.Length - position);
+
+    for (var slot = 0; slot < TabSize; slot++) {
+      var candidate = table[slot];
+      if (candidate < 0) continue;
+
+      var length = 0;
+      while (length < maxLength && data[candidate + length] == data[position + length])
+        length++;
+
+      if (length <= bestLength) continue;
+
+      if (bestSlotForLength is not null) {
+        var firstNewLength = Math.Max(MinMatch, bestLength + 1);
+        for (var matchLength = firstNewLength; matchLength <= length; matchLength++)
+          bestSlotForLength[matchLength] = slot;
+      }
+
+      bestLength = length;
+      bestSlot = slot;
+      if (bestLength == maxLength) break;
+    }
+
+    return new Match(bestLength, bestSlot);
+  }
+
+  /// <summary>
+  /// BALZ-style flexible parsing: compare the greedy match against a literal and
+  /// every shorter encodable match, scoring each choice together with the best
+  /// token available at the resulting next position.
+  /// </summary>
+  private static Match SelectLookAheadMatch(byte[] data, int position, int[][] tables, Match greedy, int[] bestSlotForLength) {
+    var selected = greedy;
+    var selectedScore = ParseScore(greedy.Length) + BestParseScoreAt(data, position + greedy.Length, tables);
+
+    var literalScore = ParseScore(1) + BestParseScoreAt(data, position + 1, tables);
+    if (literalScore > selectedScore) {
+      selected = new Match(1, 0);
+      selectedScore = literalScore;
+    }
+
+    for (var length = MinMatch; length < greedy.Length; length++) {
+      var score = ParseScore(length) + BestParseScoreAt(data, position + length, tables);
+      if (score <= selectedScore) continue;
+
+      selected = new Match(length, bestSlotForLength[length]);
+      selectedScore = score;
+    }
+
+    return selected;
+  }
+
+  /// <summary>
+  /// Scores the best token currently available at <paramref name="position"/>
+  /// without mutating the ROLZ tables. The context at any byte boundary is the
+  /// previous source byte regardless of whether that byte was produced literally
+  /// or by a match.
+  /// </summary>
+  private static int BestParseScoreAt(byte[] data, int position, int[][] tables) {
+    if (position >= data.Length) return 0;
+
+    var context = position == 0 ? 0 : data[position - 1];
+    var match = FindBestMatch(data, position, tables[context]);
+    return ParseScore(match.Length);
+  }
+
+  /// <summary>
+  /// Parse score derived from the public-domain BALZ max parser's points model.
+  /// This stream's match index always occupies <see cref="TabBits"/> coded bits,
+  /// so only progress contributes to the score.
+  /// </summary>
+  private static int ParseScore(int length) =>
+    length >= MinMatch ? length << TabBits : ((MinMatch - 1) << TabBits) - TabBits;
+
+  private readonly record struct Match(int Length, int Slot);
 
   private static void EncodeUint8(ArithEncoder enc, byte val, int[] probs, int baseIdx) {
     for (var bit = 7; bit >= 0; bit--)

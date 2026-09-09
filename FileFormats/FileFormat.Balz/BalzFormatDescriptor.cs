@@ -23,7 +23,8 @@ public sealed class BalzFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -43,7 +44,7 @@ public sealed class BalzFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("balz", "BALZ", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -65,4 +66,9 @@ public sealed class BalzFormatDescriptor : IFormatDescriptor, IStreamFormatOpera
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => BalzStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using flexible look-ahead parsing and keeps the
+  /// result only when it beats the normal greedy parse.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) => BalzStream.CompressOptimal(input, output);
 }
