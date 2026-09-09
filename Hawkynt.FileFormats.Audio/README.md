@@ -155,7 +155,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Adx` | CRI ADX | WORM | — | — | — | — | CRI ADX/AHX paths |
 | `Aea` | Sony ATRAC1 / MiniDisc (.aea) | R | — | — | — | — | Sony MiniDisc AEA / ATRAC1 |
 | `Ahx` | AHX / THX Synth-Tracker | R | — | — | — | — | AHX / THX Synth-Tracker |
-| `Aica` | Yamaha AICA ADPCM (Dreamcast) | WORM | — | — | — | — | Yamaha AICA raw |
+| `Aica` | Yamaha AICA ADPCM (Dreamcast) | WORM | ✅ | ✅ | ✅ | ✅ | Yamaha AICA raw; headerless mono, 22050 Hz assumed on decode |
 | `Aiff` | AIFF / AIFC (Apple audio) | WORM | ✅ | ✅ | ✅ | ✅ | AIFF/AIFC; multi-channel assembly from channel WAVs |
 | `Akb` | Square Enix AKB | WORM | — | — | — | — | Square Enix audio bank |
 | `Alac` | ALAC (Apple Lossless) | R | — | — | — | — | Apple Lossless inside MP4 atoms |
