@@ -5,11 +5,11 @@ using Compression.Core.Layout;
 namespace FileFormat.Vhd;
 
 /// <summary>
-/// Reader for Microsoft VHD images (fixed, dynamic and differencing).
-/// Streams reads via <see cref="SectorCache"/> so opening a multi-TB image
-/// does not load the whole file into RAM — only the footer, dynamic header,
-/// BAT and (during <see cref="Extract"/>) the requested block bytes are
-/// fetched on demand.
+/// Reader for standalone Microsoft VHD images (fixed and dynamic).
+/// Dynamic data blocks are resolved through both the BAT and the per-sector
+/// bitmap; a cleared bitmap bit is sparse in a dynamic VHD and therefore reads
+/// as zero rather than exposing stale bytes from the allocated block body.
+/// Differencing images are rejected until their parent chain can be resolved.
 /// </summary>
 public sealed class VhdReader : IDisposable {
   private static readonly byte[] Magic = "conectix"u8.ToArray();
@@ -19,11 +19,9 @@ public sealed class VhdReader : IDisposable {
   private readonly long _streamLength;
   private readonly List<VhdEntry> _entries = [];
 
-  // Fixed disk fields
   private long _fixedDataOffset;
   private long _fixedDataLength;
 
-  // Dynamic disk fields
   private bool _isDynamic;
   private uint[] _bat = [];
   private int _blockSize;
@@ -31,149 +29,156 @@ public sealed class VhdReader : IDisposable {
   private int _bitmapSectors;
   private long _virtualSize;
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
-  public IReadOnlyList<VhdEntry> Entries => _entries;
+  public IReadOnlyList<VhdEntry> Entries => this._entries;
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="VhdReader"/>.
-  /// </summary>
   public VhdReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
-    _streamLength = stream.Length;
-    _cache = new SectorCache(stream);
-    Parse();
+    this._streamLength = stream.Length;
+    this._cache = new SectorCache(stream);
+    this.Parse();
   }
 
   private void Parse() {
-    if (_streamLength < 512)
+    if (this._streamLength < 512)
       throw new InvalidDataException("VHD: file too small.");
 
-    // Footer at end of file (fixed), or copy at offset 0 (dynamic/differencing).
-    var footerOff = _streamLength - 512;
-    var footer = _cache.Read(footerOff, 512);
+    var footerOffset = this._streamLength - 512;
+    var footer = this._cache.Read(footerOffset, 512);
     if (!footer.AsSpan(0, 8).SequenceEqual(Magic)) {
-      // Try the offset-0 copy used by dynamic/differencing disks.
-      var head = _cache.Read(0, 512);
-      if (head.AsSpan(0, 8).SequenceEqual(Magic)) {
-        footerOff = 0;
-        footer = head;
-      } else {
+      var head = this._cache.Read(0, 512);
+      if (!head.AsSpan(0, 8).SequenceEqual(Magic))
         throw new InvalidDataException("VHD: invalid footer magic.");
-      }
+      footerOffset = 0;
+      footer = head;
     }
 
     var diskType = BinaryPrimitives.ReadUInt32BigEndian(footer.AsSpan(60));
-    _virtualSize = (long)BinaryPrimitives.ReadUInt64BigEndian(footer.AsSpan(48));
-    var dataOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(footer.AsSpan(16));
+    var rawVirtualSize = BinaryPrimitives.ReadUInt64BigEndian(footer.AsSpan(48));
+    if (rawVirtualSize > long.MaxValue)
+      throw new InvalidDataException("VHD: virtual disk size exceeds the supported signed range.");
+    this._virtualSize = (long)rawVirtualSize;
+    var rawDataOffset = BinaryPrimitives.ReadUInt64BigEndian(footer.AsSpan(16));
 
     if (diskType == 2) {
-      // Fixed VHD: raw data is everything before the trailing footer.
-      _isDynamic = false;
-      _fixedDataOffset = 0;
-      _fixedDataLength = _streamLength - 512;
-
-      _entries.Add(new VhdEntry {
-        Name = "disk.img",
-        Size = _fixedDataLength,
-      });
-    } else if (diskType is 3 or 4) {
-      // Dynamic (3) or Differencing (4).
-      _isDynamic = true;
-      ParseDynamicHeader(dataOffset);
-
-      _entries.Add(new VhdEntry {
-        Name = "disk.img",
-        Size = _virtualSize,
-      });
-    } else {
-      throw new InvalidDataException($"VHD: unsupported disk type {diskType}.");
+      var availableData = this._streamLength - 512;
+      if (availableData < this._virtualSize)
+        throw new InvalidDataException(
+          $"VHD: fixed disk is truncated; footer declares {this._virtualSize} guest bytes but only {availableData} are present.");
+      this._isDynamic = false;
+      this._fixedDataOffset = 0;
+      this._fixedDataLength = this._virtualSize;
+      this._entries.Add(new VhdEntry { Name = "disk.img", Size = this._virtualSize });
+      return;
     }
+
+    if (diskType == 4)
+      throw new NotSupportedException("VHD: differencing disks require parent-chain resolution, which is not supported.");
+    if (diskType != 3)
+      throw new InvalidDataException($"VHD: unsupported disk type {diskType}.");
+    if (rawDataOffset > long.MaxValue)
+      throw new InvalidDataException("VHD: dynamic-header offset exceeds the supported range.");
+
+    this._isDynamic = true;
+    this.ParseDynamicHeader((long)rawDataOffset);
+    this._entries.Add(new VhdEntry { Name = "disk.img", Size = this._virtualSize });
   }
 
   private void ParseDynamicHeader(long headerOffset) {
-    if (headerOffset < 0 || headerOffset + 1024 > _streamLength)
+    if (headerOffset < 0 || headerOffset + 1024 > this._streamLength)
       throw new InvalidDataException("VHD: dynamic disk header offset out of range.");
 
-    var hdr = _cache.Read(headerOffset, 1024);
-    if (!hdr.AsSpan(0, 8).SequenceEqual(DynMagic))
+    var header = this._cache.Read(headerOffset, 1024);
+    if (!header.AsSpan(0, 8).SequenceEqual(DynMagic))
       throw new InvalidDataException("VHD: invalid dynamic disk header magic (expected 'cxsparse').");
 
-    var batOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(hdr.AsSpan(16));
-    var maxBatEntries = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(28));
-    _blockSize = (int)BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(32));
+    var rawBatOffset = BinaryPrimitives.ReadUInt64BigEndian(header.AsSpan(16));
+    if (rawBatOffset > long.MaxValue)
+      throw new InvalidDataException("VHD: BAT offset exceeds the supported range.");
+    var batOffset = (long)rawBatOffset;
+    var maxBatEntries = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(28));
+    var rawBlockSize = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(32));
+    if (rawBlockSize > int.MaxValue)
+      throw new InvalidDataException("VHD: block size exceeds the supported range.");
+    this._blockSize = (int)rawBlockSize;
 
-    if (_blockSize <= 0 || (_blockSize & (_blockSize - 1)) != 0)
-      throw new InvalidDataException($"VHD: invalid block size {_blockSize} (must be a power of 2).");
+    if (this._blockSize <= 0 || (this._blockSize & (this._blockSize - 1)) != 0 || this._blockSize % 512 != 0)
+      throw new InvalidDataException($"VHD: invalid block size {this._blockSize}.");
+    if (maxBatEntries > int.MaxValue)
+      throw new NotSupportedException("VHD: BAT exceeds the current managed-array limit.");
 
-    _sectorsPerBlock = _blockSize / 512;
-    // Each block on disk is preceded by a sector bitmap: one bit per sector, rounded up to full sectors.
-    _bitmapSectors = (_sectorsPerBlock + 512 * 8 - 1) / (512 * 8);
+    this._sectorsPerBlock = this._blockSize / 512;
+    this._bitmapSectors = (this._sectorsPerBlock + 4095) / 4096;
 
-    // Read the BAT — this can be large (1 entry per block) so stream it through the cache
-    // rather than materialising the raw bytes.
-    var batByteLen = (long)maxBatEntries * 4;
-    if (batOffset < 0 || batOffset + batByteLen > _streamLength)
+    var batByteLength = checked((long)maxBatEntries * 4);
+    if (batOffset < 0 || batOffset + batByteLength > this._streamLength)
       throw new InvalidDataException("VHD: BAT extends beyond file.");
 
-    _bat = new uint[maxBatEntries];
-    // Read in chunks to limit transient allocation for huge BATs.
-    const int batChunkBytes = 64 * 1024;
-    var buf = new byte[batChunkBytes];
-    var remaining = batByteLen;
-    var srcOff = batOffset;
-    var entryIdx = 0;
+    this._bat = new uint[checked((int)maxBatEntries)];
+    const int chunkSize = 64 * 1024;
+    var chunk = new byte[chunkSize];
+    var remaining = batByteLength;
+    var sourceOffset = batOffset;
+    var entryIndex = 0;
     while (remaining > 0) {
-      var take = (int)Math.Min(remaining, batChunkBytes);
-      _cache.Read(srcOff, buf.AsSpan(0, take));
+      var take = (int)Math.Min(remaining, chunk.Length);
+      this._cache.Read(sourceOffset, chunk.AsSpan(0, take));
       for (var i = 0; i + 4 <= take; i += 4)
-        _bat[entryIdx++] = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(i, 4));
+        this._bat[entryIndex++] = BinaryPrimitives.ReadUInt32BigEndian(chunk.AsSpan(i, 4));
       remaining -= take;
-      srcOff += take;
+      sourceOffset += take;
     }
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Extract(VhdEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Size > int.MaxValue)
+      throw new NotSupportedException("VHD buffered extraction currently supports guest disks up to 2 GiB.");
 
-    if (!_isDynamic) {
-      var len = (int)Math.Min(entry.Size, _streamLength - _fixedDataOffset);
-      if (len <= 0) return [];
-      var buf = new byte[len];
-      _cache.Read(_fixedDataOffset, buf);
-      return buf;
+    if (!this._isDynamic) {
+      var length = checked((int)this._fixedDataLength);
+      if (length <= 0) return [];
+      var result = new byte[checked((int)entry.Size)];
+      this._cache.Read(this._fixedDataOffset, result.AsSpan(0, length));
+      return result;
     }
 
-    // Dynamic: assemble virtual disk from BAT, fetching each allocated block via the cache.
-    var result = new byte[_virtualSize];
-    for (var blockIdx = 0; blockIdx < _bat.Length; blockIdx++) {
-      var batEntry = _bat[blockIdx];
-      if (batEntry == 0xFFFFFFFF)
-        continue; // sparse — already zeroed
+    var disk = new byte[checked((int)this._virtualSize)];
+    var bitmapByteLength = checked(this._bitmapSectors * 512);
+    var bitmap = new byte[bitmapByteLength];
 
-      // Physical offset = BAT entry * 512 (sector address) + bitmap sectors
-      var physicalOffset = (long)batEntry * 512 + _bitmapSectors * 512L;
-      var virtualOffset = (long)blockIdx * _blockSize;
-      var copyLen = (int)Math.Min(_blockSize, _virtualSize - virtualOffset);
+    for (var blockIndex = 0; blockIndex < this._bat.Length; ++blockIndex) {
+      var batEntry = this._bat[blockIndex];
+      if (batEntry == 0xFFFF_FFFFu)
+        continue;
 
-      if (copyLen <= 0)
-        break;
+      var bitmapOffset = checked((long)batEntry * 512);
+      var dataOffset = checked(bitmapOffset + bitmapByteLength);
+      var virtualOffset = checked((long)blockIndex * this._blockSize);
+      if (virtualOffset >= this._virtualSize) break;
+      var blockLength = checked((int)Math.Min(this._blockSize, this._virtualSize - virtualOffset));
 
-      if (physicalOffset + copyLen > _streamLength)
-        continue; // truncated — leave as zeros
+      if (bitmapOffset < 0 || bitmapOffset + bitmapByteLength > this._streamLength)
+        throw new InvalidDataException($"VHD: block {blockIndex} sector bitmap extends beyond the file.");
+      this._cache.Read(bitmapOffset, bitmap);
 
-      _cache.Read(physicalOffset, result.AsSpan((int)virtualOffset, copyLen));
+      var sectorCount = (blockLength + 511) / 512;
+      for (var sector = 0; sector < sectorCount; ++sector) {
+        // VHD stores the first sector in the MSB of the first bitmap byte.
+        var mask = 1 << (7 - (sector & 7));
+        if ((bitmap[sector >> 3] & mask) == 0)
+          continue;
+
+        var destination = checked(virtualOffset + sector * 512L);
+        var length = checked((int)Math.Min(512, this._virtualSize - destination));
+        var source = checked(dataOffset + sector * 512L);
+        if (source < 0 || source + length > this._streamLength)
+          throw new InvalidDataException($"VHD: block {blockIndex} sector {sector} extends beyond the file.");
+        this._cache.Read(source, disk.AsSpan(checked((int)destination), length));
+      }
     }
 
-    return result;
+    return disk;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
-  public void Dispose() => _cache.Dispose();
+  public void Dispose() => this._cache.Dispose();
 }

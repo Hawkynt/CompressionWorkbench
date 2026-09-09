@@ -13,7 +13,7 @@ namespace FileFormat.Vdi;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VDI_(file_format)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -220,7 +220,7 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ModifyRebuilder.Remove(archive, entryNames, ReadDiskEntries, BuildImage);
   }
 
-  // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
+  // ── Maintenance ────────────────────────────────────────────────────
 
   /// <inheritdoc />
   public void Defragment(Stream archive)
@@ -247,6 +247,26 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
   }
 
+  /// <inheritdoc />
+  public void Shrink(Stream input, Stream output)
+    => RawDiskShrinkRebuilder.Shrink(
+      input,
+      output,
+      static stream => {
+        using var reader = new VdiReader(stream);
+        return reader.ExtractDisk();
+      },
+      static disk => {
+        using var compact = new MemoryStream();
+        using var writer = new VdiWriter(compact, leaveOpen: true, virtualSize: disk.LongLength);
+        writer.Write(disk);
+        return compact.ToArray();
+      },
+      static stream => {
+        using var reader = new VdiReader(stream);
+        return reader.ImageType is 1 or 2;
+      });
+
   // ── Private helpers ────────────────────────────────────────────────
 
   private static bool TryDelegateModifiable(Stream archive, out VdiStream? vdiStream, out IArchiveModifiable? modifiable) {
@@ -270,8 +290,8 @@ public sealed class VdiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   private static IEnumerable<(string Name, byte[] Data)> ReadDiskEntries(Stream stream) {
     stream.Position = 0;
-    var r = new VdiReader(stream);
-    yield return ("disk.img", r.ExtractDisk());
+    using var reader = new VdiReader(stream);
+    yield return ("disk.img", reader.ExtractDisk());
   }
 
   private static byte[] BuildImage(IReadOnlyList<(string Name, byte[] Data)> files) {

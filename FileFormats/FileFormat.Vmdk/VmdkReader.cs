@@ -6,199 +6,173 @@ using Compression.Core.Layout;
 namespace FileFormat.Vmdk;
 
 /// <summary>
-/// Reader for VMware VMDK images (sparse and flat/descriptor).
-/// Streams reads via <see cref="SectorCache"/> so opening a multi-TB image
-/// does not load the whole file into RAM — only the header, grain directory
-/// and (during <see cref="Extract"/>) the requested grain bytes are fetched
-/// on demand.
+/// Reader for VMware VMDK images. Sparse extents honor the header's secondary
+/// grain-directory selector and zeroed-grain-table-entry flag.
 /// </summary>
 public sealed class VmdkReader : IDisposable {
-  private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56]; // "KDMV" LE
+  private static readonly byte[] SparseMagic = [0x4B, 0x44, 0x4D, 0x56];
+
   private readonly SectorCache _cache;
   private readonly long _streamLength;
   private readonly List<VmdkEntry> _entries = [];
   private long _diskSize;
 
-  // Sparse grain directory fields
   private bool _isSparse;
+  private bool _zeroedGrainEntryEnabled;
   private long _grainSizeBytes;
-  private int _grainTableEntries; // grain table entries = grainSize * gtCoverage / grainSize
+  private int _grainTableEntries;
   private uint[] _grainDirectory = [];
   private int _numGdEntries;
 
-  // Non-sparse fields (flat/descriptor)
   private long _flatDataOffset;
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
-  public IReadOnlyList<VmdkEntry> Entries => _entries;
+  public IReadOnlyList<VmdkEntry> Entries => this._entries;
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="VmdkReader"/>.
-  /// </summary>
   public VmdkReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
-    _streamLength = stream.Length;
-    _cache = new SectorCache(stream);
-    Parse();
+    this._streamLength = stream.Length;
+    this._cache = new SectorCache(stream);
+    this.Parse();
   }
 
   private void Parse() {
-    if (_streamLength < 512)
+    if (this._streamLength < 512)
       throw new InvalidDataException("VMDK: file too small.");
 
-    // Peek the first 512 bytes — enough to disambiguate sparse vs text descriptor.
-    var head = _cache.Read(0, (int)Math.Min(_streamLength, 1024));
+    var head = this._cache.Read(0, (int)Math.Min(this._streamLength, 1024));
     if (head.AsSpan(0, 4).SequenceEqual(SparseMagic)) {
-      ParseSparse(head);
-    } else {
-      // Try text descriptor (read up to 1024 bytes which we already have).
-      var text = Encoding.ASCII.GetString(head);
-      if (text.Contains("createType") || text.Contains("VMDK"))
-        ParseDescriptor(text);
-      else
-        throw new InvalidDataException("VMDK: unrecognized format.");
+      this.ParseSparse(head);
+      return;
     }
+
+    var text = Encoding.ASCII.GetString(head);
+    if (text.Contains("createType", StringComparison.Ordinal) || text.Contains("VMDK", StringComparison.Ordinal)) {
+      this.ParseDescriptor(text);
+      return;
+    }
+
+    throw new InvalidDataException("VMDK: unrecognized format.");
   }
 
   private void ParseSparse(byte[] head) {
-    _isSparse = true;
+    this._isSparse = true;
+    if (head.Length < 72)
+      throw new InvalidDataException("VMDK: sparse header is truncated.");
 
-    // SparseExtentHeader is byte-packed (no natural alignment); all sector
-    // offsets are little-endian.
-    // offset  0: magic "KDMV" (4 bytes)
-    // offset  4: version (4 bytes)
-    // offset  8: flags (4 bytes)
-    // offset 12: capacity in sectors (8 bytes)
-    // offset 20: grainSize in sectors (8 bytes)
-    // offset 28: descriptorOffset in sectors (8 bytes)
-    // offset 36: descriptorSize in sectors (8 bytes)
-    // offset 44: numGTEsPerGT (4 bytes) — grain table entries per grain table
-    // offset 48: rgdOffset in sectors (8 bytes) — redundant grain directory
-    // offset 56: gdOffset in sectors (8 bytes) — primary grain directory
-    // offset 64: overHead in sectors (8 bytes)
+    var flags = BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(8));
+    var rawCapacity = BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(12));
+    var rawGrainSizeSectors = BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(20));
+    var rawGtes = BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(44));
+    var rawRgdOffset = BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(48));
+    var rawGdOffset = BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(56));
 
-    var capacity = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(12));
-    var grainSizeSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(20));
-    _grainTableEntries = (int)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(44));
-    var gdOffsetSectors = (long)BinaryPrimitives.ReadUInt64LittleEndian(head.AsSpan(56));
+    if (rawCapacity > long.MaxValue / 512 || rawGrainSizeSectors > long.MaxValue / 512)
+      throw new InvalidDataException("VMDK: capacity or grain size exceeds the supported range.");
+    if (rawGtes > int.MaxValue)
+      throw new NotSupportedException("VMDK: grain table exceeds the current managed-array limit.");
 
-    _diskSize = capacity * 512;
-    _grainSizeBytes = grainSizeSectors * 512;
+    var capacitySectors = (long)rawCapacity;
+    var grainSizeSectors = (long)rawGrainSizeSectors;
+    this._grainTableEntries = rawGtes == 0 ? 512 : (int)rawGtes;
+    this._zeroedGrainEntryEnabled = (flags & 0x0000_0004u) != 0;
 
-    if (_grainTableEntries <= 0)
-      _grainTableEntries = 512; // default per spec
+    // Flag bit 1 says the redundant/secondary grain directory is authoritative.
+    var useSecondary = (flags & 0x0000_0002u) != 0 && rawRgdOffset != 0;
+    var rawDirectoryOffset = useSecondary ? rawRgdOffset : rawGdOffset;
+    if (rawDirectoryOffset > long.MaxValue / 512)
+      throw new InvalidDataException("VMDK: grain-directory offset exceeds the supported range.");
 
-    // Number of GD entries = ceil(capacity / (grainSize * numGTEsPerGT))
-    var grainsPerGt = (long)_grainTableEntries;
-    var sectorsPerGt = grainsPerGt * grainSizeSectors;
-    _numGdEntries = sectorsPerGt > 0 ? (int)((capacity + sectorsPerGt - 1) / sectorsPerGt) : 0;
+    this._diskSize = checked(capacitySectors * 512);
+    this._grainSizeBytes = checked(grainSizeSectors * 512);
+    if (this._grainSizeBytes <= 0)
+      throw new InvalidDataException("VMDK: grain size is zero.");
 
-    // Read grain directory via cache.
-    var gdByteOffset = gdOffsetSectors * 512;
-    if (gdByteOffset > 0 && _numGdEntries > 0 && gdByteOffset + _numGdEntries * 4L <= _streamLength) {
-      _grainDirectory = new uint[_numGdEntries];
-      var gdBytes = new byte[_numGdEntries * 4];
-      _cache.Read(gdByteOffset, gdBytes);
-      for (var i = 0; i < _numGdEntries; i++)
-        _grainDirectory[i] = BinaryPrimitives.ReadUInt32LittleEndian(gdBytes.AsSpan(i * 4, 4));
+    var sectorsPerTable = checked((long)this._grainTableEntries * grainSizeSectors);
+    this._numGdEntries = sectorsPerTable > 0
+      ? checked((int)((capacitySectors + sectorsPerTable - 1) / sectorsPerTable))
+      : 0;
+
+    var directoryByteOffset = checked((long)rawDirectoryOffset * 512);
+    var directoryByteLength = checked((long)this._numGdEntries * 4);
+    if (directoryByteOffset <= 0 || this._numGdEntries <= 0 || directoryByteOffset + directoryByteLength > this._streamLength) {
+      this._grainDirectory = [];
     } else {
-      _grainDirectory = [];
+      this._grainDirectory = new uint[this._numGdEntries];
+      var bytes = new byte[checked((int)directoryByteLength)];
+      this._cache.Read(directoryByteOffset, bytes);
+      for (var i = 0; i < this._grainDirectory.Length; ++i)
+        this._grainDirectory[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(i * 4, 4));
     }
 
-    _entries.Add(new VmdkEntry {
-      Name = "disk.img",
-      Size = _diskSize,
-    });
+    this._entries.Add(new VmdkEntry { Name = "disk.img", Size = this._diskSize });
   }
 
   private void ParseDescriptor(string text) {
-    // Text descriptor: extract extent size.
     long totalSectors = 0;
     foreach (var line in text.Split('\n')) {
       var trimmed = line.Trim();
-      if (trimmed.StartsWith("RW ") || trimmed.StartsWith("RDONLY ")) {
-        var parts = trimmed.Split(' ');
-        if (parts.Length >= 2 && long.TryParse(parts[1], out var sectors))
-          totalSectors += sectors;
-      }
+      if (!trimmed.StartsWith("RW ", StringComparison.Ordinal) &&
+          !trimmed.StartsWith("RDONLY ", StringComparison.Ordinal))
+        continue;
+      var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+      if (parts.Length >= 2 && long.TryParse(parts[1], out var sectors))
+        totalSectors = checked(totalSectors + sectors);
     }
 
-    _diskSize = totalSectors > 0 ? totalSectors * 512 : _streamLength;
-    _flatDataOffset = 0;
-    _isSparse = false;
-
-    _entries.Add(new VmdkEntry {
-      Name = "disk.img",
-      Size = _diskSize,
-    });
+    this._diskSize = totalSectors > 0 ? checked(totalSectors * 512) : this._streamLength;
+    this._flatDataOffset = 0;
+    this._isSparse = false;
+    this._entries.Add(new VmdkEntry { Name = "disk.img", Size = this._diskSize });
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Extract(VmdkEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
+    if (entry.Size > int.MaxValue)
+      throw new NotSupportedException("VMDK buffered extraction currently supports guest disks up to 2 GiB.");
 
-    if (!_isSparse) {
-      var len = (int)Math.Min(entry.Size, _streamLength - _flatDataOffset);
-      if (len <= 0) return [];
-      var buf = new byte[len];
-      _cache.Read(_flatDataOffset, buf);
-      return buf;
-    }
-
-    // Sparse: resolve grain directory -> grain table -> grain data via the cache.
-    var result = new byte[_diskSize];
-    if (_grainSizeBytes <= 0 || _grainDirectory.Length == 0)
+    if (!this._isSparse) {
+      var length = checked((int)Math.Min(entry.Size, this._streamLength - this._flatDataOffset));
+      if (length <= 0) return [];
+      var result = new byte[checked((int)entry.Size)];
+      this._cache.Read(this._flatDataOffset, result.AsSpan(0, length));
       return result;
-
-    var totalGrains = (_diskSize + _grainSizeBytes - 1) / _grainSizeBytes;
-
-    // Single reusable 4-byte buffer for grain table entry reads.
-    Span<byte> gteBuf = stackalloc byte[4];
-
-    for (long grainIdx = 0; grainIdx < totalGrains; grainIdx++) {
-      var gdIndex = (int)(grainIdx / _grainTableEntries);
-      var gtIndex = (int)(grainIdx % _grainTableEntries);
-
-      if (gdIndex >= _grainDirectory.Length)
-        break;
-
-      var gtSectorOffset = _grainDirectory[gdIndex];
-      if (gtSectorOffset == 0)
-        continue; // no grain table allocated — zeros
-
-      // Read grain table entry via the cache.
-      var gtByteOffset = (long)gtSectorOffset * 512 + gtIndex * 4L;
-      if (gtByteOffset + 4 > _streamLength)
-        continue;
-
-      _cache.Read(gtByteOffset, gteBuf);
-      var grainSectorOffset = BinaryPrimitives.ReadUInt32LittleEndian(gteBuf);
-
-      if (grainSectorOffset == 0)
-        continue; // grain not allocated — zeros
-
-      var grainByteOffset = (long)grainSectorOffset * 512;
-      var destOffset = grainIdx * _grainSizeBytes;
-      var copyLen = (int)Math.Min(_grainSizeBytes, _diskSize - destOffset);
-
-      if (copyLen <= 0)
-        break;
-
-      if (grainByteOffset + copyLen > _streamLength)
-        continue; // truncated file
-
-      _cache.Read(grainByteOffset, result.AsSpan((int)destOffset, copyLen));
     }
 
-    return result;
+    var disk = new byte[checked((int)this._diskSize)];
+    if (this._grainSizeBytes <= 0 || this._grainDirectory.Length == 0)
+      return disk;
+
+    var totalGrains = (this._diskSize + this._grainSizeBytes - 1) / this._grainSizeBytes;
+    Span<byte> entryBytes = stackalloc byte[4];
+
+    for (long grainIndex = 0; grainIndex < totalGrains; ++grainIndex) {
+      var directoryIndex = checked((int)(grainIndex / this._grainTableEntries));
+      var tableIndex = checked((int)(grainIndex % this._grainTableEntries));
+      if (directoryIndex >= this._grainDirectory.Length) break;
+
+      var tableSector = this._grainDirectory[directoryIndex];
+      if (IsSparseEntry(tableSector)) continue;
+
+      var tableEntryOffset = checked((long)tableSector * 512 + tableIndex * 4L);
+      if (tableEntryOffset < 0 || tableEntryOffset + 4 > this._streamLength)
+        throw new InvalidDataException($"VMDK: grain table {directoryIndex} extends beyond the file.");
+      this._cache.Read(tableEntryOffset, entryBytes);
+      var grainSector = BinaryPrimitives.ReadUInt32LittleEndian(entryBytes);
+      if (IsSparseEntry(grainSector)) continue;
+
+      var sourceOffset = checked((long)grainSector * 512);
+      var destinationOffset = checked(grainIndex * this._grainSizeBytes);
+      var length = checked((int)Math.Min(this._grainSizeBytes, this._diskSize - destinationOffset));
+      if (sourceOffset < 0 || sourceOffset + length > this._streamLength)
+        throw new InvalidDataException($"VMDK: grain {grainIndex} extends beyond the file.");
+      this._cache.Read(sourceOffset, disk.AsSpan(checked((int)destinationOffset), length));
+    }
+
+    return disk;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
-  public void Dispose() => _cache.Dispose();
+  private bool IsSparseEntry(uint sector)
+    => sector == 0 || (this._zeroedGrainEntryEnabled && sector == 1);
+
+  public void Dispose() => this._cache.Dispose();
 }
