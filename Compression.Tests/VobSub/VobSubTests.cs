@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using FileFormat.MpegPs;
 using FileFormat.VobSub;
 
 namespace Compression.Tests.VobSub;
@@ -39,6 +41,21 @@ public class VobSubTests {
     0x00, 0x05, // next control sequence points to itself
     0xFF,       // end commands
   ];
+
+  private static byte[] LargeRawSpu() {
+    const int length = 5000;
+    const int controlOffset = length - 5;
+    var result = new byte[length];
+    BinaryPrimitives.WriteUInt16BigEndian(result, length);
+    BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(2), controlOffset);
+    for (var i = 4; i < controlOffset; ++i)
+      result[i] = (byte)(i * 29 + 17);
+    result[controlOffset] = 0;
+    result[controlOffset + 1] = 0;
+    BinaryPrimitives.WriteUInt16BigEndian(result.AsSpan(controlOffset + 2), controlOffset);
+    result[controlOffset + 4] = 0xFF;
+    return result;
+  }
 
   private static VobSubWriter.Pair BuildWritablePair(byte first = 0x11, byte second = 0x22)
     => VobSubWriter.Build(WritableIdx, [
@@ -131,6 +148,25 @@ public class VobSubTests {
       Assert.That(pair.SubBytes.AsSpan(2048, 4).SequenceEqual([0x00, 0x00, 0x01, 0xBA]), Is.True);
       Assert.That(index.Entries[0].FilePos, Is.Zero);
       Assert.That(index.Entries[1].FilePos, Is.EqualTo(2048));
+    });
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Writer_LargeSpu_SpansPesPacketsAndDemuxesBackByteExact() {
+    var raw = LargeRawSpu();
+    var pair = VobSubWriter.Build(
+      "# VobSub index file, v7\nid: en, index: 0\ntimestamp: 00:00:01:000, filepos: 0000000000\n",
+      [new VobSubWriter.Frame(raw, VobSubWriter.FrameKind.RawSpu)]);
+    var program = MpegPsReader.Read(pair.SubBytes);
+    var subtitle = program.Streams.Single(stream => stream.StreamId == 0xBD && stream.SubstreamId == 0x20);
+
+    Assert.Multiple(() => {
+      Assert.That(pair.SubBytes.Length, Is.EqualTo(3 * 2048));
+      Assert.That(program.PackCount, Is.EqualTo(3));
+      Assert.That(subtitle.PacketCount, Is.EqualTo(3));
+      Assert.That(subtitle.FirstPts, Is.EqualTo(90000));
+      Assert.That(subtitle.LastPts, Is.EqualTo(90000));
+      Assert.That(subtitle.Payload, Is.EqualTo(raw));
     });
   }
 
