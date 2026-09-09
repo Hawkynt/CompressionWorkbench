@@ -7,6 +7,7 @@ internal sealed class FuseMountSession(
   FuseFilesystemOperations operations,
   IFilesystemSession filesystem,
   string target,
+  MountAccessMode accessMode,
   bool ownsFilesystem
 ) : IMountSession {
   private readonly SemaphoreSlim _lifecycle = new(1, 1);
@@ -14,12 +15,13 @@ internal sealed class FuseMountSession(
   private readonly FuseFilesystemOperations _operations = operations ?? throw new ArgumentNullException(nameof(operations));
   private readonly IFilesystemSession _filesystem = filesystem ?? throw new ArgumentNullException(nameof(filesystem));
   private readonly string _target = target ?? throw new ArgumentNullException(nameof(target));
+  private readonly MountAccessMode _accessMode = accessMode;
   private readonly bool _ownsFilesystem = ownsFilesystem;
   private bool _disposed;
 
   public string BackendId => "fuse3";
   public string Target => this._target;
-  public MountAccessMode AccessMode => MountAccessMode.ReadOnly;
+  public MountAccessMode AccessMode => this._accessMode;
   public bool IsMounted => !this._disposed && this._nativeSession.IsMounted;
 
   public ValueTask FlushAsync(CancellationToken cancellationToken = default) {
