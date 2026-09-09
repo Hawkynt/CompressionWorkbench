@@ -87,8 +87,11 @@ public sealed class Ac3FormatDescriptorTests {
     var descriptor = new Ac3FormatDescriptor();
     descriptor.Create(output, inputs, options);
 
+    var written = output.ToArray();
     output.Position = 0;
     var info = Ac3Codec.ReadStreamInfo(output);
+    var header = Ac3FrameHeader.TryParse(written, 0);
+    Assert.That(header, Is.Not.Null);
     Assert.Multiple(() => {
       Assert.That(info.IsEnhanced, Is.False);
       Assert.That(info.SampleRate, Is.EqualTo(sampleRate));
@@ -96,7 +99,7 @@ public sealed class Ac3FormatDescriptorTests {
       Assert.That(info.Acmod, Is.EqualTo(7));
       Assert.That(info.Lfe, Is.True);
       Assert.That(info.Channels, Is.EqualTo(6));
-      Assert.That(info.DialNorm, Is.EqualTo(27));
+      Assert.That(header!.Value.DialNorm, Is.EqualTo(27));
       Assert.That(info.DurationSamples, Is.EqualTo(frames));
     });
   }
@@ -142,12 +145,27 @@ public sealed class Ac3FormatDescriptorTests {
   }
 
   [Test]
-  public void EncodeCapability_RefusesEac3InsteadOfRelabelingLegacyFrames() {
+  public void EncodeCapability_EmitsRealEac3SyncframesInsteadOfRelabelingLegacyFrames() {
     var descriptor = new Ac3FormatDescriptor();
-    Assert.That(
-      descriptor.CanEncode(new AudioPcmFormat(48_000, 2, 16), "eac3", new FormatCreateOptions(), out var reason),
-      Is.False);
-    Assert.That(reason, Does.Contain("not implemented"));
+    var format = new AudioPcmFormat(48_000, 2, 16);
+    Assert.That(descriptor.CanEncode(format, "eac3", new FormatCreateOptions(), out var reason), Is.True, reason);
+
+    var pcm = Signal(1536, 2, 48_000);
+    var payload = new byte[pcm.Length * sizeof(short)];
+    Buffer.BlockCopy(pcm, 0, payload, 0, payload.Length);
+
+    using var output = new MemoryStream();
+    descriptor.EncodePcm(output, new AudioPcmBuffer(format, payload), "eac3", new FormatCreateOptions());
+
+    // A relabelled legacy frame would carry bsid ≤ 10 and the AC-3 syncinfo layout.
+    var header = Ac3FrameHeader.TryParse(output.ToArray(), 0);
+    Assert.That(header, Is.Not.Null);
+    Assert.Multiple(() => {
+      Assert.That(header!.Value.IsEnhanced, Is.True);
+      Assert.That(header.Value.Bsid, Is.EqualTo(16));
+      Assert.That(header.Value.SampleRate, Is.EqualTo(48_000));
+      Assert.That(header.Value.Acmod, Is.EqualTo(2));
+    });
   }
 
   [Test]

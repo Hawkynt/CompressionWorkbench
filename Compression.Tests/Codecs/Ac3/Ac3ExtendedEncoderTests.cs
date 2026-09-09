@@ -219,23 +219,23 @@ public sealed class Ac3ExtendedEncoderTests {
     w.Put(0, 2);                            // gainrng
   }
 
+  // A/52 Annex E: crc2 covers the frame from just after the sync word up to the CRC field itself.
   private static void AssertEnhancedCrc(byte[] frame) {
-    var expected = Swap16(Crc16Ansi(frame.AsSpan(2, frame.Length - 4)));
+    var expected = Crc16(frame.AsSpan(2, frame.Length - 4));
     var actual = (ushort)((frame[^2] << 8) | frame[^1]);
     Assert.That(actual, Is.EqualTo(expected));
   }
 
-  private static ushort Crc16Ansi(ReadOnlySpan<byte> data) {
-    ushort crc = 0;
+  // A/52 CRC-16: x^16 + x^15 + x^2 + 1, processed most-significant bit first, zero seed.
+  private static ushort Crc16(ReadOnlySpan<byte> data) {
+    var crc = 0;
     foreach (var value in data) {
-      crc ^= value;
+      crc ^= value << 8;
       for (var bit = 0; bit < 8; ++bit)
-        crc = (ushort)(((crc & 1) != 0) ? (crc >> 1) ^ 0xA001 : crc >> 1);
+        crc = ((crc & 0x8000) != 0) ? ((crc << 1) ^ 0x8005) & 0xFFFF : (crc << 1) & 0xFFFF;
     }
-    return crc;
+    return (ushort)crc;
   }
-
-  private static ushort Swap16(ushort value) => (ushort)((value << 8) | (value >> 8));
 
   private sealed class BitWriter {
     private readonly List<bool> _bits = [];
