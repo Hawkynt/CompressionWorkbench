@@ -563,13 +563,13 @@ Xan DPCM (ffmpeg `xan_dpcm` in `libavcodec/dpcm.c`, the audio in Wing Commander 
 
 #### `AicaAdpcmCodec`
 
-Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip; the same quantiser as the YM2608 ADPCM-B family). A purely differential codec of the OKI / Dialogic lineage: every 4-bit nibble carries a 3-bit delta magnitude plus a sign bit (bit 3), and a per-sample quantiser `step` walks a multiplicative adaptation table rather than the 49-entry index table OKI uses. Per nibble the decoder computes `diff = ((nibble & 7) * 2 + 1) * step / 8` (an integer right-shift by 3), adds or subtracts it from a full 16-bit predictor (sign bit 3), clamps the predictor to `[-32768, 32767]`, then advances the step by `step = step * rate[nibble & 7] / 256`, clamped to `[127, 24576]`. The bitstream packs two samples per byte, LOW nibble first then the HIGH nibble — the AICA / ADPCM-B convention. Decoding begins from predictor 0 and step 127.
+Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip). The codec is differential: every 4-bit code carries a 3-bit delta magnitude plus a sign bit. The predictor starts at zero and the quantizer width at 127; the width is multiplied after every sample by the AICA transition factor and clamped to 127..24576. These are the values defined by the AICA FQ8005 Sound-block User's Manual, ADPCM tables 1 and 2. A raw AICA sample packs two consecutive samples per byte, low nibble first. The two-channel `Decode` overload exists for WAVE format tag 0x0020 (Yamaha ADPCM), whose stereo framing puts the left sample in the low nibble and the right sample in the high nibble. Raw AICA sample memory itself is one stream per AICA sound slot and therefore uses the mono overload.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two samples (low nibble first), so the output holds `data.Length * 2` samples. |
-| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes an interleaved AICA / Yamaha ADPCM stream of `channels` channels to 16-bit PCM. |
-| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit PCM to a mono AICA ADPCM byte stream using the same state machine as `Decode`, so round-tripping reproduces the waveform within the codec's lossy tolerance. Two samples pack into each byte (low nibble first); an odd trailing sample is paired with a zero (silence) high nibble. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data)` | Decodes a raw mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two samples, low nibble first. |
+| `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, int channels)` | Decodes Yamaha ADPCM using the WAVE 0x0020 byte layout. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm)` | Encodes 16-bit PCM to a raw mono AICA ADPCM byte stream. Two samples are packed per byte, low nibble first. An odd final sample is padded to a full byte; callers whose container stores an exact sample count can trim the decoded padding sample using that count. |
 
 ### Namespace `Codec.Alac`
 
@@ -4351,33 +4351,42 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `AicaFormatDescriptor`
 
-Exposes a raw Yamaha AICA ADPCM (`.aica`) file as an archive of `FULL.aica` (the byte-exact container), `MONO.wav` (the decoded 16-bit PCM at the assumed sample rate) and `metadata.ini` recording the assumptions. The AICA raw stream is headerless — the file is nothing but packed AICA ADPCM nibbles, so there is no magic signature to match on (`MagicSignatures` is empty and dispatch is by `.aica` extension only, the same approach `VoxFormatDescriptor` uses for its headerless raw container). With no header the stream carries no rate or channel-count metadata, so the Dreamcast streaming default of mono, 22050 Hz is assumed and surfaced in `metadata.ini`.
+Raw Yamaha AICA ADPCM (`.aica`) sample data. An AICA sample is headerless: the file contains only packed 4-bit codes and therefore carries no signature, sample rate, channel count, loop points, or exact odd-sample tail length. One raw sample belongs to one AICA sound slot, so this descriptor is deliberately mono. The Dreamcast streaming convention of 22050 Hz is used when decoding; a writer may accept another positive rate, but that rate remains out-of-band because there is nowhere in the file to put it. Besides the archive view (`FULL.aica`, decoded `MONO.wav`, and `metadata.ini`), the descriptor participates directly in the common audio pipeline: PCM decode/encode and packet-preserving demux/mux/remux.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AicaFormatDescriptor` | `AicaFormatDescriptor()` |  |
-| `AssumedSampleRate` | `const int AssumedSampleRate` | Assumed sample rate for headerless AICA ADPCM (the Dreamcast streaming default). |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AssumedSampleRate` | `const int AssumedSampleRate` | Assumed sample rate for headerless AICA ADPCM (Dreamcast streaming default). |
+| `CodecId` | `const string CodecId` | Canonical codec identifier used by the audio conversion pipeline. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Rebuilds raw AICA data from `FULL.aica` or exactly one mono integer-PCM WAV. Multiple WAVs are rejected rather than silently dropping every channel after the first. |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Aiff`
 

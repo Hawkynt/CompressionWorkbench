@@ -2,27 +2,25 @@
 namespace Codec.AicaAdpcm;
 
 /// <summary>
-/// Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip; the same quantiser as the
-/// YM2608 ADPCM-B family).
+/// Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip).
 /// <para>
-/// A purely differential codec of the OKI / Dialogic lineage: every 4-bit nibble
-/// carries a 3-bit delta magnitude plus a sign bit (bit 3), and a per-sample
-/// quantiser <c>step</c> walks a multiplicative adaptation table rather than the
-/// 49-entry index table OKI uses. Per nibble the decoder computes
-/// <c>diff = ((nibble &amp; 7) * 2 + 1) * step / 8</c> (an integer right-shift by 3),
-/// adds or subtracts it from a full 16-bit predictor (sign bit 3), clamps the
-/// predictor to <c>[-32768, 32767]</c>, then advances the step by
-/// <c>step = step * rate[nibble &amp; 7] / 256</c>, clamped to <c>[127, 24576]</c>.
+/// The codec is differential: every 4-bit code carries a 3-bit delta magnitude
+/// plus a sign bit. The predictor starts at zero and the quantizer width at 127;
+/// the width is multiplied after every sample by the AICA transition factor and
+/// clamped to 127..24576. These are the values defined by the AICA FQ8005
+/// Sound-block User's Manual, ADPCM tables 1 and 2.
 /// </para>
 /// <para>
-/// The bitstream packs two samples per byte, <b>LOW nibble first</b> then the HIGH
-/// nibble — the AICA / ADPCM-B convention. Decoding begins from predictor 0 and
-/// step 127.
+/// A raw AICA sample packs two consecutive samples per byte, low nibble first.
+/// The two-channel <see cref="Decode(ReadOnlySpan{byte}, int)"/> overload exists
+/// for WAVE format tag 0x0020 (Yamaha ADPCM), whose stereo framing puts the left
+/// sample in the low nibble and the right sample in the high nibble. Raw AICA
+/// sample memory itself is one stream per AICA sound slot and therefore uses the
+/// mono overload.
 /// </para>
 /// </summary>
 public static class AicaAdpcmCodec {
 
-  // Multiplicative step-adaptation table indexed by the 3-bit magnitude (canonical AICA).
   private static readonly int[] StepRate = [230, 230, 230, 230, 307, 409, 512, 614];
 
   private const int StepMin = 127;
@@ -30,25 +28,23 @@ public static class AicaAdpcmCodec {
   private const int InitialStep = 127;
 
   /// <summary>
-  /// Decodes a mono AICA ADPCM byte stream to 16-bit PCM. Each input byte yields two
-  /// samples (low nibble first), so the output holds <c>data.Length * 2</c> samples.
+  /// Decodes a raw mono AICA ADPCM byte stream to 16-bit PCM. Each input byte
+  /// yields two samples, low nibble first.
   /// </summary>
   public static short[] Decode(ReadOnlySpan<byte> data) => Decode(data, channels: 1);
 
   /// <summary>
-  /// Decodes an interleaved AICA / Yamaha ADPCM stream of
-  /// <paramref name="channels" /> channels to 16-bit PCM.
+  /// Decodes Yamaha ADPCM using the WAVE 0x0020 byte layout.
   /// </summary>
   /// <remarks>
-  /// Each byte carries one frame: the low nibble belongs to the first channel and
-  /// the high nibble to the last, so mono simply reads two consecutive samples
-  /// from one state and stereo splits the byte between two. Each channel keeps
-  /// its own predictor and step — sharing them is what makes a stereo stream
-  /// decode as noise.
+  /// Mono consumes both nibbles consecutively from one state. Stereo consumes
+  /// the low nibble with the first channel state and the high nibble with the
+  /// second channel state. Keeping this framing explicit is important: it is a
+  /// container convention, not a claim that one raw AICA sample carries stereo.
   /// </remarks>
   public static short[] Decode(ReadOnlySpan<byte> data, int channels) {
     if (channels is < 1 or > 2)
-      throw new ArgumentOutOfRangeException(nameof(channels), "AICA ADPCM carries one or two channels.");
+      throw new ArgumentOutOfRangeException(nameof(channels), "Yamaha WAVE ADPCM carries one or two channels.");
 
     var output = new short[data.Length * 2];
     var predictor = new int[channels];
@@ -66,53 +62,42 @@ public static class AicaAdpcmCodec {
   }
 
   /// <summary>
-  /// Encodes 16-bit PCM to a mono AICA ADPCM byte stream using the same state machine
-  /// as <see cref="Decode(ReadOnlySpan{byte})"/>, so round-tripping reproduces the waveform within the
-  /// codec's lossy tolerance. Two samples pack into each byte (low nibble first); an
-  /// odd trailing sample is paired with a zero (silence) high nibble.
+  /// Encodes 16-bit PCM to a raw mono AICA ADPCM byte stream. Two samples are
+  /// packed per byte, low nibble first. An odd final sample is padded to a full
+  /// byte; callers whose container stores an exact sample count can trim the
+  /// decoded padding sample using that count.
   /// </summary>
   public static byte[] Encode(ReadOnlySpan<short> pcm) {
     var output = new byte[(pcm.Length + 1) / 2];
     var predictor = 0;
     var step = InitialStep;
+
     for (var i = 0; i < pcm.Length; i += 2) {
       var lo = EncodeNibble(pcm[i], ref predictor, ref step);
       var hi = i + 1 < pcm.Length ? EncodeNibble(pcm[i + 1], ref predictor, ref step) : (byte)0;
       output[i / 2] = (byte)((hi << 4) | lo);
     }
+
     return output;
   }
 
   private static short DecodeNibble(byte nibble, ref int predictor, ref int step) {
     var magnitude = nibble & 0x07;
     var diff = ((2 * magnitude + 1) * step) >> 3;
-    if ((nibble & 8) != 0) predictor -= diff;
-    else predictor += diff;
+    predictor += (nibble & 8) != 0 ? -diff : diff;
     predictor = Math.Clamp(predictor, short.MinValue, short.MaxValue);
     step = Math.Clamp((step * StepRate[magnitude]) >> 8, StepMin, StepMax);
     return (short)predictor;
   }
 
   private static byte EncodeNibble(short sample, ref int predictor, ref int step) {
-    var diff = sample - predictor;
+    var delta = (int)sample - predictor;
+    var magnitude = Math.Min(7, Math.Abs(delta) * 4 / step);
+    var nibble = (byte)(magnitude | (delta < 0 ? 8 : 0));
 
-    byte nibble = 0;
-    if (diff < 0) {
-      nibble = 8;
-      diff = -diff;
-    }
-    // Greedily pick the 3-bit magnitude whose reconstruction diff is closest from below.
-    // Magnitude m reconstructs (2*m+1)*step/8; choose the largest m whose diff fits.
-    var magnitude = 0;
-    for (var m = 7; m >= 0; --m) {
-      if (((2 * m + 1) * step) >> 3 <= diff) {
-        magnitude = m;
-        break;
-      }
-    }
-    nibble |= (byte)magnitude;
-
-    // Advance the shared state exactly as the decoder will, so encode/decode stay in lockstep.
+    // Advance through exactly the state transition the decoder applies. Table 1
+    // selects magnitude at |delta| = n*step/4 boundaries; using reconstruction
+    // midpoints here instead makes the writer self-consistent but not AICA-compliant.
     DecodeNibble(nibble, ref predictor, ref step);
     return nibble;
   }
