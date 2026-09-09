@@ -531,7 +531,7 @@ ACE 2.0 SOUND sub-mode filter. Decorrelates audio data using adaptive linear pre
 
 ### Namespace `Compression.Core.Dictionary.Aplib`
 
-[`AplibBuildingBlock`](#aplibbuildingblock) · [`AplibDialect`](#aplibdialect)
+[`AplibBuildingBlock`](#aplibbuildingblock) · [`AplibCompressor`](#aplibcompressor) · [`AplibDialect`](#aplibdialect)
 
 #### `AplibBuildingBlock`
 
@@ -551,6 +551,15 @@ Implements `IBuildingBlock`.
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, AplibDialect dialect, out bool endMarkerHit, out int inputConsumed)` | As `DecompressRaw`, decoding the requested `dialect`. Packers that embed a hand-written aPLib depacker sometimes ship a simplified one; see `AplibDialect`. |
 | `DecompressRaw` | `static byte[] DecompressRaw(ReadOnlySpan<byte> compressed, int maxOutputSize, out bool endMarkerHit, out int inputConsumed)` | As `DecompressRaw`, additionally reporting whether decoding stopped at a genuine end-of-stream marker (`endMarkerHit`) versus running into the `maxOutputSize` cap, and how many input bytes were consumed (`inputConsumed`). Packer handlers that carve a payload at a guessed offset use the end-marker flag to reject false positives: a bare aPLib stream that terminates cleanly and consumes most of its input is far more likely to be a real payload than random section bytes that happen to decode without throwing. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `AplibCompressor`
+
+Compresses standard bare aPLib streams, either with the fast greedy encoder or with a bounded cost-based parser that searches the complete aPLib token grammar.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressOptimal` | `static byte[] CompressOptimal(ReadOnlySpan<byte> data)` | Compresses a bare standard aPLib stream using a bounded cost-based parser and returns whichever of the optimized and greedy streams is smaller. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses a bare standard aPLib stream using the fast greedy encoder. |
 
 #### `AplibDialect`
 

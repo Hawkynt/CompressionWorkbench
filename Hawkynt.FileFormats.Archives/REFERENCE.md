@@ -1838,17 +1838,19 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using the cost-based aPLib optimizer. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `ApLibStream`
 
-Provides static methods for compressing and decompressing data using the aPLib algorithm with an AP32 framed container format.
+Reads and writes the standard aPLib AP32 safe-wrapper format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes an AP32-format stream to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an AP32-format stream from `input` and writes the result to `output`. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Compresses `input` into a standard AP32 stream using the cost-based aPLib optimizer. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` into a standard AP32 stream. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a standard AP32 stream, or a legacy CompressionWorkbench AP32 stream. |
 
 ### Namespace `FileFormat.Apk`
 
