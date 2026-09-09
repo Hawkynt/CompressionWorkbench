@@ -1,12 +1,38 @@
 #pragma warning disable CS1591
 
+using Compression.Core.Entropy.ContextMixing.Mcm;
+
 namespace FileFormat.Mcm;
+
+/// <summary>
+/// Compression modes available to the managed MCM stream writer.
+/// </summary>
+/// <remarks>
+/// <see cref="Legacy"/> preserves the byte stream emitted before profile
+/// optimization was added. The remaining modes use the independent reduced MCM
+/// model graph from <see cref="McmCompressor"/> and are self-described in the
+/// stream metadata so every optimizer candidate remains decodable.
+/// </remarks>
+public enum McmCompressionMode : byte {
+  Legacy = 0,
+  Turbo = (byte)McmCompressionProfile.Turbo,
+  Fast = (byte)McmCompressionProfile.Fast,
+  Mid = (byte)McmCompressionProfile.Mid,
+  High = (byte)McmCompressionProfile.High,
+  Max = (byte)McmCompressionProfile.Max,
+}
 
 /// <summary>
 /// Represents a mcm stream.
 /// </summary>
 public static class McmStream {
   private static readonly byte[] Magic = "MCMARCHIVE"u8.ToArray();
+
+  // Algorithm 0 is the historical managed arithmetic payload already emitted
+  // by CompressionWorkbench. 0x80 is deliberately outside upstream MCM's small
+  // algorithm-id range and identifies our reduced clean-room profile payload.
+  private const byte LegacyAlgorithm = 0;
+  private const byte ReducedMcmAlgorithm = 0x80;
 
   // LEB128 helpers
   private static void WriteLeb128(Stream s, ulong value) {
@@ -26,6 +52,8 @@ public static class McmStream {
       int r = s.ReadByte();
       if (r < 0) throw new EndOfStreamException("Unexpected end of stream reading LEB128");
       b = (byte)r;
+      if (shift >= 64 || (shift == 63 && (b & 0x7E) != 0))
+        throw new InvalidDataException("Invalid MCM LEB128 value.");
       result |= (ulong)(b & 0x7F) << shift;
       shift += 7;
     } while ((b & 0x80) != 0);
@@ -33,9 +61,17 @@ public static class McmStream {
   }
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the historical managed payload.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, McmCompressionMode.Legacy);
+
+  /// <summary>
+  /// Encodes the supplied input using the selected managed MCM mode.
+  /// </summary>
+  public static void Compress(Stream input, Stream output, McmCompressionMode mode) {
+    if (!Enum.IsDefined(mode))
+      throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown MCM compression mode.");
+
     // Read all input
     using var ms = new MemoryStream();
     input.CopyTo(ms);
@@ -46,12 +82,15 @@ public static class McmStream {
     output.WriteByte(0); output.WriteByte(0);               // major version = 0 (uint16 LE)
     output.WriteByte(84); output.WriteByte(0);              // minor version = 84 (uint16 LE)
 
-    // Block metadata: mem_usage=5, algorithm=0, lzp_enabled=0, filter=0, profile=0
-    output.WriteByte(5);  // mem_usage
-    output.WriteByte(0);  // algorithm
-    output.WriteByte(0);  // lzp_enabled
-    output.WriteByte(0);  // filter
-    output.WriteByte(0);  // profile
+    var isLegacy = mode == McmCompressionMode.Legacy;
+
+    // Block metadata. The legacy tuple is kept byte-for-byte for compatibility;
+    // reduced profiles use a private algorithm id plus the profile byte.
+    output.WriteByte(5);                                    // mem_usage
+    output.WriteByte(isLegacy ? LegacyAlgorithm : ReducedMcmAlgorithm);
+    output.WriteByte(0);                                    // lzp_enabled
+    output.WriteByte(0);                                    // filter
+    output.WriteByte(isLegacy ? (byte)0 : (byte)mode);      // profile
 
     // LEB128 segment count = 1
     WriteLeb128(output, 1);
@@ -61,8 +100,9 @@ public static class McmStream {
     if (!BitConverter.IsLittleEndian) Array.Reverse(sizeBytes);
     output.Write(sizeBytes);
 
-    // Compress data using adaptive arithmetic coding with bit-tree byte encoding
-    byte[] compressed = ArithmeticCompress(data);
+    byte[] compressed = isLegacy
+      ? ArithmeticCompress(data)
+      : McmCompressor.Compress(data, (McmCompressionProfile)(byte)mode);
     output.Write(compressed);
   }
 
@@ -86,6 +126,8 @@ public static class McmStream {
     // Read block metadata (5 bytes)
     byte[] meta = new byte[5];
     input.ReadExactly(meta);
+    var algorithm = meta[1];
+    var profile = meta[4];
 
     // Read LEB128 segment count
     ulong segCount = ReadLeb128(input);
@@ -96,14 +138,33 @@ public static class McmStream {
     input.ReadExactly(sizeBuf);
     if (!BitConverter.IsLittleEndian) Array.Reverse(sizeBuf);
     ulong originalSize = BitConverter.ToUInt64(sizeBuf, 0);
+    if (originalSize > int.MaxValue)
+      throw new InvalidDataException("MCM stream is too large for the managed decoder.");
 
     // Read the rest as compressed data
     using var compMs = new MemoryStream();
     input.CopyTo(compMs);
     byte[] compressed = compMs.ToArray();
 
-    byte[] decompressed = ArithmeticDecompress(compressed, (int)originalSize);
+    byte[] decompressed = algorithm switch {
+      LegacyAlgorithm => ArithmeticDecompress(compressed, (int)originalSize),
+      ReducedMcmAlgorithm => DecompressReduced(compressed, profile),
+      _ => throw new InvalidDataException($"Unsupported MCM algorithm id {algorithm}.")
+    };
+
+    if ((ulong)decompressed.LongLength != originalSize)
+      throw new InvalidDataException(
+        $"MCM payload length mismatch: header declares {originalSize} bytes, payload declares {decompressed.LongLength}.");
+
     output.Write(decompressed);
+  }
+
+  private static byte[] DecompressReduced(byte[] compressed, byte profile) {
+    var mode = (McmCompressionMode)profile;
+    if (mode is McmCompressionMode.Legacy || !Enum.IsDefined(mode))
+      throw new InvalidDataException($"Unsupported reduced MCM profile id {profile}.");
+
+    return McmCompressor.Decompress(compressed, (McmCompressionProfile)profile);
   }
 
   // PAQ8-style adaptive arithmetic coder with bit-tree byte encoding (255 nodes).
