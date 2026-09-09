@@ -11,11 +11,18 @@ namespace Compression.Lib;
 /// best parameter combination" half of the universal-compressor goal.
 /// </summary>
 /// <remarks>
-/// <para>When the full Cartesian product of the schema's enumerable options is
+/// <para>When the full Cartesian product of the schema's enumerable optimization axes is
 /// small (≤ <c>maxCombinations</c>) every combination is tried exhaustively;
 /// otherwise a coordinate-descent pass tunes one option at a time (starting from
 /// the schema defaults), which scales to large multi-knob schemas without an
 /// exponential blow-up.</para>
+/// <para>Options with <see cref="FormatOptionDescriptor.IsOptimizationAxis"/> set to
+/// <see langword="false"/> are caller constraints rather than tuning knobs. In particular,
+/// a requested <see cref="FormatOptionKeys.TargetCompatibility"/> is never changed merely
+/// because another wire format happens to compress smaller. Supply such caller choices through
+/// <see cref="OptimizerOptions.BaseOptions"/> so every probe inherits them. Options gated by a
+/// fixed constraint through <see cref="FormatOptionDescriptor.DependsOn"/> are omitted when that
+/// constraint disables them.</para>
 /// <para>Each distinct parameter combination is probed at most once per run
 /// (coordinate descent revisits the current point), and a wall-clock /
 /// combination budget can be supplied via <see cref="OptimizerOptions"/> so the
@@ -46,7 +53,7 @@ public static class CompressionOptimizer {
   /// <summary>
   /// Tuning knobs for an optimization run. Defaults reproduce the legacy
   /// behaviour exactly: Balanced effort (512 combos), no wall-clock cap,
-  /// size-only objective, probe caching on.
+  /// size-only objective, no fixed creation options.
   /// </summary>
   public sealed record OptimizerOptions {
     /// <summary>Effort preset; scales <see cref="MaxCombinations"/> when that is left at its default.</summary>
@@ -63,6 +70,12 @@ public static class CompressionOptimizer {
 
     /// <summary>Objective to minimise.</summary>
     public Objective Objective { get; init; } = Objective.Size;
+
+    /// <summary>
+    /// Creation options copied into every probe before optimizer-selected axis values are applied.
+    /// Use this for fixed caller constraints such as password, container version or target compatibility.
+    /// </summary>
+    public FormatCreateOptions? BaseOptions { get; init; }
 
     /// <summary>Resolve the effective combination cap (explicit value wins, else the effort preset).</summary>
     public int ResolvedMaxCombinations => this.MaxCombinations ?? this.Effort switch {
@@ -99,8 +112,8 @@ public static class CompressionOptimizer {
 
   /// <summary>
   /// Finds the best compressed output across <paramref name="schema"/>'s enumerable
-  /// options under the supplied <paramref name="options"/> (effort/time budget,
-  /// objective, caching).
+  /// optimization axes under the supplied <paramref name="options"/> (effort/time budget,
+  /// objective, fixed creation options).
   /// </summary>
   public static Result OptimizeStream(
       byte[] input, IStreamFormatOperations ops, IFormatOptionsSchema schema, OptimizerOptions options) {
@@ -109,9 +122,12 @@ public static class CompressionOptimizer {
     ArgumentNullException.ThrowIfNull(schema);
     ArgumentNullException.ThrowIfNull(options);
 
-    // Each axis = an option with a finite, enumerable candidate set.
+    // Each axis = a user option the format explicitly permits the optimizer to vary.
     var axes = new List<(string Key, IReadOnlyList<string> Values, string Default)>();
     foreach (var opt in schema.OptionsSchema) {
+      if (!opt.IsOptimizationAxis || !IsEnabledByFixedDependency(opt, schema.OptionsSchema, options.BaseOptions))
+        continue;
+
       var values = opt.Kind switch {
         FormatOptionKind.Enum or FormatOptionKind.Integer when opt.AllowedValues is { Count: > 0 } => opt.AllowedValues,
         FormatOptionKind.Boolean => (IReadOnlyList<string>)["true", "false"],
@@ -123,7 +139,7 @@ public static class CompressionOptimizer {
 
     var search = new Search(input, ops, options);
 
-    // Nothing to tune: just compress at defaults.
+    // Nothing to tune: just compress with the caller's fixed options/defaults.
     if (axes.Count == 0)
       return search.Probe(new Dictionary<string, string>());
 
@@ -134,6 +150,29 @@ public static class CompressionOptimizer {
     return product <= maxCombos
       ? search.Exhaustive(axes)
       : search.CoordinateDescent(axes);
+  }
+
+  private static bool IsEnabledByFixedDependency(
+      FormatOptionDescriptor option,
+      IReadOnlyList<FormatOptionDescriptor> schema,
+      FormatCreateOptions? baseOptions) {
+    if (string.IsNullOrWhiteSpace(option.DependsOn))
+      return true;
+
+    var separator = option.DependsOn.IndexOf('=');
+    if (separator <= 0 || separator == option.DependsOn.Length - 1)
+      return true;
+
+    var dependencyKey = option.DependsOn[..separator];
+    var dependency = schema.FirstOrDefault(candidate =>
+      string.Equals(candidate.Key, dependencyKey, StringComparison.OrdinalIgnoreCase));
+    if (dependency is null || dependency.IsOptimizationAxis)
+      return true;
+
+    var effectiveValue = baseOptions?.GetString(dependencyKey) ?? dependency.Default;
+    return option.DependsOn[(separator + 1)..]
+      .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+      .Contains(effectiveValue, StringComparer.OrdinalIgnoreCase);
   }
 
   /// <summary>
@@ -158,13 +197,18 @@ public static class CompressionOptimizer {
       if (this._cache.TryGetValue(key, out var hit))
         return hit;
 
+      var createOptions = options.BaseOptions?.Copy() ?? new FormatCreateOptions();
+      foreach (var (optionKey, optionValue) in combo)
+        createOptions.FormatSpecific[optionKey] = optionValue;
+
       using var inMs = new MemoryStream(input, writable: false);
       using var outMs = new MemoryStream();
       var sw = Stopwatch.StartNew();
-      ops.Compress(inMs, outMs, new FormatCreateOptions { FormatSpecific = combo });
+      ops.Compress(inMs, outMs, createOptions);
       sw.Stop();
 
-      var result = new Result(outMs.ToArray(), combo, input.LongLength) {
+      var effectiveParameters = new Dictionary<string, string>(createOptions.FormatSpecific, StringComparer.OrdinalIgnoreCase);
+      var result = new Result(outMs.ToArray(), effectiveParameters, input.LongLength) {
         CompressTimeMs = sw.Elapsed.TotalMilliseconds,
         Probes = this.Probes + 1,
       };
@@ -234,6 +278,6 @@ public static class CompressionOptimizer {
     private Result Finalize(Result best) => best with { Probes = this.Probes };
 
     private static string CacheKey(Dictionary<string, string> combo)
-      => string.Join("", combo.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}{kv.Value}"));
+      => string.Join("\u0001", combo.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}\u0002{kv.Value}"));
   }
 }

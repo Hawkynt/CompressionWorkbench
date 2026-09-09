@@ -266,8 +266,8 @@ public static class ZooModifier {
     WriteUInt16Le(zoo, crc16);
     WriteUInt32Le(zoo, (uint)data.Length); // origSize
     WriteUInt32Le(zoo, (uint)data.Length); // compSize (Stored)
-    zoo.WriteByte(ZooConstants.MajorVersion);
-    zoo.WriteByte(ZooConstants.MinorVersion);
+    zoo.WriteByte(ZooConstants.ExtractMajorVersion);
+    zoo.WriteByte(ZooConstants.ExtractMinorVersion);
     zoo.WriteByte(0); // deleted
     zoo.WriteByte(0); // structure
     WriteUInt32Le(zoo, 0u); // commentOffset
