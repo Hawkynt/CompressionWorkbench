@@ -11,8 +11,8 @@ namespace Compression.Tests.Brr;
 [TestFixture]
 public class BrrTests {
 
-  private static byte[] SampleBrr(int blocks = 4) {
-    var pcm = new short[BrrCodec.SamplesPerBlock * blocks];
+  private static byte[] SampleBrr(int sourceBlocks = 4) {
+    var pcm = new short[BrrCodec.SamplesPerBlock * sourceBlocks];
     for (var i = 0; i < pcm.Length; ++i)
       pcm[i] = (short)(Math.Sin(i * 2 * Math.PI / 32) * 8000);
     return BrrCodec.Encode(pcm);
@@ -30,8 +30,8 @@ public class BrrTests {
 
   [Test]
   public void MonoWav_HasDefaultRateAndDecodedLength() {
-    const int blocks = 4;
-    using var ms = new MemoryStream(SampleBrr(blocks));
+    const int sourceBlocks = 4;
+    using var ms = new MemoryStream(SampleBrr(sourceBlocks));
     using var output = new MemoryStream();
     new BrrFormatDescriptor().ExtractEntry(ms, "MONO.wav", output, null);
     var wav = output.ToArray();
@@ -40,13 +40,16 @@ public class BrrTests {
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(wav.AsSpan(22)), Is.EqualTo(1)); // mono
     Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(24)), Is.EqualTo(32000u));
 
+    // BRRtools-compatible encoding emits one silent predictor-primer block because the
+    // first source block is non-zero.
     var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(40));
-    Assert.That(dataSize, Is.EqualTo((uint)(blocks * BrrCodec.SamplesPerBlock * 2)));
+    Assert.That(dataSize, Is.EqualTo((uint)((sourceBlocks + 1) * BrrCodec.SamplesPerBlock * 2)));
   }
 
   [Test]
   public void LoopPointHeader_IsSkippedAndReported() {
     // Prepend a 2-byte LE loop-point header → (length % 9) == 2.
+    // Two source blocks encode as three physical blocks because BRRtools adds the primer.
     var body = SampleBrr(2);
     var withHeader = new byte[2 + body.Length];
     BinaryPrimitives.WriteUInt16LittleEndian(withHeader.AsSpan(0), 9); // loop point
@@ -57,9 +60,8 @@ public class BrrTests {
     new BrrFormatDescriptor().ExtractEntry(ms, "MONO.wav", output, null);
     var wav = output.ToArray();
 
-    // Two blocks decode to 32 samples despite the 2-byte header.
     var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(wav.AsSpan(40));
-    Assert.That(dataSize, Is.EqualTo((uint)(2 * BrrCodec.SamplesPerBlock * 2)));
+    Assert.That(dataSize, Is.EqualTo((uint)(3 * BrrCodec.SamplesPerBlock * 2)));
 
     using var iniIn = new MemoryStream(withHeader);
     using var iniOut = new MemoryStream();
@@ -69,8 +71,9 @@ public class BrrTests {
   }
 
   [Test]
-  public void Create_FromMonoWav_ProducesBrrBlocks() {
-    const int samples = BrrCodec.SamplesPerBlock * 3;
+  public void Create_FromMonoWav_ProducesBrrToolsFraming() {
+    const int sourceBlocks = 3;
+    const int samples = BrrCodec.SamplesPerBlock * sourceBlocks;
     var pcm = new byte[samples * 2];
     for (var i = 0; i < samples; ++i)
       BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), (short)(Math.Sin(i / 5.0) * 6000));
@@ -81,8 +84,12 @@ public class BrrTests {
     new BrrFormatDescriptor().Create(output, inputs, new FormatCreateOptions());
     var brr = output.ToArray();
 
-    Assert.That(brr.Length, Is.EqualTo(3 * BrrCodec.BlockSize));
-    Assert.That(brr[^BrrCodec.BlockSize] & 0x01, Is.EqualTo(0x01), "last block carries end flag");
+    Assert.Multiple(() => {
+      Assert.That(brr.Length, Is.EqualTo((sourceBlocks + 1) * BrrCodec.BlockSize));
+      Assert.That(brr.AsSpan(0, BrrCodec.BlockSize).ToArray(), Is.All.EqualTo((byte)0),
+        "non-zero initial audio gets the BRRtools silent predictor-primer block");
+      Assert.That(brr[^BrrCodec.BlockSize] & 0x01, Is.EqualTo(0x01), "last data block carries end flag");
+    });
   }
 
   [Test]
