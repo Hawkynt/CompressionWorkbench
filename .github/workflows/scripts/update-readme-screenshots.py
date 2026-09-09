@@ -3,10 +3,10 @@ from pathlib import Path
 
 START = "<!-- branch-screenshots:start -->"
 END = "<!-- branch-screenshots:end -->"
-ANCHOR = "\n## Vision\n"
+ANCHOR = "\n## 🔬 Analysis and forensics\n"
 
 BLOCK = f"""{START}
-## UI snapshots
+## 🖼️ Screenshots
 
 These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
 
@@ -33,8 +33,8 @@ def update_readme(path: Path) -> bool:
         updated = text[:start] + BLOCK + text[end:]
     else:
         if ANCHOR not in text:
-            raise RuntimeError("README anchor '## Vision' was not found")
-        updated = text.replace(ANCHOR, f"\n{BLOCK}\n\n## Vision\n", 1)
+            raise RuntimeError("README anchor '## 🔬 Analysis and forensics' was not found")
+        updated = text.replace(ANCHOR, f"\n{BLOCK}\n\n## 🔬 Analysis and forensics\n", 1)
 
     if updated == text:
         return False
