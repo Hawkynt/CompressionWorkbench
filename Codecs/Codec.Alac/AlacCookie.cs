@@ -50,7 +50,7 @@ public sealed record AlacCookie(
       off += 12;
     else if (off == 0 && cookie.Length >= 4 + Size
              && BinaryPrimitives.ReadUInt32BigEndian(cookie) == 0
-             && BinaryPrimitives.ReadUInt32BigEndian(cookie[4..]) is >= 64 and <= 1u << 20)
+             && BinaryPrimitives.ReadUInt32BigEndian(cookie[4..]) != 0)
       // No atom header, but the full-box version/flags word is still in front of the
       // config. A bare config cannot be mistaken for this: its first field is the frame
       // length, which is never zero.

@@ -88,12 +88,12 @@ public sealed class Mp4MpegAudioRemuxTests {
   }
 
   [Test]
-  public void Mp4Inventory_ReportsAacAndMpegPacketMuxing() {
+  public void Mp4Inventory_ReportsAacAlacAndMpegPacketMuxing() {
     var capability = AudioConversionInventory.Describe(new Mp4FormatDescriptor());
 
     Assert.Multiple(() => {
       Assert.That(capability.CanMuxEncoded, Is.True);
-      Assert.That(capability.MuxCodecs, Is.EquivalentTo(new[] { "aac", "mp3", "mp2" }));
+      Assert.That(capability.MuxCodecs, Is.EquivalentTo(new[] { "aac", "mp3", "mp2", "alac" }));
     });
   }
 

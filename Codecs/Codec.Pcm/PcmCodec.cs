@@ -18,6 +18,8 @@ public static class PcmCodec {
   /// <summary>
   /// Splits interleaved little-endian signed-integer PCM into per-channel mono WAV blobs.
   /// Channels are returned in the order they occur in <paramref name="interleaved"/>.
+  /// Non-byte-aligned widths occupy the smallest whole-byte container (for example,
+  /// 20-bit PCM occupies three bytes per sample, as required by RIFF/WAVE PCM).
   /// When the container carries an explicit speaker bitmap (WAVE_FORMAT_EXTENSIBLE
   /// <c>dwChannelMask</c>, CAF channel bitmap), pass it via <paramref name="channelMask"/>
   /// so each mono WAV is named for its real speaker; otherwise the FFmpeg default
@@ -28,7 +30,7 @@ public static class PcmCodec {
     if (channels <= 1)
       return [("MONO", ToWavBlob(interleaved, channels: 1, sampleRate, bitsPerSample, formatCode: 1))];
 
-    var bytesPerSample = bitsPerSample / 8;
+    var bytesPerSample = (bitsPerSample + 7) / 8;
     var frameBytes = bytesPerSample * channels;
     if (interleaved.Length % frameBytes != 0)
       throw new ArgumentException("Interleaved PCM length is not a multiple of frame size.");
@@ -185,7 +187,7 @@ public static class PcmCodec {
     if (monoChannels.Count == 0) return [];
     if (monoChannels.Count == 1) return monoChannels[0];
 
-    var bytesPerSample = bitsPerSample / 8;
+    var bytesPerSample = (bitsPerSample + 7) / 8;
     var monoLength = monoChannels[0].Length;
     if (monoChannels.Any(c => c.Length != monoLength))
       throw new ArgumentException("All channel PCM buffers must have the same length (frame count).");
@@ -208,10 +210,14 @@ public static class PcmCodec {
   /// <summary>
   /// Wraps raw little-endian PCM bytes in a minimal RIFF/WAVE header.
   /// <paramref name="formatCode"/>: 1 = PCM integer, 3 = IEEE float.
+  /// Non-byte-aligned integer widths use the smallest whole-byte sample container.
   /// </summary>
   public static byte[] ToWavBlob(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode = 1) {
-    var byteRate = sampleRate * channels * bitsPerSample / 8;
-    var blockAlign = (ushort)(channels * bitsPerSample / 8);
+    var bytesPerSample = (bitsPerSample + 7) / 8;
+    var blockAlign = checked((ushort)(channels * bytesPerSample));
+    // Sample rates lifted from a container are attacker-controlled; the RIFF byte-rate
+    // field is 32-bit unsigned, so widen the product and saturate instead of wrapping.
+    var byteRate = (uint)Math.Clamp((long)sampleRate * blockAlign, 0L, uint.MaxValue);
     const int fmtSize = 16;
     var dataSize = pcm.Length;
     var fileSize = 4 + (8 + fmtSize) + (8 + dataSize);
@@ -226,7 +232,7 @@ public static class PcmCodec {
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[20..], (ushort)formatCode);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[22..], (ushort)channels);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[24..], (uint)sampleRate);
-    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[28..], (uint)byteRate);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[28..], byteRate);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[32..], blockAlign);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[34..], (ushort)bitsPerSample);
     "data"u8.CopyTo(s[36..]);
