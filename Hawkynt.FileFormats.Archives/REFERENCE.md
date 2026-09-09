@@ -2932,13 +2932,15 @@ Implements `IAudioDemuxSource`, `IAudioMuxTarget`.
 
 #### `AsfFormatDescriptor`
 
-Surfaces a Microsoft Advanced Systems Format container (`.asf`/`.wma`/ `.wmv`) as an archive of the byte-exact original (`FULL.asf`, Kind `Container`) plus rich metadata and a description of each carried stream. The Data Object packets are depayloaded into per-stream elementary bitstreams (`streams/stream_NN.bin`, Kind `Stream`) and each stream is described in `streams/stream_NN.info.txt` (Kind `Tag`) carrying its codec / bitrate. WMA v1/v2 audio streams (WAVEFORMATEX tags `0x160`/`0x161`) are decoded via `Codec.Wma` and WMA 9 Professional streams (tag `0x162`) via `Codec.WmaPro`, and WMA Lossless streams (tag `0x163`) bit-exactly via `Codec.WmaLossless`, into one mono `<CHANNEL>.wav` per channel (Kind `Channel`); streams the decoders can't handle (an unsupported WMA Pro / Lossless profile, corrupt data) fall back to just the `stream_NN.bin` blob. File properties and the content description land in `metadata.ini`; the Extended Content Description tags land in `metadata/tags.ini`. Read-only; parsing stops gracefully on a malformed object, keeping whatever was read.
+Surfaces a Microsoft Advanced Systems Format container (`.asf`/`.wma`/ `.wmv`) as an archive of the byte-exact original (`FULL.asf`, Kind `Container`) plus rich metadata and a description of each carried stream. The Data Object packets are depayloaded into per-stream elementary bitstreams (`streams/stream_NN.bin`, Kind `Stream`) and each stream is described in `streams/stream_NN.info.txt` (Kind `Tag`) carrying its WAVEFORMATEX data, media-object boundaries and codec / bitrate. WMA v1/v2 audio streams (WAVEFORMATEX tags `0x160`/`0x161`) are decoded via `Codec.Wma` and WMA 9 Professional streams (tag `0x162`) via `Codec.WmaPro`, and WMA Lossless streams (tag `0x163`) bit-exactly via `Codec.WmaLossless`, into one mono `<CHANNEL>.wav` per channel (Kind `Channel`). The encoded `stream_NN.bin` is retained as well, so decoding never destroys the information required for a byte-exact codec remux. The write side muxes arbitrary unencrypted audio WAVEFORMATEX streams from `stream_NN.info.txt` + `stream_NN.bin`, preserving codec-private data and media-object boundaries. Fresh encoding from WAV supports integer PCM and G.711 A-law/µ-law; an IEEE-float or G.711 WAV can also be passed through directly. WMA-family codecs remain remux-only because the checked-in managed codecs are decoders, not encoders. Existing instances are edited transactionally by reconstructing their canonical encoded stream entries and remuxing them. File properties and the content description land in `metadata.ini`; the Extended Content Description tags land in `metadata/tags.ini`. Malformed reads stop gracefully, keeping whatever was parsed.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AsfFormatDescriptor` | `AsfFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | One-line write-input summary for UI/CLI validation. |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | ASF has no valid zero-stream representation. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -2949,11 +2951,16 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | ASF has no useful aggregate input-size ceiling below the managed byte-array limit. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces canonical mux inputs and transactionally remuxes the existing ASF. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Checks whether an input participates in ASF mux/remux creation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates an ASF file from encoded stream pairs or WAV audio inputs. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes canonical stream/tag inputs and transactionally remuxes the existing ASF. |
 
 ### Namespace `FileFormat.Avi`
 
