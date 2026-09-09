@@ -81,7 +81,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.G722` | Speech | R/W | `0x0065`, `0x028F` | ITU-T G.722 sub-band ADPCM @ 64 kbit |
 | `Codec.Cvsd` | Speech | R/W | `0x0005` | CVSD delta modulation |
 | `Codec.Mace` | Lossy | R | QuickTime `MAC3`, `MAC6` | Apple MACE 3:1 / 6:1 decode |
-| `Codec.MonkeysAudio` | Lossless | R/W ⚠️ | — | Monkey's Audio supported compression levels |
+| `Codec.MonkeysAudio` | Lossless/lossy | R/W ⚠️ | — | Monkey's Audio supported compression levels |
 | `Codec.Ra144` | Speech | R | `0x2002` | RealAudio 14.4 / lpcJ |
 | `Codec.TrueSpeech` | Speech | R | `0x0022` | DSP Group TrueSpeech WAV tag 0x0022 |
 | `Codec.InterplayAcm` | Lossy | R | — | Interplay ACM |
@@ -97,8 +97,8 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.Musepack` | Lossy | R | — | Musepack SV7/SV8 |
 | `Codec.WmaPro` | Lossy | R | `0x0162`, `0x0164` | WMA 9 Professional; the S/PDIF registration `0x0164` stays a separate profile |
 | `Codec.Sipr` | Speech | R ⚠️ | `0x0130`-`0x0132` | RealAudio ACELP.NET; unsupported mode boundaries documented in source |
-| `Codec.Speex` | Speech | R | `0xA109` | Speex narrowband + wideband paths; the ACM tag is not routed |
-| `Codec.G7231` | Speech | R | `0x0059`, `0x0093`, `0x00A3`, `0x0123`, `0x1C0C`, `0xA100` | ITU G.723.1 dual-rate; historical WAVE aliases are not routed |
+| `Codec.Speex` | Lossy | R | `0xA109` | Speex narrowband + wideband paths; the ACM tag is not routed |
+| `Codec.G7231` | Lossy | R | `0x0059`, `0x0093`, `0x00A3`, `0x0123`, `0x1C0C`, `0xA100` | ITU G.723.1 dual-rate; historical WAVE aliases are not routed |
 | `Codec.Dts` | Lossy | R/W | `0x0008`, `0x0190`, `0x2001` | DTS Coherent Acoustics core encode + decode; wrapper tags are not routed |
 | `Codec.Mos6502` | CPU core | — | — | Reusable NMOS 6502 including stable illegal opcodes, BCD and cycle counting |
 | `Codec.Z80` | CPU core | — | — | Z80 core with CB/ED/DD/FD, block ops and interrupt modes |
@@ -125,7 +125,7 @@ to the WAVE reader the note says so rather than leaving it implied.
 | `Codec.Ralf` | Lossless | R | — | RealAudio Lossless |
 | `Codec.CriHca` | Lossy | R ⚠️ | — | CRI HCA; keyed-cipher limitations documented in source |
 | `Codec.Sbc` | Lossy | R | — | Bluetooth SBC + mSBC |
-| `Codec.Siren` | Lossy | R ⚠️ | — | Siren7 / G.722.1; Annex C boundary documented in source |
+| `Codec.Siren` | Lossy | R ⚠️ | — | Siren7 / G.722.1; Annex-C boundary documented in source |
 | `Codec.S302M` | PCM (mapped) | R/W | — | SMPTE 302M AES3 subframes |
 | `Codec.BinkAudio` | Lossy | R | — | Bink audio RDFT + DCT flavours |
 | `Codec.SmackerAudio` | Lossy | R | — | Smacker SMKA |
@@ -163,7 +163,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Amr` | 3GPP AMR | R | — | — | — | — | 3GPP AMR NB/WB, including MC1.0 multichannel surface |
 | `AmrNb` | AMR-NB | R | ✅ | ✅ | ✅ | ✅ | AMR-NB |
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | AMR-WB |
-| `Apc` | CRYO APC | R | — | — | — | — | CRYO APC seeded IMA |
+| `Apc` | CRYO APC | WORM | ✅ | ✅ | ✅ | ✅ | CRYO APC seeded IMA; high-nibble-first mono/stereo with configurable version and predictor seeds |
 | `Ape` | Monkey's Audio (.ape) | R | — | — | — | — | Monkey's Audio container |
 | `Asf` | ASF (Advanced Systems Format) | R | — | — | — | — | Microsoft ASF, WMA-family audio depayload/decode routes + tags |
 | `Ast` | AST (GameCube/Wii stream) | WORM | — | — | — | — | GameCube/Wii AST |

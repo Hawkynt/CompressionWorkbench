@@ -3396,12 +3396,13 @@ Microsoft Windows Media Audio 9 Professional decoder (WAVEFORMATEX tag `0x0162`)
 
 #### `StandardImaCodec`
 
-Standard IMA ADPCM with a single, continuous predictor/step-index state — the form used by Westwood `.aud` (codec id 99) and CRYO `.apc` streams, where the adaptive state runs across the whole stream rather than resetting per WAV block. Nibbles are read low nibble first within each byte, matching both formats. This complements `Codec.ImaAdpcm.ImaAdpcmCodec`, whose public surface only covers the block-structured WAV and QuickTime packet layouts. The encoder mirrors the decoder's state machine exactly so a decode→encode→decode round-trip reproduces the waveform within IMA's lossy tolerance. It lives here, alongside the other classic-game audio codecs, so both `FileFormat.Aud` and `FileFormat.Apc` can share one streaming IMA implementation.
+Standard IMA ADPCM with a single, continuous predictor/step-index state. Westwood `.aud` codec 99 uses the low-nibble-first byte helpers exposed here; formats with another packing order, notably CRYO `.apc`, use the per-nibble operations and impose their own byte/channel ordering around the same state machine. This complements `Codec.ImaAdpcm.ImaAdpcmCodec`, whose public surface only covers the block-structured WAV and QuickTime packet layouts. The encoder mirrors the decoder's state machine exactly so a decode→encode→decode round-trip reproduces the waveform within IMA's lossy tolerance. It lives here, alongside the other classic-game audio codecs, so both `FileFormat.Aud` and `FileFormat.Apc` can share one streaming IMA implementation.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `DecodeOneNibble` | `static short DecodeOneNibble(byte nibble, ref State state)` | Decodes a single IMA nibble against `state`, returning the new 16-bit sample. Exposed for stereo streams that interleave nibbles per channel (e.g. CRYO APC: low nibble left, high nibble right) and so need per-nibble control. |
+| `DecodeOneNibble` | `static short DecodeOneNibble(byte nibble, ref State state)` | Decodes one IMA nibble and advances `state`. Container codecs use this when their byte order or channel interleave differs from the low-first bulk helper. |
 | `Decode` | `static short[] Decode(ReadOnlySpan<byte> data, ref State state)` | Decodes a continuous IMA byte stream (two nibbles per byte, low nibble first) into signed 16-bit PCM, advancing `state` across the whole buffer. |
+| `EncodeOneNibble` | `static byte EncodeOneNibble(short sample, ref State state)` | Encodes one signed PCM16 sample as an IMA nibble and advances `state`. Container codecs use this when their byte order or channel interleave differs from the low-first bulk helper. |
 | `Encode` | `static byte[] Encode(ReadOnlySpan<short> pcm, ref State state)` | Encodes signed 16-bit PCM into a continuous IMA byte stream (low nibble first), advancing `state`. An odd trailing sample is paired with a zero high nibble. |
 
 #### `StandardImaCodec.State`
@@ -4714,28 +4715,40 @@ Implements `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAu
 
 #### `ApcFormatDescriptor`
 
-CRYO APC (`.apc`) audio — the IMA-ADPCM voice/effect format of CRYO Interactive titles. The little-endian header is `"CRYO_APC" (8) | version (4, e.g. "1.20") | u32 sampleCount | u32 sampleRate | u32 leftInitialSample | u32 rightInitialSample | u32 stereoFlag`, followed by raw IMA nibbles (low nibble first). The two "initial sample" fields seed the IMA predictor(s) (step index starts at 0); for stereo, nibbles interleave per channel — low nibble left, high nibble right — each driving its own continuous predictor. Surfaced as a read-only pseudo-archive: `FULL.apc` (Container), one mono `MONO.wav` or `LEFT.wav`/`RIGHT.wav` (Channel) and `metadata.ini` (Tag). Decoding uses the continuous IMA state machine in `StandardImaCodec`.
+CRYO APC (`.apc`) audio. The little-endian header is `"CRYO_APC" (8) | version (4, conventionally "1.20") | u32 sampleCount | u32 sampleRate | i32 leftInitialSample | i32 rightInitialSample | u32 stereoFlag`, followed by continuous IMA-ADPCM nibbles. The IMA step index starts at zero and the signed initial-sample fields seed the predictor(s). APC packs the high nibble first: mono consumes high then low with one state, while stereo stores left in the high nibble and right in the low nibble with independent states. The descriptor supports the pseudo-archive view, PCM16 mono/stereo decode and encode, standalone creation from channel WAVs, and packet-preserving APC demux/mux. APC packet streams use the format-specific `ima-adpcm-apc` codec id so they cannot be confused with block-framed WAVE IMA-ADPCM during generic remuxing.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApcFormatDescriptor` | `ApcFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Ape`
 
