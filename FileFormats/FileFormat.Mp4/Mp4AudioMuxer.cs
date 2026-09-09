@@ -137,10 +137,10 @@ internal static class Mp4AudioMuxer {
     if (stream.Format.CodecId.Equals("alac", StringComparison.OrdinalIgnoreCase)) {
       if (!TryExtractAlacSpecificConfig(stream.CodecPrivateData, out var config))
         throw new ArgumentException("ALAC MP4 muxing requires a 24-byte ALACSpecificConfig magic cookie.", nameof(stream));
-      var defaultDuration = BinaryPrimitives.ReadUInt32BigEndian(config);
-      if (defaultDuration is 0 or > 16_384)
-        throw new ArgumentException($"ALAC magic cookie declares an unsupported packet length of {defaultDuration} frames.", nameof(stream));
-      return new CodecConfiguration(0, config, defaultDuration, true);
+      var frameLength = BinaryPrimitives.ReadUInt32BigEndian(config);
+      if (frameLength is 0 or > 16_384)
+        throw new ArgumentException($"ALAC magic cookie declares an unsupported packet length of {frameLength} frames.", nameof(stream));
+      return new CodecConfiguration(0, config, frameLength, true);
     }
 
     if (!TryGetMpegVersion(stream.Format, out var version) || version is not (1 or 2))

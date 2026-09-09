@@ -215,7 +215,9 @@ public static class PcmCodec {
   public static byte[] ToWavBlob(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode = 1) {
     var bytesPerSample = (bitsPerSample + 7) / 8;
     var blockAlign = checked((ushort)(channels * bytesPerSample));
-    var byteRate = checked(sampleRate * blockAlign);
+    // Sample rates lifted from a container are attacker-controlled; the RIFF byte-rate
+    // field is 32-bit unsigned, so widen the product and saturate instead of wrapping.
+    var byteRate = (uint)Math.Clamp((long)sampleRate * blockAlign, 0L, uint.MaxValue);
     const int fmtSize = 16;
     var dataSize = pcm.Length;
     var fileSize = 4 + (8 + fmtSize) + (8 + dataSize);
@@ -230,7 +232,7 @@ public static class PcmCodec {
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[20..], (ushort)formatCode);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[22..], (ushort)channels);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[24..], (uint)sampleRate);
-    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[28..], (uint)byteRate);
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(s[28..], byteRate);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[32..], blockAlign);
     System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(s[34..], (ushort)bitsPerSample);
     "data"u8.CopyTo(s[36..]);

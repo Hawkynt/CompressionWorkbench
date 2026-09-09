@@ -69,8 +69,8 @@ public sealed class Pcm20BitChannelTests {
       .ToArray();
 
     Assert.That(channels.Select(static entry => entry.Name), Is.EqualTo(new[] {
-      "TRACK0_FRONT_LEFT.wav",
-      "TRACK0_FRONT_RIGHT.wav",
+      "TRACK0_LEFT.wav",
+      "TRACK0_RIGHT.wav",
     }));
 
     for (var channel = 0; channel < channels.Length; ++channel) {

@@ -573,7 +573,7 @@ Yamaha AICA 4-bit ADPCM (Sega Dreamcast sound chip). The codec is differential: 
 
 ### Namespace `Codec.Alac`
 
-[`AlacCodec`](#alaccodec) · [`AlacCookie`](#alaccookie)
+[`AlacCodec`](#alaccodec) · [`AlacCookie`](#alaccookie) · [`AlacEncoder`](#alacencoder)
 
 #### `AlacCodec`
 
@@ -608,6 +608,14 @@ Implements `IEquatable<AlacCookie>`.
 | `SampleRate` | `uint SampleRate { get; init; }` |  |
 | `Parse` | `static AlacCookie Parse(ReadOnlySpan<byte> cookie)` | Parses a magic cookie, peeling any `frma`/`alac` atom wrapper or bare version/flags prefix. Trailing atoms (channel layout, terminator) are ignored. |
 | `Write` | `byte[] Write()` | Serialises the bare 24-byte config (big-endian). |
+
+#### `AlacEncoder`
+
+Full-profile Apple Lossless encoder. Unlike the historical `Encode` convenience path this implementation covers every source shape supported by the Apple codec: 16/20/24/32-bit signed integer PCM, one through eight channels, and packet sizes through 16,384 sample frames.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Encode` | `static ValueTuple<byte[], AlacCookie> Encode(ReadOnlySpan<byte> pcmInterleaved, int channels, int sampleRate, int bitsPerSample, int frameLength = 4096)` | Encodes canonical interleaved little-endian PCM to ALAC packets. |
 
 ### Namespace `Codec.AmrNb`
 
@@ -2326,9 +2334,9 @@ PCM codec: integer/float sample packing, channel interleave/deinterleave, and ca
 | `LayoutNames` | `static IReadOnlyList<string> LayoutNames(int channels)` | Conventional channel names per layout (FFmpeg default layouts, mono → 22.2); unmapped counts fall back to CH_0..CH_N. See `ChannelLayout`. |
 | `Requantize` | `static byte[] Requantize(byte[] pcm, int fromBits, int toBits)` | Re-quantises interleaved integer PCM to another sample width. |
 | `SplitInterleavedFloat` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitInterleavedFloat(byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null)` | Splits interleaved little-endian IEEE-float PCM into per-channel mono WAV blobs (RIFF format code 3). Mirrors `SplitInterleavedPcm`'s frame walk but emits float WAVs; `bitsPerSample` must be 32 or 64. As with the integer split, an explicit `channelMask` (WAVE_FORMAT_EXTENSIBLE `dwChannelMask`, CAF channel bitmap) names each mono WAV for its real speaker; otherwise the FFmpeg default layout for the channel count applies. |
-| `SplitInterleavedPcm` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitInterleavedPcm(byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null)` | Splits interleaved little-endian signed-integer PCM into per-channel mono WAV blobs. Channels are returned in the order they occur in `interleaved`. When the container carries an explicit speaker bitmap (WAVE_FORMAT_EXTENSIBLE `dwChannelMask`, CAF channel bitmap), pass it via `channelMask` so each mono WAV is named for its real speaker; otherwise the FFmpeg default layout for the channel count applies. |
+| `SplitInterleavedPcm` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitInterleavedPcm(byte[] interleaved, int channels, int sampleRate, int bitsPerSample, ulong? channelMask = null)` | Splits interleaved little-endian signed-integer PCM into per-channel mono WAV blobs. Channels are returned in the order they occur in `interleaved`. Non-byte-aligned widths occupy the smallest whole-byte container (for example, 20-bit PCM occupies three bytes per sample, as required by RIFF/WAVE PCM). When the container carries an explicit speaker bitmap (WAVE_FORMAT_EXTENSIBLE `dwChannelMask`, CAF channel bitmap), pass it via `channelMask` so each mono WAV is named for its real speaker; otherwise the FFmpeg default layout for the channel count applies. |
 | `SplitPerChannelIntSamples` | `static IReadOnlyList<ValueTuple<string, byte[]>> SplitPerChannelIntSamples(int[][] perChannel, int sampleRate, int bitsPerSample)` | Splits per-channel integer samples into per-channel mono WAV blobs. Widths wider than `bitsPerSample` are truncated via two's-complement masking. |
-| `ToWavBlob` | `static byte[] ToWavBlob(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode = 1)` | Wraps raw little-endian PCM bytes in a minimal RIFF/WAVE header. `formatCode`: 1 = PCM integer, 3 = IEEE float. |
+| `ToWavBlob` | `static byte[] ToWavBlob(byte[] pcm, int channels, int sampleRate, int bitsPerSample, int formatCode = 1)` | Wraps raw little-endian PCM bytes in a minimal RIFF/WAVE header. `formatCode`: 1 = PCM integer, 3 = IEEE float. Non-byte-aligned integer widths use the smallest whole-byte sample container. |
 
 ### Namespace `Codec.Qoa`
 
@@ -4617,28 +4625,41 @@ Implements `IDisposable`.
 
 #### `AlacFormatDescriptor`
 
-Surfaces an ALAC (Apple Lossless) audio file — usually wrapped in an M4A (ISOBMFF) container — as a read-only archive of the container passthrough, the ALAC codec-specific "magic cookie", the raw ALAC frame bytes extracted via stsz/stsc/stco, a metadata.ini describing the cookie fields, and — when the stream decodes — one playable mono WAV per speaker (Kind `Channel`, method `pcm`), named per `ChannelLayout`. The decode is best-effort: any unsupported cookie or truncated stream leaves the FULL/Track/metadata view intact.
+Apple Lossless audio surface for M4A/MP4 and CAF. The descriptor can decode to canonical PCM, encode every ALAC source shape defined by Apple (16/20/24/32-bit, 1..8 channels), preserve encoded packets while remuxing, and expose the traditional archive view of container/cookie/track/channel payloads.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AlacFormatDescriptor` | `AlacFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Amf`
 

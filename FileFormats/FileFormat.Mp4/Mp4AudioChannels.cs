@@ -319,8 +319,12 @@ internal static class Mp4AudioChannels {
     if (pos + 8 > end) return null;
     var entrySize = (int)BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(pos));
     var entryEnd = Math.Min(pos + entrySize, end);
+    // QuickTime sound descriptions grow past the 28-byte v0 prelude: v1 appends four 32-bit
+    // fields, v2 a 36-byte struct whose leading size word otherwise reads as a plausible box.
+    var version = pos + 18 <= entryEnd ? BinaryPrimitives.ReadUInt16BigEndian(file.AsSpan(pos + 16)) : 0;
+    var prelude = 28 + version switch { 1 => 16, 2 => 36, _ => 0 };
     // Scan from after the audio sample-entry prelude; layouts vary, so byte-scan for the box.
-    for (var p = pos + 8 + 28; p + 8 <= entryEnd;) {
+    for (var p = pos + 8 + prelude; p + 8 <= entryEnd;) {
       var size = (int)BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(p));
       if (size >= 8 && p + size <= entryEnd) {
         var t = Encoding.ASCII.GetString(file, p + 4, 4);
