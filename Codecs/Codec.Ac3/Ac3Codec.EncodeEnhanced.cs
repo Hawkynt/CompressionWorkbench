@@ -3,14 +3,14 @@
 namespace Codec.Ac3;
 
 /// <summary>Controls ATSC A/52 Enhanced AC-3 encoding of an independent substream.</summary>
-/// <param name="SampleRate">32000, 44100 or 48000 Hz.</param>
+/// <param name="SampleRate">16000, 22050, 24000, 32000, 44100 or 48000 Hz.</param>
 /// <param name="Bitrate">Target average bitrate in bit/s. Frame sizes are word-aligned.</param>
 /// <param name="Acmod">A/52 audio coding mode 0..7. The input channel order follows that mode.</param>
 /// <param name="LowFrequencyEffects">When true, the final interleaved input channel is encoded as LFE.</param>
 /// <param name="DialNorm">Primary-program dialogue normalization metadata in dB, -31..-1.</param>
 /// <param name="Cutoff">Full-bandwidth channel cutoff in Hz; zero chooses a bitrate-dependent value.</param>
 /// <param name="PadFinalFrame">Pad an incomplete final frame with its last sample.</param>
-/// <param name="BlocksPerFrame">1, 2, 3 or 6; null selects the largest count compatible with the bitrate.</param>
+/// <param name="BlocksPerFrame">1, 2, 3 or 6; reduced-rate streams require 6; null selects automatically.</param>
 /// <param name="DialNorm2">Dual-mono second-program dialogue normalization; null reuses <paramref name="DialNorm"/>.</param>
 public sealed record Eac3EncoderOptions(
   int SampleRate = 48000,
@@ -31,7 +31,8 @@ public static partial class Ac3Codec {
   /// bsid 16). The Annex E framing is written independently from legacy AC-3 while reusing the
   /// shared long-block MDCT, exponent coding, parametric bit allocation and mantissa quantizers.
   /// Coupling, spectral extension, AHT, rematrixing and short-block switching are disabled; every
-  /// full-bandwidth channel is coded independently. E-AC-3's 1/2/3/6-block syncframes are supported.
+  /// full-bandwidth channel is coded independently. Full-rate streams support 1/2/3/6-block
+  /// syncframes; reduced 24/22.05/16-kHz streams use the Annex E six-block form.
   /// </summary>
   public static byte[] EncodeEnhanced(ReadOnlySpan<short> interleaved, Eac3EncoderOptions? options = null) {
     options ??= new Eac3EncoderOptions();
@@ -96,7 +97,7 @@ public static partial class Ac3Codec {
     const int floorCode = 7;
     const int fastGainCode = 4;
     var allocation = Ac3BitAllocation.Resolve(slowDecayCode, fastDecayCode, slowGainCode, dbPerBitCode, floorCode);
-    var fscod = options.SampleRate switch { 48000 => 0, 44100 => 1, 32000 => 2, _ => -1 };
+    var sampleRate = Ac3BitAllocation.SampleRateContext.FromSampleRate(options.SampleRate);
 
     var selectedCoarse = -1;
     byte[]? selectedFrame = null;
@@ -137,7 +138,7 @@ public static partial class Ac3Codec {
           allocation,
           Ac3Tables.FastGain[fastGainCode],
           snrOffset,
-          fscod,
+          sampleRate,
           isCoupling: false,
           0,
           0,
@@ -175,8 +176,19 @@ public static partial class Ac3Codec {
     writer.WriteBits(0, 2);                              // strmtyp: independent substream
     writer.WriteBits(0, 3);                              // substreamid
     writer.WriteBits((uint)(frameBytes / 2 - 1), 11);   // frmsiz
-    writer.WriteBits(options.SampleRate switch { 48000 => 0u, 44100 => 1u, _ => 2u }, 2); // fscod
-    writer.WriteBits(blocksPerFrame switch { 1 => 0u, 2 => 1u, 3 => 2u, _ => 3u }, 2);     // numblkscod
+
+    if (options.SampleRate < 32_000) {
+      writer.WriteBits(3, 2);                            // fscod: reduced sample rate follows
+      writer.WriteBits(options.SampleRate switch {
+        24_000 => 0u,
+        22_050 => 1u,
+        _ => 2u,                                         // 16 kHz
+      }, 2);                                             // fscod2; six blocks are implicit
+    } else {
+      writer.WriteBits(options.SampleRate switch { 48_000 => 0u, 44_100 => 1u, _ => 2u }, 2); // fscod
+      writer.WriteBits(blocksPerFrame switch { 1 => 0u, 2 => 1u, 3 => 2u, _ => 3u }, 2);       // numblkscod
+    }
+
     writer.WriteBits((uint)options.Acmod, 3);
     writer.WriteBits(options.LowFrequencyEffects ? 1u : 0u, 1);
     writer.WriteBits(16, 5);                             // bsid: E-AC-3
@@ -392,8 +404,9 @@ public static partial class Ac3Codec {
       throw new ArgumentOutOfRangeException(nameof(options), "Invalid E-AC-3 channel layout.");
     if (sampleCount % channels != 0)
       throw new ArgumentException("Interleaved PCM sample count must be divisible by the E-AC-3 channel count.");
-    if (options.SampleRate is not (32000 or 44100 or 48000))
-      throw new ArgumentOutOfRangeException(nameof(options), "This E-AC-3 encoder supports 32, 44.1 and 48 kHz full-rate streams.");
+    if (options.SampleRate is not (16_000 or 22_050 or 24_000 or 32_000 or 44_100 or 48_000))
+      throw new ArgumentOutOfRangeException(nameof(options),
+        "E-AC-3 supports 16, 22.05, 24, 32, 44.1 and 48 kHz in this encoder.");
     if (options.Bitrate <= 0)
       throw new ArgumentOutOfRangeException(nameof(options), "E-AC-3 bitrate must be positive.");
     if (options.DialNorm is < -31 or > -1)
@@ -405,9 +418,14 @@ public static partial class Ac3Codec {
     if (options.Cutoff < 0 || options.Cutoff > options.SampleRate / 2)
       throw new ArgumentOutOfRangeException(nameof(options), "Cutoff must be zero (automatic) or within the Nyquist limit.");
 
-    var blocks = options.BlocksPerFrame ?? SelectEnhancedBlockCount(options.SampleRate, options.Bitrate);
+    var reducedRate = options.SampleRate < 32_000;
+    var blocks = options.BlocksPerFrame ?? (reducedRate ? 6 : SelectEnhancedBlockCount(options.SampleRate, options.Bitrate));
     if (blocks is not (1 or 2 or 3 or 6))
       throw new ArgumentOutOfRangeException(nameof(options), "E-AC-3 blocks per frame must be 1, 2, 3 or 6.");
+    if (reducedRate && blocks != 6)
+      throw new ArgumentOutOfRangeException(nameof(options),
+        "Reduced-rate E-AC-3 (16/22.05/24 kHz) always carries six audio blocks per syncframe.");
+
     var exactWords = options.Bitrate * (long)(blocks * SamplesPerBlock) / (options.SampleRate * 16L);
     if (exactWords is < 1 or > 2048)
       throw new ArgumentOutOfRangeException(nameof(options), "E-AC-3 frame size must fit the 11-bit frmsiz field (1..2048 words).");
