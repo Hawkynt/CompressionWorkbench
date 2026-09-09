@@ -7397,13 +7397,13 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Flv`
 
-[`FlvFormatDescriptor`](#flvformatdescriptor) · [`FlvReader`](#flvreader) · [`FlvReader.ElementaryStream`](#flvreaderelementarystream) · [`FlvReader.FlvFile`](#flvreaderflvfile) · [`FlvReader.ScriptTag`](#flvreaderscripttag)
+[`FlvFormatDescriptor`](#flvformatdescriptor) · [`FlvMuxer`](#flvmuxer) · [`FlvRawTag`](#flvrawtag) · [`FlvReader`](#flvreader) · [`FlvReader.ElementaryStream`](#flvreaderelementarystream) · [`FlvReader.FlvFile`](#flvreaderflvfile) · [`FlvReader.ScriptTag`](#flvreaderscripttag)
 
 #### `FlvFormatDescriptor`
 
-Pseudo-archive descriptor for Flash Video (`.flv`). The container is demuxed into one entry per codec stream — AVC video as an Annex-B H.264 elementary stream, AAC audio as ADTS, MP3 as raw frames, every other codec as its concatenated frame payloads — plus the raw AMF0 script tags and a `metadata.ini` carrying the header flags and the decoded `onMetaData` values. References: `https://rtmp.veriskope.com/pdf/video_file_format_spec_v10_1.pdf` — Adobe Flash Video File Format Specification v10.1, Annex E (FLV) and the AUDIODATA/VIDEODATA tag layouts`https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf` — Adobe AMF0 file format specification (script data tags)ISO/IEC 14496-15 §5.2.4 — `AVCDecoderConfigurationRecord`; ISO/IEC 14496-3 §1.6 — `AudioSpecificConfig` and ADTS
+Pseudo-archive descriptor for Flash Video (`.flv`). The container is demuxed into one entry per codec stream — AVC video as an Annex-B H.264 elementary stream, AAC audio as ADTS, MP3 as raw frames, every other codec as its concatenated frame payloads — plus the raw AMF0 script tags and a `metadata.ini` carrying the header flags and the decoded `onMetaData` values. The write path has two layers: `FlvMuxer` performs tag-preserving whole-container remuxing for arbitrary FLV audio/video/script tags, while the container-neutral audio surface muxes AAC or MP3 encoded packets without decoding and exposes AAC packets for cross-format remuxing. References: `https://rtmp.veriskope.com/pdf/video_file_format_spec_v10_1.pdf` — Adobe Flash Video File Format Specification v10.1, Annex E (FLV) and the AUDIODATA/VIDEODATA tag layouts`https://rtmp.veriskope.com/pdf/amf0-file-format-specification.pdf` — Adobe AMF0 file format specification (script data tags)ISO/IEC 14496-15 §5.2.4 — `AVCDecoderConfigurationRecord`; ISO/IEC 14496-3 §1.6 — `AudioSpecificConfig` and ADTS
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7419,10 +7419,43 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `Remux` | `void Remux(Stream input, Stream output)` | Rewrites a complete FLV container while preserving native tag payloads, timestamps and order. This is the lossless container-level remux path for video, audio and script tags. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
+#### `FlvMuxer`
+
+FLV container writer/remuxer. The low-level path preserves complete FLV tag payloads and timing; the audio path maps the repository's container-neutral AAC/MP3 packet surface into FLV tags.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SupportedAudioCodecs` | `static readonly IReadOnlyList<string> SupportedAudioCodecs` |  |
+| `CanMuxAudio` | `static bool CanMuxAudio(AudioStreamFormat format, out string reason)` | Checks whether the encoded audio stream can be wrapped in classic FLV audio tags. |
+| `MuxAudio` | `static void MuxAudio(Stream output, AudioEncodedStream stream)` | Writes one encoded AAC or MP3 stream into an audio-only FLV container. |
+| `Mux` | `static void Mux(Stream output, IEnumerable<FlvRawTag> tags, byte version = 1, bool? hasAudio = null, bool? hasVideo = null)` | Writes a complete FLV file from already packetized FLV tag bodies. |
+| `Remux` | `static void Remux(Stream input, Stream output)` | Rewrites an FLV container from its native tags. Codec payload bytes, timestamps, tag ordering, header flag bits and StreamID are retained; tag sizes/back-pointers are recalculated. |
+| `TryDemuxAudio` | `static bool TryDemuxAudio(Stream input, out AudioEncodedStream stream)` | Exposes the first classic AAC audio stream as container-neutral encoded packets so callers can remux it without an encode/decode cycle. Other FLV audio codecs currently return false. |
+
+#### `FlvRawTag`
+
+One complete FLV tag payload together with the fields required by its 11-byte tag header. The upper three bits of `HeaderByte` are retained so filtered/encrypted tags can be remuxed without interpreting their payload.
+
+Implements `IEquatable<FlvRawTag>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlvRawTag` | `FlvRawTag(byte HeaderByte, uint TimestampMs, uint StreamId, byte[] Body)` | One complete FLV tag payload together with the fields required by its 11-byte tag header. The upper three bits of `HeaderByte` are retained so filtered/encrypted tags can be remuxed without interpreting their payload. |
+| `Body` | `byte[] Body { get; init; }` |  |
+| `HeaderByte` | `byte HeaderByte { get; init; }` |  |
+| `StreamId` | `uint StreamId { get; init; }` |  |
+| `TagType` | `byte TagType { get; }` |  |
+| `TimestampMs` | `uint TimestampMs { get; init; }` |  |
 
 #### `FlvReader`
 
