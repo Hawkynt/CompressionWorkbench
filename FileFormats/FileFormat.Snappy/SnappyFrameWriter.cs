@@ -8,18 +8,44 @@ namespace FileFormat.Snappy;
 /// Writes data in the Snappy framing format (streams).
 /// </summary>
 public sealed class SnappyFrameWriter {
-  private const int MaxBlockSize = 65536;
+  /// <summary>Maximum uncompressed data size permitted in one Snappy framing chunk.</summary>
+  public const int MaxBlockSize = 65536;
+
   private const byte ChunkCompressed = 0x00;
   private const byte ChunkUncompressed = 0x01;
   private const byte ChunkStreamId = 0xFF;
 
   private readonly Stream _output;
+  private readonly int _blockSize;
+  private readonly int _hashTableBits;
 
   /// <summary>
-  /// Initializes a new <see cref="SnappyFrameWriter"/>.
+  /// Initializes a new <see cref="SnappyFrameWriter"/> with the historical 64 KiB chunk size and
+  /// default Snappy hash table.
   /// </summary>
   /// <param name="output">The output stream.</param>
-  public SnappyFrameWriter(Stream output) => this._output = output;
+  public SnappyFrameWriter(Stream output)
+    : this(output, MaxBlockSize, SnappyConstants.HashTableBits) { }
+
+  /// <summary>
+  /// Initializes a new <see cref="SnappyFrameWriter"/> with explicit encoder parameters.
+  /// </summary>
+  /// <param name="output">The output stream.</param>
+  /// <param name="blockSize">Maximum uncompressed bytes per framing chunk (1 through 65536).</param>
+  /// <param name="hashTableBits">Log2 of the Snappy encoder hash-table size (8 through 15).</param>
+  public SnappyFrameWriter(Stream output, int blockSize, int hashTableBits) {
+    ArgumentNullException.ThrowIfNull(output);
+    if (blockSize is <= 0 or > MaxBlockSize)
+      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
+        $"Snappy framing chunks must contain between 1 and {MaxBlockSize} uncompressed bytes.");
+    if (hashTableBits is < SnappyConstants.MinHashTableBits or > SnappyConstants.MaxHashTableBits)
+      throw new ArgumentOutOfRangeException(nameof(hashTableBits), hashTableBits,
+        $"Snappy hash table width must be between {SnappyConstants.MinHashTableBits} and {SnappyConstants.MaxHashTableBits} bits.");
+
+    this._output = output;
+    this._blockSize = blockSize;
+    this._hashTableBits = hashTableBits;
+  }
 
   /// <summary>
   /// Writes data as a Snappy framing stream.
@@ -30,7 +56,7 @@ public sealed class SnappyFrameWriter {
 
     var offset = 0;
     while (offset < data.Length) {
-      var blockLen = Math.Min(MaxBlockSize, data.Length - offset);
+      var blockLen = Math.Min(this._blockSize, data.Length - offset);
       WriteChunk(data.Slice(offset, blockLen));
       offset += blockLen;
     }
@@ -46,7 +72,7 @@ public sealed class SnappyFrameWriter {
   private void WriteChunk(ReadOnlySpan<byte> uncompressed) {
     // CRC-32C (Castagnoli) masked
     var crc = MaskChecksum(ComputeCrc32C(uncompressed));
-    var compressed = SnappyCompressor.Compress(uncompressed);
+    var compressed = SnappyCompressor.Compress(uncompressed, this._hashTableBits);
 
     if (compressed.Length < uncompressed.Length) {
       // Compressed chunk: type 0x00

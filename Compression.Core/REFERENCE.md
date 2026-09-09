@@ -3007,6 +3007,7 @@ Compresses data using the Snappy block format. Snappy is a fast LZ77 variant wit
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source)` | Compresses the input data using Snappy block format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> source, int hashTableBits)` | Compresses the input data using Snappy block format and the requested encoder hash-table width. The table width changes match selection only; it is not stored in the bitstream and does not affect decoder compatibility. |
 
 #### `SnappyConstants`
 
@@ -3014,11 +3015,13 @@ Constants for Snappy block compression.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `HashTableBits` | `const int HashTableBits` | Hash table bits. |
-| `HashTableSize` | `const int HashTableSize` | Hash table size. |
+| `HashTableBits` | `const int HashTableBits` | Default encoder hash-table width. Kept at 14 for historical output compatibility. |
+| `HashTableSize` | `const int HashTableSize` | Default hash table size. |
 | `MaxCopy1Offset` | `const int MaxCopy1Offset` | Maximum offset for copy-1 (11 bits). |
 | `MaxCopy2Offset` | `const int MaxCopy2Offset` | Maximum offset for copy-2 (16 bits). |
+| `MaxHashTableBits` | `const int MaxHashTableBits` | Largest encoder hash-table width searched by the Snappy optimizer. |
 | `MaxMatchLength` | `const int MaxMatchLength` | Maximum match length for copy-1/copy-2. |
+| `MinHashTableBits` | `const int MinHashTableBits` | Smallest encoder hash-table width searched by the Snappy optimizer. |
 | `MinMatch` | `const int MinMatch` | Minimum match length. |
 | `StreamIdentifier` | `static readonly byte[] StreamIdentifier` | Snappy framing format magic chunk identifier. |
 | `TagCopy1` | `const int TagCopy1` | Copy with 1-byte offset tag (bits 1:0 = 01). |

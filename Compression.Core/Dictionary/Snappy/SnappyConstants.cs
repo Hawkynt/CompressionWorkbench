@@ -28,10 +28,16 @@ public static class SnappyConstants {
   /// <summary>Maximum match length for copy-1/copy-2.</summary>
   public const int MaxMatchLength = 64;
 
-  /// <summary>Hash table bits.</summary>
+  /// <summary>Smallest encoder hash-table width searched by the Snappy optimizer.</summary>
+  public const int MinHashTableBits = 8;
+
+  /// <summary>Default encoder hash-table width. Kept at 14 for historical output compatibility.</summary>
   public const int HashTableBits = 14;
 
-  /// <summary>Hash table size.</summary>
+  /// <summary>Largest encoder hash-table width searched by the Snappy optimizer.</summary>
+  public const int MaxHashTableBits = 15;
+
+  /// <summary>Default hash table size.</summary>
   public const int HashTableSize = 1 << SnappyConstants.HashTableBits;
 
   /// <summary>Snappy framing format magic chunk identifier.</summary>

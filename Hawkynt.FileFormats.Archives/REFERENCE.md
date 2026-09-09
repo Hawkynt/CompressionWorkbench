@@ -16544,7 +16544,7 @@ WORM writer that produces a Snap package by wrapping a fresh SquashFS v4 image h
 
 Describes snappy format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16560,8 +16560,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder parameters searched by the generic compression optimizer. Both axes affect only how a conforming Snappy stream is encoded; neither requires private decoder state. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes using the largest framing chunk and hash table. Schema-driven callers search all declared combinations and are not limited to this fixed high-resource setting. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the requested optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `SnappyFrameReader`
@@ -16579,7 +16582,9 @@ Writes data in the Snappy framing format (streams).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SnappyFrameWriter` | `SnappyFrameWriter(Stream output)` | Initializes a new `SnappyFrameWriter`. |
+| `SnappyFrameWriter` | `SnappyFrameWriter(Stream output)` | Initializes a new `SnappyFrameWriter` with the historical 64 KiB chunk size and default Snappy hash table. |
+| `SnappyFrameWriter` | `SnappyFrameWriter(Stream output, int blockSize, int hashTableBits)` | Initializes a new `SnappyFrameWriter` with explicit encoder parameters. |
+| `MaxBlockSize` | `const int MaxBlockSize` | Maximum uncompressed data size permitted in one Snappy framing chunk. |
 | `Write` | `void Write(ReadOnlySpan<byte> data)` | Writes data as a Snappy framing stream. |
 
 ### Namespace `FileFormat.Snes`

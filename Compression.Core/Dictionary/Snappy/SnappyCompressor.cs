@@ -13,7 +13,22 @@ public static class SnappyCompressor {
   /// </summary>
   /// <param name="source">The data to compress.</param>
   /// <returns>The compressed data including the varint-encoded original size header.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> source) {
+  public static byte[] Compress(ReadOnlySpan<byte> source) =>
+    Compress(source, SnappyConstants.HashTableBits);
+
+  /// <summary>
+  /// Compresses the input data using Snappy block format and the requested encoder hash-table width.
+  /// The table width changes match selection only; it is not stored in the bitstream and does not
+  /// affect decoder compatibility.
+  /// </summary>
+  /// <param name="source">The data to compress.</param>
+  /// <param name="hashTableBits">Log2 of the encoder hash-table size (8 through 15).</param>
+  /// <returns>The compressed data including the varint-encoded original size header.</returns>
+  public static byte[] Compress(ReadOnlySpan<byte> source, int hashTableBits) {
+    if (hashTableBits is < SnappyConstants.MinHashTableBits or > SnappyConstants.MaxHashTableBits)
+      throw new ArgumentOutOfRangeException(nameof(hashTableBits), hashTableBits,
+        $"Snappy hash table width must be between {SnappyConstants.MinHashTableBits} and {SnappyConstants.MaxHashTableBits} bits.");
+
     if (source.Length == 0)
       return [0]; // varint 0
 
@@ -26,27 +41,28 @@ public static class SnappyCompressor {
     var buf = ArrayPool<byte>.Shared.Rent((int)bufLen);
     try {
       var pos = WriteVarInt(buf, 0, source.Length);
-      pos = CompressBlock(source, buf, pos);
+      pos = CompressBlock(source, buf, pos, hashTableBits);
       return buf.AsSpan(0, pos).ToArray();
     } finally {
       ArrayPool<byte>.Shared.Return(buf);
     }
   }
 
-  private static int CompressBlock(ReadOnlySpan<byte> src, Span<byte> dst, int dstPos) {
+  private static int CompressBlock(ReadOnlySpan<byte> src, Span<byte> dst, int dstPos, int hashTableBits) {
     var srcLen = src.Length;
     if (srcLen == 0)
       return dstPos;
 
-    var hashTable = ArrayPool<int>.Shared.Rent(SnappyConstants.HashTableSize);
+    var hashTableSize = 1 << hashTableBits;
+    var hashTable = ArrayPool<int>.Shared.Rent(hashTableSize);
     try {
-      hashTable.AsSpan(0, SnappyConstants.HashTableSize).Fill(-1);
+      hashTable.AsSpan(0, hashTableSize).Fill(-1);
 
       var pos = 0;
       var litStart = 0;
 
       while (pos + 3 < srcLen) {
-        var h = Hash4(src, pos);
+        var h = Hash4(src, pos, hashTableBits);
         var candidate = hashTable[h];
         hashTable[h] = pos;
 
@@ -73,7 +89,7 @@ public static class SnappyCompressor {
           var end = pos + matchLen;
           ++pos;
           while (pos < end && pos + 3 < srcLen) {
-            hashTable[Hash4(src, pos)] = pos;
+            hashTable[Hash4(src, pos, hashTableBits)] = pos;
             ++pos;
           }
           pos = end;
@@ -170,8 +186,8 @@ public static class SnappyCompressor {
     return dstPos;
   }
 
-  private static int Hash4(ReadOnlySpan<byte> data, int pos) =>
-    (int)(BinaryPrimitives.ReadUInt32LittleEndian(data[pos..]) * 0x1E35A7BD >> (32 - SnappyConstants.HashTableBits));
+  private static int Hash4(ReadOnlySpan<byte> data, int pos, int hashTableBits) =>
+    (int)(BinaryPrimitives.ReadUInt32LittleEndian(data[pos..]) * 0x1E35A7BD >> (32 - hashTableBits));
 
   private static int WriteVarInt(Span<byte> buf, int pos, int value) {
     var v = (uint)value;
