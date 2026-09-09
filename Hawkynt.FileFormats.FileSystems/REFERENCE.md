@@ -5593,7 +5593,7 @@ Walks an ext2/3/4 image and yields its actual on-disk byte layout — per-file e
 
 #### `ExtFilesystemDriverAdapter`
 
-Native ext2/3/4 driver sidecar. Inode numbers + i_generation form stable node identities and hard-linked directory entries converge on the same node. File content is streamed by the existing native inode/extent walker into a bounded positional spool until the reader exposes its extent map directly.
+Native ext2/3/4 driver sidecar. Inode numbers + i_generation form stable node identities and hard-linked directory entries converge on the same node. Classic ext2 profiles can additionally be opened through the direct mounted writer; journaled/extents/checksummed profiles remain read-only.
 
 Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
