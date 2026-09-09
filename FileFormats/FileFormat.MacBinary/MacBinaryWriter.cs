@@ -35,6 +35,8 @@ public sealed class MacBinaryWriter {
 
     if (fileName.Length < 1 || fileName.Length > 63)
       throw new ArgumentException("Filename must be 1-63 characters.", nameof(fileName));
+    if (version is not (MacBinaryConstants.Version1 or MacBinaryConstants.Version2 or MacBinaryConstants.Version3))
+      throw new ArgumentOutOfRangeException(nameof(version), version, "Version must be MacBinary I (0), II (129), or III (130).");
 
     var header = new byte[MacBinaryConstants.HeaderSize];
 
@@ -84,10 +86,10 @@ public sealed class MacBinaryWriter {
     // Bytes 99-100: get info comment length (0).
     // Byte 101: Finder flags low byte (0).
 
-    // Byte 122: minimum version needed to read.
+    // Byte 122: version of MacBinary that created this file.
     header[122] = (byte)version;
-    // Byte 123: version of MacBinary that created this (same as minimum).
-    header[123] = (byte)version;
+    // Byte 123: minimum version required to read it. MacBinary III remains readable by II.
+    header[123] = version >= MacBinaryConstants.Version2 ? MacBinaryConstants.Version2 : MacBinaryConstants.Version1;
 
     // MacBinary III: write "mBIN" signature at offset 102.
     if (version >= MacBinaryConstants.Version3) {

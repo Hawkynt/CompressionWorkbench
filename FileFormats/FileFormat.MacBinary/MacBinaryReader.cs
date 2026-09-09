@@ -28,8 +28,8 @@ public sealed class MacBinaryReader {
       if (header[0] != 0)
         return false;
 
-      // Byte 74 must be 0.
-      if (header[74] != 0)
+      // Bytes 74 and 82 are required zero bytes.
+      if (header[74] != 0 || header[82] != 0)
         return false;
 
       // Filename length must be 1-63.
@@ -37,9 +37,16 @@ public sealed class MacBinaryReader {
       if (nameLen < 1 || nameLen > 63)
         return false;
 
-      // If MacBinary II or III, verify CRC.
-      var minVersion = header[122];
-      if (minVersion >= MacBinaryConstants.Version2) {
+      var writerVersion = header[122];
+      if (writerVersion is not (MacBinaryConstants.Version1 or MacBinaryConstants.Version2 or MacBinaryConstants.Version3))
+        return false;
+
+      if (writerVersion == MacBinaryConstants.Version3
+          && ReadUInt32BigEndian(header, MacBinaryConstants.SignatureOffset) != MacBinaryConstants.Signature)
+        return false;
+
+      // MacBinary II and III protect the first 124 header bytes with CRC-16/XMODEM.
+      if (writerVersion >= MacBinaryConstants.Version2) {
         var storedCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
         var computedCrc = ComputeCrcCcitt(header.AsSpan(0, 124));
         if (storedCrc != computedCrc)
@@ -64,6 +71,8 @@ public sealed class MacBinaryReader {
 
     if (header[0] != 0)
       throw new InvalidDataException("Invalid MacBinary header: byte 0 must be 0.");
+    if (header[74] != 0 || header[82] != 0)
+      throw new InvalidDataException("Invalid MacBinary header: reserved bytes 74 and 82 must be 0.");
 
     int nameLen = header[1];
     if (nameLen < 1 || nameLen > 63)
@@ -81,24 +90,34 @@ public sealed class MacBinaryReader {
     var resForkLen = ReadUInt32BigEndian(header, 87);
     var createdSecs = ReadUInt32BigEndian(header, 91);
     var modifiedSecs = ReadUInt32BigEndian(header, 95);
+    var writerVersion = header[122];
+    var minimumVersion = header[123];
 
-    var created = MacEpoch.AddSeconds(createdSecs);
-    var modified = MacEpoch.AddSeconds(modifiedSecs);
-
-    // Determine version from minimum version field and signature.
-    var minVersion = header[122];
     byte version;
-    if (minVersion >= MacBinaryConstants.Version3) {
-      var sig = ReadUInt32BigEndian(header, MacBinaryConstants.SignatureOffset);
-      version = sig == MacBinaryConstants.Signature
-        ? MacBinaryConstants.Version3
-        : MacBinaryConstants.Version2;
-    } else if (minVersion >= MacBinaryConstants.Version2) {
-      version = MacBinaryConstants.Version2;
-    } else {
-      version = MacBinaryConstants.Version1;
+    switch (writerVersion) {
+      case MacBinaryConstants.Version1:
+        version = MacBinaryConstants.Version1;
+        break;
+      case MacBinaryConstants.Version2:
+        version = MacBinaryConstants.Version2;
+        break;
+      case MacBinaryConstants.Version3:
+        if (ReadUInt32BigEndian(header, MacBinaryConstants.SignatureOffset) != MacBinaryConstants.Signature)
+          throw new InvalidDataException("Invalid MacBinary III header: missing mBIN signature.");
+        version = MacBinaryConstants.Version3;
+        break;
+      default:
+        if (writerVersion > MacBinaryConstants.Version3)
+          throw new NotSupportedException($"MacBinary version {writerVersion} is newer than MacBinary III.");
+        throw new InvalidDataException($"Unsupported MacBinary writer version: {writerVersion}.");
     }
 
+    var getInfoCommentLength = version >= MacBinaryConstants.Version2
+      ? ReadUInt16BigEndian(header, 99)
+      : (ushort)0;
+    var secondaryHeaderLength = version >= MacBinaryConstants.Version2
+      ? ReadUInt16BigEndian(header, 120)
+      : (ushort)0;
     var headerCrc = ReadUInt16BigEndian(header, MacBinaryConstants.CrcOffset);
 
     // Verify CRC for MacBinary II+.
@@ -109,6 +128,9 @@ public sealed class MacBinaryReader {
           $"MacBinary header CRC mismatch: stored 0x{headerCrc:X4}, computed 0x{computedCrc:X4}.");
     }
 
+    var created = MacEpoch.AddSeconds(createdSecs);
+    var modified = MacEpoch.AddSeconds(modifiedSecs);
+
     return new MacBinaryHeader {
       FileName = fileName,
       FileType = fileType,
@@ -116,9 +138,12 @@ public sealed class MacBinaryReader {
       FinderFlags = finderFlags,
       DataForkLength = dataForkLen,
       ResourceForkLength = resForkLen,
+      GetInfoCommentLength = getInfoCommentLength,
+      SecondaryHeaderLength = secondaryHeaderLength,
       CreatedDate = created,
       ModifiedDate = modified,
       Version = version,
+      MinimumVersion = minimumVersion,
       HeaderCrc = headerCrc,
     };
   }
@@ -131,7 +156,11 @@ public sealed class MacBinaryReader {
   public static byte[] ReadDataFork(Stream input) {
     var header = ReadHeader(input);
 
-    // Stream is now at offset 128 (right after the header).
+    // The optional secondary header immediately follows the fixed 128-byte header and is itself
+    // padded to a 128-byte boundary before the data fork starts.
+    var secondaryHeaderPadded = RoundUp(header.SecondaryHeaderLength, MacBinaryConstants.PaddingAlignment);
+    input.Position = MacBinaryConstants.HeaderSize + secondaryHeaderPadded;
+
     var data = new byte[header.DataForkLength];
     if (header.DataForkLength > 0 && ReadExact(input, data) < data.Length)
       throw new InvalidDataException("Stream too short for data fork.");
@@ -147,9 +176,9 @@ public sealed class MacBinaryReader {
   public static byte[] ReadResourceFork(Stream input) {
     var header = ReadHeader(input);
 
-    // Skip past data fork (padded to 128-byte boundary).
+    var secondaryHeaderPadded = RoundUp(header.SecondaryHeaderLength, MacBinaryConstants.PaddingAlignment);
     var dataForkPadded = RoundUp(header.DataForkLength, MacBinaryConstants.PaddingAlignment);
-    input.Position = MacBinaryConstants.HeaderSize + dataForkPadded;
+    input.Position = MacBinaryConstants.HeaderSize + secondaryHeaderPadded + dataForkPadded;
 
     var resource = new byte[header.ResourceForkLength];
     if (header.ResourceForkLength > 0 && ReadExact(input, resource) < resource.Length)
@@ -192,7 +221,7 @@ public sealed class MacBinaryReader {
 
   /// <summary>
   /// Computes CRC-CCITT (polynomial 0x1021, initial value 0) over the given data.
-  /// This is the non-reflected (MSB-first) CRC-16 used by MacBinary.
+  /// This is CRC-16/XMODEM, the non-reflected (MSB-first) CRC used by MacBinary II/III.
   /// </summary>
   internal static ushort ComputeCrcCcitt(ReadOnlySpan<byte> data) {
     ushort crc = 0;
