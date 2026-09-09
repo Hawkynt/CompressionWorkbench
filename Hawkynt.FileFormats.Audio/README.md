@@ -173,7 +173,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] frame — the pinned samples are our own decode | AMR-WB |
 | `Apc` | CRYO APC | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] decodes ours | CRYO APC seeded IMA; high-nibble-first mono/stereo with configurable version and predictor seeds |
 | `Ape` | Monkey's Audio (.ape) | WORM | ✅ | ✅ | ✅ | ✅ | — | Monkey's Audio container |
-| `Asf` | ASF (Advanced Systems Format) | R | — | — | ✅ | ✅ | [ffmpeg][ffmpeg] WMA v1/v2 files | Microsoft ASF, WMA-family audio depayload/decode routes + tags; packet-preserving demux/mux of a single unencrypted audio stream |
+| `Asf` | ASF (Advanced Systems Format) | R/W | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] WMA v1/v2 files | Microsoft ASF, WMA-family audio depayload/decode routes + tags; packet-preserving demux/mux of a single unencrypted audio stream |
 | `Ast` | AST (GameCube/Wii stream) | WORM | — | — | — | — | — | GameCube/Wii AST |
 | `Au` | Sun/NeXT .au (.snd) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] probes and decodes ours | Sun/NeXT `.au` / `.snd` |
 | `Aud` | Westwood AUD (Command & Conquer) | WORM | — | — | — | — | — | Westwood AUD / WS-ADPCM + IMA |
