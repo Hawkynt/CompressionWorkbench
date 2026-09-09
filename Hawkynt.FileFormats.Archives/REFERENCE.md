@@ -3451,13 +3451,14 @@ Implements `IDisposable`.
 
 #### `BikFormatDescriptor`
 
-Surfaces a Bink video container (`.bik`, Bink 1 'BIK?' and Bink 2 'KB2?') as a pseudo-archive that extracts only its audio. The byte-exact original is `FULL.bik` (Kind `Container`). The video data region is surfaced as `VIDEO.bin` (Kind `Track`, Method `Stored`) and the header is summarised in `metadata.ini` (Kind `Tag`). Each audio track's concatenated packets are surfaced as `TRACKn.bin` (Kind `Stream`, Method = the Bink Audio flavour) and, for Bink 1, decoded to per-channel mono WAVs `TRACKn_<CHANNEL>.wav` (Kind `Channel`) via `Codec.BinkAudio` — both RDFT and DCT flavours — with a graceful fallback to the raw blob on any decode failure. Bink 2 audio is not decoded and remains blob-only. Read-only; parsing degrades gracefully.
+Surfaces a Bink video container (`.bik`, Bink 1 'BIK?' and Bink 2 'KB2?') as a packet-aware pseudo-archive. `FULL.bik` is the byte-exact original; `VIDEO.bin` and `TRACKn.bin` are encoded elementary streams, while `metadata.ini` preserves the container/header fields and per-frame packet boundaries required for packet-preserving mux/remux. Bink 1 audio is additionally decoded to per-channel mono WAV views where supported; Bink 2 audio remains blob-only.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BikFormatDescriptor` | `BikFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -3468,8 +3469,11 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a Bink container either as a byte-exact `FULL.bik` passthrough or by packet-preserving mux of `metadata.ini`, `VIDEO.bin`, and the referenced `TRACKn.bin` streams. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |

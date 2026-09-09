@@ -175,7 +175,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Ay` | ZX Spectrum AY | R | — | — | — | — | ZX Spectrum AY via Z80+AY-3-8910 |
 | `Bcstm` | BCSTM (3DS stream) | WORM | — | — | — | — | Nintendo 3DS CSTM over DSP-ADPCM |
 | `Bfstm` | BFSTM (WiiU/Switch stream) | WORM | — | — | — | — | Wii U/Switch FSTM over DSP-ADPCM |
-| `Bik` | Bink Video | R | — | — | — | — | Bink container: raw video + decoded supported audio tracks |
+| `Bik` | Bink Video | WORM | — | — | — | — | Bink container: raw video + decoded supported audio tracks |
 | `Bonk` | Bonk Audio | WORM | — | — | — | — | Bonk container |
 | `Brr` | SNES BRR sample | WORM | — | — | — | — | SNES BRR sample |
 | `Brstm` | BRSTM (Wii stream) | WORM | — | — | — | — | Nintendo BRSTM, DSP-ADPCM/PCM channels |
