@@ -14617,13 +14617,25 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 ### Namespace `FileFormat.PowerPacker`
 
-[`PowerPackerFormatDescriptor`](#powerpackerformatdescriptor) · [`PowerPackerStream`](#powerpackerstream)
+[`PowerPackerEfficiency`](#powerpackerefficiency) · [`PowerPackerFormatDescriptor`](#powerpackerformatdescriptor) · [`PowerPackerStream`](#powerpackerstream)
+
+#### `PowerPackerEfficiency`
+
+Historical PowerPacker efficiency presets. The four values are the number of bits used for offsets in match classes 0 through 3.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Fast` | `0` | Fast preset: 9/9/9/9. |
+| `Mediocre` | `1` | Mediocre preset: 9/10/10/10. |
+| `Good` | `2` | Good preset: 9/10/11/11 (the traditional default). |
+| `VeryGood` | `3` | Very-good preset: 9/10/12/12. |
+| `Best` | `4` | Best preset: 9/10/12/13. |
 
 #### `PowerPackerFormatDescriptor`
 
 Describes power packer format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14639,20 +14651,27 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The historical offset-width preset used by the PP20 match coder. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Tries all historical efficiency presets and writes the smallest PP20 stream. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the requested efficiency preset. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `PowerPackerStream`
 
-Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file format. PP20 is a backward-decoding LZ77 variant: both the bit stream and the output buffer are consumed from end to start.
+Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file format. PP20 stores an LZ stream that is consumed from the end of the packed data and reconstructs the output from end to start.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses raw data into the PP20 format and returns the result as a new byte array. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses raw data into the PP20 format and writes the result to `output`. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a PP20-crunched byte array and returns the original data. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a PP20-crunched stream and writes the original data to `output`. |
+| `CompressOptimal` | `static byte[] CompressOptimal(ReadOnlySpan<byte> data)` | Tries every historical efficiency preset and returns the smallest result. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Tries every historical efficiency preset and writes the smallest result. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses with the traditional `Good` preset. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, PowerPackerEfficiency efficiency)` | Compresses using the selected historical efficiency preset. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses with the traditional `Good` preset. |
+| `Compress` | `static void Compress(Stream input, Stream output, PowerPackerEfficiency efficiency)` | Compresses using the selected historical efficiency preset. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a complete PP20 file. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a PP20-crunched stream. |
 
 ### Namespace `FileFormat.Ppmd`
 
