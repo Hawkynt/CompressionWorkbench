@@ -3304,6 +3304,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input using flexible look-ahead parsing and keeps the result only when it beats the normal greedy parse. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
@@ -3313,7 +3314,8 @@ BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed s
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `static void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with BALZ-style flexible look-ahead parsing and keeps it only when it is smaller than the normal greedy parse. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the normal greedy parser. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Bcm`
