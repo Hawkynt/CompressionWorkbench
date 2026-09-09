@@ -168,11 +168,11 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Akb` | Square Enix AKB | WORM | — | — | — | — | — | Square Enix audio bank |
 | `Alac` | ALAC (Apple Lossless) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] frames lifted out of libavcodec MP4s | Apple Lossless inside MP4 atoms |
 | `Amf` | AMF (DSMI Advanced Module Format) | WORM | — | — | — | — | — | DSMI AMF 0.1/0.8-1.4; sample WAV authoring/demux + byte-exact `FULL.amf` remux |
-| `Amr` | 3GPP AMR | R | — | — | — | — | — | 3GPP AMR NB/WB, including MC1.0 multichannel surface |
+| `Amr` | 3GPP AMR | WORM | ✅ | ✅ | ✅ | ✅ | — | 3GPP AMR NB/WB, including MC1.0 multichannel surface |
 | `AmrNb` | AMR-NB | R | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] frame — the pinned samples are our own decode | AMR-NB |
 | `AmrWb` | AMR-WB | R | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] frame — the pinned samples are our own decode | AMR-WB |
 | `Apc` | CRYO APC | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] decodes ours | CRYO APC seeded IMA; high-nibble-first mono/stereo with configurable version and predictor seeds |
-| `Ape` | Monkey's Audio (.ape) | R | — | — | — | — | — | Monkey's Audio container |
+| `Ape` | Monkey's Audio (.ape) | WORM | ✅ | ✅ | ✅ | ✅ | — | Monkey's Audio container |
 | `Asf` | ASF (Advanced Systems Format) | R | — | — | ✅ | ✅ | [ffmpeg][ffmpeg] WMA v1/v2 files | Microsoft ASF, WMA-family audio depayload/decode routes + tags; packet-preserving demux/mux of a single unencrypted audio stream |
 | `Ast` | AST (GameCube/Wii stream) | WORM | — | — | — | — | — | GameCube/Wii AST |
 | `Au` | Sun/NeXT .au (.snd) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] probes and decodes ours | Sun/NeXT `.au` / `.snd` |
@@ -183,7 +183,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Ay` | ZX Spectrum AY | R | — | — | — | — | — | ZX Spectrum AY via Z80+AY-3-8910 |
 | `Bcstm` | BCSTM (3DS stream) | WORM | — | — | — | — | — | Nintendo 3DS CSTM over DSP-ADPCM |
 | `Bfstm` | BFSTM (WiiU/Switch stream) | WORM | — | — | — | — | — | Wii U/Switch FSTM over DSP-ADPCM |
-| `Bik` | Bink Video | R | — | — | — | — | — | Bink container: raw video + decoded supported audio tracks |
+| `Bik` | Bink Video | WORM | — | — | — | — | — | Bink container: raw video + decoded supported audio tracks |
 | `Bonk` | Bonk Audio | WORM | — | — | — | — | — | Bonk container |
 | `Brr` | SNES BRR sample | WORM | — | — | — | — | [BRRtools][brrtools] decode vectors | SNES BRR sample |
 | `Brstm` | BRSTM (Wii stream) | WORM | — | — | — | — | — | Nintendo BRSTM, DSP-ADPCM/PCM channels |
