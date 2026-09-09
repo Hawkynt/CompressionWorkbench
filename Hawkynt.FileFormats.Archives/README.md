@@ -93,7 +93,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [yEnc](https://en.wikipedia.org/wiki/YEnc) | `YEnc` | `.yenc` | ✅ | ✅ | — |  | [yenc.org](http://www.yenc.org/yenc-draft.1.3.txt) |
 | Yaz0 | `Yaz0` | `.yaz0` `.szs` | ✅ | ✅ | — |  | [wiki.tockdom.com](https://wiki.tockdom.com/wiki/YAZ0) |
 | [zlib](https://en.wikipedia.org/wiki/Zlib) | `Zlib` | `.zlib` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1950) |
-| Zling | `Zling` | `.zling` | ✅ | ✅ | — |  | [GitHub](https://github.com/richox/libzling) |
+| Zling | `Zling` | `.zling` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/richox/libzling) |
 | [Zstandard](https://en.wikipedia.org/wiki/Zstd) | `Zstd` | `.zst` `.zstd` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc8878) |
 
 ### 🗜️ Archive containers
