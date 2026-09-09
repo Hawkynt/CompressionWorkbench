@@ -13407,7 +13407,7 @@ The parsed contents of a single Pack200 (JSR-200) segment: the archive header fi
 
 Describes pack bits format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13423,8 +13423,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Gets the packetization strategy searched by the generic compression optimizer. Greedy preserves the historical fast encoder; Optimal computes a minimum-size legal PackBits packet sequence for the complete input. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the exact minimum-size packetizer. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the historical greedy packetizer. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested packetizer. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `PackBitsStream`

@@ -7,7 +7,7 @@ namespace FileFormat.PackBits;
 /// <summary>
 /// Describes pack bits format.
 /// </summary>
-public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -24,7 +24,8 @@ public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatO
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -44,7 +45,7 @@ public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatO
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("packbits", "PackBits")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("packbits", "PackBits", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -59,11 +60,43 @@ public sealed class PackBitsFormatDescriptor : IFormatDescriptor, IStreamFormatO
   public string Description => "Apple PackBits RLE, used in TIFF/Macintosh";
 
   /// <summary>
+  /// Gets the packetization strategy searched by the generic compression optimizer.
+  /// Greedy preserves the historical fast encoder; Optimal computes a minimum-size
+  /// legal PackBits packet sequence for the complete input.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Packetizer",
+      DisplayName: "Packetizer",
+      Kind: FormatOptionKind.Enum,
+      Default: nameof(PackBitsEncodingStrategy.Greedy),
+      AllowedValues: [nameof(PackBitsEncodingStrategy.Greedy), nameof(PackBitsEncodingStrategy.Optimal)],
+      Description: "Greedy is fastest; Optimal finds the minimum-size legal PackBits packet sequence."),
+  ];
+
+  /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public void Decompress(Stream input, Stream output) => PackBitsStream.Decompress(input, output);
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input with the historical greedy packetizer.
   /// </summary>
   public void Compress(Stream input, Stream output) => PackBitsStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input using the requested packetizer.
+  /// </summary>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
+    PackBitsStream.Compress(input, output, ParsePacketizer(options));
+  /// <summary>
+  /// Encodes the supplied input with the exact minimum-size packetizer.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) =>
+    PackBitsStream.Compress(input, output, PackBitsEncodingStrategy.Optimal);
+
+  private static PackBitsEncodingStrategy ParsePacketizer(FormatCreateOptions options) {
+    var raw = options.GetString("Packetizer");
+    return Enum.TryParse<PackBitsEncodingStrategy>(raw, ignoreCase: true, out var strategy)
+      ? strategy
+      : PackBitsEncodingStrategy.Greedy;
+  }
 }
