@@ -27,12 +27,18 @@ public static class FuseRuntimeProbe {
 
     NativeLibrary.Free(libraryHandle);
 
-    var fusermount = FindExecutableOnPath("fusermount3");
-    if (fusermount is null)
+    var effectiveUserId = LibCNative.geteuid();
+    var fusermount = RequiresFusermount(effectiveUserId)
+      ? FindExecutableOnPath("fusermount3")
+      : null;
+    if (RequiresFusermount(effectiveUserId) && fusermount is null)
       return Unavailable("'fusermount3' was not found on PATH; non-root FUSE mounting cannot be established safely.", RuntimeLibrary);
 
     return new(true, RuntimeLibrary, fusermount, null);
   }
+
+  internal static bool RequiresFusermount(uint effectiveUserId)
+    => effectiveUserId != 0;
 
   internal static string? FindExecutableOnPath(string executableName, string? path = null) {
     ArgumentException.ThrowIfNullOrWhiteSpace(executableName);

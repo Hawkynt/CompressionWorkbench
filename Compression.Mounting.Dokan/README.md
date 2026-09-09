@@ -20,7 +20,13 @@ its own is not treated as evidence.
 - read-only mounting, implemented over the stable-node filesystem contract;
 - `MountAsync` refuses anything but `MountAccessMode.ReadOnly`, an unsupported
   plan, an unavailable runtime, or a non-Windows host — each with its own
-  exception rather than a silent downgrade.
+  exception rather than a silent downgrade;
+- OS-integration smoke coverage mounts a synthetic namespace, enumerates and
+  reads it through Win32, keeps a file open during teardown, and verifies clean
+  unmount whenever a Dokany 2 runtime/driver is installed;
+- teardown uses Dokan's remove/wait lifecycle; `DokanInstance.Dispose()` is the
+  final safety net and, per the upstream binding, closes the native handle only
+  after Dokan reports the filesystem dismounted.
 
 `SupportsReadWrite` stays false, and the profile says why: writable Dokan
 mounting waits on Windows sharing and delete-pending semantics and on mutation
