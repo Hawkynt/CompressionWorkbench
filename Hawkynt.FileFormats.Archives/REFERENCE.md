@@ -8162,7 +8162,7 @@ Ghost "High" mode (Z3-Z9) compressed blocks: tag-1 = uncompressed, otherwise the
 
 ### Namespace `FileFormat.Gob`
 
-[`GobEntry`](#gobentry) · [`GobFormatDescriptor`](#gobformatdescriptor) · [`GobReader`](#gobreader) · [`GobWriter`](#gobwriter)
+[`GobEntry`](#gobentry) · [`GobFormatDescriptor`](#gobformatdescriptor) · [`GobInPlaceModifier`](#gobinplacemodifier) · [`GobReader`](#gobreader) · [`GobWriter`](#gobwriter)
 
 #### `GobEntry`
 
@@ -8196,12 +8196,25 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or same-name replaces entries. Canonical archives with a trailing directory use `GobInPlaceModifier`: changed payload bytes replace the old directory and a regenerated directory follows them. Unsupported layouts retain the verified extract/re-create fallback. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a canonical GOB v2 archive. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag per the requested mode. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts matching entries. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by rewriting only the trailing directory and wiping unreferenced removed payload ranges. Unsupported layouts rebuild. |
+
+#### `GobInPlaceModifier`
+
+Changed-byte editor for canonical GOB v2 archives whose directory is the exact physical trailer. Added/replacement payloads reuse the old directory position; removal rewrites only the directory and leaves survivor payloads at their original offsets. Removed bytes are wiped only when no surviving directory record overlaps them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream archive, string name, byte[] data, bool wipeReplacedData = true)` | Adds or same-name replaces one stored entry. |
+| `AddFiles` | `static void AddFiles(Stream archive, IReadOnlyList<ValueTuple<string, byte[]>> files, bool wipeReplacedData = true)` | Adds or same-name replaces multiple entries with one directory rewrite. Structural rejection and replacement-directory serialization happen before the first archive write. |
+| `RemoveFile` | `static bool RemoveFile(Stream archive, string name, bool wipeData = true)` | Removes one entry. Returns false without writing when it is absent. |
+| `RemoveFiles` | `static int RemoveFiles(Stream archive, IReadOnlyCollection<string> names, bool wipeData = true)` | Removes matching full paths or leaf names. Survivor payloads are not moved; only the directory and unreferenced removed payload ranges are written. |
 
 #### `GobReader`
 
