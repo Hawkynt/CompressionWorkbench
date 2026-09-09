@@ -12,6 +12,7 @@ namespace FileFormat.Matroska;
 internal static class MkvAudioMuxer {
   private const ulong TimestampScaleNanoseconds = 1_000_000;
   private const long ClusterDurationMilliseconds = 5_000;
+  private const int OpusPacketClockRate = 48_000;
   private const string WriterName = "CompressionWorkbench";
 
   private static readonly string[] Codecs = [
@@ -52,6 +53,7 @@ internal static class MkvAudioMuxer {
 
     var codec = NormalizeCodec(stream.Format.CodecId);
     ValidateCodecPrivate(codec, stream);
+    var packetClockRate = codec == "opus" ? OpusPacketClockRate : stream.Format.SampleRate;
 
     var packets = stream.Packets.Where(static packet => !packet.IsHeader).ToArray();
     if (packets.Length == 0)
@@ -71,21 +73,21 @@ internal static class MkvAudioMuxer {
     }
 
     using var segment = new MemoryStream();
-    segment.Write(BuildInfo(stream.Format.SampleRate, durations.Sum()));
+    segment.Write(BuildInfo(packetClockRate, durations.Sum()));
     segment.Write(BuildTracks(stream));
 
     var cues = new List<(long Time, long Position)>();
     long cumulativeSamples = 0;
     var packetIndex = 0;
     while (packetIndex < packets.Length) {
-      var clusterTimestamp = SamplesToMilliseconds(cumulativeSamples, stream.Format.SampleRate);
+      var clusterTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate);
       var clusterPosition = segment.Position;
       using var clusterBody = new MemoryStream();
       WriteUnsignedElement(clusterBody, 0xE7, (ulong)clusterTimestamp); // Timestamp
       cues.Add((clusterTimestamp, clusterPosition));
 
       while (packetIndex < packets.Length) {
-        var packetTimestamp = SamplesToMilliseconds(cumulativeSamples, stream.Format.SampleRate);
+        var packetTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate);
         var relative = packetTimestamp - clusterTimestamp;
         if (relative >= ClusterDurationMilliseconds || relative > short.MaxValue)
           break;
@@ -155,7 +157,7 @@ internal static class MkvAudioMuxer {
     if (codec == "opus") {
       var head = stream.CodecPrivateData!;
       var preSkip = BinaryPrimitives.ReadUInt16LittleEndian(head.AsSpan(10, 2));
-      var delay = checked((ulong)preSkip * 1_000_000_000UL / 48_000UL);
+      var delay = checked((ulong)preSkip * 1_000_000_000UL / OpusPacketClockRate);
       WriteUnsignedElement(track, 0x56AA, delay);       // CodecDelay
       WriteUnsignedElement(track, 0x56BB, 80_000_000); // SeekPreRoll = 80 ms
     }
