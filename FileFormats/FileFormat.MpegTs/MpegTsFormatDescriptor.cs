@@ -80,6 +80,14 @@ public sealed class MpegTsFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// <summary>Maximum cumulative raw-PES input size; TS itself has no descriptor-imposed ceiling.</summary>
   public long? MaxTotalArchiveSize => null;
 
+  /// <inheritdoc />
+  /// <remarks>
+  /// <c>metadata.ini</c> is a structural rendering that is regenerated for every valid TS,
+  /// so this pseudo-archive never has a literally empty listed-entry set even after every PES
+  /// stream is removed.
+  /// </remarks>
+  public bool CanPurgeToEmpty => false;
+
   /// <summary>Describes the typed pseudo-archive inputs accepted by the muxer.</summary>
   public string AcceptedInputsDescription =>
     "accepts: optional metadata.ini plus stream_XXXX_<type>.bin raw-PES entries (XXXX = elementary PID)";
