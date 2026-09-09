@@ -1,5 +1,10 @@
 namespace FileFormat.PackBits;
 
+internal enum PackBitsEncodingStrategy {
+  Greedy,
+  Optimal,
+}
+
 /// <summary>
 /// Provides PackBits compression and decompression (Apple MacPaint standard)
 /// with a framed container header.
@@ -14,7 +19,9 @@ public static class PackBitsStream {
   /// </summary>
   /// <param name="input">The uncompressed source stream.</param>
   /// <param name="output">The destination stream for compressed data.</param>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, PackBitsEncodingStrategy.Greedy);
+
+  internal static void Compress(Stream input, Stream output, PackBitsEncodingStrategy strategy) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
@@ -27,7 +34,13 @@ public static class PackBitsStream {
     output.Write(Magic);
     output.Write(BitConverter.GetBytes((uint)data.Length));
 
-    // Encode PackBits packets.
+    if (strategy == PackBitsEncodingStrategy.Optimal)
+      EncodeOptimal(data, output);
+    else
+      EncodeGreedy(data, output);
+  }
+
+  private static void EncodeGreedy(byte[] data, Stream output) {
     var i = 0;
     var literal = new List<byte>(128);
 
@@ -61,6 +74,75 @@ public static class PackBitsStream {
 
     // Flush remaining literals.
     FlushLiteral(output, literal);
+  }
+
+  /// <summary>
+  /// Finds an exact minimum-size packetization. For a suffix beginning at i, a
+  /// literal packet ending at j costs 1 + (j-i) + cost[j], while a repeat packet
+  /// costs 2 + cost[j]. Both candidate ranges are at most 128 bytes wide.
+  /// Monotonic deques maintain the minima of those sliding ranges, reducing the
+  /// dynamic program from O(n * 128) to O(n) time while storing one decision byte
+  /// per input byte instead of a full cost table.
+  /// </summary>
+  private static void EncodeOptimal(byte[] data, Stream output) {
+    if (data.Length == 0)
+      return;
+
+    var decisions = new byte[data.Length];
+    var literals = new MinCostWindow();
+    var repeats = new MinCostWindow();
+
+    // cost[i+1] and cost[i+2] while walking the input backwards.
+    long nextCost = 0;
+    long nextNextCost = 0;
+
+    for (var i = data.Length - 1; i >= 0; --i) {
+      var maxEnd = Math.Min(data.Length, i + 128);
+
+      // Literal packets may end anywhere in [i+1, i+128]. Minimise
+      // cost[j] + j, because the remaining terms (1-i) are constant for i.
+      literals.Add(i + 1, nextCost + i + 1L);
+      literals.RemoveIndicesGreaterThan(maxEnd);
+      var literal = literals.Minimum;
+      var literalLength = literal.Index - i;
+      var bestCost = 1L - i + literal.Cost;
+      var decision = (byte)(literalLength - 1);
+
+      if (i + 1 < data.Length && data[i] == data[i + 1]) {
+        // Within one equal-byte run, legal repeat packets may end anywhere in
+        // [i+2, i+128]. A repeat always costs two encoded bytes regardless of length.
+        repeats.Add(i + 2, nextNextCost);
+        repeats.RemoveIndicesGreaterThan(maxEnd);
+        var repeat = repeats.Minimum;
+        var repeatCost = 2L + repeat.Cost;
+
+        if (repeatCost < bestCost) {
+          bestCost = repeatCost;
+          decision = (byte)(0x80 | (repeat.Index - i - 2));
+        }
+      } else {
+        repeats.Clear();
+      }
+
+      decisions[i] = decision;
+      nextNextCost = nextCost;
+      nextCost = bestCost;
+    }
+
+    for (var i = 0; i < data.Length;) {
+      var decision = decisions[i];
+      if ((decision & 0x80) == 0) {
+        var length = (decision & 0x7F) + 1;
+        output.WriteByte((byte)(length - 1));
+        output.Write(data.AsSpan(i, length));
+        i += length;
+      } else {
+        var length = (decision & 0x7F) + 2;
+        output.WriteByte(unchecked((byte)(sbyte)(1 - length)));
+        output.WriteByte(data[i]);
+        i += length;
+      }
+    }
   }
 
   /// <summary>
@@ -130,5 +212,47 @@ public static class PackBitsStream {
       output.WriteByte(b);
 
     literal.Clear();
+  }
+
+  private readonly record struct CostCandidate(int Index, long Cost);
+
+  /// <summary>
+  /// Monotonic queue for a backwards-moving index window. Indices are inserted in
+  /// descending order, so expired high indices leave from the front while dominated
+  /// costs leave from the back. Equal costs are retained so the older (longer packet)
+  /// candidate wins deterministically.
+  /// </summary>
+  private sealed class MinCostWindow {
+    private readonly CostCandidate[] _items = new CostCandidate[129];
+    private int _head;
+    private int _count;
+
+    public CostCandidate Minimum => this._items[this._head];
+
+    public void Add(int index, long cost) {
+      while (this._count > 0) {
+        var tail = (this._head + this._count - 1) % this._items.Length;
+        if (this._items[tail].Cost <= cost)
+          break;
+
+        --this._count;
+      }
+
+      var target = (this._head + this._count) % this._items.Length;
+      this._items[target] = new(index, cost);
+      ++this._count;
+    }
+
+    public void RemoveIndicesGreaterThan(int maxIndex) {
+      while (this._count > 0 && this._items[this._head].Index > maxIndex) {
+        this._head = (this._head + 1) % this._items.Length;
+        --this._count;
+      }
+    }
+
+    public void Clear() {
+      this._head = 0;
+      this._count = 0;
+    }
   }
 }

@@ -75,7 +75,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | `Lzs` | `.lzs` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc2395) |
 | [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | MCM | `Mcm` | `.mcm` | ✅ | ✅ | — |  | [GitHub](https://github.com/mathieuchartier/mcm) |
-| [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | — |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
+| [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | — |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
 | [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | — |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
@@ -102,7 +102,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | --- | --- | --- |
 | [ACE](https://en.wikipedia.org/wiki/ACE_(compressed_file_format)) | `Ace` | `.ace` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/droe/acefile) |
 | [afio](https://en.wikipedia.org/wiki/Afio) | `Afio` | `.afio` | WORM | ✅ | — | Writes stored members only; the per-file gzip extension is read but not written | [GitHub](https://github.com/kholtman/afio) |
-| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://kippler.com/win/unalz/) |
+| [ALZip](https://en.wikipedia.org/wiki/ALZip) | `AlZip` | `.alz` | R/W | ✅ | defrag · wipe |  | [kippler.com](http://www.kippler.com/win/unalz/) |
 | AMPK (Amiga Pack) | `Ampk` | `.ampk` | R/W | ✅ | defrag · wipe |  | [Archive Team](http://fileformats.archiveteam.org/wiki/AmiPack) |
 | [AR](https://en.wikipedia.org/wiki/Ar_(Unix)) | `Ar` | `.a` `.ar` `.deb` | R/W | ✅ | defrag · wipe |  | [freebsd.org](https://www.freebsd.org/cgi/man.cgi?query=ar&sektion=5) |
 | [ARC](https://en.wikipedia.org/wiki/ARC_(file_format)) | `Arc` | `.arc` | R/W | ✅ | defrag · wipe |  | [GitHub](https://github.com/hyc/arc) |
