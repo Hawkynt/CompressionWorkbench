@@ -23,9 +23,10 @@ public static class VobSubWriter {
   private const int PesHeaderSize = 3;
   private const int PtsSize = 5;
   private const int SubstreamIdSize = 1;
-  private const int MaximumSectorPayload = SectorSize - PackHeaderSize - PesPrefixSize - PesHeaderSize - PtsSize - SubstreamIdSize;
   private const int ProgramMuxRate = 25200;
   private const long PtsMask = (1L << 33) - 1;
+  private const long ScrLeadTicks = 9000;
+  private const long ScrTicksPerSector = 147;
 
   /// <summary>Describes how one subtitle frame should be written.</summary>
   public enum FrameKind {
@@ -172,14 +173,23 @@ public static class VobSubWriter {
 
   private static void WriteSpuProgramStream(Stream output, ReadOnlySpan<byte> spu, TimeSpan timestamp, int streamIndex) {
     ValidateSpu(spu);
-    var pts = checked((long)Math.Round(timestamp.TotalSeconds * 90000d, MidpointRounding.AwayFromZero)) & PtsMask;
+    var ptsTicks = checked((long)Math.Round(timestamp.TotalSeconds * 90000d, MidpointRounding.AwayFromZero));
+    var pts = ptsTicks & PtsMask;
     var remaining = spu;
     var sectorOrdinal = 0L;
+    var first = true;
 
     while (!remaining.IsEmpty) {
-      var payloadLength = Math.Min(MaximumSectorPayload, remaining.Length);
-      WriteSector(output, remaining[..payloadLength], pts, (byte)(0x20 | streamIndex), sectorOrdinal++);
+      var includePts = first;
+      var maximumPayload = SectorSize - PackHeaderSize - PesPrefixSize - PesHeaderSize
+                           - (includePts ? PtsSize : 0) - SubstreamIdSize;
+      var payloadLength = Math.Min(maximumPayload, remaining.Length);
+      var baseScrTicks = Math.Max(0, ptsTicks - ScrLeadTicks);
+      var scr = Math.Min(ptsTicks, baseScrTicks + sectorOrdinal * ScrTicksPerSector) & PtsMask;
+      WriteSector(output, remaining[..payloadLength], pts, scr, (byte)(0x20 | streamIndex), includePts);
       remaining = remaining[payloadLength..];
+      ++sectorOrdinal;
+      first = false;
     }
   }
 
@@ -203,17 +213,19 @@ public static class VobSubWriter {
       Stream output,
       ReadOnlySpan<byte> payload,
       long pts,
+      long scr,
       byte substreamId,
-      long sectorOrdinal) {
+      bool includePts) {
     Span<byte> sector = stackalloc byte[SectorSize];
     var position = 0;
 
-    WritePackHeader(sector, ref position, (pts + sectorOrdinal) & PtsMask);
+    WritePackHeader(sector, ref position, scr);
 
-    var bytesWithoutPadding = PackHeaderSize + PesPrefixSize + PesHeaderSize + PtsSize + SubstreamIdSize + payload.Length;
+    var ptsLength = includePts ? PtsSize : 0;
+    var bytesWithoutPadding = PackHeaderSize + PesPrefixSize + PesHeaderSize + ptsLength + SubstreamIdSize + payload.Length;
     var tail = SectorSize - bytesWithoutPadding;
     var pesStuffing = tail is > 0 and < 6 ? tail : 0;
-    var headerDataLength = PtsSize + pesStuffing;
+    var headerDataLength = ptsLength + pesStuffing;
     var pesPacketLength = PesHeaderSize + headerDataLength + SubstreamIdSize + payload.Length;
 
     sector[position++] = 0x00;
@@ -223,9 +235,10 @@ public static class VobSubWriter {
     BinaryPrimitives.WriteUInt16BigEndian(sector[position..], checked((ushort)pesPacketLength));
     position += 2;
     sector[position++] = 0x80;
-    sector[position++] = 0x80;
+    sector[position++] = includePts ? (byte)0x80 : (byte)0x00;
     sector[position++] = checked((byte)headerDataLength);
-    WriteTimestamp(sector, ref position, pts);
+    if (includePts)
+      WriteTimestamp(sector, ref position, pts);
     sector.Slice(position, pesStuffing).Fill(0xFF);
     position += pesStuffing;
     sector[position++] = substreamId;
