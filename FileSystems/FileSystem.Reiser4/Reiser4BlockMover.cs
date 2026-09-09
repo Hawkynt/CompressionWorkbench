@@ -23,11 +23,24 @@ namespace FileSystem.Reiser4;
 /// </remarks>
 public sealed class Reiser4BlockMover : IFilesystemBlockMover {
 
+  private const ulong NativeLeafBlock = 24;
+  private const int NativeItemHeaderBytes = 38;
+  private const ushort NativeExtent40Plugin = 5;
+  private const byte NativeFileBodyMinor = 4;
+  private const uint NativeNodeMagic = 0x52344653;
+  private const ulong RootObjectId = 0x2a;
+
   /// <summary>Where each file's runs are now, in the order its bytes are in.</summary>
   private readonly Dictionary<string, List<long>> _runsOf = new(StringComparer.Ordinal);
 
+  /// <summary>The byte length represented by each corresponding physical run.</summary>
+  private readonly Dictionary<string, List<long>> _runLengthsOf = new(StringComparer.Ordinal);
+
   /// <summary>Where the field naming each file's first block sits.</summary>
   private readonly Dictionary<string, long> _firstBlockFieldOf = new(StringComparer.Ordinal);
+
+  /// <summary>Native object id assigned to each file by the writer's tree profile.</summary>
+  private readonly Dictionary<string, ulong> _objectIdOf = new(StringComparer.Ordinal);
 
   /// <summary>How long each file is, which is what says how many blocks it takes.</summary>
   private readonly Dictionary<string, long> _sizeOf = new(StringComparer.Ordinal);
@@ -38,7 +51,9 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
   public void Init(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     this._runsOf.Clear();
+    this._runLengthsOf.Clear();
     this._firstBlockFieldOf.Clear();
+    this._objectIdOf.Clear();
     this._sizeOf.Clear();
     this._imageLength = image.Length;
 
@@ -49,12 +64,17 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
 
     foreach (var entry in reader.Entries) {
       if (entry.Size <= 0) continue;
-      this._runsOf[entry.Name] = reader.EnumerateRuns(entry).Select(r => r.Offset).ToList();
+      var runs = reader.EnumerateRuns(entry).ToArray();
+      this._runsOf[entry.Name] = runs.Select(static run => run.Offset).ToList();
+      this._runLengthsOf[entry.Name] = runs.Select(static run => run.Length).ToList();
       this._sizeOf[entry.Name] = entry.Size;
     }
 
-    foreach (var (name, at) in DirectoryFields(image))
+    var objectId = RootObjectId + 1;
+    foreach (var (name, at) in DirectoryFields(image)) {
       this._firstBlockFieldOf[name] = at;
+      this._objectIdOf[name] = objectId++;
+    }
 
     // The reserved blocks and the directory chain come first, and the first
     // file starts where they end.
@@ -119,41 +139,135 @@ public sealed class Reiser4BlockMover : IFilesystemBlockMover {
       throw new InvalidOperationException(
         $"Reiser4: no run of '{fileName}' sits at {oldOffset}, so it cannot be repointed.");
 
+    if (!this._runLengthsOf.TryGetValue(fileName, out var lengths) || at >= lengths.Count)
+      throw new InvalidOperationException($"Reiser4: run accounting for '{fileName}' is incomplete.");
+    if (length != lengths[at])
+      throw new NotSupportedException(
+        $"Reiser4: moving only {length} bytes of the {lengths[at]}-byte run of '{fileName}' " +
+        "would require splitting its native extent40 item.");
+
     runs[at] = newOffset;
   }
 
   /// <summary>
-  /// Writes each file's first block into the directory, once the pass is over.
+  /// Writes each file's new physical location into both the native extent40 item
+  /// and the legacy workbench directory once the pass is over.
   /// </summary>
-  /// <remarks>
-  /// A file's position is one field and a rule: consecutive blocks from there,
-  /// stepping over the bitmaps. So the layout is checked against that rule
-  /// before anything is written — a file whose runs no longer read as one
-  /// sequence cannot be described at all, and saying otherwise would hand back
-  /// a volume that reads as noise.
-  /// </remarks>
   public void SettleDirectory(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
 
+    var native = HasNativeTree(image);
     Span<byte> value = stackalloc byte[8];
     foreach (var (name, runs) in this._runsOf) {
       if (runs.Count == 0) continue;
-      if (!this._firstBlockFieldOf.TryGetValue(name, out var field))
+
+      if (!native) {
+        var expected = ImpliedRuns(runs[0], this._sizeOf[name]);
+        if (!expected.SequenceEqual(runs))
+          throw new NotSupportedException(
+            $"Reiser4: '{name}' would not read back from block {runs[0] / Reiser4Writer.BlockSize} — " +
+            "its blocks are where the legacy layout implies no file can be.");
+      }
+
+      // Keep the old private directory coherent for pre-native Workbench readers.
+      if (this._firstBlockFieldOf.TryGetValue(name, out var field)) {
+        BinaryPrimitives.WriteUInt64LittleEndian(value, (ulong)(runs[0] / Reiser4Writer.BlockSize));
+        image.Position = field;
+        image.Write(value);
+      } else if (!native) {
         throw new InvalidOperationException(
           $"Reiser4: the directory holds no entry for '{name}' to write back.");
-
-      var expected = ImpliedRuns(runs[0], this._sizeOf[name]);
-      if (!expected.SequenceEqual(runs))
-        throw new NotSupportedException(
-          $"Reiser4: '{name}' would not read back from block {runs[0] / Reiser4Writer.BlockSize} — " +
-          "its blocks are where the format implies no file can be.");
-
-      BinaryPrimitives.WriteUInt64LittleEndian(value, (ulong)(runs[0] / Reiser4Writer.BlockSize));
-      image.Position = field;
-      image.Write(value);
+      }
     }
 
+    if (native)
+      this.RepointNativeExtents(image);
+
     image.Flush();
+  }
+
+  /// <summary>True when block 24 is the native leaf written by the tree profile.</summary>
+  private static bool HasNativeTree(Stream image) {
+    var offset = checked((long)NativeLeafBlock * Reiser4Writer.BlockSize);
+    if (!image.CanSeek || offset + Reiser4Writer.BlockSize > image.Length) return false;
+
+    Span<byte> header = stackalloc byte[12];
+    image.Position = offset;
+    image.ReadExactly(header);
+    return BinaryPrimitives.ReadUInt32LittleEndian(header[8..]) == NativeNodeMagic;
+  }
+
+  /// <summary>
+  /// Repoints only extent40 start blocks in the native leaf. Widths and every
+  /// other tree byte stay untouched, so defrag does not silently rebuild metadata.
+  /// </summary>
+  private void RepointNativeExtents(Stream image) {
+    var leafOffset = checked((long)NativeLeafBlock * Reiser4Writer.BlockSize);
+    var leaf = new byte[Reiser4Writer.BlockSize];
+    image.Position = leafOffset;
+    image.ReadExactly(leaf);
+
+    var itemCount = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(2, 2));
+    var bodiesEnd = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(6, 2));
+    if (itemCount == 0
+        || itemCount > (Reiser4Writer.BlockSize - Reiser4Tree.NodeHeaderBytes) / NativeItemHeaderBytes
+        || bodiesEnd < Reiser4Tree.NodeHeaderBytes || bodiesEnd > Reiser4Writer.BlockSize)
+      throw new InvalidDataException("Reiser4: malformed native leaf while settling defragmentation.");
+
+    var bodyOffsets = new ushort[itemCount];
+    for (var i = 0; i < itemCount; ++i) {
+      var header = Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes;
+      bodyOffsets[i] = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 32, 2));
+    }
+
+    foreach (var (name, objectId) in this._objectIdOf) {
+      if (!this._runsOf.TryGetValue(name, out var runs) || runs.Count == 0) continue;
+      if (!this._runLengthsOf.TryGetValue(name, out var lengths) || lengths.Count != runs.Count)
+        throw new InvalidOperationException($"Reiser4: run accounting for '{name}' is incomplete.");
+
+      var found = false;
+      for (var i = 0; i < itemCount; ++i) {
+        var header = Reiser4Writer.BlockSize - (i + 1) * NativeItemHeaderBytes;
+        var key0 = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header, 8));
+        var itemObjectId = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(header + 16, 8));
+        var plugin = BinaryPrimitives.ReadUInt16LittleEndian(leaf.AsSpan(header + 36, 2));
+        if ((byte)(key0 & 0xF) != NativeFileBodyMinor
+            || plugin != NativeExtent40Plugin || itemObjectId != objectId)
+          continue;
+
+        var body = bodyOffsets[i];
+        var end = bodiesEnd;
+        foreach (var candidate in bodyOffsets)
+          if (candidate > body && candidate < end) end = candidate;
+        var bodyLength = end - body;
+        if (bodyLength != runs.Count * 16)
+          throw new NotSupportedException(
+            $"Reiser4: native extent40 body for '{name}' has {bodyLength / 16} runs, " +
+            $"but the mover tracks {runs.Count}.");
+
+        for (var r = 0; r < runs.Count; ++r) {
+          if ((runs[r] & (Reiser4Writer.BlockSize - 1)) != 0)
+            throw new InvalidOperationException($"Reiser4: run of '{name}' is not block aligned.");
+          var startBlock = checked((ulong)(runs[r] / Reiser4Writer.BlockSize));
+          var width = checked((ulong)((lengths[r] + Reiser4Writer.BlockSize - 1) / Reiser4Writer.BlockSize));
+          BinaryPrimitives.WriteUInt64LittleEndian(leaf.AsSpan(body + r * 16, 8), startBlock);
+          var existingWidth = BinaryPrimitives.ReadUInt64LittleEndian(leaf.AsSpan(body + r * 16 + 8, 8));
+          if (existingWidth != width)
+            throw new NotSupportedException(
+              $"Reiser4: native extent40 width for '{name}' is {existingWidth} blocks; " +
+              $"the mover accounts for {width}.");
+        }
+
+        found = true;
+        break;
+      }
+
+      if (!found)
+        throw new InvalidDataException($"Reiser4: native tree has no extent40 item for '{name}'.");
+    }
+
+    image.Position = leafOffset;
+    image.Write(leaf);
   }
 
   /// <summary>

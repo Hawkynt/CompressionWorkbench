@@ -11518,7 +11518,7 @@ Implements `IFilesystemBlockMover`.
 | `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the volume while the rest of the layout moves, which is what lets a full volume be rearranged at all. |
 | `Init` | `void Init(Stream image)` | Reads the directory once and notes where every file is. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes each file's first block into the directory, once the pass is over. |
+| `SettleDirectory` | `void SettleDirectory(Stream image)` | Writes each file's new physical location into both the native extent40 item and the legacy workbench directory once the pass is over. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `Reiser4FormatDescriptor`
@@ -11588,7 +11588,7 @@ Parses the Reiser4 master superblock at byte offset 65536 (16 * 4 KB) and the ad
 
 #### `Reiser4Reader`
 
-Reads a Reiser4 image: the master superblock's label, UUID and block size, and the files a `Reiser4Writer` placed in the workbench-layout payload area. The reserved blocks of a workbench-written image are byte-exact `mkfs.reiser4` captures describing an empty storage tree, so there is no reiser4 tree here to walk. Files live past those blocks, announced by a marker in the master superblock's spare region and described by a chained directory — the layout `Reiser4Writer` documents. An image from a real `mkfs.reiser4` carries no marker and surfaces no entries; its storage tree (extent40 bodies keyed by file offset, cde40 directory units) is out of scope.
+Reads a Reiser4 image: the master superblock's label, UUID and block size, plus regular files represented by the native stat40/cde40/extent40 items emitted by `Reiser4Writer`. The older workbench payload directory remains a compatibility fallback for images written before native tree items became authoritative.
 
 Implements `IDisposable`.
 
@@ -11597,25 +11597,25 @@ Implements `IDisposable`.
 | `Reiser4Reader` | `Reiser4Reader(Stream stream, bool leaveOpen = true)` | Initializes a new instance of `Reiser4Reader`. |
 | `MasterOffset` | `const long MasterOffset` | Byte offset of the master superblock: block 16 at a 4 KB block size. |
 | `BlockSize` | `int BlockSize { get; }` | Filesystem block size from the master superblock. |
-| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files the payload area holds. Empty for an image without the marker. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Files found in the native tree, or in the legacy payload directory. |
 | `Label` | `string Label { get; }` | Volume label from the master superblock. |
 | `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
 | `UuidHex` | `string UuidHex { get; }` | Volume UUID from the master superblock, as hex. |
 | `Valid` | `bool Valid { get; }` | True when the image carries a valid Reiser4 master superblock. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes are: one run per stretch of consecutive blocks, the block-allocator bitmaps stepped over exactly as `ExtractTo` steps over them. A file is not one contiguous run whenever a bitmap falls inside it. |
-| `ExtractTo` | `long ExtractTo(Entry entry, Stream destination)` | Writes `entry`'s contents into `destination`. A file's blocks are consecutive apart from any block-allocator bitmap they straddle, which the walk steps over exactly as the writer did. Returns the number of bytes written. |
+| `EnumerateRuns` | `IEnumerable<ValueTuple<long, long>> EnumerateRuns(Entry entry)` | Where an entry's bytes live as physical byte runs. |
+| `ExtractTo` | `long ExtractTo(Entry entry, Stream destination)` | Writes `entry`'s contents into `destination`. |
 | `Extract` | `byte[] Extract(Entry entry)` | Reads a file's contents. Only valid below the array limit. |
 
 #### `Reiser4Reader.Entry`
 
-One file in the payload area: its name, first block and byte length.
+One regular file: its name, first data block and byte length.
 
 Implements `IEquatable<Entry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One file in the payload area: its name, first block and byte length. |
+| `Entry` | `Entry(string Name, ulong FirstBlock, long Size)` | One regular file: its name, first data block and byte length. |
 | `FirstBlock` | `ulong FirstBlock { get; init; }` |  |
 | `Name` | `string Name { get; init; }` |  |
 | `Size` | `long Size { get; init; }` |  |

@@ -451,15 +451,17 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
       var blockSize = reader.BlockSize;
       // Everything before the first file's blocks is reserved or directory.
       var firstData = reader.Length;
-      List<DefragBlockInfo> files = [];
+      List<List<DefragBlockInfo>> files = [];
       foreach (var e in reader.Entries) {
         if (e.Size <= 0) continue;
         // A file is not one run: the allocator bitmaps inside it are stepped
         // over, so its bytes continue past where its length alone would end.
+        List<DefragBlockInfo> runs = [];
         foreach (var (offset, length) in reader.EnumerateRuns(e)) {
           if (offset < firstData) firstData = offset;
-          files.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
+          runs.Add(new DefragBlockInfo(offset, length, DefragBlockKind.Used, e.Name));
         }
+        if (runs.Count > 0) files.Add(runs);
       }
 
       var metadataEnd = files.Count > 0 ? firstData : Math.Min(reader.Length, 25L * blockSize);
@@ -473,7 +475,13 @@ public sealed class Reiser4FormatDescriptor : IFormatDescriptor, IArchiveFormatO
         result.Add(new DefragBlockInfo((long)block * blockSize, blockSize,
           DefragBlockKind.MetadataReserved, "Block-allocator bitmap"));
 
-      result.AddRange(files);
+      // A map is read as a walk over the volume: each file keeps its own runs in
+      // chain order, but the files themselves follow the bytes, not the
+      // directory. The native tree lists names in key order, which is not where
+      // their blocks are, and a map in that order makes the defrag planner shuffle
+      // an already-consolidated volume.
+      foreach (var runs in files.OrderBy(static runs => runs[0].Offset))
+        result.AddRange(runs);
     } catch {
       return [];
     }
