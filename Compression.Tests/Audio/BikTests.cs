@@ -22,6 +22,53 @@ public class BikTests {
     var descriptor = new BikFormatDescriptor();
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
     Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(descriptor, Is.InstanceOf<IArchiveWriteConstraints>());
+  }
+
+  [Test]
+  public void Descriptor_WriteConstraints_AcceptsOnlyCanonicalRootComponents() {
+    var descriptor = new BikFormatDescriptor();
+
+    foreach (var name in new[] { "FULL.bik", "metadata.ini", "VIDEO.bin", "TRACK0.bin", "track123.bin" })
+      Assert.That(descriptor.CanAccept(ArchiveInputInfo.InMemory(name, []), out var reason), Is.True,
+        $"{name}: {reason}");
+
+    foreach (var name in new[] { "anything.bin", "TRACK.bin", "TRACK-1.bin", "TRACK0.wav", "nested/VIDEO.bin" })
+      Assert.That(descriptor.CanAccept(ArchiveInputInfo.InMemory(name, []), out _), Is.False, name);
+
+    var directory = new ArchiveInputInfo("metadata.ini", "metadata.ini", IsDirectory: true);
+    Assert.That(descriptor.CanAccept(directory, out _), Is.False);
+  }
+
+  [Test]
+  public void Create_UnsupportedInputName_IsArgumentException() {
+    var descriptor = new BikFormatDescriptor();
+    using var output = new MemoryStream();
+
+    Assert.That(() => descriptor.Create(output, [
+      ArchiveInputInfo.InMemory("arbitrary.bin", "BIKi"u8.ToArray()),
+    ], new FormatCreateOptions()), Throws.TypeOf<ArgumentException>());
+  }
+
+  [Test]
+  public void Mux_MalformedNumericMetadata_IsInvalidDataException() {
+    const string metadata = """
+      [Bink]
+      signature = BIKi
+      frames = nope
+      width = 320
+      height = 200
+      fps_num = 25
+      fps_den = 1
+      audio_tracks = 0
+      """;
+    var descriptor = new BikFormatDescriptor();
+    using var output = new MemoryStream();
+
+    Assert.That(() => descriptor.Create(output, [
+      ArchiveInputInfo.InMemory("metadata.ini", Encoding.UTF8.GetBytes(metadata)),
+      ArchiveInputInfo.InMemory("VIDEO.bin", []),
+    ], new FormatCreateOptions()), Throws.TypeOf<InvalidDataException>());
   }
 
   [Test]
