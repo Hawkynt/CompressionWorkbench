@@ -21,25 +21,52 @@ public static class Ac3BitAllocation {
   /// <summary>One delta-bit-allocation segment (A/52 §7.2.2.6): band offset, band count, gain code.</summary>
   public readonly record struct DeltaSegment(int Offset, int Length, int Value);
 
+  /// <summary>
+  /// Sample-rate information needed by the bit-allocation model. Annex E reduced rates reuse the
+  /// 48/44.1/32-kHz hearing-threshold columns selected by <see cref="FsCod"/>, but address them with
+  /// the critical-band index shifted right once.
+  /// </summary>
+  internal readonly record struct SampleRateContext(int FsCod, int BandShift) {
+    internal static SampleRateContext FromSampleRate(int sampleRate) => sampleRate switch {
+      48_000 => new(0, 0),
+      44_100 => new(1, 0),
+      32_000 => new(2, 0),
+      24_000 => new(0, 1),
+      22_050 => new(1, 1),
+      16_000 => new(2, 1),
+      _ => throw new ArgumentOutOfRangeException(nameof(sampleRate),
+        "AC-3/E-AC-3 bit allocation supports 48, 44.1, 32, 24, 22.05 and 16 kHz."),
+    };
+  }
+
   /// <summary>Resolves the coded allocation parameters (sdcycod/fdcycod/sgaincod/dbpbcod/floorcod) to their table values.</summary>
   public static AllocParams Resolve(int sdcycod, int fdcycod, int sgaincod, int dbpbcod, int floorcod)
     => new(Ac3Tables.SlowDecay[sdcycod], Ac3Tables.FastDecay[fdcycod],
            Ac3Tables.SlowGain[sgaincod], Ac3Tables.DbPerBit[dbpbcod], Ac3Tables.Floor[floorcod]);
 
   /// <summary>
-  /// Computes the bit-allocation pointers for one channel over bins
-  /// <paramref name="start"/>..<paramref name="end"/>-1. <paramref name="exp"/> holds the decoded
-  /// exponents; <paramref name="bap"/> (length ≥ end) receives the per-bin bap.
-  /// <paramref name="fgain"/> is the channel fast gain, <paramref name="snrOffset"/> the combined
-  /// coarse/fine SNR offset, <paramref name="fscod"/> the sample-rate code (for the hearing
-  /// threshold). <paramref name="deltas"/> applies optional delta bit allocation; pass null for
-  /// none. The coupling channel (<paramref name="isCoupling"/>) skips the low-frequency excitation
-  /// bootstrap and starts its leak integrators from <paramref name="cplFastLeak"/> /
-  /// <paramref name="cplSlowLeak"/> instead.
+  /// Computes the bit-allocation pointers for one full-rate AC-3 channel over bins
+  /// <paramref name="start"/>..<paramref name="end"/>-1. <paramref name="fscod"/> is the legacy
+  /// 48/44.1/32-kHz sample-rate code 0..2. E-AC-3 reduced-rate callers use the internal overload so
+  /// the Annex E critical-band shift is retained alongside the base sample-rate family.
   /// </summary>
   public static void ComputeBap(
       byte[] exp, byte[] bap, int start, int end,
       AllocParams p, int fgain, int snrOffset, int fscod, bool isCoupling,
+      int cplFastLeak, int cplSlowLeak,
+      DeltaSegment[]? deltas,
+      byte[]? bapTable = null)
+    => ComputeBap(exp, bap, start, end, p, fgain, snrOffset,
+      new SampleRateContext(Math.Clamp(fscod, 0, 2), 0), isCoupling,
+      cplFastLeak, cplSlowLeak, deltas, bapTable);
+
+  /// <summary>
+  /// Shared AC-3/E-AC-3 bit-allocation implementation. Reduced-rate E-AC-3 uses the corresponding
+  /// full-rate hearing-threshold column with a one-bit critical-band shift (A/52 Annex E).
+  /// </summary>
+  internal static void ComputeBap(
+      byte[] exp, byte[] bap, int start, int end,
+      AllocParams p, int fgain, int snrOffset, SampleRateContext sampleRate, bool isCoupling,
       int cplFastLeak, int cplSlowLeak,
       DeltaSegment[]? deltas,
       byte[]? bapTable = null) {
@@ -81,7 +108,7 @@ public static class Ac3BitAllocation {
 
     // §7.2.2.4 / §7.2.2.5 — excitation function and masking curve.
     var mask = new int[CriticalBands];
-    ComputeMask(bndpsd, mask, bandStart, bandEnd, p, fgain, fscod, isCoupling, cplFastLeak, cplSlowLeak);
+    ComputeMask(bndpsd, mask, bandStart, bandEnd, p, fgain, sampleRate, isCoupling, cplFastLeak, cplSlowLeak);
 
     // §7.2.2.6 — delta bit allocation.
     if (deltas != null) {
@@ -122,7 +149,7 @@ public static class Ac3BitAllocation {
   // falling; the coupling channel starts from the transmitted leak values instead.
   private static void ComputeMask(
       int[] bndpsd, int[] mask, int bandStart, int bandEnd, AllocParams p,
-      int fgain, int fscod, bool isCoupling, int cplFastLeak, int cplSlowLeak) {
+      int fgain, SampleRateContext sampleRate, bool isCoupling, int cplFastLeak, int cplSlowLeak) {
 
     var excite = new int[CriticalBands];
     int fastLeak, slowLeak;
@@ -173,13 +200,15 @@ public static class Ac3BitAllocation {
       excite[band] = Math.Max(fastLeak, slowLeak);
     }
 
-    // §7.2.2.5 — knee compensation below dbknee, then the hearing threshold floor.
-    var hthFs = Math.Clamp(fscod, 0, 2);
+    // §7.2.2.5 — reduced-rate E-AC-3 reuses the base-rate hearing-threshold column and addresses
+    // it with band >> 1. This is the sr_shift behavior in the reference decoder.
+    var hthFs = Math.Clamp(sampleRate.FsCod, 0, 2);
+    var hthShift = Math.Clamp(sampleRate.BandShift, 0, 1);
     for (var band = bandStart; band < bandEnd; ++band) {
       var e = excite[band];
       if (bndpsd[band] < p.DbPerBit)
         e += (p.DbPerBit - bndpsd[band]) >> 2;
-      mask[band] = Math.Max(e, Ac3Tables.HearingThreshold[band, hthFs]);
+      mask[band] = Math.Max(e, Ac3Tables.HearingThreshold[band >> hthShift, hthFs]);
     }
   }
 
