@@ -550,9 +550,9 @@ public sealed class AmfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static IReadOnlyList<sbyte> ParsePanning(string text, byte version, int channels) {
     if (string.IsNullOrWhiteSpace(text)) {
       if (version < 11) return [];
-      var result = new sbyte[channels];
-      for (var i = 0; i < result.Length; ++i) result[i] = i % 2 == 0 ? (sbyte)-64 : (sbyte)63;
-      return result;
+      var defaults = new sbyte[channels];
+      for (var i = 0; i < defaults.Length; ++i) defaults[i] = i % 2 == 0 ? (sbyte)-64 : (sbyte)63;
+      return defaults;
     }
     if (version < 11)
       throw new NotSupportedException($"AMF {DisplayVersion(version)} has no explicit panning table.");
