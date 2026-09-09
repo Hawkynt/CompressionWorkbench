@@ -6,11 +6,11 @@ namespace FileFormat.Rzip;
 /// <remarks>
 /// <para>
 /// Two-stage design after Andrew Tridgell, "Efficient Algorithms for Sorting and
-/// Synchronization" (PhD thesis, ANU, 1999), chapter 3. Stage 1 indexes the whole input
-/// with a polynomial rolling hash over a 16-byte window and never discards a position,
-/// so a match can reach arbitrarily far back rather than only within a 32K or 64K
-/// sliding window - that reach is the entire point of rzip. Stage 2 entropy codes the
-/// literal bytes.
+/// Synchronization" (PhD thesis, ANU, 1999), chapter 5. Stage 1 indexes the whole input
+/// with a polynomial rolling hash over a configurable match window (16 bytes by default)
+/// and never discards a position solely because of distance, so a match can reach
+/// arbitrarily far back rather than only within a 32K or 64K sliding window - that reach
+/// is the entire point of rzip. Stage 2 entropy codes the literal bytes.
 /// </para>
 /// <para>
 /// Upstream rzip hands stage 2 to an external bzip2. This implementation carries its own
@@ -47,11 +47,24 @@ public static class RzipStream {
   private readonly record struct Token(bool IsLiteral, long Distance, long Length);
 
   /// <summary>
-  /// Compresses data into RZIP format.
+  /// Compresses data into RZIP format using the default match-finder settings.
   /// </summary>
   /// <param name="input">The input stream containing data to compress.</param>
   /// <param name="output">The output stream to write RZIP-compressed data to.</param>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, RzipConstants.MinMatch, RzipConstants.CandidateSearchLimit);
+
+  /// <summary>
+  /// Compresses data into RZIP format using explicit encoder-only match-finder settings.
+  /// These values do not alter the wire format: the decoder consumes only the emitted
+  /// literal and back-reference tokens.
+  /// </summary>
+  internal static void Compress(Stream input, Stream output, int minMatch, int candidateSearchLimit) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentOutOfRangeException.ThrowIfLessThan(minMatch, 2);
+    ArgumentOutOfRangeException.ThrowIfLessThan(candidateSearchLimit, 1);
+
     byte[] data;
     using (var buffer = new MemoryStream()) {
       input.CopyTo(buffer);
@@ -67,7 +80,7 @@ public static class RzipStream {
 
     var body = new List<byte>(data.Length / 2 + 64);
     var literals = new List<byte>(data.Length);
-    var tokens = Tokenize(data, literals);
+    var tokens = Tokenize(data, literals, minMatch, candidateSearchLimit);
 
     WriteVarInt(body, tokens.Count);
     foreach (var token in tokens) {
@@ -170,38 +183,40 @@ public static class RzipStream {
   /// expired by distance, so a match can reach back to the start of the input.
   /// </summary>
   /// <remarks>
-  /// Each hash value keeps the most recent <see cref="RzipConstants.HashBucketCapacity"/>
-  /// positions in increasing order; the newest
-  /// <see cref="RzipConstants.CandidateSearchLimit"/> of them are examined newest first,
-  /// and a candidate must be strictly longer than the incumbent to displace it, so among
-  /// equally long matches the nearest wins. The current position joins its bucket after
-  /// the search, and positions covered by an emitted match are never indexed.
+  /// Each hash value keeps enough recent positions to satisfy
+  /// <paramref name="candidateSearchLimit"/> (and never fewer than the historical default
+  /// bucket capacity). The newest requested candidates are examined newest first, and a
+  /// candidate must be strictly longer than the incumbent to displace it, so among equally
+  /// long matches the nearest wins. The current position joins its bucket after the search,
+  /// and positions covered by an emitted match are never indexed.
   /// </remarks>
-  private static List<Token> Tokenize(byte[] data, List<byte> literals) {
+  private static List<Token> Tokenize(
+      byte[] data, List<byte> literals, int minMatch, int candidateSearchLimit) {
     var tokens = new List<Token>();
     var length = data.Length;
     if (length == 0)
       return tokens;
 
-    if (length < RzipConstants.MinMatch) {
+    if (length < minMatch) {
       tokens.Add(new(true, 0, length));
       literals.AddRange(data);
       return tokens;
     }
 
     var basePower = 1u;
-    for (var i = 0; i < RzipConstants.MinMatch - 1; ++i)
+    for (var i = 0; i < minMatch - 1; ++i)
       basePower = unchecked(basePower * RzipConstants.RollingHashBase);
 
     var buckets = new Dictionary<uint, List<int>>();
-    var lastPosition = length - RzipConstants.MinMatch;
+    var bucketCapacity = Math.Max(RzipConstants.HashBucketCapacity, candidateSearchLimit);
+    var lastPosition = length - minMatch;
     var literalStart = 0;
-    var hash = HashAt(data, 0);
+    var hash = HashAt(data, 0, minMatch);
     var hashValid = true;
 
     for (var position = 0; position <= lastPosition;) {
       if (!hashValid) {
-        hash = HashAt(data, position);
+        hash = HashAt(data, position, minMatch);
         hashValid = true;
       }
 
@@ -209,7 +224,7 @@ public static class RzipStream {
       var bestPosition = -1;
 
       if (buckets.TryGetValue(hash, out var bucket)) {
-        var stop = Math.Max(0, bucket.Count - RzipConstants.CandidateSearchLimit);
+        var stop = Math.Max(0, bucket.Count - candidateSearchLimit);
         for (var index = bucket.Count - 1; index >= stop; --index) {
           var candidate = bucket[index];
           var limit = length - position;
@@ -217,7 +232,7 @@ public static class RzipStream {
           while (matched < limit && data[candidate + matched] == data[position + matched])
             ++matched;
 
-          if (matched < RzipConstants.MinMatch || matched <= bestLength)
+          if (matched < minMatch || matched <= bestLength)
             continue;
 
           bestLength = matched;
@@ -227,10 +242,10 @@ public static class RzipStream {
         buckets[hash] = bucket = [];
 
       bucket.Add(position);
-      if (bucket.Count > RzipConstants.HashBucketCapacity)
+      if (bucket.Count > bucketCapacity)
         bucket.RemoveAt(0);
 
-      if (bestLength >= RzipConstants.MinMatch) {
+      if (bestLength >= minMatch) {
         if (position > literalStart) {
           tokens.Add(new(true, 0, position - literalStart));
           literals.AddRange(data.AsSpan(literalStart, position - literalStart));
@@ -245,7 +260,7 @@ public static class RzipStream {
 
       if (position < lastPosition)
         hash = unchecked((hash - (uint)data[position] * basePower) * RzipConstants.RollingHashBase
-          + data[position + RzipConstants.MinMatch]);
+          + data[position + minMatch]);
 
       ++position;
     }
@@ -258,9 +273,9 @@ public static class RzipStream {
     return tokens;
   }
 
-  private static uint HashAt(byte[] data, int position) {
+  private static uint HashAt(byte[] data, int position, int windowLength) {
     var hash = 0u;
-    for (var i = 0; i < RzipConstants.MinMatch; ++i)
+    for (var i = 0; i < windowLength; ++i)
       hash = unchecked(hash * RzipConstants.RollingHashBase + data[position + i]);
 
     return hash;
