@@ -11012,9 +11012,9 @@ Implements `IEquatable<Track>`.
 
 #### `MkvFormatDescriptor`
 
-Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present.
+Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can additionally be packet-preserving demuxed and muxed through the audio pipeline.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11030,13 +11030,17 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `MkvLayoutMap`
 
