@@ -5,11 +5,9 @@ using FileFormat.Asf;
 namespace Compression.Tests.Asf;
 
 /// <summary>
-/// Pins the ASF descriptor's WMA wiring: a synthetic ASF whose audio stream is tagged
-/// WMA v2 (0x161) and carries an all-zero coded superframe must surface decoded
-/// per-channel WAVs (Kind <c>Channel</c>); a stream tagged WMA Pro (0x162) that lacks the
-/// (>= 18-byte) codec-private extradata the WMA Pro decoder needs must fall back to the
-/// raw <c>stream_NN.bin</c> blob, the documented graceful path.
+/// Pins the ASF descriptor's WMA wiring. Decodable WMA streams expose per-channel WAVs as a
+/// convenience view while always retaining their raw elementary bytes plus canonical remux
+/// metadata. Unsupported decode profiles still expose the same raw artifacts without channels.
 /// </summary>
 [TestFixture]
 public class AsfWmaChannelTests {
@@ -29,41 +27,49 @@ public class AsfWmaChannelTests {
   private const int PacketSize = 600;
 
   [Test]
-  public void Wmav2_AllZeroSuperframe_SurfacesChannelWavs() {
+  public void Wmav2_AllZeroSuperframe_SurfacesChannelsAndRawRemuxArtifacts() {
     var asf = BuildWmaAsf(formatTag: 0x0161, streamNumber: 1, channels: 2);
     var entries = new AsfFormatDescriptor().List(new MemoryStream(asf), null);
 
-    Assert.That(entries.Any(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_01/")), Is.True,
-      "expected decoded per-channel WAV entries for the WMA v2 stream");
-    // No raw fallback blob when decoding succeeded.
-    Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin"), Is.False);
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_01/")), Is.True,
+        "expected decoded per-channel WAV entries for the WMA v2 stream");
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True,
+        "decoded audio must retain the encoded elementary stream for remux");
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.properties.bin"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.objects.csv"), Is.True);
+    });
   }
 
   [Test]
-  public void WmaPro_Tag_NoExtradata_FallsBackToRawStreamBlob() {
+  public void WmaPro_Tag_NoExtradata_SurfacesRawRemuxArtifacts() {
     // 0x162 with cbSize == 0 carries no decode flags / channel mask, so the WMA Pro
-    // decoder cannot be constructed and the raw blob is surfaced (graceful fallback).
+    // decoder cannot be constructed. Canonical encoded artifacts remain available.
     var asf = BuildWmaAsf(formatTag: 0x0162, streamNumber: 1, channels: 2);
     var entries = new AsfFormatDescriptor().List(new MemoryStream(asf), null);
 
-    Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False,
-      "WMA Pro without extradata must not be decoded");
-    Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True);
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Kind == "Channel"), Is.False,
+        "WMA Pro without extradata must not be decoded");
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.properties.bin"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.objects.csv"), Is.True);
+    });
   }
 
   [Test]
-  public void WmaPro_Tag_WithExtradata_AttemptsDecode_OrGracefullyFallsBack() {
-    // A 0x162 stream carrying a valid 18-byte WMA Pro extradata tail and an all-zero
-    // packet drives the decoder. The reference skips the first frame, so an all-zero
-    // packet yields either no decoded output (then the raw blob is surfaced) or silent
-    // channel WAVs — but never both, and never a non-graceful failure.
+  public void WmaPro_Tag_WithExtradata_AlwaysRetainsRawRemuxArtifacts() {
+    // A 0x162 stream carrying a valid 18-byte WMA Pro extradata tail drives the decoder.
+    // Whether this synthetic zero packet yields decoded samples is codec behavior; container
+    // remux artifacts must exist either way.
     var asf = BuildWmaProAsf(streamNumber: 1, channels: 2);
     var entries = new AsfFormatDescriptor().List(new MemoryStream(asf), null);
 
-    var hasChannels = entries.Any(e => e.Kind == "Channel" && e.Name.StartsWith("streams/stream_01/"));
-    var hasBlob = entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream");
-    Assert.That(hasChannels ^ hasBlob, Is.True,
-      "exactly one of decoded channel WAVs or the raw fallback blob must be present");
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.bin" && e.Kind == "Stream"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.properties.bin"), Is.True);
+      Assert.That(entries.Any(e => e.Name == "streams/stream_01.objects.csv"), Is.True);
+    });
   }
 
   // ── synthetic ASF assembly ───────────────────────────────────────────────────

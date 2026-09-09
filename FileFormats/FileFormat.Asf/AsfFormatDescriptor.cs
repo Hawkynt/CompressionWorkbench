@@ -9,97 +9,86 @@ using Compression.Registry;
 namespace FileFormat.Asf;
 
 /// <summary>
-/// Surfaces a Microsoft Advanced Systems Format container (<c>.asf</c>/<c>.wma</c>/
-/// <c>.wmv</c>) as an archive of the byte-exact original (<c>FULL.asf</c>, Kind
-/// <c>Container</c>) plus rich metadata and a description of each carried stream.
-/// The Data Object packets are depayloaded into per-stream elementary bitstreams
-/// (<c>streams/stream_NN.bin</c>, Kind <c>Stream</c>) and each stream is described in
-/// <c>streams/stream_NN.info.txt</c> (Kind <c>Tag</c>) carrying its codec / bitrate.
-/// WMA v1/v2 audio streams (WAVEFORMATEX tags <c>0x160</c>/<c>0x161</c>) are decoded
-/// via <c>Codec.Wma</c> and WMA 9 Professional streams (tag <c>0x162</c>) via
-/// <c>Codec.WmaPro</c>, and WMA Lossless streams (tag <c>0x163</c>) bit-exactly via
-/// <c>Codec.WmaLossless</c>, into one mono <c>&lt;CHANNEL&gt;.wav</c> per channel (Kind
-/// <c>Channel</c>); streams the decoders can't handle (an unsupported WMA Pro / Lossless
-/// profile, corrupt data) fall back to just the <c>stream_NN.bin</c>
-/// blob. File properties and the
-/// content description land in <c>metadata.ini</c>; the Extended Content Description
-/// tags land in <c>metadata/tags.ini</c>. Read-only; parsing stops gracefully on a
-/// malformed object, keeping whatever was read.
+/// Surfaces Microsoft Advanced Systems Format (<c>.asf</c>/<c>.wma</c>/<c>.wmv</c>)
+/// as a pseudo-archive and supports codec-preserving mux/remux. Demuxed raw streams carry
+/// their exact Stream Properties body plus a media-object manifest, so rebuilding preserves
+/// codec-private data, object boundaries, presentation timestamps and key-frame flags without
+/// decoding/re-encoding the WMV/WMA elementary bytes.
 /// </summary>
-public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+  IArchiveCreatable, IArchiveModifiable {
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+  /// <summary>Gets the id.</summary>
   public string Id => "Asf";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "ASF (Advanced Systems Format)";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+
+  /// <summary>Gets the category.</summary>
   public FormatCategory Category => FormatCategory.Audio;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+
+  /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+
+  /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".asf";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+
+  /// <summary>Gets the extensions.</summary>
   public IReadOnlyList<string> Extensions => [".asf", ".wma", ".wmv"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+
+  /// <summary>Gets the compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
+
+  /// <summary>Gets the magic signatures.</summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // ASF Header Object GUID (little-endian byte order on disk).
     new([0x30, 0x26, 0xB2, 0x75, 0x8E, 0x66, 0xCF, 0x11,
          0xA6, 0xD9, 0x00, 0xAA, 0x00, 0x62, 0xCE, 0x6C], Confidence: 0.95),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "ASF/WMA/WMV container; full file + metadata + per-stream descriptions + packet payload.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  /// <summary>Gets the methods.</summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("asf-remux", "ASF stream mux/remux")];
+
+  /// <summary>Gets the tar compression format id.</summary>
+  public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the family.</summary>
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+
+  /// <summary>Gets the description.</summary>
+  public string Description => "ASF/WMA/WMV demux plus codec-preserving fixed-packet mux/remux.";
+
+  /// <summary>The normalized remux profile deliberately does not expose a zero-stream ASF instance.</summary>
+  public bool CanPurgeToEmpty => false;
+
+  /// <summary>Lists the entries in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password)
     => AudioPseudoArchive.List(BuildEntries(stream));
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Extracts the supplied container.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files)
     => AudioPseudoArchive.Extract(BuildEntries(stream), outputDir, files);
 
-  /// <summary>
-  /// Performs the extract entry operation.
-  /// </summary>
+  /// <summary>Extracts one pseudo-archive entry.</summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  /// <summary>
+  /// Builds ASF from canonical demux artifacts. A lone <c>FULL.asf</c> is accepted as a
+  /// byte-exact passthrough; otherwise every stream needs <c>.properties.bin</c> and
+  /// <c>.bin</c>, with optional <c>.objects.csv</c> timing/boundary metadata.
+  /// </summary>
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
+    => AsfRemuxer.Create(output, inputs, options);
+
+  /// <summary>Adds/replaces canonical ASF stream artifacts and transactionally remuxes the file.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => AsfRemuxer.Add(archive, inputs);
+
+  /// <summary>Removes the referenced logical stream and transactionally remuxes the survivors.</summary>
+  public void Remove(Stream archive, string[] entryNames)
+    => AsfRemuxer.Remove(archive, entryNames);
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
@@ -111,11 +100,13 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     };
 
     var parsed = AsfReader.Parse(blob);
-
     entries.Add(new("metadata.ini", "Tag", Encoding.UTF8.GetBytes(parsed.RenderMetadataIni())));
 
     if (parsed.ExtendedTags.Count > 0)
       entries.Add(new("metadata/tags.ini", "Tag", Encoding.UTF8.GetBytes(parsed.RenderTagsIni())));
+    if (parsed.PreservedHeaderObjects.Count > 0)
+      entries.Add(new(AsfRemuxer.PreservedHeaderPath, "Tag",
+        AsfContainerWriter.JoinPreservedHeaderObjects(parsed.PreservedHeaderObjects), Method: "asf_header"));
 
     foreach (var s in parsed.Streams) {
       entries.Add(new($"streams/stream_{s.StreamNumber:D2}.info.txt", "Tag",
@@ -124,32 +115,32 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (!parsed.StreamPayloads.TryGetValue(s.StreamNumber, out var payload) || payload.Length == 0)
         continue;
 
-      // WMA v1/v2 audio → try to decode to per-channel WAVs; fall back to the raw blob.
-      if (s.Kind == "audio" && s.FormatTag is 0x0160 or 0x0161 && TryDecodeWmaChannels(s, payload, entries))
-        continue;
+      // Decoded channel WAVs are a convenience view, not a replacement for the encoded
+      // stream. Always retain the canonical raw artifacts as well: a mixed WMV+WMA file
+      // must survive extract -> create without silently losing the audio track merely
+      // because the WMA decoder happened to understand it.
+      if (s.Kind == "audio" && s.FormatTag is 0x0160 or 0x0161)
+        TryDecodeWmaChannels(s, payload, entries);
+      else if (s.Kind == "audio" && s.FormatTag == 0x0162)
+        TryDecodeWmaProChannels(s, payload, entries);
+      else if (s.Kind == "audio" && s.FormatTag == 0x0163)
+        TryDecodeWmaLosslessChannels(s, payload, entries);
 
-      // WMA 9 Professional (tag 0x0162) → try to decode to per-channel WAVs; fall back to
-      // the raw blob.
-      if (s.Kind == "audio" && s.FormatTag == 0x0162 && TryDecodeWmaProChannels(s, payload, entries))
-        continue;
-
-      // WMA Lossless (tag 0x0163) → bit-exact integer decode to per-channel WAVs; fall
-      // back to the raw blob on unsupported profiles (arithmetic coding, inverse LPC).
-      if (s.Kind == "audio" && s.FormatTag == 0x0163 && TryDecodeWmaLosslessChannels(s, payload, entries))
-        continue;
-
-      entries.Add(new($"streams/stream_{s.StreamNumber:D2}.bin", "Stream", payload, Method: "asf_stream"));
+      entries.Add(new(AsfRemuxer.PayloadPath(s.StreamNumber), "Stream", payload, Method: "asf_stream"));
+      if (s.StreamPropertiesBody.Length > 0)
+        entries.Add(new(AsfRemuxer.PropertiesPath(s.StreamNumber), "Tag", s.StreamPropertiesBody, Method: "asf_stream_properties"));
+      var objects = parsed.StreamObjects.TryGetValue(s.StreamNumber, out var manifest)
+        ? manifest
+        : [new AsfMediaObjectInfo(payload.Length, 0, false)];
+      entries.Add(new(AsfRemuxer.ObjectsPath(s.StreamNumber), "Tag", AsfRemuxer.RenderObjects(objects), Method: "asf_media_objects"));
     }
 
     return entries;
   }
 
   /// <summary>
-  /// Decodes a WMA v1/v2 audio stream's reassembled superframes (via <see cref="WmaCodec"/>)
-  /// and adds one mono <c>&lt;CHANNEL&gt;.wav</c> per channel under
-  /// <c>streams/stream_NN/</c>. Each ASF media object is one coded superframe. Returns
-  /// false (so the caller surfaces the raw blob instead) when the stream lacks the
-  /// parameters needed to construct the decoder or decoding fails.
+  /// Decodes a WMA v1/v2 audio stream's reassembled superframes and adds one mono WAV per
+  /// channel. Returns false when decoding is unavailable so the raw stream is surfaced.
   /// </summary>
   private static bool TryDecodeWmaChannels(AsfReader.StreamInfo s, byte[] payload, List<AudioPseudoArchive.Entry> entries) {
     try {
@@ -163,7 +154,6 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var blockAlign = s.BlockAlign.Value;
       using var pcm = new MemoryStream();
       var decodedAny = false;
-      // Each reassembled media object is one coded superframe of block_align bytes.
       for (var off = 0; off + 1 <= payload.Length; off += blockAlign) {
         var len = Math.Min(blockAlign, payload.Length - off);
         var samples = codec.DecodeSuperframe(payload.AsSpan(off, len));
@@ -186,20 +176,11 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
       return true;
     } catch {
-      return false; // graceful fallback to the raw stream blob
+      return false;
     }
   }
 
-  /// <summary>
-  /// Decodes a WMA 9 Professional (tag <c>0x0162</c>) audio stream's reassembled packets
-  /// (via <see cref="WmaProCodec"/>) and adds one mono <c>&lt;CHANNEL&gt;.wav</c> per
-  /// channel under <c>streams/stream_NN/</c>; the decoder's channel count comes from the
-  /// extradata channel mask, which may differ from the WAVEFORMATEX nChannels. Each
-  /// reassembled ASF media object is one WMA Pro packet of <c>block_align</c> bytes.
-  /// Returns false (so the caller surfaces the raw blob instead) when the stream lacks the
-  /// parameters needed to construct the decoder or decoding fails — including unsupported
-  /// profiles, which the reference handles as a graceful no-op.
-  /// </summary>
+  /// <summary>Attempts WMA Professional channel decode, otherwise leaves the raw stream available.</summary>
   private static bool TryDecodeWmaProChannels(AsfReader.StreamInfo s, byte[] payload, List<AudioPseudoArchive.Entry> entries) {
     try {
       if (s.Channels is not (> 0) || s.SampleRate is not (> 0) || s.BlockAlign is not (> 0) ||
@@ -234,19 +215,11 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
       return true;
     } catch {
-      return false; // graceful fallback to the raw stream blob
+      return false;
     }
   }
 
-  /// <summary>
-  /// Decodes a WMA Lossless (tag <c>0x0163</c>) audio stream's reassembled packets (via
-  /// <see cref="WmaLosslessCodec"/>) into one mono <c>&lt;CHANNEL&gt;.wav</c> per channel
-  /// under <c>streams/stream_NN/</c>. The decoder's channel count comes from the extradata
-  /// channel mask. Each reassembled ASF media object is one packet of <c>block_align</c>
-  /// bytes. Returns false (so the caller surfaces the raw blob instead) when the stream
-  /// lacks the parameters needed to construct the decoder or decoding fails — including the
-  /// unsupported arithmetic-coding / inverse-LPC profiles, which decode as a graceful no-op.
-  /// </summary>
+  /// <summary>Attempts WMA Lossless channel decode, otherwise leaves the raw stream available.</summary>
   private static bool TryDecodeWmaLosslessChannels(AsfReader.StreamInfo s, byte[] payload, List<AudioPseudoArchive.Entry> entries) {
     try {
       if (s.Channels is not (> 0) || s.SampleRate is not (> 0) || s.BlockAlign is not (> 0) ||
@@ -280,7 +253,7 @@ public sealed class AsfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
       return true;
     } catch {
-      return false; // graceful fallback to the raw stream blob
+      return false;
     }
   }
 }

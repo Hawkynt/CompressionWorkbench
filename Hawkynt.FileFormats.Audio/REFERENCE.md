@@ -4964,13 +4964,14 @@ Implements `IAudioDemuxSource`, `IAudioMuxTarget`.
 
 #### `AsfFormatDescriptor`
 
-Surfaces a Microsoft Advanced Systems Format container (`.asf`/`.wma`/ `.wmv`) as an archive of the byte-exact original (`FULL.asf`, Kind `Container`) plus rich metadata and a description of each carried stream. The Data Object packets are depayloaded into per-stream elementary bitstreams (`streams/stream_NN.bin`, Kind `Stream`) and each stream is described in `streams/stream_NN.info.txt` (Kind `Tag`) carrying its codec / bitrate. WMA v1/v2 audio streams (WAVEFORMATEX tags `0x160`/`0x161`) are decoded via `Codec.Wma` and WMA 9 Professional streams (tag `0x162`) via `Codec.WmaPro`, and WMA Lossless streams (tag `0x163`) bit-exactly via `Codec.WmaLossless`, into one mono `<CHANNEL>.wav` per channel (Kind `Channel`); streams the decoders can't handle (an unsupported WMA Pro / Lossless profile, corrupt data) fall back to just the `stream_NN.bin` blob. File properties and the content description land in `metadata.ini`; the Extended Content Description tags land in `metadata/tags.ini`. Read-only; parsing stops gracefully on a malformed object, keeping whatever was read.
+Surfaces Microsoft Advanced Systems Format (`.asf`/`.wma`/`.wmv`) as a pseudo-archive and supports codec-preserving mux/remux. Demuxed raw streams carry their exact Stream Properties body plus a media-object manifest, so rebuilding preserves codec-private data, object boundaries, presentation timestamps and key-frame flags without decoding/re-encoding the WMV/WMA elementary bytes.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AsfFormatDescriptor` | `AsfFormatDescriptor()` |  |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | The normalized remux profile deliberately does not expose a zero-stream ASF instance. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -4983,9 +4984,12 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces canonical ASF stream artifacts and transactionally remuxes the file. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds ASF from canonical demux artifacts. A lone `FULL.asf` is accepted as a byte-exact passthrough; otherwise every stream needs `.properties.bin` and `.bin`, with optional `.objects.csv` timing/boundary metadata. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Extracts one pseudo-archive entry. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the supplied container. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the referenced logical stream and transactionally remuxes the survivors. |
 
 ### Namespace `FileFormat.Ast`
 
