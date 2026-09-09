@@ -49,7 +49,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
 | aPLib | `ApLib` | `.aplib` | ✅ | ✅ | — | Self-framed stream; not byte-compatible with packer aPLib payloads (BB_Aplib decodes those) | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
-| BCM | `Bcm` | `.bcm` | ✅ | ✅ | — |  | [GitHub](https://github.com/encode84/bcm) |
+| BCM | `Bcm` | `.bcm` | ✅ | ✅ | ✅ | Block-size search (16–128 KiB) | [GitHub](https://github.com/encode84/bcm) |
 | [BinHex](https://en.wikipedia.org/wiki/BinHex) | `BinHex` | `.hqx` | ✅ | ✅ | — |  | [RFC](https://www.rfc-editor.org/rfc/rfc1741) |
 | BriefLZ | `BriefLz` | `.blz` | ✅ | ✅ | ✅ | Reference-compatible blzpack stream; optimizer compares managed effort levels 1–10 | [GitHub](https://github.com/jibsen/brieflz) |
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
@@ -477,7 +477,6 @@ var archive = FormatRegistry.DetectArchiveOperations(input);
 foreach (var entry in archive.List(input))
   Console.WriteLine($"{entry.Name,-40} {entry.Size,12:N0}");
 ```
-
 ### Round-trip a compression stream
 
 ```csharp
@@ -557,7 +556,6 @@ Every public and protected member of all 1134 types, generated from the built as
 - Reverse-engineered proprietary structures are documented only to the depth evidenced by code, tests and reference binaries. Unknown structure is not filled with guesses.
 
 ## ❤️ Support
-
 If this project saves you time or money, consider supporting its development:
 
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
