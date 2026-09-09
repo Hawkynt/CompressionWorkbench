@@ -346,20 +346,26 @@ internal static class LizardHuffman {
     }
   }
 
-  private ref struct ForwardBitReader(ReadOnlySpan<byte> source) {
+  private ref struct ForwardBitReader {
+    private readonly ReadOnlySpan<byte> _source;
     private int _position;
+
+    internal ForwardBitReader(ReadOnlySpan<byte> source) {
+      this._source = source;
+      this._position = 0;
+    }
 
     internal int Position => this._position;
 
     internal uint PeekBits(int count) {
       if (count == 0)
         return 0;
-      if (count < 0 || this._position + count > source.Length * 8)
+      if (count < 0 || this._position + count > this._source.Length * 8)
         throw new InvalidDataException("Truncated FSE NCount header.");
       uint value = 0;
       for (var bit = 0; bit < count; ++bit) {
         var absolute = this._position + bit;
-        value |= (uint)((source[absolute >> 3] >> (absolute & 7)) & 1) << bit;
+        value |= (uint)((this._source[absolute >> 3] >> (absolute & 7)) & 1) << bit;
       }
       return value;
     }

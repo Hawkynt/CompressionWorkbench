@@ -694,9 +694,9 @@ public static class LizardStream {
       var length = ReadUInt24(source, ref position);
       if (length > source.Length - position)
         throw new InvalidDataException($"Lizard {name} stream exceeds its block.");
-      var result = source.Slice(position, length).ToArray();
+      var raw = source.Slice(position, length).ToArray();
       position += length;
-      return result;
+      return raw;
     }
 
     var originalLength = ReadUInt24(source, ref position);
