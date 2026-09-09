@@ -126,7 +126,7 @@ internal static class BscBlockCodec {
       CoderQlfcFast => BscQlfcFast.Decompress(coderPayload, dataSize),
       _ => throw new NotSupportedException($"BSC: QLFC coder {coder} is not supported"),
     };
-    if (bwtData.IsEmpty)
+    if (bwtData.Length == 0)
       throw new InvalidDataException("BSC: compressed block decoded to no BWT data");
     if (primaryIndex <= 0 || primaryIndex > bwtData.Length)
       throw new InvalidDataException($"BSC: invalid one-based BWT primary index {primaryIndex}");

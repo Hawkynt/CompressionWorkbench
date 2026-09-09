@@ -214,8 +214,9 @@ internal static class BscLzp {
         return previous;
       }
 
-      var previousSparse = _sparse!.GetValueOrDefault(index);
-      _sparse[index] = value;
+      var sparse = _sparse!;
+      var previousSparse = sparse.GetValueOrDefault(index);
+      sparse[index] = value;
       return previousSparse;
     }
   }

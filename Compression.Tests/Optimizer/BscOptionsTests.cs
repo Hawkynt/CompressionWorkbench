@@ -177,7 +177,9 @@ public class BscOptionsTests {
 
     Assert.That(result.Parameters, Does.ContainKey("BlockSize"));
     Assert.That(result.Parameters, Does.ContainKey("SortingContexts"));
-    Assert.That(result.Probes, Is.EqualTo(12), "6 block sizes × 2 context orders are searched exhaustively");
+    Assert.That(result.Parameters, Does.ContainKey("EntropyCoder"));
+    Assert.That(result.Probes, Is.EqualTo(36),
+      "6 block sizes × 2 context orders × 3 QLFC coders are searched exhaustively");
     Assert.That(Decompress(descriptor, result.Bytes), Is.EqualTo(data));
 
     var atDefault = CompressAt(descriptor, data, "26214400", "Following");

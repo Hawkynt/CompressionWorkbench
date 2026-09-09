@@ -336,7 +336,7 @@ internal static class BscQlfcFast {
         context += context + (int)value;
       }
     } else {
-      for (var context = 1, bit = bitSize - 1; bit >= 0; --bit, ++context) {
+      for (int context = 1, bit = bitSize - 1; bit >= 0; --bit, ++context) {
         ref var predictor = ref model.RunMantissa(currentChar, bitSize, context);
         var probability = predictor;
         var value = (uint)((run >> bit) & 1);

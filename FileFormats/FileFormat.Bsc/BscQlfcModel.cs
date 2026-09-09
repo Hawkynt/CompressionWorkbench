@@ -165,7 +165,7 @@ internal static class BscQlfcModel {
             ref var charExponent = ref model.RankExponentChar(currentChar, bit - 1);
             ref var staticExponent = ref model.RankExponentStatic[bit - 1];
             EncodeModelBit(coder, 1, ref charExponent, ref stateExponent, ref staticExponent,
-              RankExponent, model, model.RankExponentMixerId(Math.Max(history, (byte)1), bit));
+              RankExponent, model, model.RankExponentMixerId(Math.Max(history, (byte)bit), bit));
           }
           if (bitRankSize < maxRank) {
             ref var stateExponent = ref model.RankExponentState(state, bitRankSize - 1);
@@ -222,7 +222,7 @@ internal static class BscQlfcModel {
           ref var charExponent = ref model.RunExponentChar(currentChar, bit - 1);
           ref var staticExponent = ref model.RunExponentStatic[bit - 1];
           EncodeModelBit(coder, 1, ref charExponent, ref stateExponent, ref staticExponent,
-            RunExponent, model, model.RunExponentMixerId(Math.Max(history, (byte)1), bit));
+            RunExponent, model, model.RunExponentMixerId(Math.Max(history, (byte)bit), bit));
         }
         {
           ref var stateExponent = ref model.RunExponentState(state, bitRunSize - 1);
@@ -397,8 +397,9 @@ internal static class BscQlfcModel {
       BitModelConfig config,
       Model model,
       int mixerId) {
+    MixState mixState = default;
     var probability = model.Adaptive
-      ? model.Mix(mixerId, charProbability, stateProbability, staticProbability, config, out var mixState)
+      ? model.Mix(mixerId, charProbability, stateProbability, staticProbability, config, out mixState)
       : StaticProbability(charProbability, stateProbability, staticProbability, config.StaticWeights);
 
     if (model.Adaptive) {
@@ -621,13 +622,15 @@ internal static class BscQlfcModel {
       Adaptive = adaptive;
       if (!adaptive)
         return;
-      _rankMixers = new(AlphabetSize);
-      _rankExponentMixers = new(RankExponentBits * RankExponentBits);
-      _rankMantissaMixers = new(RankExponentBits);
-      _rankEscapeMixers = new(AlphabetSize);
-      _runMixers = new(AlphabetSize);
-      _runExponentMixers = new(RunExponentBits * RunExponentBits);
-      _runMantissaMixers = new(RunExponentBits);
+      // The kind is the high byte of every mixer id and has to keep matching
+      // ResolveBank, so it belongs to the bank itself, not to a running counter.
+      _rankMixers = new(1, AlphabetSize);
+      _rankExponentMixers = new(2, RankExponentBits * RankExponentBits);
+      _rankMantissaMixers = new(3, RankExponentBits);
+      _rankEscapeMixers = new(4, AlphabetSize);
+      _runMixers = new(5, AlphabetSize);
+      _runExponentMixers = new(6, RunExponentBits * RunExponentBits);
+      _runMantissaMixers = new(7, RunExponentBits);
     }
 
     internal bool Adaptive { get; }
@@ -719,14 +722,13 @@ internal static class BscQlfcModel {
     }
 
     private sealed class MixerBank {
-      private static int _nextKind;
       private readonly int[] _weightChar;
       private readonly int[] _weightState;
       private readonly int[] _weightGlobal;
       private readonly short[] _probabilityMap;
 
-      internal MixerBank(int count) {
-        Kind = ++_nextKind;
+      internal MixerBank(int kind, int count) {
+        Kind = kind;
         _weightChar = new int[count];
         _weightState = new int[count];
         _weightGlobal = new int[count];
