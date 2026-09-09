@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace FileFormat.Squeeze;
 
@@ -6,19 +7,23 @@ namespace FileFormat.Squeeze;
 /// Provides static methods for reading and writing the CP/M Squeeze (.sqz / .??q) file format.
 /// </summary>
 /// <remarks>
-/// Richard Greenlaw's file squeezer (1981) uses a stored Huffman tree with an explicit node array.
-/// The format consists of:
+/// Richard Greenlaw's Squeeze format first applies a 0x90 run-length transform and then Huffman-codes
+/// that transformed byte stream. Standalone SQ files contain, in order:
 /// <list type="bullet">
 ///   <item><description>2-byte magic (0x76, 0xFF = 0xFF76 LE).</description></item>
+///   <item><description>2-byte checksum (sum of the original, expanded bytes modulo 65536, LE).</description></item>
 ///   <item><description>Null-terminated ASCII original filename.</description></item>
-///   <item><description>2-byte checksum (sum of all original bytes mod 65536, LE).</description></item>
-///   <item><description>2-byte node count (LE).</description></item>
+///   <item><description>2-byte Huffman node count (LE).</description></item>
 ///   <item><description>Node array: each node is two signed 16-bit LE values (left, right).
 ///   Non-negative values are child node indices; negative values encode leaves as -(symbol + 1).</description></item>
 ///   <item><description>Huffman-coded bitstream (LSB-first bit order) terminated by EOF symbol (256).</description></item>
 /// </list>
+/// A zero-node tree represents an empty stream.
 /// </remarks>
 public static class SqueezeStream {
+
+  private const int HistoricalMinimumRunLength = 3;
+  private const int DisabledMinimumRunLength = 256;
 
   /// <summary>
   /// Decompresses a Squeeze-format stream from <paramref name="input"/> and writes the result to <paramref name="output"/>.
@@ -26,92 +31,90 @@ public static class SqueezeStream {
   /// <param name="input">The stream containing Squeeze-compressed data.</param>
   /// <param name="output">The stream to which the decompressed data is written.</param>
   /// <exception cref="InvalidDataException">
-  /// Thrown when the magic bytes are invalid, the tree is malformed, or the checksum does not match.
+  /// Thrown when the magic bytes are invalid, the tree/RLE stream is malformed, or the checksum does not match.
   /// </exception>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    // Read 2-byte magic
-    Span<byte> magicBuf = stackalloc byte[2];
-    input.ReadExactly(magicBuf);
-    var magic = BinaryPrimitives.ReadUInt16LittleEndian(magicBuf);
+    Span<byte> word = stackalloc byte[2];
+    input.ReadExactly(word);
+    var magic = BinaryPrimitives.ReadUInt16LittleEndian(word);
     if (magic != SqueezeConstants.Magic)
       throw new InvalidDataException($"Invalid Squeeze magic: 0x{magic:X4}, expected 0x{SqueezeConstants.Magic:X4}.");
 
-    // Read null-terminated original filename (discard)
-    ReadNullTerminatedString(input);
+    input.ReadExactly(word);
+    var expectedChecksum = BinaryPrimitives.ReadUInt16LittleEndian(word);
 
-    // Read 2-byte checksum
-    Span<byte> checksumBuf = stackalloc byte[2];
-    input.ReadExactly(checksumBuf);
-    var expectedChecksum = BinaryPrimitives.ReadUInt16LittleEndian(checksumBuf);
+    _ = ReadNullTerminatedString(input);
 
-    // Read node count
-    Span<byte> countBuf = stackalloc byte[2];
-    input.ReadExactly(countBuf);
-    var nodeCount = BinaryPrimitives.ReadUInt16LittleEndian(countBuf);
-
-    if (nodeCount == 0)
-      throw new InvalidDataException("Squeeze node count is zero.");
+    input.ReadExactly(word);
+    var nodeCount = BinaryPrimitives.ReadUInt16LittleEndian(word);
     if (nodeCount > SqueezeConstants.MaxNodes)
       throw new InvalidDataException($"Squeeze node count {nodeCount} exceeds maximum {SqueezeConstants.MaxNodes}.");
 
-    // Read node array
-    var left = new short[nodeCount];
-    var right = new short[nodeCount];
-    Span<byte> nodeBuf = stackalloc byte[4];
-    for (var i = 0; i < nodeCount; i++) {
-      input.ReadExactly(nodeBuf);
-      left[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBuf);
-      right[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBuf[2..]);
+    if (nodeCount == 0) {
+      if (expectedChecksum != 0)
+        throw new InvalidDataException($"Squeeze checksum mismatch: computed 0x0000, expected 0x{expectedChecksum:X4}.");
+      return;
     }
 
-    // Decode bitstream (LSB-first)
+    var left = new short[nodeCount];
+    var right = new short[nodeCount];
+    Span<byte> nodeBytes = stackalloc byte[4];
+    for (var i = 0; i < nodeCount; ++i) {
+      input.ReadExactly(nodeBytes);
+      left[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBytes);
+      right[i] = BinaryPrimitives.ReadInt16LittleEndian(nodeBytes[2..]);
+    }
+
     using var result = new MemoryStream();
     var currentByte = 0;
     var bitsLeft = 0;
+    var sawRleDelimiter = false;
+    var haveLastByte = false;
+    byte lastByte = 0;
     ushort checksum = 0;
 
     while (true) {
-      // Walk tree from root (node 0)
-      var node = 0;
-      while (true) {
-        if (node < 0 || node >= nodeCount)
-          throw new InvalidDataException($"Squeeze tree references invalid node index {node}.");
-
-        // Get next bit
-        if (bitsLeft == 0) {
-          currentByte = input.ReadByte();
-          if (currentByte < 0)
-            throw new InvalidDataException("Unexpected end of Squeeze bitstream.");
-          bitsLeft = 8;
-        }
-
-        var bit = currentByte & 1;
-        currentByte >>= 1;
-        bitsLeft--;
-
-        // Navigate: 0 = left, 1 = right
-        var child = bit == 0 ? left[node] : right[node];
-
-        if (child < 0) {
-          // Leaf: symbol = -(child + 1)
-          var symbol = -(child + 1);
-          if (symbol == SqueezeConstants.EofMarker)
-            goto done;
-          if (symbol is < 0 or > 255)
-            throw new InvalidDataException($"Squeeze tree contains invalid symbol {symbol}.");
-          result.WriteByte((byte)symbol);
-          checksum += (ushort)symbol;
-          break;
-        }
-
-        node = child;
+      var symbol = DecodeSymbol(input, left, right, ref currentByte, ref bitsLeft);
+      if (symbol == SqueezeConstants.EofMarker) {
+        if (sawRleDelimiter)
+          throw new InvalidDataException("Squeeze stream ends in an incomplete RLE escape.");
+        break;
       }
+      if (symbol is < 0 or > byte.MaxValue)
+        throw new InvalidDataException($"Squeeze tree contains invalid symbol {symbol}.");
+
+      var value = (byte)symbol;
+      if (sawRleDelimiter) {
+        if (value == 0) {
+          WriteExpandedByte(result, SqueezeConstants.RleDelimiter, ref checksum);
+          lastByte = SqueezeConstants.RleDelimiter;
+          haveLastByte = true;
+        } else {
+          if (!haveLastByte)
+            throw new InvalidDataException("Squeeze RLE count appears before a literal byte.");
+
+          // The first copy was emitted before the delimiter, so a count N contributes N-1 more copies.
+          for (var i = 1; i < value; ++i)
+            WriteExpandedByte(result, lastByte, ref checksum);
+        }
+
+        sawRleDelimiter = false;
+        continue;
+      }
+
+      if (value == SqueezeConstants.RleDelimiter) {
+        sawRleDelimiter = true;
+        continue;
+      }
+
+      WriteExpandedByte(result, value, ref checksum);
+      lastByte = value;
+      haveLastByte = true;
     }
 
-    done:
     if (checksum != expectedChecksum)
       throw new InvalidDataException($"Squeeze checksum mismatch: computed 0x{checksum:X4}, expected 0x{expectedChecksum:X4}.");
 
@@ -124,87 +127,161 @@ public static class SqueezeStream {
   /// </summary>
   /// <param name="input">The stream containing uncompressed data.</param>
   /// <param name="output">The stream to which the Squeeze-compressed data is written.</param>
-  /// <param name="originalFilename">
-  /// The original filename to embed in the header. Defaults to an empty string.
-  /// </param>
-  public static void Compress(Stream input, Stream output, string originalFilename = "") {
+  /// <param name="originalFilename">The original filename to embed in the header. Defaults to an empty string.</param>
+  public static void Compress(Stream input, Stream output, string originalFilename = "")
+    => Compress(input, output, HistoricalMinimumRunLength, originalFilename);
+
+  /// <summary>
+  /// Encodes SQ while choosing the smallest run length that is represented by an RLE token.
+  /// A value of 256 suppresses repeat tokens while still escaping literal 0x90 bytes.
+  /// </summary>
+  internal static void Compress(Stream input, Stream output, int minimumRunLength, string originalFilename = "") {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(originalFilename);
 
-    // Read all input
+    if (minimumRunLength is < HistoricalMinimumRunLength or > DisabledMinimumRunLength)
+      throw new ArgumentOutOfRangeException(nameof(minimumRunLength), minimumRunLength,
+        $"Squeeze RLE minimum run length must be in {HistoricalMinimumRunLength}..{DisabledMinimumRunLength}.");
+    if (originalFilename.Contains('\0'))
+      throw new ArgumentException("Squeeze filenames cannot contain an embedded NUL.", nameof(originalFilename));
+
     var data = ReadAllBytes(input);
-
-    // Compute checksum
     ushort checksum = 0;
-    for (var i = 0; i < data.Length; i++)
-      checksum += data[i];
+    foreach (var value in data)
+      checksum += value;
 
-    // Build frequency table (256 byte symbols + EOF)
-    var freq = new long[257];
-    for (var i = 0; i < data.Length; i++)
-      freq[data[i]]++;
-    freq[SqueezeConstants.EofMarker] = 1;
+    var rle = EncodeRle(data, minimumRunLength);
 
-    // Build Huffman tree and serialize to node array
-    BuildTree(freq, out var left, out var right, out var codes, out var codeLens);
-    var nodeCount = left.Length;
+    Span<byte> word = stackalloc byte[2];
+    BinaryPrimitives.WriteUInt16LittleEndian(word, SqueezeConstants.Magic);
+    output.Write(word);
+    BinaryPrimitives.WriteUInt16LittleEndian(word, checksum);
+    output.Write(word);
 
-    // Write header
-    Span<byte> header = stackalloc byte[2];
-    BinaryPrimitives.WriteUInt16LittleEndian(header, SqueezeConstants.Magic);
-    output.Write(header);
-
-    // Write null-terminated filename
-    foreach (var ch in originalFilename)
-      output.WriteByte((byte)ch);
+    output.Write(Encoding.ASCII.GetBytes(originalFilename));
     output.WriteByte(0);
 
-    // Write checksum
-    Span<byte> checksumBuf = stackalloc byte[2];
-    BinaryPrimitives.WriteUInt16LittleEndian(checksumBuf, checksum);
-    output.Write(checksumBuf);
-
-    // Write node count
-    Span<byte> countBuf = stackalloc byte[2];
-    BinaryPrimitives.WriteUInt16LittleEndian(countBuf, (ushort)nodeCount);
-    output.Write(countBuf);
-
-    // Write node array
-    Span<byte> nodeBuf = stackalloc byte[4];
-    for (var i = 0; i < nodeCount; i++) {
-      BinaryPrimitives.WriteInt16LittleEndian(nodeBuf, left[i]);
-      BinaryPrimitives.WriteInt16LittleEndian(nodeBuf[2..], right[i]);
-      output.Write(nodeBuf);
+    if (rle.Length == 0) {
+      BinaryPrimitives.WriteUInt16LittleEndian(word, 0);
+      output.Write(word);
+      return;
     }
 
-    // Encode data + EOF (LSB-first)
-    var bitBuffer = 0u;
+    var freq = new long[257];
+    foreach (var value in rle)
+      ++freq[value];
+    freq[SqueezeConstants.EofMarker] = 1;
+
+    BuildTree(freq, out var left, out var right, out var codes, out var codeLens);
+    var nodeCount = left.Length;
+    if (nodeCount > SqueezeConstants.MaxNodes)
+      throw new InvalidDataException($"Squeeze Huffman tree has {nodeCount} nodes; maximum is {SqueezeConstants.MaxNodes}.");
+
+    BinaryPrimitives.WriteUInt16LittleEndian(word, checked((ushort)nodeCount));
+    output.Write(word);
+
+    Span<byte> nodeBytes = stackalloc byte[4];
+    for (var i = 0; i < nodeCount; ++i) {
+      BinaryPrimitives.WriteInt16LittleEndian(nodeBytes, left[i]);
+      BinaryPrimitives.WriteInt16LittleEndian(nodeBytes[2..], right[i]);
+      output.Write(nodeBytes);
+    }
+
+    ulong bitBuffer = 0;
     var bitCount = 0;
-
-    for (var i = 0; i < data.Length; i++)
-      WriteBits(output, codes[data[i]], codeLens[data[i]], ref bitBuffer, ref bitCount);
-
-    // Write EOF symbol
+    foreach (var value in rle)
+      WriteBits(output, codes[value], codeLens[value], ref bitBuffer, ref bitCount);
     WriteBits(output, codes[SqueezeConstants.EofMarker], codeLens[SqueezeConstants.EofMarker], ref bitBuffer, ref bitCount);
 
-    // Flush remaining bits (pad with zeros)
     if (bitCount > 0)
       output.WriteByte((byte)bitBuffer);
   }
 
-  private static void WriteBits(Stream output, uint code, int length, ref uint bitBuffer, ref int bitCount) {
-    // Codes are stored LSB-first: we emit the lowest bit of code first.
-    // code is already in LSB-first order (bit 0 = first bit to emit).
-    //
-    // The accumulator is unsigned deliberately. As a signed int, a code long
-    // enough to reach bit 31 made the value negative, and the shift below is
-    // then arithmetic: it sign-extends and feeds 1-bits back into the stream.
-    // Squeeze codes can reach that length on a sufficiently skewed alphabet.
-    bitBuffer |= (uint)((ulong)code << bitCount);
+  private static byte[] EncodeRle(ReadOnlySpan<byte> source, int minimumRunLength) {
+    using var output = new MemoryStream(source.Length);
+    var offset = 0;
+
+    while (offset < source.Length) {
+      var value = source[offset];
+      if (value == SqueezeConstants.RleDelimiter) {
+        output.WriteByte(SqueezeConstants.RleDelimiter);
+        output.WriteByte(0);
+        ++offset;
+        continue;
+      }
+
+      var runLength = 1;
+      while (offset + runLength < source.Length && source[offset + runLength] == value)
+        ++runLength;
+
+      var remaining = runLength;
+      while (remaining > 0) {
+        var count = Math.Min(remaining, byte.MaxValue);
+        if (count >= minimumRunLength) {
+          output.WriteByte(value);
+          output.WriteByte(SqueezeConstants.RleDelimiter);
+          output.WriteByte((byte)count);
+        } else {
+          for (var i = 0; i < count; ++i)
+            output.WriteByte(value);
+        }
+        remaining -= count;
+      }
+
+      offset += runLength;
+    }
+
+    return output.ToArray();
+  }
+
+  private static void WriteExpandedByte(Stream output, byte value, ref ushort checksum) {
+    output.WriteByte(value);
+    checksum += value;
+  }
+
+  private static int DecodeSymbol(
+    Stream input,
+    short[] left,
+    short[] right,
+    ref int currentByte,
+    ref int bitsLeft
+  ) {
+    var node = 0;
+    var traversed = 0;
+
+    while (true) {
+      if ((uint)node >= (uint)left.Length)
+        throw new InvalidDataException($"Squeeze tree references invalid node index {node}.");
+      if (++traversed > left.Length)
+        throw new InvalidDataException("Squeeze Huffman tree contains a cycle.");
+
+      if (bitsLeft == 0) {
+        currentByte = input.ReadByte();
+        if (currentByte < 0)
+          throw new InvalidDataException("Unexpected end of Squeeze bitstream.");
+        bitsLeft = 8;
+      }
+
+      var bit = currentByte & 1;
+      currentByte >>= 1;
+      --bitsLeft;
+
+      var child = bit == 0 ? left[node] : right[node];
+      if (child < 0)
+        return -(child + 1);
+      node = child;
+    }
+  }
+
+  private static void WriteBits(Stream output, uint code, int length, ref ulong bitBuffer, ref int bitCount) {
+    // code is already stored LSB-first (bit zero is emitted first). The accumulator is 64-bit so
+    // a long code plus the at-most-seven pending bits cannot truncate before completed bytes drain.
+    bitBuffer |= (ulong)code << bitCount;
     bitCount += length;
 
     while (bitCount >= 8) {
-      output.WriteByte((byte)(bitBuffer & 0xFF));
+      output.WriteByte((byte)bitBuffer);
       bitBuffer >>= 8;
       bitCount -= 8;
     }
@@ -214,26 +291,21 @@ public static class SqueezeStream {
   /// Builds a Huffman tree from symbol frequencies and serializes it into the Squeeze node-array format.
   /// </summary>
   private static void BuildTree(long[] freq, out short[] left, out short[] right, out uint[] codes, out int[] codeLens) {
-    // Count active symbols
     var symbolCount = 0;
-    for (var i = 0; i < freq.Length; i++)
+    for (var i = 0; i < freq.Length; ++i)
       if (freq[i] > 0)
-        symbolCount++;
+        ++symbolCount;
 
     if (symbolCount == 0)
       throw new InvalidOperationException("No symbols to encode.");
 
-    // Special case: single symbol (only EOF or single byte + EOF)
     if (symbolCount == 1) {
-      // Create a minimal tree: one root node with the symbol on both sides
       var sym = -1;
-      for (var i = 0; i < freq.Length; i++)
+      for (var i = 0; i < freq.Length; ++i)
         if (freq[i] > 0) { sym = i; break; }
 
-      left = new short[1];
-      right = new short[1];
-      left[0] = (short)(-(sym + 1));
-      right[0] = (short)(-(sym + 1));
+      left = [(short)(-(sym + 1))];
+      right = [(short)(-(sym + 1))];
       codes = new uint[257];
       codeLens = new int[257];
       codes[sym] = 0;
@@ -241,41 +313,20 @@ public static class SqueezeStream {
       return;
     }
 
-    // Huffman construction under an explicit total order on nodes. Squeeze stores the tree
-    // itself - the node array below is written to the file verbatim - so it is not enough to
-    // pin down the code lengths: which of two merged nodes becomes the left child, and in what
-    // order the internal nodes come into existence, both end up in the output. Compression.Core's
-    // DeterministicHuffman cannot be used here for that reason (it returns code lengths only, and
-    // takes int weights where Squeeze counts in long), so the same rule is applied directly.
-    //
-    // The rule: a node's key is the pair (weight, rank), where a leaf for symbol s has weight
-    // freq[s] and rank s, and the k-th internal node created has the summed weight of its two
-    // children and rank 257 + k. Node a precedes node b when a.Weight < b.Weight, or the weights
-    // are equal and a.Rank < b.Rank. Ranks are pairwise distinct - symbols are distinct and all
-    // below 257, creation indices are distinct and all at or above it - so no two nodes ever
-    // compare equal and the tree is a function of the frequencies alone. In plain terms: lighter
-    // first; among equal weights, leaves before internal nodes, leaves by ascending symbol,
-    // internal nodes oldest first.
-    //
-    // No heap is involved. The leaves are sorted once into that order and the internal nodes are
-    // appended as they are created, which leaves them already sorted, because merge weights are
-    // non-decreasing and creation indices increase. The smallest node still unmerged is therefore
-    // always at the front of one of the two queues.
+    // Squeeze writes the tree itself, so equal-frequency ordering is part of the produced bytes.
+    // Use the repository's deterministic rule directly: (weight, symbol) for leaves, followed by
+    // internal nodes in creation order on equal weight. The two-queue merge makes that total order explicit.
     var leafCount = symbolCount;
     var leaves = new (long Weight, int Symbol)[leafCount];
     var filled = 0;
-    for (var i = 0; i < freq.Length; i++)
+    for (var i = 0; i < freq.Length; ++i)
       if (freq[i] > 0)
         leaves[filled++] = (freq[i], i);
 
-    // The comparison never returns zero for two different leaves, so how the sort itself treats
-    // equal keys cannot matter.
     Array.Sort(leaves, static (a, b) => a.Weight != b.Weight
       ? a.Weight.CompareTo(b.Weight)
       : a.Symbol.CompareTo(b.Symbol));
 
-    // Node-array values: a leaf child is encoded as -(symbol + 1), an internal child as its
-    // creation index. Two leaves per merge minus the shared root gives leafCount - 1 internals.
     var internalCount = leafCount - 1;
     var internalWeight = new long[internalCount];
     var nodeLeft = new short[internalCount];
@@ -286,11 +337,8 @@ public static class SqueezeStream {
     var created = 0;
 
     (short Value, long Weight) TakeSmallest() {
-      // Equal weight favours the leaf: a leaf's rank is below 257 while an internal node's rank
-      // is at or above it. Entries [internalHead, created) are the internal nodes still unmerged.
       var takeLeaf = leafHead < leafCount
                      && (internalHead >= created || leaves[leafHead].Weight <= internalWeight[internalHead]);
-
       if (takeLeaf) {
         var leaf = leaves[leafHead++];
         return ((short)(-(leaf.Symbol + 1)), leaf.Weight);
@@ -309,81 +357,80 @@ public static class SqueezeStream {
       ++created;
     }
 
-    // The root is the last internal node created. The Squeeze format expects node 0 = root,
-    // so the nodes have to be remapped.
     var rootId = internalCount - 1;
-    var totalNodes = internalCount;
-    left = new short[totalNodes];
-    right = new short[totalNodes];
+    left = new short[internalCount];
+    right = new short[internalCount];
 
-    // Build a remapping: root goes to index 0, others shift
-    var remap = new int[totalNodes];
+    var remap = new int[internalCount];
     remap[rootId] = 0;
     var next = 1;
-    for (var i = 0; i < totalNodes; i++) {
-      if (i == rootId) continue;
+    for (var i = 0; i < internalCount; ++i) {
+      if (i == rootId)
+        continue;
       remap[i] = next++;
     }
 
-    // Apply remapping
-    for (var i = 0; i < totalNodes; i++) {
-      var newIdx = remap[i];
-      left[newIdx] = RemapChild(nodeLeft[i], remap);
-      right[newIdx] = RemapChild(nodeRight[i], remap);
+    for (var i = 0; i < internalCount; ++i) {
+      var newIndex = remap[i];
+      left[newIndex] = RemapChild(nodeLeft[i], remap);
+      right[newIndex] = RemapChild(nodeRight[i], remap);
     }
 
-    // Generate codes by walking the tree (LSB-first: first bit is lowest bit)
     codes = new uint[257];
     codeLens = new int[257];
     GenerateCodes(left, right, 0, 0, 0, codes, codeLens);
   }
 
-  private static short RemapChild(short child, int[] remap) =>
-    child >= 0 ? (short)remap[child] : child;
+  private static short RemapChild(short child, int[] remap)
+    => child >= 0 ? (short)remap[child] : child;
 
-  private static void GenerateCodes(short[] left, short[] right, int node, uint code, int depth, uint[] codes, int[] codeLens) {
-    var l = left[node];
-    var r = right[node];
+  private static void GenerateCodes(
+    short[] left,
+    short[] right,
+    int node,
+    uint code,
+    int depth,
+    uint[] codes,
+    int[] codeLens
+  ) {
+    var leftChild = left[node];
+    var rightChild = right[node];
 
-    // Going left adds a 0-bit at position 'depth' (code unchanged), going right adds a 1-bit.
-    // Each child is one level deeper, so the code length is depth + 1.
-
-    if (l < 0) {
-      var sym = -(l + 1);
-      var len = Math.Max(depth + 1, 1);
-      codes[sym] = code;
-      codeLens[sym] = len;
+    if (leftChild < 0) {
+      var symbol = -(leftChild + 1);
+      codes[symbol] = code;
+      codeLens[symbol] = Math.Max(depth + 1, 1);
     } else {
-      GenerateCodes(left, right, l, code, depth + 1, codes, codeLens);
+      GenerateCodes(left, right, leftChild, code, depth + 1, codes, codeLens);
     }
 
-    if (r < 0) {
-      var sym = -(r + 1);
-      var len = Math.Max(depth + 1, 1);
-      codes[sym] = code | (1u << depth);
-      codeLens[sym] = len;
+    if (rightChild < 0) {
+      var symbol = -(rightChild + 1);
+      codes[symbol] = code | (1u << depth);
+      codeLens[symbol] = Math.Max(depth + 1, 1);
     } else {
-      GenerateCodes(left, right, r, code | (1u << depth), depth + 1, codes, codeLens);
+      GenerateCodes(left, right, rightChild, code | (1u << depth), depth + 1, codes, codeLens);
     }
   }
 
   private static string ReadNullTerminatedString(Stream stream) {
     var bytes = new List<byte>();
     while (true) {
-      var b = stream.ReadByte();
-      if (b <= 0) break;
-      bytes.Add((byte)b);
+      var value = stream.ReadByte();
+      if (value < 0)
+        throw new InvalidDataException("Squeeze header ends before the filename terminator.");
+      if (value == 0)
+        return Encoding.ASCII.GetString(bytes.ToArray());
+      bytes.Add((byte)value);
     }
-
-    return System.Text.Encoding.ASCII.GetString(bytes.ToArray());
   }
 
   private static byte[] ReadAllBytes(Stream stream) {
-    if (stream is MemoryStream ms && ms.Position == 0)
-      return ms.ToArray();
+    if (stream is MemoryStream memoryStream && memoryStream.Position == 0)
+      return memoryStream.ToArray();
 
-    using var buf = new MemoryStream();
-    stream.CopyTo(buf);
-    return buf.ToArray();
+    using var buffer = new MemoryStream();
+    stream.CopyTo(buffer);
+    return buffer.ToArray();
   }
 }
