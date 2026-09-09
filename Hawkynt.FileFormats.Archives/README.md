@@ -67,7 +67,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/inikep/lizard) |
 | [LZ4 frame](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | `Lz4` | `.lz4` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
 | [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | `Lzfse` | `.lzfse` | ✅ | ✅ | — | Uncompressed and LZVN blocks only; the FSE/tANS compressed block families are not implemented | [GitHub](https://github.com/lzfse/lzfse) |
-| LZG | `Lzg` | `.lzg` | ✅ | ✅ | — |  | [GitHub](https://github.com/mbitsnbites/liblzg) |
+| LZG | `Lzg` | `.lzg` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/mbitsnbites/liblzg) |
 | LZHAM | `Lzham` | `.lzham` | ✅ | ✅ | — |  | [GitHub](https://github.com/richgel999/lzham_codec) |
 | [Lzip](https://en.wikipedia.org/wiki/Lzip) | `Lzip` | `.lz` `.lzip` | ✅ | ✅ | ✅ |  | [nongnu.org](https://www.nongnu.org/lzip/manual/lzip_manual.html#File-format) |
 | [LZMA (.lzma)](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `Lzma` | `.lzma` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
