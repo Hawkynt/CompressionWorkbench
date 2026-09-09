@@ -64,7 +64,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
 | KWAJ | `Kwaj` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/KWAJ) |
-| Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | — |  | [GitHub](https://github.com/inikep/lizard) |
+| Lizard (LZ5) | `Lizard` | `.liz` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/inikep/lizard) |
 | [LZ4 frame](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) | `Lz4` | `.lz4` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md) |
 | [LZFSE](https://en.wikipedia.org/wiki/LZFSE) | `Lzfse` | `.lzfse` | ✅ | ✅ | — | Uncompressed and LZVN blocks only; the FSE/tANS compressed block families are not implemented | [GitHub](https://github.com/lzfse/lzfse) |
 | LZG | `Lzg` | `.lzg` | ✅ | ✅ | — |  | [GitHub](https://github.com/mbitsnbites/liblzg) |

@@ -6,315 +6,806 @@ using System.Numerics;
 namespace FileFormat.Lizard;
 
 /// <summary>
-/// Lizard (formerly LZ5) compression stream.
-/// Frame format: magic (06 22 4D 18) + FLG + BD + ContentSize + HC + blocks + end mark.
-/// Block internals use LZ4-compatible token format.
+/// Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method
+/// families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
 /// </summary>
+/// <remarks>
+/// This is a clean-room implementation from the published Lizard block/frame
+/// descriptions and the public behavior of the BSD-licensed reference codec.
+/// Lizard's fastLZ4 codewords live inside Lizard's five-stream block format and
+/// are not ordinary LZ4 blocks. HUF streams use the FiniteStateEntropy wire
+/// format implemented by <see cref="LizardHuffman"/>.
+/// </remarks>
 public static class LizardStream {
-
   private static readonly byte[] Magic = [0x06, 0x22, 0x4D, 0x18];
-  private const byte Flg = 0x68;  // version=01, B.Indep=1, B.Checksum=0, C.Size=1, C.Checksum=0
-  private const byte Bd = 0x40;   // block max size bits 6-4 = 4 (4MB)
-  private const int BlockSize = 4 * 1024 * 1024;
 
-  /// <summary>Compresses input into the Lizard frame format.</summary>
-  public static void Compress(Stream input, Stream output) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var data = ms.ToArray();
+  private const byte DefaultFlags = 0x68; // version=01, independent blocks, content size present
+  private const int RawBlockSize = 128 * 1024;
+  private const int MinMatch = 4;
+  private const int MinOffset = 8;
+  private const int LastLiterals = 16;
+  private const int MatchFindLimit = LastLiterals + MinMatch;
+  private const int MaxFastOffset = ushort.MaxValue;
+  private const int MaxLizOffset = 0xFFFFFF;
+  private const int LongOffsetThreshold = 1 << 16;
+  private const int LongOffsetMinMatch = 16;
+  private const int HashBits = 16;
+  private const int HashSize = 1 << HashBits;
+  private const int DefaultCompressionLevel = 17;
+  private const int DefaultFrameBlockSize = 4 * 1024 * 1024;
 
-    // Frame magic
+  private const byte FlagLiterals = 1;
+  private const byte FlagTokens = 2;
+  private const byte FlagOffset16 = 4;
+  private const byte FlagOffset24 = 8;
+  private const byte FlagLengths = 16;
+  private const byte FlagUncompressed = 128;
+
+  private static readonly IReadOnlyDictionary<int, byte> BlockSizeIds = new Dictionary<int, byte> {
+    [128 * 1024] = 1,
+    [256 * 1024] = 2,
+    [1024 * 1024] = 3,
+    [4 * 1024 * 1024] = 4,
+    [16 * 1024 * 1024] = 5,
+    [64 * 1024 * 1024] = 6,
+    [256 * 1024 * 1024] = 7,
+  };
+
+  public static void Compress(Stream input, Stream output) =>
+    Compress(input, output, DefaultCompressionLevel, DefaultFrameBlockSize);
+
+  public static void Compress(Stream input, Stream output, int compressionLevel, int blockSize) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ValidateCompressionLevel(compressionLevel);
+    if (!BlockSizeIds.TryGetValue(blockSize, out var blockSizeId))
+      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize, "Unsupported Lizard frame block size.");
+
+    using var source = new MemoryStream();
+    input.CopyTo(source);
+    var data = source.ToArray();
+
     output.Write(Magic);
+    output.WriteByte(DefaultFlags);
+    output.WriteByte((byte)(blockSizeId << 4));
 
-    // FLG + BD + 8-byte content size
-    output.WriteByte(Flg);
-    output.WriteByte(Bd);
-    Span<byte> contentSizeBuf = stackalloc byte[8];
-    BinaryPrimitives.WriteUInt64LittleEndian(contentSizeBuf, (ulong)data.Length);
-    output.Write(contentSizeBuf);
+    Span<byte> contentSize = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt64LittleEndian(contentSize, (ulong)data.LongLength);
+    output.Write(contentSize);
 
-    // Header checksum: XXHash32 over FLG + BD + ContentSize bytes, seed=0
-    Span<byte> hcInput = stackalloc byte[10];
-    hcInput[0] = Flg;
-    hcInput[1] = Bd;
-    contentSizeBuf.CopyTo(hcInput[2..]);
-    var hcHash = XxHash32(hcInput);
-    output.WriteByte((byte)((hcHash >> 8) & 0xFF));
+    Span<byte> descriptor = stackalloc byte[10];
+    descriptor[0] = DefaultFlags;
+    descriptor[1] = (byte)(blockSizeId << 4);
+    contentSize.CopyTo(descriptor[2..]);
+    output.WriteByte((byte)(XxHash32(descriptor) >> 8));
 
-    // Data blocks (up to 4MB each)
-    var offset = 0;
-    Span<byte> blockSizeBuf = stackalloc byte[4];
-    while (offset < data.Length) {
-      var chunkLen = Math.Min(BlockSize, data.Length - offset);
-      var chunk = data.AsSpan(offset, chunkLen);
-      var compressed = CompressBlock(chunk);
+    Span<byte> sizeBuffer = stackalloc byte[4];
+    for (var offset = 0; offset < data.Length;) {
+      var count = Math.Min(blockSize, data.Length - offset);
+      var sourceBlock = data.AsSpan(offset, count);
+      var compressed = CompressDataBlock(sourceBlock, compressionLevel);
 
-      // If compressed is larger than original, store uncompressed (bit 31 set)
-      if (compressed.Length >= chunkLen) {
-        BinaryPrimitives.WriteUInt32LittleEndian(blockSizeBuf, (uint)chunkLen | 0x80000000u);
-        output.Write(blockSizeBuf);
-        output.Write(chunk);
+      if (compressed.Length >= count) {
+        BinaryPrimitives.WriteUInt32LittleEndian(sizeBuffer, (uint)count | 0x80000000u);
+        output.Write(sizeBuffer);
+        output.Write(sourceBlock);
       } else {
-        BinaryPrimitives.WriteUInt32LittleEndian(blockSizeBuf, (uint)compressed.Length);
-        output.Write(blockSizeBuf);
+        BinaryPrimitives.WriteUInt32LittleEndian(sizeBuffer, (uint)compressed.Length);
+        output.Write(sizeBuffer);
         output.Write(compressed);
       }
-      offset += chunkLen;
+      offset += count;
     }
 
-    // End mark
-    BinaryPrimitives.WriteUInt32LittleEndian(blockSizeBuf, 0);
-    output.Write(blockSizeBuf);
+    BinaryPrimitives.WriteUInt32LittleEndian(sizeBuffer, 0);
+    output.Write(sizeBuffer);
   }
 
-  /// <summary>Decompresses a Lizard frame stream.</summary>
   public static void Decompress(Stream input, Stream output) {
-    // Read and verify magic
-    Span<byte> magicBuf = stackalloc byte[4];
-    input.ReadExactly(magicBuf);
-    if (magicBuf[0] != Magic[0] || magicBuf[1] != Magic[1] ||
-        magicBuf[2] != Magic[2] || magicBuf[3] != Magic[3])
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
+    Span<byte> magic = stackalloc byte[4];
+    input.ReadExactly(magic);
+    if (!magic.SequenceEqual(Magic))
       throw new InvalidDataException("Not a Lizard stream: invalid magic.");
 
-    // FLG
-    var flg = (byte)input.ReadByte();
-    var hasCSize = (flg & 0x08) != 0;
+    var flags = ReadByte(input, "frame flags");
+    if ((flags >> 6) != 1)
+      throw new InvalidDataException($"Unsupported Lizard frame version {flags >> 6}.");
+    if ((flags & 0x03) != 0)
+      throw new InvalidDataException("Lizard frame has non-zero reserved flag bits.");
 
-    // BD
-    _ = (byte)input.ReadByte();
+    var blockIndependent = (flags & 0x20) != 0;
+    var blockChecksum = (flags & 0x10) != 0;
+    var hasContentSize = (flags & 0x08) != 0;
+    var contentChecksum = (flags & 0x04) != 0;
 
-    // Optional content size
-    if (hasCSize) {
-      Span<byte> cSizeBuf = stackalloc byte[8];
-      input.ReadExactly(cSizeBuf);
-      // content size is informational; not strictly needed for decompression
+    var blockDescriptor = ReadByte(input, "block descriptor");
+    if ((blockDescriptor & 0x8F) != 0)
+      throw new InvalidDataException("Lizard frame has non-zero reserved block descriptor bits.");
+    var maxFrameBlockSize = GetBlockSize((blockDescriptor >> 4) & 7);
+
+    Span<byte> descriptor = stackalloc byte[10];
+    var descriptorLength = 2;
+    descriptor[0] = flags;
+    descriptor[1] = blockDescriptor;
+
+    ulong? declaredContentSize = null;
+    if (hasContentSize) {
+      Span<byte> contentSize = stackalloc byte[8];
+      input.ReadExactly(contentSize);
+      declaredContentSize = BinaryPrimitives.ReadUInt64LittleEndian(contentSize);
+      contentSize.CopyTo(descriptor[2..]);
+      descriptorLength += 8;
     }
 
-    // HC (header checksum) — read and skip
-    input.ReadByte();
+    var expectedHeaderChecksum = ReadByte(input, "header checksum");
+    if ((byte)(XxHash32(descriptor[..descriptorLength]) >> 8) != expectedHeaderChecksum)
+      throw new InvalidDataException("Lizard frame header checksum mismatch.");
 
-    // Read blocks until end mark
-    Span<byte> blockSizeBuf = stackalloc byte[4];
+    var history = new List<byte>();
+    using var decodedFrame = new MemoryStream();
+    Span<byte> sizeBuffer = stackalloc byte[4];
+    Span<byte> checksumBuffer = stackalloc byte[4];
+
     while (true) {
-      input.ReadExactly(blockSizeBuf);
-      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(blockSizeBuf);
-      if (rawSize == 0) break; // end mark
+      input.ReadExactly(sizeBuffer);
+      var rawSize = BinaryPrimitives.ReadUInt32LittleEndian(sizeBuffer);
+      if (rawSize == 0)
+        break;
 
-      var isUncompressed = (rawSize & 0x80000000u) != 0;
-      var byteCount = (int)(rawSize & 0x7FFFFFFFu);
+      var stored = (rawSize & 0x80000000u) != 0;
+      var byteCount = checked((int)(rawSize & 0x7FFFFFFFu));
+      if (byteCount > maxFrameBlockSize)
+        throw new InvalidDataException($"Lizard frame block size {byteCount} exceeds advertised maximum {maxFrameBlockSize}.");
 
-      var blockData = new byte[byteCount];
-      input.ReadExactly(blockData);
-
-      if (isUncompressed) {
-        output.Write(blockData);
-      } else {
-        DecompressBlock(blockData, output);
+      var block = new byte[byteCount];
+      input.ReadExactly(block);
+      if (blockChecksum) {
+        input.ReadExactly(checksumBuffer);
+        var expected = BinaryPrimitives.ReadUInt32LittleEndian(checksumBuffer);
+        if (XxHash32(block) != expected)
+          throw new InvalidDataException("Lizard block checksum mismatch.");
       }
+
+      if (blockIndependent)
+        history.Clear();
+      var blockOutputStart = history.Count;
+      if (stored)
+        history.AddRange(block);
+      else
+        DecompressDataBlock(block, history);
+
+      var decodedBlockSize = history.Count - blockOutputStart;
+      if (decodedBlockSize > maxFrameBlockSize)
+        throw new InvalidDataException("Decoded Lizard block exceeds the frame's advertised maximum block size.");
+      for (var i = blockOutputStart; i < history.Count; ++i)
+        decodedFrame.WriteByte(history[i]);
     }
+
+    var decoded = decodedFrame.ToArray();
+    if (contentChecksum) {
+      input.ReadExactly(checksumBuffer);
+      if (XxHash32(decoded) != BinaryPrimitives.ReadUInt32LittleEndian(checksumBuffer))
+        throw new InvalidDataException("Lizard content checksum mismatch.");
+    }
+    if (declaredContentSize is { } size && size != (ulong)decoded.LongLength)
+      throw new InvalidDataException($"Lizard content size mismatch: header says {size}, decoded {decoded.LongLength}.");
+
+    output.Write(decoded);
   }
 
-  // ── LZ4-compatible block compression ────────────────────────────────────────
+  private static byte[] CompressDataBlock(ReadOnlySpan<byte> source, int compressionLevel) {
+    var data = source.ToArray();
+    var lizV1 = IsLizV1(compressionLevel);
+    int[] heads = [];
+    int[] previous = [];
+    if (lizV1)
+      CreateMatchTables(Math.Min(data.Length, MaxLizOffset + 1), out heads, out previous);
 
-  private static byte[] CompressBlock(ReadOnlySpan<byte> src) {
-    // Hash chain matching: min match 4, max offset 65535
-    var n = src.Length;
-    if (n == 0) return [];
-
-    // Hash table: maps 4-byte hash → last position seen
-    const int HashBits = 16;
-    const int HashSize = 1 << HashBits;
-    var hashTable = new int[HashSize];
-    Array.Fill(hashTable, -1);
-
-    using var outBuf = new MemoryStream();
-
-    var ip = 0;         // current input position
-    var anchor = 0;     // start of current literal run
-
-    // Need at least 4 bytes for a match
-    while (ip < n - 4) {
-      var hash = Hash4(src, ip);
-      var matchPos = hashTable[hash];
-      hashTable[hash] = ip;
-
-      // Try to find a match
-      var bestLen = 0;
-      var bestOffset = 0;
-
-      if (matchPos >= 0 && matchPos < ip && ip - matchPos <= 65535) {
-        var candidate = matchPos;
-        while (candidate >= 0 && candidate < ip && ip - candidate <= 65535) {
-          if (src[candidate] == src[ip] && src[candidate + 1] == src[ip + 1] &&
-              src[candidate + 2] == src[ip + 2] && src[candidate + 3] == src[ip + 3]) {
-            // Extend match
-            var ml = 4;
-            var maxMl = Math.Min(n - ip, ip - candidate); // can't overlap in source beyond n
-            // Actually max match length is limited to n - ip
-            var maxMatch = n - ip - 1; // leave at least 1 byte as end-of-block safety
-            if (maxMatch < 4) break;
-            while (ml < maxMatch && src[candidate + ml] == src[ip + ml])
-              ml++;
-            if (ml > bestLen) {
-              bestLen = ml;
-              bestOffset = ip - candidate;
-            }
-          }
-          // We don't maintain a full chain here, so stop after first candidate.
-          break;
-        }
+    using var output = new MemoryStream();
+    output.WriteByte((byte)compressionLevel);
+    for (var offset = 0; offset < data.Length; offset += RawBlockSize) {
+      var count = Math.Min(RawBlockSize, data.Length - offset);
+      var block = data.AsSpan(offset, count);
+      var compressed = lizV1
+        ? CompressLizV1Block(data, offset, count, compressionLevel, heads, previous)
+        : CompressFastBlock(block, compressionLevel);
+      if (compressed.Length == 0 || compressed.Length >= count + 4) {
+        output.WriteByte(FlagUncompressed);
+        WriteUInt24(output, count);
+        output.Write(block);
+      } else {
+        output.Write(compressed);
       }
+    }
+    return output.ToArray();
+  }
 
-      if (bestLen < 4) {
-        ip++;
+  private static byte[] CompressFastBlock(ReadOnlySpan<byte> source, int compressionLevel) {
+    if (source.Length < MatchFindLimit)
+      return [];
+
+    var data = source.ToArray();
+    CreateMatchTables(data.Length, out var heads, out var previous);
+    using var tokens = new MemoryStream();
+    using var literals = new MemoryStream();
+
+    var anchor = 0;
+    var position = 0;
+    var matchStartLimit = data.Length - MatchFindLimit;
+    var searchDepth = GetSearchDepth(compressionLevel);
+    var lazy = GetStrength(compressionLevel) >= 8;
+
+    while (position <= matchStartLimit) {
+      var match = FindBestMatch(data, position, heads, previous, searchDepth, MaxFastOffset, 0);
+      if (match.Length < MinMatch) {
+        Insert(data, position, heads, previous);
+        ++position;
         continue;
       }
 
-      // Emit sequence: literals [anchor..ip) + match
-      EmitSequence(outBuf, src, anchor, ip, bestOffset, bestLen);
-      ip += bestLen;
-      anchor = ip;
-
-      // Update hash table for skipped positions
-      if (ip < n - 4) {
-        hashTable[Hash4(src, ip)] = ip;
-      }
-    }
-
-    // Emit final literals
-    EmitFinalLiterals(outBuf, src, anchor);
-    return outBuf.ToArray();
-  }
-
-  private static void EmitSequence(MemoryStream output, ReadOnlySpan<byte> src,
-      int literalStart, int matchStart, int matchOffset, int matchLen) {
-    var litLen = matchStart - literalStart;
-    var mlCode = matchLen - 4; // LZ4: match length stored as (actual - 4)
-
-    // Token byte: high nibble = literal length (capped at 15), low nibble = match length code (capped at 15)
-    var litNibble = Math.Min(litLen, 15);
-    var mlNibble = Math.Min(mlCode, 15);
-    output.WriteByte((byte)((litNibble << 4) | mlNibble));
-
-    // Extra literal length bytes
-    if (litLen >= 15) {
-      var remaining = litLen - 15;
-      while (remaining >= 255) { output.WriteByte(255); remaining -= 255; }
-      output.WriteByte((byte)remaining);
-    }
-
-    // Literal bytes
-    for (var i = 0; i < litLen; i++)
-      output.WriteByte(src[literalStart + i]);
-
-    // Match offset: 2 bytes LE
-    output.WriteByte((byte)(matchOffset & 0xFF));
-    output.WriteByte((byte)(matchOffset >> 8));
-
-    // Extra match length bytes
-    if (mlCode >= 15) {
-      var remaining = mlCode - 15;
-      while (remaining >= 255) { output.WriteByte(255); remaining -= 255; }
-      output.WriteByte((byte)remaining);
-    }
-  }
-
-  private static void EmitFinalLiterals(MemoryStream output, ReadOnlySpan<byte> src, int literalStart) {
-    var litLen = src.Length - literalStart;
-    if (litLen == 0) return;
-
-    var litNibble = Math.Min(litLen, 15);
-    output.WriteByte((byte)(litNibble << 4)); // match nibble = 0 (no match at end)
-
-    if (litLen >= 15) {
-      var remaining = litLen - 15;
-      while (remaining >= 255) { output.WriteByte(255); remaining -= 255; }
-      output.WriteByte((byte)remaining);
-    }
-
-    for (var i = 0; i < litLen; i++)
-      output.WriteByte(src[literalStart + i]);
-    // No match offset/length for final literals
-  }
-
-  private static void DecompressBlock(byte[] src, Stream output) {
-    var result = new List<byte>(src.Length * 3);
-    var ip = 0;
-
-    while (ip < src.Length) {
-      var token = src[ip++];
-      var litLen = (token >> 4) & 0xF;
-      var mlCode = token & 0xF;
-
-      // Expand literal length
-      if (litLen == 15) {
-        int extra;
-        do {
-          extra = src[ip++];
-          litLen += extra;
-        } while (extra == 255);
+      if (lazy && position < matchStartLimit) {
+        Insert(data, position, heads, previous);
+        var next = FindBestMatch(data, position + 1, heads, previous, searchDepth, MaxFastOffset, 0);
+        if (next.Length > match.Length + 1) {
+          ++position;
+          continue;
+        }
       }
 
-      // Copy literals
-      for (var i = 0; i < litLen; i++)
-        result.Add(src[ip++]);
-
-      // Check if there's a match (end of block = no more data after literals)
-      if (ip >= src.Length) break;
-
-      // Match offset: 2 bytes LE
-      var matchOffset = src[ip] | (src[ip + 1] << 8);
-      ip += 2;
-
-      // Expand match length
-      var matchLen = mlCode + 4;
-      if (mlCode == 15) {
-        int extra;
-        do {
-          extra = src[ip++];
-          matchLen += extra;
-        } while (extra == 255);
-      }
-
-      // Copy match (may overlap — use byte-by-byte to handle overlapping copies correctly)
-      var matchStart = result.Count - matchOffset;
-      for (var i = 0; i < matchLen; i++)
-        result.Add(result[matchStart + i]);
+      EmitFastSequence(tokens, literals, data, anchor, position, match.Offset, match.Length);
+      var end = position + match.Length;
+      for (var p = lazy ? position + 1 : position; p < end && p <= matchStartLimit; ++p)
+        Insert(data, p, heads, previous);
+      position = end;
+      anchor = position;
     }
 
-    output.Write(result.ToArray());
+    literals.Write(data.AsSpan(anchor));
+    if (tokens.Length == 0)
+      return [];
+    return BuildCompressedBlock(tokens.ToArray(), literals.ToArray(), [], [], compressionLevel);
   }
 
-  private static int Hash4(ReadOnlySpan<byte> data, int pos) {
-    var v = BinaryPrimitives.ReadUInt32LittleEndian(data[pos..]);
-    return (int)(((v * 2654435761u) >> 16) & 0xFFFF);
+  private static byte[] CompressLizV1Block(byte[] source, int blockStart, int blockLength, int compressionLevel,
+      int[] heads, int[] previous) {
+    if (blockLength < MatchFindLimit)
+      return [];
+
+    using var tokens = new MemoryStream();
+    using var literals = new MemoryStream();
+    using var offsets16 = new MemoryStream();
+    using var offsets24 = new MemoryStream();
+
+    var blockEnd = blockStart + blockLength;
+    var anchor = blockStart;
+    var position = blockStart;
+    var lastOffset = 0;
+    var matchStartLimit = blockEnd - MatchFindLimit;
+    var searchDepth = GetSearchDepth(compressionLevel);
+    var lazy = GetStrength(compressionLevel) >= 6;
+
+    while (position <= matchStartLimit) {
+      var match = FindBestMatch(source, position, heads, previous, searchDepth, MaxLizOffset, lastOffset, blockEnd);
+      if (match.Length < MinMatch) {
+        Insert(source, position, heads, previous);
+        ++position;
+        continue;
+      }
+
+      if (lazy && position < matchStartLimit) {
+        Insert(source, position, heads, previous);
+        var next = FindBestMatch(source, position + 1, heads, previous, searchDepth, MaxLizOffset, lastOffset, blockEnd);
+        if (next.Length > match.Length + 1) {
+          ++position;
+          continue;
+        }
+      }
+
+      EmitLizV1Sequence(tokens, literals, offsets16, offsets24, source, anchor, position,
+        match.Offset, match.Length, ref lastOffset);
+      var end = position + match.Length;
+      for (var p = lazy ? position + 1 : position; p < end && p <= matchStartLimit; ++p)
+        Insert(source, p, heads, previous);
+      position = end;
+      anchor = position;
+    }
+
+    for (var p = matchStartLimit + 1; p + MinMatch <= blockEnd; ++p)
+      Insert(source, p, heads, previous);
+
+    literals.Write(source.AsSpan(anchor, blockEnd - anchor));
+    if (tokens.Length == 0)
+      return [];
+    return BuildCompressedBlock(tokens.ToArray(), literals.ToArray(), offsets16.ToArray(), offsets24.ToArray(), compressionLevel);
   }
 
-  // ── XXHash32 ─────────────────────────────────────────────────────────────────
+  private static byte[] BuildCompressedBlock(byte[] tokens, byte[] literals, byte[] offsets16, byte[] offsets24, int compressionLevel) {
+    var huffman = UsesHuffman(compressionLevel);
+    var lengthsRecord = EncodeStream([], false, out _);
+    var offset16Record = EncodeStream(offsets16, false, out _);
+    var offset24Record = EncodeStream(offsets24, false, out _);
+    var tokenRecord = EncodeStream(tokens, huffman, out var tokensHuffman);
+    var literalRecord = EncodeStream(literals, huffman, out var literalsHuffman);
+
+    byte header = 0;
+    if (tokensHuffman)
+      header |= FlagTokens;
+    if (literalsHuffman)
+      header |= FlagLiterals;
+
+    using var output = new MemoryStream(1 + lengthsRecord.Length + offset16Record.Length + offset24Record.Length + tokenRecord.Length + literalRecord.Length);
+    output.WriteByte(header);
+    output.Write(lengthsRecord);
+    output.Write(offset16Record);
+    output.Write(offset24Record);
+    output.Write(tokenRecord);
+    output.Write(literalRecord);
+    return output.ToArray();
+  }
+
+  private static byte[] EncodeStream(ReadOnlySpan<byte> data, bool tryHuffman, out bool huffman) {
+    if (tryHuffman && data.Length > 1024 && LizardHuffman.TryCompress(data) is { } compressed
+        && compressed.Length + compressed.Length / 8 + 512 < data.Length) {
+      using var encoded = new MemoryStream(6 + compressed.Length);
+      WriteUInt24(encoded, data.Length);
+      WriteUInt24(encoded, compressed.Length);
+      encoded.Write(compressed);
+      huffman = true;
+      return encoded.ToArray();
+    }
+
+    using var raw = new MemoryStream(3 + data.Length);
+    WriteUInt24(raw, data.Length);
+    raw.Write(data);
+    huffman = false;
+    return raw.ToArray();
+  }
+
+  private static void DecompressDataBlock(ReadOnlySpan<byte> source, List<byte> output) {
+    if (source.IsEmpty)
+      throw new InvalidDataException("Lizard compressed block is empty.");
+
+    var compressionLevel = source[0];
+    ValidateCompressionLevel(compressionLevel);
+    var position = 1;
+    while (position < source.Length) {
+      var blockOutputStart = output.Count;
+      var header = source[position++];
+      if (header == FlagUncompressed) {
+        var length = ReadUInt24(source, ref position);
+        if (length > RawBlockSize || length > source.Length - position)
+          throw new InvalidDataException("Invalid uncompressed Lizard block length.");
+        AddBytes(output, source.Slice(position, length));
+        position += length;
+        continue;
+      }
+      if ((header & FlagUncompressed) != 0 || (header & ~(FlagLiterals | FlagTokens | FlagOffset16 | FlagOffset24 | FlagLengths)) != 0)
+        throw new InvalidDataException($"Unknown Lizard internal block header 0x{header:X2}.");
+
+      var lengths = ReadStream(source, ref position, "lengths", (header & FlagLengths) != 0);
+      var offsets16 = ReadStream(source, ref position, "16-bit offsets", (header & FlagOffset16) != 0);
+      var offsets24 = ReadStream(source, ref position, "24-bit offsets", (header & FlagOffset24) != 0);
+      var tokens = ReadStream(source, ref position, "tokens", (header & FlagTokens) != 0);
+      var literals = ReadStream(source, ref position, "literals", (header & FlagLiterals) != 0);
+      if (lengths.Length != 0)
+        throw new InvalidDataException("Lizard v2 reference streams do not use the historical lengths stream.");
+
+      if (IsLizV1(compressionLevel))
+        DecompressLizV1Block(tokens, literals, offsets16, offsets24, output, blockOutputStart);
+      else
+        DecompressFastBlock(tokens, literals, offsets16, offsets24, output, blockOutputStart);
+    }
+  }
+
+  private static void DecompressFastBlock(byte[] tokens, byte[] literals, byte[] offsets16, byte[] offsets24,
+      List<byte> output, int blockOutputStart) {
+    if (offsets16.Length != 0 || offsets24.Length != 0)
+      throw new InvalidDataException("Lizard fastLZ4 codewords embed their 16-bit offsets in the literals stream.");
+
+    var literalPosition = 0;
+    foreach (var token in tokens) {
+      var literalLength = token & 0x0F;
+      if (literalLength == 15)
+        literalLength += ReadExtendedLength(literals, ref literalPosition);
+      CopyLiterals(literals, ref literalPosition, literalLength, output, blockOutputStart);
+
+      if (literals.Length - literalPosition < 2)
+        throw new InvalidDataException("Lizard fastLZ4 match is missing its offset.");
+      var matchOffset = BinaryPrimitives.ReadUInt16LittleEndian(literals.AsSpan(literalPosition));
+      literalPosition += 2;
+      if (matchOffset < MinOffset || matchOffset > output.Count)
+        throw new InvalidDataException($"Lizard match offset {matchOffset} is invalid at output position {output.Count}.");
+
+      var matchLength = token >> 4;
+      if (matchLength == 15)
+        matchLength += ReadExtendedLength(literals, ref literalPosition);
+      CopyMatch(output, blockOutputStart, matchOffset, matchLength + MinMatch);
+    }
+
+    var finalLiterals = literals.Length - literalPosition;
+    if (finalLiterals < LastLiterals)
+      throw new InvalidDataException("Compressed Lizard block violates the required 16-byte final-literals tail.");
+    CopyLiterals(literals, ref literalPosition, finalLiterals, output, blockOutputStart);
+  }
+
+  private static void DecompressLizV1Block(byte[] tokens, byte[] literals, byte[] offsets16, byte[] offsets24,
+      List<byte> output, int blockOutputStart) {
+    var literalPosition = 0;
+    var offset16Position = 0;
+    var offset24Position = 0;
+    var lastOffset = 0;
+
+    foreach (var token in tokens) {
+      int matchLength;
+      if (token >= 32) {
+        var literalLength = token & 7;
+        if (literalLength == 7)
+          literalLength += ReadExtendedLength(literals, ref literalPosition);
+        CopyLiterals(literals, ref literalPosition, literalLength, output, blockOutputStart);
+
+        var repeat = (token & 0x80) != 0;
+        if (!repeat) {
+          if (offsets16.Length - offset16Position < 2)
+            throw new InvalidDataException("LIZv1 token is missing its 16-bit offset.");
+          lastOffset = BinaryPrimitives.ReadUInt16LittleEndian(offsets16.AsSpan(offset16Position));
+          offset16Position += 2;
+          if (lastOffset < MinOffset)
+            throw new InvalidDataException("LIZv1 16-bit offset is below the reference minimum of 8.");
+        }
+
+        matchLength = (token >> 3) & 15;
+        if (matchLength == 15)
+          matchLength += ReadExtendedLength(literals, ref literalPosition);
+        if (!repeat && matchLength is > 0 and < MinMatch)
+          throw new InvalidDataException("LIZv1 new-offset token has a forbidden match length below four.");
+        if (matchLength == 0)
+          continue; // literal-only prefix before a long-offset token
+      } else {
+        if (offsets24.Length - offset24Position < 3)
+          throw new InvalidDataException("LIZv1 long-offset token is missing its 24-bit offset.");
+        lastOffset = ReadUInt24(offsets24, ref offset24Position);
+        if (lastOffset < MinOffset)
+          throw new InvalidDataException("LIZv1 24-bit offset is invalid.");
+        if (token < 31) {
+          matchLength = token + LongOffsetMinMatch;
+        } else {
+          matchLength = 47 + ReadExtendedLength(literals, ref literalPosition);
+        }
+      }
+
+      if (lastOffset <= 0 || lastOffset > output.Count)
+        throw new InvalidDataException($"LIZv1 match offset {lastOffset} is invalid at output position {output.Count}.");
+      CopyMatch(output, blockOutputStart, lastOffset, matchLength);
+    }
+
+    if (offset16Position != offsets16.Length || offset24Position != offsets24.Length)
+      throw new InvalidDataException("LIZv1 offset streams contain unused trailing values.");
+    var finalLiterals = literals.Length - literalPosition;
+    if (finalLiterals < LastLiterals)
+      throw new InvalidDataException("Compressed LIZv1 block violates the required 16-byte final-literals tail.");
+    CopyLiterals(literals, ref literalPosition, finalLiterals, output, blockOutputStart);
+  }
+
+  private static void EmitFastSequence(Stream tokens, Stream literals, byte[] source,
+      int literalStart, int matchStart, int offset, int matchLength) {
+    var literalLength = matchStart - literalStart;
+    var matchCode = matchLength - MinMatch;
+    var literalNibble = Math.Min(literalLength, 15);
+    var matchNibble = Math.Min(matchCode, 15);
+    tokens.WriteByte((byte)((matchNibble << 4) | literalNibble));
+    if (literalNibble == 15)
+      WriteExtendedLength(literals, literalLength - 15);
+    literals.Write(source.AsSpan(literalStart, literalLength));
+    Span<byte> offsetBytes = stackalloc byte[2];
+    BinaryPrimitives.WriteUInt16LittleEndian(offsetBytes, checked((ushort)offset));
+    literals.Write(offsetBytes);
+    if (matchNibble == 15)
+      WriteExtendedLength(literals, matchCode - 15);
+  }
+
+  private static void EmitLizV1Sequence(Stream tokens, Stream literals, Stream offsets16, Stream offsets24,
+      byte[] source, int literalStart, int matchStart, int offset, int matchLength, ref int lastOffset) {
+    var literalLength = matchStart - literalStart;
+    var repeat = lastOffset != 0 && offset == lastOffset;
+
+    if (repeat) {
+      var token = EncodeLizLiteralPrefix(literals, source, literalStart, literalLength);
+      token |= 0x80;
+      token |= checked((byte)(Math.Min(matchLength, 15) << 3));
+      if (matchLength >= 15)
+        WriteExtendedLength(literals, matchLength - 15);
+      tokens.WriteByte(token);
+      return;
+    }
+
+    if (offset >= LongOffsetThreshold) {
+      if (matchLength < LongOffsetMinMatch)
+        throw new InvalidOperationException("LIZv1 long offsets require matches of at least 16 bytes.");
+      if (literalLength > 0) {
+        var literalToken = EncodeLizLiteralPrefix(literals, source, literalStart, literalLength);
+        tokens.WriteByte((byte)(literalToken | 0x80)); // repeat offset + zero match = literal-only prefix
+      }
+
+      if (matchLength >= 47) {
+        tokens.WriteByte(31);
+        WriteExtendedLength(literals, matchLength - 47);
+      } else {
+        tokens.WriteByte(checked((byte)(matchLength - LongOffsetMinMatch)));
+      }
+      WriteUInt24(offsets24, offset);
+      lastOffset = offset;
+      return;
+    }
+
+    var shortToken = EncodeLizLiteralPrefix(literals, source, literalStart, literalLength);
+    Span<byte> offsetBytes = stackalloc byte[2];
+    BinaryPrimitives.WriteUInt16LittleEndian(offsetBytes, checked((ushort)offset));
+    offsets16.Write(offsetBytes);
+    lastOffset = offset;
+    shortToken |= checked((byte)(Math.Min(matchLength, 15) << 3));
+    if (matchLength >= 15)
+      WriteExtendedLength(literals, matchLength - 15);
+    tokens.WriteByte(shortToken);
+  }
+
+  private static byte EncodeLizLiteralPrefix(Stream literals, byte[] source, int literalStart, int literalLength) {
+    var shortLength = Math.Min(literalLength, 7);
+    if (literalLength >= 7)
+      WriteExtendedLength(literals, literalLength - 7);
+    literals.Write(source.AsSpan(literalStart, literalLength));
+    return checked((byte)shortLength);
+  }
+
+  private static (int Length, int Offset) FindBestMatch(byte[] source, int position, int[] heads, int[] previous,
+      int searchDepth, int maxOffset, int lastOffset, int matchEnd = -1) {
+    if (matchEnd < 0)
+      matchEnd = source.Length;
+    if (position + MinMatch > matchEnd)
+      return (0, 0);
+
+    var candidate = heads[Hash4(source, position)];
+    var bestLength = 0;
+    var bestOffset = 0;
+    var maxLength = matchEnd - LastLiterals - position;
+    var attempts = 0;
+    while (candidate >= 0 && attempts < searchDepth) {
+      var offset = position - candidate;
+      if (offset > maxOffset)
+        break;
+      if (offset < MinOffset) {
+        candidate = previous[candidate % previous.Length];
+        continue;
+      }
+      ++attempts;
+
+      if (source[candidate] == source[position] && source[candidate + 1] == source[position + 1]
+          && source[candidate + 2] == source[position + 2] && source[candidate + 3] == source[position + 3]) {
+        var length = MinMatch;
+        while (length < maxLength && source[candidate + length] == source[position + length])
+          ++length;
+        if (offset >= LongOffsetThreshold && offset != lastOffset && length < LongOffsetMinMatch) {
+          candidate = previous[candidate % previous.Length];
+          continue;
+        }
+        if (length > bestLength || length == bestLength && offset == lastOffset) {
+          bestLength = length;
+          bestOffset = offset;
+          if (length == maxLength)
+            break;
+        }
+      }
+      candidate = previous[candidate % previous.Length];
+    }
+    return (bestLength, bestOffset);
+  }
+
+  private static void CreateMatchTables(int length, out int[] heads, out int[] previous) {
+    heads = new int[HashSize];
+    previous = new int[length];
+    Array.Fill(heads, -1);
+    Array.Fill(previous, -1);
+  }
+
+  private static void Insert(byte[] source, int position, int[] heads, int[] previous) {
+    if (position + MinMatch > source.Length)
+      return;
+    var hash = Hash4(source, position);
+    previous[position % previous.Length] = heads[hash];
+    heads[hash] = position;
+  }
+
+  private static int Hash4(byte[] source, int position) =>
+    (int)((BinaryPrimitives.ReadUInt32LittleEndian(source.AsSpan(position)) * 2654435761u) >> (32 - HashBits));
+
+  private static int GetStrength(int compressionLevel) => compressionLevel % 10;
+
+  private static int GetSearchDepth(int compressionLevel) => GetStrength(compressionLevel) switch {
+    <= 1 => 1,
+    <= 3 => 2,
+    4 => 4,
+    5 => 8,
+    6 => 16,
+    7 => 256,
+    8 => 256,
+    _ => 512,
+  };
+
+  private static bool IsLizV1(int compressionLevel) => compressionLevel / 10 is 2 or 4;
+  private static bool UsesHuffman(int compressionLevel) => compressionLevel >= 30;
+
+  private static void CopyLiterals(byte[] literals, ref int position, int length, List<byte> output, int blockOutputStart) {
+    EnsureRawBlockCapacity(output.Count - blockOutputStart, length);
+    if (length < 0 || length > literals.Length - position)
+      throw new InvalidDataException("Lizard literal run exceeds its stream.");
+    AddBytes(output, literals.AsSpan(position, length));
+    position += length;
+  }
+
+  private static void CopyMatch(List<byte> output, int blockOutputStart, int offset, int length) {
+    EnsureRawBlockCapacity(output.Count - blockOutputStart, length);
+    if (offset < MinOffset || offset > output.Count)
+      throw new InvalidDataException($"Lizard match offset {offset} is invalid at output position {output.Count}.");
+    var matchStart = output.Count - offset;
+    for (var i = 0; i < length; ++i)
+      output.Add(output[matchStart + i]);
+  }
+
+  private static void WriteExtendedLength(Stream output, int remaining) {
+    if (remaining < 0)
+      throw new ArgumentOutOfRangeException(nameof(remaining));
+    if (remaining < 254) {
+      output.WriteByte((byte)remaining);
+      return;
+    }
+    if (remaining < 1 << 16) {
+      output.WriteByte(254);
+      Span<byte> value = stackalloc byte[2];
+      BinaryPrimitives.WriteUInt16LittleEndian(value, (ushort)remaining);
+      output.Write(value);
+      return;
+    }
+    if (remaining >= 1 << 24)
+      throw new InvalidOperationException("Lizard length exceeds the 24-bit format limit.");
+    output.WriteByte(255);
+    WriteUInt24(output, remaining);
+  }
+
+  private static int ReadExtendedLength(ReadOnlySpan<byte> source, ref int position) {
+    if (position >= source.Length)
+      throw new InvalidDataException("Truncated Lizard extended length.");
+    var first = source[position++];
+    if (first < 254)
+      return first;
+    if (first == 254) {
+      if (source.Length - position < 2)
+        throw new InvalidDataException("Truncated Lizard 16-bit extended length.");
+      var value = BinaryPrimitives.ReadUInt16LittleEndian(source[position..]);
+      position += 2;
+      return value;
+    }
+    return ReadUInt24(source, ref position);
+  }
+
+  private static byte[] ReadStream(ReadOnlySpan<byte> source, ref int position, string name, bool huffman) {
+    if (!huffman) {
+      var length = ReadUInt24(source, ref position);
+      if (length > source.Length - position)
+        throw new InvalidDataException($"Lizard {name} stream exceeds its block.");
+      var raw = source.Slice(position, length).ToArray();
+      position += length;
+      return raw;
+    }
+
+    var originalLength = ReadUInt24(source, ref position);
+    var compressedLength = ReadUInt24(source, ref position);
+    if (compressedLength > source.Length - position)
+      throw new InvalidDataException($"Compressed Lizard {name} stream exceeds its block.");
+    var result = LizardHuffman.Decompress(source.Slice(position, compressedLength), originalLength);
+    position += compressedLength;
+    return result;
+  }
+
+  private static void WriteUInt24(Stream output, int value) {
+    if ((uint)value > 0xFFFFFFu)
+      throw new ArgumentOutOfRangeException(nameof(value));
+    Span<byte> bytes = stackalloc byte[3];
+    bytes[0] = (byte)value;
+    bytes[1] = (byte)(value >> 8);
+    bytes[2] = (byte)(value >> 16);
+    output.Write(bytes);
+  }
+
+  private static int ReadUInt24(ReadOnlySpan<byte> source, ref int position) {
+    if (source.Length - position < 3)
+      throw new InvalidDataException("Truncated Lizard 24-bit value.");
+    var value = source[position] | source[position + 1] << 8 | source[position + 2] << 16;
+    position += 3;
+    return value;
+  }
+
+  private static int GetBlockSize(int blockSizeId) => blockSizeId switch {
+    1 => 128 * 1024,
+    2 => 256 * 1024,
+    3 => 1024 * 1024,
+    4 => 4 * 1024 * 1024,
+    5 => 16 * 1024 * 1024,
+    6 => 64 * 1024 * 1024,
+    7 => 256 * 1024 * 1024,
+    _ => throw new InvalidDataException($"Unsupported Lizard block-size id {blockSizeId}."),
+  };
+
+  private static byte ReadByte(Stream input, string field) {
+    var value = input.ReadByte();
+    if (value < 0)
+      throw new EndOfStreamException($"Truncated Lizard {field}.");
+    return (byte)value;
+  }
+
+  private static void ValidateCompressionLevel(int compressionLevel) {
+    if (compressionLevel is < 10 or > 49)
+      throw new ArgumentOutOfRangeException(nameof(compressionLevel), compressionLevel,
+        "Lizard compression levels range from 10 through 49.");
+  }
+
+  private static void EnsureRawBlockCapacity(int alreadyDecoded, int additional) {
+    if (additional < 0 || alreadyDecoded < 0 || additional > RawBlockSize - alreadyDecoded)
+      throw new InvalidDataException("Decoded Lizard internal block exceeds 128 KiB.");
+  }
+
+  private static void AddBytes(List<byte> output, ReadOnlySpan<byte> data) {
+    foreach (var value in data)
+      output.Add(value);
+  }
 
   private static uint XxHash32(ReadOnlySpan<byte> data, uint seed = 0) {
-    const uint Prime1 = 2654435761u, Prime2 = 2246822519u, Prime3 = 3266489917u,
-                Prime4 = 668265263u, Prime5 = 374761393u;
-    uint h;
-    int i = 0;
+    const uint prime1 = 2654435761u;
+    const uint prime2 = 2246822519u;
+    const uint prime3 = 3266489917u;
+    const uint prime4 = 668265263u;
+    const uint prime5 = 374761393u;
+
+    uint hash;
+    var position = 0;
     if (data.Length >= 16) {
-      uint v1 = seed + Prime1 + Prime2, v2 = seed + Prime2, v3 = seed, v4 = seed - Prime1;
-      int limit = data.Length - 16;
-      while (i <= limit) {
-        v1 = BitOperations.RotateLeft(v1 + BinaryPrimitives.ReadUInt32LittleEndian(data[i..]) * Prime2, 13) * Prime1; i += 4;
-        v2 = BitOperations.RotateLeft(v2 + BinaryPrimitives.ReadUInt32LittleEndian(data[i..]) * Prime2, 13) * Prime1; i += 4;
-        v3 = BitOperations.RotateLeft(v3 + BinaryPrimitives.ReadUInt32LittleEndian(data[i..]) * Prime2, 13) * Prime1; i += 4;
-        v4 = BitOperations.RotateLeft(v4 + BinaryPrimitives.ReadUInt32LittleEndian(data[i..]) * Prime2, 13) * Prime1; i += 4;
+      var v1 = seed + prime1 + prime2;
+      var v2 = seed + prime2;
+      var v3 = seed;
+      var v4 = seed - prime1;
+      var limit = data.Length - 16;
+      while (position <= limit) {
+        v1 = BitOperations.RotateLeft(v1 + BinaryPrimitives.ReadUInt32LittleEndian(data[position..]) * prime2, 13) * prime1;
+        position += 4;
+        v2 = BitOperations.RotateLeft(v2 + BinaryPrimitives.ReadUInt32LittleEndian(data[position..]) * prime2, 13) * prime1;
+        position += 4;
+        v3 = BitOperations.RotateLeft(v3 + BinaryPrimitives.ReadUInt32LittleEndian(data[position..]) * prime2, 13) * prime1;
+        position += 4;
+        v4 = BitOperations.RotateLeft(v4 + BinaryPrimitives.ReadUInt32LittleEndian(data[position..]) * prime2, 13) * prime1;
+        position += 4;
       }
-      h = BitOperations.RotateLeft(v1, 1) + BitOperations.RotateLeft(v2, 7) +
-          BitOperations.RotateLeft(v3, 12) + BitOperations.RotateLeft(v4, 18);
+      hash = BitOperations.RotateLeft(v1, 1) + BitOperations.RotateLeft(v2, 7)
+        + BitOperations.RotateLeft(v3, 12) + BitOperations.RotateLeft(v4, 18);
     } else {
-      h = seed + Prime5;
+      hash = seed + prime5;
     }
-    h += (uint)data.Length;
-    while (i <= data.Length - 4) { h = BitOperations.RotateLeft(h + BinaryPrimitives.ReadUInt32LittleEndian(data[i..]) * Prime3, 17) * Prime4; i += 4; }
-    while (i < data.Length) { h = BitOperations.RotateLeft(h + data[i] * Prime5, 11) * Prime1; i++; }
-    h ^= h >> 15; h *= Prime2; h ^= h >> 13; h *= Prime3; h ^= h >> 16;
-    return h;
+
+    hash += (uint)data.Length;
+    while (position <= data.Length - 4) {
+      hash = BitOperations.RotateLeft(hash + BinaryPrimitives.ReadUInt32LittleEndian(data[position..]) * prime3, 17) * prime4;
+      position += 4;
+    }
+    while (position < data.Length) {
+      hash = BitOperations.RotateLeft(hash + data[position] * prime5, 11) * prime1;
+      ++position;
+    }
+
+    hash ^= hash >> 15;
+    hash *= prime2;
+    hash ^= hash >> 13;
+    hash *= prime3;
+    hash ^= hash >> 16;
+    return hash;
   }
 }

@@ -9595,36 +9595,40 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 #### `LizardFormatDescriptor`
 
-Describes lizard format.
+Describes the Lizard (formerly LZ5) stream format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LizardFormatDescriptor` | `LizardFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Tunable Lizard parameters supported by the managed encoder. Upstream defines four method families across levels 10-49: fastLZ4 (10-19), LIZv1 (20-29), fastLZ4+HUF (30-39), and LIZv1+HUF (40-49). |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 #### `LizardStream`
 
-Lizard (formerly LZ5) compression stream. Frame format: magic (06 22 4D 18) + FLG + BD + ContentSize + HC + blocks + end mark. Block internals use LZ4-compatible token format.
+Managed Lizard (formerly LZ5) frame codec covering all four Lizard v2 method families: fastLZ4, LIZv1, fastLZ4+HUF, and LIZv1+HUF (levels 10-49).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses input into the Lizard frame format. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Lizard frame stream. |
+| `Compress` | `static void Compress(Stream input, Stream output)` |  |
+| `Compress` | `static void Compress(Stream input, Stream output, int compressionLevel, int blockSize)` |  |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` |  |
 
 ### Namespace `FileFormat.Lnk`
 
