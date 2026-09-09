@@ -22,14 +22,23 @@ public class MacBinaryHeader {
   /// <summary>Length of the resource fork in bytes.</summary>
   public uint ResourceForkLength { get; init; }
 
+  /// <summary>Length of the Get Info comment stored after the resource fork.</summary>
+  public ushort GetInfoCommentLength { get; init; }
+
+  /// <summary>Length of the optional secondary header immediately following the main header.</summary>
+  public ushort SecondaryHeaderLength { get; init; }
+
   /// <summary>File creation date.</summary>
   public DateTime CreatedDate { get; init; }
 
   /// <summary>File modification date.</summary>
   public DateTime ModifiedDate { get; init; }
 
-  /// <summary>MacBinary version (0 = I, 129 = II, 130 = III).</summary>
+  /// <summary>MacBinary version used to create the file (0 = I, 129 = II, 130 = III).</summary>
   public byte Version { get; init; }
+
+  /// <summary>Minimum MacBinary version required to read the file.</summary>
+  public byte MinimumVersion { get; init; }
 
   /// <summary>CRC-16 of header bytes 0-123 (MacBinary II and III).</summary>
   public ushort HeaderCrc { get; init; }

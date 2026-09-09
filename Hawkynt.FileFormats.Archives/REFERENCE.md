@@ -10411,7 +10411,7 @@ Implements `IEquatable<VariantStream>`.
 
 ### Namespace `FileFormat.MacBinary`
 
-[`MacBinaryFormatDescriptor`](#macbinaryformatdescriptor) · [`MacBinaryHeader`](#macbinaryheader) · [`MacBinaryReader`](#macbinaryreader) · [`MacBinaryWriter`](#macbinarywriter)
+[`MacBinaryFormatDescriptor`](#macbinaryformatdescriptor) · [`MacBinaryHeader`](#macbinaryheader) · [`MacBinaryOptimizer`](#macbinaryoptimizer) · [`MacBinaryReader`](#macbinaryreader) · [`MacBinaryWriter`](#macbinarywriter)
 
 #### `MacBinaryFormatDescriptor`
 
@@ -10450,10 +10450,21 @@ Represents the 128-byte header of a MacBinary encoded file.
 | `FileName` | `string FileName { get; init; }` | Mac filename (1-63 characters). |
 | `FileType` | `byte[] FileType { get; init; }` | 4-byte Mac file type (e.g., "TEXT"). |
 | `FinderFlags` | `byte FinderFlags { get; init; }` | Finder flags high byte. |
+| `GetInfoCommentLength` | `ushort GetInfoCommentLength { get; init; }` | Length of the Get Info comment stored after the resource fork. |
 | `HeaderCrc` | `ushort HeaderCrc { get; init; }` | CRC-16 of header bytes 0-123 (MacBinary II and III). |
+| `MinimumVersion` | `byte MinimumVersion { get; init; }` | Minimum MacBinary version required to read the file. |
 | `ModifiedDate` | `DateTime ModifiedDate { get; init; }` | File modification date. |
 | `ResourceForkLength` | `uint ResourceForkLength { get; init; }` | Length of the resource fork in bytes. |
-| `Version` | `byte Version { get; init; }` | MacBinary version (0 = I, 129 = II, 130 = III). |
+| `SecondaryHeaderLength` | `ushort SecondaryHeaderLength { get; init; }` | Length of the optional secondary header immediately following the main header. |
+| `Version` | `byte Version { get; init; }` | MacBinary version used to create the file (0 = I, 129 = II, 130 = III). |
+
+#### `MacBinaryOptimizer`
+
+Canonicalizes MacBinary I/II/III files without changing their represented Macintosh file.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Optimize` | `static void Optimize(Stream input, Stream output)` | Writes a canonical, semantically equivalent MacBinary representation of `input` to `output`. |
 
 #### `MacBinaryReader`
 

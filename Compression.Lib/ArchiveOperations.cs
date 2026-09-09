@@ -705,6 +705,15 @@ public static class ArchiveOperations {
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
+    // ── MacBinary: canonicalize the wrapper without dropping Mac-specific payloads ──
+    if (format == F.MacBinary) {
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+        using var inFs = File.OpenRead(inputPath);
+        FileFormat.MacBinary.MacBinaryOptimizer.Optimize(inFs, outFs);
+      });
+      return (originalSize, new FileInfo(outputPath).Length, 1);
+    }
+
     // ── Compound tar: re-encode outer compression with best level ────
     var comp = FormatDetector.GetTarCompression(format);
     if (comp.HasValue) {
