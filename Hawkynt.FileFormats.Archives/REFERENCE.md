@@ -8875,7 +8875,7 @@ Implements `IDisposable`.
 
 Describes ice packer format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8891,8 +8891,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Encoder effort. This changes only how deeply the managed writer searches its LZ77 hash chains; the resulting ICE stream is self-contained and needs no matching decoder setting. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes at every declared search depth and writes the smallest result. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested optimizer-visible level. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `IcePackerStream`
@@ -8901,8 +8904,11 @@ Compressor and decompressor for the Atari ST ICE Packer format (Axe of Delight, 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
+| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Match-chain depth used by the historical no-options compressor. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses raw data into ICE Packer format. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int searchDepth)` | Compresses raw data into ICE Packer format using the requested LZ77 match search depth. |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses raw data from `input` in ICE Packer format and writes the result to `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output, int searchDepth)` | Compresses raw data while controlling how many candidates each LZ77 hash chain may inspect. A larger search depth is slower but may find a better tokenization; the encoded stream itself does not store this encoder-only knob. |
 | `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses ICE-packed data from a byte span. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses ICE-packed data from `input` and writes the original data to `output`. |
 

@@ -10,6 +10,11 @@ namespace FileFormat.IcePacker;
 /// and the output buffer is filled from end to start.
 /// </summary>
 public static class IcePackerStream {
+  /// <summary>
+  /// Match-chain depth used by the historical no-options compressor.
+  /// </summary>
+  public const int DefaultSearchDepth = 64;
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /// <summary>
@@ -36,12 +41,24 @@ public static class IcePackerStream {
   /// </summary>
   /// <param name="input">Stream containing the raw data to compress.</param>
   /// <param name="output">Stream that receives the ICE-packed output.</param>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output)
+    => Compress(input, output, DefaultSearchDepth);
+
+  /// <summary>
+  /// Compresses raw data while controlling how many candidates each LZ77 hash
+  /// chain may inspect. A larger search depth is slower but may find a better
+  /// tokenization; the encoded stream itself does not store this encoder-only knob.
+  /// </summary>
+  /// <param name="input">Stream containing the raw data to compress.</param>
+  /// <param name="output">Stream that receives the ICE-packed output.</param>
+  /// <param name="searchDepth">Maximum number of hash-chain candidates inspected per position.</param>
+  public static void Compress(Stream input, Stream output, int searchDepth) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    ArgumentOutOfRangeException.ThrowIfLessThan(searchDepth, 1);
 
     var data = ReadAllBytes(input);
-    var result = CompressCore(data);
+    var result = CompressCore(data, searchDepth);
     output.Write(result);
   }
 
@@ -57,7 +74,19 @@ public static class IcePackerStream {
   /// </summary>
   /// <param name="data">The raw bytes to compress.</param>
   /// <returns>The ICE-packed data including header.</returns>
-  public static byte[] Compress(ReadOnlySpan<byte> data) => CompressCore(data);
+  public static byte[] Compress(ReadOnlySpan<byte> data) => CompressCore(data, DefaultSearchDepth);
+
+  /// <summary>
+  /// Compresses raw data into ICE Packer format using the requested LZ77 match
+  /// search depth.
+  /// </summary>
+  /// <param name="data">The raw bytes to compress.</param>
+  /// <param name="searchDepth">Maximum number of hash-chain candidates inspected per position.</param>
+  /// <returns>The ICE-packed data including header.</returns>
+  public static byte[] Compress(ReadOnlySpan<byte> data, int searchDepth) {
+    ArgumentOutOfRangeException.ThrowIfLessThan(searchDepth, 1);
+    return CompressCore(data, searchDepth);
+  }
 
   // ── Decompression ──────────────────────────────────────────────────────────
 
@@ -154,7 +183,7 @@ public static class IcePackerStream {
     public static Token CreateMatch(int length, int offset) => new(true, 0, length, offset);
   }
 
-  private static byte[] CompressCore(ReadOnlySpan<byte> input) {
+  private static byte[] CompressCore(ReadOnlySpan<byte> input, int searchDepth) {
     if (input.Length == 0) {
       var empty = new byte[IcePackerConstants.HeaderSize];
       BinaryPrimitives.WriteUInt32BigEndian(empty, IcePackerConstants.Magic1);
@@ -166,7 +195,7 @@ public static class IcePackerStream {
     // reverse the input first. Tokens from the reversed scan are in decode order.
     var reversed = input.ToArray();
     Array.Reverse(reversed);
-    var tokens = FindTokens(reversed);
+    var tokens = FindTokens(reversed, searchDepth);
 
     // Phase 2: Encode tokens using a backward bit writer.
     // The decompressor reads bits from the END of packed data toward the START,
@@ -225,14 +254,14 @@ public static class IcePackerStream {
   /// <summary>
   /// Scans the input forward using a hash chain match finder and produces a list of tokens.
   /// </summary>
-  private static List<Token> FindTokens(ReadOnlySpan<byte> input) {
+  private static List<Token> FindTokens(ReadOnlySpan<byte> input, int searchDepth) {
     var tokens = new List<Token>();
 
-    // Use HashChainMatchFinder for efficient match finding.
-    // ICE max offset is 4096 and max length is 267.
+    // ICE max offset is 4096 and max length is 267. Search depth is an
+    // encoder-only trade-off: more candidates cost CPU but may improve the parse.
     var matchFinder = new HashChainMatchFinder(
       windowSize: IcePackerConstants.MaxOffsetLong,
-      maxChainDepth: 64);
+      maxChainDepth: searchDepth);
 
     var pos = 0;
     while (pos < input.Length) {
