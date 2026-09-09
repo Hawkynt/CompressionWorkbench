@@ -13177,23 +13177,7 @@ Builds a fresh TRSDOS / LDOS disk image from scratch (Write-Once, Read-Many). Th
 
 ### Namespace `FileSystem.Tux2`
 
-[`Tux2BlockMover`](#tux2blockmover) · [`Tux2Entry`](#tux2entry) · [`Tux2FormatDescriptor`](#tux2formatdescriptor) · [`Tux2Reader`](#tux2reader) · [`Tux2RecordMap`](#tux2recordmap) · [`Tux2Writer`](#tux2writer)
-
-#### `Tux2BlockMover`
-
-Moves a whole record inside the container, which needs nothing else rewritten.
-
-Implements `IFilesystemBlockMover`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Tux2BlockMover` | `Tux2BlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A byte: records are packed to the byte, not to any larger unit. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a record may occupy: past the container's header. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call moves the record it is given and nothing else. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A record may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+[`Tux2Entry`](#tux2entry) · [`Tux2FormatDescriptor`](#tux2formatdescriptor) · [`Tux2Reader`](#tux2reader)
 
 #### `Tux2Entry`
 
@@ -13210,97 +13194,48 @@ Represents a tux 2 entry.
 
 #### `Tux2FormatDescriptor`
 
-Read+WORM descriptor for TUX2 — Daniel Phillips's 2002 phase-tree filesystem proposal (OLS 2002 paper, never-stabilised research format). Recognises a deterministic header pattern (magic "TUX2FS\0\0" at offset 0) so research images we generate round-trip through the reader. Writer emits a single-phase image only (no alpha/beta phases, no version chain) — real legacy prototype images would need a custom parser matching the specific snapshot of the in-progress code that produced them. References: Daniel Phillips, "The Tux2 Filesystem" (Ottawa Linux Symposium 2002 proceedings) — the defining paper`https://en.wikipedia.org/wiki/Tux3` — Wikipedia article covering the phase-tree lineage
+Opaque/manual descriptor for Daniel Phillips's TUX2 phase-tree research filesystem.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Tux2FormatDescriptor` | `Tux2FormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The single tunable the single-phase WORM writer honours: the on-disk format version stamped into the header at offset 0x08. `Version` is written verbatim and `Version` reads it back, so the knob round-trips. Defaults to 1 (the version the reader documents). |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh single-phase TUX2 image: 16-byte header (magic + version + file count) followed by per-file records (u16 name length, UTF-8 name, u32 data length, raw bytes). Round-trips through `Tux2Reader`. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Header, per-record prefixes and any tail slack are metadata; each record body is the file that owns it. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default would feed this reader's synthetic entries — the raw image and the metadata sheet — back in as files; they are excluded so the rebuilt volume holds the same files the original did. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `Tux2Reader`
 
-Detection-only / synthetic-image reader for TUX2 — Daniel Phillips's 2000-era "phase tree" filesystem proposal. TUX2 was a research design (atomic phase-tree commits, copy-on-write metadata) that never reached a stable on-disk layout shipped to end users. No public spec for the in-progress prototype's on-disk format ever stabilised; the project was eventually superseded by TUX3. Because no canonical TUX2 images exist in the wild, this reader recognises a deterministic synthetic header — a chosen 8-byte ASCII magic "TUX2FS\0\0" at offset 0 followed by a small JSON-ish payload — so that the descriptor at least round-trips its own synthetic images for testing. Real TUX2 prototype dumps (if any survive) would need a custom parser matching the specific cvs-era code path that produced them. Synthetic header layout (little-endian): 0x00 8 bytes Magic = "TUX2FS\0\0" 0x08 u32 version (1) 0x0C u32 file_count 0x10 ... per-file records: u16 name_len name (UTF-8, name_len bytes) u32 data_len data (data_len bytes)
+Opaque reader for the historical TUX2 research filesystem.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Tux2Reader` | `Tux2Reader(Stream stream)` | Initializes a new instance of `Tux2Reader`. |
-| `Magic` | `static readonly byte[] Magic` | Provides the magic value. |
-| `Entries` | `IReadOnlyList<Tux2Entry> Entries { get; }` | Gets the entries. |
-| `FileCount` | `uint FileCount { get; }` | Gets or sets the file count. |
-| `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Version` | `uint Version { get; }` | Gets or sets the version. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `long ExtractTo(Tux2Entry entry, Stream destination)` | Writes `entry`'s bytes into `destination`. |
-| `Extract` | `byte[] Extract(Tux2Entry entry)` | Decodes the supplied input. |
-
-#### `Tux2RecordMap`
-
-Describes the container one whole record at a time — the name, the lengths and the bytes that follow them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | The layout a pass plans against: the header, then one run per record. |
-
-#### `Tux2Writer`
-
-WORM writer for the TUX2 synthetic image layout that `Tux2Reader` parses. TUX2 was a 2002-era phase-tree research filesystem (Daniel Phillips, kernel.org/doc/ols/2002/) whose on-disk format never stabilised — no canonical real-world images exist. The reader documents (and round-trips) a deterministic synthetic header that we emit here: Single-phase only (no alpha/beta phases, no version chain) — matches the goal of "WORM emit single-phase image with N files (no research-level snapshots)". Round-trips through `Tux2Reader`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Tux2Writer` | `Tux2Writer()` |  |
-| `Version` | `uint Version { get; init; }` | Gets or sets the version. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Action<Stream> copy)` | Adds a file whose bytes are written straight into the output by `copy`. Nothing is buffered, so a record may be as large as the record header's u32 length field allows. |
-| `Build` | `byte[] Build()` | Performs the build operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `Tux2Reader` | `Tux2Reader(Stream stream)` | Initializes a reader over the selected image. |
+| `Entries` | `IReadOnlyList<Tux2Entry> Entries { get; }` | Gets the entries exposed by this opaque reader. |
+| `Length` | `long Length { get; }` | Gets the total size of the selected image. |
+| `LooksLikeExt2` | `bool LooksLikeExt2 { get; }` | Gets whether the image carries the Ext2 family superblock magic at the canonical offset. This is only a compatibility hint, not a TUX2 identity test. |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractTo` | `long ExtractTo(Tux2Entry entry, Stream destination)` | Streams an entry to `destination`. |
+| `Extract` | `byte[] Extract(Tux2Entry entry)` | Returns an entry as a byte array when it fits the CLR array limit. |
 
 ### Namespace `FileSystem.Tux3`
 
-[`Tux3BlockMover`](#tux3blockmover) · [`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3Reader`](#tux3reader) · [`Tux3RecordMap`](#tux3recordmap) · [`Tux3Writer`](#tux3writer)
-
-#### `Tux3BlockMover`
-
-Moves a whole record inside the container, which needs nothing else rewritten.
-
-Implements `IFilesystemBlockMover`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Tux3BlockMover` | `Tux3BlockMover()` |  |
-| `BlockSize` | `int BlockSize { get; }` | A byte: records are packed to the byte, not to any larger unit. |
-| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a record may occupy: past the container's header. |
-| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call moves the record it is given and nothing else. |
-| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A record may be held outside the container while the rest of the layout moves, which is what lets a full one be rearranged at all. |
-| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Performs the update allocation after move operation. |
+[`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3Reader`](#tux3reader)
 
 #### `Tux3Entry`
 
@@ -13317,88 +13252,62 @@ Represents a tux 3 entry.
 
 #### `Tux3FormatDescriptor`
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
+Read-only native-superblock descriptor for the linux-tux3 research filesystem.
+
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Tux3FormatDescriptor` | `Tux3FormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The single tunable the single-version WORM writer honours: the 64-bit `birthday` field stamped into the superblock at offset 0x08. `Birthday` is written verbatim and `Birthday` reads it back, so the knob round-trips. Supplied as a hexadecimal string (with or without a leading `0x`); left blank the writer takes the moment of creation from the clock. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh single-version TUX3 image: zeroed boot region (block 0), documented superblock prefix (block 1, "TUX3SUPR" magic at offset 4096), and a sentinel WORM file table at block 2 carrying the per-file records. Round-trips through `Tux3Reader`. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Boot block, superblock, WORM-table prefixes and the tail padding are metadata; each record body is the file that owns it. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Re-lays the volume out with the requested geometry. The generic default would feed this reader's synthetic entries — the raw image and the metadata sheet — back in as files; they are excluded so the rebuilt volume holds the same files the original did. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 #### `Tux3Reader`
 
-Detection / metadata-surface reader for TUX3 — Daniel Phillips's successor to TUX2, a version-tree based filesystem with copy-on-write metadata and atomic commit semantics. The Tux3 prototype lives in the linux-tux3 tree on kernel.org and uses a superblock magic of "TUX3SUPR" (8 ASCII bytes). Full B-tree traversal of itable / atable is multi-week work; this reader surfaces the parsed superblock as structured metadata plus the raw image. Superblock layout (the documented prefix; little-endian; sits at file offset 4096 == one 4KiB block): 0x00 8 bytes Magic = "TUX3SUPR" 0x08 u64 birthday 0x10 u64 flags 0x18 u64 iroot (root of itable B-tree) 0x20 u64 oroot (root of otable B-tree) 0x28 u64 aroot (root of atable B-tree) 0x30 u64 blockbits 0x38 u64 volblocks 0x40 u64 freeblocks 0x48 u64 nextalloc 0x50 u32 atomgen 0x54 u32 freeatom ... On top of the documented superblock surface, this reader also recognises an optional WORM file table emitted by `Tux3Writer`: a sentinel header "TUX3WORM" placed at offset `8192` (block 2, immediately after the superblock block) followed by a u32 file count and per-file records (u16 name length, UTF-8 name, u32 data length, raw bytes). Single-version WORM images created by `Tux3Writer` round-trip through this reader; B-tree-formatted prototype images continue to surface only as `FULL.tux3` + `metadata.ini` + `superblock.bin`.
+Native-superblock reader for the linux-tux3 research filesystem.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Tux3Reader` | `Tux3Reader(Stream stream)` | Initializes a new instance of `Tux3Reader`. |
-| `Magic` | `static readonly byte[] Magic` | Provides the magic value. |
-| `SuperblockOffset` | `const int SuperblockOffset` | Defines the superblock offset constant value. |
-| `WormTableMagic` | `static readonly byte[] WormTableMagic` | Sentinel marker for the optional WORM file table appended after the superblock at `WormTableOffset`. |
-| `WormTableOffset` | `const int WormTableOffset` | Defines the worm table offset constant value. |
-| `ARoot` | `ulong ARoot { get; }` | Gets or sets the a root. |
-| `Birthday` | `ulong Birthday { get; }` | Gets or sets the birthday. |
-| `BlockBits` | `ulong BlockBits { get; }` | Gets or sets the block bits. |
-| `Entries` | `IReadOnlyList<Tux3Entry> Entries { get; }` | Gets the entries. |
-| `Flags` | `ulong Flags { get; }` | Gets or sets the flags. |
-| `FreeBlocks` | `ulong FreeBlocks { get; }` | Gets or sets the free blocks. |
-| `HasWormTable` | `bool HasWormTable { get; }` | Gets a value indicating whether has worm table. |
-| `IRoot` | `ulong IRoot { get; }` | Gets or sets the i root. |
-| `Length` | `long Length { get; }` | Total size of the backing image in bytes. |
-| `ORoot` | `ulong ORoot { get; }` | Gets or sets the o root. |
-| `ValidSuperblock` | `bool ValidSuperblock { get; }` | Gets a value indicating whether valid superblock. |
-| `VolBlocks` | `ulong VolBlocks { get; }` | Gets or sets the vol blocks. |
-| `WormFileCount` | `uint WormFileCount { get; }` | Gets or sets the worm file count. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractTo` | `long ExtractTo(Tux3Entry entry, Stream destination)` | Writes `entry`'s bytes into `destination`. |
-| `Extract` | `byte[] Extract(Tux3Entry entry)` | Decodes the supplied input. |
-
-#### `Tux3RecordMap`
-
-Describes the WORM table one whole record at a time — the name, the length and the bytes that follow them.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | The layout a pass plans against: the head, then one run per record. |
-
-#### `Tux3Writer`
-
-WORM writer for the TUX3 prototype on-disk surface that `Tux3Reader` parses. TUX3 was Daniel Phillips's version-tree successor to TUX2; the linux-tux3 prototype was never declared stable, so this writer emits the documented superblock prefix (magic "TUX3SUPR" at block offset 4096 plus the documented 0x60-byte field set) followed by a sentinel WORM file table at block 2 (offset 8192). The version-tree itself is collapsed to a single version — no version chain, no atomic-commit log — matching the goal "WORM emit single-version image with N files". Layout produced (little-endian): Round-trips through `Tux3Reader`. Real linux-tux3 prototype dumps that use the itable/otable/atable B-trees are not emitted by this writer (the B-tree code paths in the prototype were never stabilised); a real-world dump would need a full B-tree writer.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Tux3Writer` | `Tux3Writer()` |  |
-| `Birthday` | `ulong Birthday { get; init; }` | When the volume claims it was made. Taken from the clock unless set, because a birthday that reads the same on every volume is a maker's mark. |
-| `BlockBits` | `ulong BlockBits { get; init; }` | Gets or sets the block bits. |
-| `Flags` | `ulong Flags { get; init; }` | Gets or sets the flags. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Action<Stream> copy)` | Adds a file whose bytes are written straight into the output by `copy`. Nothing is buffered, so a record may be as large as the record header's u32 length field allows. |
-| `Build` | `byte[] Build()` | Performs the build operation. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `Tux3Reader` | `Tux3Reader(Stream stream)` | Initializes a reader over a TUX3 image. |
+| `DiskSuperSize` | `const int DiskSuperSize` | Size in bytes of the packed current `struct disksuper`. |
+| `Legacy2012Magic` | `static readonly byte[] Legacy2012Magic` | Older 2012-12-20 userspace-tree disk-format magic. |
+| `Magic` | `static readonly byte[] Magic` | Current linux-tux3 disk-format magic (2014-05-06 revision). |
+| `SuperblockOffset` | `const int SuperblockOffset` | Fixed byte offset of `struct disksuper`. |
+| `AtomDictionarySize` | `ulong AtomDictionarySize { get; }` |  |
+| `AtomGeneration` | `uint AtomGeneration { get; }` |  |
+| `Birthday` | `ulong Birthday { get; }` |  |
+| `BlockBits` | `ushort BlockBits { get; }` |  |
+| `Entries` | `IReadOnlyList<Tux3Entry> Entries { get; }` | Gets the entries exposed by this metadata-only reader. |
+| `Flags` | `ulong Flags { get; }` |  |
+| `FreeAtom` | `uint FreeAtom { get; }` |  |
+| `IRoot` | `ulong IRoot { get; }` |  |
+| `Length` | `long Length { get; }` | Gets the total image size. |
+| `LogChain` | `ulong LogChain { get; }` |  |
+| `LogCount` | `uint LogCount { get; }` |  |
+| `NextBlock` | `ulong NextBlock { get; }` |  |
+| `ORoot` | `ulong ORoot { get; }` |  |
+| `Revision` | `string Revision { get; }` | Gets the disk-format revision identified by the eight-byte magic. |
+| `UsedInodes` | `ulong UsedInodes { get; }` |  |
+| `ValidSuperblock` | `bool ValidSuperblock { get; }` | Gets whether a supported native superblock was parsed. |
+| `VolBlocks` | `ulong VolBlocks { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractTo` | `long ExtractTo(Tux3Entry entry, Stream destination)` | Streams an entry to `destination`. |
+| `Extract` | `byte[] Extract(Tux3Entry entry)` | Returns an entry as a byte array when it fits the CLR array limit. |
 
 ### Namespace `FileSystem.Ubifs`
 
