@@ -85,10 +85,7 @@ internal sealed class RefsCowBlockRefcountEditor {
         var fresh = RefsBlockRefcountCodec.BuildFreshValue(
           rowStart,
           checked(this._metadata.ActiveCheckpointClock + 1));
-        var deltas = requestedDeltas.ToDictionary(
-          item => item.Key,
-          item => checked(item.Value + 1)); // materialize the implicit ordinary owner
-        var changed = RefsBlockRefcountCodec.AdjustCounts(fresh, deltas);
+        var changed = RefsBlockRefcountCodec.AddCloneReferences(fresh, requestedDeltas);
         rows.Insert(FindInsertion(rows, key, comparer), new RefsTreeRow(key, changed));
         continue;
       }
@@ -102,17 +99,9 @@ internal sealed class RefsCowBlockRefcountEditor {
         throw new NotSupportedException(
           $"ReFS Block Refcount range 0x{rowStart:X}+0x400 is not a writable normal 0x820-byte row.");
 
-      var deltas = new Dictionary<int, int>(requestedDeltas.Count);
-      foreach (var (index, delta) in requestedDeltas) {
-        var raw = RefsBlockRefcountCodec.ReadRaw(row.Value, index);
-        var count = raw & RefsBlockRefcountCodec.CountMask;
-        var flags = raw & ~RefsBlockRefcountCodec.CountMask;
-        deltas[index] = delta > 0 && count == 0 && flags == 0
-          ? checked(delta + 1) // zero slot is sparse-table shorthand for one ordinary owner
-          : delta;
-      }
-
-      var updated = RefsBlockRefcountCodec.AdjustCounts(row.Value, deltas);
+      var updated = requestedDeltas.Values.All(delta => delta > 0)
+        ? RefsBlockRefcountCodec.AddCloneReferences(row.Value, requestedDeltas)
+        : RefsBlockRefcountCodec.AdjustCounts(row.Value, requestedDeltas);
       if (RefsBlockRefcountCodec.IsUnflaggedZeroRow(updated))
         rows.RemoveAt(rowIndex);
       else
