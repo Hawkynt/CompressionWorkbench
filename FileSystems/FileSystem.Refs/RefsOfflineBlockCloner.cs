@@ -20,8 +20,15 @@ internal sealed record RefsOfflineCloneResult(
 /// refuses resident, sparse, integrity, already-shared and otherwise undecoded
 /// stream layouts. Native mounted-driver/MLog semantics remain fail-closed.
 /// </summary>
-internal static class RefsOfflineBlockCloner {
-  public static RefsOfflineCloneResult CloneWholeFile(
+public static class RefsOfflineBlockCloner {
+  /// <summary>
+  /// Replaces the contents of an existing destination file with a metadata-only
+  /// clone of an existing source file on an unmounted ReFS image.
+  /// </summary>
+  public static void CloneWholeFile(Stream image, string sourcePath, string destinationPath)
+    => CloneWholeFileCore(image, sourcePath, destinationPath);
+
+  internal static RefsOfflineCloneResult CloneWholeFileCore(
       Stream image,
       string sourcePath,
       string destinationPath) {
