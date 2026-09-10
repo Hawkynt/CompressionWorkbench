@@ -96,8 +96,8 @@ public static class D81MountValidator {
             writable = false;
             limitations.Add("REL files use 1581 super-side-sector metadata that the writable session does not model.");
           } else if (baseType == 5) {
-            writable = false;
-            limitations.Add("CBM partition/subdirectory entries are not modeled by the flat writable session.");
+            throw new InvalidDataException(
+              "D81 contains a CBM partition/subdirectory entry; the current flat mounted namespace cannot represent it losslessly.");
           }
           if ((fileType & 0x80) == 0) {
             writable = false;
