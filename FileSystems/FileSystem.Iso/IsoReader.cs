@@ -90,8 +90,6 @@ public sealed class IsoReader : IDisposable {
     while (pos < end) {
       var recLen = _data.ReadByte(pos);
       if (recLen == 0) {
-        if (pending is not null)
-          throw new InvalidDataException($"ISO9660: multi-extent file '{pending.Name}' is missing its final directory record.");
         pos = ((pos / SectorSize) + 1) * SectorSize;
         continue;
       }
