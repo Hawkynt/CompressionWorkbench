@@ -80,6 +80,45 @@ public sealed class RefsBlockRefcountCodecTests {
     });
   }
 
+  [Test, Category("HappyPath")]
+  public void BuildFreshValue_InitializesRangeStampAndZeroTotal() {
+    var row = RefsBlockRefcountCodec.BuildFreshValue(0x123400UL, modificationStamp: 0xE5);
+
+    Assert.Multiple(() => {
+      Assert.That(row, Has.Length.EqualTo(0x820));
+      Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(row.AsSpan(0x00, 8)), Is.EqualTo(0x123400UL));
+      Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(row.AsSpan(0x08, 8)), Is.EqualTo(0x400UL));
+      Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(row.AsSpan(0x10, 8)), Is.EqualTo(0xE5UL));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(row.AsSpan(0x18, 4)), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(row.AsSpan(0x81C, 4)), Is.Zero);
+      Assert.That(RefsBlockRefcountCodec.HasValidTotal(row), Is.True);
+      Assert.That(RefsBlockRefcountCodec.IsUnflaggedZeroRow(row), Is.True);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void FreshValue_FirstCloneCanMaterializeImplicitOwnerAsCountTwo() {
+    var row = RefsBlockRefcountCodec.BuildFreshValue(0x4000UL, modificationStamp: 0x99);
+
+    var changed = RefsBlockRefcountCodec.AdjustCounts(
+      row,
+      new Dictionary<int, int> { [7] = +2 });
+
+    Assert.Multiple(() => {
+      Assert.That(RefsBlockRefcountCodec.ReadCount(changed, 7), Is.EqualTo(2));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(changed.AsSpan(0x18, 4)), Is.EqualTo(2));
+      Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(changed.AsSpan(0x10, 8)), Is.EqualTo(0x99UL));
+    });
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void FreshRowBuilders_RejectUnalignedRangeStart() {
+    Assert.Multiple(() => {
+      Assert.Throws<ArgumentOutOfRangeException>(() => RefsBlockRefcountCodec.BuildKey(0x123401UL));
+      Assert.Throws<ArgumentOutOfRangeException>(() => RefsBlockRefcountCodec.BuildFreshValue(0x123401UL, 1));
+    });
+  }
+
   private static byte[] BuildRow(ulong start) {
     var row = new byte[RefsBlockRefcountCodec.NormalValueSize];
     BinaryPrimitives.WriteUInt64LittleEndian(row.AsSpan(0, 8), start);
