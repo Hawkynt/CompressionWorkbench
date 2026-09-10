@@ -68,7 +68,7 @@ public sealed class ExFatFilesystemDriverTests {
     var streamOffset = entryOffset + 32;
     bytes[streamOffset + 1] |= 0x02; // GeneralSecondaryFlags.NoFatChain
     const long validLength = 4317;
-    BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(streamOffset + 8, 8), validLength);
+    BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(streamOffset + 8, 8), (ulong)validLength);
     RecomputeEntrySetChecksum(bytes.AsSpan(entryOffset, setLength));
 
     using var readerImage = new MemoryStream(bytes, writable: false);
@@ -162,7 +162,7 @@ public sealed class ExFatFilesystemDriverTests {
       var secondaryCount = image[offset + 1];
       var setLength = (secondaryCount + 1) * 32;
       var set = image.AsSpan(offset, setLength);
-      var streamOffset = 32;
+      const int streamOffset = 32;
       if (setLength < 64 || set[streamOffset] != 0xC0) continue;
       var nameLength = set[streamOffset + 3];
       if (DecodeName(set, nameLength) == name) return offset;
