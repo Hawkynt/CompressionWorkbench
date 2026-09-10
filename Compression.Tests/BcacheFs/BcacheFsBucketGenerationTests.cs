@@ -70,17 +70,18 @@ public sealed class BcacheFsBucketGenerationTests {
     });
   }
 
-  private static BcacheFsReader.Entry Entry(MemoryStream image, string name) {
+  private static global::FileSystem.BcacheFs.BcacheFsReader.Entry Entry(MemoryStream image, string name) {
     image.Position = 0;
-    using var reader = new BcacheFsReader(image, leaveOpen: true);
+    using var reader = new global::FileSystem.BcacheFs.BcacheFsReader(image, leaveOpen: true);
     Assert.That(reader.Valid, Is.True, reader.Status);
     return reader.Entries.Single(entry => entry.Name == name);
   }
 
-  private static byte[] ReadPayload(MemoryStream image, BcacheFsReader.Entry entry) {
+  private static byte[] ReadPayload(
+      MemoryStream image, global::FileSystem.BcacheFs.BcacheFsReader.Entry entry) {
     image.Position = 0;
-    using var reader = new BcacheFsReader(image, leaveOpen: true);
-    return reader.Extract(entry);
+    using var reader = new global::FileSystem.BcacheFs.BcacheFsReader(image, leaveOpen: true);
+    return reader.Read(entry);
   }
 
   private static (byte AllocGeneration, byte OldestGeneration, byte DataType, byte BucketGensGeneration)
