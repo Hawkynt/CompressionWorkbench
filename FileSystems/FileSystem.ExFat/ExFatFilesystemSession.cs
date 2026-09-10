@@ -72,7 +72,10 @@ internal sealed class ExFatFilesystemSession : IFilesystemSession {
   public IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory) {
     ThrowIfDisposed();
     RequireDirectory(directory);
-    return (_children.TryGetValue(directory, out var children) ? children.Values : [])
+    IEnumerable<NodeState> values = _children.TryGetValue(directory, out var children)
+      ? children.Values
+      : Array.Empty<NodeState>();
+    return values
       .OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
       .Select(node => new FilesystemDirectoryEntry(node.Name, node.NodeId, node.Kind))
       .ToArray();
