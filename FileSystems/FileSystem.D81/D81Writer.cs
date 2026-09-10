@@ -225,10 +225,10 @@ public sealed class D81Writer {
     disk[off + 6] = 0xC0;
     disk[off + 7] = 0x00;
 
+    Span<byte> bitmap = stackalloc byte[5];
     for (var t = startTrack; t <= endTrack; t++) {
       var bamOff = off + 16 + (t - startTrack) * 6;
       var freeSectors = 0;
-      Span<byte> bitmap = stackalloc byte[5];
       bitmap.Clear();
 
       for (var s = 0; s < SectorsPerTrackConst; s++) {
