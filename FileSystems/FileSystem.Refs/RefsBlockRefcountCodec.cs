@@ -66,6 +66,32 @@ internal static class RefsBlockRefcountCodec {
     return result;
   }
 
+  /// <summary>
+  /// Adds clone references to a sparse Block Refcount row. A completely zero
+  /// slot is not an unowned cluster: absence from the sparse table represents
+  /// the ordinary single allocation owner. Its first clone therefore adds that
+  /// implicit owner before the requested new references. Flagged zero-count
+  /// slots belong to a separate management class and are not given that baseline.
+  /// </summary>
+  public static byte[] AddCloneReferences(
+      ReadOnlySpan<byte> original,
+      IReadOnlyDictionary<int, int> additionalReferences) {
+    ArgumentNullException.ThrowIfNull(additionalReferences);
+    if (!TryGetRange(original, out _, out _) || !HasValidTotal(original))
+      throw new InvalidDataException("ReFS Block Refcount row is not a valid normal 0x820-byte row.");
+
+    var deltas = new Dictionary<int, int>(additionalReferences.Count);
+    foreach (var (index, additional) in additionalReferences) {
+      if (additional <= 0)
+        throw new ArgumentOutOfRangeException(nameof(additionalReferences), "ReFS clone references must be positive.");
+      var raw = ReadRaw(original, index);
+      var count = raw & CountMask;
+      var flags = raw & ~CountMask;
+      deltas[index] = checked(additional + (count == 0 && flags == 0 ? 1 : 0));
+    }
+    return AdjustCounts(original, deltas);
+  }
+
   public static bool IsUnflaggedZeroRow(ReadOnlySpan<byte> value) {
     if (!TryGetRange(value, out _, out _) || !HasValidTotal(value)) return false;
     for (var i = 0; i < EntriesPerRow; ++i)
