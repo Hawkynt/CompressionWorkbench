@@ -4,9 +4,10 @@ using System.Buffers.Binary;
 namespace FileSystem.Refs;
 
 /// <summary>
-/// Exact normal-row codec for root #6 / schema 0xe0b0. The modification stamp
-/// at +0x10 and trailing dword at +0x81c are intentionally preserved verbatim;
-/// their mutation semantics are not guessed.
+/// Exact normal-row codec for root #6 / schema 0xe0b0. Existing-row updates
+/// preserve the modification stamp at +0x10 and trailing dword at +0x81c
+/// verbatim. Fresh rows require the caller to supply the checkpoint-derived
+/// modification stamp explicitly.
 /// </summary>
 internal static class RefsBlockRefcountCodec {
   public const int EntriesPerRow = 0x400;
@@ -73,10 +74,22 @@ internal static class RefsBlockRefcountCodec {
   }
 
   public static byte[] BuildKey(ulong startVirtualLcn) {
+    ValidateRangeStart(startVirtualLcn);
     var key = new byte[16];
     BinaryPrimitives.WriteUInt64LittleEndian(key.AsSpan(0, 8), startVirtualLcn);
     BinaryPrimitives.WriteUInt64LittleEndian(key.AsSpan(8, 8), EntriesPerRow);
     return key;
+  }
+
+  public static byte[] BuildFreshValue(ulong startVirtualLcn, ulong modificationStamp) {
+    ValidateRangeStart(startVirtualLcn);
+    var value = new byte[NormalValueSize];
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x00, 8), startVirtualLcn);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x08, 8), EntriesPerRow);
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(0x10, 8), modificationStamp);
+    // TotalRefCount and the trailing dword start at zero. Per-cluster words are
+    // likewise zero until the caller materializes the first shared references.
+    return value;
   }
 
   public static void RefreshTotal(Span<byte> value) {
@@ -87,6 +100,14 @@ internal static class RefsBlockRefcountCodec {
       sum = checked(sum + (uint)(BinaryPrimitives.ReadUInt16LittleEndian(
         value.Slice(EntriesOffset + i * 2, 2)) & CountMask));
     BinaryPrimitives.WriteUInt32LittleEndian(value.Slice(0x18, 4), sum);
+  }
+
+  private static void ValidateRangeStart(ulong startVirtualLcn) {
+    if ((startVirtualLcn & (EntriesPerRow - 1UL)) != 0)
+      throw new ArgumentOutOfRangeException(
+        nameof(startVirtualLcn),
+        startVirtualLcn,
+        "ReFS Block Refcount rows must start on a 0x400-cluster boundary.");
   }
 
   private static void ValidateIndex(ReadOnlySpan<byte> value, int index) {
