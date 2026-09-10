@@ -10,7 +10,10 @@ namespace FileSystem.Iso;
 /// and positional file handles without extracting entries into temporary files
 /// or byte arrays.
 /// </summary>
-public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
+public sealed class IsoFilesystemDriverAdapter :
+  IFilesystemDriverAdapter,
+  IBlockDeviceFilesystemDriverProvider {
+
   private const int LogicalBlockSize = 2048;
 
   public string FormatId => "Iso";
@@ -28,7 +31,7 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
 
       return new FilesystemDriverProfile(
         FormatId,
-        "ECMA-119 native extent reader",
+        "ECMA-119 native file-section reader",
         FilesystemDriverCapabilities.EnumerateDirectories |
         FilesystemDriverCapabilities.ReadData |
         FilesystemDriverCapabilities.RandomAccess |
@@ -38,8 +41,9 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
         CanMount: true,
         CanMountWritable: false,
         [
-          "File handles read directly from decoded ISO file extents; no extraction or whole-file materialization is used.",
+          "File handles read directly from decoded ECMA-119 file sections, including multi-extent files and per-section extended-attribute prefixes.",
           "Node ids are deterministic for the mounted session; ISO 9660 has no inode number and durable identity across remount is not claimed.",
+          "Interleaved file sections fail closed until File Unit Size / Interleave Gap addressing is implemented.",
           "Mounted writes remain disabled: the existing offline ISO modifier does not provide complete nested-directory, open-handle, truncate, and durability semantics.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
@@ -61,6 +65,24 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
       throw new InvalidDataException("ISO image is not mountable: " + string.Join("; ", profile.Limitations));
 
     return new IsoReadOnlyFilesystemSession(image, profile, options.LeaveOpen);
+  }
+
+  public FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device) {
+    ArgumentNullException.ThrowIfNull(device);
+    using var stream = new BlockDeviceStream(device, leaveOpen: true);
+    return ProbeFilesystem(stream);
+  }
+
+  public IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options) {
+    ArgumentNullException.ThrowIfNull(device);
+    ArgumentNullException.ThrowIfNull(options);
+    var stream = new BlockDeviceStream(device, leaveOpen: false);
+    try {
+      return OpenFilesystem(stream, options with { LeaveOpen = false });
+    } catch {
+      stream.Dispose();
+      throw;
+    }
   }
 
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
@@ -107,17 +129,9 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
       blockers.Distinct(StringComparer.Ordinal).ToArray());
   }
 
-  /// <summary>
-  /// Rejects images whose volume descriptors point at directory extents the
-  /// backing store no longer holds. The reader clamps a directory extent that
-  /// runs past the end of the image and yields whatever records it could still
-  /// decode, so a volume truncated ahead of its root directory parses as an
-  /// empty namespace instead of an error. A mount driver has to fail closed
-  /// there rather than publish an empty filesystem.
-  /// </summary>
   private static void ValidateVolumeDescriptors(Stream image) {
     Span<byte> header = stackalloc byte[6];
-    Span<byte> rootRecord = stackalloc byte[12];
+    Span<byte> rootRecord = stackalloc byte[18];
     var seen = false;
 
     for (var sector = 16; sector < 256; ++sector) {
@@ -131,20 +145,20 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
         break;
       if (header[1] != 'C' || header[2] != 'D' || header[3] != '0' || header[4] != '0' || header[5] != '1')
         continue;
-      if (header[0] != 1 && header[0] != 2)
+      if (header[0] is not (1 or 2))
         continue;
 
-      // ECMA-119 8.4.18: the root directory record occupies byte 156 of a
-      // primary or supplementary volume descriptor. Within that record the
-      // extent location and the data length are both-endian fields at relative
-      // offsets 2 and 10; the little-endian halves are read here.
-      image.Position = offset + 156 + 2;
+      image.Position = offset + 156;
       image.ReadExactly(rootRecord);
-      var extent = (long)BinaryPrimitives.ReadUInt32LittleEndian(rootRecord) * LogicalBlockSize;
-      var length = BinaryPrimitives.ReadUInt32LittleEndian(rootRecord[8..]);
+      if (rootRecord[0] < 34)
+        throw new InvalidDataException("ISO root directory record is truncated.");
+      var extendedAttributeBlocks = rootRecord[1];
+      var extentLba = BinaryPrimitives.ReadUInt32LittleEndian(rootRecord[2..]);
+      var length = BinaryPrimitives.ReadUInt32LittleEndian(rootRecord[10..]);
+      var extent = checked(((long)extentLba + extendedAttributeBlocks) * LogicalBlockSize);
       if (extent < 0 || extent > image.Length || length > image.Length - extent)
         throw new InvalidDataException(
-          $"ISO root directory extent [{extent}, {extent + length}) lies outside the image.");
+          $"ISO root directory data extent [{extent}, {extent + length}) lies outside the image.");
 
       seen = true;
     }
@@ -161,16 +175,26 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
         throw new InvalidDataException("ISO reader returned an empty filesystem entry path.");
       if (!paths.Add(path))
         throw new InvalidDataException($"ISO filesystem contains duplicate decoded path '{path}'.");
+      if (entry.MountLimitation is { } limitation)
+        throw new NotSupportedException($"ISO file '{path}' is outside the native mounted profile: {limitation}");
       if (entry.IsDirectory) {
-        // A directory extent always holds at least its own '.' and '..'
-        // records, so it has to begin strictly inside the image.
         if (entry.DataOffset < 0 || entry.DataOffset >= image.Length)
           throw new InvalidDataException($"ISO directory '{path}' extent starts outside the image.");
         continue;
       }
-      if (entry.Size < 0 || entry.DataOffset < 0 || entry.DataOffset > image.Length || entry.Size > image.Length - entry.DataOffset)
-        throw new InvalidDataException(
-          $"ISO file '{path}' extent [{entry.DataOffset}, {entry.DataOffset + Math.Max(0, entry.Size)}) lies outside the image.");
+
+      long logical = 0;
+      foreach (var segment in IsoReader.Segments(entry)) {
+        if (segment.LogicalOffset != logical)
+          throw new InvalidDataException($"ISO file '{path}' has a discontinuous file-section map.");
+        if (segment.Length < 0 || segment.PhysicalOffset < 0 ||
+            segment.PhysicalOffset > image.Length || segment.Length > image.Length - segment.PhysicalOffset)
+          throw new InvalidDataException(
+            $"ISO file '{path}' section [{segment.PhysicalOffset}, {segment.PhysicalOffset + Math.Max(0, segment.Length)}) lies outside the image.");
+        logical = checked(logical + segment.Length);
+      }
+      if (logical != entry.Size)
+        throw new InvalidDataException($"ISO file '{path}' sections cover {logical} of {entry.Size} logical bytes.");
     }
   }
 
@@ -192,10 +216,13 @@ public sealed class IsoFilesystemDriverAdapter : IFilesystemDriverAdapter {
     return index < 0 ? message : message[..index];
   }
 
-  internal static long AllocatedLength(long logicalLength) {
-    if (logicalLength <= 0)
-      return 0;
-    return checked(((logicalLength + LogicalBlockSize - 1) / LogicalBlockSize) * LogicalBlockSize);
+  internal static long AllocatedLength(IsoEntry entry) {
+    long result = 0;
+    foreach (var segment in IsoReader.Segments(entry)) {
+      if (segment.Length <= 0) continue;
+      result = checked(result + ((segment.Length + LogicalBlockSize - 1) / LogicalBlockSize) * LogicalBlockSize);
+    }
+    return result;
   }
 }
 
@@ -276,20 +303,20 @@ internal sealed class IsoReadOnlyFilesystemSession : IFilesystemSession {
 
       var nodeId = new FilesystemNodeId(nextId++, 1);
       byPath.Add(path, nodeId);
-      var capturedOffset = entry.DataOffset;
       var capturedLength = entry.Size;
+      var capturedSegments = IsoReader.Segments(entry).ToArray();
       result.Add(new FilesystemSnapshotNode(
         nodeId,
         parent,
         name,
         entry.IsDirectory ? FilesystemNodeKind.Directory : FilesystemNodeKind.RegularFile,
         entry.IsDirectory ? 0 : entry.Size,
-        entry.IsDirectory ? 0 : IsoFilesystemDriverAdapter.AllocatedLength(entry.Size),
+        entry.IsDirectory ? 0 : IsoFilesystemDriverAdapter.AllocatedLength(entry),
         LinkCount: entry.IsDirectory ? 2U : 1U,
         Modified: ToOffset(entry.LastModified),
         OpenReadHandle: entry.IsDirectory
           ? null
-          : () => new IsoPositionalFileHandle(nodeId, _image, _ioGate, capturedOffset, capturedLength)));
+          : () => new IsoPositionalFileHandle(nodeId, _image, _ioGate, capturedSegments, capturedLength)));
     }
 
     return result;
@@ -299,8 +326,12 @@ internal sealed class IsoReadOnlyFilesystemSession : IFilesystemSession {
     foreach (var entry in entries) {
       if (entry.IsDirectory)
         continue;
-      if (entry.Size < 0 || entry.DataOffset < 0 || entry.DataOffset > _image.Length || entry.Size > _image.Length - entry.DataOffset)
-        throw new InvalidDataException($"ISO file '{entry.Name}' extent lies outside the image.");
+      if (entry.MountLimitation is { } limitation)
+        throw new NotSupportedException($"ISO file '{entry.Name}' is outside the mounted profile: {limitation}");
+      foreach (var segment in IsoReader.Segments(entry))
+        if (segment.Length < 0 || segment.PhysicalOffset < 0 ||
+            segment.PhysicalOffset > _image.Length || segment.Length > _image.Length - segment.PhysicalOffset)
+          throw new InvalidDataException($"ISO file '{entry.Name}' section lies outside the image.");
     }
   }
 
@@ -325,12 +356,12 @@ internal sealed class IsoPositionalFileHandle(
   FilesystemNodeId nodeId,
   Stream image,
   object ioGate,
-  long dataOffset,
+  IReadOnlyList<IsoDataSegment> segments,
   long length
 ) : IFilesystemFileHandle {
   private readonly Stream _image = image ?? throw new ArgumentNullException(nameof(image));
   private readonly object _ioGate = ioGate ?? throw new ArgumentNullException(nameof(ioGate));
-  private readonly long _dataOffset = dataOffset;
+  private readonly IReadOnlyList<IsoDataSegment> _segments = segments ?? throw new ArgumentNullException(nameof(segments));
   private readonly long _length = length;
   private bool _disposed;
 
@@ -347,18 +378,36 @@ internal sealed class IsoPositionalFileHandle(
     ThrowIfDisposed();
     if (offset < 0)
       throw new ArgumentOutOfRangeException(nameof(offset));
-    if (destination.Length == 0 || offset >= _length)
+    if (destination.IsEmpty || offset >= _length)
       return 0;
 
-    var count = checked((int)Math.Min(destination.Length, _length - offset));
-    var physical = checked(_dataOffset + offset);
+    var wanted = checked((int)Math.Min(destination.Length, _length - offset));
+    var target = destination[..wanted];
+    var copied = 0;
+    var logicalEnd = checked(offset + wanted);
+
     lock (_ioGate) {
-      if (physical < 0 || physical > _image.Length - count)
-        throw new InvalidDataException("ISO file extent ends outside the backing image.");
-      _image.Position = physical;
-      _image.ReadExactly(destination[..count]);
+      foreach (var segment in _segments) {
+        var segmentEnd = checked(segment.LogicalOffset + segment.Length);
+        if (segmentEnd <= offset) continue;
+        if (segment.LogicalOffset >= logicalEnd) break;
+
+        var from = Math.Max(offset, segment.LogicalOffset);
+        var to = Math.Min(logicalEnd, segmentEnd);
+        var take = checked((int)(to - from));
+        if (take <= 0) continue;
+        var physical = checked(segment.PhysicalOffset + from - segment.LogicalOffset);
+        if (physical < 0 || physical > _image.Length - take)
+          throw new InvalidDataException("ISO file section ends outside the backing image.");
+        _image.Position = physical;
+        _image.ReadExactly(target.Slice(copied, take));
+        copied += take;
+      }
     }
-    return count;
+
+    if (copied != wanted)
+      throw new InvalidDataException($"ISO file sections supplied only {copied} of {wanted} requested bytes.");
+    return copied;
   }
 
   public void Write(long offset, ReadOnlySpan<byte> source)
