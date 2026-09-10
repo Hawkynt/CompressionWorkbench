@@ -97,17 +97,74 @@ public sealed class RefsBlockRefcountCodecTests {
   }
 
   [Test, Category("HappyPath")]
-  public void FreshValue_FirstCloneCanMaterializeImplicitOwnerAsCountTwo() {
+  public void AddCloneReferences_FreshRowMaterializesImplicitOwnerAsCountTwo() {
     var row = RefsBlockRefcountCodec.BuildFreshValue(0x4000UL, modificationStamp: 0x99);
 
-    var changed = RefsBlockRefcountCodec.AdjustCounts(
+    var changed = RefsBlockRefcountCodec.AddCloneReferences(
       row,
-      new Dictionary<int, int> { [7] = +2 });
+      new Dictionary<int, int> { [7] = 1 });
 
     Assert.Multiple(() => {
       Assert.That(RefsBlockRefcountCodec.ReadCount(changed, 7), Is.EqualTo(2));
       Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(changed.AsSpan(0x18, 4)), Is.EqualTo(2));
       Assert.That(BinaryPrimitives.ReadUInt64LittleEndian(changed.AsSpan(0x10, 8)), Is.EqualTo(0x99UL));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void AddCloneReferences_ExistingRowZeroSlotStillMaterializesCountTwo() {
+    var row = BuildRow(0x8000);
+    WriteRaw(row, 3, 2); // another shared cluster makes the sparse row already exist
+    RefsBlockRefcountCodec.RefreshTotal(row);
+
+    var changed = RefsBlockRefcountCodec.AddCloneReferences(
+      row,
+      new Dictionary<int, int> { [9] = 1 });
+
+    Assert.Multiple(() => {
+      Assert.That(RefsBlockRefcountCodec.ReadCount(changed, 3), Is.EqualTo(2));
+      Assert.That(RefsBlockRefcountCodec.ReadCount(changed, 9), Is.EqualTo(2));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(changed.AsSpan(0x18, 4)), Is.EqualTo(4));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void AddCloneReferences_TrackedSlotIncrementsWithoutImplicitBaseline() {
+    var row = BuildRow(0xC000);
+    WriteRaw(row, 12, 2);
+    RefsBlockRefcountCodec.RefreshTotal(row);
+
+    var changed = RefsBlockRefcountCodec.AddCloneReferences(
+      row,
+      new Dictionary<int, int> { [12] = 1 });
+
+    Assert.That(RefsBlockRefcountCodec.ReadCount(changed, 12), Is.EqualTo(3));
+  }
+
+  [Test, Category("HappyPath")]
+  public void AddCloneReferences_FlaggedZeroSlotDoesNotAssumeOrdinaryOwner() {
+    var row = BuildRow(0x10000);
+    WriteRaw(row, 5, RefsBlockRefcountCodec.DedupManagedMask);
+    RefsBlockRefcountCodec.RefreshTotal(row);
+
+    var changed = RefsBlockRefcountCodec.AddCloneReferences(
+      row,
+      new Dictionary<int, int> { [5] = 1 });
+
+    Assert.That(RefsBlockRefcountCodec.ReadRaw(changed, 5), Is.EqualTo(0x8001));
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void AddCloneReferences_RejectsNonPositiveReferenceCount() {
+    var row = BuildRow(0x14000);
+
+    Assert.Multiple(() => {
+      Assert.Throws<ArgumentOutOfRangeException>(() => RefsBlockRefcountCodec.AddCloneReferences(
+        row,
+        new Dictionary<int, int> { [1] = 0 }));
+      Assert.Throws<ArgumentOutOfRangeException>(() => RefsBlockRefcountCodec.AddCloneReferences(
+        row,
+        new Dictionary<int, int> { [1] = -1 }));
     });
   }
 
