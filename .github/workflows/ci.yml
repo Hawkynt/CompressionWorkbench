@@ -122,6 +122,19 @@ jobs:
           dotnet pack Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj --configuration Release --output dist-nuget -p:Version=0.0.0-ci
           ls -la dist-nuget/
 
+      - name: Install interop tools (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils
+          # cabextract and wimlib-imagex are the tools that OWN the CAB and WIM formats.
+          # Both reference tests fall back to 7-Zip when they are absent, so without these
+          # two packages the owning readers were never asked -- which is what #85 and #86
+          # each reported. Installed so those cases run instead of silently degrading.
+          sudo apt-get install -y cabextract wimtools
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
+          sudo modprobe gfs2 || true
+
       # Core tests -- always run (no external tools required).
       #
       # NOTE the two similar category names, which are NOT spellings of each other:
@@ -141,14 +154,6 @@ jobs:
       # Interop tools for E2E tests. gfs2-utils is a mandatory oracle for the
       # ExHash gate below; linux-modules-extra supplies gfs2.ko on Ubuntu runner
       # kernels where it is not built in.
-      - name: Install interop tools (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
-          sudo modprobe gfs2 || true
-
       - name: Install 7-Zip (Windows)
         if: matrix.os == 'windows-latest'
         run: choco install 7zip -y
