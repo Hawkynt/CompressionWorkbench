@@ -164,6 +164,7 @@ public static class CdiInPlaceModifier {
     var endOfSector = (long)lba * geom.SectorSize + geom.SectorSize;
     if (endOfSector > geom.DataAreaLength) return false;
     Span<byte> zeros = stackalloc byte[Iso9660SectorSize];
+    zeros.Clear();
     image.Position = (long)lba * geom.SectorSize + geom.DataOffset;
     image.Write(zeros);
     return true;

@@ -125,6 +125,7 @@ internal static class CdiDescriptor {
 
   private static void WriteZeros(Stream stream, int count) {
     Span<byte> zeros = stackalloc byte[32];
+    zeros.Clear();
     while (count > 0) {
       var chunk = Math.Min(count, zeros.Length);
       stream.Write(zeros[..chunk]);
