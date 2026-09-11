@@ -4,6 +4,10 @@ on:
   push:
     branches: [feature/moosefs-maintenance]
 
+concurrency:
+  group: regenerate-moosefs-docs
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
@@ -27,16 +31,21 @@ jobs:
           --configuration Release
           --filter FullyQualifiedName~FilesystemReadmeIsCurrentTests.TheSupportMatrix_SaysWhatTheCodeSays
           --nologo
-      - name: Commit generated matrix
+      - name: Rewrite filesystem package API reference
+        uses: Hawkynt/RepositoryTemplate/package-readme@v1
+        with:
+          mode: write
+          project: Hawkynt.FileFormats.FileSystems/Hawkynt.FileFormats.FileSystems.csproj
+      - name: Commit generated documentation
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- Hawkynt.FileFormats.FileSystems/README.md; then
-            echo 'Support matrix already current.'
+          if git diff --quiet -- Hawkynt.FileFormats.FileSystems/README.md Hawkynt.FileFormats.FileSystems/REFERENCE.md; then
+            echo 'Filesystem package documentation already current.'
             exit 0
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Hawkynt.FileFormats.FileSystems/README.md
-          git commit -m '* regenerate filesystem support matrix'
+          git add Hawkynt.FileFormats.FileSystems/README.md Hawkynt.FileFormats.FileSystems/REFERENCE.md
+          git commit -m '* regenerate filesystem package documentation'
           git push
