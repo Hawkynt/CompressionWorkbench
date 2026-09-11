@@ -378,7 +378,12 @@ public sealed class BcacheFsBlockMover : IFilesystemBlockMover {
       if (key.Type != KeyAllocV4 || key.Value.Length <= 16) continue;
 
       var bucket = (long)key.Position.Offset;
-      occupied.Add(bucket);
+      // An alloc key is not the same thing as an occupied bucket. A bucket that
+      // has been emptied keeps its key so the generation it was bumped to
+      // survives the emptying, and that key says data type free — which is the
+      // volume agreeing that the freespace tree may offer the bucket, not
+      // disagreeing with it.
+      if (key.Value[14] != DataFree) occupied.Add(bucket);
       if (key.Value[14] == DataUser)
         recorded[bucket] = BinaryPrimitives.ReadUInt32LittleEndian(key.Value.AsSpan(16));
     }

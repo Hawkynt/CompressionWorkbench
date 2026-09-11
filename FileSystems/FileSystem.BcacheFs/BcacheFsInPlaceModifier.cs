@@ -323,18 +323,13 @@ internal static class BcacheFsInPlaceModifier {
         throw new InvalidDataException(
           $"bcachefs: bucket_gens records generation {generation} for alloc-tree hole {bucket}.");
 
-    foreach (var extent in extentKeys) {
+    // Only the shape of an extent is a precondition. Where the data sits is not:
+    // a defragmentation moves the bytes and then asks for the accounting to be
+    // rebuilt around them, so on that path the incoming alloc tree still
+    // describes the buckets the runs came from. The extent-to-bucket agreement
+    // is therefore checked on what the commit writes, not on what it reads.
+    foreach (var extent in extentKeys)
       ValidateExtent(extent, volume.BucketSectorCount);
-      var sector = ExtentSector(extent);
-      var bucket = sector / volume.BucketSectorCount;
-      var pointerGeneration = ExtentGeneration(extent);
-      if (!bucketStates.TryGetValue(bucket, out var state) || state.DataType != DataUser)
-        throw new InvalidDataException(
-          $"bcachefs: extent at sector {sector} points into bucket {bucket}, which is not allocated as user data.");
-      if (state.Generation != pointerGeneration)
-        throw new InvalidDataException(
-          $"bcachefs: extent at sector {sector} carries generation {pointerGeneration}, bucket {bucket} is generation {state.Generation}.");
-    }
 
     var preserved = new Dictionary<int, List<Key>> {
       [BtreeSubvolumes] = ReadTree(volume, BtreeSubvolumes),
@@ -381,6 +376,7 @@ internal static class BcacheFsInPlaceModifier {
 
     var trees = BuildLogicalTrees(model);
     var metadataBuckets = BuildAllocationTrees(model, trees);
+    ValidateBucketGenerations(trees);
     if (metadataBuckets.Count > MetadataBuckets)
       throw new NotSupportedException(
         $"bcachefs metadata needs {metadataBuckets.Count} buckets; an in-place commit budgets {MetadataBuckets}.");
@@ -650,6 +646,15 @@ internal static class BcacheFsInPlaceModifier {
       for (byte type = DataFree; type <= DataUser; ++type)
         if (bucketsOf[type] > 0)
           accounting.Add(DevDataTypeKey(type, bucketsOf[type], sectorsOf[type]));
+
+      // A pointer's generation belongs to the bucket the bytes are in, not to the
+      // one they were in. A pass that relocates a run rewrites the sector in the
+      // pointer and leaves the generation where it was, so a run moved into a
+      // bucket that has been emptied once would be read as a stale pointer and
+      // the file dropped. The commit is where the run is placed as far as the
+      // volume is concerned, so it is where the generation is stamped.
+      foreach (var extent in extents)
+        StampExtentGeneration(extent, BucketGeneration(finalStates, ExtentSector(extent) / BucketSectors));
 
       foreach (var extent in extents) {
         var sector = ExtentSector(extent);
@@ -1141,12 +1146,94 @@ internal static class BcacheFsInPlaceModifier {
     throw new InvalidDataException("bcachefs extent contains no pointer.");
   }
 
+  /// <summary>Writes a generation into the pointer an extent already carries.</summary>
+  private static void StampExtentGeneration(Key extent, byte generation) {
+    for (var i = 0; i + 8 <= extent.Value.Length; i += 8) {
+      var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(i));
+      if (!IsPointer(word)) continue;
+      BinaryPrimitives.WriteUInt64LittleEndian(extent.Value.AsSpan(i),
+        ExtentPointer(PointerSector(word), (byte)((word >> 48) & 0xFF), generation));
+      return;
+    }
+    throw new InvalidDataException("bcachefs extent contains no pointer.");
+  }
+
   private static byte ExtentGeneration(Key extent) {
     for (var i = 0; i + 8 <= extent.Value.Length; i += 8) {
       var word = BinaryPrimitives.ReadUInt64LittleEndian(extent.Value.AsSpan(i));
       if (IsPointer(word)) return (byte)(word >> 56);
     }
     throw new InvalidDataException("bcachefs extent contains no pointer.");
+  }
+
+  /// <summary>
+  /// Checks that the four places a bucket's generation is written down still say
+  /// the same thing, on the keys the commit is about to lay out.
+  /// </summary>
+  /// <remarks>
+  /// <para>A pointer names a bucket and the generation that bucket had when the
+  /// data was put there. bcachefs treats a dirty pointer whose generation has
+  /// since moved on as data loss rather than as a pointer to fix, so a run left
+  /// one generation behind is a file the volume has quietly dropped.</para>
+  ///
+  /// <para>The same number is written down four times — the alloc key, the
+  /// bucket_gens slot, the extent's pointer and that extent's backpointer — and
+  /// these are checked against each other rather than against the state they were
+  /// all derived from, so an encoding fault in any one of the four is caught here
+  /// instead of on the next mount. A bucket the alloc tree does not describe may
+  /// not carry a generation at all: bcachefs requires a hole in the alloc tree to
+  /// read as generation zero.</para>
+  /// </remarks>
+  private static void ValidateBucketGenerations(IReadOnlyDictionary<int, List<Key>> trees) {
+    var allocated = new Dictionary<long, (byte Generation, byte DataType)>();
+    foreach (var key in trees[BtreeAlloc]) {
+      var bucket = (long)key.Position.Offset;
+      allocated[bucket] = (key.Value[12], key.Value[14]);
+    }
+
+    foreach (var key in trees[BtreeBucketGens]) {
+      var first = checked((long)key.Position.Offset * BucketGensNr);
+      for (var i = 0; i < key.Value.Length; ++i) {
+        var bucket = first + i;
+        var indexed = key.Value[i];
+        if (!allocated.TryGetValue(bucket, out var state)) {
+          if (indexed != 0)
+            throw new InvalidDataException(
+              $"bcachefs: bucket_gens records generation {indexed} for alloc-tree hole {bucket}.");
+          continue;
+        }
+
+        if (state.Generation != indexed)
+          throw new InvalidDataException(
+            $"bcachefs: bucket {bucket} has alloc generation {state.Generation} but bucket_gens says {indexed}.");
+      }
+    }
+
+    var pointed = new Dictionary<ulong, byte>();
+    foreach (var extent in trees[BtreeExtents]) {
+      var sector = ExtentSector(extent);
+      var bucket = sector / BucketSectors;
+      if (!allocated.TryGetValue(bucket, out var state) || state.DataType != DataUser)
+        throw new InvalidDataException(
+          $"bcachefs: extent at sector {sector} points into bucket {bucket}, which is not allocated as user data.");
+
+      var pointerGeneration = ExtentGeneration(extent);
+      if (state.Generation != pointerGeneration)
+        throw new InvalidDataException(
+          $"bcachefs: extent at sector {sector} carries generation {pointerGeneration}, bucket {bucket} is generation {state.Generation}.");
+      pointed[(ulong)sector << ExtentBpShift] = pointerGeneration;
+    }
+
+    foreach (var key in trees[BtreeBackpointers]) {
+      if (key.Value[2] != DataUser) continue;
+      if (!pointed.TryGetValue(key.Position.Offset, out var pointerGeneration))
+        throw new InvalidDataException(
+          $"bcachefs: a user-data backpointer at {key.Position.Offset} names no extent.");
+      if (key.Value[3] != pointerGeneration)
+        throw new InvalidDataException(
+          $"bcachefs: backpointer at {key.Position.Offset} carries generation {key.Value[3]}, "
+          + $"its extent carries {pointerGeneration}.");
+    }
   }
 
   private static BucketState BucketStateOf(
