@@ -25,8 +25,10 @@ namespace FileSystem.GlusterFs;
 /// present, the filesystem root is used as a conservative explicit-input
 /// fallback.</para>
 ///
-/// <para>The backing readers currently do not interpret or mutate Gluster xattrs.
-/// Those bytes remain untouched because this type is read-only.</para>
+/// <para>Gluster xattrs are readable through <see cref="ReadExtendedAttributes"/>.
+/// The backing accessors also support conservative inline/short-form mutation,
+/// but this brick reader remains read-only until all xattr storage forms needed
+/// by a maintenance operation can be preserved without rebuilding metadata.</para>
 /// </summary>
 public sealed class GlusterFsReader : IDisposable {
 
@@ -132,6 +134,7 @@ public sealed class GlusterFsReader : IDisposable {
         Name = BrickPath(relativePath),
         Size = entry.Size,
         IsDirectory = entry.IsDirectory,
+        BackingPath = NormalizePath(entry.Name),
         DataFactory = entry.IsDirectory ? null : () => _xfsReader!.Extract(captured),
       });
     }
@@ -152,6 +155,7 @@ public sealed class GlusterFsReader : IDisposable {
         Name = BrickPath(relativePath),
         Size = entry.Size,
         IsDirectory = entry.IsDirectory,
+        BackingPath = NormalizePath(entry.Name),
         DataFactory = entry.IsDirectory ? null : () => _extReader!.Extract(captured),
       });
     }
@@ -220,10 +224,12 @@ public sealed class GlusterFsReader : IDisposable {
     builder.Append(CultureInfo.InvariantCulture, $"gluster_index_detected={this.HasGlusterIndex.ToString().ToLowerInvariant()}\n");
     builder.Append("view=physical single-brick namespace\n");
     builder.Append("gluster_internal_directory=.glusterfs (hidden from normal listing)\n");
-    builder.Append("xattrs=preserved in image but not interpreted\n");
+    builder.Append("xattrs=readable through native backing-filesystem accessors\n");
+    builder.Append("xattr_mutation=native inline/short-form subset only; descriptor remains read-only\n");
     builder.Append("cluster_namespace_reconstruction=false\n");
+    builder.Append("cluster_operations=rebalance,fix-layout,remove-brick are outside the single-image abstraction\n");
     builder.Append("mutation=false\n");
-    builder.Append("mutation_blocker=Gluster object identity and DHT/AFR/EC state live in trusted.gfid/trusted.glusterfs.* xattrs; current backing writers do not preserve those attributes during rebuilds.\n");
+    builder.Append("mutation_blocker=maintenance must preserve every trusted.gfid/trusted.glusterfs.* storage form; external/leaf/btree xattr mutation is not complete yet.\n");
     return Encoding.UTF8.GetBytes(builder.ToString());
   }
 
@@ -256,6 +262,22 @@ public sealed class GlusterFsReader : IDisposable {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory) return [];
     return entry.DataFactory?.Invoke() ?? entry.Data;
+  }
+
+  /// <summary>
+  /// Reads the native extended attributes belonging to a surfaced brick entry.
+  /// </summary>
+  public IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(GlusterFsEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.BackingPath is null)
+      return new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+    _image.Position = 0;
+    return this.BackingFileSystem switch {
+      "xfs" => XfsExtendedAttributes.Read(_image, entry.BackingPath),
+      "ext" => ExtExtendedAttributes.Read(_image, entry.BackingPath),
+      _ => throw new NotSupportedException($"GlusterFS: xattrs are not supported for backing filesystem '{this.BackingFileSystem}'."),
+    };
   }
 
   /// <summary>
