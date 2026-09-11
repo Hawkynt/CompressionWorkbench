@@ -86,7 +86,7 @@ public sealed class Qcow2Writer {
 
     WriteHeader(output, virtualSize, l1Size, l1TableOffset, refcountTableOffset);
     WriteL1(output, l1Size, l2TablesStart);
-    WriteL2Tables(output, data, guestClusterCount, l1Size, physicalDataIndex, dataStart);
+    WriteL2Tables(output, guestClusterCount, l1Size, physicalDataIndex, dataStart);
     WriteRefcountTable(output, refcountBlockClusters, refcountBlocksStart);
     WriteRefcountBlocks(output, refcountBlockClusters, totalPhysicalClusters);
     WriteGuestData(output, data, guestClusterCount, physicalDataIndex);
@@ -99,11 +99,11 @@ public sealed class Qcow2Writer {
       long l1TableOffset,
       long refcountTableOffset) {
     var header = new byte[ClusterSize];
-    Qcow2Structures.Magic.CopyTo(header);
+    Qcow2Structures.Magic.CopyTo(header.AsSpan());
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(4), 2);
     BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(8), 0);
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(16), 0);
-    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), ClusterBits);
+    BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), (uint)ClusterBits);
     BinaryPrimitives.WriteUInt64BigEndian(header.AsSpan(24), (ulong)virtualSize);
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(32), 0);
     BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(36), (uint)l1Size);
@@ -128,7 +128,6 @@ public sealed class Qcow2Writer {
 
   private static void WriteL2Tables(
       Stream output,
-      byte[] data,
       int guestClusterCount,
       int l1Size,
       int[] physicalDataIndex,
