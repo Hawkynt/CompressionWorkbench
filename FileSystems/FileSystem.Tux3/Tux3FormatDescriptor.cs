@@ -155,7 +155,9 @@ public sealed class Tux3FormatDescriptor :
 
   private static bool TryGetDeclaredVolumeLength(Tux3Reader reader, out long length) {
     length = 0;
-    if (!reader.ValidSuperblock || reader.VolBlocks == 0 || reader.BlockBits >= 63)
+    // The reference format reserves a 4 KiB superblock area as the maximum block size.
+    // Treat larger shifts as corrupt rather than trusting them for destructive maintenance.
+    if (!reader.ValidSuperblock || reader.VolBlocks == 0 || reader.BlockBits > 12)
       return false;
 
     var blockSize = 1UL << reader.BlockBits;
