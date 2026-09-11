@@ -18,6 +18,14 @@ public sealed record FirmwareImage(
 ) {
 
   /// <summary>
+  /// Gets the original segmented x86 start address when an Intel HEX type-03
+  /// record supplied one. Keeping CS:IP separately matters because many CS:IP
+  /// pairs map to the same linear address and therefore cannot be reconstructed
+  /// from <see cref="StartAddress"/> alone.
+  /// </summary>
+  public (ushort CodeSegment, ushort InstructionPointer)? StartSegmentAddress { get; init; }
+
+  /// <summary>
   /// Flattens all segments into a single contiguous binary spanning from the
   /// lowest address to the end of the highest segment. Gaps are filled with
   /// <paramref name="fill"/> (default <c>0xFF</c> to match flash erase state).
