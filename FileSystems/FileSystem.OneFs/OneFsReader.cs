@@ -84,11 +84,18 @@ public sealed class OneFsReader : IDisposable {
   public long ImageSize { get; }
 
   /// <summary>
+  /// Initializes a conservative OneFS image reader without consuming or owning
+  /// the source stream. Kept as the original one-argument public constructor for
+  /// binary/source API compatibility.
+  /// </summary>
+  public OneFsReader(Stream stream) : this(stream, leaveOpen: true) { }
+
+  /// <summary>
   /// Initializes a conservative OneFS image reader without consuming the image.
   /// </summary>
   /// <param name="stream">Readable, seekable raw image stream.</param>
   /// <param name="leaveOpen">Whether disposing the reader leaves the source open.</param>
-  public OneFsReader(Stream stream, bool leaveOpen = true) {
+  public OneFsReader(Stream stream, bool leaveOpen) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead)
       throw new ArgumentException("OneFS inspection requires a readable stream.", nameof(stream));
