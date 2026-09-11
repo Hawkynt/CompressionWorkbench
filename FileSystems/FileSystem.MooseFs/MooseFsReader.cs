@@ -42,6 +42,17 @@ public sealed class MooseFsReader : IDisposable {
   public bool ValidHeader { get; private set; }
 
   /// <summary>
+  /// Compatibility view of the first eight bytes after the signature, matching
+  /// the value older CompressionWorkbench builds exposed under this incorrect
+  /// name. MooseFS does not define this field as a file-id counter.
+  /// </summary>
+  [Obsolete("MooseFS metadata has no file-id counter at this location; use MetadataVersion, MetaId, MaxNodeId and NextSessionId.")]
+  public ulong? FileIdCounter
+    => _data.Length >= SignatureSize + 8
+      ? BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(SignatureSize, 8))
+      : null;
+
+  /// <summary>
   /// Packed file-format version (<c>0x16</c> for 1.6, <c>0x20</c> for 2.0),
   /// or <c>null</c> for the special <c>MFSM NEW</c> bootstrap image.
   /// </summary>
