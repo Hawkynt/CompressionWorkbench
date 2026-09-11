@@ -69,7 +69,7 @@ public class CdiTests {
     Assert.That(file, Is.Not.Null);
     Assert.Multiple(() => {
       Assert.That(file!.Size, Is.EqualTo(data.Length));
-      Assert.That(reader.Extract(file), Is.EqualTo(data));
+      Assert.That(reader.Extract(file!), Is.EqualTo(data));
     });
   }
 
