@@ -14,10 +14,12 @@ namespace FileFormat.FirmwareHex;
 /// and both are fully specified, so writing them is a transcription rather than a
 /// reconstruction. The reader normalises an image to a single <c>firmware.bin</c>
 /// plus a rendered <c>metadata.ini</c>; the writer reads that pair back — the
-/// payload is the bytes, the metadata supplies the base and start addresses the
-/// flat binary cannot carry.</para>
+/// payload is the bytes, the metadata supplies the address map and start address
+/// information the flat binary cannot carry.</para>
 /// </remarks>
 public static class FirmwareHexWriter {
+
+  private readonly record struct SegmentLayout(uint Address, int Length);
 
   /// <summary>The name the reader gives the flat payload.</summary>
   public const string PayloadName = "firmware.bin";
@@ -37,12 +39,16 @@ public static class FirmwareHexWriter {
     byte[]? payload = null;
     var baseAddress = 0u;
     uint? startAddress = null;
+    ushort? startSegmentCs = null;
+    ushort? startSegmentIp = null;
+    var segmentLayout = new List<SegmentLayout>();
 
     foreach (var input in inputs) {
       if (input.IsDirectory) continue;
       var leaf = Path.GetFileName(input.ArchiveName);
       if (leaf.Equals(MetadataName, StringComparison.OrdinalIgnoreCase)) {
-        ReadMetadata(input.ReadContent(), ref baseAddress, ref startAddress);
+        ReadMetadata(input.ReadContent(), ref baseAddress, ref startAddress,
+          segmentLayout, ref startSegmentCs, ref startSegmentIp);
         continue;
       }
       // Any other single input is the payload, whatever it is called: a caller
@@ -50,33 +56,130 @@ public static class FirmwareHexWriter {
       payload ??= input.ReadContent();
     }
 
-    var segments = payload is { Length: > 0 }
-      ? new List<(uint, byte[])> { (baseAddress, payload) }
-      : [];
-    return new FirmwareImage(segments, startAddress, RecordCount: 0, GapCount: 0,
-      TotalDataBytes: payload?.Length ?? 0, SourceFormat: sourceFormat);
+    List<(uint Address, byte[] Data)> segments;
+    if (payload is not { Length: > 0 })
+      segments = [];
+    else if (!TryRestoreSparseSegments(payload, baseAddress, segmentLayout, out segments))
+      segments = [(baseAddress, payload)];
+
+    var image = new FirmwareImage(segments, startAddress, RecordCount: 0,
+      GapCount: Math.Max(0, segments.Count - 1),
+      TotalDataBytes: segments.Sum(segment => segment.Data.Length),
+      SourceFormat: sourceFormat);
+
+    if (startAddress is { } linear && startSegmentCs is { } cs && startSegmentIp is { } ip
+        && ((uint)cs << 4) + ip == linear)
+      image = image with { StartSegmentAddress = (cs, ip) };
+
+    return image;
   }
 
-  /// <summary>Reads the two addresses the flat payload cannot carry out of a rendered summary.</summary>
-  private static void ReadMetadata(byte[] metadata, ref uint baseAddress, ref uint? startAddress) {
+  /// <summary>
+  /// Reads the addresses and segment map that a flat payload cannot carry out of
+  /// a rendered summary. Unknown metadata is deliberately ignored so older and
+  /// hand-written summaries remain accepted.
+  /// </summary>
+  private static void ReadMetadata(byte[] metadata, ref uint baseAddress, ref uint? startAddress,
+      List<SegmentLayout> segmentLayout, ref ushort? startSegmentCs, ref ushort? startSegmentIp) {
     foreach (var raw in Encoding.UTF8.GetString(metadata).Split('\n')) {
       var line = raw.Trim();
       var equals = line.IndexOf('=', StringComparison.Ordinal);
       if (equals < 0) continue;
       var key = line[..equals].Trim();
       var value = line[(equals + 1)..].Trim();
-      if (!value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) continue;
-      if (!uint.TryParse(value.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var parsed)) continue;
-      if (key.Equals("base_address", StringComparison.OrdinalIgnoreCase)) baseAddress = parsed;
-      else if (key.Equals("start_address", StringComparison.OrdinalIgnoreCase)) startAddress = parsed;
+
+      if (key.Equals("base_address", StringComparison.OrdinalIgnoreCase)) {
+        if (TryParseHexUInt32(value, out var parsed)) baseAddress = parsed;
+        continue;
+      }
+      if (key.Equals("start_address", StringComparison.OrdinalIgnoreCase)) {
+        if (TryParseHexUInt32(value, out var parsed)) startAddress = parsed;
+        continue;
+      }
+      if (key.Equals("start_segment_cs", StringComparison.OrdinalIgnoreCase)) {
+        if (TryParseHexUInt16(value, out var parsed)) startSegmentCs = parsed;
+        continue;
+      }
+      if (key.Equals("start_segment_ip", StringComparison.OrdinalIgnoreCase)) {
+        if (TryParseHexUInt16(value, out var parsed)) startSegmentIp = parsed;
+        continue;
+      }
+      if (key.StartsWith("segment_", StringComparison.OrdinalIgnoreCase)
+          && TryParseSegmentLayout(value, out var segment))
+        segmentLayout.Add(segment);
     }
+  }
+
+  private static bool TryParseHexUInt32(string text, out uint value) {
+    value = 0;
+    return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+      && uint.TryParse(text.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+  }
+
+  private static bool TryParseHexUInt16(string text, out ushort value) {
+    value = 0;
+    return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+      && ushort.TryParse(text.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+  }
+
+  private static bool TryParseSegmentLayout(string value, out SegmentLayout segment) {
+    segment = default;
+    const string separator = " .. ";
+    var separatorIndex = value.IndexOf(separator, StringComparison.Ordinal);
+    if (separatorIndex <= 0) return false;
+
+    var startText = value[..separatorIndex].Trim();
+    var remainder = value[(separatorIndex + separator.Length)..].Trim();
+    var endTokenLength = remainder.IndexOf(' ');
+    if (endTokenLength < 0) endTokenLength = remainder.Length;
+    var endText = remainder[..endTokenLength];
+    if (!TryParseHexUInt32(startText, out var start) || !TryParseHexUInt32(endText, out var end) || end < start)
+      return false;
+
+    var length = (ulong)end - start;
+    if (length > int.MaxValue) return false;
+    segment = new SegmentLayout(start, (int)length);
+    return true;
+  }
+
+  /// <summary>
+  /// Restores the sparse runs described by metadata from the reader's flat binary.
+  /// The layout is used only when it spans the payload exactly; if callers replace
+  /// <c>firmware.bin</c> with a differently sized binary, stale segment metadata is
+  /// ignored and the replacement becomes one contiguous run at <paramref name="baseAddress"/>.
+  /// </summary>
+  private static bool TryRestoreSparseSegments(byte[] payload, uint baseAddress,
+      IReadOnlyList<SegmentLayout> layout, out List<(uint Address, byte[] Data)> segments) {
+    segments = [];
+    if (layout.Count == 0) return false;
+
+    var ordered = layout.OrderBy(segment => segment.Address).ToArray();
+    if (ordered[0].Address != baseAddress) return false;
+
+    ulong previousEnd = baseAddress;
+    ulong highestEnd = baseAddress;
+    foreach (var segment in ordered) {
+      if (segment.Length < 0 || segment.Address < previousEnd) return false;
+      var end = (ulong)segment.Address + (uint)segment.Length;
+      if (end > 0x1_0000_0000UL) return false;
+      previousEnd = end;
+      highestEnd = Math.Max(highestEnd, end);
+    }
+    if (highestEnd - baseAddress != (ulong)payload.Length) return false;
+
+    foreach (var segment in ordered) {
+      var offset = (ulong)segment.Address - baseAddress;
+      if (offset + (uint)segment.Length > (ulong)payload.Length) return false;
+      segments.Add((segment.Address, payload.AsSpan((int)offset, segment.Length).ToArray()));
+    }
+    return true;
   }
 
   /// <summary>
   /// Writes <paramref name="image"/> as Intel HEX: type-04 extended-linear-address
   /// records whenever the high half of the address changes, type-00 data records of
   /// at most <paramref name="bytesPerRecord"/> bytes that never straddle a 64 KiB
-  /// boundary, an optional type-05 start-linear-address record, and the type-01
+  /// boundary, an optional type-03 or type-05 start-address record, and the type-01
   /// end-of-file record every reader requires.
   /// </summary>
   public static void WriteIntelHex(Stream output, FirmwareImage image, int bytesPerRecord = 16) {
@@ -88,6 +191,10 @@ public static class FirmwareHexWriter {
     var text = new StringBuilder();
     var upper = -1L;
     foreach (var (segmentAddress, data) in image.Segments) {
+      if ((ulong)segmentAddress + (uint)data.Length > 0x1_0000_0000UL)
+        throw new InvalidDataException(
+          $"IntelHex: segment at 0x{segmentAddress:X8} with {data.Length} bytes exceeds the 32-bit address space.");
+
       var offset = 0;
       while (offset < data.Length) {
         var address = segmentAddress + (uint)offset;
@@ -106,8 +213,12 @@ public static class FirmwareHexWriter {
       }
     }
 
-    if (image.StartAddress is { } start)
+    if (image.StartSegmentAddress is { } segmentedStart) {
+      var (cs, ip) = segmentedStart;
+      Record(text, 0, 0x03, [(byte)(cs >> 8), (byte)cs, (byte)(ip >> 8), (byte)ip]);
+    } else if (image.StartAddress is { } start) {
       Record(text, 0, 0x05, [(byte)(start >> 24), (byte)(start >> 16), (byte)(start >> 8), (byte)start]);
+    }
 
     Record(text, 0, 0x01, []);
     var bytes = Encoding.ASCII.GetBytes(text.ToString());
