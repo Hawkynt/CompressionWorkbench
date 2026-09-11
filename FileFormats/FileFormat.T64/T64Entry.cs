@@ -2,9 +2,13 @@
 namespace FileFormat.T64;
 
 /// <summary>
-/// Represents a t 64 entry.
+/// Represents a T64 directory entry.
 /// </summary>
 public sealed class T64Entry {
+  /// <summary>
+  /// Gets the zero-based directory slot index.
+  /// </summary>
+  public int DirectoryIndex { get; init; }
   /// <summary>
   /// Gets or sets the name.
   /// </summary>
@@ -21,6 +25,10 @@ public sealed class T64Entry {
   /// Gets or sets the entry type.
   /// </summary>
   public byte EntryType { get; init; } // 1=normal, 3=snapshot
+  /// <summary>
+  /// Gets the Commodore file type byte.
+  /// </summary>
+  public byte FileType { get; init; }
   /// <summary>
   /// Gets or sets the start address.
   /// </summary>
