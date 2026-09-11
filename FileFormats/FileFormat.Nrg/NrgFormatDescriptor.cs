@@ -170,14 +170,35 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ArgumentNullException.ThrowIfNull(output);
     var profile = NrgStructureInspector.Inspect(input);
     if (!profile.IsSingleDataTrack) {
-      input.Position = 0;
-      output.Position = 0;
-      output.SetLength(0);
-      input.CopyTo(output);
+      CopyThrough(input, output);
       return;
     }
 
-    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+    using var rebuilt = RebuildVerb.CreateScratchStream();
+    var useRebuilt = false;
+    try {
+      RebuildVerb.RebuildToStream(input, rebuilt, this, this);
+      useRebuilt = rebuilt.Length > 0 && rebuilt.Length < input.Length;
+    } catch {
+      useRebuilt = false;
+    }
+
+    output.Position = 0;
+    output.SetLength(0);
+    if (useRebuilt) {
+      rebuilt.Position = 0;
+      rebuilt.CopyTo(output);
+    } else {
+      input.Position = 0;
+      input.CopyTo(output);
+    }
+  }
+
+  private static void CopyThrough(Stream input, Stream output) {
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
   }
 
   private static void EnsureNamedFileMutationProfile(Stream archive) {
