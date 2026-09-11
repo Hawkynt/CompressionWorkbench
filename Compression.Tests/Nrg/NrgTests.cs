@@ -16,10 +16,14 @@ public class NrgTests {
     return image.ToArray();
   }
 
-  private static byte[] BuildOffsetTrackNrg(string fileName, byte[] data, int prefixLength = 4096) {
+  private static byte[] ExtractCanonicalIso(string fileName, byte[] data) {
     var canonical = CreateNrg((fileName, data));
-    var canonicalTrailer = checked((int)BinaryPrimitives.ReadUInt64BigEndian(canonical.AsSpan(canonical.Length - 8)));
-    var iso = canonical.AsSpan(0, canonicalTrailer).ToArray();
+    var trailerOffset = checked((int)BinaryPrimitives.ReadUInt64BigEndian(canonical.AsSpan(canonical.Length - 8)));
+    return canonical.AsSpan(0, trailerOffset).ToArray();
+  }
+
+  private static byte[] BuildOffsetTrackNrg(string fileName, byte[] data, int prefixLength = 4096) {
+    var iso = ExtractCanonicalIso(fileName, data);
 
     using var output = new MemoryStream();
     output.Write(new byte[prefixLength]);
@@ -32,6 +36,39 @@ public class NrgTests {
     etn2[19] = 0x00;
     WriteChunk(output, "ETN2"u8, etn2);
 
+    WriteCommonTrailerChunks(output);
+
+    Span<byte> footer = stackalloc byte[12];
+    "NER5"u8.CopyTo(footer);
+    BinaryPrimitives.WriteUInt64BigEndian(footer[4..], trailerOffset);
+    output.Write(footer);
+    return output.ToArray();
+  }
+
+  private static byte[] BuildLegacyOffsetTrackNrg(string fileName, byte[] data, int prefixLength = 4096) {
+    var iso = ExtractCanonicalIso(fileName, data);
+
+    using var output = new MemoryStream();
+    output.Write(new byte[prefixLength]);
+    output.Write(iso);
+    var trailerOffset = checked((uint)output.Position);
+
+    Span<byte> etnf = stackalloc byte[20];
+    BinaryPrimitives.WriteUInt32BigEndian(etnf, checked((uint)prefixLength));
+    BinaryPrimitives.WriteUInt32BigEndian(etnf[4..], checked((uint)iso.Length));
+    etnf[11] = 0x00;
+    WriteChunk(output, "ETNF"u8, etnf);
+
+    WriteCommonTrailerChunks(output);
+
+    Span<byte> footer = stackalloc byte[8];
+    "NERO"u8.CopyTo(footer);
+    BinaryPrimitives.WriteUInt32BigEndian(footer[4..], trailerOffset);
+    output.Write(footer);
+    return output.ToArray();
+  }
+
+  private static void WriteCommonTrailerChunks(Stream output) {
     Span<byte> sinf = stackalloc byte[4];
     BinaryPrimitives.WriteUInt32BigEndian(sinf, 1);
     WriteChunk(output, "SINF"u8, sinf);
@@ -40,12 +77,6 @@ public class NrgTests {
     BinaryPrimitives.WriteUInt32BigEndian(mtyp, 0x00000400);
     WriteChunk(output, "MTYP"u8, mtyp);
     WriteChunk(output, "END!"u8, ReadOnlySpan<byte>.Empty);
-
-    Span<byte> footer = stackalloc byte[12];
-    "NER5"u8.CopyTo(footer);
-    BinaryPrimitives.WriteUInt64BigEndian(footer[4..], trailerOffset);
-    output.Write(footer);
-    return output.ToArray();
   }
 
   private static void WriteChunk(Stream output, ReadOnlySpan<byte> id, ReadOnlySpan<byte> payload) {
@@ -108,6 +139,18 @@ public class NrgTests {
     var payload = "track-offset"u8.ToArray();
     var image = BuildOffsetTrackNrg("OFFSET.BIN", payload);
     Assert.That(ReadFile(image, "OFFSET.BIN"), Is.EqualTo(payload));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Read_LegacyNeroEtnf_Uses32BitTrackOffset() {
+    var payload = "legacy-track-offset"u8.ToArray();
+    var image = BuildLegacyOffsetTrackNrg("LEGACY.BIN", payload);
+
+    using var stream = new MemoryStream(image, writable: false);
+    using var reader = new NrgReader(stream);
+    Assert.That(reader.Version, Is.EqualTo(1));
+    var entry = reader.Entries.Single(e => !e.IsDirectory && e.Name.Equals("LEGACY.BIN", StringComparison.OrdinalIgnoreCase));
+    Assert.That(reader.Extract(entry), Is.EqualTo(payload));
   }
 
   [Test, Category("Regression")]
