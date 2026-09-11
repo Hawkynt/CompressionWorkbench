@@ -6,8 +6,8 @@ namespace FileSystem.TahoeLafs;
 
 /// <summary>
 /// Byte-preserving maintenance for the outer Tahoe-LAFS storage-server share
-/// container. The opaque encrypted/erasure-coded share payload is never decoded
-/// or rewritten semantically.
+/// container. Capability connection documents contain no reclaimable internal
+/// storage and therefore pass through unchanged.
 /// </summary>
 internal static class TahoeLafsMaintenance {
 
@@ -16,10 +16,15 @@ internal static class TahoeLafsMaintenance {
     ArgumentNullException.ThrowIfNull(output);
 
     var source = ReadAll(input);
-    var layout = TahoeLafsContainer.Parse(source);
-    var result = layout.Kind == TahoeLafsShareKind.Mutable
-      ? PackMutable(source, layout, preserveLength: false)
-      : source;
+    byte[] result;
+    if (TahoeLafsConnection.TryParse(source, out _)) {
+      result = source;
+    } else {
+      var layout = TahoeLafsContainer.Parse(source);
+      result = layout.Kind == TahoeLafsShareKind.Mutable
+        ? PackMutable(source, layout, preserveLength: false)
+        : source;
+    }
 
     output.Position = 0;
     output.SetLength(0);
@@ -34,10 +39,13 @@ internal static class TahoeLafsMaintenance {
 
     options ??= new DefragOptions();
     if (options.Mode != DefragMode.ConsolidateAtStart)
-      throw new NotSupportedException($"Tahoe-LAFS share packing supports only {DefragMode.ConsolidateAtStart}.");
+      throw new NotSupportedException($"Tahoe-LAFS packing supports only {DefragMode.ConsolidateAtStart}.");
     options.CancellationToken.ThrowIfCancellationRequested();
 
     var source = ReadAll(archive);
+    if (TahoeLafsConnection.TryParse(source, out _))
+      return; // a three-line connection document has no physical fragmentation
+
     var layout = TahoeLafsContainer.Parse(source);
     if (layout.Kind == TahoeLafsShareKind.Immutable)
       return; // immutable storage shares already have data immediately followed by leases
@@ -54,6 +62,9 @@ internal static class TahoeLafsMaintenance {
   internal static IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     var source = ReadAll(archive);
+    if (TahoeLafsConnection.TryParse(source, out _))
+      return [new(0, source.LongLength, DefragBlockKind.MetadataReserved, "capability-connection")];
+
     var layout = TahoeLafsContainer.Parse(source);
     var result = new List<DefragBlockInfo>(5);
 

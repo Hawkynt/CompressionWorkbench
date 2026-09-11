@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using Compression.Registry;
 using FileSystem.TahoeLafs;
 
@@ -69,11 +70,13 @@ public class TahoeLafsDetectionTests {
     Assert.That(descriptor.DisplayName, Does.Contain("Tahoe"));
     Assert.That(descriptor.Extensions, Does.Contain(".tahoe-share"));
     Assert.That(descriptor.Extensions, Does.Contain(".share"));
-    Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(4));
+    Assert.That(descriptor.Extensions, Does.Contain(".tahoe-cap"));
+    Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(5));
     Assert.That(descriptor.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0x00, 0x00, 0x00, 0x01 }));
     Assert.That(descriptor.MagicSignatures[1].Bytes, Is.EqualTo(new byte[] { 0x00, 0x00, 0x00, 0x02 }));
     Assert.That(descriptor.MagicSignatures[2].Bytes, Is.EqualTo(MutableV1Magic.ToArray()));
     Assert.That(descriptor.MagicSignatures[3].Bytes, Is.EqualTo(MutableV2Magic.ToArray()));
+    Assert.That(descriptor.MagicSignatures[4].Bytes, Is.EqualTo(Encoding.ASCII.GetBytes(TahoeLafsConnection.Magic)));
     Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
   }
 
@@ -122,6 +125,17 @@ public class TahoeLafsDetectionTests {
       Assert.That(reader.FreeSpace, Is.EqualTo(35));
       Assert.That(reader.Entries.Select(e => e.Name), Does.Contain("share.mutable.bin"));
     });
+  }
+
+  [Test, Category("HappyPath")]
+  public void ConnectionDocument_IsDetectedByItsOwnMagic() {
+    var connection = new TahoeLafsConnection(
+      new Uri("http://127.0.0.1:3456/"),
+      TahoeLafsCapability.Parse("URI:DIR2:write:fingerprint"));
+    using var stream = new MemoryStream(connection.Serialize());
+
+    Assert.That(TahoeLafsConnection.TryRead(stream, out var parsed), Is.True);
+    Assert.That(parsed!.RootCapability.CanWrite, Is.True);
   }
 
   [Test, Category("Sad")]

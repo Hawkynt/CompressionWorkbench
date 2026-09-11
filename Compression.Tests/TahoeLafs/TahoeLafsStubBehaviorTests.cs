@@ -6,8 +6,8 @@ using FileSystem.TahoeLafs;
 namespace Compression.Tests.TahoeLafs;
 
 /// <summary>
-/// Pins the intentionally read-only archive namespace while allowing physical
-/// maintenance of the Tahoe storage-share container itself.
+/// Pins the dual Tahoe profile: raw storage shares remain opaque, while a
+/// capability connection document supplies a genuine live R/W namespace.
 /// </summary>
 [TestFixture]
 public class TahoeLafsStubBehaviorTests {
@@ -24,23 +24,25 @@ public class TahoeLafsStubBehaviorTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_AdvertisesPhysicalMaintenanceWithoutFakeArchiveWrites() {
+  public void Descriptor_AdvertisesCapabilityBackedRwAndPhysicalMaintenance() {
     var descriptor = new TahoeLafsFormatDescriptor();
 
     Assert.Multiple(() => {
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
-      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False,
+        "A generic creator cannot invent a Tahoe grid endpoint and root capability.");
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveModifiable>());
+      Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
       Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
       Assert.That(descriptor, Is.InstanceOf<IArchiveDefragmentable>());
       Assert.That(descriptor, Is.InstanceOf<IArchiveLayoutMap>());
       Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
       Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>());
-      Assert.That(descriptor, Is.Not.InstanceOf<IArchivePurgeable>());
     });
   }
 
   [Test, Category("HappyPath")]
-  public void OpaqueEntries_RemainExactRenderedViews() {
+  public void RawShare_OpaqueEntriesRemainExactRenderedViews() {
     var image = BuildImmutable(payloadLen: 64);
     var descriptor = new TahoeLafsFormatDescriptor();
     using var stream = new MemoryStream(image, writable: false);
@@ -65,9 +67,19 @@ public class TahoeLafsStubBehaviorTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Description_StatesOpaqueReadOnlyNamespace() {
+  public void RawShare_ModificationRefusesRatherThanPretendingCiphertextIsNamespaceData() {
+    var descriptor = (IArchiveModifiable)new TahoeLafsFormatDescriptor();
+    using var image = new MemoryStream(BuildImmutable());
+
+    Assert.Throws<NotSupportedException>(() =>
+      descriptor.Add(image, [ArchiveInputInfo.InMemory("new.bin", new byte[] { 1, 2, 3 })]));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Description_DistinguishesOpaqueSharesFromCapabilityRw() {
     var description = new TahoeLafsFormatDescriptor().Description.ToLowerInvariant();
     Assert.That(description, Does.Contain("opaque"));
-    Assert.That(description, Does.Contain("read-only"));
+    Assert.That(description, Does.Contain("capability"));
+    Assert.That(description, Does.Contain("read/write"));
   }
 }
