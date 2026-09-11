@@ -154,6 +154,8 @@ public class OneFsDetectionTests {
     var descriptor = new OneFsFormatDescriptor();
 
     Assert.Multiple(() => {
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanTest), Is.False,
+        "Opaque byte copying cannot validate an undocumented filesystem's integrity.");
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
