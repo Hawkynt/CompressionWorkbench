@@ -156,6 +156,20 @@ public class CdiTests {
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void LegacyFooter_OrdinaryFileEdit_UpgradesThroughV35Rebuild() {
+    using var ms = new MemoryStream();
+    ms.Write(BuildLegacyCdi("readme.txt", "old"u8.ToArray()));
+    ms.Position = 0;
+
+    var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
+    ((IArchiveModifiable)descriptor).Add(ms, [ArchiveInputInfo.InMemory("readme.txt", "replacement"u8)]);
+
+    Assert.That(ReadFile(ms, "README.TXT"), Is.EqualTo("replacement"u8.ToArray()));
+    var bytes = ms.ToArray();
+    Assert.That(BitConverter.ToUInt32(bytes, bytes.Length - 8), Is.EqualTo(0x80000006u));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
   public void Descriptor_AddReplaceRemoveAndPurge_RoundTripFiles() {
     var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
     var creator = (IArchiveCreatable)descriptor;
