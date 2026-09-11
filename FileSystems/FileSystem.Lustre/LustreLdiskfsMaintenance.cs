@@ -70,12 +70,15 @@ internal static class LustreLdiskfsMaintenance {
 
     for (uint group = 0; group < geometry.GroupCount; ++group) {
       ReadDescriptor(image, geometry, group, descriptor);
-      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
 
+      // BLOCK_UNINIT is itself a safe stop condition: if corruption merely sets this
+      // bit we skip a writable group rather than touching it. If corruption clears the
+      // bit on a genuinely uninitialised group, the descriptor checksum below catches it.
       var flags = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(0x12, 2));
       if ((flags & BgBlockUninit) != 0)
         continue;
 
+      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
       ReadAndValidateBlockBitmap(image, geometry, group, descriptor, bitmap);
 
       var groupFirst = (ulong)geometry.FirstDataBlock + (ulong)group * geometry.BlocksPerGroup;
@@ -261,13 +264,12 @@ internal static class LustreLdiskfsMaintenance {
     var bitmap = new byte[geometry.BlockSize];
     for (uint group = 0; group < geometry.GroupCount; ++group) {
       ReadDescriptor(image, geometry, group, descriptor);
-      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
-
       var flags = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(0x12, 2));
       if ((flags & BgBlockUninit) != 0)
         throw new NotSupportedException(
           $"Lustre shrink refuses lazy BLOCK_UNINIT group {group}; its on-disk allocation bitmap is not authoritative yet.");
 
+      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
       ReadAndValidateBlockBitmap(image, geometry, group, descriptor, bitmap);
     }
   }
