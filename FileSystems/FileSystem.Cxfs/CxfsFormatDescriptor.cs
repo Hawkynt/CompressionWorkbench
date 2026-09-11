@@ -35,13 +35,24 @@ public sealed class CxfsFormatDescriptor :
   IArchiveDefragmentable,
   IFormatOptionsSchema {
 
+  private sealed class LabelPreservingCreator(CxfsFormatDescriptor owner, string volumeLabel) : IArchiveCreatable {
+    public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+      var forwarded = options.Copy();
+      forwarded.FormatSpecific["VolumeLabel"] = volumeLabel;
+      owner.Create(output, inputs, forwarded);
+    }
+  }
+
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new FormatOptionDescriptor(
       Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: "",
       Description: "CXFS/XFS volume label stored in sb_fname (max 12 ASCII chars)."),
   ];
 
-  public long? MaxTotalArchiveSize => int.MaxValue;
+  // CxfsV4Writer currently materialises the complete image in one managed array.
+  // With its two equal power-of-two AGs the largest representable profile below
+  // Array.MaxLength is 2 * 131072 * 4096 = 1 GiB.
+  public long? MaxTotalArchiveSize => 1L << 30;
   public long? MinTotalArchiveSize => CxfsV4Writer.MinAgBlocks * CxfsV4Writer.BlockSize * CxfsV4Writer.AgCount;
 
   public string AcceptedInputsDescription =>
@@ -129,7 +140,8 @@ public sealed class CxfsFormatDescriptor :
       if (!this.CanAccept(input, out var reason))
         throw new NotSupportedException(reason);
 
-    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+    var creator = CreatorPreservingMetadata(archive);
+    RebuildVerb.EditViaRebuild(archive, this, creator, tmpDir => {
       foreach (var input in inputs) {
         var target = Path.Combine(tmpDir, input.ArchiveName);
         File.WriteAllBytes(target, input.ReadContent());
@@ -139,8 +151,9 @@ public sealed class CxfsFormatDescriptor :
 
   public void Remove(Stream archive, string[] entryNames) {
     EnsureMutationProfile(archive);
+    var creator = CreatorPreservingMetadata(archive);
     var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
-    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+    RebuildVerb.EditViaRebuild(archive, this, creator, tmpDir => {
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.TopDirectoryOnly))
         if (remove.Contains(Path.GetFileName(file)))
           File.Delete(file);
@@ -155,13 +168,51 @@ public sealed class CxfsFormatDescriptor :
     if (options.Mode != DefragMode.ConsolidateAtStart)
       throw new NotSupportedException("The CXFS v4 rebuild profile currently supports ConsolidateAtStart only.");
     EnsureMutationProfile(archive);
-    RebuildVerb.RebuildInPlace(archive, this, this,
+    var creator = CreatorPreservingMetadata(archive);
+    RebuildVerb.RebuildInPlace(archive, this, creator,
       onProgress: options.OnProgress, cancellationToken: options.CancellationToken);
   }
 
   public void Shrink(Stream input, Stream output) {
     EnsureMutationProfile(input);
-    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+    var creator = CreatorPreservingMetadata(input);
+    using var rebuilt = RebuildVerb.CreateScratchStream();
+    var useRebuilt = false;
+    try {
+      RebuildVerb.RebuildToStream(input, rebuilt, this, creator);
+      useRebuilt = rebuilt.Length > 0 && rebuilt.Length < input.Length;
+    } catch {
+      useRebuilt = false;
+    }
+
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    if (useRebuilt) {
+      rebuilt.Position = 0;
+      rebuilt.CopyTo(output);
+    } else {
+      input.CopyTo(output);
+    }
+  }
+
+  private IArchiveCreatable CreatorPreservingMetadata(Stream archive)
+    => new LabelPreservingCreator(this, ReadVolumeLabel(archive));
+
+  private static string ReadVolumeLabel(Stream archive) {
+    var original = archive.Position;
+    try {
+      Span<byte> sb = stackalloc byte[120];
+      archive.Position = 0;
+      archive.ReadExactly(sb);
+      var label = sb[108..120];
+      var terminator = label.IndexOf((byte)0);
+      if (terminator >= 0)
+        label = label[..terminator];
+      return System.Text.Encoding.ASCII.GetString(label);
+    } finally {
+      archive.Position = original;
+    }
   }
 
   private void EnsureMutationProfile(Stream archive) {
