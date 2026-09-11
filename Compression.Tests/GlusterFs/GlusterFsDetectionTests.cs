@@ -56,6 +56,7 @@ public class GlusterFsDetectionTests {
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsDirectories), Is.True);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
     });
   }
 
@@ -117,6 +118,41 @@ public class GlusterFsDetectionTests {
     }
   }
 
+  [Test, Category("RoundTrip")]
+  public void ExtBackingStore_ShrinkToFit_PreservesPayloadAndGfid() {
+    var original = BuildExtBrick();
+    var descriptor = new GlusterFsFormatDescriptor();
+    using var input = new MemoryStream(original, writable: false);
+    using var output = new MemoryStream();
+
+    descriptor.Shrink(input, output);
+
+    Assert.That(output.Length, Is.LessThan(original.LongLength));
+    output.Position = 0;
+    using var reader = new GlusterFsReader(output);
+    var entry = reader.Entries.Single(candidate => candidate.Name == "brick/data/hello.txt");
+    Assert.Multiple(() => {
+      Assert.That(Encoding.UTF8.GetString(reader.Extract(entry)), Is.EqualTo("hello from ext brick"));
+      Assert.That(reader.ReadExtendedAttributes(entry)["trusted.gfid"], Is.EqualTo(Gfid));
+    });
+  }
+
+  [Test, Category("RoundTrip")]
+  public void XfsBackingStore_ShrinkCopiesThroughWithoutRebuild() {
+    var original = BuildXfsBrick();
+    var descriptor = new GlusterFsFormatDescriptor();
+    using var input = new MemoryStream(original, writable: false);
+    using var output = new MemoryStream();
+
+    descriptor.Shrink(input, output);
+
+    Assert.That(output.ToArray(), Is.EqualTo(original));
+    output.Position = 0;
+    using var reader = new GlusterFsReader(output);
+    var entry = reader.Entries.Single(candidate => candidate.Name == "brick/data/hello.txt");
+    Assert.That(reader.ReadExtendedAttributes(entry)["trusted.gfid"], Is.EqualTo(Gfid));
+  }
+
   [Test, Category("Regression")]
   public void WorkbenchProbeMagic_IsNoLongerAcceptedAsGlusterFs() {
     byte[] oldSyntheticProbe = [0xCA, 0xFE, 0x5B, 0xAB, 0, 0, 0, 0];
@@ -128,7 +164,7 @@ public class GlusterFsDetectionTests {
   }
 
   [Test, Category("Regression")]
-  public void Descriptor_DoesNotAdvertiseMutationsUntilAllXattrStorageFormsAreSafe() {
+  public void Descriptor_DoesNotAdvertiseUnsafeMutations() {
     var descriptor = new GlusterFsFormatDescriptor();
 
     Assert.Multiple(() => {
@@ -136,7 +172,6 @@ public class GlusterFsDetectionTests {
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchivePurgeable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
-      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveShrinkable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IWipeEmpty>());
       Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>());
     });
