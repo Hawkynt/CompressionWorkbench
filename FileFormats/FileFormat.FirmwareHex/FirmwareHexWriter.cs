@@ -122,6 +122,12 @@ public static class FirmwareHexWriter {
       && ushort.TryParse(text.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
   }
 
+  private static bool TryParseHexUInt64(string text, out ulong value) {
+    value = 0;
+    return text.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+      && ulong.TryParse(text.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+  }
+
   private static bool TryParseSegmentLayout(string value, out SegmentLayout segment) {
     segment = default;
     const string separator = " .. ";
@@ -133,10 +139,11 @@ public static class FirmwareHexWriter {
     var endTokenLength = remainder.IndexOf(' ');
     if (endTokenLength < 0) endTokenLength = remainder.Length;
     var endText = remainder[..endTokenLength];
-    if (!TryParseHexUInt32(startText, out var start) || !TryParseHexUInt32(endText, out var end) || end < start)
+    if (!TryParseHexUInt32(startText, out var start) || !TryParseHexUInt64(endText, out var end)
+        || end < start || end > 0x1_0000_0000UL)
       return false;
 
-    var length = (ulong)end - start;
+    var length = end - start;
     if (length > int.MaxValue) return false;
     segment = new SegmentLayout(start, (int)length);
     return true;
@@ -159,7 +166,7 @@ public static class FirmwareHexWriter {
     ulong previousEnd = baseAddress;
     ulong highestEnd = baseAddress;
     foreach (var segment in ordered) {
-      if (segment.Length < 0 || segment.Address < previousEnd) return false;
+      if (segment.Address < previousEnd) return false;
       var end = (ulong)segment.Address + (uint)segment.Length;
       if (end > 0x1_0000_0000UL) return false;
       previousEnd = end;
@@ -170,7 +177,7 @@ public static class FirmwareHexWriter {
     foreach (var segment in ordered) {
       var offset = (ulong)segment.Address - baseAddress;
       if (offset + (uint)segment.Length > (ulong)payload.Length) return false;
-      segments.Add((segment.Address, payload.AsSpan((int)offset, segment.Length).ToArray()));
+      segments.Add((segment.Address, payload.AsSpan(checked((int)offset), segment.Length).ToArray()));
     }
     return true;
   }
