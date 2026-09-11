@@ -27,6 +27,24 @@ public sealed class UImageReader {
   /// <summary>Length of the image-name field.</summary>
   public const int NameLength = 32;
 
+  /// <summary>Parsed fixed legacy header, independent of the payload bytes.</summary>
+  public sealed record LegacyHeader(
+    uint Magic,
+    uint HeaderCrc,
+    uint Timestamp,
+    uint DataSize,
+    uint LoadAddress,
+    uint EntryPoint,
+    uint DataCrc,
+    byte Os,
+    byte Architecture,
+    byte Type,
+    byte Compression,
+    string Name,
+    byte[] RawHeader,
+    uint ComputedHeaderCrc
+  );
+
   /// <summary>Parsed uImage container.</summary>
   public sealed record UImage(
     uint Magic,
@@ -47,43 +65,56 @@ public sealed class UImageReader {
     uint ComputedDataCrc
   );
 
-  /// <summary>Parses a uImage from a full-file byte span.</summary>
-  public static UImage Read(ReadOnlySpan<byte> data) {
+  /// <summary>Parses only the fixed 64-byte legacy header.</summary>
+  public static LegacyHeader ReadHeader(ReadOnlySpan<byte> data) {
     if (data.Length < HeaderSize)
       throw new InvalidDataException($"uImage: file shorter than {HeaderSize}-byte header.");
 
-    var magic = BinaryPrimitives.ReadUInt32BigEndian(data);
+    var header = data[..HeaderSize].ToArray();
+    var magic = BinaryPrimitives.ReadUInt32BigEndian(header);
     if (magic != Magic)
       throw new InvalidDataException($"uImage: bad magic 0x{magic:X8} (expected 0x{Magic:X8}).");
 
-    var hcrc = BinaryPrimitives.ReadUInt32BigEndian(data[4..]);
-    var time = BinaryPrimitives.ReadUInt32BigEndian(data[8..]);
-    var size = BinaryPrimitives.ReadUInt32BigEndian(data[12..]);
-    var load = BinaryPrimitives.ReadUInt32BigEndian(data[16..]);
-    var ep = BinaryPrimitives.ReadUInt32BigEndian(data[20..]);
-    var dcrc = BinaryPrimitives.ReadUInt32BigEndian(data[24..]);
-    var os = data[28];
-    var arch = data[29];
-    var type = data[30];
-    var comp = data[31];
+    var hcrc = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(4));
+    var time = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(8));
+    var size = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12));
+    var load = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(16));
+    var ep = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(20));
+    var dcrc = BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(24));
+    var os = header[28];
+    var arch = header[29];
+    var type = header[30];
+    var comp = header[31];
 
-    var nameSpan = data.Slice(32, NameLength);
+    var nameSpan = header.AsSpan(32, NameLength);
     var nameEnd = nameSpan.IndexOf((byte)0);
     if (nameEnd < 0) nameEnd = NameLength;
     var name = Encoding.ASCII.GetString(nameSpan[..nameEnd]);
 
-    var bodyEnd = HeaderSize + (int)Math.Min(size, (uint)(data.Length - HeaderSize));
-    var body = data[HeaderSize..bodyEnd].ToArray();
-    var header = data[..HeaderSize].ToArray();
-
     // Recompute header CRC: clear the hcrc field to 0 before hashing.
     var headerForCrc = header.ToArray();
-    headerForCrc[4] = headerForCrc[5] = headerForCrc[6] = headerForCrc[7] = 0;
+    headerForCrc.AsSpan(4, sizeof(uint)).Clear();
     var computedHeaderCrc = Crc32Ieee.Compute(headerForCrc);
+
+    return new LegacyHeader(magic, hcrc, time, size, load, ep, dcrc, os, arch, type,
+      comp, name, header, computedHeaderCrc);
+  }
+
+  /// <summary>Parses a uImage from a full-file byte span.</summary>
+  public static UImage Read(ReadOnlySpan<byte> data) {
+    var header = ReadHeader(data);
+    var availablePayload = data.Length - HeaderSize;
+    if (header.DataSize > (uint)availablePayload)
+      throw new InvalidDataException(
+        $"uImage: header declares {header.DataSize} payload bytes, but only {availablePayload} are present.");
+
+    var body = data.Slice(HeaderSize, checked((int)header.DataSize)).ToArray();
     var computedDataCrc = Crc32Ieee.Compute(body);
 
-    return new UImage(magic, hcrc, time, size, load, ep, dcrc, os, arch, type, comp,
-      name, header, body, computedHeaderCrc, computedDataCrc);
+    return new UImage(header.Magic, header.HeaderCrc, header.Timestamp, header.DataSize,
+      header.LoadAddress, header.EntryPoint, header.DataCrc, header.Os,
+      header.Architecture, header.Type, header.Compression, header.Name,
+      header.RawHeader, body, header.ComputedHeaderCrc, computedDataCrc);
   }
 
   /// <summary>Decodes the <c>ih_os</c> byte to a readable name.</summary>

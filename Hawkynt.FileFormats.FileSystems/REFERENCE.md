@@ -1416,13 +1416,13 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.UImage`
 
-[`UImageFormatDescriptor`](#uimageformatdescriptor) · [`UImageReader`](#uimagereader) · [`UImageReader.UImage`](#uimagereaderuimage) · [`UImageWriter`](#uimagewriter) · [`UImageWriter.Header`](#uimagewriterheader)
+[`UImageFormatDescriptor`](#uimageformatdescriptor) · [`UImageReader`](#uimagereader) · [`UImageReader.LegacyHeader`](#uimagereaderlegacyheader) · [`UImageReader.UImage`](#uimagereaderuimage) · [`UImageWriter`](#uimagewriter) · [`UImageWriter.Header`](#uimagewriterheader)
 
 #### `UImageFormatDescriptor`
 
-Pseudo-archive descriptor for U-Boot legacy uImage containers (`mkimage` output). Exposes `metadata.ini`, `header.bin` (the 64-byte legacy header) and `payload.bin` (the compressed body verbatim). When the body compression is `none` an additional `payload_decompressed.bin` is emitted; for gzip/bzip2/lzma/lzo/lz4/zstd the body is left compressed and the `metadata.ini` notes which scheme the caller needs to apply. References: `https://docs.u-boot.org/` — U-Boot documentation`https://github.com/u-boot/u-boot` — U-Boot sources — `include/image.h` defines the 64-byte legacy header
+Pseudo-archive descriptor for U-Boot legacy uImage containers (`mkimage` output). Exposes `metadata.ini`, `header.bin` (the 64-byte legacy header) and `payload.bin` (the compressed body verbatim). When the body compression is `none` an additional `payload_decompressed.bin` alias is emitted. The one native payload is mutable; the other entries are renderings of the fixed header or aliases of that payload. References: `https://docs.u-boot.org/` — U-Boot documentation`https://github.com/u-boot/u-boot` — U-Boot sources — `include/image.h` defines the 64-byte legacy header
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1438,10 +1438,16 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces the one native payload and/or edits its header renderings. Legacy uImage is a single-payload container, so adding an arbitrary non-synthetic input means replacing that payload rather than manufacturing a second member. Dead trailing bytes are preserved verbatim after the new declared payload. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh uImage: the single payload input becomes the body, a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the header fields, and both CRCs are computed the way `mkimage` computes them. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the fixed header, declared payload and any dead trailer bytes. The map is emitted only for a structurally valid image whose two CRCs match, so generic wipe never guesses about malformed input. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Purge` | `void Purge(Stream archive)` | Removes the live payload while preserving outer size. The former body becomes dead trailer space, intentionally left intact; `IWipeEmpty` can subsequently overwrite it when forensic erasure is requested. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the sole live payload. The header/metadata entries are synthetic and cannot be removed independently; removing the decompressed alias is treated as removing the payload it represents. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Removes bytes after the declared payload. Such a trailer is outside the legacy uImage described by `ih_size`; the header and live payload remain byte-identical. Invalid images are copied through unchanged. |
 
 #### `UImageReader`
 
@@ -1456,8 +1462,33 @@ Reader for the legacy U-Boot uImage container (`mkimage` output). The fixed 64-b
 | `ArchName` | `static string ArchName(byte arch)` | Decodes the `ih_arch` byte to a readable name. |
 | `CompressionName` | `static string CompressionName(byte comp)` | Decodes the `ih_comp` byte to a readable name. |
 | `OsName` | `static string OsName(byte os)` | Decodes the `ih_os` byte to a readable name. |
+| `ReadHeader` | `static LegacyHeader ReadHeader(ReadOnlySpan<byte> data)` | Parses only the fixed 64-byte legacy header. |
 | `Read` | `static UImage Read(ReadOnlySpan<byte> data)` | Parses a uImage from a full-file byte span. |
 | `TypeName` | `static string TypeName(byte type)` | Decodes the `ih_type` byte to a readable name. |
+
+#### `UImageReader.LegacyHeader`
+
+Parsed fixed legacy header, independent of the payload bytes.
+
+Implements `IEquatable<LegacyHeader>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LegacyHeader` | `LegacyHeader(uint Magic, uint HeaderCrc, uint Timestamp, uint DataSize, uint LoadAddress, uint EntryPoint, uint DataCrc, byte Os, byte Architecture, byte Type, byte Compression, string Name, byte[] RawHeader, uint ComputedHeaderCrc)` | Parsed fixed legacy header, independent of the payload bytes. |
+| `Architecture` | `byte Architecture { get; init; }` |  |
+| `Compression` | `byte Compression { get; init; }` |  |
+| `ComputedHeaderCrc` | `uint ComputedHeaderCrc { get; init; }` |  |
+| `DataCrc` | `uint DataCrc { get; init; }` |  |
+| `DataSize` | `uint DataSize { get; init; }` |  |
+| `EntryPoint` | `uint EntryPoint { get; init; }` |  |
+| `HeaderCrc` | `uint HeaderCrc { get; init; }` |  |
+| `LoadAddress` | `uint LoadAddress { get; init; }` |  |
+| `Magic` | `uint Magic { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Os` | `byte Os { get; init; }` |  |
+| `RawHeader` | `byte[] RawHeader { get; init; }` |  |
+| `Timestamp` | `uint Timestamp { get; init; }` |  |
+| `Type` | `byte Type { get; init; }` |  |
 
 #### `UImageReader.UImage`
 
@@ -1495,6 +1526,10 @@ Writer for the legacy U-Boot uImage container: the fixed 64-byte big-endian head
 | `HeaderName` | `const string HeaderName` | The name the reader gives the header as stored. |
 | `MetadataName` | `const string MetadataName` | The name the reader gives the rendered summary. |
 | `PayloadName` | `const string PayloadName` | The name the reader gives the body as stored. |
+| `ApplyMetadata` | `static Header ApplyMetadata(Header header, ReadOnlySpan<byte> metadata)` | Applies fields from the descriptor's rendered `metadata.ini` to an existing header model. Unknown and derived fields are ignored. |
+| `FromHeaderBytes` | `static Header FromHeaderBytes(ReadOnlySpan<byte> bytes)` | Reads editable fields from a raw 64-byte uImage header. Size and CRC fields are deliberately not retained because `Write` derives them from the new payload. |
+| `From` | `static Header From(LegacyHeader header)` | Copies the editable fields from an already parsed legacy header. |
+| `From` | `static Header From(UImage image)` | Copies the editable fields from an already parsed uImage. |
 | `From` | `static ValueTuple<Header, byte[]> From(IReadOnlyList<ArchiveInputInfo> inputs)` | The body and header a create or edit describes: the single payload input as the body, and the header fields read out of `metadata.ini` when the caller passes the one the reader rendered. |
 | `Write` | `static void Write(Stream output, Header header, ReadOnlySpan<byte> body)` | Writes a uImage carrying `body` under `header`. |
 
