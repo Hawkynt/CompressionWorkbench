@@ -20,9 +20,9 @@ public sealed class EcryptfsFormatDescriptor :
   IFormatDescriptor,
   IArchiveFormatOperations,
   IArchiveCreatable,
+  IArchiveModifiable,
   IArchiveShrinkable,
-  IWipeEmpty,
-  IArchivePurgeable {
+  IWipeEmpty {
 
   public string Id => "Ecryptfs";
   public string DisplayName => "eCryptfs";
@@ -32,6 +32,7 @@ public sealed class EcryptfsFormatDescriptor :
     FormatCapabilities.CanList
     | FormatCapabilities.CanExtract
     | FormatCapabilities.CanCreate
+    | FormatCapabilities.CanModify
     | FormatCapabilities.SupportsPassword;
 
   public string DefaultExtension => ".ecryptfs";
@@ -54,7 +55,7 @@ public sealed class EcryptfsFormatDescriptor :
 
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  public string Description => "Linux eCryptfs per-file lower-file encryption container.";
+  public string Description => "Linux eCryptfs per-file lower-file encryption container — passphrase AES read/create/replace/remove.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new EcryptfsReader(stream);
@@ -99,6 +100,79 @@ public sealed class EcryptfsFormatDescriptor :
   }
 
   /// <summary>
+  /// Credential-free mutation cannot safely replace encrypted plaintext. Callers
+  /// must use the <see cref="IArchiveModifiable.Add(Stream,IReadOnlyList{ArchiveInputInfo},ArchiveMutationOptions)"/>
+  /// overload instead of relying on ambient or format-specific password state.
+  /// </summary>
+  void IArchiveModifiable.Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
+    => throw new InvalidOperationException(
+      "eCryptfs replacement requires a passphrase; use the credential-aware IArchiveModifiable.Add overload.");
+
+  /// <summary>
+  /// Replaces the one logical upper-file payload after validating the existing
+  /// lower file with the supplied passphrase. A complete replacement lower file
+  /// is staged before the caller's stream is changed, so a bad passphrase or
+  /// writer failure leaves the original bytes untouched.
+  /// </summary>
+  void IArchiveModifiable.Add(
+    Stream archive,
+    IReadOnlyList<ArchiveInputInfo> inputs,
+    ArchiveMutationOptions options
+  ) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("eCryptfs mutation requires a readable, writable, seekable stream.", nameof(archive));
+    if (options.Password is null)
+      throw new ArgumentException("A passphrase is required to modify an eCryptfs lower file.", nameof(options));
+    if (inputs.Any(i => i.IsDirectory))
+      throw new NotSupportedException("An eCryptfs lower file represents one regular file; directories cannot be added.");
+
+    var files = inputs.Where(i => !i.IsDirectory).ToList();
+    if (files.Count != 1)
+      throw new NotSupportedException("eCryptfs replacement requires exactly one regular-file payload.");
+
+    archive.Position = 0;
+    int keySize;
+    using (var reader = new EcryptfsReader(archive)) {
+      reader.ValidatePassword(options.Password);
+      keySize = reader.CipherDescription switch {
+        "AES-128-CBC" => 16,
+        "AES-192-CBC" => 24,
+        "AES-256-CBC" => 32,
+        _ => throw new NotSupportedException($"Cannot rewrite eCryptfs cipher '{reader.CipherDescription}'."),
+      };
+    }
+
+    var content = files[0].ReadContent();
+    using var staged = new MemoryStream();
+    EcryptfsCodec.Create(staged, content, options.Password, keySize);
+
+    staged.Position = 0;
+    archive.Position = 0;
+    archive.SetLength(0);
+    staged.CopyTo(archive);
+    archive.Position = 0;
+  }
+
+  /// <summary>
+  /// Removes the single logical payload. This does not require the FEK: the
+  /// plaintext length can be set to zero and ciphertext extents discarded while
+  /// retaining valid authentication-token metadata.
+  /// </summary>
+  void IArchiveModifiable.Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    if (entryNames.Any(IsContentName))
+      EcryptfsCodec.Purge(archive);
+  }
+
+  void IArchiveModifiable.Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    ((IArchiveModifiable)this).Remove(archive, entryNames);
+  }
+
+  /// <summary>
   /// Clears metadata padding and bytes beyond the canonical encrypted extent set.
   /// Ciphertext inside the final live extent is never touched: plaintext tail
   /// zeroing would require the passphrase, which the wipe interface intentionally
@@ -118,4 +192,7 @@ public sealed class EcryptfsFormatDescriptor :
   /// to zero and truncate all ciphertext extents while retaining valid key metadata.
   /// </summary>
   public void Purge(Stream archive) => EcryptfsCodec.Purge(archive);
+
+  private static bool IsContentName(string name)
+    => Path.GetFileName(name.Replace('\\', '/')).Equals("content.bin", StringComparison.OrdinalIgnoreCase);
 }
