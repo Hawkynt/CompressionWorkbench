@@ -1,32 +1,43 @@
-using System.Buffers.Binary;
 using System.Text;
 
 namespace FileFormat.Nrg;
 
 /// <summary>
-/// Reads the ISO 9660 data track embedded in a Nero Burning ROM NRG image.
-/// NRG stores disc sectors first, then a chunked session/track descriptor, and
-/// finally a footer pointing back to that descriptor.
+/// Reads the ISO 9660 file system embedded in a Nero Burning ROM NRG disc image.
+/// NRG images carry a footer at the end of the file identifying the format version
+/// and providing a chunk table that describes the track layout.
+/// <para>
+/// Footer layout:
+/// <list type="bullet">
+///   <item>NRG v2: last 12 bytes — "NER5" (4 bytes) + uint64 BE offset to chunk table.</item>
+///   <item>NRG v1: last 8 bytes — "NERO" (4 bytes) + uint32 BE offset to chunk table.</item>
+/// </list>
+/// This reader parses the footer to locate the data area, then heuristically detects
+/// the sector geometry and parses the ISO 9660 file system.
+/// </para>
 /// </summary>
 public sealed class NrgReader : IDisposable {
+  // Footer magic
+  private static readonly byte[] MagicNer5 = [(byte)'N', (byte)'E', (byte)'R', (byte)'5'];
+  private static readonly byte[] MagicNero = [(byte)'N', (byte)'E', (byte)'R', (byte)'O'];
+
+  // ISO 9660 constants
   private const int Iso9660SectorSize = 2048;
   private const int RawSectorSize = 2352;
   private const int SectorSize2336 = 2336;
-  private const int RawSectorWithSubchannelSize = 2448;
   private const int PvdLba = 16;
   private const int Mode1DataOffset = 16;
   private const int Mode2Form1DataOffset = 24;
 
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private readonly int _sectorSize;
-  private readonly int _dataOffset;
-  private readonly long _trackOffset;
-  private readonly long _dataAreaEnd;
   private bool _disposed;
 
-  private readonly record struct FooterInfo(int Version, long TrailerOffset, long FooterOffset);
-  private readonly record struct TrackCandidate(long Offset, long Length, int SectorSize, int DataOffset);
+  private readonly int _sectorSize;
+  private readonly int _dataOffset;
+
+  // Offset within the stream where the data (track) area begins
+  private readonly long _dataAreaOffset;
 
   /// <summary>Gets the NRG format version detected from the footer (1 or 2), or 0 if no valid footer was found.</summary>
   public int Version { get; }
@@ -34,372 +45,279 @@ public sealed class NrgReader : IDisposable {
   /// <summary>Gets all file and directory entries found in the ISO 9660 file system.</summary>
   public IReadOnlyList<NrgEntry> Entries { get; }
 
-  /// <summary>Initializes a new <see cref="NrgReader"/> from an NRG stream.</summary>
+  /// <summary>
+  /// Initializes a new <see cref="NrgReader"/> from an NRG stream.
+  /// </summary>
+  /// <param name="stream">The stream containing the NRG image data.</param>
+  /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   public NrgReader(Stream stream, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
-    if (!stream.CanRead || !stream.CanSeek)
-      throw new ArgumentException("NRG reading requires a readable, seekable stream.", nameof(stream));
     this._leaveOpen = leaveOpen;
 
-    var footer = ReadFooter(stream);
-    this.Version = footer.Version;
+    (this.Version, this._dataAreaOffset) = ReadFooter(stream);
 
-    if (TryFindIsoTrack(stream, footer, out var track)) {
-      this._trackOffset = track.Offset;
-      this._sectorSize = track.SectorSize;
-      this._dataOffset = track.DataOffset;
-      this._dataAreaEnd = TrackEnd(track, footer.TrailerOffset);
-    } else {
-      var end = footer.Version != 0 ? footer.TrailerOffset : stream.Length;
-      (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream, 0, end);
-      this._trackOffset = 0;
-      this._dataAreaEnd = end;
-    }
+    // Treat the data area as a sub-stream starting at _dataAreaOffset
+    (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream, this._dataAreaOffset);
 
     var entries = new List<NrgEntry>();
     TryParseIso9660(entries);
     this.Entries = entries;
   }
 
-  /// <summary>Extracts the raw data for a file entry.</summary>
+  /// <summary>
+  /// Extracts the raw data for a file entry.
+  /// </summary>
+  /// <param name="entry">The file entry to extract. Must not be a directory.</param>
+  /// <returns>The file data bytes.</returns>
   public byte[] Extract(NrgEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     if (entry.IsDirectory)
       throw new ArgumentException("Cannot extract a directory entry.", nameof(entry));
     if (entry.Size == 0)
       return [];
-    if (entry.Size > int.MaxValue)
-      throw new NotSupportedException("NRG entries larger than 2 GiB require a streaming extraction API.");
 
-    return ReadFileData(entry.StartLba, checked((int)entry.Size));
+    return ReadFileData(entry.StartLba, (int)entry.Size);
   }
 
-  private static FooterInfo ReadFooter(Stream stream) {
-    if (stream.Length >= 12) {
-      stream.Position = stream.Length - 12;
-      Span<byte> footer = stackalloc byte[12];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NER5"u8)) {
-        var offset = BinaryPrimitives.ReadUInt64BigEndian(footer[4..]);
-        var footerOffset = stream.Length - 12;
-        if (offset <= (ulong)footerOffset)
-          return new(2, checked((long)offset), footerOffset);
-      }
+  // -------------------------------------------------------------------------
+  // Footer parsing
+  // -------------------------------------------------------------------------
+
+  private static (int Version, long DataAreaOffset) ReadFooter(Stream stream) {
+    if (stream.Length < 12)
+      return (0, 0);
+
+    // Check NRG v2: last 12 bytes = "NER5" + 8-byte BE offset
+    stream.Position = stream.Length - 12;
+    Span<byte> footer12 = stackalloc byte[12];
+    if (stream.Read(footer12) == 12 &&
+        footer12[0] == MagicNer5[0] && footer12[1] == MagicNer5[1] &&
+        footer12[2] == MagicNer5[2] && footer12[3] == MagicNer5[3]) {
+      var chunkOffset = ReadUInt64BE(footer12, 4);
+      // Data area starts at beginning of file; chunk table is at chunkOffset
+      // The data area offset is 0 (data precedes the chunk table)
+      return (2, 0);
     }
 
+    // Check NRG v1: last 8 bytes = "NERO" + 4-byte BE offset
     if (stream.Length >= 8) {
       stream.Position = stream.Length - 8;
-      Span<byte> footer = stackalloc byte[8];
-      if (ReadExactly(stream, footer) && footer[..4].SequenceEqual("NERO"u8)) {
-        var offset = BinaryPrimitives.ReadUInt32BigEndian(footer[4..]);
-        var footerOffset = stream.Length - 8;
-        if (offset <= footerOffset)
-          return new(1, offset, footerOffset);
+      Span<byte> footer8 = stackalloc byte[8];
+      if (stream.Read(footer8) == 8 &&
+          footer8[0] == MagicNero[0] && footer8[1] == MagicNero[1] &&
+          footer8[2] == MagicNero[2] && footer8[3] == MagicNero[3]) {
+        return (1, 0);
       }
     }
 
-    return new(0, stream.Length, stream.Length);
+    // No recognized footer — treat entire stream as raw sector data starting at offset 0
+    return (0, 0);
   }
 
-  private static bool TryFindIsoTrack(Stream stream, FooterInfo footer, out TrackCandidate track) {
-    track = default;
-    if (footer.Version == 0 || footer.TrailerOffset >= footer.FooterOffset)
-      return false;
+  // -------------------------------------------------------------------------
+  // Sector geometry detection
+  // -------------------------------------------------------------------------
 
-    foreach (var candidate in ReadTrackCandidates(stream, footer)) {
-      var end = TrackEnd(candidate, footer.TrailerOffset);
-      if (TryProbe(stream, candidate.Offset, candidate.SectorSize, candidate.DataOffset, end)) {
-        track = candidate;
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private static List<TrackCandidate> ReadTrackCandidates(Stream stream, FooterInfo footer) {
-    var result = new List<TrackCandidate>();
-    var position = footer.TrailerOffset;
-    var header = new byte[8];
-
-    while (position <= footer.FooterOffset - header.Length) {
-      stream.Position = position;
-      if (!ReadExactly(stream, header))
-        break;
-
-      var headerSpan = header.AsSpan();
-      var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(headerSpan[4..]);
-      var payloadStart = position + header.Length;
-      if (payloadStart > footer.FooterOffset || payloadLength > (ulong)(footer.FooterOffset - payloadStart))
-        break;
-      var payloadEnd = payloadStart + payloadLength;
-
-      if (headerSpan[..4].SequenceEqual("ETN2"u8))
-        ReadEtn2Candidates(stream, payloadStart, payloadLength, result);
-      else if (headerSpan[..4].SequenceEqual("ETNF"u8))
-        ReadEtnfCandidates(stream, payloadStart, payloadLength, result);
-      else if (headerSpan[..4].SequenceEqual("DAOX"u8))
-        ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: true, result);
-      else if (headerSpan[..4].SequenceEqual("DAOI"u8))
-        ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: false, result);
-
-      position = payloadEnd;
-      if (headerSpan[..4].SequenceEqual("END!"u8))
-        break;
-    }
-
-    return result;
-  }
-
-  private static void ReadEtn2Candidates(Stream stream, long payloadStart, uint payloadLength, List<TrackCandidate> result) {
-    const int recordSize = 32;
-    var record = new byte[recordSize];
-    for (long relative = 0; relative + recordSize <= payloadLength; relative += recordSize) {
-      stream.Position = payloadStart + relative;
-      if (!ReadExactly(stream, record))
-        return;
-
-      var span = record.AsSpan();
-      var offset = BinaryPrimitives.ReadUInt64BigEndian(span);
-      var length = BinaryPrimitives.ReadUInt64BigEndian(span[8..]);
-      if (offset > long.MaxValue || length > long.MaxValue)
-        continue;
-      if (TryDecodeMode(span[19], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
-        result.Add(new(checked((long)offset), checked((long)length), sectorSize, dataOffset));
-    }
-  }
-
-  private static void ReadEtnfCandidates(Stream stream, long payloadStart, uint payloadLength, List<TrackCandidate> result) {
-    const int recordSize = 20;
-    var record = new byte[recordSize];
-    for (long relative = 0; relative + recordSize <= payloadLength; relative += recordSize) {
-      stream.Position = payloadStart + relative;
-      if (!ReadExactly(stream, record))
-        return;
-
-      var span = record.AsSpan();
-      var offset = BinaryPrimitives.ReadUInt32BigEndian(span);
-      var length = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
-      if (TryDecodeMode(span[11], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
-        result.Add(new(offset, length, sectorSize, dataOffset));
-    }
-  }
-
-  private static void ReadDaoCandidates(Stream stream, long payloadStart, uint payloadLength, bool isV2, List<TrackCandidate> result) {
-    const int daoHeaderSize = 22;
-    var recordSize = isV2 ? 42 : 30;
-    if (payloadLength < daoHeaderSize)
-      return;
-
-    var record = new byte[recordSize];
-    for (long relative = daoHeaderSize; relative + recordSize <= payloadLength; relative += recordSize) {
-      stream.Position = payloadStart + relative;
-      if (!ReadExactly(stream, record))
-        return;
-
-      var span = record.AsSpan();
-      var declaredSectorSize = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(12, 2));
-      var mode = span[14];
-      ulong start;
-      ulong end;
-      if (isV2) {
-        start = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(26, 8));
-        end = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(34, 8));
-      } else {
-        start = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(22, 4));
-        end = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(26, 4));
-      }
-
-      if (start > long.MaxValue || end > long.MaxValue || end < start)
-        continue;
-      if (TryDecodeMode(mode, declaredSectorSize, out var sectorSize, out var dataOffset))
-        result.Add(new(checked((long)start), checked((long)(end - start)), sectorSize, dataOffset));
-    }
-  }
-
-  private static bool TryDecodeMode(byte mode, int declaredSectorSize, out int sectorSize, out int dataOffset) {
-    (sectorSize, dataOffset) = mode switch {
-      0x00 or 0x02 => (Iso9660SectorSize, 0),
-      0x03 => (SectorSize2336, 0),
-      0x05 => (RawSectorSize, Mode1DataOffset),
-      0x06 => (RawSectorSize, Mode2Form1DataOffset),
-      0x0F => (RawSectorWithSubchannelSize, Mode1DataOffset),
-      0x11 => (RawSectorWithSubchannelSize, Mode2Form1DataOffset),
-      _ => declaredSectorSize switch {
-        Iso9660SectorSize => (Iso9660SectorSize, 0),
-        _ => (0, 0),
-      },
-    };
-    return sectorSize != 0;
-  }
-
-  private static long TrackEnd(TrackCandidate candidate, long hardEnd) {
-    if (candidate.Offset < 0 || candidate.Offset >= hardEnd)
-      return candidate.Offset;
-    if (candidate.Length <= 0)
-      return hardEnd;
-    var remaining = hardEnd - candidate.Offset;
-    return candidate.Offset + Math.Min(candidate.Length, remaining);
-  }
-
-  private static (int SectorSize, int DataOffset) DetectSectorGeometry(Stream stream, long trackOffset, long dataEnd) {
-    if (TryProbe(stream, trackOffset, RawSectorSize, Mode1DataOffset, dataEnd))
+  private static (int SectorSize, int DataOffset) DetectSectorGeometry(Stream stream, long dataAreaOffset) {
+    if (TryProbe(stream, dataAreaOffset, RawSectorSize, Mode1DataOffset))
       return (RawSectorSize, Mode1DataOffset);
-    if (TryProbe(stream, trackOffset, RawSectorSize, Mode2Form1DataOffset, dataEnd))
+
+    if (TryProbe(stream, dataAreaOffset, RawSectorSize, Mode2Form1DataOffset))
       return (RawSectorSize, Mode2Form1DataOffset);
-    if (TryProbe(stream, trackOffset, SectorSize2336, 8, dataEnd))
+
+    if (TryProbe(stream, dataAreaOffset, SectorSize2336, 8))
       return (SectorSize2336, 8);
-    if (TryProbe(stream, trackOffset, Iso9660SectorSize, 0, dataEnd))
+
+    if (TryProbe(stream, dataAreaOffset, Iso9660SectorSize, 0))
       return (Iso9660SectorSize, 0);
+
     return (RawSectorSize, Mode1DataOffset);
   }
 
-  private static bool TryProbe(Stream stream, long trackOffset, int sectorSize, int dataOffset, long dataEnd) {
-    if (trackOffset < 0 || sectorSize <= 0 || dataOffset < 0)
-      return false;
-    var pvdPosition = trackOffset + (long)PvdLba * sectorSize + dataOffset;
-    if (pvdPosition < trackOffset || pvdPosition > dataEnd - 6)
+  private static bool TryProbe(Stream stream, long dataAreaOffset, int sectorSize, int dataOffset) {
+    var pvdPos = dataAreaOffset + (long)PvdLba * sectorSize + dataOffset;
+    if (pvdPos + 6 > stream.Length)
       return false;
 
-    Span<byte> signature = stackalloc byte[6];
-    stream.Position = pvdPosition;
-    return ReadExactly(stream, signature) &&
-           signature[0] == 1 && signature[1..].SequenceEqual("CD001"u8);
+    Span<byte> sig = stackalloc byte[6];
+    stream.Position = pvdPos;
+    var read = stream.Read(sig);
+    if (read < 6)
+      return false;
+
+    return sig[0] == 1 &&
+           sig[1] == (byte)'C' &&
+           sig[2] == (byte)'D' &&
+           sig[3] == (byte)'0' &&
+           sig[4] == (byte)'0' &&
+           sig[5] == (byte)'1';
   }
+
+  // -------------------------------------------------------------------------
+  // ISO 9660 parsing
+  // -------------------------------------------------------------------------
 
   private void TryParseIso9660(List<NrgEntry> entries) {
     var pvd = ReadSector(PvdLba);
-    if (pvd == null || pvd[0] != 1 || !pvd.AsSpan(1, 5).SequenceEqual("CD001"u8))
+    if (pvd == null)
       return;
 
-    var rootLba = BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(158, 4));
-    var rootSize = BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(166, 4));
-    if (rootLba > int.MaxValue || rootSize > int.MaxValue)
+    if (pvd[0] != 1 ||
+        pvd[1] != (byte)'C' || pvd[2] != (byte)'D' ||
+        pvd[3] != (byte)'0' || pvd[4] != (byte)'0' || pvd[5] != (byte)'1')
       return;
 
-    WalkDirectory((int)rootLba, (int)rootSize, "", entries, []);
+    var rootLba = (int)ReadUInt32LE(pvd, 156 + 2);
+    var rootSize = (int)ReadUInt32LE(pvd, 156 + 10);
+
+    WalkDirectory(rootLba, rootSize, "", entries);
   }
 
-  private void WalkDirectory(int dirLba, int dirSize, string parentPath, List<NrgEntry> entries, HashSet<int> visited) {
-    if (dirLba <= 0 || dirSize <= 0 || !visited.Add(dirLba))
+  private void WalkDirectory(int dirLba, int dirSize, string parentPath, List<NrgEntry> entries) {
+    if (dirLba <= 0 || dirSize <= 0)
       return;
 
     var bytesRead = 0;
     var currentLba = dirLba;
-    var bufferOffset = 0;
+    var bufOffset = 0;
     byte[]? sector = null;
 
     while (bytesRead < dirSize) {
-      if (sector == null || bufferOffset >= Iso9660SectorSize) {
+      if (sector == null || bufOffset >= Iso9660SectorSize) {
         sector = ReadSector(currentLba);
         if (sector == null)
           return;
-        ++currentLba;
-        bufferOffset = 0;
+        currentLba++;
+        bufOffset = 0;
       }
 
-      var recordLength = sector[bufferOffset];
-      if (recordLength == 0) {
-        var remaining = Iso9660SectorSize - bufferOffset;
+      var recordLen = sector[bufOffset];
+
+      if (recordLen == 0) {
+        var remaining = Iso9660SectorSize - bufOffset;
         bytesRead += remaining;
-        bufferOffset = Iso9660SectorSize;
+        bufOffset = Iso9660SectorSize;
         continue;
       }
 
-      if (recordLength < 34 || bufferOffset + recordLength > Iso9660SectorSize) {
-        var remaining = Iso9660SectorSize - bufferOffset;
+      if (bufOffset + recordLen > Iso9660SectorSize) {
+        var remaining = Iso9660SectorSize - bufOffset;
         bytesRead += remaining;
-        bufferOffset = Iso9660SectorSize;
+        bufOffset = Iso9660SectorSize;
         continue;
       }
 
-      var record = sector.AsSpan(bufferOffset, recordLength);
-      ParseDirectoryRecord(record, parentPath, entries, visited);
-      bytesRead += recordLength;
-      bufferOffset += recordLength;
+      var record = sector.AsSpan(bufOffset, recordLen);
+      ParseDirectoryRecord(record, parentPath, entries);
+
+      bytesRead += recordLen;
+      bufOffset += recordLen;
     }
   }
 
-  private void ParseDirectoryRecord(ReadOnlySpan<byte> record, string parentPath, List<NrgEntry> entries, HashSet<int> visited) {
-    var idLength = record[32];
-    if (idLength == 0 || 33 + idLength > record.Length)
-      return;
-    if (idLength == 1 && (record[33] == 0x00 || record[33] == 0x01))
+  private void ParseDirectoryRecord(ReadOnlySpan<byte> record, string parentPath, List<NrgEntry> entries) {
+    if (record.Length < 34)
       return;
 
-    var dataLba = BinaryPrimitives.ReadUInt32LittleEndian(record[2..6]);
-    var dataLength = BinaryPrimitives.ReadUInt32LittleEndian(record[10..14]);
-    if (dataLba > int.MaxValue || dataLength > int.MaxValue)
+    var dataLba = (int)ReadUInt32LE(record, 2);
+    var dataLen = (int)ReadUInt32LE(record, 10);
+    var flags = record[25];
+    var idLen = record[32];
+
+    if (idLen == 0 || record.Length < 33 + idLen)
       return;
 
-    var isDirectory = (record[25] & 0x02) != 0;
-    var rawName = Encoding.ASCII.GetString(record.Slice(33, idLength));
+    if (idLen == 1 && (record[33] == 0x00 || record[33] == 0x01))
+      return;
+
+    var isDirectory = (flags & 0x02) != 0;
+    var rawName = Encoding.ASCII.GetString(record.Slice(33, idLen));
     var name = StripVersionSuffix(rawName);
+
     if (string.IsNullOrEmpty(name))
       return;
 
-    var fullPath = parentPath.Length > 0 ? $"{parentPath}/{name}" : name;
+    var fullPath = parentPath.Length > 0 ? parentPath + "/" + name : name;
+
     entries.Add(new NrgEntry {
       Name = name,
       FullPath = fullPath,
       IsDirectory = isDirectory,
-      Size = isDirectory ? 0 : dataLength,
-      StartLba = (int)dataLba,
+      Size = isDirectory ? 0 : dataLen,
+      StartLba = dataLba,
     });
 
     if (isDirectory)
-      WalkDirectory((int)dataLba, (int)dataLength, fullPath, entries, visited);
+      WalkDirectory(dataLba, dataLen, fullPath, entries);
   }
+
+  // -------------------------------------------------------------------------
+  // Data extraction
+  // -------------------------------------------------------------------------
 
   private byte[] ReadFileData(int startLba, int size) {
     var result = new byte[size];
     var written = 0;
-    for (var lba = startLba; written < size; ++lba) {
+    var lba = startLba;
+
+    while (written < size) {
       var sector = ReadSector(lba);
       if (sector == null)
-        throw new InvalidDataException("NRG file extent runs past the selected data track.");
+        break;
 
       var toCopy = Math.Min(Iso9660SectorSize, size - written);
       sector.AsSpan(0, toCopy).CopyTo(result.AsSpan(written));
       written += toCopy;
+      lba++;
     }
+
     return result;
   }
 
   private byte[]? ReadSector(int lba) {
-    if (lba < 0)
-      return null;
-    var sectorStart = this._trackOffset + (long)lba * this._sectorSize;
+    var sectorStart = this._dataAreaOffset + (long)lba * this._sectorSize;
     var dataStart = sectorStart + this._dataOffset;
-    if (sectorStart < this._trackOffset || dataStart < sectorStart || dataStart > this._dataAreaEnd - Iso9660SectorSize)
+
+    if (dataStart + Iso9660SectorSize > this._stream.Length)
       return null;
 
     this._stream.Position = dataStart;
-    var buffer = new byte[Iso9660SectorSize];
-    return ReadExactly(this._stream, buffer) ? buffer : null;
+    var buf = new byte[Iso9660SectorSize];
+    var totalRead = 0;
+    while (totalRead < buf.Length) {
+      var read = this._stream.Read(buf, totalRead, buf.Length - totalRead);
+      if (read == 0)
+        return null;
+      totalRead += read;
+    }
+
+    return buf;
   }
 
-  private static bool ReadExactly(Stream stream, Span<byte> buffer) {
-    var offset = 0;
-    while (offset < buffer.Length) {
-      var read = stream.Read(buffer[offset..]);
-      if (read == 0)
-        return false;
-      offset += read;
-    }
-    return true;
-  }
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
+  private static uint ReadUInt32LE(ReadOnlySpan<byte> data, int offset) =>
+    (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24));
+
+  private static ulong ReadUInt64BE(ReadOnlySpan<byte> data, int offset) =>
+    ((ulong)data[offset] << 56) | ((ulong)data[offset + 1] << 48) |
+    ((ulong)data[offset + 2] << 40) | ((ulong)data[offset + 3] << 32) |
+    ((ulong)data[offset + 4] << 24) | ((ulong)data[offset + 5] << 16) |
+    ((ulong)data[offset + 6] << 8)  | data[offset + 7];
 
   private static string StripVersionSuffix(string name) {
-    var separator = name.IndexOf(';');
-    return separator >= 0 ? name[..separator] : name;
+    var semi = name.IndexOf(';');
+    return semi >= 0 ? name[..semi] : name;
   }
 
   /// <inheritdoc />
   public void Dispose() {
-    if (this._disposed)
-      return;
-    this._disposed = true;
-    if (!this._leaveOpen)
-      this._stream.Dispose();
+    if (!this._disposed) {
+      this._disposed = true;
+      if (!this._leaveOpen)
+        this._stream.Dispose();
+    }
   }
 }
