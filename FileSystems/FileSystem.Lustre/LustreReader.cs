@@ -193,9 +193,10 @@ public sealed class LustreReader : IDisposable {
     bldr.Append(CultureInfo.InvariantCulture, $"image_size={_data.Length}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"ldiskfs_volume_label={this.LdiskfsVolumeLabel}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"ldiskfs_entry_count={(_extReader?.Entries.Count ?? 0)}\n");
-    bldr.Append("note=R/O via ext4 reader delegation. Surfaces the ldiskfs view of a single MDT or OST ");
-    bldr.Append("backing store, NOT the Lustre logical view. Lustre xattrs (LMA, LOV EA striping, FID) ");
-    bldr.Append("are preserved in the raw image but not interpreted. Combining MDT inode metadata with ");
+    bldr.Append("note=Read projection via ext4 delegation. Conservative offline maintenance may wipe bitmap-proven ");
+    bldr.Append("free blocks and trim trailing free ldiskfs blocks without reconstructing live inodes. The view is one ");
+    bldr.Append("MDT or OST backing store, NOT the Lustre logical view. Lustre xattrs (LMA, LOV EA striping, FID) ");
+    bldr.Append("remain opaque and allocated metadata is preserved byte-for-byte. Combining MDT inode metadata with ");
     bldr.Append("file data striped across multiple OSTs requires live cluster metadata and is out-of-scope.\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
