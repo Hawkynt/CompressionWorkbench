@@ -1,12 +1,15 @@
 #pragma warning disable CS1591
+using System.Buffers.Binary;
 using Compression.Registry;
 using Compression.Registry.Streaming;
+using FileSystem.Ext;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.GlusterFs;
 
 /// <summary>
-/// Read-only single-brick view for GlusterFS backing-store images.
+/// Read-only single-brick view for GlusterFS backing-store images, with a
+/// conservative backing-store shrink operation where it is provably metadata-safe.
 ///
 /// <para>GlusterFS has no independent block format: a volume is a logical
 /// collection of bricks and each brick is an export directory on an ordinary
@@ -21,11 +24,18 @@ namespace FileSystem.GlusterFs;
 /// 0xCAFE5BAB probe convention is deliberately not recognised as GlusterFS.</para>
 ///
 /// <para>The native XFS/ext layers can now read Gluster xattrs and conservatively
-/// mutate the common short-form/in-inode storage cases. This descriptor remains
-/// read-only until every xattr storage form that a maintenance operation can
+/// mutate the common short-form/in-inode storage cases. General archive mutation
+/// remains disabled until every xattr storage form that a maintenance operation can
 /// encounter (including ext external blocks/EA inodes and XFS leaf/btree/remote
 /// attributes) is preserved. Advertising a rebuild-based mutation before then
 /// could silently discard <c>trusted.gfid</c> or <c>trusted.glusterfs.*</c> state.</para>
+///
+/// <para>Shrink is the deliberate exception. For ext-backed bricks the native
+/// in-place shrinker chooses its boundary from the filesystem allocation bitmap;
+/// every allocated xattr block therefore pins the boundary just like file data and
+/// is preserved byte-for-byte. XFS-backed bricks copy through unchanged because the
+/// current XFS shrink path may rebuild the image. This is a backing-store geometry
+/// operation only; it is not Gluster's remove-brick command.</para>
 ///
 /// <para>Gluster volume operations such as rebalance, fix-layout, and remove-brick
 /// are explicitly outside this single-image abstraction. They coordinate multiple
@@ -42,7 +52,7 @@ namespace FileSystem.GlusterFs;
 ///   <item><description><c>https://github.com/gluster/glusterfs</c> — canonical GlusterFS implementation, dual GPLv2/LGPLv3+</description></item>
 /// </list>
 /// </summary>
-public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable {
 
   /// <summary>
   /// Gets the id.
@@ -94,12 +104,12 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. GlusterFS has no " +
-    "standalone image format; the supplied .gluster image is treated as one brick's backing " +
-    "filesystem. The .glusterfs GFID index is hidden from normal listings. Native backing " +
-    "accessors can read trusted.gfid/trusted.glusterfs.* and mutate inline/short-form xattrs, " +
-    "but archive mutations stay disabled until external/leaf/btree xattr forms are safe. " +
-    "Cluster rebalance, fix-layout, and remove-brick are intentionally out of scope.";
+    "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. Native backing " +
+    "accessors read trusted.gfid/trusted.glusterfs.* and mutate inline/short-form xattrs. " +
+    "General writes, defrag, wipe, layout and purge stay disabled until all xattr storage " +
+    "forms are safe. Shrink-to-fit is supported for ext-backed bricks via the allocation " +
+    "bitmap; XFS-backed bricks copy through unchanged. Cluster rebalance, fix-layout and " +
+    "remove-brick are intentionally out of scope.";
 
   /// <summary>
   /// Lists the entries in the supplied brick backing-store image.
@@ -130,5 +140,58 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
       ?? throw new FileNotFoundException($"GlusterFS brick entry not found: {entryName}");
     var data = reader.Extract(entry);
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Shrinks an ext-backed brick to its highest allocated block without rebuilding
+  /// file or xattr metadata. XFS-backed bricks are copied unchanged.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("GlusterFS shrink requires a readable, seekable input.", nameof(input));
+    if (!output.CanRead || !output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("GlusterFS shrink requires a readable, writable, seekable output.", nameof(output));
+
+    Stream target;
+    if (ReferenceEquals(input, output)) {
+      target = output;
+    } else {
+      input.Position = 0;
+      output.Position = 0;
+      output.SetLength(0);
+      input.CopyTo(output);
+      output.Flush();
+      target = output;
+    }
+
+    if (!IsExtBacking(target)) {
+      target.Position = 0;
+      return;
+    }
+
+    target.Position = 0;
+    try {
+      ExtInPlaceShrinker.ShrinkToFit(target);
+    } catch (NotSupportedException) {
+      // Some valid ext geometries cannot be reduced by the conservative in-place
+      // shrinker. Leaving the already-copied image unchanged is the safe result.
+    }
+    target.Position = 0;
+  }
+
+  private static bool IsExtBacking(Stream image) {
+    const long magicOffset = 1024 + 56;
+    if (image.Length < magicOffset + sizeof(ushort)) return false;
+    var original = image.Position;
+    Span<byte> magic = stackalloc byte[sizeof(ushort)];
+    try {
+      image.Position = magicOffset;
+      image.ReadExactly(magic);
+      return BinaryPrimitives.ReadUInt16LittleEndian(magic) == 0xEF53;
+    } finally {
+      image.Position = original;
+    }
   }
 }
