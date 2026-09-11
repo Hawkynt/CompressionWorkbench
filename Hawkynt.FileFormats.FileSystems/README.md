@@ -97,7 +97,6 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [ReFS](https://en.wikipedia.org/wiki/ReFS) | `Refs` | R/W | ✅ | ✅ moving | ✅ | — | — | ✅ | own reader + struct-parity tests | ReFS 3.x; mutation is offline-quiescent only (see limitations). Its geometry analysis is real, but there is no creator to write a re-laid volume with, so Layout stays absent | [ReFS overview](https://learn.microsoft.com/windows-server/storage/refs/refs-overview) |
 | [Stacker CVF](https://en.wikipedia.org/wiki/Stac_Electronics#Stacker) | `Stacker` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | `dmsdos` mounts the genuine `GenuineStackerWriter` output and reads byte-exact | STACVOL; Genuine/Extended flavor-preserving rebuild edits | [Stacker notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/FileSystems/FileSystem.Stacker/FORMAT-NOTES.md) |
 | [Transactional FAT (TFAT)](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) | `TFat` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | host-kernel `vfat` mount + [`fsck.fat`](https://github.com/dosfstools/dosfstools) read the written volume | Transaction-safe FAT (Windows CE) | [TFAT](https://learn.microsoft.com/previous-versions/windows/embedded/aa911939(v=msdn.10)) |
-
 ### Unix / Linux
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
@@ -172,7 +171,6 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [YAFFS2](https://en.wikipedia.org/wiki/YAFFS) | `Yaffs2` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [YAFFS](https://yaffs.net/) |
 
 ### Amiga, Atari, Acorn and other home computers
-
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [Acorn ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) | `Adfs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests; the `adfs` module is absent from the QEMU guest | Acorn ADFS | [ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) |
@@ -222,7 +220,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [GlusterFS](https://en.wikipedia.org/wiki/Gluster) | `GlusterFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Brick metadata only | [GlusterFS](https://docs.gluster.org/) |
 | [IBM Spectrum Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
 | [JuiceFS](https://juicefs.com/) | `JuiceFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Chunk objects only | [JuiceFS](https://juicefs.com/docs/community/introduction/) |
-| [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | — | — | — | — | — | — | detection of the on-disk signature | OST / MDT objects only | [Lustre](https://www.lustre.org/) |
+| [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | ✅ | — | ✅ | ✅ | — | — | own reader + struct-parity tests | ldiskfs MDT/OST backing store; conservative offline free-block wipe + trailing-block shrink; namespace edits remain R/O | [Lustre](https://www.lustre.org/) |
 | [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
 | [NetApp WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) | `Wafl` | R | — | — | — | — | — | — | detection of the on-disk signature | NetApp WAFL | [WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) |
 | [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ | ✅ moving | ✅ | — | — | — | anchor detection derived from real OES media; see the on-disk notes | Beast / B-tree layout undocumented; the writer emits a container under its own magic, not a pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |
@@ -247,7 +245,6 @@ using var fs = new FatReader(image);
 foreach (var entry in fs.ListRecursive())
   Console.WriteLine($"{entry.Path} {entry.Size,10} {entry.Modified:O}");
 ```
-
 ### Open a virtual disk and inspect its inner filesystem
 
 ```csharp
@@ -297,7 +294,6 @@ The **Proof** column is produced by these suites, all in `Compression.Tests`. Ex
 | `ExternalConformance*`, `ExternalFsInteropTests` (`Category("ExternalFsInterop")`) | `e2fsck`, `xfs_repair`, `btrfs check`, `fsck.f2fs`, `fsck.jfs`, `reiserfsck`, `fsck.minix`, `fsck.hfsplus`, hfsutils, ntfs-3g, `mkudffs`, `unsquashfs`, `mtools`, `qemu-img` accept what the package writes, and the package reads what they write. |
 | DOS-era drivers under QEMU / `dmsdos` | MS-DOS 6.22 `DRVSPACE` mounts the DoubleSpace / DriveSpace CVFs; the `dmsdos` driver mounts the DriveSpace 3 and Stacker volumes. |
 | Struct-parity unit tests | For formats with no reachable external tool, each on-disk structure the writer emits is compared field by field against the specification and read back by the package's own reader. |
-
 Disk-image containers follow the same rule with `qemu-img`: forward `check`, raw round-trip via `convert -O raw`, and reverse — an image `qemu-img create` made is opened by the package reader. A forensic-style path builds an inner filesystem with known files, wraps it in a container, validates the container externally, then walks it back and compares bytes.
 
 ## 🧯 Filesystem-aware recovery
