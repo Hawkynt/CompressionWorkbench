@@ -8,10 +8,9 @@ namespace FileFormat.Cdi;
 /// DiscJuggler CDI disc image (Padus) — CD track data followed by a trailing
 /// session/track descriptor.
 ///
-/// <para>The public specification was never released. The implemented v3.5
-/// writer profile is a clean-room reconstruction from the container behaviour
-/// documented by CDIrip and cross-checked against independent DiscJuggler
-/// readers; see <c>docs/CDI-ON-DISK.md</c>.</para>
+/// <para>The public specification was never released. Descriptor parsing follows
+/// the independently documented on-disk layout and is cross-checked against
+/// CDIrip, Aaru and mkdcdisc; see <c>docs/CDI-ON-DISK.md</c>.</para>
 /// </summary>
 public sealed class CdiFormatDescriptor :
   IFormatDescriptor,
@@ -36,7 +35,7 @@ public sealed class CdiFormatDescriptor :
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "DiscJuggler CDI disc image (R/W through verified ISO 9660 rebuild; existing-sector low-level rewrite retained for legacy footer-only images)";
+    "DiscJuggler CDI (multisession/multitrack/audio/Mode-2 read; R/W rebuild for the single-session cooked Mode-1 profile; mixed layouts fail closed on mutation)";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new CdiReader(stream, leaveOpen: true);
@@ -75,21 +74,25 @@ public sealed class CdiFormatDescriptor :
     var payload = iso.Build();
     output.Position = 0;
     output.SetLength(0);
-    output.Write(payload);
 
+    var zeroSector = new byte[2048];
+    for (var i = 0; i < CdiDescriptor.StandardPregapSectors; ++i)
+      output.Write(zeroSector);
+
+    output.Write(payload);
     var remainder = payload.Length % 2048;
     if (remainder != 0)
-      output.Write(new byte[2048 - remainder]);
+      output.Write(zeroSector.AsSpan(0, 2048 - remainder));
 
-    var sectorCount = checked((uint)(output.Position / 2048));
-    output.Write(CdiDescriptor.BuildSingleTrackV35(sectorCount));
+    var dataSectorCount = checked((uint)((payload.Length + 2047L) / 2048L));
+    output.Write(CdiDescriptor.BuildSingleTrackV35(dataSectorCount));
   }
 
   /// <summary>
-  /// Adds/replaces ordinary ISO files through the verified rebuild path. The
-  /// obsolete footer-only profile emitted by older CompressionWorkbench builds
-  /// keeps its explicit sector namespace when every requested entry names a
-  /// <c>sector-NNNNNN.bin</c>; ordinary names upgrade through the rebuild path.
+  /// Adds/replaces ordinary ISO files through a verified rebuild when the image
+  /// is the layout-preserving single-track Mode-1 profile. Mixed/multisession
+  /// images are readable but intentionally refused for mutation because a
+  /// rebuild would silently discard their audio tracks, pregaps or session map.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -101,6 +104,7 @@ public sealed class CdiFormatDescriptor :
       return;
     }
 
+    EnsureRebuildSafeProfile(archive);
     RebuildVerb.EditViaRebuild(archive, this, this, tempDirectory => {
       foreach (var input in inputs) {
         if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
@@ -117,20 +121,17 @@ public sealed class CdiFormatDescriptor :
     });
   }
 
-  /// <summary>
-  /// Removes ordinary ISO files through the verified rebuild path. Legacy
-  /// footer-only images retain their old sector-clearing namespace only for
-  /// explicit <c>sector-NNNNNN.bin</c> requests.
-  /// </summary>
+  /// <summary>Removes ordinary ISO files through the same profile-preserving rebuild path.</summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
 
-    if (UsesLegacySectorNamespace(archive) && entryNames.All(IsSectorAddress)) {
+    if (UsesLegacySectorNamespace(archive) && entryNames.Length > 0 && entryNames.All(IsSectorAddress)) {
       CdiInPlaceModifier.RemoveSectors(archive, entryNames);
       return;
     }
 
+    EnsureRebuildSafeProfile(archive);
     var skip = new HashSet<string>(entryNames.Select(name => name.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
     RebuildVerb.EditViaRebuild(archive, this, this, tempDirectory => {
       foreach (var file in Directory.GetFiles(tempDirectory, "*", SearchOption.AllDirectories)) {
@@ -141,8 +142,82 @@ public sealed class CdiFormatDescriptor :
     });
   }
 
-  private static bool UsesLegacySectorNamespace(Stream archive)
-    => CdiDescriptor.TryReadFooter(archive, out var footer) && footer.IsLegacyFooterOnly;
+  /// <summary>Purges only profiles whose optical layout the creator can preserve.</summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    EnsureRebuildSafeProfile(archive);
+    RebuildVerb.PurgeViaModifier(archive, this, this);
+  }
+
+  /// <summary>Rebuild-defragments the supported single-track profile.</summary>
+  public void Defragment(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    EnsureRebuildSafeProfile(archive);
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Rebuild-defragments with progress/cancellation while preserving the profile gate.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException($"CDI supports only {DefragMode.ConsolidateAtStart} defragmentation.");
+
+    EnsureRebuildSafeProfile(archive);
+    RebuildVerb.RebuildInPlace(
+      archive,
+      this,
+      this,
+      onProgress: options.OnProgress,
+      cancellationToken: options.CancellationToken
+    );
+  }
+
+  /// <summary>Shrinks by verified rebuild only when rebuilding preserves the optical layout profile.</summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    EnsureRebuildSafeProfile(input);
+    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+  }
+
+  private static bool UsesLegacySectorNamespace(Stream archive) {
+    var position = archive.CanSeek ? archive.Position : 0;
+    try {
+      return CdiDescriptor.TryReadFooter(archive, out var footer) && footer.IsLegacyFooterOnly;
+    } finally {
+      if (archive.CanSeek) archive.Position = position;
+    }
+  }
+
+  private static void EnsureRebuildSafeProfile(Stream archive) {
+    if (!archive.CanRead || !archive.CanSeek)
+      throw new ArgumentException("CDI rebuild mutation requires a readable, seekable stream.", nameof(archive));
+
+    var originalPosition = archive.Position;
+    try {
+      if (CdiDescriptor.TryReadFooter(archive, out var footer) && footer.IsLegacyFooterOnly)
+        return;
+
+      archive.Position = 0;
+      using var reader = new CdiReader(archive, leaveOpen: true);
+      if (reader.Tracks.Count == 1) {
+        var track = reader.Tracks[0];
+        if (track.SessionNumber == 1 &&
+            track.TrackNumber == 1 &&
+            track.Mode == CdiTrackMode.Mode1 &&
+            track.ReadMode == CdiReadMode.Mode1_2048)
+          return;
+      }
+
+      throw new NotSupportedException(
+        "CDI mutation is limited to the single-session, single cooked Mode-1 track profile. " +
+        "This image has a mixed, multisession, audio, Mode-2, raw-sector or otherwise unsupported layout; " +
+        "rebuilding it as one ISO track would destroy optical-disc semantics.");
+    } finally {
+      archive.Position = originalPosition;
+    }
+  }
 
   private static bool InputsAreSectorAddresses(IReadOnlyList<ArchiveInputInfo> inputs)
     => inputs.Count > 0 && inputs.All(input => !input.IsDirectory && IsSectorAddress(input.ArchiveName));
