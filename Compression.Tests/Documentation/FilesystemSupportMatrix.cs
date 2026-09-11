@@ -11,7 +11,7 @@ namespace Compression.Tests.Documentation;
 /// descriptors themselves say.
 /// </summary>
 /// <remarks>
-/// <para>The columns that can be read off the code — the id, the R / WORM / R/W
+/// <para>The columns that can be read off the code — the id, the N/A / R / WORM / R/W
 /// state and the maintenance verbs — are always regenerated, so the README
 /// cannot claim a capability a descriptor does not declare. The columns that
 /// cannot — the link behind a name, how a format is proven against outside
@@ -161,11 +161,12 @@ public static class FilesystemSupportMatrix {
     return false;
   }
 
-  /// <summary>The repository's write scale: R/W over WORM over R, read off <see cref="FormatCapabilities"/>.</summary>
+  /// <summary>The repository's write scale: R/W over WORM over R over N/A, read off <see cref="FormatCapabilities"/>.</summary>
   public static string State(IFormatDescriptor descriptor)
     => descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify) ? "R/W"
      : descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate) ? "WORM"
-     : "R";
+     : (descriptor.Capabilities & (FormatCapabilities.CanList | FormatCapabilities.CanExtract)) != 0 ? "R"
+     : "N/A";
 
   /// <summary>
   /// How a format defragments: by moving runs through a block mover of its own,
