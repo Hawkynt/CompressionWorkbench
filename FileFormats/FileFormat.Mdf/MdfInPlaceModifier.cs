@@ -79,7 +79,8 @@ public static class MdfInPlaceModifier {
     image.Position = pvdAt;
     Span<byte> sig = stackalloc byte[6];
     if (image.Read(sig) < sig.Length) return false;
-    return sig.SequenceEqual([1, (byte)'C', (byte)'D', (byte)'0', (byte)'0', (byte)'1']);
+    ReadOnlySpan<byte> primaryVolumeDescriptor = [1, (byte)'C', (byte)'D', (byte)'0', (byte)'0', (byte)'1'];
+    return sig.SequenceEqual(primaryVolumeDescriptor);
   }
 
   /// <summary>Reads one 2 048-byte user-data sector.</summary>

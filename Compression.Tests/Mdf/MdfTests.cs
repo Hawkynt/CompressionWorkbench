@@ -210,14 +210,19 @@ public class MdfTests {
     Assert.That(image.Length, Is.EqualTo(original.Length));
   }
 
+  // An add is refused only once it cannot fit even after the track's reclaimable
+  // slack has been released, because AddOrReplace trims the logical volume before
+  // it checks capacity. So the payload here is larger than the whole track: no
+  // amount of trimming can make room for it, and the refusal must leave the image
+  // byte-for-byte untouched rather than half-written.
   [Test, Category("Regression")]
-  public void Add_WithoutPhysicalHeadroom_FailsWithoutMutatingImage() {
+  public void Add_LargerThanTheWholeTrack_FailsWithoutMutatingImage() {
     var original = BuildIso("OLD.TXT", "old"u8.ToArray());
     using var image = new MemoryStream((byte[])original.Clone(), writable: true);
     var descriptor = new MdfFormatDescriptor();
 
     Assert.Throws<IOException>(() =>
-      descriptor.Add(image, [ArchiveInputInfo.InMemory("NEW.BIN", new byte[CookedSectorSize])]));
+      descriptor.Add(image, [ArchiveInputInfo.InMemory("NEW.BIN", new byte[original.Length])]));
     Assert.That(image.ToArray(), Is.EqualTo(original));
   }
 
@@ -251,9 +256,10 @@ public class MdfTests {
 
     Span<byte> free = stackalloc byte[CookedSectorSize];
     MdfInPlaceModifier.ReadSector(image, freeLba, free, geometry);
+    var freedSector = free.ToArray();
     Assert.Multiple(() => {
       Assert.That(wiped, Is.GreaterThan(0));
-      Assert.That(free.ToArray(), Is.All.Zero);
+      Assert.That(freedSector, Is.All.Zero);
       Assert.That(image.Length, Is.EqualTo(beforeLength));
       Assert.That(ExtractFile(image, "KEEP.BIN"), Is.EqualTo("keep"u8.ToArray()));
     });

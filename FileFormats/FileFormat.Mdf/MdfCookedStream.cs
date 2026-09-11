@@ -110,9 +110,19 @@ internal sealed class MdfCookedStream : Stream {
   }
 
   public override void SetLength(long value) {
-    if (value != this.Length)
+    if (value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+
+    // The track keeps its physical size whatever happens here: the MDS descriptors
+    // pin it, and shortening the file would leave them describing sectors that are
+    // no longer present. A caller asking to shrink is describing a smaller *logical*
+    // volume inside that fixed track — ISO defragmentation does exactly this — and
+    // the trailing sectors simply stay as free space, with the volume-space field in
+    // the primary volume descriptor recording the new size. So a shrink is accepted
+    // and costs nothing physically. Growing past the track is the case that genuinely
+    // needs new MDS descriptors, and that is still refused.
+    if (value > this.Length)
       throw new NotSupportedException(
-        "Changing MDF physical length requires updating the companion MDS track descriptors, which the single-stream archive API cannot do safely.");
+        "Growing an MDF beyond its track length requires updating the companion MDS track descriptors, which the single-stream archive API cannot do safely.");
   }
 
   protected override void Dispose(bool disposing) {

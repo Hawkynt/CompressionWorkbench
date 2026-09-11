@@ -68,7 +68,6 @@ public sealed class FilesystemWriteRoundTripTests {
   private static readonly Dictionary<string, string> UnitAddressed = new(StringComparer.Ordinal) {
     ["BinCue"] = "BinCueInPlaceModifyTests",
     ["Cdi"] = "CdiInPlaceModifyTests",
-    ["Mdf"] = "MdfInPlaceModifyTests",
     ["Nrg"] = "NrgInPlaceModifyTests",
     ["Cso"] = "CsoInPlaceModifyTests",
     ["Ewf"] = "FilesystemRwPromotionRoundTripTests",
