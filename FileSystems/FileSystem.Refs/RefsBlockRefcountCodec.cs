@@ -129,7 +129,7 @@ internal static class RefsBlockRefcountCodec {
   }
 
   private static void ValidateRangeStart(ulong startVirtualLcn) {
-    if ((startVirtualLcn & (EntriesPerRow - 1UL)) != 0)
+    if ((startVirtualLcn & ((ulong)EntriesPerRow - 1UL)) != 0)
       throw new ArgumentOutOfRangeException(
         nameof(startVirtualLcn),
         startVirtualLcn,
