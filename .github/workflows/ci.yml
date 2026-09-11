@@ -139,13 +139,14 @@ jobs:
           --logger "trx;LogFileName=core-tests.trx"
 
       # Interop tools for E2E tests. gfs2-utils is a mandatory oracle for the
-      # ExHash gate below; linux-modules-extra supplies gfs2.ko on Ubuntu runner
-      # kernels where it is not built in.
+      # ExHash gate below; xfsprogs exercises XFS/CXFS on-disk conformance;
+      # linux-modules-extra supplies gfs2.ko on Ubuntu runner kernels where it is
+      # not built in.
       - name: Install interop tools (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils
+          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils xfsprogs
           sudo apt-get install -y "linux-modules-extra-$(uname -r)" || true
           sudo modprobe gfs2 || true
 
