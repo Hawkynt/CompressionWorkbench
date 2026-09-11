@@ -94,36 +94,35 @@ public sealed class Tux3FormatDescriptor :
   /// <summary>
   /// Enumerates the provable byte layout without guessing at undecoded TUX3 allocation state.
   /// The declared native volume is reserved wholesale; only trailing bytes outside it are free.
+  /// Invalid or arithmetically unrepresentable volume metadata reserves the complete physical image.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     if (!image.CanRead || !image.CanSeek)
       return [];
 
+    var imageLength = image.Length;
     try {
       using var reader = new Tux3Reader(image);
       if (!TryGetDeclaredVolumeLength(reader, out var volumeLength))
-        return [];
+        return ReserveWholeImage(imageLength);
 
-      var imageLength = image.Length;
       if (volumeLength >= imageLength)
-        return imageLength == 0
-          ? []
-          : [new DefragBlockInfo(0, imageLength, DefragBlockKind.MetadataReserved, "TUX3 volume (allocation map unresolved)")];
+        return ReserveWholeImage(imageLength);
 
       return [
         new DefragBlockInfo(0, volumeLength, DefragBlockKind.MetadataReserved, "TUX3 volume (allocation map unresolved)"),
         new DefragBlockInfo(volumeLength, imageLength - volumeLength, DefragBlockKind.Free, "Trailing bytes outside TUX3 volume"),
       ];
     } catch (InvalidDataException) {
-      return [];
+      return ReserveWholeImage(imageLength);
     } catch (IOException) {
-      return [];
+      return ReserveWholeImage(imageLength);
     }
   }
 
   /// <summary>
-  /// Removes only bytes beyond the volume size declared by <c>volblocks &lt;&lt; blockbits</c>.
+  /// Removes only bytes beyond the volume size declared by <c>volblocks * blocksize</c>.
   /// Malformed, truncated, or arithmetically invalid images are copied through unchanged.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
@@ -171,6 +170,11 @@ public sealed class Tux3FormatDescriptor :
     length = (long)declared;
     return true;
   }
+
+  private static IEnumerable<DefragBlockInfo> ReserveWholeImage(long imageLength)
+    => imageLength == 0
+      ? []
+      : [new DefragBlockInfo(0, imageLength, DefragBlockKind.MetadataReserved, "TUX3 image (volume boundary unresolved)")];
 
   private static void CopyPrefix(Stream input, Stream output, long count) {
     var buffer = new byte[128 * 1024];
