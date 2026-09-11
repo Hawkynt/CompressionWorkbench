@@ -102,14 +102,26 @@ public sealed class T64Reader : IDisposable {
     var ordered = rawEntries.OrderBy(static e => e.DataOffset).ToArray();
     for (var i = 0; i < ordered.Length; i++) {
       var raw = ordered[i];
-      var nextOffset = i + 1 < ordered.Length ? ordered[i + 1].DataOffset : _data.Length;
+      var isLastPayload = i + 1 >= ordered.Length;
+      var nextOffset = isLastPayload ? _data.Length : ordered[i + 1].DataOffset;
       if (nextOffset < raw.DataOffset)
         throw new InvalidDataException($"T64: entry {raw.DirectoryIndex} has an invalid payload order.");
 
       var physicalBytesAvailable = nextOffset - raw.DataOffset;
       var size = ResolveSize(raw, physicalBytesAvailable);
-      if (size < 0 || size > physicalBytesAvailable)
-        throw new InvalidDataException($"T64: entry {raw.DirectoryIndex} extends into the next payload or past EOF.");
+      if (size < 0)
+        throw new InvalidDataException($"T64: entry {raw.DirectoryIndex} has a negative payload length.");
+
+      if (size > physicalBytesAvailable) {
+        // Tape writers routinely overstate the last record's end address by a byte or two, so the
+        // declared length runs past EOF on images that are otherwise intact. VICE and t64fix read
+        // those tapes by stopping at the end of the file, and this mirrors that. An overrun into a
+        // *following* payload is genuine corruption and still fails.
+        if (!isLastPayload)
+          throw new InvalidDataException($"T64: entry {raw.DirectoryIndex} extends into the next payload.");
+
+        size = physicalBytesAvailable;
+      }
 
       _entries.Add(new T64Entry {
         DirectoryIndex = raw.DirectoryIndex,
