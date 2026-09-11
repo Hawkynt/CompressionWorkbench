@@ -1,5 +1,5 @@
-using System.Text;
 using Compression.Registry;
+using Compression.Tests.Documentation;
 using FileSystem.BeeGfs;
 
 namespace Compression.Tests.BeeGfs;
@@ -7,65 +7,97 @@ namespace Compression.Tests.BeeGfs;
 [TestFixture]
 public class BeeGfsDetectionTests {
 
-  private static byte[] BuildMinimal(int payloadLen = 128) {
-    var image = new byte[16 + payloadLen];
-    Encoding.ASCII.GetBytes("BeeGFS").CopyTo(image.AsSpan(0, 6));
-    for (var i = 0; i < payloadLen; i++) image[16 + i] = (byte)(i & 0xFF);
-    return image;
+  private static MemoryStream LegacyTaggedStream() {
+    var image = new byte[128];
+    "BeeGFS"u8.CopyTo(image);
+    return new MemoryStream(image, writable: false);
   }
 
   [Test, Category("HappyPath")]
-  public void Detector_IdentifiesByMagic() {
-    var d = new BeeGfsFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("BeeGfs"));
-    Assert.That(d.Extensions, Does.Contain(".beegfs"));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(2));
-    Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("BeeGFS"u8.ToArray()));
-    Assert.That(d.MagicSignatures[1].Bytes, Is.EqualTo("BeeG"u8.ToArray()));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+  public void Descriptor_DoesNotInventStandaloneStreamFormat() {
+    var descriptor = new BeeGfsFormatDescriptor();
+
+    Assert.Multiple(() => {
+      Assert.That(descriptor.Id, Is.EqualTo("BeeGfs"));
+      Assert.That(descriptor.Capabilities, Is.EqualTo(FormatCapabilities.None));
+      Assert.That(descriptor.DefaultExtension, Is.Empty);
+      Assert.That(descriptor.Extensions, Is.Empty);
+      Assert.That(descriptor.MagicSignatures, Is.Empty);
+      Assert.That(descriptor.Methods, Is.Empty);
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveFormatOperations>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+      Assert.That(FilesystemSupportMatrix.State(descriptor), Is.EqualTo("N/A"));
+    });
+  }
+
+  [Test, Category("Regression")]
+  public void LegacySyntheticMagic_DoesNotProduceMountableFilesystem() {
+    var descriptor = new BeeGfsFormatDescriptor();
+    using var image = LegacyTaggedStream();
+
+    var profile = descriptor.ProbeFilesystem(image);
+    var limitations = string.Join('\n', profile.Limitations);
+
+    Assert.Multiple(() => {
+      Assert.That(profile.FormatId, Is.EqualTo(descriptor.Id));
+      Assert.That(profile.Capabilities, Is.EqualTo(FilesystemDriverCapabilities.None));
+      Assert.That(profile.MutationModel, Is.EqualTo(FilesystemMutationModel.None));
+      Assert.That(profile.CanMount, Is.False);
+      Assert.That(profile.CanMountWritable, Is.False);
+      Assert.That(limitations, Does.Contain("single-stream"));
+      Assert.That(limitations, Does.Contain("ext4").And.Contain("XFS"));
+    });
+  }
+
+  [TestCase(true)]
+  [TestCase(false)]
+  [Category("Exception")]
+  public void OpenFilesystem_RejectsSingleStream(bool readOnly) {
+    var descriptor = new BeeGfsFormatDescriptor();
+    using var image = LegacyTaggedStream();
+
+    var error = Assert.Throws<NotSupportedException>(
+      () => descriptor.OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: readOnly)));
+
+    Assert.That(error!.Message, Does.Contain("one Stream"));
   }
 
   [Test, Category("HappyPath")]
-  public void List_ReturnsTwoEntries() {
-    var d = new BeeGfsFormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimal(payloadLen: 256));
-    var entries = d.List(ms, password: null);
-    var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "beegfs-chunk.bin" }));
+  public void Readiness_ExplainsDistributedInputBoundary() {
+    var descriptor = new BeeGfsFormatDescriptor();
+    using var image = LegacyTaggedStream();
+
+    var readOnly = descriptor.DescribeFilesystemDriverReadiness(image, FilesystemDriverTarget.ReadOnly);
+    var readWrite = descriptor.DescribeFilesystemDriverReadiness(image, FilesystemDriverTarget.ReadWrite);
+    var readOnlyBlockers = string.Join('\n', readOnly.Blockers);
+    var readWriteBlockers = string.Join('\n', readWrite.Blockers);
+
+    Assert.Multiple(() => {
+      Assert.That(readOnly.Derivable, Is.False);
+      Assert.That(readOnly.UsesNativeProvider, Is.True);
+      Assert.That(readOnly.AvailableLayers, Is.EqualTo(FilesystemDriverReadinessLayer.None));
+      Assert.That(readOnly.RequiredLayers.HasFlag(FilesystemDriverReadinessLayer.Namespace), Is.True);
+      Assert.That(readOnlyBlockers, Does.Contain("metadata/storage targets"));
+      Assert.That(readOnlyBlockers, Does.Contain("target and stripe mappings"));
+
+      Assert.That(readWrite.Derivable, Is.False);
+      Assert.That(readWrite.UsesNativeProvider, Is.True);
+      Assert.That(readWrite.AvailableLayers, Is.EqualTo(FilesystemDriverReadinessLayer.None));
+      Assert.That(readWrite.RequiredLayers.HasFlag(FilesystemDriverReadinessLayer.WriteData), Is.True);
+      Assert.That(readWrite.RequiredLayers.HasFlag(FilesystemDriverReadinessLayer.DurabilityModel), Is.True);
+      Assert.That(readWriteBlockers, Does.Contain("coordinated metadata"));
+    });
   }
 
-  [Test, Category("Stub")]
-  public void Description_FlagsDetectionOnly() {
-    var d = new BeeGfsFormatDescriptor();
-    var desc = d.Description.ToLowerInvariant();
-    Assert.That(desc, Does.Contain("stage 0"));
-    Assert.That(desc, Does.Contain("detection"));
-    // Per CONTRIBUTING.md staging strategy: Stage-0 must NOT advertise create/modify.
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
-  }
+  [Test, Category("HappyPath")]
+  public void Description_StatesThereIsNoStandaloneImage() {
+    var description = new BeeGfsFormatDescriptor().Description;
 
-  [Test, Category("Stub")]
-  public void Description_ExplainsWhyStageZero() {
-    var d = new BeeGfsFormatDescriptor();
-    var desc = d.Description.ToLowerInvariant();
-    // Honest Stage-0 acceptance gate: the descriptor must surface the
-    // architectural reason promotion is not possible (no single-image surface).
-    Assert.That(desc, Does.Contain("no standalone on-disk image"));
-    Assert.That(desc, Does.Contain("distributed").Or.Contain("cluster"));
-  }
-
-  [Test, Category("Exception")]
-  public void Reader_TooSmall_Throws() {
-    using var ms = new MemoryStream(new byte[4]);
-    Assert.Throws<InvalidDataException>(() => _ = new BeeGfsReader(ms));
-  }
-
-  [Test, Category("Exception")]
-  public void Reader_BadMagic_Throws() {
-    var bad = new byte[32];
-    Encoding.ASCII.GetBytes("NOTBEEGFS").CopyTo(bad.AsSpan(0));
-    using var ms = new MemoryStream(bad);
-    Assert.Throws<InvalidDataException>(() => _ = new BeeGfsReader(ms));
+    Assert.Multiple(() => {
+      Assert.That(description, Does.Contain("distributed filesystem"));
+      Assert.That(description, Does.Contain("no standalone byte-stream image"));
+      Assert.That(description, Does.Contain("multi-target snapshot"));
+    });
   }
 }
