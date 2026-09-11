@@ -12,12 +12,11 @@ internal static class CdiDescriptor {
   internal const uint Version2 = 0x80000004;
   internal const uint Version3 = 0x80000005;
   internal const uint Version35 = 0x80000006;
+  internal const int StandardPregapSectors = 150;
 
   private const int SessionBlockSize = 15;
-  private const int PhysicalSessionPreambleSize = 7;
   private const int LogicalTrackHeaderSize = 0x30;
   private const int FixedTrackTailSize = 0xAE;
-  private const int FirstTrackPregapSectors = 150;
   private const int MaximumTrackCount = 99;
   private const int MaximumIndexCount = 1024;
   private const uint MaximumCdTextBlocks = 4096;
@@ -306,7 +305,7 @@ internal static class CdiDescriptor {
     if (dataSectorCount == 0)
       throw new ArgumentOutOfRangeException(nameof(dataSectorCount));
 
-    var totalTrackSectors = checked(dataSectorCount + FirstTrackPregapSectors);
+    var totalTrackSectors = checked(dataSectorCount + StandardPregapSectors);
     using var descriptor = new MemoryStream(capacity: 512);
 
     descriptor.WriteByte(1); // number of sessions
@@ -352,7 +351,7 @@ internal static class CdiDescriptor {
 
   private static void WriteSingleTrackBody(Stream stream, uint dataSectorCount, uint totalTrackSectors) {
     WriteUInt16(stream, 2); // index 0 + index 1
-    WriteUInt32(stream, FirstTrackPregapSectors);
+    WriteUInt32(stream, StandardPregapSectors);
     WriteUInt32(stream, dataSectorCount);
     WriteUInt32(stream, 0); // CD-Text blocks
     WriteUInt16(stream, 0);
