@@ -311,12 +311,16 @@ internal static class RadosPoolDump {
     });
   }
 
-  private static byte[] EncodeData(long offset, ReadOnlySpan<byte> payload)
-    => EncodeStruct(1, 1, body => {
+  private static byte[] EncodeData(long offset, ReadOnlySpan<byte> payload) {
+    // Copied out first: `payload` is a ReadOnlySpan, and the encoder body below is a lambda,
+    // which cannot capture a ref struct.
+    var bytes = payload.ToArray();
+    return EncodeStruct(1, 1, body => {
       WriteUInt64(body, checked((ulong)offset));
-      WriteUInt64(body, checked((ulong)payload.Length));
-      WriteBuffer(body, payload);
+      WriteUInt64(body, checked((ulong)bytes.Length));
+      WriteBuffer(body, bytes);
     });
+  }
 
   private static byte[] EncodeAttributes(IReadOnlyDictionary<string, byte[]> attributes) {
     var pairs = attributes.OrderBy(static p => p.Key, StringComparer.Ordinal)

@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 namespace FileSystem.TahoeLafs;
@@ -52,7 +53,7 @@ public sealed class TahoeLafsConnection {
     return connection;
   }
 
-  public static bool TryRead(Stream stream, out TahoeLafsConnection? connection) {
+  public static bool TryRead(Stream stream, [NotNullWhen(true)] out TahoeLafsConnection? connection) {
     ArgumentNullException.ThrowIfNull(stream);
     connection = null;
     if (!stream.CanRead)
@@ -121,7 +122,7 @@ public sealed class TahoeLafsConnection {
       throw new ArgumentException("Tahoe-LAFS gateway URL must not contain user-info, query, or fragment components.", nameof(uri));
 
     var builder = new UriBuilder(uri);
-    if (!builder.Path.EndsWith('/', StringComparison.Ordinal))
+    if (!builder.Path.EndsWith("/", StringComparison.Ordinal))
       builder.Path += "/";
     return builder.Uri;
   }

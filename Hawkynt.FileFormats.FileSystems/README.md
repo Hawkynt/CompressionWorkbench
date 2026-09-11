@@ -216,21 +216,21 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | R | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
-| [CephFS / RADOS](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R | — | — | — | — | — | — | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
+| [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
 | [GlusterFS brick](https://en.wikipedia.org/wiki/Gluster) | `GlusterFs` | R | ✅ | — | — | ✅ | — | — | detection of the on-disk signature | Brick metadata only | [GlusterFS](https://docs.gluster.org/) |
-| [IBM Spectrum Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
+| [IBM Storage Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
 | [JuiceFS](https://juicefs.com/) | `JuiceFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Chunk objects only | [JuiceFS](https://juicefs.com/docs/community/introduction/) |
 | [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | ✅ | — | ✅ | ✅ | — | — | own reader + struct-parity tests | ldiskfs MDT/OST backing store; conservative offline free-block wipe + trailing-block shrink; namespace edits remain R/O | [Lustre](https://www.lustre.org/) |
 | [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | ✅ | — | — | ✅ | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
 | [NetApp WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) | `Wafl` | R | — | — | — | — | — | — | detection of the on-disk signature | NetApp WAFL | [WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) |
 | [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ | ✅ moving | ✅ | — | — | — | anchor detection derived from real OES media; see the on-disk notes | Beast / B-tree layout undocumented; the writer emits a container under its own magic, not a pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |
-| [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R | — | — | — | — | — | — | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
+| [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
 | [NWFS386 (Novell Traditional NetWare filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R/W | ✅ | ✅ rebuild | — | ✅ | ✅ | ✅ | own reader + struct-parity tests | Plain single-segment DOS namespace; rebuild edits preserve block size and volume name; compression/suballocation/alternate namespaces are read-only | [Traditional NetWare partitions](https://www.novell.com/developer/documentation/vfs/vfs__enu/data/afpro44.html) |
 | [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
 | [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R | — | — | — | — | — | — | detection of the on-disk signature | SGI cluster XFS | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
-| [Tahoe-LAFS share](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R | ✅ | ✅ rebuild | ✅ | ✅ | — | — | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
+| [Tahoe-LAFS share / capability namespace](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
 | [TFS (BBN Trans-FS)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | detection of the on-disk signature | BBN Trans-FS; no public on-disk specification | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
 
 <!-- SUPPORT:END -->
@@ -280,7 +280,7 @@ ops.Remove(image, ["var/log/old.log"]);
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 836 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
+Every public and protected member of all 846 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
 
 <!-- API:END -->
 

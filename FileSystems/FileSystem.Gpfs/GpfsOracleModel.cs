@@ -11,7 +11,9 @@ namespace FileSystem.Gpfs;
 /// oracle instead of being promoted from plausible guesses.
 /// </summary>
 internal static class GpfsOracleParser {
-  private static readonly Regex NumberField = new(@"\b(?<name>[A-Za-z][A-Za-z0-9]*) is (?<value>0x[0-9A-Fa-f]+|[0-9]+)", RegexOptions.CultureInvariant);
+  // mmfsckx writes the plural for counted things -- "disks are 14  regions are 784" -- so a
+  // pattern matching only "is" reads none of them and every count comes back null.
+  private static readonly Regex NumberField = new(@"\b(?<name>[A-Za-z][A-Za-z0-9]*) (?:is|are) (?<value>0x[0-9A-Fa-f]+|[0-9]+)", RegexOptions.CultureInvariant);
   private static readonly Regex Address = new(@"(?<![0-9])(?<disk>[0-9]+):(?<sector>[0-9]+)(?![0-9])", RegexOptions.CultureInvariant);
   private static readonly Regex HexWord = new(@"0x(?<word>[0-9A-Fa-f]+)", RegexOptions.CultureInvariant);
   private static readonly Regex TsdbfsHeader = new(@"^Inode (?<inode>[0-9]+) \[(?<bracket>[0-9]+)\] snap (?<snap>[0-9]+) \(index (?<index>[0-9]+) in block (?<block>[0-9]+)\):$", RegexOptions.CultureInvariant);
@@ -456,9 +458,11 @@ internal static class GpfsOracleParser {
     private int? TryNullableDecimal(string name)
       => TryDecimal(name, out var value) ? value : null;
 
-    private bool TryDecimal(string name, out int value)
-      => Fields.TryGetValue(name, out var text)
-         && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    private bool TryDecimal(string name, out int value) {
+      value = 0;
+      return Fields.TryGetValue(name, out var text)
+             && int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
+    }
 
     private uint? TryHex(string name) {
       if (!Fields.TryGetValue(name, out var text))

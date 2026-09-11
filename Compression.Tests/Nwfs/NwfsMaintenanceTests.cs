@@ -1,4 +1,5 @@
 using Compression.Registry;
+using System.Linq;
 using FileSystem.Nwfs;
 
 namespace Compression.Tests.Nwfs;
@@ -104,7 +105,9 @@ public sealed class NwfsMaintenanceTests {
 
     var volume = NwfsReader.TryOpen(image.ToArray());
     Assert.That(volume, Is.Not.Null);
-    Assert.That(volume!.List(), Is.Empty);
+    // Purge removes every live NON-DIRECTORY entry; the directory tree is meant to survive, which
+    // is what IArchivePurgeable documents and what the Erofs and NWFS386 purge tests assert.
+    Assert.That(volume!.List().Where(entry => !entry.IsDirectory), Is.Empty);
   }
 
   [Test, Category("HappyPath")]

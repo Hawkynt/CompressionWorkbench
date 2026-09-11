@@ -89,7 +89,11 @@ public class CephFsDetectionTests {
       Attributes: new Dictionary<string, byte[]> { ["x"] = [1, 2, 3] },
       OmapHeader: [4, 5],
       Omap: new Dictionary<string, byte[]> { ["k"] = [6, 7] }));
-    using var image = new MemoryStream(bytes, writable: true);
+    // Expandable: MemoryStream(byte[]) is fixed-capacity even when writable, and the
+    // replacement payload is longer than the one it replaces.
+    using var image = new MemoryStream();
+    image.Write(bytes, 0, bytes.Length);
+    image.Position = 0;
 
     descriptor.Add(image, [ArchiveInputInfo.InMemory("rados/team/obj", "new-data"u8)]);
 

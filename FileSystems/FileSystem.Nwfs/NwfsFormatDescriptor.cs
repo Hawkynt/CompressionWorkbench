@@ -274,7 +274,7 @@ public sealed class NwfsFormatDescriptor
     target.Position = 0;
   }
 
-  public IReadOnlyList<DefragBlockInfo> EnumerateExtents(Stream image)
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
     => NwfsMaintenance.EnumerateExtents(image);
 
   private static NwfsWriter NewWriter(FormatCreateOptions options) {

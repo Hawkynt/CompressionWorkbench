@@ -317,7 +317,7 @@ public sealed class TahoeLafsClient : IDisposable {
     if (!uri.IsAbsoluteUri || uri.Scheme is not ("http" or "https"))
       throw new ArgumentException("Tahoe-LAFS gateway URL must use HTTP or HTTPS.", nameof(uri));
     var builder = new UriBuilder(uri);
-    if (!builder.Path.EndsWith('/', StringComparison.Ordinal))
+    if (!builder.Path.EndsWith("/", StringComparison.Ordinal))
       builder.Path += "/";
     return builder.Uri;
   }

@@ -215,9 +215,12 @@ public sealed class WaflReader : IDisposable {
       return null;
 
     var verifiedOffsets = references.Select(reference => reference.Offset).ToHashSet();
-    var starts = references
-      .Where(reference => IsClassicTableStart(volInfoBlock, reference, verifiedOffsets, volInfo.LittleEndian))
-      .ToList();
+    // `volInfoBlock` is a span, which the Where predicate cannot capture, so the filter runs as a
+    // plain loop instead of a query.
+    var starts = new List<FsInfoReference>();
+    foreach (var reference in references)
+      if (IsClassicTableStart(volInfoBlock, reference, verifiedOffsets, volInfo.LittleEndian))
+        starts.Add(reference);
 
     if (starts.Count != 1)
       return new FsInfoTableProbe(fsInfoMagic, fsInfoVersion, null, -1, references, starts.Count > 1);
