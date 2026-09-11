@@ -286,7 +286,7 @@ Every public and protected member of all 857 types, generated from the built ass
 
 ## 🧪 How the proofs run
 
-The **Proof** column is produced by these suites, all in `Compression.Tests`. External tools that are absent make the corresponding test skip rather than fail, so the matrix records what has been shown, not what a particular runner had installed.
+The **Proof** column is produced by these suites, all in `Compression.Tests`. External tools that are absent make the corresponding test skip rather than fail, so the matrix records what has been shown, not what a particular runner had installed. A tool too old to read the format at all counts as absent for this purpose and skips with the version it reported — it never examined the image, so it has not judged it. A tool that does read the image and then objects has judged it, and that is a failure, never a skip.
 
 | Suite | What it shows |
 | --- | --- |

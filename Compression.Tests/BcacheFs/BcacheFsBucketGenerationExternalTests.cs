@@ -15,8 +15,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
 
   [Test]
   public void ReusedNonzeroGeneration_PassesBcachefsFsck() {
-    if (!OperatingSystem.IsLinux())
-      Assert.Ignore("The mandatory bcachefs generation oracle runs on the Ubuntu CI leg.");
+    RequireCapableChecker();
 
     var path = Path.Combine(Path.GetTempPath(), $"cwb_bcachefs_gen_{Guid.NewGuid():N}.img");
     try {
@@ -46,8 +45,7 @@ public sealed class BcacheFsBucketGenerationExternalTests {
 
   [Test]
   public void DefragmentingOverReusedBuckets_PassesBcachefsFsck() {
-    if (!OperatingSystem.IsLinux())
-      Assert.Ignore("The mandatory bcachefs generation oracle runs on the Ubuntu CI leg.");
+    RequireCapableChecker();
 
     var path = Path.Combine(Path.GetTempPath(), $"cwb_bcachefs_gendefrag_{Guid.NewGuid():N}.img");
     try {
@@ -91,6 +89,44 @@ public sealed class BcacheFsBucketGenerationExternalTests {
     } finally {
       try { File.Delete(path); } catch { /* best effort */ }
     }
+  }
+
+  /// <summary>
+  /// Stops the oracle before it judges an image it cannot read.
+  /// </summary>
+  /// <remarks>
+  /// <para>This package stamps the metadata version in
+  /// <see cref="BcacheFsFormat.Version"/> and the <c>incompat_version_field</c>
+  /// feature with it. A checker older than that version refuses the superblock
+  /// outright — <c>error validating superblock: Filesystem has incompatible
+  /// features</c>, <c>invalid_sb_features</c> — without looking at a single
+  /// bucket, which is a statement about the checker and not about the volume.
+  /// Ubuntu's current archive ships 1.3.4 against the 1.38 written here, so the
+  /// oracle is skipped there and runs wherever the tool is new enough.</para>
+  ///
+  /// <para>This is the only skip. A checker that opens the image and then
+  /// complains is answering the question that was asked, and its answer is the
+  /// verdict — an oracle that ran and said no is never downgraded to a skip.</para>
+  /// </remarks>
+  private static void RequireCapableChecker() {
+    if (!OperatingSystem.IsLinux())
+      Assert.Ignore("The mandatory bcachefs generation oracle runs on the Ubuntu CI leg.");
+
+    var required = (Major: BcacheFsFormat.Version >> 10, Minor: BcacheFsFormat.Version & 0x3FF);
+    var reported = Run("bcachefs", "version").StdOut.Trim();
+
+    var digits = reported.AsSpan().TrimStart('v');
+    var parts = digits.ToString().Split('.');
+    if (parts.Length < 2
+      || !int.TryParse(parts[0], out var major)
+      || !int.TryParse(parts[1], out var minor))
+      return;   // unreadable version: run the checker rather than silently skipping it
+
+    if (major < required.Major || (major == required.Major && minor < required.Minor))
+      Assert.Ignore(
+        $"bcachefs-tools {reported} predates the metadata version this package writes "
+        + $"({required.Major}.{required.Minor}) and refuses the superblock before reading any "
+        + "bucket, so it cannot witness generations here.");
   }
 
   private static (string StdOut, string StdErr, int ExitCode) Run(
