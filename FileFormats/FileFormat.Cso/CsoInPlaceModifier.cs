@@ -17,22 +17,29 @@ public static class CsoInPlaceModifier {
   /// Replaces one logical block. <paramref name="newUncompressedData"/> must be exactly block_size
   /// bytes; for a partial final block only its logical prefix is retained, matching CSO semantics.
   /// </summary>
-  public static void WriteBlock(Stream image, int blockIndex, ReadOnlySpan<byte> newUncompressedData) {
+  public static void WriteBlock(Stream image, int blockIndex, ReadOnlySpan<byte> newUncompressedData)
+    => WriteBlocks(image, new Dictionary<int, byte[]> { [blockIndex] = newUncompressedData.ToArray() });
+
+  /// <summary>Replaces several logical blocks in one transactional repack.</summary>
+  internal static void WriteBlocks(Stream image, IReadOnlyDictionary<int, byte[]> replacements) {
     ArgumentNullException.ThrowIfNull(image);
+    ArgumentNullException.ThrowIfNull(replacements);
     if (!image.CanRead || !image.CanWrite || !image.CanSeek)
       throw new InvalidOperationException("CSO/ZSO block modification requires a readable, writable, seekable stream.");
 
     var layout = CsoImage.ReadLayout(image);
-    if ((uint)blockIndex >= (uint)layout.BlockCount)
-      throw new ArgumentOutOfRangeException(nameof(blockIndex),
-        $"CSO/ZSO block index {blockIndex} outside [0, {layout.BlockCount}).");
-    if (newUncompressedData.Length != layout.BlockSize)
-      throw new ArgumentException(
-        $"New block payload must be exactly block_size ({layout.BlockSize}) bytes; got {newUncompressedData.Length}.",
-        nameof(newUncompressedData));
+    foreach (var (blockIndex, replacement) in replacements) {
+      if ((uint)blockIndex >= (uint)layout.BlockCount)
+        throw new ArgumentOutOfRangeException(nameof(replacements),
+          $"CSO/ZSO block index {blockIndex} outside [0, {layout.BlockCount}).");
+      if (replacement.Length != checked((int)layout.BlockSize))
+        throw new ArgumentException(
+          $"New block payload must be exactly block_size ({layout.BlockSize}) bytes; got {replacement.Length} for block {blockIndex}.",
+          nameof(replacements));
+    }
+    if (replacements.Count == 0)
+      return;
 
-    var replacement = newUncompressedData.ToArray();
-    var replacements = new Dictionary<int, byte[]> { [blockIndex] = replacement };
     using var logical = CsoImage.OpenLogicalStream(image, layout, replacements);
     using var staged = CreateScratchStream();
     CsoWriter.Write(staged, logical, layout.UncompressedSize, checked((int)layout.BlockSize), layout.Variant);
