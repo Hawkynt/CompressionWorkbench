@@ -23,6 +23,9 @@ public sealed class LynxTests {
       Assert.That(Encoding.ASCII.GetString(bytes, 60, 4), Is.EqualTo("LYNX"));
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
+      Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
+      Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
     });
 
     archive.Position = 0;
@@ -104,6 +107,25 @@ public sealed class LynxTests {
   }
 
   [Test]
+  public void Purge_RebuildsMinimalValidEmptyArchive() {
+    var descriptor = new LynxFormatDescriptor();
+    using var archive = Create(descriptor, [
+      ArchiveInputInfo.InMemory("FIRST.PRG", Enumerable.Repeat((byte)0x11, 300).ToArray()),
+      ArchiveInputInfo.InMemory("SECOND.PRG", Enumerable.Repeat((byte)0x22, 400).ToArray()),
+    ]);
+
+    descriptor.Purge(archive);
+
+    Assert.Multiple(() => {
+      Assert.That(archive.Length, Is.EqualTo(254));
+      Assert.That(ReadDirectoryBlockCount(archive.ToArray()), Is.EqualTo(1));
+    });
+    archive.Position = 0;
+    Assert.That(descriptor.List(archive, null), Is.Empty);
+    Assert.That(Encoding.ASCII.GetString(archive.ToArray(), 60, 4), Is.EqualTo("LYNX"));
+  }
+
+  [Test]
   public void Writer_UsesRequestedCommodoreType_AndRejectsLossyNamesOrEncryption() {
     var descriptor = new LynxFormatDescriptor();
     using var seq = Create(descriptor,
@@ -119,8 +141,8 @@ public sealed class LynxTests {
       ArchiveInputInfo.InMemory("abcdefghijklmnop-A", Array.Empty<byte>()),
       ArchiveInputInfo.InMemory("abcdefghijklmnop-B", new byte[] { 1 }),
     ]));
-    Assert.Throws<ArgumentException>(() => Create(descriptor,
-      [ArchiveInputInfo.InMemory("MÄDCHEN.PRG", Array.Empty<byte>())]));
+    Assert.Throws<ArgumentException>(() => Create(descriptor, [
+      ArchiveInputInfo.InMemory("MÄDCHEN.PRG", Array.Empty<byte>())]));
     Assert.Throws<NotSupportedException>(() => Create(descriptor,
       [ArchiveInputInfo.InMemory("A.PRG", Array.Empty<byte>())],
       new FormatCreateOptions { Password = "secret" }));
@@ -143,6 +165,75 @@ public sealed class LynxTests {
     Assert.That(archive.Length, Is.EqualTo(logicalLength));
     archive.Position = 0;
     Assert.That(descriptor.ExtractEntryToMemory(archive, "A.PRG", null), Is.EqualTo(Enumerable.Repeat((byte)1, 300).ToArray()));
+  }
+
+  [Test]
+  public void Shrink_ReclaimsDirectoryOverallocationAndTrailer_WithoutChangingPayload() {
+    var descriptor = new LynxFormatDescriptor();
+    var payload = Enumerable.Range(0, 700).Select(index => (byte)(index * 13)).ToArray();
+    using var archive = Create(descriptor, [ArchiveInputInfo.InMemory("KEEP.PRG", payload)]);
+    var transientNames = new List<string>();
+
+    for (var i = 0; i < 12; ++i) {
+      var name = $"TEMP{i:D2}.PRG";
+      transientNames.Add(name);
+      descriptor.Add(archive, [ArchiveInputInfo.InMemory(name, Enumerable.Repeat((byte)(i + 1), 20 + i).ToArray())]);
+    }
+
+    descriptor.Remove(archive, transientNames.ToArray());
+    Assert.That(ReadDirectoryBlockCount(archive.ToArray()), Is.GreaterThan(1));
+    archive.Position = archive.Length;
+    archive.Write(Enumerable.Repeat((byte)0xEE, 113).ToArray());
+    var bloatedLength = archive.Length;
+
+    using var shrunk = new MemoryStream();
+    descriptor.Shrink(archive, shrunk);
+
+    Assert.Multiple(() => {
+      Assert.That(shrunk.Length, Is.LessThan(bloatedLength));
+      Assert.That(shrunk.Length % LynxReader.BlockSize, Is.Zero);
+      Assert.That(ReadDirectoryBlockCount(shrunk.ToArray()), Is.EqualTo(1));
+    });
+    shrunk.Position = 0;
+    Assert.That(descriptor.List(shrunk, null).Select(entry => entry.Name), Is.EqualTo(new[] { "KEEP.PRG" }));
+    shrunk.Position = 0;
+    Assert.That(descriptor.ExtractEntryToMemory(shrunk, "KEEP.PRG", null), Is.EqualTo(payload));
+  }
+
+  [Test]
+  public void LayoutAndWipe_ExposeAndClearOnlyUnusedBytes() {
+    var descriptor = new LynxFormatDescriptor();
+    var payload = Enumerable.Range(0, 300).Select(index => (byte)(index * 7 + 3)).ToArray();
+    using var archive = Create(descriptor, [ArchiveInputInfo.InMemory("DATA.PRG", payload)]);
+    archive.Position = archive.Length;
+    archive.Write(Enumerable.Repeat((byte)0xCC, 37).ToArray());
+
+    archive.Position = 0;
+    var free = descriptor.EnumerateLayout(archive)
+      .Where(extent => extent.Kind == DefragBlockKind.Free)
+      .ToArray();
+    Assert.That(free, Is.Not.Empty);
+    Assert.That(free.Any(extent => extent.FileName == "Directory padding"), Is.True);
+    Assert.That(free.Any(extent => extent.FileName == "DATA.PRG block padding"), Is.True);
+    Assert.That(free.Any(extent => extent.FileName == "Trailing transport data"), Is.True);
+
+    foreach (var extent in free) {
+      archive.Position = extent.Offset;
+      archive.Write(Enumerable.Repeat((byte)0xA5, checked((int)extent.Length)).ToArray());
+    }
+
+    archive.Position = 0;
+    var wiped = descriptor.WipeUnusedSpace(archive);
+    Assert.That(wiped, Is.EqualTo(free.Sum(extent => extent.Length)));
+
+    archive.Position = 0;
+    Assert.That(descriptor.ExtractEntryToMemory(archive, "DATA.PRG", null), Is.EqualTo(payload));
+    var bytes = archive.ToArray();
+    foreach (var extent in free)
+      Assert.That(
+        bytes.AsSpan(checked((int)extent.Offset), checked((int)extent.Length)).ToArray().All(value => value == 0),
+        Is.True,
+        $"Expected free extent '{extent.FileName}' to be zeroed.");
   }
 
   private static MemoryStream Create(
