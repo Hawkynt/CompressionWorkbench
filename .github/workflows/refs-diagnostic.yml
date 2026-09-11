@@ -1,0 +1,57 @@
+name: ReFS diagnostic
+
+on:
+  push:
+    branches: [refs-block-refcount-clone]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Clone PNGCrushCS sibling
+        run: git clone --depth 1 https://github.com/Hawkynt/PNGCrushCS.git "$GITHUB_WORKSPACE/../PNGCrushCS"
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: preview
+      - name: Pre-build sibling
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/../PNGCrushCS"
+          REQUIRED="Compression.Core FileFormat.Core FileFormat.Bmp FileFormat.Apng FileFormat.Tiff FileFormat.BigTiff FileFormat.Mng FileFormat.Fli FileFormat.Dcx FileFormat.Icns FileFormat.Mpo FileFormat.Jpeg FileFormat.Png"
+          locate() {
+            local proj="$1"
+            if [ -f "$proj/$proj.csproj" ]; then echo "$proj"; return 0; fi
+            if [ -f "FileFormats/$proj/$proj.csproj" ]; then echo "FileFormats/$proj"; return 0; fi
+            return 1
+          }
+          for proj in $REQUIRED; do
+            if ! locate "$proj" >/dev/null; then exit 0; fi
+          done
+          for proj in $REQUIRED; do
+            dir="$(locate "$proj")"
+            dotnet build "$dir/$proj.csproj" --configuration Release --nologo
+          done
+      - name: Restore
+        run: dotnet restore CompressionWorkbench.slnx
+      - name: Build and capture diagnostics
+        id: build
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          dotnet build CompressionWorkbench.slnx --configuration Release --no-restore 2>&1 | tee refs-build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refs-build-log
+          path: refs-build.log
+      - name: Propagate build result
+        if: steps.build.outcome != 'success'
+        run: exit 1
