@@ -2,27 +2,25 @@
 namespace FileSystem.CephFs;
 
 /// <summary>
-/// Represents a ceph fs entry.
+/// Represents one object in a portable <c>rados export</c> pool dump.
 /// </summary>
 public sealed class CephFsEntry {
-  /// <summary>
-  /// Gets or sets the name.
-  /// </summary>
   public string Name { get; init; } = "";
-  /// <summary>
-  /// Gets or sets the size.
-  /// </summary>
   public long Size { get; init; }
-  /// <summary>
-  /// Gets a value indicating whether is directory.
-  /// </summary>
   public bool IsDirectory { get; init; }
-  /// <summary>
-  /// Gets or sets the offset.
-  /// </summary>
   public long Offset { get; init; }
-  /// <summary>
-  /// Gets or sets the data.
-  /// </summary>
   public byte[] Data { get; init; } = [];
+
+  /// <summary>RADOS object identifier.</summary>
+  public string ObjectId { get; init; } = "";
+  /// <summary>RADOS namespace; empty means the default namespace.</summary>
+  public string Namespace { get; init; } = "";
+  /// <summary>RADOS locator key used for placement.</summary>
+  public string LocatorKey { get; init; } = "";
+  /// <summary>User xattrs as they are restored by <c>rados import</c>.</summary>
+  public IReadOnlyDictionary<string, byte[]> Attributes { get; init; } = new Dictionary<string, byte[]>();
+  /// <summary>RADOS OMAP header.</summary>
+  public byte[] OmapHeader { get; init; } = [];
+  /// <summary>RADOS OMAP key/value pairs.</summary>
+  public IReadOnlyDictionary<string, byte[]> Omap { get; init; } = new Dictionary<string, byte[]>();
 }

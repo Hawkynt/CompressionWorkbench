@@ -4,7 +4,7 @@ namespace Compression.Registry;
 /// Opt-in capability: the descriptor can reject inputs that don't belong in this archive
 /// type. Applied by the UI (drag-drop prohibition cursor + tooltip) and the CLI (rejection
 /// with non-zero exit) before <see cref="IArchiveCreatable.Create"/> or
-/// <see cref="IArchiveModifiable.Add"/> is called.
+/// <see cref="IArchiveModifiable.Add(System.IO.Stream, System.Collections.Generic.IReadOnlyList{Compression.Registry.ArchiveInputInfo})"/> is called.
 /// <para>
 /// Descriptors that accept anything (ZIP, TAR, …) simply don't implement this interface.
 /// </para>

@@ -10,11 +10,10 @@ namespace Compression.Tests.FirmwareHex;
 /// round trip.
 /// </summary>
 /// <remarks>
-/// Intel HEX, TI-TXT and the legacy uImage are all fully specified and all three
-/// were read-only, which made three tracked gaps in the support matrix that were
-/// no harder to close than transcribing the specification. Each is a single
-/// payload under a header or a base address, so they are WORM rather than R/W —
-/// there is no second file to add to one.
+/// Intel HEX, TI-TXT and the legacy uImage are all fully specified and originally
+/// had read-only descriptors. Their creators close the write side by transcribing
+/// those specifications. Intel HEX additionally supports rebuild-based editing;
+/// TI-TXT and uImage remain WORM because they expose only a single payload view.
 /// </remarks>
 [TestFixture]
 [Category("HappyPath"), Category("RoundTrip")]

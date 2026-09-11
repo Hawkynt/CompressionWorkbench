@@ -2,7 +2,7 @@
 namespace FileSystem.GlusterFs;
 
 /// <summary>
-/// Represents a gluster fs entry.
+/// Represents an entry surfaced from a single GlusterFS brick backing store.
 /// </summary>
 public sealed class GlusterFsEntry {
   /// <summary>
@@ -22,7 +22,17 @@ public sealed class GlusterFsEntry {
   /// </summary>
   public long Offset { get; init; }
   /// <summary>
-  /// Gets or sets the data.
+  /// Gets or sets eagerly materialized data, used by synthetic metadata entries.
   /// </summary>
   public byte[] Data { get; init; } = [];
+
+  /// <summary>
+  /// Lazily materializes an entry delegated to the backing filesystem reader.
+  /// </summary>
+  internal Func<byte[]>? DataFactory { get; init; }
+
+  /// <summary>
+  /// Native path inside the backing filesystem, used for xattr lookup.
+  /// </summary>
+  internal string? BackingPath { get; init; }
 }

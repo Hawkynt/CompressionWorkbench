@@ -43,6 +43,7 @@ public sealed class FilesystemWriteRoundTripTests {
   private const string ProbeStem = "PROBE";
   private const string Seed = "SEED.BIN";
   private const string SeedStem = "SEED";
+  private const string TestPassword = "cwb-filesystem-roundtrip";
 
   /// <summary>
   /// Ids whose write claim this fixture cannot exercise, and why. Each entry is a
@@ -52,6 +53,8 @@ public sealed class FilesystemWriteRoundTripTests {
   private static readonly Dictionary<string, string> KnownGaps = new(StringComparer.Ordinal) {
     ["Refs"] = "edits existing volumes only — no creator, so there is no probe image to edit. "
              + "A ReFS corpus would have to come from Windows.",
+    ["TahoeLafs"] = "R/W is a live capability-backed namespace — no creator can synthesize a Tahoe grid endpoint and root write-capability. "
+                   + "TahoeLafsClientTests exercise the gateway contract with an in-process HTTP oracle.",
   };
 
   /// <summary>
@@ -156,7 +159,8 @@ public sealed class FilesystemWriteRoundTripTests {
     var added = Payload(3, 512);
     byte[] withProbe;
     try {
-      withProbe = Mutate(formatId, image, m => modifier.Add(m, [ArchiveInputInfo.InMemory(Probe, added)]), "Add");
+      withProbe = Mutate(formatId, image,
+        m => Add(modifier, formatId, m, [ArchiveInputInfo.InMemory(Probe, added)]), "Add");
     } catch (NotSupportedException) {
       this.EditByOwnEntry(formatId, modifier, image);
       return;
@@ -170,9 +174,9 @@ public sealed class FilesystemWriteRoundTripTests {
     // and the bare leaf second. Both together, in one call, is what a strict
     // remover reads as "one of these is missing".
     var stored = Names(formatId, withProbe).First(n => Matches(n, ProbeStem));
-    var afterRemove = Mutate(formatId, withProbe, m => modifier.Remove(m, [stored]), "Remove");
+    var afterRemove = Mutate(formatId, withProbe, m => Remove(modifier, formatId, m, [stored]), "Remove");
     if (Names(formatId, afterRemove).Any(n => Matches(n, ProbeStem)) && Leaf(stored) != stored)
-      afterRemove = Mutate(formatId, withProbe, m => modifier.Remove(m, [Leaf(stored)]), "Remove");
+      afterRemove = Mutate(formatId, withProbe, m => Remove(modifier, formatId, m, [Leaf(stored)]), "Remove");
     Assert.That(Names(formatId, afterRemove).Any(n => Matches(n, ProbeStem)), Is.False,
       $"{formatId}: '{stored}' is still listed after Remove.");
     this.AssertReadsBack(formatId, afterRemove, SeedStem, seed, "after remove (survivor)");
@@ -193,7 +197,7 @@ public sealed class FilesystemWriteRoundTripTests {
     var ops = (IArchiveFormatOperations)FormatRegistry.GetArchiveOps(formatId)!;
     List<ArchiveEntryInfo> entries;
     using (var stream = new MemoryStream(image, writable: false))
-      entries = ops.List(stream, null).Where(e => !e.IsDirectory).ToList();
+      entries = ops.List(stream, PasswordFor(formatId)).Where(e => !e.IsDirectory).ToList();
 
     // metadata.ini and its kin are rendered from the header, not stored, so
     // rewriting one asks the format to accept a report of itself as input.
@@ -217,7 +221,7 @@ public sealed class FilesystemWriteRoundTripTests {
       byte[] edited;
       try {
         edited = Mutate(formatId, image,
-          m => modifier.Add(m, [ArchiveInputInfo.InMemory(candidate.Name, replacement)]), "Add");
+          m => Add(modifier, formatId, m, [ArchiveInputInfo.InMemory(candidate.Name, replacement)]), "Add");
       } catch (Exception ex) when (ex is NotSupportedException or ArgumentException or InvalidDataException) {
         refusals.Add($"{candidate.Name}: {ex.Message}");
         continue;
@@ -291,7 +295,7 @@ public sealed class FilesystemWriteRoundTripTests {
   private static byte[]? Create(string formatId, IReadOnlyList<ArchiveInputInfo> inputs) {
     if (FormatRegistry.GetArchiveOps(formatId) is not IArchiveCreatable creator) return null;
     using var image = new MemoryStream();
-    creator.Create(image, inputs, new FormatCreateOptions());
+    creator.Create(image, inputs, new FormatCreateOptions { Password = PasswordFor(formatId) });
     return image.Length == 0 ? null : image.ToArray();
   }
 
@@ -308,8 +312,35 @@ public sealed class FilesystemWriteRoundTripTests {
   private static List<string> Names(string formatId, byte[] image) {
     var ops = (IArchiveFormatOperations)FormatRegistry.GetArchiveOps(formatId)!;
     using var stream = new MemoryStream(image, writable: false);
-    return ops.List(stream, null).Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
+    return ops.List(stream, PasswordFor(formatId)).Where(e => !e.IsDirectory).Select(e => e.Name).ToList();
   }
+
+  private static void Add(
+    IArchiveModifiable modifier,
+    string formatId,
+    Stream archive,
+    IReadOnlyList<ArchiveInputInfo> inputs
+  ) {
+    var password = PasswordFor(formatId);
+    if (password is null)
+      modifier.Add(archive, inputs);
+    else
+      modifier.Add(archive, inputs, new ArchiveMutationOptions { Password = password });
+  }
+
+  private static void Remove(IArchiveModifiable modifier, string formatId, Stream archive, string[] entryNames) {
+    var password = PasswordFor(formatId);
+    if (password is null)
+      modifier.Remove(archive, entryNames);
+    else
+      modifier.Remove(archive, entryNames, new ArchiveMutationOptions { Password = password });
+  }
+
+  private static string? PasswordFor(string formatId)
+    => (FormatRegistry.GetArchiveOps(formatId) as IFormatDescriptor)?.Capabilities
+         .HasFlag(FormatCapabilities.SupportsPassword) == true
+      ? TestPassword
+      : null;
 
   private void AssertReadsBack(string formatId, byte[] image, string stem, byte[] expected, string step) {
     var extracted = this.ExtractAll(formatId, image);
@@ -343,7 +374,7 @@ public sealed class FilesystemWriteRoundTripTests {
     try {
       var ops = (IArchiveFormatOperations)FormatRegistry.GetArchiveOps(formatId)!;
       using (var stream = new MemoryStream(image, writable: false))
-        ops.Extract(stream, outDir, null, null);
+        ops.Extract(stream, outDir, PasswordFor(formatId), null);
       return Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories)
         .Select(path => (Path.GetFileName(path), File.ReadAllBytes(path)))
         .ToList();

@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileSystem.Nwfs\FileSystem.Nwfs.csproj" />
   </ItemGroup>
 
 </Project>

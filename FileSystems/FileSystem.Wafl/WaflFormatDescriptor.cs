@@ -6,122 +6,114 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Wafl;
 
 /// <summary>
-/// Stage 0 detection-only descriptor for NetApp WAFL (Write-Anywhere File
-/// Layout) volume images. Surfaces only a synthetic <c>metadata.ini</c>
-/// and the raw image bytes; no real file-walk is attempted.
-///
-/// <para>
-/// <b>Stage-0 confirmed.</b> An R/O promotion attempt was investigated
-/// against the publicly available material (Hitz 1994 TR3002, NetApp
-/// patents WO1994029807 / US6289356, archived ONTAP whitepapers) and
-/// declined. The high-level tree-of-blocks design (root inode → inode
-/// file → metadata files + user files; 4 KB blocks; FSinfo block at a
-/// fixed location anchoring two redundant copies) is published, but the
-/// exact byte-level on-disk encoding used by current ONTAP releases is
-/// not — neither the inode record layout, the FBN → VBN → PVBN
-/// translation tables, the FlexVol container-file mapping, nor the
-/// RAID-DP parity scheme used for block addressing have a public spec
-/// adequate to extract files from a single-image dump. WAFL is heavily
-/// patented and proprietary; no open-source reader exists. The full
-/// investigation record is captured in this XML doc, the metadata.ini
-/// surface, and the README stub-tier table.
-/// </para>
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>Hitz, Lau, Malcolm — "File System Design for an NFS File Server Appliance" (USENIX Winter 1994; NetApp TR-3002), the defining WAFL paper</description></item>
-///   <item><description>NetApp patents WO1994029807 / US6289356 — the published block-layout details</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout</c> — Wikipedia article</description></item>
-/// </list>
+/// Conservative read-only descriptor for flat logical NetApp WAFL volume images.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Stage 0 validates the documented volinfo roots at VBNs 1 and 2 using NetApp's
+/// published <c>0xdab8fbab</c> magic. Stage 1 follows the additional public
+/// volinfo contract for the classic 32-bit direct-fsinfo profile: volinfo carries
+/// a backward-compatible fsinfo magic and a VBN lookup table whose entry zero
+/// references the active fsinfo block. Candidate references are accepted only
+/// when their target blocks carry that fsinfo magic, and ambiguity fails closed.
+/// </para>
+/// <para>
+/// This does not yet decode the inode file or namespace, and it does not turn a
+/// physical ONTAP RAID member into a logical VBN image. Version-specific inode
+/// layouts, FlexVol VVBN/PVBN mapping, allocation maps, snapshots and consistency
+/// point commit/checksum rules remain prerequisites for safe mutation. Compact,
+/// defrag, wipe, shrink, re-layout and purge therefore remain unavailable.
+/// </para>
+/// </remarks>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+  /// <summary>Gets the id.</summary>
   public string Id => "Wafl";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "NetApp WAFL";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+
+  /// <summary>Gets the category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+
+  /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+
+  /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".wafl";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+
+  /// <summary>Gets the extensions.</summary>
   public IReadOnlyList<string> Extensions => [".wafl"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+
+  /// <summary>Gets the compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // "wafd" (0x77 0x61 0x66 0x64) — WAFL FSinfo block tag at offset 0.
-    new("wafd"u8.ToArray(), Offset: 0, Confidence: 0.90),
-  ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description =>
-    "NetApp WAFL — detection-only (Stage-0 confirmed) — proprietary ONTAP filesystem; " +
-    "on-disk tree-of-blocks is partially reverse-engineered from Hitz 1994 + NetApp patents " +
-    "but FBN/VBN/PVBN translation, FlexVol container mapping, RAID-DP block placement, and " +
-    "NVRAM consistency-point gap make a safe single-image R/O reader infeasible from public spec. " +
-    "Magic 'wafd' at offset 0 of FSinfo block.";
 
   /// <summary>
-  /// Lists the entries in the supplied container.
+  /// Gets fixed-offset signatures usable by the generic detector. WAFL volinfo
+  /// is at fixed VBNs 1 and 2, but the published material does not define one
+  /// stable byte offset for the volinfo-magic field inside every ONTAP generation;
+  /// content validation is therefore performed by <see cref="WaflReader"/>.
   /// </summary>
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+
+  /// <summary>Gets the methods.</summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+
+  /// <summary>Gets the tar compression format id.</summary>
+  public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the family.</summary>
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+
+  /// <summary>Gets the description.</summary>
+  public string Description =>
+    "NetApp WAFL — Stage 0 documented volinfo detection plus Stage 1 structural volinfo→fsinfo traversal for the disclosed classic 32-bit direct-fsinfo profile. " +
+    "Verified fsinfo blocks are listable/extractable while inode and namespace decoding remain intentionally unavailable. " +
+    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, allocation maps and snapshot/free-space reachability are still required for safe offline R/W, " +
+    "so compact/defrag/wipe/shrink/layout/purge remain disabled.";
+
+  /// <summary>Lists the entries in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new WaflReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    using var reader = new WaflReader(stream);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index,
+      entry.Name,
+      entry.Size,
+      entry.Size,
+      "Stored",
+      entry.IsDirectory,
+      false,
+      null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Extracts the supplied pseudo-entries.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new WaflReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    using var reader = new WaflReader(stream);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files)) continue;
+
+      using var source = reader.OpenEntry(entry);
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      source.CopyTo(target);
     }
   }
 
   Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryName);
-    var r = new WaflReader(archive);
-    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
-      ?? throw new FileNotFoundException($"WAFL entry not found: {entryName}");
-    var data = r.Extract(entry);
-    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+
+    using var reader = new WaflReader(archive);
+    var entry = reader.Entries.FirstOrDefault(candidate => candidate.Name == entryName)
+      ?? throw new FileNotFoundException($"WAFL entry not found: {entryName}", entryName);
+
+    if (!archive.CanSeek)
+      return new MemoryStream(reader.Extract(entry), writable: false);
+
+    // WaflReader does not own seekable caller streams, so disposing the reader
+    // leaves a bounded raw-image view alive. Small structural entries are backed
+    // by their own 4 KiB copy and remain valid independently as well.
+    return reader.OpenEntry(entry);
   }
 }

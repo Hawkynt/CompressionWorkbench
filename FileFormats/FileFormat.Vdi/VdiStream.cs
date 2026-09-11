@@ -6,11 +6,14 @@ namespace FileFormat.Vdi;
 /// <summary>
 /// Provides seekable read/write access to the virtual disk content of a VDI image.
 /// Translates virtual block offsets through the block allocation map (BAM).
-/// Reads from unallocated blocks (BAM entry = 0xFFFFFFFF) return zeros.
-/// Writes to unallocated blocks allocate new data blocks at EOF and update
-/// the BAM entry and allocated block count.
+/// A BAM entry at or above VDI_DISCARDED (0xFFFFFFFE) has no physical block
+/// behind it — both VDI_DISCARDED and VDI_UNALLOCATED (0xFFFFFFFF) read as
+/// zeros, which is what VirtualBox and qemu do. Writing to such a block
+/// allocates a new data block at EOF and updates the BAM entry and the
+/// allocated block count.
 /// </summary>
 public sealed class VdiStream : Stream {
+  private const uint DiscardedEntry = 0xFFFFFFFE;
   private const uint UnallocatedEntry = 0xFFFFFFFF;
   private const uint VdiSignature = 0xBEDA107F;
 
@@ -80,8 +83,8 @@ public sealed class VdiStream : Stream {
       var blockOff = (int)(_position % _blockSize);
       var toRead = Math.Min(remaining, (int)_blockSize - blockOff);
 
-      if (blockIdx >= _blockCount || _blockMap[blockIdx] == UnallocatedEntry) {
-        // Unallocated block — return zeros
+      if (blockIdx >= _blockCount || _blockMap[blockIdx] >= DiscardedEntry) {
+        // No physical block behind this entry — reads as zeros
         Array.Clear(buffer, offset, toRead);
       } else {
         var physOffset = (long)_offsetData + (long)_blockMap[blockIdx] * _blockSize + blockOff;
@@ -118,7 +121,7 @@ public sealed class VdiStream : Stream {
       if (blockIdx >= _blockCount)
         throw new InvalidOperationException($"Block index {blockIdx} out of range.");
 
-      if (_blockMap[blockIdx] == UnallocatedEntry) {
+      if (_blockMap[blockIdx] >= DiscardedEntry) {
         // Allocate new block at EOF
         var newPhysIdx = _allocatedCount;
         _allocatedCount++;

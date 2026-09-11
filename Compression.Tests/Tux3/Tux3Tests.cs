@@ -7,15 +7,19 @@ namespace Compression.Tests.Tux3;
 
 [TestFixture]
 public class Tux3Tests {
-  private static byte[] BuildNativeImage(bool legacy2012 = false) {
-    var image = new byte[16 * 1024];
+  private static byte[] BuildNativeImage(
+    bool legacy2012 = false,
+    ulong volBlocks = 0x1234,
+    ushort blockBits = 12,
+    int imageLength = 16 * 1024) {
+    var image = new byte[imageLength];
     var super = image.AsSpan(Tux3Reader.SuperblockOffset, Tux3Reader.DiskSuperSize);
     (legacy2012 ? Tux3Reader.Legacy2012Magic : Tux3Reader.Magic).CopyTo(super);
 
     BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x08, 8), 0x0123_4567_89AB_CDEFUL);
     BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x10, 8), 0x1020_3040_5060_7080UL);
-    BinaryPrimitives.WriteUInt16BigEndian(super.Slice(0x18, 2), 12);
-    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x20, 8), 0x0000_0000_0000_1234UL);
+    BinaryPrimitives.WriteUInt16BigEndian(super.Slice(0x18, 2), blockBits);
+    BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x20, 8), volBlocks);
     BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x28, 8), 0x0001_0000_0000_0042UL);
     BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x30, 8), 0x8002_0000_0000_0043UL);
     BinaryPrimitives.WriteUInt64BigEndian(super.Slice(0x38, 8), 0x0000_0000_0000_0040UL);
@@ -75,7 +79,7 @@ public class Tux3Tests {
   }
 
   [Test, Category("Spec")]
-  public void Descriptor_AdvertisesOnlyTheNativeMetadataSurface() {
+  public void Descriptor_AdvertisesNativeMetadataAndSafeMaintenanceSurface() {
     var descriptor = new Tux3FormatDescriptor();
 
     Assert.Multiple(() => {
@@ -85,8 +89,12 @@ public class Tux3Tests {
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsMultipleEntries), Is.False);
+      Assert.That(descriptor, Is.InstanceOf<IFilesystemExtentMap>());
+      Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
+      Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
       Assert.That(descriptor.Description, Does.Contain("native big-endian superblock"));
     });
   }
@@ -113,5 +121,122 @@ public class Tux3Tests {
     } finally {
       Directory.Delete(output, recursive: true);
     }
+  }
+
+  [Test, Category("Spec")]
+  public void ExtentMap_ReservesUndecodedVolumeAndMarksOnlyExternalTailFree() {
+    const long declaredLength = 3L << 12;
+    var image = BuildNativeImage(volBlocks: 3);
+    using var stream = new MemoryStream(image, writable: false);
+
+    var extents = new Tux3FormatDescriptor().EnumerateExtents(stream).ToArray();
+
+    Assert.That(extents, Has.Length.EqualTo(2));
+    Assert.Multiple(() => {
+      Assert.That(extents[0].Offset, Is.Zero);
+      Assert.That(extents[0].Length, Is.EqualTo(declaredLength));
+      Assert.That(extents[0].Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+      Assert.That(extents[1].Offset, Is.EqualTo(declaredLength));
+      Assert.That(extents[1].Length, Is.EqualTo(image.LongLength - declaredLength));
+      Assert.That(extents[1].Kind, Is.EqualTo(DefragBlockKind.Free));
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void WipeUnusedSpace_ZeroesOnlyExternalTail() {
+    const int declaredLength = 3 << 12;
+    var image = BuildNativeImage(volBlocks: 3);
+    image[declaredLength - 1] = 0x5A;
+    Array.Fill(image, (byte)0xA5, declaredLength, image.Length - declaredLength);
+    using var stream = new MemoryStream(image, writable: true);
+    var descriptor = new Tux3FormatDescriptor();
+
+    var wiped = ((IWipeEmpty)descriptor).WipeUnusedSpace(stream, wipeClusterTips: false, wipeDeletedEntries: false);
+
+    Assert.Multiple(() => {
+      Assert.That(wiped, Is.EqualTo(image.Length - declaredLength));
+      Assert.That(image[declaredLength - 1], Is.EqualTo(0x5A));
+      Assert.That(image.AsSpan(declaredLength).ToArray(), Is.All.Zero);
+    });
+  }
+
+  [Test, Category("HappyPath")]
+  public void Shrink_RemovesOnlyExternalTail() {
+    const int declaredLength = 3 << 12;
+    var image = BuildNativeImage(volBlocks: 3);
+    Array.Fill(image, (byte)0xA5, declaredLength, image.Length - declaredLength);
+    using var input = new MemoryStream(image, writable: false);
+    using var output = new MemoryStream();
+
+    new Tux3FormatDescriptor().Shrink(input, output);
+
+    Assert.Multiple(() => {
+      Assert.That(output.Length, Is.EqualTo(declaredLength));
+      Assert.That(output.ToArray(), Is.EqualTo(image[..declaredLength]));
+    });
+  }
+
+  [Test, Category("Regression")]
+  public void TruncatedDeclaredVolume_IsNeverTreatedAsFreeOrShrunk() {
+    var image = BuildNativeImage(volBlocks: 5);
+    image[^1] = 0xA5;
+    var descriptor = new Tux3FormatDescriptor();
+
+    using var layoutStream = new MemoryStream(image, writable: false);
+    var extents = descriptor.EnumerateExtents(layoutStream).ToArray();
+    Assert.That(extents, Has.Length.EqualTo(1));
+    Assert.Multiple(() => {
+      Assert.That(extents[0].Offset, Is.Zero);
+      Assert.That(extents[0].Length, Is.EqualTo(image.LongLength));
+      Assert.That(extents[0].Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+    });
+
+    var wipeCopy = image.ToArray();
+    using var wipeStream = new MemoryStream(wipeCopy, writable: true);
+    var wiped = ((IWipeEmpty)descriptor).WipeUnusedSpace(wipeStream, wipeClusterTips: false, wipeDeletedEntries: false);
+    Assert.Multiple(() => {
+      Assert.That(wiped, Is.Zero);
+      Assert.That(wipeCopy, Is.EqualTo(image));
+    });
+
+    using var shrinkInput = new MemoryStream(image, writable: false);
+    using var shrinkOutput = new MemoryStream();
+    descriptor.Shrink(shrinkInput, shrinkOutput);
+    Assert.That(shrinkOutput.ToArray(), Is.EqualTo(image));
+  }
+
+  [Test, Category("Regression")]
+  public void OverflowingDeclaredVolume_FailsClosedInsteadOfTrustingWrappedShift() {
+    const ushort blockBits = 12;
+    const ulong volBlocks = (1UL << 52) + 3;
+    const ulong wrappedLength = volBlocks << blockBits;
+    var image = BuildNativeImage(volBlocks: volBlocks, blockBits: blockBits);
+    image[^1] = 0xA5;
+    var descriptor = new Tux3FormatDescriptor();
+
+    Assert.That(wrappedLength, Is.EqualTo(3UL << blockBits),
+      "The regression fixture must wrap a mathematically >64-bit volume into a plausible small boundary.");
+
+    using var layoutStream = new MemoryStream(image, writable: false);
+    var extents = descriptor.EnumerateExtents(layoutStream).ToArray();
+    Assert.That(extents, Has.Length.EqualTo(1));
+    Assert.Multiple(() => {
+      Assert.That(extents[0].Offset, Is.Zero);
+      Assert.That(extents[0].Length, Is.EqualTo(image.LongLength));
+      Assert.That(extents[0].Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+    });
+
+    var wipeCopy = image.ToArray();
+    using var wipeStream = new MemoryStream(wipeCopy, writable: true);
+    var wiped = ((IWipeEmpty)descriptor).WipeUnusedSpace(wipeStream, wipeClusterTips: false, wipeDeletedEntries: false);
+    Assert.Multiple(() => {
+      Assert.That(wiped, Is.Zero);
+      Assert.That(wipeCopy, Is.EqualTo(image));
+    });
+
+    using var shrinkInput = new MemoryStream(image, writable: false);
+    using var shrinkOutput = new MemoryStream();
+    descriptor.Shrink(shrinkInput, shrinkOutput);
+    Assert.That(shrinkOutput.ToArray(), Is.EqualTo(image));
   }
 }

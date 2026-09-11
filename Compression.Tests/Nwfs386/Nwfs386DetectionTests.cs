@@ -1,23 +1,32 @@
 #pragma warning disable CS1591
 using Compression.Lib;
+using FileSystem.Nwfs;
 
 namespace Compression.Tests.Nwfs386;
 
 [TestFixture]
 public class Nwfs386DetectionTests {
 
-  private static byte[] BuildMinimal() {
+  [Test, Category("ErrorHandling")]
+  public void Detector_DoesNotTreatArbitraryNetWPrefixAsNwfs386() {
     var image = new byte[4096];
-    // "NetW" ASCII at offset 0.
-    image[0] = 0x4E; image[1] = 0x65; image[2] = 0x74; image[3] = 0x57;
-    return image;
+    "NetW"u8.CopyTo(image);
+
+    var fmt = FormatDetector.DetectByMagic(image);
+
+    Assert.That(fmt.ToString(), Is.Not.EqualTo("Nwfs386").IgnoreCase,
+      "The old four-byte NetW prefix had no authoritative NWFS386 basis and must not claim the format.");
   }
 
   [Test, Category("HappyPath")]
-  public void Detector_IdentifiesNwfs386_ByMagic() {
-    var image = BuildMinimal();
-    var fmt = FormatDetector.DetectByMagic(image.AsSpan(0, 512));
-    Assert.That(fmt.ToString(), Is.EqualTo("Nwfs386").IgnoreCase,
-      $"FormatDetector must recognise NWFS386 via 'NetW' at offset 0. Got: {fmt}");
+  public void HotfixMagic_IsOwnedBySharedNwfsDetector_NotDuplicatedByAlias() {
+    var writer = new NwfsWriter();
+    writer.AddFile("HELLO.TXT", "hello"u8.ToArray());
+    var image = writer.Build();
+
+    var fmt = FormatDetector.DetectByMagic(image);
+
+    Assert.That(fmt.ToString(), Is.EqualTo("Nwfs").IgnoreCase,
+      "Nwfs386 is an extension-routed compatibility id; the shared NWFS descriptor owns HOTFIX00 magic routing.");
   }
 }

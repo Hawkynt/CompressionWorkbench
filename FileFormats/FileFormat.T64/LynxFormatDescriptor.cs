@@ -16,7 +16,10 @@ public sealed class LynxFormatDescriptor :
     IArchiveCreatable,
     IArchiveModifiable,
     IArchiveDefragmentable,
+    IArchiveShrinkable,
     IArchiveLayoutMap,
+    IWipeEmpty,
+    IArchivePurgeable,
     IFormatOptionsSchema {
 
   /// <summary>
@@ -76,8 +79,8 @@ public sealed class LynxFormatDescriptor :
   /// </summary>
   public string Description =>
     "Will Corley/Ultimate Lynx Commodore archive: 254-byte sector payload blocks, PRG/SEQ/USR/DEL " +
-    "creation, REL read/remove support, and genuine in-place add/replace/remove by shifting only " +
-    "the affected directory/data block ranges. No compression or checksum exists in the format.";
+    "creation, REL read/remove support, genuine in-place add/replace/remove, exact layout/wipe, " +
+    "directory/trailer shrink, and purge. No compression or checksum exists in the format.";
 
   /// <summary>
   /// Gets the options schema.
@@ -184,6 +187,25 @@ public sealed class LynxFormatDescriptor :
   }
 
   /// <summary>
+  /// Removes all live entries in one pass while preserving the input archive's BASIC preamble
+  /// and Lynx signature. The empty directory is emitted at its minimum one-block allocation.
+  /// </summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("Lynx purge requires a readable, writable, seekable stream.", nameof(archive));
+
+    var reader = Open(archive);
+    var directory = LynxWriter.BuildDirectory([], 1, reader.BasicHeader, reader.Signature);
+    archive.Position = 0;
+    archive.SetLength(0);
+    archive.Write(directory);
+    archive.SetLength(directory.Length);
+    archive.Flush();
+    archive.Position = 0;
+  }
+
+  /// <summary>
   /// Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation
   /// therefore consists of validating that layout and dropping transport/trailing padding after
   /// the last allocated archive block; intrinsic per-block padding is part of the format.
@@ -210,18 +232,109 @@ public sealed class LynxFormatDescriptor :
   }
 
   /// <summary>
-  /// Enumerates the layout.
+  /// Rebuilds the directory at its smallest whole-254-byte allocation and copies the complete
+  /// existing data area byte-for-byte. This preserves REL side sectors and file-type metadata,
+  /// while reclaiming directory blocks left behind after removals and any trailing transport data.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("Lynx shrink requires distinct input and output streams.", nameof(output));
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("Lynx shrink input must be readable and seekable.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("Lynx shrink output must be writable and seekable.", nameof(output));
+
+    var reader = Open(input);
+    var directory = LynxWriter.BuildDirectory(
+      reader.Entries.Select(LynxWriter.FromEntry).ToArray(),
+      1,
+      reader.BasicHeader,
+      reader.Signature);
+
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(directory);
+
+    input.Position = reader.DataStart;
+    var remaining = reader.LogicalDataEnd - reader.DataStart;
+    var buffer = new byte[64 * 1024];
+    while (remaining > 0) {
+      var count = (int)Math.Min(buffer.Length, remaining);
+      input.ReadExactly(buffer.AsSpan(0, count));
+      output.Write(buffer.AsSpan(0, count));
+      remaining -= count;
+    }
+
+    output.SetLength(output.Position);
+    output.Flush();
+    output.Position = 0;
+  }
+
+  /// <summary>
+  /// Enumerates the exact byte layout: live directory text, directory padding, REL side sectors,
+  /// logical file bytes, per-file block padding, and any trailer beyond the archive allocation.
+  /// Explicit free extents make generic forensic wiping safe for this format.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     var reader = Open(archive);
-    yield return new DefragBlockInfo(0, reader.DataStart, DefragBlockKind.MetadataReserved, "Lynx directory");
+
+    if (reader.DirectoryContentEnd > 0)
+      yield return new DefragBlockInfo(0, reader.DirectoryContentEnd, DefragBlockKind.MetadataReserved, "Lynx directory");
+    if (reader.DirectoryContentEnd < reader.DataStart)
+      yield return new DefragBlockInfo(
+        reader.DirectoryContentEnd,
+        reader.DataStart - reader.DirectoryContentEnd,
+        DefragBlockKind.Free,
+        "Directory padding");
+
     foreach (var entry in reader.Entries) {
-      var allocated = checked((long)entry.ArchiveBlocks * LynxReader.BlockSize);
-      if (allocated > 0)
-        yield return new DefragBlockInfo(entry.AllocationOffset, allocated, DefragBlockKind.Used, entry.Name);
+      if (entry.DataOffset > entry.AllocationOffset)
+        yield return new DefragBlockInfo(
+          entry.AllocationOffset,
+          entry.DataOffset - entry.AllocationOffset,
+          DefragBlockKind.MetadataReserved,
+          $"{entry.Name} REL side sectors");
+
+      if (entry.Length > 0)
+        yield return new DefragBlockInfo(entry.DataOffset, entry.Length, DefragBlockKind.Used, entry.Name);
+
+      var allocationEnd = checked(entry.AllocationOffset + (long)entry.ArchiveBlocks * LynxReader.BlockSize);
+      var payloadEnd = checked(entry.DataOffset + entry.Length);
+      if (payloadEnd < allocationEnd)
+        yield return new DefragBlockInfo(
+          payloadEnd,
+          allocationEnd - payloadEnd,
+          DefragBlockKind.Free,
+          $"{entry.Name} block padding");
     }
+
     if (reader.LogicalDataEnd < archive.Length)
-      yield return new DefragBlockInfo(reader.LogicalDataEnd, archive.Length - reader.LogicalDataEnd, DefragBlockKind.Free);
+      yield return new DefragBlockInfo(
+        reader.LogicalDataEnd,
+        archive.Length - reader.LogicalDataEnd,
+        DefragBlockKind.Free,
+        "Trailing transport data");
+  }
+
+  /// <summary>
+  /// Zeros only byte ranges that the Lynx layout proves unused: directory padding, payload block
+  /// padding and trailing transport data. Live file bytes and REL side-sector metadata are retained.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanRead || !image.CanWrite || !image.CanSeek)
+      throw new ArgumentException("Lynx wipe requires a readable, writable, seekable stream.", nameof(image));
+
+    var imageSize = image.Length;
+    var layout = this.EnumerateLayout(image).ToArray();
+    return UnusedSpaceWiper.WipeDeclaredFree(
+      image,
+      layout,
+      imageSize,
+      wipeClusterTips: false,
+      fileSizeLookup: null);
   }
 
   private static LynxReader Open(Stream stream) {

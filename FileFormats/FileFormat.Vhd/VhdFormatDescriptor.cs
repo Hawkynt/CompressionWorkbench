@@ -15,7 +15,7 @@ namespace FileFormat.Vhd;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VHD_(file_format)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable, IRandomAccessBlockDeviceProvider {
+public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable, IRandomAccessBlockDeviceProvider {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -239,7 +239,7 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     ModifyRebuilder.Remove(archive, entryNames, ReadDiskEntries, BuildImage);
   }
 
-  // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
+  // ── Maintenance ────────────────────────────────────────────────────
 
   /// <inheritdoc />
   public void Defragment(Stream archive)
@@ -265,6 +265,23 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
   }
+
+  /// <inheritdoc />
+  public void Shrink(Stream input, Stream output)
+    => RawDiskShrinkRebuilder.Shrink(
+      input,
+      output,
+      static stream => {
+        using var reader = new VhdReader(stream);
+        var entry = reader.Entries.First(e => !e.IsDirectory);
+        return reader.Extract(entry);
+      },
+      static disk => {
+        var writer = new VhdWriter();
+        writer.SetDiskData(disk);
+        return writer.BuildDynamic();
+      },
+      CanRebuildFlatVhd);
 
   // ── IRandomAccessBlockDeviceProvider ────────────────────────────────
 
@@ -313,6 +330,21 @@ public sealed class VhdFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   // ── Private helpers ────────────────────────────────────────────────
+
+  private static bool CanRebuildFlatVhd(Stream stream) {
+    if (stream.Length < 512) return false;
+    Span<byte> footer = stackalloc byte[512];
+    stream.Position = stream.Length - 512;
+    stream.ReadExactly(footer);
+    if (!footer[..8].SequenceEqual("conectix"u8)) {
+      stream.Position = 0;
+      stream.ReadExactly(footer);
+      if (!footer[..8].SequenceEqual("conectix"u8)) return false;
+    }
+
+    var diskType = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(footer[60..64]);
+    return diskType is 2 or 3; // fixed or dynamic; never flatten a differencing chain
+  }
 
   /// <summary>
   /// Tries to open a <see cref="VhdStream"/> for a VHD (fixed or dynamic).

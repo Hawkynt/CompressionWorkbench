@@ -1336,10 +1336,15 @@ public class ExternalFsInteropTests {
 
   [Test]
   public void Minix_OurImage_LinuxSideCheck_Skip() {
-    // util-linux ships mkfs.minix but no fsck.minix for v3 — there is no Linux tool
-    // that validates v3 images. Document this and skip cleanly.
-    Assert.Ignore("No Linux fsck.minix for Minix v3 in util-linux. Our reverse test " +
-                  "(Linux mkfs.minix → our reader) covers read-side parity.");
+    // This stub used to claim util-linux has no fsck.minix for v3. That is not
+    // true: fsck.minix (util-linux 2.42.3) walks a v3 volume and reports its inode
+    // and zone counts. The check it says is missing is therefore already being
+    // made — MinixFsBitmapConventionTests and MinixFsLargeFileTests hand the
+    // written volume to fsck.minix through ThirdPartyFsCheck, which is where the
+    // Minix write side is actually gated.
+    Assert.Ignore("Superseded: fsck.minix does validate v3, and MinixFs is gated on " +
+                  "it via ThirdPartyFsCheck in MinixFsBitmapConventionTests and " +
+                  "MinixFsLargeFileTests.");
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1512,8 +1517,15 @@ public class ExternalFsInteropTests {
 
   [Test]
   public void Apfs_NoLinuxValidator_Skip() {
-    Assert.Ignore("APFS has no Linux fsck (apfs-fuse is read-only and not in apt). " +
-                  "Our APFS writer is self-validated only; Apple's apfs_fsck runs on macOS only.");
+    // The old reason for this skip — "APFS has no Linux fsck" — is false. apfsprogs
+    // ships fsck.apfs, and ThirdPartyFsCheck already registers it for Apfs together
+    // with the kernel's read-only apfs driver. What is still missing is a test that
+    // hands our writer's volume to either of them, so the APFS write side remains
+    // unchecked by anything outside this repository — but for want of wiring, not
+    // for want of a tool.
+    Assert.Ignore("Not yet wired: fsck.apfs (apfsprogs) and the kernel's apfs driver " +
+                  "are both registered in ThirdPartyFsCheck but no test hands the " +
+                  "APFS writer's output to them.");
   }
 
   [Test]

@@ -4,10 +4,14 @@ using System.Buffers.Binary;
 namespace FileSystem.Refs;
 
 /// <summary>
-/// Native CoW editor for the populated Block Refcount tree. Existing normal
-/// rows can be incremented/decremented and are removed when every count/flag
-/// reaches zero. Creating a brand-new 0x820 row remains fail-closed because the
-/// +0x10 modification-stamp creation rule is not yet proven.
+/// Native CoW editor for root #6 / schema 0xe0b0. Existing normal rows can be
+/// incremented/decremented, new normal rows are materialized from the active
+/// checkpoint clock, and rows are removed when every count/flag reaches zero.
+///
+/// The Block Refcount tree is sparse: an untracked live data cluster is treated
+/// as having one implicit ordinary owner. Adding the first clone therefore
+/// materializes count 2, both when the containing 0x400 row is absent and when
+/// the row exists for unrelated shared clusters but the target slot is zero.
 /// </summary>
 internal sealed class RefsCowBlockRefcountEditor {
   private readonly RefsMetadataReader _metadata;
@@ -51,13 +55,14 @@ internal sealed class RefsCowBlockRefcountEditor {
     return this._tree.Rewrite(
       this._metadata.Roots[6],
       virtualAddresses: true,
-      (rows, _) => ApplyChanges(rows, changes));
+      (rows, comparer) => this.ApplyChanges(rows, comparer, changes));
   }
 
-  private static bool ApplyChanges(
+  private bool ApplyChanges(
       List<RefsTreeRow> rows,
+      RefsKeyComparer comparer,
       IReadOnlyDictionary<ulong, Dictionary<int, int>> changes) {
-    foreach (var (rowStart, deltas) in changes.OrderBy(item => item.Key)) {
+    foreach (var (rowStart, requestedDeltas) in changes.OrderBy(item => item.Key)) {
       var matching = new List<int>();
       for (var i = 0; i < rows.Count; ++i) {
         var candidate = rows[i];
@@ -68,15 +73,22 @@ internal sealed class RefsCowBlockRefcountEditor {
           matching.Add(i);
       }
 
+      if (matching.Count > 1)
+        throw new InvalidDataException($"ReFS Block Refcount contains duplicate row key 0x{rowStart:X}+0x400.");
+
       if (matching.Count == 0) {
-        if (deltas.Values.Any(delta => delta < 0))
+        if (requestedDeltas.Values.Any(delta => delta < 0))
           throw new InvalidDataException(
             $"ReFS Block Refcount decrement targets untracked VLCN range 0x{rowStart:X}+0x400.");
-        throw new NotSupportedException(
-          $"ReFS Block Refcount row creation for VLCN range 0x{rowStart:X}+0x400 requires the unresolved +0x10 creation-stamp rule.");
+
+        var key = RefsBlockRefcountCodec.BuildKey(rowStart);
+        var fresh = RefsBlockRefcountCodec.BuildFreshValue(
+          rowStart,
+          checked(this._metadata.ActiveCheckpointClock + 1));
+        var changed = RefsBlockRefcountCodec.AddCloneReferences(fresh, requestedDeltas);
+        rows.Insert(FindInsertion(rows, key, comparer), new RefsTreeRow(key, changed));
+        continue;
       }
-      if (matching.Count != 1)
-        throw new InvalidDataException($"ReFS Block Refcount contains duplicate row key 0x{rowStart:X}+0x400.");
 
       var rowIndex = matching[0];
       var row = rows[rowIndex];
@@ -87,12 +99,28 @@ internal sealed class RefsCowBlockRefcountEditor {
         throw new NotSupportedException(
           $"ReFS Block Refcount range 0x{rowStart:X}+0x400 is not a writable normal 0x820-byte row.");
 
-      var changed = RefsBlockRefcountCodec.AdjustCounts(row.Value, deltas);
-      if (RefsBlockRefcountCodec.IsUnflaggedZeroRow(changed))
+      var updated = requestedDeltas.Values.All(delta => delta > 0)
+        ? RefsBlockRefcountCodec.AddCloneReferences(row.Value, requestedDeltas)
+        : RefsBlockRefcountCodec.AdjustCounts(row.Value, requestedDeltas);
+      if (RefsBlockRefcountCodec.IsUnflaggedZeroRow(updated))
         rows.RemoveAt(rowIndex);
       else
-        rows[rowIndex] = row with { Value = changed };
+        rows[rowIndex] = row with { Value = updated };
     }
     return true;
+  }
+
+  private static int FindInsertion(
+      IReadOnlyList<RefsTreeRow> rows,
+      byte[] key,
+      RefsKeyComparer comparer) {
+    var lo = 0;
+    var hi = rows.Count;
+    while (lo < hi) {
+      var mid = lo + ((hi - lo) >> 1);
+      if (comparer.Compare(rows[mid].Key, key) < 0) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
   }
 }

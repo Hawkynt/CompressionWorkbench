@@ -36,8 +36,8 @@ namespace FileFormat.Macrium;
 /// <para>
 /// <b>R/W semantics:</b> Macrium Reflect X is a disk-image format whose
 /// logical payload is a single contiguous sector stream — the same shape as
-/// VHD / VDI / VMDK / QCOW2. <see cref="IArchiveModifiable.Add"/> and
-/// <see cref="IArchiveModifiable.Remove"/> operate on the synthetic
+/// VHD / VDI / VMDK / QCOW2. <see cref="IArchiveModifiable.Add(System.IO.Stream, System.Collections.Generic.IReadOnlyList{Compression.Registry.ArchiveInputInfo})"/> and
+/// <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/> operate on the synthetic
 /// <c>disk-image.raw</c> entry (Add concatenates supplied input bytes onto
 /// the existing image and rebuilds the container; Add of an entry whose name
 /// matches an existing one replaces the disk payload; Remove of

@@ -175,7 +175,7 @@ public static class PartitionedDiskLister {
   // ── Add / Remove (partition-aware) ────────────────────────────────────
 
   /// <summary>
-  /// Partition-aware <see cref="IArchiveModifiable.Add"/>. Returns <c>true</c>
+  /// Partition-aware <see cref="IArchiveModifiable.Add(System.IO.Stream, System.Collections.Generic.IReadOnlyList{Compression.Registry.ArchiveInputInfo})"/>. Returns <c>true</c>
   /// when a partition table was present and at least one input was dispatched
   /// through the partition-aware path; <c>false</c> when no partition table
   /// exists so the caller can fall through to the existing single-FS path.
@@ -243,7 +243,7 @@ public static class PartitionedDiskLister {
   }
 
   /// <summary>
-  /// Partition-aware <see cref="IArchiveModifiable.Remove"/>. Returns <c>true</c>
+  /// Partition-aware <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/>. Returns <c>true</c>
   /// when a partition table was present and at least one entry was removed;
   /// <c>false</c> if no partition table was detected. Entry name shapes:
   /// <c>Partition&lt;N&gt;_&lt;Type&gt;/&lt;inner&gt;</c> deletes an inner-FS

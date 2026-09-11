@@ -1,15 +1,9 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
-using System.Text;
 
 namespace FileFormat.UefiFv;
 
-/// <summary>
-/// Reader for UEFI Platform Initialization (PI) Firmware Volumes. Locates the
-/// FV header by scanning for the <c>_FVH</c> signature at offset 40 from the
-/// start of each 16-byte-aligned candidate (UEFI PI Volume 3). Walks the FFS
-/// file list and returns one <see cref="FfsFile"/> record per live file.
-/// </summary>
+/// <summary>Reader for UEFI PI firmware volumes and standard FFS2/FFS3 file records.</summary>
 public sealed class UefiFvReader {
   public static readonly byte[] Signature = [(byte)'_', (byte)'F', (byte)'V', (byte)'H'];
   public const int SignatureOffset = 40;
@@ -23,33 +17,16 @@ public sealed class UefiFvReader {
     ushort ExtHeaderOffset,
     byte Revision,
     IReadOnlyList<(uint NumBlocks, uint Length)> BlockMap
-  );
+  ) {
+    public bool ErasePolarity => (this.Attributes & UefiFvConstants.ErasePolarityMask) != 0;
+    public byte EraseByte => this.ErasePolarity ? (byte)0xFF : (byte)0x00;
+  }
 
-  public sealed record FfsFile(
-    Guid Name,
-    byte Type,
-    byte Attributes,
-    byte State,
-    uint Size,
-    byte[] Contents
-  );
-
-  public sealed record FirmwareVolume(
-    int StartOffset,
-    FvHeader Header,
-    IReadOnlyList<FfsFile> Files
-  );
+  public sealed record FfsFile(Guid Name, byte Type, byte Attributes, byte State, uint Size, byte[] Contents);
+  public sealed record FirmwareVolume(int StartOffset, FvHeader Header, IReadOnlyList<FfsFile> Files);
 
   public static FirmwareVolume Read(ReadOnlySpan<byte> data, int fvStart = 0) {
-    if (data.Length < fvStart + 56)
-      throw new InvalidDataException("UefiFv: file shorter than minimum FV header.");
-
-    var sigSpan = data.Slice(fvStart + SignatureOffset, 4);
-    if (!sigSpan.SequenceEqual(Signature))
-      throw new InvalidDataException(
-        $"UefiFv: '_FVH' signature not found at offset {fvStart + SignatureOffset}.");
-
-    var fsGuid = new Guid(data.Slice(fvStart + 16, 16));
+    var layout = UefiFvParser.Parse(data, fvStart);
     var fvLength = BinaryPrimitives.ReadUInt64LittleEndian(data[(fvStart + 32)..]);
     var attributes = BinaryPrimitives.ReadUInt32LittleEndian(data[(fvStart + 44)..]);
     var headerLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(fvStart + 48)..]);
@@ -58,69 +35,32 @@ public sealed class UefiFvReader {
     var revision = data[fvStart + 55];
 
     var blockMap = new List<(uint, uint)>();
-    var p = fvStart + 56;
-    while (p + 8 <= data.Length) {
-      var nb = BinaryPrimitives.ReadUInt32LittleEndian(data[p..]);
-      var bl = BinaryPrimitives.ReadUInt32LittleEndian(data[(p + 4)..]);
-      p += 8;
-      if (nb == 0 && bl == 0) break;
-      blockMap.Add((nb, bl));
+    var headerEnd = checked(fvStart + headerLength);
+    var terminated = false;
+    for (var p = fvStart + 56; p + 8 <= headerEnd; p += 8) {
+      var blocks = BinaryPrimitives.ReadUInt32LittleEndian(data[p..]);
+      var length = BinaryPrimitives.ReadUInt32LittleEndian(data[(p + 4)..]);
+      if (blocks == 0 && length == 0) { terminated = true; break; }
+      blockMap.Add((blocks, length));
     }
+    if (!terminated) throw new InvalidDataException("UefiFv: firmware-volume block map is not terminated inside HeaderLength.");
 
-    var header = new FvHeader(fsGuid, fvLength, attributes, headerLength, checksum, extOff, revision, blockMap);
-    var ffsStart = fvStart + headerLength;
-    var ffsEnd = checked((int)Math.Min((long)data.Length, fvStart + (long)fvLength));
-    var files = ReadFfsFiles(data, ffsStart, ffsEnd);
+    // `data` is a ReadOnlySpan, which a lambda cannot capture, so the slices are materialised
+    // here rather than inside the projection.
+    var files = new List<FfsFile>();
+    foreach (var slot in UefiFvParser.LiveSlots(layout))
+      files.Add(new FfsFile(
+        slot.Name, slot.Type, slot.Attributes, slot.RawState, checked((uint)slot.Size),
+        data.Slice(slot.DataOffset, slot.DataLength).ToArray()));
+    var header = new FvHeader(new Guid(data.Slice(fvStart + 16, 16)), fvLength, attributes,
+      headerLength, checksum, extOff, revision, blockMap);
     return new FirmwareVolume(fvStart, header, files);
   }
 
   public static int? FindFirst(ReadOnlySpan<byte> data) {
-    for (var i = 0; i + SignatureOffset + 4 <= data.Length; i += 16) {
-      if (data.Slice(i + SignatureOffset, 4).SequenceEqual(Signature))
-        return i;
-    }
+    for (var i = 0; i + SignatureOffset + 4 <= data.Length; i += 16)
+      if (data.Slice(i + SignatureOffset, 4).SequenceEqual(Signature)) return i;
     return null;
-  }
-
-  private static List<FfsFile> ReadFfsFiles(ReadOnlySpan<byte> data, int start, int end) {
-    var files = new List<FfsFile>();
-    var pos = Align8(start);
-    while (pos + 24 <= end) {
-      // Free/deleted regions may occur between live files after offline
-      // mutation, so a gap has to be walked over one alignment quantum at a
-      // time. Only the quantum itself is tested: asking whether a whole 24-byte
-      // header is erased reads past the end of the gap, and the last two
-      // quanta of a gap then look half-written — the walk parsed that overlap
-      // as a file, took its size from the middle of the real header's GUID, and
-      // gave up on the volume. An FFS file starts on this boundary and opens
-      // with its GUID, which is never all-ones.
-      if (IsErased(data.Slice(pos, 8))) {
-        pos += 8;
-        continue;
-      }
-
-      var header = data.Slice(pos, 24);
-
-      var name = new Guid(header[..16]);
-      var type = header[18];
-      var attrs = header[19];
-      var size = (uint)(header[20] | (header[21] << 8) | (header[22] << 16));
-      var state = header[23];
-      if (size < 24 || pos + (long)size > end) break;
-
-      var contents = data.Slice(pos + 24, checked((int)size - 24)).ToArray();
-      files.Add(new FfsFile(name, type, attrs, state, size, contents));
-      pos = Align8(pos + checked((int)size));
-    }
-    return files;
-
-    static bool IsErased(ReadOnlySpan<byte> bytes) {
-      foreach (var b in bytes)
-        if (b != 0xFF) return false;
-      return true;
-    }
-
-    static int Align8(int v) => (v + 7) & ~7;
   }
 
   public static string FileTypeName(byte t) => t switch {
@@ -145,8 +85,8 @@ public sealed class UefiFvReader {
   };
 
   public static string ShortTypeTag(byte t) {
-    var n = FileTypeName(t);
+    var name = FileTypeName(t);
     const string prefix = "EFI_FV_FILETYPE_";
-    return n.StartsWith(prefix, StringComparison.Ordinal) ? n[prefix.Length..] : n;
+    return name.StartsWith(prefix, StringComparison.Ordinal) ? name[prefix.Length..] : name;
   }
 }

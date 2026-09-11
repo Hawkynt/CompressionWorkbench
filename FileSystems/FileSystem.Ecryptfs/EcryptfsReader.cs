@@ -1,127 +1,92 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
-using System.Globalization;
-using System.Text;
+using System.Security.Cryptography;
 
 namespace FileSystem.Ecryptfs;
 
 /// <summary>
-/// Reads eCryptfs per-file encryption headers. eCryptfs is a stacking
-/// file-level encryption filesystem (Linux) — every encrypted file is
-/// stored on the lower filesystem as a regular file whose first page is
-/// a metadata header followed by AES-CBC ciphertext extents. The header
-/// starts with a 4-byte big-endian marker (<c>0x3C81B7F5</c>) so the
-/// individual on-disk container is well-defined and detectable.
-/// Decryption requires the user's mount passphrase + EFEK (Encrypted
-/// File Encryption Key) tag-3 / tag-11 packets and is OUT OF SCOPE; this
-/// reader surfaces the parsed header + the encrypted payload as a single
-/// opaque entry.
-///
-/// File header layout (big-endian, file offset 0):
-///   0x00 u32  marker            == 0x3C81B7F5
-///   0x04 u64  decrypted-size    (plaintext length, host-endian on Linux)
-///   0x0C u32  flags
-///   0x10 u32  extent-size       (typically 4096)
-///   0x14 ...  EFEK packets, tag-3 / tag-11 OpenPGP-style
-///   ~0x800   start of AES-CBC ciphertext extents
+/// Reader for an eCryptfs lower file. eCryptfs is a stacked filesystem, so one
+/// lower file represents one encrypted upper file rather than a complete volume.
 /// </summary>
 public sealed class EcryptfsReader : IDisposable {
-  private readonly byte[] _data;
+  private readonly Stream _stream;
+  private readonly EcryptfsCodec.Header _header;
   private readonly List<EcryptfsEntry> _entries = [];
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
-  public IReadOnlyList<EcryptfsEntry> Entries => _entries;
-
-  /// <summary>
-  /// Gets or sets the marker.
-  /// </summary>
-  public uint Marker { get; private set; }
-  /// <summary>
-  /// Gets or sets the decrypted size.
-  /// </summary>
-  public ulong DecryptedSize { get; private set; }
-  /// <summary>
-  /// Gets or sets the flags.
-  /// </summary>
-  public uint Flags { get; private set; }
-  /// <summary>
-  /// Gets or sets the extent size.
-  /// </summary>
-  public uint ExtentSize { get; private set; }
-  /// <summary>
-  /// Gets a value indicating whether valid header.
-  /// </summary>
-  public bool ValidHeader { get; private set; }
-
-  /// <summary>
-  /// Defines the ecryptfs marker constant value.
-  /// </summary>
-  public const uint EcryptfsMarker = 0x3C81B7F5u;
-  private const int HeaderMinSize = 24;
-
-  /// <summary>
-  /// Initializes a new instance of <see cref="EcryptfsReader"/>.
-  /// </summary>
   public EcryptfsReader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
-    Parse();
-  }
+    ArgumentNullException.ThrowIfNull(stream);
+    this._stream = stream;
+    this._header = EcryptfsCodec.ReadHeader(stream);
 
-  private void Parse() {
-    if (_data.Length < HeaderMinSize)
-      throw new InvalidDataException("Ecryptfs: file too small for header.");
-
-    var marker = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(0, 4));
-    if (marker != EcryptfsMarker)
-      throw new InvalidDataException($"Ecryptfs: invalid marker 0x{marker:X8} at offset 0 (expected 0x{EcryptfsMarker:X8}).");
-
-    this.Marker = marker;
-    // Decrypted-size is 8 bytes BE per the eCryptfs on-disk format documentation
-    // (kernel writes it big-endian regardless of host byte order so files round-trip across hosts).
-    this.DecryptedSize = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(4, 8));
-    this.Flags = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(12, 4));
-    this.ExtentSize = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(16, 4));
-    this.ValidHeader = true;
-
-    var meta = BuildMetadata();
-    _entries.Add(new EcryptfsEntry { Name = "FULL.ecryptfs", Size = _data.Length, IsDirectory = false, Data = _data });
-    _entries.Add(new EcryptfsEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Data = meta });
-
-    // Surface the encrypted ciphertext as opaque blob (everything after the metadata page).
-    var payloadStart = (int)Math.Min((long)Math.Max(this.ExtentSize, 4096), _data.Length);
-    var payloadLen = _data.Length - payloadStart;
-    if (payloadLen > 0) {
-      var blob = _data.AsSpan(payloadStart, payloadLen).ToArray();
-      _entries.Add(new EcryptfsEntry { Name = "ciphertext.bin", Size = blob.Length, IsDirectory = false, Data = blob });
+    if (this._header.DecryptedSize > 0) {
+      if (this._header.DecryptedSize > long.MaxValue)
+        throw new InvalidDataException("eCryptfs plaintext size exceeds the supported entry-size range.");
+      this._entries.Add(new EcryptfsEntry {
+        Name = "content.bin",
+        Size = (long)this._header.DecryptedSize,
+        IsDirectory = false,
+      });
     }
   }
 
-  private byte[] BuildMetadata() {
-    var bldr = new StringBuilder();
-    bldr.Append("parse_status=ok\n");
-    bldr.Append("format=eCryptfs (file-level encryption)\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"marker=0x{this.Marker:X8}\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"decrypted_size={this.DecryptedSize}\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"flags=0x{this.Flags:X8}\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"extent_size={this.ExtentSize}\n");
-    bldr.Append("note=Ciphertext exposed opaque; decryption requires mount passphrase + EFEK.\n");
-    return Encoding.UTF8.GetBytes(bldr.ToString());
+  /// <summary>The validated eCryptfs marker relation constant.</summary>
+  public uint Marker => EcryptfsCodec.MarkerMagic;
+
+  /// <summary>The random first word of the two-word marker pair stored on disk.</summary>
+  public uint MarkerWord => this._header.MarkerWord;
+
+  /// <summary>Plaintext file length stored in the lower-file header.</summary>
+  public ulong DecryptedSize => this._header.DecryptedSize;
+
+  /// <summary>Raw eCryptfs file flags, including the version in the top byte.</summary>
+  public uint Flags => this._header.Flags;
+
+  /// <summary>eCryptfs lower-file format version.</summary>
+  public byte FileVersion => this._header.FileVersion;
+
+  /// <summary>Encryption extent size in bytes.</summary>
+  public uint ExtentSize => this._header.ExtentSize;
+
+  /// <summary>Number of header extents preceding ciphertext data.</summary>
+  public ushort HeaderExtentCount => this._header.HeaderExtentCount;
+
+  /// <summary>Total metadata region at the beginning of the lower file.</summary>
+  public int MetadataSize => this._header.MetadataSize;
+
+  /// <summary>Canonical lower-file length implied by the plaintext size and extent geometry.</summary>
+  public long CanonicalLength => this._header.CanonicalLength;
+
+  /// <summary>Human-readable cipher of the first passphrase packet, when present.</summary>
+  public string CipherDescription => this._header.CipherDescription;
+
+  /// <summary>Raw eight-byte authentication-token signature as lowercase hexadecimal.</summary>
+  public string? PassphraseSignature
+    => this._header.PassphrasePackets.Count == 0
+      ? null
+      : Convert.ToHexStringLower(this._header.PassphrasePackets[0].Signature);
+
+  public IReadOnlyList<EcryptfsEntry> Entries => this._entries;
+
+  /// <summary>Decrypts the single logical upper-file payload with a passphrase.</summary>
+  /// <exception cref="CryptographicException">The passphrase does not match this lower file.</exception>
+  public byte[] ExtractContent(string password) {
+    if (this._header.DecryptedSize > int.MaxValue)
+      throw new IOException("This eCryptfs payload is too large for the in-memory extraction API.");
+    using var output = new MemoryStream((int)this._header.DecryptedSize);
+    EcryptfsCodec.DecryptTo(this._stream, output, this._header, password);
+    return output.ToArray();
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// Validates a passphrase against the authentication-token packet without
+  /// materializing plaintext in memory. The ciphertext is streamed through the
+  /// normal decoder into <see cref="Stream.Null"/>, so the same key and extent
+  /// path used by extraction is exercised before a destructive mutation starts.
   /// </summary>
-  public byte[] Extract(EcryptfsEntry entry) {
-    ArgumentNullException.ThrowIfNull(entry);
-    return entry.Data;
-  }
+  /// <exception cref="CryptographicException">The passphrase does not match this lower file.</exception>
+  public void ValidatePassword(string password)
+    => EcryptfsCodec.DecryptTo(this._stream, Stream.Null, this._header, password);
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
-  public void Dispose() { }
+  public void Dispose() {
+    // The reader never owns the caller's stream.
+  }
 }

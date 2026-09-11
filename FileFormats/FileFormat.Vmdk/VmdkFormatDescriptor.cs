@@ -14,7 +14,7 @@ namespace FileFormat.Vmdk;
 ///   <item><description><c>https://en.wikipedia.org/wiki/VMDK</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
+public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchiveLayoutMap, IFilesystemExtentMap, IPartitionEditable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -227,7 +227,7 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     ModifyRebuilder.Remove(archive, entryNames, ReadDiskEntries, BuildImage);
   }
 
-  // ── IArchiveDefragmentable (inner-FS-aware) ────────────────────────
+  // ── Maintenance ────────────────────────────────────────────────────
 
   /// <inheritdoc />
   public void Defragment(Stream archive)
@@ -254,7 +254,52 @@ public sealed class VmdkFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     DefragRebuilder.Rebuild(archive, options, ReadDiskEntries, BuildImage);
   }
 
+  /// <inheritdoc />
+  public void Shrink(Stream input, Stream output)
+    => RawDiskShrinkRebuilder.Shrink(
+      input,
+      output,
+      static stream => {
+        using var reader = new VmdkReader(stream);
+        var entry = reader.Entries.First(e => !e.IsDirectory);
+        return reader.Extract(entry);
+      },
+      static disk => {
+        var writer = new VmdkWriter();
+        writer.SetDiskData(disk);
+        return writer.Build();
+      },
+      CanRebuildMonolithicSparseVmdk);
+
   // ── Private helpers ────────────────────────────────────────────────
+
+  private static bool CanRebuildMonolithicSparseVmdk(Stream stream) {
+    if (stream.Length < 512) return false;
+    Span<byte> header = stackalloc byte[512];
+    stream.Position = 0;
+    stream.ReadExactly(header);
+    if (!header[..4].SequenceEqual("KDMV"u8)) return false;
+
+    var version = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header[4..8]);
+    var flags = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(header[8..12]);
+    const uint unsupportedFlags = 0x0001_0000u | 0x0002_0000u; // compressed grains / stream-optimized metadata
+    if (version != 1 || (flags & unsupportedFlags) != 0) return false;
+
+    var descriptorSector = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(header[28..36]);
+    var descriptorSectors = System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(header[36..44]);
+    if (descriptorSector == 0 || descriptorSectors == 0 || descriptorSectors > 128) return false;
+    var descriptorOffset = checked((long)descriptorSector * 512);
+    var descriptorLength = checked((long)descriptorSectors * 512);
+    if (descriptorOffset < 0 || descriptorLength <= 0 || descriptorOffset + descriptorLength > stream.Length)
+      return false;
+
+    var bytes = new byte[checked((int)descriptorLength)];
+    stream.Position = descriptorOffset;
+    stream.ReadExactly(bytes);
+    var descriptor = System.Text.Encoding.ASCII.GetString(bytes);
+    return descriptor.Contains("createType=\"monolithicSparse\"", StringComparison.OrdinalIgnoreCase)
+      && descriptor.Contains("parentCID=ffffffff", StringComparison.OrdinalIgnoreCase);
+  }
 
   private static bool TryDelegateModifiable(Stream archive, out VmdkStream? vmdkStream, out IArchiveModifiable? modifiable) {
     vmdkStream = null;

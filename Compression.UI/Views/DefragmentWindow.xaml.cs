@@ -1687,7 +1687,7 @@ public partial class DefragmentWindow : Window {
   /// <summary>
   /// Runs the purge operation: erases <em>all live data</em> from the container,
   /// leaving a valid but empty archive/image. Realised via
-  /// <see cref="IArchiveModifiable.Remove"/> over every entry. Distinct from
+  /// <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/> over every entry. Distinct from
   /// wipe-empty, which only zeros <em>dead</em> space (see docs/ARCHIVE-MODEL.md).
   /// </summary>
   private void OnPurge(object sender, RoutedEventArgs e) {

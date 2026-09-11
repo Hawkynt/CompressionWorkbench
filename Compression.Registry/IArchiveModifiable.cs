@@ -39,6 +39,17 @@ public interface IArchiveModifiable : IArchivePurgeable {
     });
   }
 
+  /// <summary>Adds or replaces files while supplying operation-scoped credentials.</summary>
+  /// <remarks>
+  /// The default deliberately delegates to the legacy overload so every existing
+  /// unencrypted modifier keeps its behavior unchanged. Password-aware formats
+  /// override this overload and consume <see cref="ArchiveMutationOptions.Password"/>.
+  /// </remarks>
+  void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    this.Add(archive, inputs);
+  }
+
   /// <summary>
   /// Removes the named entries from an existing instance. Passing every entry name yields an
   /// empty container/image where the format permits one.
@@ -59,5 +70,15 @@ public interface IArchiveModifiable : IArchivePurgeable {
           File.Delete(file);
       }
     });
+  }
+
+  /// <summary>Removes entries while supplying operation-scoped credentials.</summary>
+  /// <remarks>
+  /// The default delegates to the legacy overload; formats that need a password to
+  /// locate or rewrite encrypted metadata can override this overload independently.
+  /// </remarks>
+  void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    this.Remove(archive, entryNames);
   }
 }

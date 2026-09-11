@@ -22,6 +22,7 @@ namespace Compression.Tests.Support;
 /// </remarks>
 internal static class MaintenanceOperationProbe {
   public const string ProbeName = "PROBE.BIN";
+  private const string TestPassword = "cwb-maintenance-probe";
 
   private static readonly byte[] ProbeData = CreateProbeData();
   private static readonly string ProbeDigest = Digest(ProbeData);
@@ -58,8 +59,17 @@ internal static class MaintenanceOperationProbe {
 
     var image = Path.Combine(workDirectory, "probe.img");
     try {
-      ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
-        new CompressionOptions(), format, null);
+      // Unencrypted by default. Defragment(Stream) and Purge take no credentials, so a probe
+      // encrypted merely because the format *supports* passwords is one those verbs cannot read --
+      // which is every classic archive format. Only a format that refuses to be created without
+      // one gets the password, on the retry below.
+      try {
+        ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
+          new CompressionOptions(), format, null);
+      } catch when (PasswordFor(ops!) != null) {
+        ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
+          new CompressionOptions { Password = PasswordFor(ops!) }, format, null);
+      }
     } catch (Exception ex) {
       Assert.Fail($"{formatId}: advertises a maintenance verb but neither creates the standard probe image "
         + $"nor declares the input inadmissible through IArchiveWriteConstraints: {ex.GetType().Name}: {ex.Message}");
@@ -93,15 +103,16 @@ internal static class MaintenanceOperationProbe {
 
   public static IReadOnlyList<ArchiveEntryInfo> ListFiles(IArchiveFormatOperations ops, Stream image) {
     if (image.CanSeek) image.Position = 0;
-    return ops.List(image, null).Where(entry => !entry.IsDirectory).ToArray();
+    return ops.List(image, PasswordFor(ops)).Where(entry => !entry.IsDirectory).ToArray();
   }
 
   private static IReadOnlyList<ArchiveEntryInfo> ProbeEntries(IArchiveFormatOperations ops, Stream image) {
     var matches = new List<ArchiveEntryInfo>();
+    var password = PasswordFor(ops);
     foreach (var entry in ListFiles(ops, image)) {
       try {
         if (image.CanSeek) image.Position = 0;
-        using var payload = ops.OpenEntry(image, entry.Name, null);
+        using var payload = ops.OpenEntry(image, entry.Name, password);
         if (Digest(payload) == ProbeDigest)
           matches.Add(entry);
       } catch {
@@ -111,6 +122,11 @@ internal static class MaintenanceOperationProbe {
     }
     return matches;
   }
+
+  private static string? PasswordFor(IArchiveFormatOperations ops)
+    => (ops as IFormatDescriptor)?.Capabilities.HasFlag(FormatCapabilities.SupportsPassword) == true
+      ? TestPassword
+      : null;
 
   private static byte[] CreateProbeData() {
     var result = new byte[4096];

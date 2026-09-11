@@ -1,126 +1,111 @@
 using System.Buffers.Binary;
+using Compression.Registry;
+using FileFormat.Cso;
 
 namespace Compression.Tests.Cso;
 
 [TestFixture]
 public class CsoTests {
-
-  // Build a minimal synthetic CSO (or ZSO): 24-byte header, N+1 index entries, then fake block data.
-  // uncompressed_size = 4096, block_size = 2048 => 2 blocks, 3 index entries.
-  private static byte[] BuildSyntheticImage(bool isZso, byte[] block0, byte[] block1, bool block0Stored = false, bool block1Stored = false) {
-    using var ms = new MemoryStream();
-    ms.Write(isZso ? "ZISO"u8 : "CISO"u8);
-    Span<byte> buf = stackalloc byte[8];
-    // header_size = 0x18 (24)
-    BinaryPrimitives.WriteUInt32LittleEndian(buf[..4], 0x18u);
-    ms.Write(buf[..4]);
-    // uncompressed_size = 4096
-    BinaryPrimitives.WriteUInt64LittleEndian(buf, 4096UL);
-    ms.Write(buf);
-    // block_size = 2048
-    BinaryPrimitives.WriteUInt32LittleEndian(buf[..4], 2048u);
-    ms.Write(buf[..4]);
-    // version, align, reserved[2]
-    ms.WriteByte(1);
-    ms.WriteByte(0);
-    ms.WriteByte(0);
-    ms.WriteByte(0);
-
-    // Index table: 3 entries. Offsets point to byte positions in the file.
-    var indexStart = (uint)ms.Position;
-    var indexSize = 3u * 4u; // 12 bytes
-    var block0Offset = indexStart + indexSize; // immediately after index
-    var block1Offset = block0Offset + (uint)block0.Length;
-    var endOffset = block1Offset + (uint)block1.Length;
-
-    uint entry0 = block0Offset | (block0Stored ? 0x8000_0000u : 0u);
-    uint entry1 = block1Offset | (block1Stored ? 0x8000_0000u : 0u);
-    uint entry2 = endOffset;
-
-    BinaryPrimitives.WriteUInt32LittleEndian(buf[..4], entry0);
-    ms.Write(buf[..4]);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf[..4], entry1);
-    ms.Write(buf[..4]);
-    BinaryPrimitives.WriteUInt32LittleEndian(buf[..4], entry2);
-    ms.Write(buf[..4]);
-
-    ms.Write(block0);
-    ms.Write(block1);
-    return ms.ToArray();
-  }
+  private const int BlockSize = 2048;
 
   [Test, Category("HappyPath")]
   public void Descriptor_Properties() {
-    var d = new FileFormat.Cso.CsoFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Cso"));
-    Assert.That(d.Extensions, Contains.Item(".cso"));
-    Assert.That(d.Extensions, Contains.Item(".ziso"));
-    Assert.That(d.Category, Is.EqualTo(Compression.Registry.FormatCategory.Archive));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(2));
+    var descriptor = new CsoFormatDescriptor();
+    Assert.That(descriptor.Id, Is.EqualTo("Cso"));
+    Assert.That(descriptor.Extensions, Does.Contain(".cso"));
+    Assert.That(descriptor.Extensions, Does.Contain(".ziso"));
+    Assert.That(descriptor.Extensions, Does.Contain(".zso"));
+    Assert.That(descriptor.Category, Is.EqualTo(FormatCategory.Archive));
+    Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(2));
+  }
+
+  [TestCase(null, "CISO", 1, TestName = "CreateRoundTrip_CsoV1")]
+  [TestCase("zso", "ZISO", 1, TestName = "CreateRoundTrip_Zso")]
+  [TestCase("cso2", "CISO", 2, TestName = "CreateRoundTrip_CsoV2")]
+  [Category("RoundTrip")]
+  public void CreateAndLogicalBlockExtraction_RoundTrips(string? method, string magic, byte version) {
+    var payload = BuildPayload(BlockSize * 3 + 317);
+    var image = CreateImage(payload, method);
+
+    Assert.That(System.Text.Encoding.ASCII.GetString(image, 0, 4), Is.EqualTo(magic));
+    Assert.That(image[20], Is.EqualTo(version));
+    Assert.That(ReadLogicalPayload(image), Is.EqualTo(payload));
+  }
+
+  [Test, Category("Interoperability")]
+  public void Zso_DecodesLibLz4KnownBlock() {
+    // liblz4 raw-block oracle for 2048 zero bytes (no frame header / no stored size prefix).
+    var encoded = Convert.FromHexString("1F000100FFFFFFFFFFFFFFEE500000000000");
+    var image = BuildSingleBlockImage("ZISO", 1, encoded, methodFlag: false);
+
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(image);
+    var block = ((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
+    Assert.That(block, Is.EqualTo(new byte[BlockSize]));
+
+    stream.Position = 0;
+    Assert.That(descriptor.List(stream, null).Single(e => e.Name == "blocks/block_00000.bin").Method,
+      Is.EqualTo("LZ4"));
+  }
+
+  [Test, Category("Interoperability")]
+  public void CsoV2_DecodesLibLz4KnownBlock() {
+    var encoded = Convert.FromHexString("1F000100FFFFFFFFFFFFFFEE500000000000");
+    var image = BuildSingleBlockImage("CISO", 2, encoded, methodFlag: true);
+
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(image);
+    var block = ((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
+    Assert.That(block, Is.EqualTo(new byte[BlockSize]));
+
+    stream.Position = 0;
+    Assert.That(descriptor.List(stream, null).Single(e => e.Name == "blocks/block_00000.bin").Method,
+      Is.EqualTo("LZ4"));
+  }
+
+  [Test, Category("Compatibility")]
+  public void CsoVersionZero_IsAcceptedAsV1() {
+    var payload = BuildPayload(BlockSize);
+    var image = CreateImage(payload);
+    image[20] = 0;
+
+    Assert.That(ReadLogicalPayload(image), Is.EqualTo(payload));
   }
 
   [Test, Category("HappyPath")]
-  public void List_SurfacesBlocksAndIndex() {
-    var block0 = new byte[] { 0x10, 0x20, 0x30 };
-    var block1 = new byte[] { 0xAA, 0xBB };
-    var img = BuildSyntheticImage(isZso: false, block0, block1, block0Stored: false, block1Stored: true);
+  public void List_ReportsLogicalAndPhysicalBlockSizes() {
+    var payload = new byte[BlockSize + 137];
+    var image = CreateImage(payload, "zso");
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(image);
 
-    var desc = new FileFormat.Cso.CsoFormatDescriptor();
-    using var ms = new MemoryStream(img);
-    var entries = desc.List(ms, null);
-
-    // FULL.cso, metadata.ini, index.bin, blocks (dir), block_00000.bin, block_00001.bin = 6 entries
-    Assert.That(entries, Has.Count.EqualTo(6));
-    Assert.That(entries[0].Name, Is.EqualTo("FULL.cso"));
-    Assert.That(entries[1].Name, Is.EqualTo("metadata.ini"));
-    Assert.That(entries[2].Name, Is.EqualTo("index.bin"));
-    Assert.That(entries[2].OriginalSize, Is.EqualTo(12));
-    Assert.That(entries[3].Name, Is.EqualTo("blocks"));
-    Assert.That(entries[3].IsDirectory, Is.True);
-    Assert.That(entries[4].Name, Is.EqualTo("blocks/block_00000.bin"));
-    Assert.That(entries[4].OriginalSize, Is.EqualTo(block0.Length));
-    Assert.That(entries[4].Method, Is.EqualTo("Deflate"));
-    Assert.That(entries[5].Name, Is.EqualTo("blocks/block_00001.bin"));
-    Assert.That(entries[5].OriginalSize, Is.EqualTo(block1.Length));
-    Assert.That(entries[5].Method, Is.EqualTo("Stored"));
+    var entries = descriptor.List(stream, null);
+    var first = entries.Single(e => e.Name == "blocks/block_00000.bin");
+    var last = entries.Single(e => e.Name == "blocks/block_00001.bin");
+    Assert.That(first.OriginalSize, Is.EqualTo(BlockSize));
+    Assert.That(last.OriginalSize, Is.EqualTo(137));
+    Assert.That(first.CompressedSize, Is.LessThan(BlockSize));
+    Assert.That(first.Method, Is.EqualTo("LZ4"));
   }
 
   [Test, Category("HappyPath")]
-  public void List_ZsoReportsLz4Method() {
-    var img = BuildSyntheticImage(isZso: true, new byte[] { 1, 2 }, new byte[] { 3, 4 });
-    var desc = new FileFormat.Cso.CsoFormatDescriptor();
-    using var ms = new MemoryStream(img);
-    var entries = desc.List(ms, null);
-    Assert.That(entries[0].Name, Is.EqualTo("FULL.ziso"));
-    Assert.That(entries[4].Method, Is.EqualTo("LZ4"));
-  }
-
-  [Test, Category("HappyPath")]
-  public void Extract_WritesBlocksAndMetadata() {
-    var block0 = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF };
-    var block1 = new byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
-    var img = BuildSyntheticImage(isZso: false, block0, block1);
-
-    var desc = new FileFormat.Cso.CsoFormatDescriptor();
-    var tmp = Path.Combine(Path.GetTempPath(), "cso_test_" + Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(tmp);
+  public void Extract_WritesMetadataAndLogicalBlocks() {
+    var payload = BuildPayload(BlockSize * 2);
+    var image = CreateImage(payload, "cso2");
+    var descriptor = new CsoFormatDescriptor();
+    var directory = Path.Combine(Path.GetTempPath(), "cso_test_" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
     try {
-      using var ms = new MemoryStream(img);
-      desc.Extract(ms, tmp, null, null);
+      using var stream = new MemoryStream(image);
+      descriptor.Extract(stream, directory, null, ["metadata.ini", "block_00001.bin"]);
 
-      Assert.That(File.Exists(Path.Combine(tmp, "FULL.cso")), Is.True);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "FULL.cso")), Is.EqualTo(img));
-      Assert.That(File.Exists(Path.Combine(tmp, "metadata.ini")), Is.True);
-      Assert.That(File.Exists(Path.Combine(tmp, "index.bin")), Is.True);
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "blocks/block_00000.bin")), Is.EqualTo(block0));
-      Assert.That(File.ReadAllBytes(Path.Combine(tmp, "blocks/block_00001.bin")), Is.EqualTo(block1));
-      var meta = File.ReadAllText(Path.Combine(tmp, "metadata.ini"));
-      Assert.That(meta, Does.Contain("uncompressed_size=4096"));
-      Assert.That(meta, Does.Contain("block_size=2048"));
-      Assert.That(meta, Does.Contain("block_count=2"));
-      Assert.That(meta, Does.Contain("is_zso=0"));
+      var metadata = File.ReadAllText(Path.Combine(directory, "metadata.ini"));
+      Assert.That(metadata, Does.Contain("variant=cso2"));
+      Assert.That(metadata, Does.Contain("block_size=2048"));
+      Assert.That(File.ReadAllBytes(Path.Combine(directory, "blocks/block_00001.bin")),
+        Is.EqualTo(payload.AsSpan(BlockSize, BlockSize).ToArray()));
     } finally {
-      Directory.Delete(tmp, recursive: true);
+      Directory.Delete(directory, recursive: true);
     }
   }
 
@@ -128,8 +113,76 @@ public class CsoTests {
   public void List_RejectsInvalidMagic() {
     var bogus = new byte[64];
     bogus[0] = (byte)'X';
-    var desc = new FileFormat.Cso.CsoFormatDescriptor();
-    using var ms = new MemoryStream(bogus);
-    Assert.That(() => desc.List(ms, null), Throws.InstanceOf<InvalidDataException>());
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(bogus);
+    Assert.That(() => descriptor.List(stream, null), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void List_RejectsNonMonotonicIndex() {
+    var image = CreateImage(new byte[BlockSize * 2]);
+    var first = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(24, 4));
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(28, 4), first - 1);
+
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(image);
+    Assert.That(() => descriptor.List(stream, null), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  private static byte[] CreateImage(byte[] payload, string? method = null, int blockSize = BlockSize) {
+    var creator = (IArchiveCreatable)new CsoFormatDescriptor();
+    using var stream = new MemoryStream();
+    var options = new FormatCreateOptions(method);
+    options.FormatSpecific["BlockSize"] = blockSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    creator.Create(stream, [ArchiveInputInfo.InMemory("disc.iso", payload)], options);
+    return stream.ToArray();
+  }
+
+  private static byte[] ReadLogicalPayload(byte[] image) {
+    var descriptor = new CsoFormatDescriptor();
+    using var stream = new MemoryStream(image, writable: false);
+    var names = descriptor.List(stream, null)
+      .Where(e => !e.IsDirectory && e.Name.StartsWith("blocks/block_", StringComparison.Ordinal))
+      .OrderBy(e => e.Index)
+      .Select(e => e.Name)
+      .ToArray();
+    using var output = new MemoryStream();
+    foreach (var name in names) {
+      stream.Position = 0;
+      output.Write(((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, name, null));
+    }
+    return output.ToArray();
+  }
+
+  private static byte[] BuildSingleBlockImage(string magic, byte version, byte[] encoded, bool methodFlag) {
+    using var stream = new MemoryStream();
+    stream.Write(System.Text.Encoding.ASCII.GetBytes(magic));
+    Span<byte> word = stackalloc byte[8];
+    BinaryPrimitives.WriteUInt32LittleEndian(word[..4], 24);
+    stream.Write(word[..4]);
+    BinaryPrimitives.WriteUInt64LittleEndian(word, BlockSize);
+    stream.Write(word);
+    BinaryPrimitives.WriteUInt32LittleEndian(word[..4], BlockSize);
+    stream.Write(word[..4]);
+    stream.WriteByte(version);
+    stream.WriteByte(0);
+    stream.WriteByte(0);
+    stream.WriteByte(0);
+
+    const uint dataOffset = 32;
+    var first = dataOffset | (methodFlag ? 0x8000_0000u : 0u);
+    BinaryPrimitives.WriteUInt32LittleEndian(word[..4], first);
+    stream.Write(word[..4]);
+    BinaryPrimitives.WriteUInt32LittleEndian(word[..4], dataOffset + checked((uint)encoded.Length));
+    stream.Write(word[..4]);
+    stream.Write(encoded);
+    return stream.ToArray();
+  }
+
+  private static byte[] BuildPayload(int length) {
+    var payload = new byte[length];
+    for (var i = 0; i < payload.Length; ++i)
+      payload[i] = (byte)((i * 17 + i / 31) & 0xFF);
+    return payload;
   }
 }

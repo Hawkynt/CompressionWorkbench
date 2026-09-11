@@ -2964,13 +2964,13 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.Avi`
 
-[`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack)
+[`AviFormatDescriptor`](#aviformatdescriptor) · [`AviLayoutMap`](#avilayoutmap) · [`AviOptimizer`](#avioptimizer) · [`AviReader`](#avireader) · [`AviReader.ChunkEntry`](#avireaderchunkentry) · [`AviReader.InterleavedChunk`](#avireaderinterleavedchunk) · [`AviReader.ParsedAvi`](#avireaderparsedavi) · [`AviReader.Track`](#avireadertrack) · [`AviWriter`](#aviwriter)
 
 #### `AviFormatDescriptor`
 
-Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info.
+Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info. Creation remuxes an existing AVI or rebuilds an AVI 1.0 file from the extracted metadata plus elementary video frames and PCM audio.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -2987,6 +2987,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternal
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a fresh AVI by genuinely remuxing an AVI input, or by muxing the descriptor's extracted `metadata.ini`, frame entries and PCM audio track. |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -3035,6 +3036,20 @@ Implements `IEquatable<ChunkEntry>`.
 | `ChunkId` | `string ChunkId { get; init; }` |  |
 | `Data` | `byte[] Data { get; init; }` |  |
 
+#### `AviReader.InterleavedChunk`
+
+One movi chunk in file order. `IndexFlags` is populated from a matching legacy `idx1` entry when present.
+
+Implements `IEquatable<InterleavedChunk>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `InterleavedChunk` | `InterleavedChunk(int StreamIndex, string ChunkId, byte[] Data, uint? IndexFlags = null)` | One movi chunk in file order. `IndexFlags` is populated from a matching legacy `idx1` entry when present. |
+| `ChunkId` | `string ChunkId { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `IndexFlags` | `uint? IndexFlags { get; init; }` |  |
+| `StreamIndex` | `int StreamIndex { get; init; }` |  |
+
 #### `AviReader.ParsedAvi`
 
 Represents a parsed avi.
@@ -3045,7 +3060,9 @@ Implements `IEquatable<ParsedAvi>`.
 | --- | --- | --- |
 | `ParsedAvi` | `ParsedAvi(int Width, int Height, uint MicroSecPerFrame, uint TotalFrames, IReadOnlyList<Track> Tracks)` | Represents a parsed avi. |
 | `Height` | `int Height { get; init; }` |  |
+| `MainHeader` | `byte[] MainHeader { get; init; }` | Raw `avih` body, retained so a remux can preserve non-derived header fields. |
 | `MicroSecPerFrame` | `uint MicroSecPerFrame { get; init; }` |  |
+| `MoviChunks` | `IReadOnlyList<InterleavedChunk> MoviChunks { get; init; }` | Recognised movi chunks in their original global interleave order. |
 | `TotalFrames` | `uint TotalFrames { get; init; }` |  |
 | `Tracks` | `IReadOnlyList<Track> Tracks { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
@@ -3070,8 +3087,17 @@ Implements `IEquatable<Track>`.
 | `Handler` | `uint Handler { get; init; }` |  |
 | `Height` | `int Height { get; init; }` |  |
 | `Index` | `int Index { get; init; }` |  |
+| `StreamHeader` | `byte[] StreamHeader { get; init; }` | Raw `strh` body, retained so a remux can preserve stream timing and flags. |
 | `StreamType` | `string StreamType { get; init; }` |  |
 | `Width` | `int Width { get; init; }` |  |
+
+#### `AviWriter`
+
+AVI 1.0 RIFF muxer. Writes a canonical hdrl/movi/idx1 layout while preserving encoded packet bytes, stream format blocks, stream timing headers, interleave order, and legacy index flags whenever `AviReader` exposed them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Write` | `static void Write(Stream output, ParsedAvi avi)` | Writes `avi` to `output` as an AVI 1.0 RIFF file. |
 
 ### Namespace `FileFormat.Avro`
 
@@ -9814,7 +9840,7 @@ Writes a Long Range Zip (lrzip) container with the LZMA subtype. Other methods a
 
 Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9836,12 +9862,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation therefore consists of validating that layout and dropping transport/trailing padding after the last allocated archive block; intrinsic per-block padding is part of the format. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the exact byte layout: live directory text, directory padding, REL side sectors, logical file bytes, per-file block padding, and any trailer beyond the archive allocation. Explicit free extents make generic forensic wiping safe for this format. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Performs the extract entry to memory operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Performs the open entry operation. |
+| `Purge` | `void Purge(Stream archive)` | Removes all live entries in one pass while preserving the input archive's BASIC preamble and Lynx signature. The empty directory is emitted at its minimum one-block allocation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds the directory at its smallest whole-254-byte allocation and copies the complete existing data area byte-for-byte. This preserves REL side sectors and file-type metadata, while reclaiming directory blocks left behind after removals and any trailing transport data. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros only byte ranges that the Lynx layout proves unused: directory padding, payload block padding and trailing transport data. Live file bytes and REL side-sector metadata are retained. |
 
 ### Namespace `FileFormat.Lz4`
 
@@ -15669,13 +15698,27 @@ Reads RPG Maker RGSSAD / RGSS2A / RGSS3A encrypted archives. v1 ("RGSSAD\0\1"): 
 
 ### Namespace `FileFormat.Rnc`
 
-[`RncFormatDescriptor`](#rncformatdescriptor) · [`RncStream`](#rncstream)
+[`RncCompressionOptions`](#rnccompressionoptions) · [`RncFormatDescriptor`](#rncformatdescriptor) · [`RncParseStrategy`](#rncparsestrategy) · [`RncStream`](#rncstream)
+
+#### `RncCompressionOptions`
+
+Encoder controls for RNC ProPack Method 1.
+
+Implements `IEquatable<RncCompressionOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RncCompressionOptions` | `RncCompressionOptions()` |  |
+| `BlockSize` | `int BlockSize { get; init; }` | Maximum uncompressed bytes represented by one Huffman-table block. |
+| `DictionarySize` | `int DictionarySize { get; init; }` | Sliding dictionary size in bytes. Method 1 permits up to 32768 bytes. |
+| `ParseStrategy` | `RncParseStrategy ParseStrategy { get; init; }` | LZ parsing strategy. |
+| `SearchDepth` | `int SearchDepth { get; init; }` | Maximum hash-chain candidates examined at each input position. |
 
 #### `RncFormatDescriptor`
 
-Describes rnc format.
+Describes the RNC ProPack stream format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15691,19 +15734,32 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The encoder axes searched by `CompressionOptimizer`. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes the supplied input with the widest dictionary and the deepest search this codec offers. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input with the ProPack default settings. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the requested dictionary, block size, search depth and parser. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `RncParseStrategy`
+
+Parser strategy used by the RNC Method 1 encoder.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Greedy` | `0` | Emit the longest match found at the current position immediately. |
+| `Lazy` | `1` | Prefer a literal when the next position has a longer match, matching ProPack's one-byte look-ahead. |
 
 #### `RncStream`
 
-Compressor and decompressor for the Rob Northen Compression (RNC) format. RNC is a Huffman + LZSS scheme used in many classic Amiga and DOS games. This implementation supports Method 1 (Huffman + LZSS).
+Compressor and decompressor for Rob Northen Computing's RNC ProPack stream format. Method 1 is the Huffman-coded LZ77 variant used by many Amiga, DOS and console games.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses raw data into the RNC Method 1 format and writes the result to `output`. |
-| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | Computes the RNC CRC-16 checksum using the custom polynomial 0xCC01. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RNC-compressed stream and writes the original data to `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses using the ProPack-compatible Method 1 defaults. |
+| `Compress` | `static void Compress(Stream input, Stream output, RncCompressionOptions options)` | Compresses using the supplied Method 1 encoder settings. |
+| `Crc16` | `static ushort Crc16(ReadOnlySpan<byte> data)` | Computes the RNC CRC-16 (CRC-16/ARC, polynomial 0xA001, initial value 0). |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an RNC stream. |
 
 ### Namespace `FileFormat.Rpa`
 
@@ -20761,11 +20817,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `ZipLayoutMap`
 
-Walks the ZIP central directory and emits the byte-level layout of every local file header, compressed data payload, the central directory itself, and the EOCD record as `DefragBlockInfo` tiles.
+Walks a ZIP central directory and emits a fail-closed byte-level layout of local headers, compressed payloads, optional data descriptors, the central directory and EOCD.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` | Enumerates the value. |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` |  |
 
 #### `ZipModifier`
 
