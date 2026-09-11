@@ -30,27 +30,15 @@ public sealed class CxfsReader : IDisposable {
   /// <summary>XFS superblock magic: ASCII "XFSB" (0x58465342 BE).</summary>
   public static readonly byte[] XfsbMagic = "XFSB"u8.ToArray();
 
-  /// <summary>Offset of the legacy XFS <c>sb_features2</c> field in <c>xfs_dsb</c>.</summary>
-  public const int SbFeatures2Offset = 0x82;
+  /// <summary>Offset of the XFS <c>sb_features2</c> field in <c>xfs_dsb</c>.</summary>
+  public const int SbFeatures2Offset = 0xC8;
 
   private readonly byte[] _data;
   private readonly List<CxfsEntry> _entries = [];
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
   public IReadOnlyList<CxfsEntry> Entries => _entries;
-  /// <summary>
-  /// Gets the XFS superblock magic.
-  /// </summary>
   public uint XfsMagic { get; private set; }
-  /// <summary>
-  /// Gets the XFS <c>sb_features2</c> field for diagnostics.
-  /// </summary>
   public uint SbFeatures2 { get; private set; }
-  /// <summary>
-  /// Gets a value indicating whether the XFS superblock header is valid.
-  /// </summary>
   public bool ValidHeader { get; private set; }
 
   /// <summary>True when the XFS reader successfully accepted the filesystem,
@@ -58,9 +46,6 @@ public sealed class CxfsReader : IDisposable {
   /// when the detection-only fallback was required.</summary>
   public bool DelegatedToXfs { get; private set; }
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="CxfsReader"/>.
-  /// </summary>
   public CxfsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek) stream.Position = 0;
@@ -93,10 +78,6 @@ public sealed class CxfsReader : IDisposable {
       using var xfs = new XfsReader(xfsStream);
       var xfsEntries = xfs.Entries;
 
-      // XfsReader intentionally fails closed by returning no entries when the
-      // root inode cannot be walked. Distinguish that from a genuinely empty
-      // filesystem by validating the root inode itself before accepting the
-      // zero-entry result.
       if (xfsEntries.Count == 0 && !HasPlausibleRootDirectory())
         return false;
 
@@ -118,13 +99,6 @@ public sealed class CxfsReader : IDisposable {
     }
   }
 
-  /// <summary>
-  /// Validates enough of the XFS root inode address to tell a valid empty root
-  /// directory from a synthetic/truncated superblock that merely carries XFSB.
-  /// The calculation mirrors the documented XFS inode-number geometry and the
-  /// existing <see cref="XfsReader"/> address calculation; it does not interpret
-  /// CXFS-specific state because there is none in the filesystem structure.
-  /// </summary>
   private bool HasPlausibleRootDirectory() {
     if (_data.Length < 128)
       return false;
@@ -194,16 +168,10 @@ public sealed class CxfsReader : IDisposable {
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Extract(CxfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() { }
 }
