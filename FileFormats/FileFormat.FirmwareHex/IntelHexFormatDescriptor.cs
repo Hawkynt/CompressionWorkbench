@@ -105,6 +105,31 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FirmwareHexWriter.WriteIntelHex(output, FirmwareHexWriter.ImageFrom(inputs, "IntelHex"));
   }
 
+  /// <summary>
+  /// Removes all programmed bytes and start-address state while leaving the
+  /// canonical valid empty Intel HEX document (the EOF record). This overrides
+  /// the generic pseudo-archive purge because <c>firmware.bin</c> is a rendered
+  /// view that also exists as a zero-length view of an empty image.
+  /// </summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("Intel HEX purge requires a readable, writable, seekable stream.", nameof(archive));
+
+    archive.Position = 0;
+    _ = BuildEntries(archive); // validate before committing a destructive edit
+
+    using var rebuilt = new MemoryStream();
+    FirmwareHexWriter.WriteIntelHex(rebuilt,
+      new FirmwareImage([], StartAddress: null, RecordCount: 0, GapCount: 0, TotalDataBytes: 0, SourceFormat: "IntelHex"));
+    archive.Position = 0;
+    archive.SetLength(0);
+    rebuilt.Position = 0;
+    rebuilt.CopyTo(archive);
+    archive.Flush();
+    archive.Position = 0;
+  }
+
   // IArchiveModifiable and IArchiveDefragmentable intentionally use their shared
   // verified staged-rebuild implementations. Rebuilding is the native edit model
   // for a line-oriented HEX file: there are no allocation structures to patch in
