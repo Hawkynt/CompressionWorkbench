@@ -12,18 +12,28 @@ namespace FileSystem.OneFs;
 /// <remarks>
 /// <para>
 /// Dell documents the cluster-level structures required to resolve OneFS data:
-/// the superblock points at the LIN master, the LIN B+ tree maps logical inode
-/// numbers to mirrored inode addresses, and file metatrees map logical blocks to
-/// protection groups. Those addresses identify a node, drive and physical block,
-/// so a lone drive image is not a self-contained filesystem namespace.
+/// superblocks live at multiple fixed block addresses on every drive and point
+/// at the LIN master, the LIN B+ tree maps logical inode numbers to mirrored
+/// inode addresses, and file metatrees map logical blocks to protection groups.
+/// Those addresses identify a node, drive and physical block, so a lone drive
+/// image is not a self-contained filesystem namespace.
+/// </para>
+/// <para>
+/// Dell also documents enough physical geometry for safe analysis: every data
+/// disk is divided into 32 MiB cylinder groups made of 8 KiB filesystem blocks,
+/// with a per-cylinder-group bitmap tracking whether blocks are used for data,
+/// inodes or other metadata. The bitmap's raw serialization and location are not
+/// publicly specified, so this reader reports the geometry but does not attempt
+/// to interpret allocation state.
 /// </para>
 /// <para>
 /// Dell does not publish a fixed raw-image magic value that identifies a OneFS
 /// drive at offset zero. In particular, the historical <c>"OneFS"</c> / <c>"ONEF"</c>
 /// literals previously used here could not be corroborated by Dell documentation
-/// and are therefore not parsed or advertised as signatures. The reader is
-/// reached by explicit format selection or the <c>.onefs</c> extension and treats
-/// the supplied bytes as opaque media.
+/// and are therefore not parsed or advertised as signatures. Public OneFS logs
+/// do show that a superblock magic is validated, but neither its authoritative
+/// value nor the fixed superblock block addresses have been found in a public
+/// byte-level specification.
 /// </para>
 /// <para>
 /// The reader deliberately performs no payload reads while listing. This keeps a
@@ -31,23 +41,17 @@ namespace FileSystem.OneFs;
 /// inventing structure from undocumented bytes. The raw image remains available
 /// as a bounded streaming entry for forensic inspection or export.
 /// </para>
-/// <para>
-/// References used for the clean-room behaviour documented here:
-/// <list type="bullet">
-///   <item><description>Dell Technologies Info Hub, "OneFS Metadata" (LIN tree,
-///     inode mirrors, IFM/DFM B+ trees and protection groups).</description></item>
-///   <item><description>Dell PowerScale OneFS Technical Overview, "File system
-///     structure" (distributed UFS-based filesystem and single namespace).</description></item>
-///   <item><description>Dell PowerScale OneFS Technical Specifications Guide
-///     (8 KiB filesystem block size).</description></item>
-/// </list>
-/// No external implementation code is copied or translated.
-/// </para>
 /// </remarks>
 public sealed class OneFsReader : IDisposable {
 
   /// <summary>Documented OneFS filesystem block size.</summary>
   public const int PhysicalBlockSize = 8 * 1024;
+
+  /// <summary>Documented physical cylinder-group size of each OneFS data disk.</summary>
+  public const int CylinderGroupSize = 32 * 1024 * 1024;
+
+  /// <summary>Documented number of 8 KiB blocks in a 32 MiB cylinder group.</summary>
+  public const int BlocksPerCylinderGroup = CylinderGroupSize / PhysicalBlockSize;
 
   /// <summary>Name of the synthetic inspection metadata entry.</summary>
   public const string MetadataEntryName = "metadata.ini";
@@ -135,17 +139,24 @@ public sealed class OneFsReader : IDisposable {
     builder.Append("format=Dell PowerScale / Isilon OneFS\n");
     builder.Append("detection=extension-or-explicit-selection\n");
     builder.Append("authoritative_raw_magic=not_published\n");
+    builder.Append("superblock_magic=known-to-exist-value-not-publicly-verified\n");
+    builder.Append("superblock_locations=multiple-fixed-block-addresses-values-not-publicly-verified\n");
+    builder.Append("superblock_role=references-LIN-master\n");
     builder.Append("physical_block_size=").Append(PhysicalBlockSize.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    builder.Append("cylinder_group_size=").Append(CylinderGroupSize.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    builder.Append("blocks_per_cylinder_group=").Append(BlocksPerCylinderGroup.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    builder.Append("allocation_tracking=per-cylinder-group-bitmap-serialization-not-published\n");
     builder.Append("image_size=").Append(this.ImageSize.ToString(CultureInfo.InvariantCulture)).Append('\n');
     builder.Append("rw_promotion=blocked\n");
     builder.Append("rw_promotion_reason_1=OneFS exposes one namespace across the cluster, not one self-contained namespace per drive\n");
     builder.Append("rw_promotion_reason_2=LIN B+ tree entries resolve logical inode numbers to mirrored inode addresses on node+drive+block tuples\n");
     builder.Append("rw_promotion_reason_3=IFM metatrees resolve logical file blocks to protection groups distributed across cluster nodes and drives\n");
-    builder.Append("rw_promotion_reason_4=no published raw-media serialization/update specification or offline single-drive checker was found\n");
+    builder.Append("rw_promotion_reason_4=safe writes use distributed two-phase commit and per-node journals\n");
+    builder.Append("rw_promotion_reason_5=no published byte-level allocation/tree/journal serialization or offline single-drive checker was found\n");
     builder.Append("maintenance=blocked\n");
-    builder.Append("maintenance_reason=free/live allocation, relocation metadata, protection-group membership and transaction rules cannot be proven from one opaque image\n");
-    builder.Append("ufs_note=Dell describes OneFS as UFS-based; that architectural ancestry does not make an isolated /ifs drive image a generic standalone UFS volume\n");
-    builder.Append("note=The raw image is exposed byte-for-byte for inspection only; no undocumented bytes are interpreted or rewritten.\n");
+    builder.Append("maintenance_reason=bitmap location and encoding, relocation metadata, protection-group membership and transaction rules cannot be proven from one opaque image\n");
+    builder.Append("ufs_note=OneFS is FreeBSD-derived and early Isilon material describes BAM as working with or instead of BSD UFS; an isolated /ifs data drive is not established as a generic standalone UFS volume\n");
+    builder.Append("note=The raw image is exposed byte-for-byte for inspection only; only documented geometry is interpreted.\n");
     return Encoding.UTF8.GetBytes(builder.ToString());
   }
 
