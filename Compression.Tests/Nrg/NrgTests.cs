@@ -80,11 +80,9 @@ public class NrgTests {
 
     var position = trailerOffset;
     var etn2 = ReadChunk(image, ref position, "ETN2", 32);
-    Assert.Multiple(() => {
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2), Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2[8..]), Is.EqualTo((ulong)trailerOffset));
-      Assert.That(etn2[19], Is.Zero, "cooked Mode 1");
-    });
+    Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2), Is.Zero);
+    Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2[8..]), Is.EqualTo((ulong)trailerOffset));
+    Assert.That(etn2[19], Is.Zero, "cooked Mode 1");
 
     var sinf = ReadChunk(image, ref position, "SINF", 4);
     Assert.That(BinaryPrimitives.ReadUInt32BigEndian(sinf), Is.EqualTo(1));
@@ -109,7 +107,6 @@ public class NrgTests {
   public void Read_UsesEtn2TrackOffset_InsteadOfAssumingOffsetZero() {
     var payload = "track-offset"u8.ToArray();
     var image = BuildOffsetTrackNrg("OFFSET.BIN", payload);
-
     Assert.That(ReadFile(image, "OFFSET.BIN"), Is.EqualTo(payload));
   }
 
