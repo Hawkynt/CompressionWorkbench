@@ -19,16 +19,21 @@ namespace FileSystem.GlusterFs;
 /// intentionally exposes only the physical view of one supplied backing image.
 /// It does not claim to reconstruct a Gluster volume from one brick.</para>
 ///
+/// <para>When the backing namespace contains Gluster's <c>.glusterfs</c> GFID
+/// index, its parent directory identifies the brick root. Entries outside that
+/// subtree and the index itself are omitted from the normal view. If no index is
+/// present, the filesystem root is used as a conservative explicit-input
+/// fallback.</para>
+///
 /// <para>The backing readers currently do not interpret or mutate Gluster xattrs.
-/// Those bytes remain untouched because this type is read-only. The internal
-/// <c>.glusterfs</c> GFID index is omitted from the normal brick listing so it is
-/// not mistaken for user namespace content.</para>
+/// Those bytes remain untouched because this type is read-only.</para>
 /// </summary>
 public sealed class GlusterFsReader : IDisposable {
 
   private const int ExtSuperblockOffset = 1024;
   private const int ExtMagicOffset = ExtSuperblockOffset + 56;
   private const ushort ExtMagic = 0xEF53;
+  private const string GlusterIndexName = ".glusterfs";
 
   private readonly Stream _image;
   private readonly bool _ownsImage;
@@ -50,6 +55,16 @@ public sealed class GlusterFsReader : IDisposable {
   /// Gets the detected backing filesystem name (<c>xfs</c> or <c>ext</c>).
   /// </summary>
   public string BackingFileSystem { get; private set; } = "";
+
+  /// <summary>
+  /// Gets the inferred brick root inside the backing filesystem. Empty means filesystem root.
+  /// </summary>
+  public string BrickRoot { get; private set; } = "";
+
+  /// <summary>
+  /// Gets whether a <c>.glusterfs</c> GFID index was present and used to locate the brick root.
+  /// </summary>
+  public bool HasGlusterIndex { get; private set; }
 
   /// <summary>
   /// Initializes a reader over one brick backing-store image.
@@ -107,16 +122,17 @@ public sealed class GlusterFsReader : IDisposable {
     _xfsReader = new XfsReader(_image, leaveOpen: true);
     this.BackingFileSystem = "xfs";
     this.ValidHeader = true;
+    SetBrickRoot(_xfsReader.Entries.Select(entry => entry.Name));
     AddMetadata(_xfsReader.Entries.Count);
 
     foreach (var entry in _xfsReader.Entries) {
-      if (IsGlusterInternal(entry.Name)) continue;
+      if (!TryGetBrickRelativePath(entry.Name, out var relativePath)) continue;
       var captured = entry;
       _entries.Add(new GlusterFsEntry {
-        Name = BrickPath(entry.Name),
+        Name = BrickPath(relativePath),
         Size = entry.Size,
         IsDirectory = entry.IsDirectory,
-        DataFactory = entry.IsDirectory ? null : () => _xfsReader.Extract(captured),
+        DataFactory = entry.IsDirectory ? null : () => _xfsReader!.Extract(captured),
       });
     }
   }
@@ -126,18 +142,62 @@ public sealed class GlusterFsReader : IDisposable {
     _extReader = new ExtReader(_image, leaveOpen: true);
     this.BackingFileSystem = "ext";
     this.ValidHeader = true;
+    SetBrickRoot(_extReader.Entries.Select(entry => entry.Name));
     AddMetadata(_extReader.Entries.Count);
 
     foreach (var entry in _extReader.Entries) {
-      if (IsGlusterInternal(entry.Name)) continue;
+      if (!TryGetBrickRelativePath(entry.Name, out var relativePath)) continue;
       var captured = entry;
       _entries.Add(new GlusterFsEntry {
-        Name = BrickPath(entry.Name),
+        Name = BrickPath(relativePath),
         Size = entry.Size,
         IsDirectory = entry.IsDirectory,
-        DataFactory = entry.IsDirectory ? null : () => _extReader.Extract(captured),
+        DataFactory = entry.IsDirectory ? null : () => _extReader!.Extract(captured),
       });
     }
+  }
+
+  private void SetBrickRoot(IEnumerable<string> paths) {
+    var roots = paths
+      .Select(NormalizePath)
+      .Where(IsGlusterIndexPath)
+      .Select(path => path.Equals(GlusterIndexName, StringComparison.Ordinal)
+        ? ""
+        : path[..^(GlusterIndexName.Length + 1)])
+      .Distinct(StringComparer.Ordinal)
+      .ToArray();
+
+    if (roots.Length > 1)
+      throw new NotSupportedException(
+        "GlusterFS: backing image contains multiple .glusterfs indexes; supply an image containing one brick.");
+
+    this.HasGlusterIndex = roots.Length == 1;
+    this.BrickRoot = roots.FirstOrDefault() ?? "";
+  }
+
+  private bool TryGetBrickRelativePath(string path, out string relativePath) {
+    var normalized = NormalizePath(path);
+    if (this.BrickRoot.Length != 0) {
+      if (normalized.Equals(this.BrickRoot, StringComparison.Ordinal)) {
+        relativePath = "";
+        return false;
+      }
+
+      var prefix = this.BrickRoot + "/";
+      if (!normalized.StartsWith(prefix, StringComparison.Ordinal)) {
+        relativePath = "";
+        return false;
+      }
+      normalized = normalized[prefix.Length..];
+    }
+
+    if (normalized.Length == 0 || IsGlusterInternal(normalized)) {
+      relativePath = "";
+      return false;
+    }
+
+    relativePath = normalized;
+    return true;
   }
 
   private void AddMetadata(int backingEntryCount) {
@@ -156,6 +216,8 @@ public sealed class GlusterFsReader : IDisposable {
     builder.Append(CultureInfo.InvariantCulture, $"backing_fs={this.BackingFileSystem}\n");
     builder.Append(CultureInfo.InvariantCulture, $"image_size={_image.Length}\n");
     builder.Append(CultureInfo.InvariantCulture, $"backing_entry_count={backingEntryCount}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"brick_root={this.BrickRoot}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"gluster_index_detected={this.HasGlusterIndex.ToString().ToLowerInvariant()}\n");
     builder.Append("view=physical single-brick namespace\n");
     builder.Append("gluster_internal_directory=.glusterfs (hidden from normal listing)\n");
     builder.Append("xattrs=preserved in image but not interpreted\n");
@@ -165,16 +227,17 @@ public sealed class GlusterFsReader : IDisposable {
     return Encoding.UTF8.GetBytes(builder.ToString());
   }
 
-  private static string BrickPath(string path) {
-    var normalized = path.Replace('\\', '/').TrimStart('/');
-    return "brick/" + normalized;
-  }
+  private static string BrickPath(string path) => "brick/" + NormalizePath(path);
 
-  private static bool IsGlusterInternal(string path) {
-    var normalized = path.Replace('\\', '/').Trim('/');
-    return normalized.Equals(".glusterfs", StringComparison.Ordinal) ||
-           normalized.StartsWith(".glusterfs/", StringComparison.Ordinal);
-  }
+  private static string NormalizePath(string path) => path.Replace('\\', '/').Trim('/');
+
+  private static bool IsGlusterIndexPath(string path) =>
+    path.Equals(GlusterIndexName, StringComparison.Ordinal) ||
+    path.EndsWith("/" + GlusterIndexName, StringComparison.Ordinal);
+
+  private static bool IsGlusterInternal(string path) =>
+    path.Equals(GlusterIndexName, StringComparison.Ordinal) ||
+    path.StartsWith(GlusterIndexName + "/", StringComparison.Ordinal);
 
   private void ReadAt(long offset, Span<byte> destination) {
     var original = _image.Position;
