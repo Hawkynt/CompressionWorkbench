@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -12,14 +11,12 @@ namespace FileFormat.Nrg;
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://cdemu.sourceforge.io</c> — CDEmu / libMirage NRG parser, used as a behavioural oracle for the reverse-engineered chunk layout</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/NRG_(file_format)</c> — format overview</description></item>
+///   <item><description><c>https://problemkaputt.de/psx-spx.htm</c> — independently documented NRG CUEX/DAOX/ETN structures</description></item>
 ///   <item><description>No official public Nero specification is available; the format is proprietary and reverse-engineered</description></item>
 /// </list>
 /// </summary>
 public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
   IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable {
-
-  private const uint CdRomMediumType = 0x00000400;
 
   /// <summary>Gets the id.</summary>
   public string Id => "Nrg";
@@ -52,7 +49,10 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <summary>Gets the methods.</summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [
+    new("iso9660", "ISO 9660"),
+    new("cdda", "CD-DA / mixed-mode tracks"),
+  ];
 
   /// <summary>Gets the tar compression format id.</summary>
   public string? TarCompressionFormatId => null;
@@ -62,16 +62,16 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "Nero Burning ROM disc image (NRG v1/v2 reader; interoperable v2 TAO ISO writer; R/W and maintenance through verified rebuild)";
+    "Nero Burning ROM disc image (NRG v1/v2 reader; v2 DAO multi-session/multi-track/audio writer; named ISO edits use verified rebuild)";
 
-  /// <summary>Lists the entries in the supplied container.</summary>
+  /// <summary>Lists the ISO 9660 entries from the first readable data track in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new NrgReader(stream, leaveOpen: true);
     return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(index, entry.FullPath, entry.Size,
       entry.Size, "iso9660", entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>Decodes the supplied input.</summary>
+  /// <summary>Extracts ISO 9660 entries from the first readable data track.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var reader = new NrgReader(stream, leaveOpen: true);
     foreach (var entry in reader.Entries) {
@@ -84,11 +84,9 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Creates a single-session, single-track NRG v2 image containing a cooked
-  /// 2,048-byte/sector ISO 9660 track. The trailer is a real NRG descriptor
-  /// chain rather than merely a NER5 signature: ETN2 describes the TAO track,
-  /// SINF records the session track count, MTYP marks CD-ROM media, and END!
-  /// terminates the chunk list.
+  /// Creates the generic archive API profile: one DAO session containing one cooked
+  /// Mode-1 ISO 9660 track. Call <see cref="NrgWriter.Write(Stream,NrgDiscDefinition)"/>
+  /// directly for multi-session, mixed data/audio, pregap, MCN, ISRC, CD-TEXT or raw-sector authoring.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
@@ -98,42 +96,96 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     foreach (var input in inputs.Where(static input => !input.IsDirectory))
       iso.AddFile(input.ArchiveName.Replace('\\', '/'), input.ReadContent());
 
-    var image = iso.Build();
-    output.Write(image);
-
-    var trailerOffset = checked((ulong)output.Position);
-
-    Span<byte> etn2 = stackalloc byte[32];
-    BinaryPrimitives.WriteUInt64BigEndian(etn2, 0); // track starts at file offset 0
-    BinaryPrimitives.WriteUInt64BigEndian(etn2[8..], checked((ulong)image.LongLength));
-    etn2[19] = 0x00; // Mode 1, cooked 2,048-byte user-data sectors
-    BinaryPrimitives.WriteUInt32BigEndian(etn2[20..], 0); // first logical sector
-    WriteChunk(output, "ETN2"u8, etn2);
-
-    Span<byte> sinf = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(sinf, 1); // one track in this session
-    WriteChunk(output, "SINF"u8, sinf);
-
-    Span<byte> mtyp = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32BigEndian(mtyp, CdRomMediumType);
-    WriteChunk(output, "MTYP"u8, mtyp);
-
-    WriteChunk(output, "END!"u8, ReadOnlySpan<byte>.Empty);
-
-    Span<byte> footer = stackalloc byte[12];
-    "NER5"u8.CopyTo(footer);
-    BinaryPrimitives.WriteUInt64BigEndian(footer[4..], trailerOffset);
-    output.Write(footer);
+    NrgWriter.Write(output, new NrgDiscDefinition([
+      new NrgSessionDefinition([
+        new NrgTrackDefinition(NrgTrackMode.Mode1, iso.Build()),
+      ]),
+    ]));
   }
 
-  private static void WriteChunk(Stream output, ReadOnlySpan<byte> id, ReadOnlySpan<byte> payload) {
-    if (id.Length != 4)
-      throw new ArgumentException("NRG chunk ids are exactly four bytes.", nameof(id));
+  /// <summary>
+  /// Adds/replaces named ISO entries through a verified rebuild. Multi-track or audio NRGs are
+  /// deliberately refused here because flattening them to the generic single-ISO create profile
+  /// would destroy disc structure.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    EnsureNamedFileMutationProfile(archive);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        if (input.IsDirectory || string.IsNullOrEmpty(input.ArchiveName))
+          continue;
+        var destination = Path.Combine(tmpDir, input.ArchiveName.Replace('/', Path.DirectorySeparatorChar));
+        var parent = Path.GetDirectoryName(destination);
+        if (!string.IsNullOrEmpty(parent))
+          Directory.CreateDirectory(parent);
+        File.WriteAllBytes(destination, input.ReadContent());
+      }
+    });
+  }
 
-    Span<byte> header = stackalloc byte[8];
-    id.CopyTo(header);
-    BinaryPrimitives.WriteUInt32BigEndian(header[4..], checked((uint)payload.Length));
-    output.Write(header);
-    output.Write(payload);
+  /// <summary>Removes named ISO entries through the same profile-gated verified rebuild.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    EnsureNamedFileMutationProfile(archive);
+    var skip = new HashSet<string>(entryNames, StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
+        var relative = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
+        if (skip.Contains(relative) || skip.Contains(Path.GetFileName(relative)))
+          File.Delete(file);
+      }
+    });
+  }
+
+  /// <summary>Purges the single-data-track R/W profile to a valid empty NRG.</summary>
+  public void Purge(Stream archive) {
+    EnsureNamedFileMutationProfile(archive);
+    RebuildVerb.PurgeViaModifier(archive, this, this);
+  }
+
+  /// <summary>Rebuild-defragments the single-data-track R/W profile.</summary>
+  public void Defragment(Stream archive) {
+    EnsureNamedFileMutationProfile(archive);
+    RebuildVerb.RebuildInPlace(archive, this, this);
+  }
+
+  /// <summary>Progress-reporting rebuild defrag for the single-data-track R/W profile.</summary>
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException($"NRG rebuild defrag supports only {DefragMode.ConsolidateAtStart}.");
+    EnsureNamedFileMutationProfile(archive);
+    RebuildVerb.RebuildInPlace(archive, this, this,
+      onProgress: options.OnProgress,
+      cancellationToken: options.CancellationToken);
+  }
+
+  /// <summary>
+  /// Tight-packs the single-data-track profile. Multi-track/audio images are copied through
+  /// unchanged rather than being flattened into one ISO track.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var profile = NrgStructureInspector.Inspect(input);
+    if (!profile.IsSingleDataTrack) {
+      input.Position = 0;
+      output.Position = 0;
+      output.SetLength(0);
+      input.CopyTo(output);
+      return;
+    }
+
+    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+  }
+
+  private static void EnsureNamedFileMutationProfile(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    var profile = NrgStructureInspector.Inspect(archive);
+    if (!profile.IsSingleDataTrack)
+      throw new NotSupportedException(
+        "Named-file mutation/defrag/purge is supported only for a single data-track NRG. " +
+        "Multi-session, mixed-mode and audio images are authorable but are not flattened during file-level maintenance.");
   }
 }
