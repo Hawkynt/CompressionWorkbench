@@ -1165,14 +1165,16 @@ Implements `IFilesystemBlockMover`.
 
 #### `T64Entry`
 
-Represents a t 64 entry.
+Represents a T64 directory entry.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `T64Entry` | `T64Entry()` |  |
 | `DataOffset` | `int DataOffset { get; init; }` | Gets or sets the data offset. |
+| `DirectoryIndex` | `int DirectoryIndex { get; init; }` | Gets the zero-based directory slot index. |
 | `EndAddress` | `ushort EndAddress { get; init; }` | Gets or sets the end address. |
 | `EntryType` | `byte EntryType { get; init; }` | Gets or sets the entry type. |
+| `FileType` | `byte FileType { get; init; }` | Gets the Commodore file type byte. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets a value indicating whether is directory. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
@@ -1180,7 +1182,7 @@ Represents a t 64 entry.
 
 #### `T64FormatDescriptor`
 
-Commodore 64 T64 tape container — directory of memory-load records. References: Peter Schepers, "C64 File Formats: T64" — the classic reference document`https://vice-emu.sourceforge.io/` — VICE emulator — reference implementation reading/writing T64
+Commodore 64 T64 tape container — directory of memory-load records. References: Peter Schepers, "C64 File Formats: T64" — the classic reference document`https://vice-emu.sourceforge.io/` — VICE emulator and T64 documentation
 
 Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemBlockMover`, `IFormatDescriptor`, `IWipeEmpty`.
 
@@ -1199,15 +1201,16 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing T64 tape image via `T64InPlaceModifier`. If a directory slot is free the entry drops in directly and the new payload is appended at EOF. If the directory is full the directory grows by one 32-byte slot — the payload region shifts forward by 32 bytes and every existing slot's absolute dataOffset field is patched. No full image rebuild. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces files inside an existing T64 image without rebuilding it. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments a T64 image. Falls back to rebuild since T64 data offsets are stored in directory entries and recompaction is simplest via rebuild. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte layout of a T64 tape image: 64-byte header as MetadataReserved, N×32-byte directory entries as MetadataReserved, and each file's data region as Used. |
+| `Defragment` | `void Defragment(Stream archive)` | Packs live payloads immediately after the directory with native byte moves. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Defragments a T64 image. The canonical consolidate-at-start path moves normal payloads in place and patches only their absolute data-offset fields. Other layout modes retain the established rebuild behaviour, but preserve T64 version, tape name, load address and Commodore file type. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates every byte of a normal-record T64 image: the fixed header, live and free directory slots, live payloads, and proven dead gaps/tail bytes. Unknown record kinds fail closed by exposing no free-space map at all. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing T64 tape image via `T64InPlaceModifier`. Later directory slots shift up by 32 bytes, the removed payload bytes are wiped, the remaining payload region shifts to close the gap (each affected slot's absolute dataOffset is patched), and the stream is truncated. |
+| `Purge` | `void Purge(Stream archive)` | Wipes all directory/payload bytes and leaves the canonical 64-byte empty T64 header. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries, wipes their payload bytes and compacts the image. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
 
 #### `T64InPlaceModifier`
@@ -1221,12 +1224,12 @@ True in-place R/W modifier for Commodore 64 `.t64` tape images. Performs O(touch
 
 #### `T64Modifier`
 
-In-place T64 modifier — performs O(touched bytes) random-access I/O against a T64 tape image. T64 has a 64-byte header followed by a fixed-size directory table of N×32-byte slots, then concatenated file data. AddFile: finds an empty slot (entryType=0) in the directory, appends file data at EOF, and fills in the slot.RemoveFile: sets the slot's entryType to 0 (marks it free). Data is left in place (no compaction).
+Compatibility facade for the T64 in-place editor.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ushort startAddress = 2049)` | Adds a file to an existing T64 tape image. Finds the first free slot (entryType=0) in the directory, appends the file data at the end of the image, and writes the directory entry. |
-| `RemoveFile` | `static bool RemoveFile(Stream image, string name)` | Removes a named file from the T64 image by zeroing its directory entry type. Returns false if not found. |
+| `AddFile` | `static void AddFile(Stream image, string name, byte[] data, ushort startAddress = 2049)` | Adds or replaces a file in an existing T64 tape image. |
+| `RemoveFile` | `static bool RemoveFile(Stream image, string name)` | Removes a named file from the T64 image and compacts the vacated bytes. |
 
 #### `T64Reader`
 
@@ -1237,8 +1240,11 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `T64Reader` | `T64Reader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `T64Reader`. |
+| `DirectoryEntryCount` | `ushort DirectoryEntryCount { get; }` | Gets the number of directory slots reserved by the image. |
 | `Entries` | `IReadOnlyList<T64Entry> Entries { get; }` | Gets the entries. |
 | `TapeName` | `string TapeName { get; }` | Gets or sets the tape name. |
+| `UsedEntryCount` | `ushort UsedEntryCount { get; }` | Gets the used-entry count stored in the header. |
+| `Version` | `ushort Version { get; }` | Gets the T64 format version. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Extract` | `byte[] Extract(T64Entry entry)` | Decodes the supplied input. |
 
@@ -1250,8 +1256,9 @@ Writes a Commodore 64 T64 tape container, building the tape record and the direc
 | --- | --- | --- |
 | `T64Writer` | `T64Writer()` |  |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
+| `AddFile` | `void AddFile(string name, ushort startAddress, byte fileType, byte[] data)` | Adds a file while preserving its Commodore file-type byte. |
 | `AddFile` | `void AddFile(string name, ushort startAddress, byte[] data)` | Performs the add file operation. |
-| `Build` | `byte[] Build(string tapeName = "TAPE")` | Performs the build operation. |
+| `Build` | `byte[] Build(string tapeName = "TAPE", ushort version = 256)` | Performs the build operation. |
 
 ### Namespace `FileFormat.Tap`
 
