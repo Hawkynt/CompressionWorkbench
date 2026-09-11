@@ -8,238 +8,346 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Cso;
 
 /// <summary>
-/// PSP CSO / ZSO compressed ISO image. Layout after the 4-byte magic (<c>CISO</c> for CSO, <c>ZISO</c>
-/// for LZ4-compressed ZSO): uint32 header_size, uint64 uncompressed_size, uint32 block_size,
-/// uint8 version, uint8 align, uint16 reserved, then an index table of <c>N = uncompressed_size /
-/// block_size + 1</c> uint32 entries (high bit = stored/uncompressed, low 31 bits = file offset).
-///
-/// <para>This descriptor surfaces each compressed block as a raw blob — it does NOT decompress
-/// the blocks (consumers can further process with zlib for CSO or LZ4 for ZSO).</para>
-///
-/// References:
-/// <list type="bullet">
-///   <item><description><c>https://github.com/unknownbrackets/maxcso</c> — maxcso — maintained CSO/ZSO tool; its docs describe the CSO v1/v2 and ZSO layouts</description></item>
-///   <item><description>The format originates in PSP homebrew (ciso); there is no official Sony documentation</description></item>
-/// </list>
+/// PSP CSO v1/v2 and ZSO compressed ISO image.
 /// </summary>
+/// <remarks>
+/// The synthetic block entries expose logical, decompressed block contents. Replacing one therefore
+/// round-trips through the same bytes a consumer of the ISO sees, while container maintenance can
+/// canonicalize physical compression, index alignment and stale tail bytes independently.
+/// </remarks>
 public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveModifiable {
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+    IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable,
+    IArchiveLayoutMap, ILayoutOptimizable, IArchivePurgeable, ISyntheticEntryNames {
+
+  private static readonly IReadOnlySet<string> SyntheticNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+    "FULL.cso", "FULL.ziso", "metadata.ini", "index.bin",
+  };
+
   public string Id => "Cso";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "PSP CSO/ZSO";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".cso";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".cso", ".ziso", ".zso"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     new("CISO"u8.ToArray(), Confidence: 0.90),
     new("ZISO"u8.ToArray(), Confidence: 0.90),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("stored", "Stored"),
-    new("deflate", "Deflate"),
-    new("lz4", "LZ4"),
+    new("deflate", "Deflate / CSO v1"),
+    new("lz4", "LZ4 / ZSO"),
+    new("cso2", "CSO v2 (DEFLATE/LZ4)"),
   ];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "PSP CSO (zlib) / ZSO (LZ4) compressed ISO image.";
+  public string Description => "PSP CSO v1/v2 (DEFLATE/LZ4) and ZSO (LZ4) compressed ISO image.";
+  public IReadOnlySet<string> SyntheticEntryNames => SyntheticNames;
 
-  private const uint IndexUncompressedMask = 0x8000_0000u;
-  private const uint IndexOffsetMask = 0x7FFF_FFFFu;
-
-  private sealed record CsoLayout(
-    long FullSize,
-    bool IsZso,
-    string Magic,
-    uint HeaderSize,
-    ulong UncompressedSize,
-    uint BlockSize,
-    byte Version,
-    byte Align,
-    int BlockCount,
-    uint[] IndexRaw
-  );
-
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var layout = ReadLayout(stream);
+    var layout = CsoImage.ReadLayout(stream);
     var entries = new List<ArchiveEntryInfo>(4 + layout.BlockCount);
-    var ext = layout.IsZso ? "ziso" : "cso";
+    var ext = layout.Variant == CsoVariant.Zso ? "ziso" : "cso";
     entries.Add(new ArchiveEntryInfo(0, $"FULL.{ext}", layout.FullSize, layout.FullSize, "Stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "Stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(2, "index.bin", layout.IndexRaw.Length * 4L, layout.IndexRaw.Length * 4L, "Stored", false, false, null));
     entries.Add(new ArchiveEntryInfo(3, "blocks", 0, 0, "Stored", true, false, null));
 
-    var storedMethod = layout.IsZso ? "LZ4" : "Deflate";
     for (var i = 0; i < layout.BlockCount; ++i) {
-      var (offset, size, isUncompressed) = GetBlockSpan(layout, i);
-      var method = isUncompressed ? "Stored" : storedMethod;
+      var (_, physicalLength, encoding) = CsoImage.GetBlockSpan(layout, i);
       entries.Add(new ArchiveEntryInfo(
         Index: 4 + i,
         Name: $"blocks/block_{i:D5}.bin",
-        OriginalSize: size,
-        CompressedSize: size,
-        Method: method,
+        OriginalSize: CsoImage.LogicalBlockLength(layout, i),
+        CompressedSize: physicalLength,
+        Method: MethodName(encoding),
         IsDirectory: false,
         IsEncrypted: false,
         LastModified: null,
-        Kind: isUncompressed ? "stored" : "compressed"));
-      // offset intentionally referenced to avoid unused-local warning in contexts that strip.
-      _ = offset;
+        Kind: encoding == CsoBlockEncoding.Stored ? "stored" : "compressed"));
     }
     return entries;
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var layout = ReadLayout(stream);
-    var ext = layout.IsZso ? "ziso" : "cso";
+    var layout = CsoImage.ReadLayout(stream);
+    var ext = layout.Variant == CsoVariant.Zso ? "ziso" : "cso";
     var fullName = $"FULL.{ext}";
 
     if (Wants(files, fullName)) {
+      if (layout.FullSize > int.MaxValue)
+        throw new InvalidDataException("CSO/ZSO whole-image synthetic entry is too large for buffered extraction.");
       stream.Position = 0;
-      var buf = new byte[layout.FullSize];
-      ReadExact(stream, buf);
-      WriteFile(outputDir, fullName, buf);
+      var bytes = new byte[(int)layout.FullSize];
+      CsoImage.ReadExact(stream, bytes);
+      WriteFile(outputDir, fullName, bytes);
     }
 
     if (Wants(files, "metadata.ini"))
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(layout)));
 
     if (Wants(files, "index.bin")) {
-      var idxBytes = new byte[layout.IndexRaw.Length * 4];
+      var indexBytes = new byte[layout.IndexRaw.Length * sizeof(uint)];
       for (var i = 0; i < layout.IndexRaw.Length; ++i)
-        BinaryPrimitives.WriteUInt32LittleEndian(idxBytes.AsSpan(i * 4, 4), layout.IndexRaw[i]);
-      WriteFile(outputDir, "index.bin", idxBytes);
+        BinaryPrimitives.WriteUInt32LittleEndian(indexBytes.AsSpan(i * sizeof(uint), sizeof(uint)), layout.IndexRaw[i]);
+      WriteFile(outputDir, "index.bin", indexBytes);
     }
 
     for (var i = 0; i < layout.BlockCount; ++i) {
       var name = $"blocks/block_{i:D5}.bin";
-      if (!Wants(files, name)) continue;
-      var (offset, size, _) = GetBlockSpan(layout, i);
-      var data = ReadRange(stream, offset, size);
-      WriteFile(outputDir, name, data);
+      if (!Wants(files, name))
+        continue;
+      var decoded = CsoImage.DecodeBlock(stream, layout, i);
+      var logicalLength = CsoImage.LogicalBlockLength(layout, i);
+      WriteFile(outputDir, name, decoded.AsSpan(0, logicalLength).ToArray());
     }
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var variant = VariantFromCreateOptions(options);
+    var blockSize = options.GetOptionInt("BlockSize", CsoWriter.DefaultBlockSize);
+    if (blockSize <= 0)
+      throw new ArgumentOutOfRangeException(nameof(options), "CSO/ZSO BlockSize must be positive.");
+
+    using var payload = CsoInPlaceModifier.CreateScratchStream();
+    ulong size = 0;
+    foreach (var input in inputs) {
+      if (input.IsDirectory)
+        continue;
+      var content = input.ReadContent();
+      payload.Write(content);
+      size = checked(size + (ulong)content.Length);
+    }
+    payload.Position = 0;
+    CsoWriter.Write(output, payload, size, blockSize, variant);
+  }
+
+  /// <summary>Replaces logical block_NNNNN.bin entries transactionally.</summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(inputs);
+    var layout = CsoImage.ReadLayout(archive);
+    var replacements = new Dictionary<int, byte[]>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory)
+        continue;
+      var index = ParseBlockIndex(input.ArchiveName.Replace('\\', '/'));
+      if (index < 0)
+        throw BlockNamespaceOnly(input.ArchiveName, "added");
+      if (index >= layout.BlockCount)
+        throw new ArgumentOutOfRangeException(nameof(inputs), $"CSO/ZSO block index {index} outside [0, {layout.BlockCount}).");
+      var content = input.ReadContent();
+      if (content.Length != layout.BlockSize)
+        throw new ArgumentException(
+          $"Replacement block {index} must be exactly block_size ({layout.BlockSize}) bytes; got {content.Length}.",
+          nameof(inputs));
+      replacements[index] = content;
+    }
+    if (replacements.Count != 0)
+      CsoInPlaceModifier.WriteBlocks(archive, replacements);
+  }
+
+  /// <summary>Clears logical blocks to zero; it does not edit the ISO 9660 directory tree inside them.</summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(archive);
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var layout = CsoImage.ReadLayout(archive);
+    var zero = new byte[checked((int)layout.BlockSize)];
+    var replacements = new Dictionary<int, byte[]>();
+    foreach (var name in entryNames) {
+      var index = ParseBlockIndex(name.Replace('\\', '/'));
+      if (index < 0)
+        throw BlockNamespaceOnly(name, "removed");
+      if (index >= layout.BlockCount)
+        throw new ArgumentOutOfRangeException(nameof(entryNames), $"CSO/ZSO block index {index} outside [0, {layout.BlockCount}).");
+      replacements[index] = zero;
+    }
+    if (replacements.Count != 0)
+      CsoInPlaceModifier.WriteBlocks(archive, replacements);
+  }
+
+  // ── Maintenance ──────────────────────────────────────────────────────
+
+  /// <summary>Canonical repack: ordered blocks, align=0, no stale/orphaned body bytes.</summary>
+  public void Defragment(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("CSO/ZSO defragmentation requires a readable, writable, seekable stream.", nameof(archive));
+    var layout = CsoImage.ReadLayout(archive);
+    using var staged = CsoInPlaceModifier.CreateScratchStream();
+    Repack(archive, staged, layout, checked((int)layout.BlockSize));
+    Commit(staged, archive, truncate: true);
+  }
+
+  /// <summary>
+  /// Rebuilds canonically and uses it only when it is smaller; otherwise copies the source through.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    using var staged = CsoInPlaceModifier.CreateScratchStream();
+    var useStaged = false;
+    try {
+      var layout = CsoImage.ReadLayout(input);
+      Repack(input, staged, layout, checked((int)layout.BlockSize));
+      useStaged = staged.Length < input.Length;
+    } catch {
+      useStaged = false;
+    }
+
+    output.Position = 0;
+    output.SetLength(0);
+    var chosen = useStaged ? staged : input;
+    chosen.Position = 0;
+    chosen.CopyTo(output);
+  }
+
+  /// <summary>
+  /// Wipes dead bytes by canonicalizing into the beginning of the same-sized stream and zeroing the
+  /// now-unindexed tail. If the local codecs cannot reproduce the image no larger than the source,
+  /// no byte is touched.
+  /// </summary>
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanRead || !image.CanWrite || !image.CanSeek)
+      throw new ArgumentException("CSO/ZSO wipe requires a readable, writable, seekable stream.", nameof(image));
+
+    var originalLength = image.Length;
+    var layout = CsoImage.ReadLayout(image);
+    using var staged = CsoInPlaceModifier.CreateScratchStream();
+    Repack(image, staged, layout, checked((int)layout.BlockSize));
+    if (staged.Length >= originalLength)
+      return 0;
+
+    var reclaimed = originalLength - staged.Length;
+    staged.Position = 0;
+    image.Position = 0;
+    staged.CopyTo(image);
+    WriteZeros(image, reclaimed);
+    image.Flush();
+    return reclaimed;
+  }
+
+  /// <summary>Describes the real container byte layout; only bytes after the final index are free.</summary>
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    var layout = CsoImage.ReadLayout(archive);
+    if (layout.DataStart > 0)
+      yield return new DefragBlockInfo(0, layout.DataStart, DefragBlockKind.MetadataReserved, "CSO/ZSO header + index");
+
+    for (var i = 0; i < layout.BlockCount; ++i) {
+      var (offset, length, encoding) = CsoImage.GetBlockSpan(layout, i);
+      if (length <= 0)
+        continue;
+      yield return new DefragBlockInfo(offset, length, DefragBlockKind.Used,
+        $"blocks/block_{i:D5}.bin", encoding switch {
+          CsoBlockEncoding.Stored => DefragBlockClass.Frozen,
+          CsoBlockEncoding.Lz4 => DefragBlockClass.Cold,
+          _ => DefragBlockClass.Normal,
+        });
+    }
+
+    if (layout.DataEnd < layout.FullSize)
+      yield return new DefragBlockInfo(layout.DataEnd, layout.FullSize - layout.DataEnd, DefragBlockKind.Free, "unindexed tail");
+  }
+
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    var layout = CsoImage.ReadLayout(image);
+    var trailing = Math.Max(0, layout.FullSize - layout.DataEnd);
+    var notes = new List<string> {
+      $"{VariantName(layout.Variant)} with {layout.BlockCount:N0} independently compressed blocks.",
+      "Canonical rebuilds emit align=0 and remove index-alignment padding/orphaned data without changing logical ISO bytes.",
+    };
+    if (layout.Align != 0)
+      notes.Add($"Current index_shift={layout.Align}; a rebuild can remove that alignment padding.");
+    return new LayoutAnalysis {
+      ImageSize = layout.FullSize,
+      CurrentUnitSize = checked((int)layout.BlockSize),
+      CurrentSlackBytes = trailing,
+      OptimalUnitSize = checked((int)layout.BlockSize),
+      OptimalSlackBytes = 0,
+      RequiresRebuild = ["BlockSize", "IndexShift"],
+      Notes = notes,
+    };
+  }
+
+  /// <summary>Reblocks and recompresses while preserving the source CSO/ZSO variant and logical ISO bytes.</summary>
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(source);
+    ArgumentNullException.ThrowIfNull(target);
+    ArgumentNullException.ThrowIfNull(options);
+    var layout = CsoImage.ReadLayout(source);
+    var targetBlockSize = options.UnitSize > 0 ? options.UnitSize : checked((int)layout.BlockSize);
+    if (targetBlockSize <= 0)
+      throw new ArgumentOutOfRangeException(nameof(options), "CSO/ZSO target BlockSize must be positive.");
+    Repack(source, target, layout, targetBlockSize);
+  }
+
+  /// <summary>Leaves a valid empty container of the same CSO/ZSO variant and block geometry.</summary>
+  public void Purge(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("CSO/ZSO purge requires a readable, writable, seekable stream.", nameof(archive));
+    var layout = CsoImage.ReadLayout(archive);
+    using var emptyInput = new MemoryStream([], writable: false);
+    using var staged = CsoInPlaceModifier.CreateScratchStream();
+    CsoWriter.Write(staged, emptyInput, 0, checked((int)layout.BlockSize), layout.Variant);
+    Commit(staged, archive, truncate: true);
+  }
+
+  private static void Repack(Stream source, Stream target, CsoLayout layout, int targetBlockSize) {
+    source.Position = 0;
+    using var logical = CsoImage.OpenLogicalStream(source, layout);
+    target.Position = 0;
+    target.SetLength(0);
+    CsoWriter.Write(target, logical, layout.UncompressedSize, targetBlockSize, layout.Variant);
+  }
+
+  private static void Commit(Stream staged, Stream target, bool truncate) {
+    staged.Position = 0;
+    target.Position = 0;
+    if (truncate)
+      target.SetLength(0);
+    staged.CopyTo(target);
+    target.Flush();
+  }
+
+  private static void WriteZeros(Stream stream, long count) {
+    Span<byte> zeros = stackalloc byte[4096];
+    while (count > 0) {
+      var length = (int)Math.Min(count, zeros.Length);
+      stream.Write(zeros[..length]);
+      count -= length;
+    }
+  }
+
+  private static CsoVariant VariantFromCreateOptions(FormatCreateOptions options) {
+    var requested = options.GetString("Variant") ?? options.MethodName;
+    if (string.IsNullOrWhiteSpace(requested))
+      return CsoVariant.CsoV1;
+    return requested.Trim().ToLowerInvariant() switch {
+      "cso" or "cso1" or "deflate" or "stored" => CsoVariant.CsoV1,
+      "zso" or "lz4" => CsoVariant.Zso,
+      "cso2" or "v2" => CsoVariant.CsoV2,
+      _ => throw new NotSupportedException($"Unsupported CSO/ZSO creation variant '{requested}'."),
+    };
   }
 
   private static bool Wants(string[]? files, string name)
     => files == null || files.Length == 0 || MatchesFilter(name, files);
 
-  private static CsoLayout ReadLayout(Stream stream) {
-    if (!stream.CanSeek)
-      throw new InvalidDataException("CSO/ZSO descriptor requires a seekable stream.");
-    stream.Position = 0;
-    var fullSize = stream.Length;
-
-    Span<byte> header = stackalloc byte[24];
-    ReadExact(stream, header);
-    var magic = Encoding.ASCII.GetString(header[..4]);
-    var isZso = magic switch {
-      "CISO" => false,
-      "ZISO" => true,
-      _ => throw new InvalidDataException("Not a CSO/ZSO image (missing CISO/ZISO magic)."),
-    };
-
-    var headerSize = BinaryPrimitives.ReadUInt32LittleEndian(header[4..8]);
-    var uncompressedSize = BinaryPrimitives.ReadUInt64LittleEndian(header[8..16]);
-    var blockSize = BinaryPrimitives.ReadUInt32LittleEndian(header[16..20]);
-    var version = header[20];
-    var align = header[21];
-    // header[22..24] reserved.
-
-    if (blockSize == 0)
-      throw new InvalidDataException("CSO/ZSO block_size is zero.");
-    // Block count is uncompressed_size / block_size + 1 index entries form the table, last entry
-    // marks end of file. Number of actual blocks is uncompressed_size / block_size (ceil).
-    var blockCountLong = (long)((uncompressedSize + blockSize - 1) / blockSize);
-    if (blockCountLong < 0 || blockCountLong > 8_000_000)
-      throw new InvalidDataException($"CSO/ZSO block count implausible: {blockCountLong}.");
-    var blockCount = (int)blockCountLong;
-
-    var indexCount = blockCount + 1;
-    var indexBytes = new byte[indexCount * 4];
-    // The index table immediately follows the 24-byte header (header_size is typically 0x18=24).
-    stream.Position = 24;
-    ReadExact(stream, indexBytes);
-    var indexRaw = new uint[indexCount];
-    for (var i = 0; i < indexCount; ++i)
-      indexRaw[i] = BinaryPrimitives.ReadUInt32LittleEndian(indexBytes.AsSpan(i * 4, 4));
-
-    return new CsoLayout(
-      FullSize: fullSize,
-      IsZso: isZso,
-      Magic: magic,
-      HeaderSize: headerSize,
-      UncompressedSize: uncompressedSize,
-      BlockSize: blockSize,
-      Version: version,
-      Align: align,
-      BlockCount: blockCount,
-      IndexRaw: indexRaw);
-  }
-
-  private static (long Offset, long Size, bool IsUncompressed) GetBlockSpan(CsoLayout layout, int blockIndex) {
-    var raw = layout.IndexRaw[blockIndex];
-    var nextRaw = layout.IndexRaw[blockIndex + 1];
-    var isUncompressed = (raw & IndexUncompressedMask) != 0;
-    var offset = (long)(raw & IndexOffsetMask) << layout.Align;
-    var nextOffset = (long)(nextRaw & IndexOffsetMask) << layout.Align;
-    var size = Math.Max(0, nextOffset - offset);
-    if (offset < 0 || offset > layout.FullSize)
-      throw new InvalidDataException($"CSO/ZSO block {blockIndex} offset out of range.");
-    if (offset + size > layout.FullSize)
-      size = Math.Max(0, layout.FullSize - offset);
-    return (offset, size, isUncompressed);
-  }
-
   private static string BuildMetadataIni(CsoLayout layout) {
     var sb = new StringBuilder();
     sb.Append("[Cso]\n");
     sb.Append(CultureInfo.InvariantCulture, $"magic={layout.Magic}\n");
-    sb.Append(CultureInfo.InvariantCulture, $"is_zso={(layout.IsZso ? 1 : 0)}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"variant={VariantName(layout.Variant)}\n");
     sb.Append(CultureInfo.InvariantCulture, $"header_size={layout.HeaderSize}\n");
     sb.Append(CultureInfo.InvariantCulture, $"uncompressed_size={layout.UncompressedSize}\n");
     sb.Append(CultureInfo.InvariantCulture, $"block_size={layout.BlockSize}\n");
@@ -250,103 +358,32 @@ public sealed class CsoFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return sb.ToString();
   }
 
-  private static byte[] ReadRange(Stream stream, long offset, long size) {
-    if (size <= 0) return [];
-    if (size > int.MaxValue)
-      throw new InvalidDataException("CSO/ZSO block too large to extract.");
-    stream.Position = offset;
-    var buf = new byte[(int)size];
-    ReadExact(stream, buf);
-    return buf;
-  }
+  private static string VariantName(CsoVariant variant) => variant switch {
+    CsoVariant.CsoV1 => "cso1",
+    CsoVariant.CsoV2 => "cso2",
+    CsoVariant.Zso => "zso",
+    _ => "unknown",
+  };
 
-  private static void ReadExact(Stream stream, Span<byte> buffer) {
-    var read = 0;
-    while (read < buffer.Length) {
-      var n = stream.Read(buffer[read..]);
-      if (n <= 0) throw new EndOfStreamException("Unexpected end of CSO/ZSO stream.");
-      read += n;
-    }
-  }
+  private static string MethodName(CsoBlockEncoding encoding) => encoding switch {
+    CsoBlockEncoding.Stored => "Stored",
+    CsoBlockEncoding.Deflate => "Deflate",
+    CsoBlockEncoding.Lz4 => "LZ4",
+    _ => "Unknown",
+  };
 
-  // ── IArchiveCreatable (CSO v1 only) ───────────────────────────────────
+  private static NotSupportedException BlockNamespaceOnly(string name, string verb)
+    => new(
+      $"CSO/ZSO: '{name}' cannot be {verb}. A compressed ISO container is edited at logical " +
+      "block_NNNNN.bin granularity; editing the ISO 9660 filesystem inside it is a separate operation.");
 
-  /// <summary>
-  /// Emits a fresh CSO v1 stream. Inputs are concatenated in supplied order
-  /// to form the uncompressed payload (the caller is responsible for ensuring
-  /// the result is a valid PSP ISO if PSP semantics matter).
-  /// </summary>
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    ArgumentNullException.ThrowIfNull(output);
-    ArgumentNullException.ThrowIfNull(inputs);
-    using var payload = new MemoryStream();
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      payload.Write(input.ReadContent());
-    }
-    var bytes = CsoWriter.Build(payload.ToArray());
-    output.Write(bytes, 0, bytes.Length);
-  }
-
-  // ── IArchiveModifiable (R/W via block-NNNNN.bin synthetic entries) ────
-
-  /// <summary>
-  /// Replaces blocks named <c>blocks/block_NNNNN.bin</c> (5-digit zero-padded
-  /// index) with the supplied payloads. Each input must be exactly the
-  /// container's block_size bytes. Other input names are ignored.
-  /// </summary>
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(inputs);
-    foreach (var input in inputs) {
-      if (input.IsDirectory) continue;
-      var name = input.ArchiveName.Replace('\\', '/');
-      var idx = ParseBlockIndex(name);
-      // A name this cannot place is not a name to pass over: writing nothing and
-      // raising nothing reports an add that did not happen.
-      if (idx < 0)
-        throw new NotSupportedException(
-          $"CSO: '{input.ArchiveName}' cannot be added. A compressed ISO is edited a block at a "
-          + "time, so an entry has to be named 'block_NNNNN.bin' for the block it replaces. "
-          + "Adding a file to the ISO 9660 filesystem inside it is not something this supports.");
-      CsoInPlaceModifier.WriteBlock(archive, idx, input.ReadContent());
-    }
-  }
-
-  /// <summary>
-  /// "Removes" blocks by writing block_size zero bytes through
-  /// <see cref="CsoInPlaceModifier.WriteBlock"/>, which compresses the zero
-  /// slab to its minimum DEFLATE encoding and zero-pads the on-disk slack.
-  /// </summary>
-  public void Remove(Stream archive, string[] entryNames) {
-    ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryNames);
-    var header = CsoInPlaceModifier.ReadHeader(archive);
-    var zero = new byte[header.BlockSize];
-    foreach (var name in entryNames) {
-      var clean = name.Replace('\\', '/');
-      var idx = ParseBlockIndex(clean);
-      if (idx < 0)
-        throw new NotSupportedException(
-          $"CSO: '{name}' cannot be removed. A compressed ISO is edited a block at a time, so an "
-          + "entry has to be named 'block_NNNNN.bin' for the block it clears. Removing a file from "
-          + "the ISO 9660 filesystem inside it is not something this supports.");
-      CsoInPlaceModifier.WriteBlock(archive, idx, zero);
-    }
-  }
-
-  /// <summary>
-  /// Parses the trailing block index out of names that look like
-  /// <c>blocks/block_NNNNN.bin</c> or <c>block_NNNNN.bin</c>. Returns -1 if
-  /// the name doesn't match the synthetic-entry shape.
-  /// </summary>
   private static int ParseBlockIndex(string name) {
     var fileName = Path.GetFileNameWithoutExtension(name);
     const string prefix = "block_";
-    if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return -1;
-    var digits = fileName[prefix.Length..];
-    return int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx) && idx >= 0
-      ? idx
+    if (!fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+      return -1;
+    return int.TryParse(fileName[prefix.Length..], NumberStyles.Integer, CultureInfo.InvariantCulture, out var index) && index >= 0
+      ? index
       : -1;
   }
 }

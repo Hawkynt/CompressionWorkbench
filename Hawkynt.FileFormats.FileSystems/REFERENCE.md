@@ -196,48 +196,56 @@ Implements `IDisposable`.
 
 #### `CsoFormatDescriptor`
 
-PSP CSO / ZSO compressed ISO image. Layout after the 4-byte magic (`CISO` for CSO, `ZISO` for LZ4-compressed ZSO): uint32 header_size, uint64 uncompressed_size, uint32 block_size, uint8 version, uint8 align, uint16 reserved, then an index table of `N = uncompressed_size / block_size + 1` uint32 entries (high bit = stored/uncompressed, low 31 bits = file offset). This descriptor surfaces each compressed block as a raw blob — it does NOT decompress the blocks (consumers can further process with zlib for CSO or LZ4 for ZSO). References: `https://github.com/unknownbrackets/maxcso` — maxcso — maintained CSO/ZSO tool; its docs describe the CSO v1/v2 and ZSO layoutsThe format originates in PSP homebrew (ciso); there is no official Sony documentation
+PSP CSO v1/v2 and ZSO compressed ISO image.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CsoFormatDescriptor` | `CsoFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces blocks named `blocks/block_NNNNN.bin` (5-digit zero-padded index) with the supplied payloads. Each input must be exactly the container's block_size bytes. Other input names are ignored. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh CSO v1 stream. Inputs are concatenated in supplied order to form the uncompressed payload (the caller is responsible for ensuring the result is a valid PSP ISO if PSP semantics matter). |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | "Removes" blocks by writing block_size zero bytes through `WriteBlock`, which compresses the zero slab to its minimum DEFLATE encoding and zero-pads the on-disk slack. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces logical block_NNNNN.bin entries transactionally. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Canonical repack: ordered blocks, align=0, no stale/orphaned body bytes. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Describes the real container byte layout; only bytes after the final index are free. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Leaves a valid empty container of the same CSO/ZSO variant and block geometry. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Reblocks and recompresses while preserving the source CSO/ZSO variant and logical ISO bytes. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Clears logical blocks to zero; it does not edit the ISO 9660 directory tree inside them. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds canonically and uses it only when it is smaller; otherwise copies the source through. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Wipes dead bytes by canonicalizing into the beginning of the same-sized stream and zeroing the now-unindexed tail. If the local codecs cannot reproduce the image no larger than the source, no byte is touched. |
 
 #### `CsoInPlaceModifier`
 
-In-place block-level mutator for PSP CSO v1 images. Lets callers replace individual decompressed blocks without rewriting the whole container. Semantics for `WriteBlock`: If the new compressed payload fits inside the old block's on-disk slot, the payload is written at the same offset and trailing slack is zero-padded — the index table and every other block's bytes are unchanged.Otherwise the payload is appended at the current end of stream and the block's index entry is updated to point at the new location. The old in-place bytes become orphaned (defrag-recoverable).CSO v2 / ZSO (LZ4) are out of scope; only the v1 header layout with align=0 is supported. The modifier refuses to operate on streams whose header reports a different version or a non-zero align (because the offset-shift semantics would silently misplace the new block).
+Block-level mutator for CSO v1/v2 and ZSO images.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `WriteBlock` | `static void WriteBlock(Stream image, int blockIndex, ReadOnlySpan<byte> newUncompressedData)` | Replaces block `blockIndex`'s content with `newUncompressedData` (which must be exactly `block_size` bytes long, matching the container's geometry). The payload is DEFLATE-compressed; if the result is smaller than the slab it's written compressed, otherwise stored uncompressed (with the index entry's high bit set). |
+| `WriteBlock` | `static void WriteBlock(Stream image, int blockIndex, ReadOnlySpan<byte> newUncompressedData)` | Replaces one logical block. `newUncompressedData` must be exactly block_size bytes; for a partial final block only its logical prefix is retained, matching CSO semantics. |
 
 #### `CsoWriter`
 
-Writes a PSP CSO v1 ("CISO") compressed-ISO container from scratch (WORM). Layout (24-byte header + (N+1)·uint32 index + N compressed blocks): $00..$03: magic "CISO"$04..$07: uint32 LE header_size = 24$08..$0F: uint64 LE uncompressed_size$10..$13: uint32 LE block_size (this writer uses 2048 = ISO 9660 sector)$14: uint8 version = 1$15: uint8 align (left-shift applied to index offsets; this writer uses 0)$16..$17: uint16 reserved = 0$18..(header+4·(N+1)): index table. bit 31 set = stored uncompressed.Each block: raw DEFLATE bytes (no zlib header) of one block_size-aligned slab, OR the slab verbatim when the compressed output is not smaller than the slab.ZSO (LZ4) and CSO v2 are out of scope; see `CsoFormatDescriptor`.
+Writes PSP CSO v1/v2 and ZSO compressed-ISO containers.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CsoWriter` | `CsoWriter()` |  |
-| `DefaultBlockSize` | `const int DefaultBlockSize` | Default block size — 2048 = one ISO 9660 cooked sector. |
-| `Build` | `static byte[] Build(ReadOnlySpan<byte> uncompressedData, int blockSize = 2048)` | Builds a CSO v1 stream that, when fully decompressed, yields `uncompressedData`. Blocks of `blockSize` bytes are each DEFLATE-compressed; if the compressed output is not smaller than the original slab, the slab is stored verbatim and its index entry gets the `IndexUncompressedFlag` bit set. |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | Default block size — one cooked ISO 9660 sector. |
+| `Build` | `static byte[] Build(ReadOnlySpan<byte> uncompressedData, int blockSize = 2048)` | Builds a canonical CSO v1 stream around `uncompressedData`. |
 
 ### Namespace `FileFormat.Dmg`
 
@@ -535,7 +543,7 @@ Writers for the two firmware text formats, and the shared step that turns a crea
 | `MetadataName` | `const string MetadataName` | The name the reader gives the rendered summary. |
 | `PayloadName` | `const string PayloadName` | The name the reader gives the flat payload. |
 | `ImageFrom` | `static FirmwareImage ImageFrom(IReadOnlyList<ArchiveInputInfo> inputs, string sourceFormat)` | The image a create or edit describes: the single payload input as the bytes, and the addresses read out of `metadata.ini` when the caller passes the one the reader rendered. An input list with no payload describes an image with no data, which both formats can write. |
-| `WriteIntelHex` | `static void WriteIntelHex(Stream output, FirmwareImage image, int bytesPerRecord = 16)` | Writes `image` as Intel HEX: type-04 extended-linear-address records whenever the high half of the address changes, type-00 data records of at most `bytesPerRecord` bytes that never straddle a 64 KiB boundary, an optional type-05 start-linear-address record, and the type-01 end-of-file record every reader requires. |
+| `WriteIntelHex` | `static void WriteIntelHex(Stream output, FirmwareImage image, int bytesPerRecord = 16)` | Writes `image` as Intel HEX: type-04 extended-linear-address records whenever the high half of the address changes, type-00 data records of at most `bytesPerRecord` bytes that never straddle a 64 KiB boundary, an optional type-03 or type-05 start-address record, and the type-01 end-of-file record every reader requires. |
 | `WriteTiTxt` | `static void WriteTiTxt(Stream output, FirmwareImage image, int bytesPerLine = 16)` | Writes `image` as TI-TXT: an `@AAAA` address line per segment, space-separated hex bytes at `bytesPerLine` a line, and the single `q` the format ends with. |
 
 #### `FirmwareImage`
@@ -553,14 +561,15 @@ Implements `IEquatable<FirmwareImage>`.
 | `Segments` | `IReadOnlyList<ValueTuple<uint, byte[]>> Segments { get; init; }` |  |
 | `SourceFormat` | `string SourceFormat { get; init; }` |  |
 | `StartAddress` | `uint? StartAddress { get; init; }` |  |
+| `StartSegmentAddress` | `ValueTuple<ushort, ushort>? StartSegmentAddress { get; init; }` | Gets the original segmented x86 start address when an Intel HEX type-03 record supplied one. Keeping CS:IP separately matters because many CS:IP pairs map to the same linear address and therefore cannot be reconstructed from `StartAddress` alone. |
 | `TotalDataBytes` | `int TotalDataBytes { get; init; }` |  |
 | `ToFlatBinary` | `byte[] ToFlatBinary(byte fill = 255)` | Flattens all segments into a single contiguous binary spanning from the lowest address to the end of the highest segment. Gaps are filled with `fill` (default `0xFF` to match flash erase state). |
 
 #### `IntelHexFormatDescriptor`
 
-Pseudo-archive descriptor for Intel HEX firmware files. Decodes the ASCII records into a flat binary (`firmware.bin`) and surfaces a `metadata.ini` with record count, declared start address, and gap count. References: Intel "Hexadecimal Object File Format Specification", Rev. A (1988) — the defining document`https://en.wikipedia.org/wiki/Intel_HEX` — record types and checksum rules
+Pseudo-archive descriptor for Intel HEX firmware files. Decodes the ASCII records into a flat binary (`firmware.bin`) and surfaces a `metadata.ini` with record count, declared start address, and sparse segment layout. References: Intel "Hexadecimal Object File Format Specification", Rev. A (1988) — the defining document`https://developerhelp.microchip.com/xwiki/bin/view/software-tools/ipe/sqtp-file-format-specification/intel-hex/` — record layout and checksum rules
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -577,9 +586,10 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh Intel HEX file: the single payload input becomes the data records, and a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the base and start addresses that a flat binary cannot carry. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh Intel HEX file: the single payload input becomes the data records, and a `metadata.ini` alongside it -- the one this descriptor's own reader renders -- supplies the sparse segment map and start-address form that a flat binary cannot carry. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Purge` | `void Purge(Stream archive)` | Removes all programmed bytes and start-address state while leaving the canonical valid empty Intel HEX document (the EOF record). This overrides the generic pseudo-archive purge because `firmware.bin` is a rendered view that also exists as a zero-length view of an empty image. |
 
 #### `IntelHexReader`
 
@@ -601,37 +611,45 @@ Reader for Motorola S-Record files (`Stnn[aaaa|aaaaaa|aaaaaaaa]dd…cc`). Recogn
 
 #### `TiTxtFormatDescriptor`
 
-Pseudo-archive descriptor for the TI-TXT firmware text format used by MSP430. Address lines (`@HHHH`) introduce contiguous byte runs; a single `q` terminates the file. Extension is intentionally empty — `.txt` is far too ambiguous — so detection relies on the first non-whitespace byte being `@`. References: Texas Instruments MSP430 programming/bootloader guides — define the TI-TXT format (@addr / data / q)`https://srecord.sourceforge.net` — SRecord tool suite — documents and converts TI-TXT (srec_ti_txt)
+Pseudo-archive descriptor for the TI-TXT firmware text format used by MSP430. Address lines (`@HHHH`) introduce sparse byte runs; a line containing `q` terminates the file. The archive view exposes the logical firmware as `firmware.bin` plus a rendered `metadata.ini` summary. References: `https://downloads.ti.com/docs/esd/SPRU513P/Content/SPRU513P_HTML/hex-conversion-utility-description.html` — TI Hex Conversion Utility, TI-TXT format`https://www.ti.com/lit/pdf/slau131` — Texas Instruments MSP430 programming documentation`https://srecord.sourceforge.net/man/man5/srec_ti_txt.5.html` — SRecord TI-TXT documentation; used only as an interoperability reference
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `ISyntheticEntryNames`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TiTxtFormatDescriptor` | `TiTxtFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Writes a fresh TI-TXT file: the single payload input becomes the data lines under an `@address` taken from a `metadata.ini` alongside it, and the file ends with the `q` the format requires. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Replaces the single logical firmware payload and/or moves its base address. A metadata-only base-address edit shifts every sparse section by the same delta so address holes remain holes rather than becoming explicit 0xFF data. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Canonicalises section ordering and record wrapping without flattening sparse holes. The reader merges only exactly adjacent sections; the writer then emits one address record per contiguous run and 16 bytes per full data line. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Erases all live firmware bytes while leaving a valid empty TI-TXT document. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removing the logical firmware payload leaves the valid empty TI-TXT form, `q`. |
 
 #### `TiTxtReader`
 
-Reader for TI-TXT MSP430 text firmware files. Addresses are introduced by `@HHHH` lines; data lines follow as space-separated hex bytes (typically 16 per line); a single `q` token terminates the file.
+Parser for Texas Instruments TI-TXT firmware images. Address records introduce sparse byte runs and a line containing only `q` terminates the document.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TiTxtReader` | `TiTxtReader()` |  |
-| `Read` | `static FirmwareImage Read(string text)` | Parses a TI-TXT document into a `FirmwareImage`. |
+| `Read` | `static FirmwareImage Read(string text)` | Parses a TI-TXT document into its sparse firmware image. |
 
 ### Namespace `FileFormat.Ipsw`
 
@@ -639,31 +657,36 @@ Reader for TI-TXT MSP430 text firmware files. Addresses are introduced by `@HHHH
 
 #### `IpswFormatDescriptor`
 
-Apple IPSW / OTA firmware package. An IPSW is just a ZIP file (with an Apple-specific layout). Rather than surfacing entries as a flat generic ZIP, this descriptor lifts the well-known Apple artifacts (`BuildManifest.plist`, `Firmware/` subtree, `LLB.*`, `iBSS.*`, `iBEC.*`, `iBoot.*`, root-filesystem `*.dmg`) into first-class canonical entries. Everything else is exposed under `other/`. This is a compound-extension descriptor (`.ipsw`, `.otazip`): magic is empty so it does not steal generic ZIPs. Read-only; the plist and DMG payloads are emitted as raw bytes — no plist parsing or DMG mounting. References: `https://theapplewiki.com` — The Apple Wiki (formerly The iPhone Wiki) — community IPSW documentation`https://github.com/blacktop/ipsw` — ipsw — maintained IPSW research and extraction tool`https://en.wikipedia.org/wiki/IPSW` — Wikipedia
+Apple IPSW / OTA firmware package. IPSW files are ZIP containers whose entry paths are semantically significant: manifests refer to firmware members by their ZIP path, so the descriptor exposes those paths losslessly instead of projecting them into a flattened view.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IpswFormatDescriptor` | `IpswFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by ZIP path) entries inside an existing IPSW. Routes through `IpswInPlaceModifier` — only the central directory, EOCD, and the appended LFH + payload are touched. Synthetic canonical entries are silently dropped. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Emits a fresh IPSW (ZIP) container from the supplied inputs. Synthetic canonical entries the descriptor surfaces on read (`FULL.ipsw`, `metadata.ini`) are silently dropped — they aren't real ZIP entries. All other inputs are stored under their `ArchiveName`. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named ZIP entries from an existing IPSW. Routes through `IpswInPlaceModifier` — the LFH + compressed payload of the dropped entry are zero-wiped and the central directory is rewritten. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `IpswInPlaceModifier`
 
@@ -682,7 +705,7 @@ In-place modifier for Apple IPSW packages. An IPSW is just a ZIP file with an Ap
 
 Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -704,12 +727,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation therefore consists of validating that layout and dropping transport/trailing padding after the last allocated archive block; intrinsic per-block padding is part of the format. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the exact byte layout: live directory text, directory padding, REL side sectors, logical file bytes, per-file block padding, and any trailer beyond the archive allocation. Explicit free extents make generic forensic wiping safe for this format. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Performs the extract entry to memory operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Performs the open entry operation. |
+| `Purge` | `void Purge(Stream archive)` | Removes all live entries in one pass while preserving the input archive's BASIC preamble and Lynx signature. The empty directory is emitted at its minimum one-block allocation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds the directory at its smallest whole-254-byte allocation and copies the complete existing data area byte-for-byte. This preserves REL side sectors and file-type metadata, while reclaiming directory blocks left behind after removals and any trailing transport data. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros only byte ranges that the Lynx layout proves unused: directory padding, payload block padding and trailing transport data. Live file bytes and REL side-sector metadata are retained. |
 
 ### Namespace `FileFormat.Mdf`
 
@@ -1373,34 +1399,39 @@ Implements `IEquatable<Header>`.
 
 #### `UefiFvFormatDescriptor`
 
-UEFI PI Firmware Volume (`.fv`/`.fd`) archive surface. FFS files are exposed as `{GUID}_{TYPE_TAG}.bin`; standalone volumes can be created and ordinary FFS2 records can be added/replaced/removed through erased free space. References: `https://uefi.org/specifications` — UEFI Platform Initialization (PI) Specification, Volume 3: Firmware Storage Design`https://github.com/LongSoft/UEFITool` — UEFITool firmware-volume parser/editor
+UEFI PI Firmware Volume archive surface. Standard FFS2/FFS3 files are exposed as `{GUID}_{TYPE_TAG}.bin`; mutable unsigned volumes support transactional edits, erase-aware wiping, purge, and offline consolidation. References: UEFI PI Specification 1.10 Volume III (Firmware Storage) and EDK II as an interoperability oracle. The implementation is independently written.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UefiFvFormatDescriptor` | `UefiFvFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Restores unused bytes to the FV's declared erase value. For erase-polarity-one flash this is 0xFF rather than zero; writing zero would turn free space into apparently programmed data and make the firmware volume structurally invalid. |
 
 #### `UefiFvReader`
 
-Reader for UEFI Platform Initialization (PI) Firmware Volumes. Locates the FV header by scanning for the `_FVH` signature at offset 40 from the start of each 16-byte-aligned candidate (UEFI PI Volume 3). Walks the FFS file list and returns one `FfsFile` record per live file.
+Reader for UEFI PI firmware volumes and standard FFS2/FFS3 file records.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1447,6 +1478,8 @@ Implements `IEquatable<FvHeader>`.
 | `Attributes` | `uint Attributes { get; init; }` |  |
 | `BlockMap` | `IReadOnlyList<ValueTuple<uint, uint>> BlockMap { get; init; }` |  |
 | `Checksum` | `ushort Checksum { get; init; }` |  |
+| `EraseByte` | `byte EraseByte { get; }` |  |
+| `ErasePolarity` | `bool ErasePolarity { get; }` |  |
 | `ExtHeaderOffset` | `ushort ExtHeaderOffset { get; init; }` |  |
 | `FileSystemGuid` | `Guid FileSystemGuid { get; init; }` |  |
 | `FvLength` | `ulong FvLength { get; init; }` |  |
@@ -5166,9 +5199,9 @@ Represents an ecryptfs entry.
 
 #### `EcryptfsFormatDescriptor`
 
-Read-only descriptor for eCryptfs per-file encryption containers. eCryptfs (Linux) stacks on top of any underlying FS and stores each encrypted file with a 4-byte big-endian marker `0x3C81B7F5` at offset 0 followed by an 8-byte decrypted size, 4-byte flags, and 4-byte extent-size hint. Decryption requires the user's passphrase + EFEK packets — out of scope. The encrypted payload is surfaced as a single opaque entry along with the parsed header metadata. References: `https://docs.kernel.org/filesystems/ecryptfs.html` — Linux kernel eCryptfs documentation`https://github.com/torvalds/linux/tree/master/fs/ecryptfs` — mainline implementation (`ecryptfs_kernel.h` defines the file-header marker + packet layout)`https://en.wikipedia.org/wiki/ECryptfs` — Wikipedia overview
+Descriptor for one eCryptfs lower file. eCryptfs is a stacked filesystem: every lower file carries its own encrypted upper-file payload, size, extent geometry and authentication-token packet set. The implementation supports the ordinary passphrase path using the Linux eCryptfs AES-128/192/256 packet conventions. Private-key authentication and xattr-only metadata are deliberately rejected because their required key/xattr material is not contained in a standalone stream.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5182,30 +5215,40 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | eCryptfs has no fixed byte magic: its marker is two random 32-bit words whose XOR equals 0x3C81B7F5. Static signature matching cannot express that relation, so detection falls back to the extension and the reader performs the authoritative relational check. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Removes the logical payload without requiring the FEK: set plaintext length to zero and truncate all ciphertext extents while retaining valid key metadata. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Drops any bytes after the encrypted extents implied by the header. This is the only meaningful compact/shrink operation for a single eCryptfs lower file. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Clears metadata padding and bytes beyond the canonical encrypted extent set. Ciphertext inside the final live extent is never touched: plaintext tail zeroing would require the passphrase, which the wipe interface intentionally does not carry. |
 
 #### `EcryptfsReader`
 
-Reads eCryptfs per-file encryption headers. eCryptfs is a stacking file-level encryption filesystem (Linux) — every encrypted file is stored on the lower filesystem as a regular file whose first page is a metadata header followed by AES-CBC ciphertext extents. The header starts with a 4-byte big-endian marker (`0x3C81B7F5`) so the individual on-disk container is well-defined and detectable. Decryption requires the user's mount passphrase + EFEK (Encrypted File Encryption Key) tag-3 / tag-11 packets and is OUT OF SCOPE; this reader surfaces the parsed header + the encrypted payload as a single opaque entry. File header layout (big-endian, file offset 0): 0x00 u32 marker == 0x3C81B7F5 0x04 u64 decrypted-size (plaintext length, host-endian on Linux) 0x0C u32 flags 0x10 u32 extent-size (typically 4096) 0x14 ... EFEK packets, tag-3 / tag-11 OpenPGP-style ~0x800 start of AES-CBC ciphertext extents
+Reader for an eCryptfs lower file. eCryptfs is a stacked filesystem, so one lower file represents one encrypted upper file rather than a complete volume.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `EcryptfsReader` | `EcryptfsReader(Stream stream)` | Initializes a new instance of `EcryptfsReader`. |
-| `EcryptfsMarker` | `const uint EcryptfsMarker` | Defines the ecryptfs marker constant value. |
-| `DecryptedSize` | `ulong DecryptedSize { get; }` | Gets or sets the decrypted size. |
-| `Entries` | `IReadOnlyList<EcryptfsEntry> Entries { get; }` | Gets the entries. |
-| `ExtentSize` | `uint ExtentSize { get; }` | Gets or sets the extent size. |
-| `Flags` | `uint Flags { get; }` | Gets or sets the flags. |
-| `Marker` | `uint Marker { get; }` | Gets or sets the marker. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(EcryptfsEntry entry)` | Decodes the supplied input. |
+| `EcryptfsReader` | `EcryptfsReader(Stream stream)` |  |
+| `CanonicalLength` | `long CanonicalLength { get; }` | Canonical lower-file length implied by the plaintext size and extent geometry. |
+| `CipherDescription` | `string CipherDescription { get; }` | Human-readable cipher of the first passphrase packet, when present. |
+| `DecryptedSize` | `ulong DecryptedSize { get; }` | Plaintext file length stored in the lower-file header. |
+| `Entries` | `IReadOnlyList<EcryptfsEntry> Entries { get; }` |  |
+| `ExtentSize` | `uint ExtentSize { get; }` | Encryption extent size in bytes. |
+| `FileVersion` | `byte FileVersion { get; }` | eCryptfs lower-file format version. |
+| `Flags` | `uint Flags { get; }` | Raw eCryptfs file flags, including the version in the top byte. |
+| `HeaderExtentCount` | `ushort HeaderExtentCount { get; }` | Number of header extents preceding ciphertext data. |
+| `MarkerWord` | `uint MarkerWord { get; }` | The random first word of the two-word marker pair stored on disk. |
+| `Marker` | `uint Marker { get; }` | The validated eCryptfs marker relation constant. |
+| `MetadataSize` | `int MetadataSize { get; }` | Total metadata region at the beginning of the lower file. |
+| `PassphraseSignature` | `string PassphraseSignature { get; }` | Raw eight-byte authentication-token signature as lowercase hexadecimal. |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractContent` | `byte[] ExtractContent(string password)` | Decrypts the single logical upper-file payload with a passphrase. |
+| `ValidatePassword` | `void ValidatePassword(string password)` | Validates a passphrase against the authentication-token packet without materializing plaintext in memory. The ciphertext is streamed through the normal decoder into `Null`, so the same key and extent path used by extraction is exercised before a destructive mutation starts. |
 
 ### Namespace `FileSystem.Efs`
 
@@ -5556,7 +5599,7 @@ Builds exFAT filesystem images that Windows 10+ actually mounts. Default layout:
 
 ### Namespace `FileSystem.Ext`
 
-[`ExtBlockMover`](#extblockmover) · [`ExtEntry`](#extentry) · [`ExtExtentMap`](#extextentmap) · [`ExtFilesystemDriverAdapter`](#extfilesystemdriveradapter) · [`ExtFormatDescriptor`](#extformatdescriptor) · [`ExtInPlaceShrinker`](#extinplaceshrinker) · [`ExtInPlaceShrinker.ShrinkResult`](#extinplaceshrinkershrinkresult) · [`ExtModifier`](#extmodifier) · [`ExtModifier.InPlaceUnsupportedException`](#extmodifierinplaceunsupportedexception) · [`ExtReader`](#extreader) · [`ExtRemover`](#extremover) · [`ExtShrinkHelper`](#extshrinkhelper) · [`ExtShrinkHelper.ShrinkResult`](#extshrinkhelpershrinkresult) · [`ExtWriter`](#extwriter) · [`ExtWriter.ExtVersion`](#extwriterextversion)
+[`ExtBlockMover`](#extblockmover) · [`ExtEntry`](#extentry) · [`ExtExtendedAttributes`](#extextendedattributes) · [`ExtExtentMap`](#extextentmap) · [`ExtFilesystemDriverAdapter`](#extfilesystemdriveradapter) · [`ExtFormatDescriptor`](#extformatdescriptor) · [`ExtInPlaceShrinker`](#extinplaceshrinker) · [`ExtInPlaceShrinker.ShrinkResult`](#extinplaceshrinkershrinkresult) · [`ExtModifier`](#extmodifier) · [`ExtModifier.InPlaceUnsupportedException`](#extmodifierinplaceunsupportedexception) · [`ExtReader`](#extreader) · [`ExtRemover`](#extremover) · [`ExtShrinkHelper`](#extshrinkhelper) · [`ExtShrinkHelper.ShrinkResult`](#extshrinkhelpershrinkresult) · [`ExtWriter`](#extwriter) · [`ExtWriter.ExtVersion`](#extwriterextversion)
 
 #### `ExtBlockMover`
 
@@ -5590,6 +5633,16 @@ Represents an ext entry.
 | `LinkTarget` | `string LinkTarget { get; init; }` | Gets or sets the link target. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
+
+#### `ExtExtendedAttributes`
+
+Reads ext2/3/4 extended attributes and performs conservative in-inode mutations.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `static IReadOnlyDictionary<string, byte[]> Read(Stream image, string path)` | Reads all directly stored xattrs for `path`. |
+| `Remove` | `static bool Remove(Stream image, string path, string name)` | Removes one in-inode xattr, returning false when it was absent. |
+| `Set` | `static void Set(Stream image, string path, string name, ReadOnlySpan<byte> value)` | Creates or replaces one in-inode xattr. External-block and EA-inode values are never rewritten by this conservative mutator. |
 
 #### `ExtExtentMap`
 
@@ -6817,12 +6870,12 @@ Clean-room GFS2 (Global File System 2) image writer producing a minimal, standal
 
 #### `GlusterFsEntry`
 
-Represents a gluster fs entry.
+Represents an entry surfaced from a single GlusterFS brick backing store.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `GlusterFsEntry` | `GlusterFsEntry()` |  |
-| `Data` | `byte[] Data { get; init; }` | Gets or sets the data. |
+| `Data` | `byte[] Data { get; init; }` | Gets or sets eagerly materialized data, used by synthetic metadata entries. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Offset` | `long Offset { get; init; }` | Gets or sets the offset. |
@@ -6830,9 +6883,9 @@ Represents a gluster fs entry.
 
 #### `GlusterFsFormatDescriptor`
 
-Stage 0 detection-only descriptor for GlusterFS. Honest fallback: GlusterFS has no on-disk image format. A GlusterFS volume is a logical aggregation of one or more "bricks", and every brick is just a normal directory on a local POSIX filesystem (typically XFS or ext4). Volume files live at their normal POSIX paths inside the brick directory and carry GlusterFS state in extended attributes (`trusted.gfid`, `trusted.glusterfs.dht`, `trusted.glusterfs.volume-id`, `trusted.glusterfs.pathinfo`, etc.). There is no superblock, no brick header, no portable single-file representation that this image-based pipeline can consume. We therefore stay Stage 0 permanently. The 0xCAFE5BAB magic recognised here is a workbench-internal convention for hand-dumped brick-object probes — it is not a real on-disk GlusterFS structure and no real GlusterFS deployment will produce it. Promotion to R/O would require walking a live directory tree and reading xattrs, which is outside the image-stream contract enforced by `IArchiveFormatOperations`. References: `https://docs.gluster.org` — official GlusterFS documentation (brick/xattr architecture)`https://github.com/gluster/glusterfs` — canonical source`https://en.wikipedia.org/wiki/GlusterFS` — Wikipedia overview
+Read-only single-brick view for GlusterFS backing-store images, with a conservative backing-store shrink operation where it is provably metadata-safe. GlusterFS has no independent block format: a volume is a logical collection of bricks and each brick is an export directory on an ordinary filesystem with extended-attribute support. This descriptor therefore delegates real backing images to the repository's XFS or ext2/3/4 reader and surfaces the physical contents of one brick. It does not reconstruct the distributed Gluster namespace.Detection is extension-only. XFS and ext images already belong to their native descriptors and there is no Gluster-specific superblock magic with which to distinguish a brick image automatically. The former workbench-only 0xCAFE5BAB probe convention is deliberately not recognised as GlusterFS.The native XFS/ext layers can now read Gluster xattrs and conservatively mutate the common short-form/in-inode storage cases. General archive mutation remains disabled until every xattr storage form that a maintenance operation can encounter (including ext external blocks/EA inodes and XFS leaf/btree/remote attributes) is preserved. Advertising a rebuild-based mutation before then could silently discard `trusted.gfid` or `trusted.glusterfs.*` state.Shrink is the deliberate exception. For ext-backed bricks the native in-place shrinker chooses its boundary from the filesystem allocation bitmap; every allocated xattr block therefore pins the boundary just like file data and is preserved byte-for-byte. XFS-backed bricks copy through unchanged because the current XFS shrink path may rebuild the image. This is a backing-store geometry operation only; it is not Gluster's remove-brick command.Gluster volume operations such as rebalance, fix-layout, and remove-brick are explicitly outside this single-image abstraction. They coordinate multiple bricks and belong to a live cluster/volume control plane, not an offline brick image editor. References: `https://docs.gluster.org/en/latest/Administrator-Guide/Setting-Up-Volumes/` — a volume is a logical collection of export-directory bricks`https://docs.gluster.org/en/latest/Administrator-Guide/GlusterFS-Introduction/` — backing filesystems must support extended attributes`https://docs.gluster.org/en/latest/Administrator-Guide/Managing-Volumes/` — remove-brick/rebalance/fix-layout are volume operations`https://docs.kernel.org/filesystems/ext4/attributes.html` — ext4 xattr on-disk layout`https://www.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf` — XFS short-form attribute layout`https://github.com/gluster/glusterfs` — canonical GlusterFS implementation, dual GPLv2/LGPLv3+
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -6846,28 +6899,30 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. Empty by design because GlusterFS has no separate on-disk magic. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts entries from the supplied single-brick physical view. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied brick backing-store image. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks an ext-backed brick to its highest allocated block without rebuilding file or xattr metadata. XFS-backed bricks are copied unchanged. |
 
 #### `GlusterFsReader`
 
-Stage 0 detection-only reader for GlusterFS — permanent honest fallback. GlusterFS itself has no on-disk image format: a brick is a normal directory on a local POSIX filesystem (XFS / ext4 / ...) and volume files are stored at their normal POSIX paths inside that directory. All GlusterFS-specific state lives in extended attributes (the `trusted.gfid`, `trusted.glusterfs.dht`, `trusted.glusterfs.volume-id`, `trusted.glusterfs.pathinfo` namespace). Consequences: There is no superblock or brick header to parse.Distribution / replication state (DHT hashing → brick mapping, AFR replicate metadata, EC dispersed metadata, rebalance bookkeeping) only exists across multiple bricks on multiple hosts, not inside any single image.An R/O promotion is fundamentally incompatible with this project's image-stream contract — recognising a GlusterFS "volume" would require walking a live POSIX directory tree and reading xattrs through the host OS, which is outside the `Stream`-based `IArchiveFormatOperations` surface. The 0xCAFE5BAB magic verified by `Parse` is a workbench-internal probe convention used to dump and round-trip hand-crafted "brick object" experiments; it is not a real on-disk GlusterFS marker and no real GlusterFS deployment produces it. The reader therefore stays a thin two-entry detector (synthetic `metadata.ini` + raw `gluster-brick.bin`) and will never grow real semantics.
+Reads a single GlusterFS brick backing-store image by delegating the native on-disk filesystem to the existing XFS or ext2/3/4 reader. GlusterFS does not define a separate block format. A brick is an export directory on an ordinary filesystem that supports extended attributes. The logical volume namespace and DHT/AFR/EC state span multiple bricks, while object identity and translator metadata are stored in xattrs such as `trusted.gfid` and `trusted.glusterfs.*`. Consequently this reader intentionally exposes only the physical view of one supplied backing image. It does not claim to reconstruct a Gluster volume from one brick.When the backing namespace contains Gluster's `.glusterfs` GFID index, its parent directory identifies the brick root. Entries outside that subtree and the index itself are omitted from the normal view. If no index is present, the filesystem root is used as a conservative explicit-input fallback.Gluster xattrs are readable through `ReadExtendedAttributes`. The backing accessors also support conservative inline/short-form mutation, but this brick reader remains read-only until all xattr storage forms needed by a maintenance operation can be preserved without rebuilding metadata.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `GlusterFsReader` | `GlusterFsReader(Stream stream)` | Initializes a new instance of `GlusterFsReader`. |
-| `BrickMagic` | `static readonly byte[] BrickMagic` | Workbench-internal probe magic (0xCA 0xFE 0x5B 0xAB, 0xCAFE5BAB big-endian) used by the detector tests. Not a real GlusterFS structure — GlusterFS has no on-disk header at all. |
-| `Entries` | `IReadOnlyList<GlusterFsEntry> Entries { get; }` | Gets the entries. |
-| `MagicWord` | `uint MagicWord { get; }` | Gets or sets the magic word. |
-| `TrailingWord` | `uint TrailingWord { get; }` | Gets or sets the trailing word. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(GlusterFsEntry entry)` | Decodes the supplied input. |
+| `GlusterFsReader` | `GlusterFsReader(Stream stream)` | Initializes a reader over one brick backing-store image. |
+| `BackingFileSystem` | `string BackingFileSystem { get; }` | Gets the detected backing filesystem name (`xfs` or `ext`). |
+| `BrickRoot` | `string BrickRoot { get; }` | Gets the inferred brick root inside the backing filesystem. Empty means filesystem root. |
+| `Entries` | `IReadOnlyList<GlusterFsEntry> Entries { get; }` | Gets the entries in the single-brick physical view. |
+| `HasGlusterIndex` | `bool HasGlusterIndex { get; }` | Gets whether a `.glusterfs` GFID index was present and used to locate the brick root. |
+| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether a supported backing filesystem was found. |
+| `Dispose` | `void Dispose()` | Releases backing filesystem readers and any spool created for a non-seekable input. |
+| `Extract` | `byte[] Extract(GlusterFsEntry entry)` | Extracts one surfaced entry. |
+| `ReadExtendedAttributes` | `IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(GlusterFsEntry entry)` | Reads the native extended attributes belonging to a surfaced brick entry. |
 
 ### Namespace `FileSystem.Gpfs`
 
@@ -8651,9 +8706,9 @@ Represents a lustre entry.
 
 #### `LustreFormatDescriptor`
 
-R/O descriptor for Lustre MDT/OST images via ldiskfs (ext4-compatible) reader delegation. Surfaces the ldiskfs view of a single MDT or OST backing store — NOT the Lustre logical view (which would require combining MDT inode metadata with file data striped across multiple OSTs, out of scope without live cluster metadata). Detection is extension-routed (.lustre / .ost / .mdt) and the legacy "LUSTRE" / "LUst" object-header magic at offset 0; ext4 superblock magic is deliberately NOT registered here (it would steal detection from generic ext4 images). When opened with an ldiskfs MDT/OST image (recognised by the .ost / .mdt / .lustre extension), `LustreReader` delegates the file walk to `FileSystem.Ext.ExtReader`. References: `https://www.lustre.org/` — project home`https://wiki.lustre.org/` — Lustre wiki (architecture, ldiskfs/MDT/OST layout)`https://en.wikipedia.org/wiki/Lustre_(file_system)` — Wikipedia article
+Descriptor for Lustre MDT/OST images backed by ldiskfs (ext4-compatible). The archive projection surfaces one target's backing-store namespace — NOT the distributed Lustre logical view, which requires correlating MDT metadata with objects striped across multiple OSTs. Maintenance is intentionally narrower than generic ext editing. Free-space wipe follows the ldiskfs block allocation bitmap, and shrink updates ext geometry in place, preserving every surviving allocated block. Add/replace/remove, defrag and structural relayout are not advertised because rebuilding through the generic ext writer would discard Lustre LMA/LOV/FID extended attributes and target metadata. Legacy "LUSTRE" / "LUst" object-header dumps remain inspection-only. Detection is extension-routed (.lustre / .ost / .mdt) and the legacy "LUSTRE" / "LUst" object-header magic at offset 0; ext4 superblock magic is deliberately NOT registered here because that would steal generic ext4 images. References: `https://wiki.lustre.org/Configuring_the_Lustre_File_System` — mkfs.lustre examples showing ldiskfs backing targets`https://wiki.lustre.org/Understanding_Lustre_Internals` — backing ldiskfs inspection and Lustre target internals`https://docs.kernel.org/filesystems/ext4/bitmaps.html` — ext4 allocation bitmap semantics and BLOCK_UNINIT warning`https://docs.kernel.org/filesystems/ext4/group_descr.html` — group descriptor and bitmap locations
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFormatDescriptor`, `ILayoutOptimizable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8670,8 +8725,11 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Reports the current ldiskfs block geometry. Structural relayout is deliberately not offered until a Lustre-aware writer can preserve all target metadata. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks an offline ldiskfs target by trimming trailing free blocks while preserving all surviving allocated blocks and Lustre-specific inode/xattr bytes. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeroes complete ldiskfs blocks whose initialized allocation bitmap proves them free. Cluster-tip and deleted-dirent requests are deliberately ignored: those byte ranges cannot be proven dead without interpreting Lustre-specific inode/xattr semantics. |
 
 #### `LustreReader`
 
@@ -9320,9 +9378,9 @@ One synthetic surface in the MooseFS master-metadata image: either the `metadata
 
 #### `MooseFsFormatDescriptor`
 
-Partial R/O descriptor for MooseFS master-metadata images (`metadata.mfs`). Surfaces the metadata envelope (signature, counters, section index) and the raw payload bytes of each walked section. Path-tree (NODE/EDGE) and chunk-id (CHNK) bodies are version-specific and require golden samples to decode honestly — the reader makes no claim about their internal structure. MooseFS file content lives on chunk servers and is unreachable from a single metadata image. Listing therefore surfaces ONLY synthetic metadata + per-section raw payloads, never POSIX paths. References: `https://github.com/moosefs/moosefs` — canonical source (master metadata dump/load code)`https://moosefs.com/` — vendor site and documentation`https://en.wikipedia.org/wiki/Moose_File_System` — Wikipedia article
+Descriptor for MooseFS master-metadata images (`metadata.mfs`). The standalone image contains namespace/chunk metadata, not file payloads; payload bytes live on chunk servers. The descriptor therefore exposes a synthetic forensic view of the metadata envelope rather than pretending a metadata dump is a self-contained MooseFS volume. Safe standalone-image maintenance is deliberately narrow: byte layout can be mapped, unused-space wiping fails closed (valid metadata dumps are tightly packed), and purge resets the image to MooseFS's official `MFSM NEW` empty bootstrap. Add/replace/remove, shrink and defragmentation require semantic NODE/EDGE/CHNK updates and/or live cluster coordination and are not advertised here. References: `https://github.com/moosefs/moosefs` — canonical implementation and metadata loader/store format`https://moosefs.com/` — vendor documentation
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9339,42 +9397,50 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the exact bytes occupied by a valid MooseFS metadata image. Unknown/truncated images return no extents so generic maintenance fails closed. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the synthetic metadata-image views. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the synthetic entries in the supplied metadata image. |
+| `Purge` | `void Purge(Stream archive)` | Resets a valid metadata image to MooseFS's official empty bootstrap state. This only rewrites `metadata.mfs`; any chunk-server data is outside the image and therefore outside this operation. |
 
 #### `MooseFsReader`
 
-Partial R/O reader for MooseFS master-metadata images (`metadata.mfs`). MooseFS is a fault-tolerant distributed FS — the master server keeps the namespace + chunk-server topology in a single binary metadata file, while file data lives on chunk servers. This reader understands the master metadata's outer envelope: 8-byte ASCII signature (e.g. `MFSM 2.0`, `MFSM 1.6`, `MFSM 1.5`, `MFSM 1.4`, `MFSM NEW`).For 1.6+ images: two 8-byte big-endian counters (file-id counter, metadata version) immediately after the signature.Sequence of sections. Each section: 8-byte ASCII type tag (`SESS 1.0`, `STAT 1.0`, `NODE 1.0`, `EDGE 1.0`, `FREE 1.0`, `XATR 1.0`, `CHNK 1.0`, `OPEN 1.0`, `FLCK 1.0`, `QUOT 1.0`, `ACLS 1.0`, …) + 8-byte big-endian payload length + that many payload bytes.Final 16-byte terminator `[MFS EOF MARKER]`. The reader walks the section index only — it does not attempt to decode NODE / EDGE record bodies, which differ between MooseFS minor versions and require ground-truth golden samples to validate. NODE/EDGE would give path tree + inode metadata; CHNK gives chunk-id mappings. None of those by themselves yield file content — MooseFS data lives on chunk servers and is only reachable via the live MooseFS protocol. Therefore the reader exposes: `metadata.ini` — human-readable summary of header + section table (name, payload offset, payload length).`moosefs-master.bin` — the raw image, byte-for-byte.`section_<NAME>.bin` — the raw payload bytes of each section the index walk surfaced (NODE, EDGE, CHNK, …). Useful for offline forensics; we make no claim about their internal structure. If section-walk fails (signature past the 8-byte tag is not recognised, a section length runs past EOF, the EOF marker is missing, …), the reader falls back to a header-only surface (metadata.ini + raw) and records the parse failure in `metadata.ini`'s `parse_status` field. This is the honest "we recognise the envelope but couldn't walk the contents" mode rather than silently inventing entries.
+Partial reader for MooseFS master-metadata images (`metadata.mfs`). It understands the versioned outer envelope and section framing, but does not decode the version-specific NODE / EDGE / CHNK bodies or contact chunk servers. Consequently all surfaced archive entries are synthetic forensic views of the metadata image rather than the mounted MooseFS namespace.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `MooseFsReader` | `MooseFsReader(Stream stream)` | Initializes a new instance of `MooseFsReader`. |
-| `EofMarker` | `static readonly byte[] EofMarker` | 16-byte MooseFS end-of-file marker following the last section. |
-| `MasterTag` | `static readonly byte[] MasterTag` | MooseFS master metadata 4-byte prefix: ASCII "MFSM". |
-| `Entries` | `IReadOnlyList<MooseFsEntry> Entries { get; }` | Listing of every entry this image surfaces. |
-| `FileIdCounter` | `ulong? FileIdCounter { get; }` | File-id counter from the modern (1.6+) post-signature header, or `null` when the image is too short or pre-1.6. |
-| `MetadataVersion` | `ulong? MetadataVersion { get; }` | Metadata version counter from the modern (1.6+) post-signature header, or `null` when the image is too short or pre-1.6. |
-| `ParseStatus` | `string ParseStatus { get; }` | Human-readable description of how the section walk terminated: `"ok"` (full walk + EOF marker), `"truncated"` (section walk stopped before EOF marker), `"header-only"` (image too short for any sections), or `"unsupported-header"` (no MFSM tag). |
-| `Sections` | `IReadOnlyList<SectionEntry> Sections { get; }` | Section index walked from the master metadata stream. |
-| `Signature` | `string Signature { get; }` | The 8-byte ASCII signature at offset 0 (e.g. `"MFSM 2.0"`). |
-| `ValidHeader` | `bool ValidHeader { get; }` | True when the 4-byte `MFSM` tag was present at offset 0. |
+| `MooseFsReader` | `MooseFsReader(Stream stream)` | Initializes a reader over one MooseFS metadata image. |
+| `EofMarker` | `static readonly byte[] EofMarker` | Modern (1.6+) 16-byte MooseFS end-of-file marker. |
+| `MasterTag` | `static readonly byte[] MasterTag` | MooseFS master metadata 4-byte prefix: ASCII `MFSM`. |
+| `Entries` | `IReadOnlyList<MooseFsEntry> Entries { get; }` | Listing of every synthetic entry surfaced from this image. |
+| `FileFormatVersion` | `byte? FileFormatVersion { get; }` | Packed file-format version (`0x16` for 1.6, `0x20` for 2.0), or `null` for the special `MFSM NEW` bootstrap image. |
+| `FileIdCounter` | `ulong? FileIdCounter { get; }` | Compatibility view of the first eight bytes after the signature, matching the value older CompressionWorkbench builds exposed under this incorrect name. MooseFS does not define this field as a file-id counter. |
+| `ImageSize` | `long ImageSize { get; }` | The exact image size consumed by this reader. |
+| `IsEmptyBootstrap` | `bool IsEmptyBootstrap { get; }` | Whether this is MooseFS's official eight-byte empty bootstrap image. |
+| `MaxNodeId` | `uint? MaxNodeId { get; }` | Maximum node id from the pre-2.0 metadata header. Not present in 2.0+. |
+| `MetaId` | `ulong? MetaId { get; }` | Metadata instance id stored by 2.0+ images. |
+| `MetadataVersion` | `ulong? MetadataVersion { get; }` | Metadata/changelog version stored in the master metadata header. |
+| `NextSessionId` | `uint? NextSessionId { get; }` | Next session id from the pre-2.0 metadata header. Not present in 2.0+. |
+| `ParseStatus` | `string ParseStatus { get; }` | Human-readable parse result: `ok`, `header-only`, `truncated`, `trailing-data`, or `unsupported-header`. |
+| `Sections` | `IReadOnlyList<SectionEntry> Sections { get; }` | Section index walked from section-framed (1.6+) metadata. |
+| `Signature` | `string Signature { get; }` | The 8-byte ASCII signature, for example `MFSM 2.0`. |
+| `ValidHeader` | `bool ValidHeader { get; }` | True once the `MFSM` prefix has been verified. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(MooseFsEntry entry)` | Returns the bytes that back the given entry (in-memory). |
+| `Extract` | `byte[] Extract(MooseFsEntry entry)` | Returns the bytes backing a surfaced synthetic entry. |
 
 #### `MooseFsReader.SectionEntry`
 
-One walked section from the master metadata stream.
+One walked section from a 1.6+ master metadata stream.
 
 Implements `IEquatable<SectionEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectionEntry` | `SectionEntry(string Tag, long Offset, long Length)` | One walked section from the master metadata stream. |
-| `Length` | `long Length { get; init; }` | Length of the section payload in bytes. |
-| `Offset` | `long Offset { get; init; }` | Byte offset of the section payload (after the 16-byte tag+length). |
-| `Tag` | `string Tag { get; init; }` | The 8-byte ASCII tag (e.g. `"NODE 1.0"`), trimmed. |
+| `SectionEntry` | `SectionEntry(string Tag, long Offset, long Length)` | One walked section from a 1.6+ master metadata stream. |
+| `Length` | `long Length { get; init; }` | Payload length in bytes. |
+| `Offset` | `long Offset { get; init; }` | Byte offset of the section payload. |
+| `Tag` | `string Tag { get; init; }` | Eight-byte section tag, for example `NODE 1.0`. |
 
 ### Namespace `FileSystem.Msa`
 
@@ -10174,27 +10240,37 @@ Writes a NetWare 386 disk image: a partition table naming one NetWare partition,
 
 #### `Nwfs386FormatDescriptor`
 
-Read-only descriptor for Novell NetWare 386 (NWFS386) raw partition dumps, detected via the "NetW" ASCII prefix at offset 0. DOS partition type `0x65`. The on-disk format is FAT-like but proprietary; no parser is attempted — the image is surfaced as a single opaque entry with metadata.ini noting the partition-type hint. References: `https://www.win.tue.nl/~aeb/partitions/partition_types-1.html` — partition-type catalogue (0x65 = Novell NetWare)`https://en.wikipedia.org/wiki/NetWare_File_System` — Wikipedia articleNovell NetWare 386 internal documentation — the on-disk format was never published
+Compatibility descriptor for the Novell NetWare 386 Traditional File System. The actual reader/writer lives in `FileSystem.Nwfs`; this descriptor keeps the historical `Nwfs386` id/extensions while sharing that implementation.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Nwfs386FormatDescriptor` | `Nwfs386FormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 ### Namespace `FileSystem.Ocfs2`
 
@@ -10410,45 +10486,52 @@ Represents an one fs entry.
 
 #### `OneFsFormatDescriptor`
 
-Stage 0 detection-only descriptor for Dell EMC Isilon OneFS LIN-tree root images. Surfaces only a synthetic `metadata.ini` and the raw image bytes; no real file-walk is attempted. Why R/O promotion is impossible (per CONTRIBUTING.md promotion gates):No single-image content surface. OneFS is a clustered scale-out NAS — every file is split into "protection groups" striped across drives and nodes with FEC (Forward Error Correction, N+M:B layout, e.g. N+2:1). A single drive/node image carries only one stripe; the file data cannot be reconstructed without the peer nodes. A read-only reader from one image can never return correct file bytes. LIN tree is cluster-wide. The Logical Inode Number tree (the OneFS metadata index) lives across nodes, not in a single superblock. There is no per-image inode-to-block mapping to walk. Proprietary on-disk format, no public specification. Dell EMC has never published the OneFS on-disk format. No open-source reverse-engineered reader exists. Without a spec we cannot honour the CONTRIBUTING rule "never advertise capabilities you cannot prove against a real spec". FreeBSD/UFS ancestry does NOT give us a UFS reader fallback. OneFS runs on a FreeBSD-derived kernel, but the filesystem layer is entirely proprietary — it is NOT FFS/UFS at the on-disk level. UFS1 places its superblock magic `0x00011954` at offset 8192; OneFS images have the ASCII `"OneFS"` tag at offset 0 and no UFS superblock. Routing OneFS images through `UfsReader` would fail the magic check and (if forced) return arbitrary bytes — the textbook mutual-compensation trap. Conclusion: Stage-0 detection only. Surface the magic, raw bytes, and a `metadata.ini` documenting the limitation. R/O promotion is blocked on (a) Dell EMC publishing the spec and (b) a multi-node ingest path — neither is in reach. References: Dell EMC "PowerScale OneFS Technical Overview" whitepaper — high-level architecture only; no on-disk spec is published`https://en.wikipedia.org/wiki/OneFS_distributed_file_system` — Wikipedia article
+Conservative inspection descriptor for Dell PowerScale / Isilon OneFS media.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ILayoutOptimizable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OneFsFormatDescriptor` | `OneFsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the conservative inspection capabilities. Integrity testing is not advertised: without a verified superblock/tree parser, successfully copying an opaque image does not prove that the filesystem is structurally sound. |
+| `Category` | `FormatCategory Category { get; }` | Gets the format category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the conventional extension for explicitly supplied raw media. |
+| `Description` | `string Description { get; }` | Gets a description of the intentionally limited inspection surface. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the recognized extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the algorithm family. |
+| `Id` | `string Id { get; }` | Gets the registry id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets fixed magic signatures. Dell does not publish an authoritative offset-zero raw-media signature, so OneFS intentionally has none. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the pseudo-archive storage method. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Reports the fixed physical geometry documented by Dell without reading or interpreting proprietary allocation metadata. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts selected inspection entries through bounded streams. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the two conservative inspection entries without reading the image payload. |
 
 #### `OneFsReader`
 
-Stage 0 detection-only reader for Dell EMC Isilon OneFS LIN-tree root images. OneFS is a clustered scale-out NAS — its single-image surface is the LIN-tree root block, whose first bytes are the ASCII tag `"OneFS"` (5 bytes, 0x4F 0x6E 0x65 0x46 0x53) or the short `"ONEF"` tag (0x4F 0x4E 0x45 0x46 = 0x4F4E4546 BE int) used in some node-local boot images. Only the tag is verified; the real LIN tree (logical inode number tree) is a cluster-wide construct and cannot be walked from a single image. File data is FEC-striped across nodes (N+M:B protection groups) — even a complete single-drive image carries only one stripe and cannot reconstruct file content without peer nodes. OneFS shares OS ancestry with FreeBSD, but the on-disk filesystem layer is proprietary and NOT UFS-compatible: there is no UFS1 superblock magic (`0x00011954`) at the UFS1 superblock offset (8192). The OneFS on-disk format has never been publicly specified by Dell EMC.
+Conservative single-image inspection surface for Dell PowerScale / Isilon OneFS media.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `OneFsReader` | `OneFsReader(Stream stream)` | Initializes a new instance of `OneFsReader`. |
-| `LongTag` | `static readonly byte[] LongTag` | OneFS LIN-tree-root long tag: ASCII "OneFS" (5 bytes). |
-| `ShortTag` | `static readonly byte[] ShortTag` | OneFS short tag: ASCII "ONEF" (4 bytes, 0x4F4E4546 BE). |
-| `Entries` | `IReadOnlyList<OneFsEntry> Entries { get; }` | Gets the entries. |
-| `Tag` | `string Tag { get; }` | Gets or sets the tag. |
-| `TrailingWord` | `uint TrailingWord { get; }` | Gets or sets the trailing word. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(OneFsEntry entry)` | Decodes the supplied input. |
+| `OneFsReader` | `OneFsReader(Stream stream)` | Initializes a conservative OneFS image reader without consuming or owning the source stream. Kept as the original one-argument public constructor for binary/source API compatibility. |
+| `OneFsReader` | `OneFsReader(Stream stream, bool leaveOpen)` | Initializes a conservative OneFS image reader without consuming the image. |
+| `BlocksPerCylinderGroup` | `const int BlocksPerCylinderGroup` | Documented number of 8 KiB blocks in a 32 MiB cylinder group. |
+| `CylinderGroupSize` | `const int CylinderGroupSize` | Documented physical cylinder-group size of each OneFS data disk. |
+| `MetadataEntryName` | `const string MetadataEntryName` | Name of the synthetic inspection metadata entry. |
+| `PhysicalBlockSize` | `const int PhysicalBlockSize` | Documented OneFS filesystem block size. |
+| `RawImageEntryName` | `const string RawImageEntryName` | Name of the opaque raw-image entry. |
+| `Entries` | `IReadOnlyList<OneFsEntry> Entries { get; }` | Gets the synthetic entries exposed by the conservative reader. |
+| `ImageSize` | `long ImageSize { get; }` | Gets the byte length of the opaque source image. |
+| `Tag` | `string Tag { get; }` | Legacy compatibility property. No authoritative fixed OneFS raw-media tag is currently known, so this value is always empty. |
+| `TrailingWord` | `uint TrailingWord { get; }` | Legacy compatibility property. No undocumented trailing header word is interpreted; this value is always zero. |
+| `ValidHeader` | `bool ValidHeader { get; }` | Legacy compatibility property. The current reader does not claim to have validated a proprietary raw-media header, so this value is always false. |
+| `Dispose` | `void Dispose()` | Releases the source stream when ownership was requested. |
+| `Extract` | `byte[] Extract(OneFsEntry entry)` | Materializes an entry in memory. Prefer `OpenEntry` for the raw image so large media remains streaming. |
+| `OpenEntry` | `Stream OpenEntry(OneFsEntry entry)` | Opens an entry as a bounded read-only stream. Opening the raw image resets the source to byte zero but never copies the payload into managed memory. |
 
 ### Namespace `FileSystem.OpenVms`
 
@@ -11446,7 +11529,7 @@ WORM writer for QNX6 (Neutrino) filesystem images. Emits a power-safe layout: th
 
 ### Namespace `FileSystem.Refs`
 
-[`RefsBlockMover`](#refsblockmover) · [`RefsExtentMap`](#refsextentmap) · [`RefsFormatDescriptor`](#refsformatdescriptor)
+[`RefsBlockMover`](#refsblockmover) · [`RefsExtentMap`](#refsextentmap) · [`RefsFormatDescriptor`](#refsformatdescriptor) · [`RefsOfflineBlockCloner`](#refsofflineblockcloner)
 
 #### `RefsBlockMover`
 
@@ -11506,6 +11589,14 @@ Implements `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifi
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` | Opens a filesystem session over the image. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` | Probes the image and reports the filesystem driver profile. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes regular files or empty directories from an unmounted ReFS image. Namespace deletion is published through immutable B+ replacement pages and the alternate CHKP. |
+
+#### `RefsOfflineBlockCloner`
+
+Performs the bounded offline ReFS block-clone operation for two existing, equal-sized ordinary extent-backed files. The destination's stream mapping is replaced by the source mapping through immutable object/Object-Table CoW, while root #6 gains the corresponding shared-cluster reference counts in the same alternate-checkpoint publication. This is deliberately narrower than FSCTL_DUPLICATE_EXTENTS_TO_FILE: it clones a whole cluster-aligned file only, does not create names or extend EOF, and refuses resident, sparse, integrity, already-shared and otherwise undecoded stream layouts. Native mounted-driver/MLog semantics remain fail-closed.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CloneWholeFile` | `static void CloneWholeFile(Stream image, string sourcePath, string destinationPath)` | Replaces the contents of an existing destination file with a metadata-only clone of an existing source file on an unmounted ReFS image. |
 
 ### Namespace `FileSystem.Reiser4`
 
@@ -13291,9 +13382,9 @@ Represents a tux 3 entry.
 
 #### `Tux3FormatDescriptor`
 
-Read-only native-superblock descriptor for the linux-tux3 research filesystem.
+Native-superblock descriptor for the linux-tux3 research filesystem.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13311,8 +13402,10 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryName
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the provable byte layout without guessing at undecoded TUX3 allocation state. The declared native volume is reserved wholesale; only trailing bytes outside it are free. Invalid or arithmetically unrepresentable volume metadata reserves the complete physical image. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Removes only bytes beyond the volume size declared by `volblocks * blocksize`. Malformed, truncated, or arithmetically invalid images are copied through unchanged. |
 
 #### `Tux3Reader`
 
@@ -14147,7 +14240,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Xfs`
 
-[`XfsBlockMover`](#xfsblockmover) · [`XfsEntry`](#xfsentry) · [`XfsExtentMap`](#xfsextentmap) · [`XfsFilesystemDriverAdapter`](#xfsfilesystemdriveradapter) · [`XfsFormatDescriptor`](#xfsformatdescriptor) · [`XfsInPlaceAdder`](#xfsinplaceadder) · [`XfsModifier`](#xfsmodifier) · [`XfsReader`](#xfsreader) · [`XfsWriter`](#xfswriter)
+[`XfsBlockMover`](#xfsblockmover) · [`XfsEntry`](#xfsentry) · [`XfsExtendedAttributes`](#xfsextendedattributes) · [`XfsExtentMap`](#xfsextentmap) · [`XfsFilesystemDriverAdapter`](#xfsfilesystemdriveradapter) · [`XfsFormatDescriptor`](#xfsformatdescriptor) · [`XfsInPlaceAdder`](#xfsinplaceadder) · [`XfsModifier`](#xfsmodifier) · [`XfsReader`](#xfsreader) · [`XfsWriter`](#xfswriter)
 
 #### `XfsBlockMover`
 
@@ -14178,6 +14271,16 @@ Represents a xfs entry.
 | `LastModified` | `DateTime? LastModified { get; init; }` | Gets or sets the last modified. |
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
+
+#### `XfsExtendedAttributes`
+
+Reads and mutates XFS short-form extended attributes stored in an inode's attribute fork.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Read` | `static IReadOnlyDictionary<string, byte[]> Read(Stream image, string path)` | Reads all short-form xattrs for `path`. |
+| `Remove` | `static bool Remove(Stream image, string path, string name)` | Removes one short-form xattr, returning false when it was absent. |
+| `Set` | `static void Set(Stream image, string path, string name, ReadOnlySpan<byte> value)` | Creates or replaces a short-form xattr. If the resulting fork does not fit in the inode, the call fails without modifying the image. |
 
 #### `XfsExtentMap`
 

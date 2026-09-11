@@ -37,10 +37,19 @@ internal static class FirmwareHexCommon {
     sb.Append(CultureInfo.InvariantCulture, $"base_address = 0x{image.BaseAddress:X8}\n");
     sb.Append(CultureInfo.InvariantCulture,
       $"start_address = {(image.StartAddress.HasValue ? $"0x{image.StartAddress.Value:X8}" : "(unspecified)")}\n");
+    if (image.StartSegmentAddress is { } segmentedStart) {
+      var (cs, ip) = segmentedStart;
+      sb.AppendLine("start_address_kind = segment");
+      sb.Append(CultureInfo.InvariantCulture, $"start_segment_cs = 0x{cs:X4}\n");
+      sb.Append(CultureInfo.InvariantCulture, $"start_segment_ip = 0x{ip:X4}\n");
+    } else if (image.StartAddress.HasValue) {
+      sb.AppendLine("start_address_kind = linear");
+    }
     for (var i = 0; i < image.Segments.Count; i++) {
       var (a, d) = image.Segments[i];
+      var end = (ulong)a + (uint)d.Length;
       sb.Append(CultureInfo.InvariantCulture,
-        $"segment_{i} = 0x{a:X8} .. 0x{a + (uint)d.Length:X8} ({d.Length} bytes)\n");
+        $"segment_{i} = 0x{a:X8} .. 0x{end:X8} ({d.Length} bytes)\n");
     }
     return Encoding.UTF8.GetBytes(sb.ToString());
   }

@@ -27,6 +27,7 @@ internal sealed class LynxReader {
   public int FileCount { get; private set; }
   public string Signature { get; private set; } = string.Empty;
   public byte[] BasicHeader { get; private set; } = [];
+  public long DirectoryContentEnd { get; private set; }
   public long DataStart => (long)this.DirectoryBlocks * BlockSize;
   public long LogicalDataEnd { get; private set; }
 
@@ -141,6 +142,7 @@ internal sealed class LynxReader {
         throw new InvalidDataException($"Lynx entry '{name}' allocation extends beyond the archive.");
     }
 
+    this.DirectoryContentEnd = cursor;
     this.LogicalDataEnd = allocationOffset;
   }
 

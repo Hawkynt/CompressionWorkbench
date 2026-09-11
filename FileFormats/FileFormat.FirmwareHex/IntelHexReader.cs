@@ -17,6 +17,7 @@ public sealed class IntelHexReader {
     var segments = new SortedDictionary<uint, byte[]>();
     uint extendedBase = 0;
     uint? startAddr = null;
+    (ushort CodeSegment, ushort InstructionPointer)? startSegmentAddress = null;
     var recordCount = 0;
     var sawEof = false;
 
@@ -24,6 +25,8 @@ public sealed class IntelHexReader {
     for (var line = reader.ReadLine(); line != null; line = reader.ReadLine()) {
       line = line.Trim();
       if (line.Length == 0 || line[0] != ':') continue;
+      if (sawEof)
+        throw new InvalidDataException("IntelHex: record found after the end-of-file record.");
       if (line.Length < 11) throw new InvalidDataException($"IntelHex: short record '{line}'.");
       recordCount++;
 
@@ -45,27 +48,38 @@ public sealed class IntelHexReader {
           $"IntelHex: checksum mismatch (computed 0x{expected:X2}, stored 0x{bytes[^1]:X2}) on '{line}'.");
 
       var payload = bytes.AsSpan(4, len).ToArray();
+      ValidateRecordShape(type, addr, payload.Length, line);
       switch (type) {
-        case 0x00: // data
-          AddSegment(segments, extendedBase + addr, payload);
+        case 0x00: { // data
+          var absoluteAddress = extendedBase + addr;
+          if ((ulong)absoluteAddress + (uint)payload.Length > 0x1_0000_0000UL)
+            throw new InvalidDataException($"IntelHex: data record crosses the 32-bit address-space limit in '{line}'.");
+          AddSegment(segments, absoluteAddress, payload);
           break;
+        }
         case 0x01: // EOF
           sawEof = true;
           break;
         case 0x02: // extended segment address (16-bit segment * 16)
           extendedBase = (uint)(((payload[0] << 8) | payload[1]) << 4);
           break;
-        case 0x03: // start segment address (CS:IP)
-          startAddr = (uint)(((payload[0] << 24) | (payload[1] << 16)) + ((payload[2] << 8) | payload[3]));
+        case 0x03: { // start segment address (CS:IP)
+          var cs = (ushort)((payload[0] << 8) | payload[1]);
+          var ip = (ushort)((payload[2] << 8) | payload[3]);
+          startAddr = ((uint)cs << 4) + ip;
+          startSegmentAddress = (cs, ip);
           break;
+        }
         case 0x04: // extended linear address (high 16 bits)
           extendedBase = (uint)((payload[0] << 24) | (payload[1] << 16));
           break;
         case 0x05: // start linear address (EIP)
           startAddr = (uint)((payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3]);
+          startSegmentAddress = null;
           break;
         default:
-          // Unknown record types are ignored (some vendors extend the format).
+          // Unknown record types are ignored after checksum validation. Some
+          // vendor tools extend Intel HEX beyond the six standard record types.
           break;
       }
     }
@@ -74,7 +88,25 @@ public sealed class IntelHexReader {
       throw new InvalidDataException("IntelHex: missing ':00000001FF' end-of-file record.");
 
     var (merged, gapCount, totalBytes) = MergeSegments(segments);
-    return new FirmwareImage(merged, startAddr, recordCount, gapCount, totalBytes, "IntelHex");
+    return new FirmwareImage(merged, startAddr, recordCount, gapCount, totalBytes, "IntelHex") {
+      StartSegmentAddress = startSegmentAddress,
+    };
+  }
+
+  private static void ValidateRecordShape(byte type, ushort address, int payloadLength, string line) {
+    var expectedPayloadLength = type switch {
+      0x01 => 0,
+      0x02 or 0x04 => 2,
+      0x03 or 0x05 => 4,
+      _ => -1,
+    };
+    if (expectedPayloadLength >= 0 && payloadLength != expectedPayloadLength)
+      throw new InvalidDataException(
+        $"IntelHex: record type 0x{type:X2} requires {expectedPayloadLength} data bytes, got {payloadLength} in '{line}'.");
+
+    if ((type is 0x01 or 0x02 or 0x03 or 0x04 or 0x05) && address != 0)
+      throw new InvalidDataException(
+        $"IntelHex: record type 0x{type:X2} requires address 0000, got {address:X4} in '{line}'.");
   }
 
   private static byte[] ParseHexBytes(ReadOnlySpan<char> hex) {
@@ -90,10 +122,11 @@ public sealed class IntelHexReader {
   }
 
   private static void AddSegment(SortedDictionary<uint, byte[]> segments, uint addr, byte[] data) {
-    // Merge with an immediately-preceding segment so consecutive 16-byte records fold into one.
+    // Merge with an immediately-preceding segment so consecutive data records
+    // fold into one logical byte run.
     foreach (var k in segments.Keys) {
       var existing = segments[k];
-      if (k + (uint)existing.Length == addr) {
+      if ((ulong)k + (uint)existing.Length == addr) {
         var merged = new byte[existing.Length + data.Length];
         Buffer.BlockCopy(existing, 0, merged, 0, existing.Length);
         Buffer.BlockCopy(data, 0, merged, existing.Length, data.Length);
@@ -107,13 +140,13 @@ public sealed class IntelHexReader {
   internal static (List<(uint Address, byte[] Data)> Segments, int GapCount, int TotalBytes)
       MergeSegments(SortedDictionary<uint, byte[]> segments) {
     var list = new List<(uint, byte[])>();
-    uint? prevEnd = null;
+    ulong? prevEnd = null;
     var gaps = 0;
     var total = 0;
     foreach (var (addr, data) in segments) {
       if (prevEnd.HasValue && addr > prevEnd.Value) gaps++;
       list.Add((addr, data));
-      prevEnd = addr + (uint)data.Length;
+      prevEnd = (ulong)addr + (uint)data.Length;
       total += data.Length;
     }
     return (list, gaps, total);

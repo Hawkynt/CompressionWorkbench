@@ -4,46 +4,42 @@ using static Compression.Registry.FormatHelpers;
 
 namespace FileFormat.UefiFv;
 
-/// <summary>
-/// Offline random-access editor for ordinary FFS2 records in a firmware volume.
-/// It reuses erased 0xFF ranges and never relocates unrelated FFS files.
-/// </summary>
+/// <summary>Transactional offline editor for standard PI FFS2/FFS3 firmware volumes.</summary>
 internal static class UefiFvInPlaceModifier {
-  private sealed record Slot(int Offset, int Length, Guid Guid, byte Type) {
-    public string Name => UefiFvWriter.EntryName(Guid, Type);
-  }
-
   public static void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
     var state = Open(archive);
     foreach (var (name, data) in FilesOnly(inputs)) {
       var identity = UefiFvWriter.IdentityFromName(name);
-      var existing = ScanSlots(state.Image, state.FvStart, state.FvEnd)
-        .FirstOrDefault(s => s.Guid == identity.Guid);
-      if (existing != null)
-        Erase(state, existing.Offset, existing.Length);
+      foreach (var old in UefiFvParser.LiveSlots(state.Volume, includePad: false)
+                 .Where(slot => slot.Name == identity.Guid).ToList())
+        Erase(state, old.Offset, old.Footprint);
+      Refresh(state);
 
-      var encoded = UefiFvWriter.BuildFfsFile(identity.Guid, identity.Type, data);
+      var encoded = UefiFvWriter.BuildFfsFile(identity.Guid, identity.Type, data,
+        state.Volume.FileSystemGuid, state.Volume.ErasePolarity);
       var footprint = UefiFvWriter.Align8(encoded.Length);
-      var offset = FindErasedRun(state.Image, state.DataStart, state.FvEnd, footprint);
+      var offset = FindErasedRun(state.Image, state.Volume.DataStart, state.Volume.End,
+        footprint, state.Volume.EraseByte);
       if (offset < 0)
         throw new IOException($"UEFI FV has no erased run large enough for '{name}' ({footprint} bytes).");
-
-      Write(state, offset, encoded);
-      if (footprint > encoded.Length)
-        Erase(state, offset + encoded.Length, footprint - encoded.Length);
+      encoded.CopyTo(state.Image, offset);
+      Refresh(state);
     }
+    Finish(state);
   }
 
   public static void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(entryNames);
     var state = Open(archive);
     foreach (var name in entryNames) {
-      var slot = ScanSlots(state.Image, state.FvStart, state.FvEnd)
-        .FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-      if (slot != null)
-        Erase(state, slot.Offset, slot.Length);
+      var slot = UefiFvParser.LiveSlots(state.Volume, includePad: false)
+        .FirstOrDefault(s => string.Equals(UefiFvWriter.EntryName(s.Name, s.Type), name, StringComparison.OrdinalIgnoreCase));
+      if (slot == null) continue;
+      Erase(state, slot.Offset, slot.Footprint);
+      Refresh(state);
     }
+    Finish(state);
   }
 
   private static EditorState Open(Stream archive) {
@@ -52,76 +48,47 @@ internal static class UefiFvInPlaceModifier {
       throw new ArgumentException("UEFI FV mutation requires a seekable read/write stream.", nameof(archive));
     if (archive.Length > int.MaxValue)
       throw new NotSupportedException("The in-memory FV editor supports images up to 2 GiB.");
-
     archive.Position = 0;
     var image = new byte[checked((int)archive.Length)];
     archive.ReadExactly(image);
-    var fvStart = UefiFvReader.FindFirst(image)
-      ?? throw new InvalidDataException("UEFI FV header was not found.");
-    var fv = UefiFvReader.Read(image, fvStart);
-    var fvEnd = checked(fvStart + (int)fv.Header.FvLength);
-    if (fvEnd > image.Length) throw new InvalidDataException("UEFI FV extends past the image.");
-    var dataStart = Align8(checked(fvStart + fv.Header.HeaderLength));
-    return new EditorState(archive, image, fvStart, dataStart, fvEnd);
+    var start = UefiFvReader.FindFirst(image) ?? throw new InvalidDataException("UEFI FV header was not found.");
+    var volume = UefiFvParser.Parse(image, start);
+    EnsureMutable(volume);
+    return new EditorState(archive, image, start, volume);
   }
 
-  private static List<Slot> ScanSlots(byte[] image, int fvStart, int fvEnd) {
-    var fv = UefiFvReader.Read(image, fvStart);
-    var pos = Align8(checked(fvStart + fv.Header.HeaderLength));
-    var result = new List<Slot>();
-    while (pos + UefiFvWriter.FfsHeaderLength <= fvEnd) {
-      // One quantum at a time, and only the quantum is tested — see the same
-      // walk in UefiFvReader: testing a whole header straddles the end of an
-      // erased gap and reads the next file's GUID as a length.
-      if (IsErased(image.AsSpan(pos, UefiFvWriter.Alignment))) {
-        pos += UefiFvWriter.Alignment;
-        continue;
-      }
-
-      var size = image[pos + 20] | (image[pos + 21] << 8) | (image[pos + 22] << 16);
-      if (size < UefiFvWriter.FfsHeaderLength || pos + size > fvEnd)
-        throw new InvalidDataException($"Invalid FFS file header at FV offset 0x{pos - fvStart:X}.");
-      var guid = new Guid(image.AsSpan(pos, 16));
-      var type = image[pos + 18];
-      var footprint = UefiFvWriter.Align8(size);
-      result.Add(new Slot(pos, footprint, guid, type));
-      pos += footprint;
-    }
-    return result;
+  private static void EnsureMutable(UefiFvLayout volume) {
+    if (volume.FileSystemGuid != UefiFvConstants.Ffs2Guid && volume.FileSystemGuid != UefiFvConstants.Ffs3Guid)
+      throw new NotSupportedException($"UEFI FV uses unsupported file-system GUID {volume.FileSystemGuid:D}.");
+    if (volume.IsSigned)
+      throw new NotSupportedException("Signed UEFI firmware volumes cannot be modified without re-signing the complete volume.");
   }
 
-  private static int FindErasedRun(byte[] image, int start, int end, int needed) {
-    for (var pos = Align8(start); pos + needed <= end; pos += UefiFvWriter.Alignment) {
-      if (IsErased(image.AsSpan(pos, needed))) return pos;
-    }
+  private static void Refresh(EditorState state)
+    => state.Volume = UefiFvParser.Parse(state.Image, state.Start);
+
+  private static void Finish(EditorState state) {
+    var usedEnd = UefiFvParser.LiveSlots(state.Volume).Select(slot => slot.DataEnd)
+      .DefaultIfEmpty(state.Volume.DataStart).Max();
+    UefiFvParser.WriteUsedSize(state.Image, state.Volume, usedEnd);
+    state.Archive.Position = 0;
+    state.Archive.Write(state.Image);
+    state.Archive.SetLength(state.Image.Length);
+  }
+
+  private static int FindErasedRun(byte[] image, int start, int end, int needed, byte eraseByte) {
+    for (var pos = UefiFvConstants.AlignOffset(start, start); pos + needed <= end; pos += UefiFvWriter.Alignment)
+      if (UefiFvParser.IsErased(image.AsSpan(pos, needed), eraseByte)) return pos;
     return -1;
   }
 
-  private static bool IsErased(ReadOnlySpan<byte> bytes) {
-    foreach (var b in bytes)
-      if (b != 0xFF) return false;
-    return true;
-  }
+  private static void Erase(EditorState state, int offset, int length)
+    => state.Image.AsSpan(offset, length).Fill(state.Volume.EraseByte);
 
-  private static void Write(EditorState state, int offset, ReadOnlySpan<byte> bytes) {
-    bytes.CopyTo(state.Image.AsSpan(offset, bytes.Length));
-    state.Archive.Position = offset;
-    state.Archive.Write(bytes);
+  private sealed class EditorState(Stream archive, byte[] image, int start, UefiFvLayout volume) {
+    public Stream Archive { get; } = archive;
+    public byte[] Image { get; } = image;
+    public int Start { get; } = start;
+    public UefiFvLayout Volume { get; set; } = volume;
   }
-
-  private static void Erase(EditorState state, int offset, int length) {
-    state.Image.AsSpan(offset, length).Fill(0xFF);
-    state.Archive.Position = offset;
-    Span<byte> erased = stackalloc byte[1024];
-    erased.Fill(0xFF);
-    var remaining = length;
-    while (remaining > 0) {
-      var take = Math.Min(remaining, erased.Length);
-      state.Archive.Write(erased[..take]);
-      remaining -= take;
-    }
-  }
-
-  private static int Align8(int value) => (value + 7) & ~7;
-  private sealed record EditorState(Stream Archive, byte[] Image, int FvStart, int DataStart, int FvEnd);
 }
