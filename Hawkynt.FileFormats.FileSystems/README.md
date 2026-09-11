@@ -64,7 +64,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [DMG](https://en.wikipedia.org/wiki/Apple_Disk_Image) | `Dmg` | R/W | — | — | — | — | — | ✅ | own reader + struct-parity tests | — | [Apple disk images](https://developer.apple.com/library/archive/documentation/DeveloperTools/Conceptual/SoftwareDistribution4/Concepts/sd_disk_images.html) |
 | [EnCase EWF (E01)](https://en.wikipedia.org/wiki/EnCase#Expert_Witness_File_Format) | `Ewf` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | EnCase E01 segment chain | [libewf documentation](https://github.com/libyal/libewf/tree/main/documentation) |
 | [Flattened Device Tree Blob](https://en.wikipedia.org/wiki/Devicetree) | `Dtb` | R/W | — | — | — | — | — | ✅ | own reader + struct-parity tests | Flattened Device Tree walked as a pseudo-archive | [Devicetree specification](https://www.devicetree.org/specifications/) |
-| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) | `IntelHex` | WORM | — | — | — | — | — | — | own reader + struct-parity tests | Intel HEX and Motorola S-record, normalised to `firmware.bin` + metadata; the writer takes one payload and the base and start addresses from `metadata.ini` | [Intel HEX](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
+| [Intel HEX](https://en.wikipedia.org/wiki/Intel_HEX) | `IntelHex` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | Intel HEX and Motorola S-record, normalised to `firmware.bin` + metadata; the writer takes one payload and the base and start addresses from `metadata.ini` | [Intel HEX](https://www.keil.com/support/docs/1584/_hlp_hexfile.htm) / [S-record](https://srecord.sourceforge.net/man/man5/srec_motorola.5.html) |
 | [MDF/MDS](https://en.wikipedia.org/wiki/Alcohol_120%25) | `Mdf` | R/W | — | — | — | — | — | ✅ | own reader + struct-parity tests | Sector-image editor | [Alcohol 120%](https://en.wikipedia.org/wiki/Alcohol_120%25) |
 | [Nintendo PartitionFS](https://en.wikipedia.org/wiki/Nintendo_Switch) | `Pfs0` | R/W | ✅ | ✅ rebuild | ✅ | — | — | ✅ | own reader + struct-parity tests | Nintendo Switch PartitionFS | [PFS0 (switchbrew)](https://switchbrew.org/wiki/NCA#PFS0) |
 | [NRG](https://en.wikipedia.org/wiki/Nero_Burning_ROM) | `Nrg` | R/W | — | — | — | — | — | ✅ | own reader + struct-parity tests | Sector-image editor | [Nero Burning ROM](https://en.wikipedia.org/wiki/Nero_Burning_ROM) |
@@ -344,7 +344,7 @@ cwb recover raw.img --mode files --format Jpeg,Png
 If this project saves you time or money, consider supporting its development:
 
 [![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
-[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C)](https://www.paypal.me/hawkynt)
 
 ## 📜 License
 
