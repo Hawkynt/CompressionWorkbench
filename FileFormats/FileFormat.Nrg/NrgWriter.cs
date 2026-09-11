@@ -34,7 +34,8 @@ public sealed record NrgTrackDefinition(NrgTrackMode Mode, byte[] Data) {
 
   /// <summary>
   /// Optional pregap bytes. When supplied they must contain exactly <see cref="PregapSectors"/> sectors,
-  /// or, when <see cref="PregapSectors"/> is zero, determine the pregap length themselves.
+  /// or, when <see cref="PregapSectors"/> is zero, determine the pregap length themselves. Raw framed
+  /// and subchannel modes require explicit bytes because an all-zero sector would not be valid framing.
   /// </summary>
   public byte[]? PregapData { get; init; }
 
@@ -141,15 +142,16 @@ public static class NrgWriter {
   private static List<SessionLayout> WriteTrackData(Stream output, NrgDiscDefinition disc) {
     var sessions = new List<SessionLayout>(disc.Sessions.Count);
     var nextTrackNumber = 1;
-    var programLba = 0;
     var previousLeadOutLba = 0;
 
     for (var sessionIndex = 0; sessionIndex < disc.Sessions.Count; ++sessionIndex) {
       var definition = disc.Sessions[sessionIndex];
+      var firstTrackPregap = GetPregapSectors(definition.Tracks[0], GetSectorSize(definition.Tracks[0].Mode));
       int leadInLba;
+      int programLba;
       if (sessionIndex == 0) {
         leadInLba = -150;
-        programLba = 0;
+        programLba = -firstTrackPregap;
       } else {
         var previousLeadOutLength = sessionIndex == 1 ? FirstLeadOutSectors : LaterLeadOutSectors;
         leadInLba = checked(previousLeadOutLba + previousLeadOutLength);
@@ -219,8 +221,7 @@ public static class NrgWriter {
       Encoding.ASCII.GetBytes(mcn, payload.AsSpan(4, 13));
 
     payload[17] = 0;
-    payload[18] = session.Tracks.Any(static track => IsMode2(track.Definition.Mode)) ? (byte)0x20 : (byte)0x00;
-    payload[19] = 0x01;
+    BinaryPrimitives.WriteUInt16BigEndian(payload.AsSpan(18, 2), GetTocType(session));
     payload[20] = checked((byte)session.Tracks[0].TrackNumber);
     payload[21] = checked((byte)session.Tracks[^1].TrackNumber);
 
@@ -242,6 +243,12 @@ public static class NrgWriter {
     WriteChunk(output, "DAOX"u8, payload);
   }
 
+  private static ushort GetTocType(SessionLayout session) {
+    if (session.Tracks.Any(static track => IsMode2(track.Definition.Mode)))
+      return 0x2001;
+    return session.Tracks.Any(static track => !IsAudio(track.Definition.Mode)) ? (ushort)0x0001 : (ushort)0x0000;
+  }
+
   private static void WriteCueEntry(Span<byte> destination, byte adrCtl, byte track, byte index, int lba) {
     destination[0] = adrCtl;
     destination[1] = track;
@@ -251,7 +258,7 @@ public static class NrgWriter {
   }
 
   private static byte AdrCtl(NrgTrackDefinition track) {
-    var control = track.Mode is NrgTrackMode.Audio or NrgTrackMode.AudioWithSubchannel ? 0x00 : 0x40;
+    var control = IsAudio(track.Mode) ? 0x00 : 0x40;
     if (track.CopyPermitted)
       control |= 0x20;
     return checked((byte)(control | 0x01));
@@ -266,8 +273,11 @@ public static class NrgWriter {
   private static int GetPregapSectors(NrgTrackDefinition track, int sectorSize) {
     if (track.PregapSectors < 0)
       throw new ArgumentOutOfRangeException(nameof(track.PregapSectors), "Pregap sector count cannot be negative.");
-    if (track.PregapData is not { Length: > 0 } bytes)
+    if (track.PregapData is not { Length: > 0 } bytes) {
+      if (track.PregapSectors != 0 && RequiresExplicitPregapData(track.Mode))
+        throw new ArgumentException($"NRG {track.Mode} pregaps require explicit PregapData with valid sector framing.", nameof(track));
       return track.PregapSectors;
+    }
     if (bytes.Length % sectorSize != 0)
       throw new ArgumentException("NRG pregap data must be an integral number of sectors.", nameof(track));
 
@@ -276,6 +286,10 @@ public static class NrgWriter {
       throw new ArgumentException("NRG PregapSectors does not match PregapData length.", nameof(track));
     return fromBytes;
   }
+
+  private static bool RequiresExplicitPregapData(NrgTrackMode mode)
+    => mode is NrgTrackMode.Mode1Raw or NrgTrackMode.Mode2Raw or
+      NrgTrackMode.Mode1RawWithSubchannel or NrgTrackMode.AudioWithSubchannel or NrgTrackMode.Mode2RawWithSubchannel;
 
   private static void ValidateDisc(NrgDiscDefinition disc) {
     if (disc.Sessions is null || disc.Sessions.Count == 0)
@@ -320,11 +334,15 @@ public static class NrgWriter {
       throw new ArgumentException("NRG ISRC must contain exactly 12 printable ASCII characters.", nameof(isrc));
   }
 
+  private static bool IsAudio(NrgTrackMode mode)
+    => mode is NrgTrackMode.Audio or NrgTrackMode.AudioWithSubchannel;
+
   private static bool IsMode2(NrgTrackMode mode)
     => mode is NrgTrackMode.Mode2Form1 or NrgTrackMode.Mode2Form2 or NrgTrackMode.Mode2Raw or NrgTrackMode.Mode2RawWithSubchannel;
 
   private static void WriteZeros(Stream output, long length) {
     Span<byte> zeros = stackalloc byte[4096];
+    zeros.Clear();
     while (length > 0) {
       var count = (int)Math.Min(length, zeros.Length);
       output.Write(zeros[..count]);
