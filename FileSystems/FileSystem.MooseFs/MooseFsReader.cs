@@ -6,110 +6,78 @@ using System.Text;
 namespace FileSystem.MooseFs;
 
 /// <summary>
-/// Partial R/O reader for MooseFS master-metadata images (<c>metadata.mfs</c>).
-/// MooseFS is a fault-tolerant distributed FS — the master server keeps the
-/// namespace + chunk-server topology in a single binary metadata file, while
-/// file data lives on chunk servers. This reader understands the master
-/// metadata's outer envelope:
-/// <list type="bullet">
-///   <item>8-byte ASCII signature (e.g. <c>MFSM 2.0</c>, <c>MFSM 1.6</c>,
-///         <c>MFSM 1.5</c>, <c>MFSM 1.4</c>, <c>MFSM NEW</c>).</item>
-///   <item>For 1.6+ images: two 8-byte big-endian counters
-///         (file-id counter, metadata version) immediately after the signature.</item>
-///   <item>Sequence of sections. Each section: 8-byte ASCII type tag
-///         (<c>SESS 1.0</c>, <c>STAT 1.0</c>, <c>NODE 1.0</c>, <c>EDGE 1.0</c>,
-///         <c>FREE 1.0</c>, <c>XATR 1.0</c>, <c>CHNK 1.0</c>, <c>OPEN 1.0</c>,
-///         <c>FLCK 1.0</c>, <c>QUOT 1.0</c>, <c>ACLS 1.0</c>, …) + 8-byte
-///         big-endian payload length + that many payload bytes.</item>
-///   <item>Final 16-byte terminator <c>[MFS EOF MARKER]</c>.</item>
-/// </list>
-///
-/// <para>
-/// The reader walks the <em>section index</em> only — it does not attempt to
-/// decode NODE / EDGE record bodies, which differ between MooseFS minor
-/// versions and require ground-truth golden samples to validate. NODE/EDGE
-/// would give path tree + inode metadata; CHNK gives chunk-id mappings. None
-/// of those by themselves yield file content — MooseFS data lives on chunk
-/// servers and is only reachable via the live MooseFS protocol. Therefore
-/// the reader exposes:
-/// </para>
-/// <list type="bullet">
-///   <item><c>metadata.ini</c> — human-readable summary of header + section
-///         table (name, payload offset, payload length).</item>
-///   <item><c>moosefs-master.bin</c> — the raw image, byte-for-byte.</item>
-///   <item><c>section_&lt;NAME&gt;.bin</c> — the raw payload bytes of each
-///         section the index walk surfaced (NODE, EDGE, CHNK, …). Useful for
-///         offline forensics; we make no claim about their internal
-///         structure.</item>
-/// </list>
-///
-/// <para>
-/// If section-walk fails (signature past the 8-byte tag is not recognised,
-/// a section length runs past EOF, the EOF marker is missing, …), the
-/// reader falls back to a header-only surface (metadata.ini + raw) and
-/// records the parse failure in <c>metadata.ini</c>'s <c>parse_status</c>
-/// field. This is the honest "we recognise the envelope but couldn't walk
-/// the contents" mode rather than silently inventing entries.
-/// </para>
+/// Partial reader for MooseFS master-metadata images (<c>metadata.mfs</c>).
+/// It understands the versioned outer envelope and section framing, but does
+/// not decode the version-specific NODE / EDGE / CHNK bodies or contact chunk
+/// servers. Consequently all surfaced archive entries are synthetic forensic
+/// views of the metadata image rather than the mounted MooseFS namespace.
 /// </summary>
 public sealed class MooseFsReader : IDisposable {
 
-  /// <summary>MooseFS master metadata 4-byte prefix: ASCII "MFSM".</summary>
+  /// <summary>MooseFS master metadata 4-byte prefix: ASCII <c>MFSM</c>.</summary>
   public static readonly byte[] MasterTag = "MFSM"u8.ToArray();
 
-  /// <summary>16-byte MooseFS end-of-file marker following the last section.</summary>
+  /// <summary>Modern (1.6+) 16-byte MooseFS end-of-file marker.</summary>
   public static readonly byte[] EofMarker = "[MFS EOF MARKER]"u8.ToArray();
 
-  private const int HeaderSize = 8;
-  // After the 8-byte signature, modern (1.6+) images have two BE uint64s
-  // followed by the section stream. Section tag + length = 16 bytes.
-  private const int SectionTagSize = 8;
-  private const int SectionLenSize = 8;
-  // Section payloads can be huge on a real cluster — cap what we'll hold in
-  // memory as a synthetic per-section entry. Larger sections still show up
-  // in metadata.ini's table but their raw payload is not surfaced.
+  private const int SignatureSize = 8;
+  private const int MetadataHeaderSize = 16;
+  private const int SectionHeaderSize = 16;
   private const long MaxInMemorySection = 64L * 1024 * 1024;
 
   private readonly byte[] _data;
   private readonly List<MooseFsEntry> _entries = [];
   private readonly List<SectionEntry> _sections = [];
 
-  /// <summary>Listing of every entry this image surfaces.</summary>
+  /// <summary>Listing of every synthetic entry surfaced from this image.</summary>
   public IReadOnlyList<MooseFsEntry> Entries => _entries;
 
-  /// <summary>Section index walked from the master metadata stream.</summary>
+  /// <summary>Section index walked from section-framed (1.6+) metadata.</summary>
   public IReadOnlyList<SectionEntry> Sections => _sections;
 
-  /// <summary>The 8-byte ASCII signature at offset 0 (e.g. <c>"MFSM 2.0"</c>).</summary>
+  /// <summary>The 8-byte ASCII signature, for example <c>MFSM 2.0</c>.</summary>
   public string Signature { get; private set; } = "";
 
-  /// <summary>True when the 4-byte <c>MFSM</c> tag was present at offset 0.</summary>
+  /// <summary>True once the <c>MFSM</c> prefix has been verified.</summary>
   public bool ValidHeader { get; private set; }
 
   /// <summary>
-  /// File-id counter from the modern (1.6+) post-signature header, or
-  /// <c>null</c> when the image is too short or pre-1.6.
+  /// Packed file-format version (<c>0x16</c> for 1.6, <c>0x20</c> for 2.0),
+  /// or <c>null</c> for the special <c>MFSM NEW</c> bootstrap image.
   /// </summary>
-  public ulong? FileIdCounter { get; private set; }
+  public byte? FileFormatVersion { get; private set; }
+
+  /// <summary>Whether this is MooseFS's official eight-byte empty bootstrap image.</summary>
+  public bool IsEmptyBootstrap { get; private set; }
 
   /// <summary>
-  /// Metadata version counter from the modern (1.6+) post-signature header,
-  /// or <c>null</c> when the image is too short or pre-1.6.
+  /// Maximum node id from the pre-2.0 metadata header. Not present in 2.0+.
   /// </summary>
+  public uint? MaxNodeId { get; private set; }
+
+  /// <summary>Metadata/changelog version stored in the master metadata header.</summary>
   public ulong? MetadataVersion { get; private set; }
 
   /// <summary>
-  /// Human-readable description of how the section walk terminated:
-  /// <c>"ok"</c> (full walk + EOF marker), <c>"truncated"</c> (section walk
-  /// stopped before EOF marker), <c>"header-only"</c> (image too short for
-  /// any sections), or <c>"unsupported-header"</c> (no MFSM tag).
+  /// Next session id from the pre-2.0 metadata header. Not present in 2.0+.
+  /// </summary>
+  public uint? NextSessionId { get; private set; }
+
+  /// <summary>Metadata instance id stored by 2.0+ images.</summary>
+  public ulong? MetaId { get; private set; }
+
+  /// <summary>The exact image size consumed by this reader.</summary>
+  public long ImageSize => _data.LongLength;
+
+  /// <summary>
+  /// Human-readable parse result: <c>ok</c>, <c>header-only</c>,
+  /// <c>truncated</c>, <c>trailing-data</c>, or <c>unsupported-header</c>.
   /// </summary>
   public string ParseStatus { get; private set; } = "unsupported-header";
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="MooseFsReader"/>.
-  /// </summary>
+  /// <summary>Initializes a reader over one MooseFS metadata image.</summary>
   public MooseFsReader(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -117,33 +85,117 @@ public sealed class MooseFsReader : IDisposable {
   }
 
   private void Parse() {
-    if (_data.Length < HeaderSize)
-      throw new InvalidDataException("MooseFS: file too small for master metadata header.");
+    if (_data.Length < SignatureSize)
+      throw new InvalidDataException("MooseFS: file too small for master metadata signature.");
 
-    if (!_data.AsSpan(0, 4).SequenceEqual(MasterTag))
+    if (!_data.AsSpan(0, MasterTag.Length).SequenceEqual(MasterTag))
       throw new InvalidDataException("MooseFS: missing 'MFSM' tag at offset 0.");
 
     this.ValidHeader = true;
-    this.Signature = Encoding.ASCII.GetString(_data, 0, 8).TrimEnd('\0');
+    this.Signature = Encoding.ASCII.GetString(_data, 0, SignatureSize);
 
-    // Modern (1.6+) images carry two BE uint64s right after the 8-byte
-    // signature. Older 1.4/1.5 images stream sections immediately. We pull
-    // the counters when the image is long enough; downstream code does not
-    // assume they're meaningful for non-1.6+ signatures.
-    if (_data.Length >= HeaderSize + 16) {
-      this.FileIdCounter = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(HeaderSize, 8));
-      this.MetadataVersion = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(HeaderSize + 8, 8));
+    if (this.Signature == "MFSM NEW") {
+      this.IsEmptyBootstrap = true;
+      this.ParseStatus = _data.Length == SignatureSize ? "ok" : "trailing-data";
+      BuildEntries();
+      return;
     }
 
-    WalkSections();
+    if (!TryParseFileFormatVersion(_data.AsSpan(0, SignatureSize), out var fileVersion)) {
+      this.ParseStatus = "unsupported-header";
+      BuildEntries();
+      return;
+    }
 
-    var meta = BuildMetadata();
+    this.FileFormatVersion = fileVersion;
+    if (_data.Length < SignatureSize + MetadataHeaderSize) {
+      this.ParseStatus = "header-only";
+      BuildEntries();
+      return;
+    }
+
+    ParseMetadataHeader(fileVersion);
+
+    if (fileVersion < 0x16)
+      ParseLegacyBody();
+    else
+      WalkSections();
+
+    BuildEntries();
+  }
+
+  private void ParseMetadataHeader(byte fileVersion) {
+    var header = _data.AsSpan(SignatureSize, MetadataHeaderSize);
+    if (fileVersion >= 0x20) {
+      this.MetadataVersion = BinaryPrimitives.ReadUInt64BigEndian(header[..8]);
+      this.MetaId = BinaryPrimitives.ReadUInt64BigEndian(header[8..]);
+      return;
+    }
+
+    this.MaxNodeId = BinaryPrimitives.ReadUInt32BigEndian(header[..4]);
+    this.MetadataVersion = BinaryPrimitives.ReadUInt64BigEndian(header.Slice(4, 8));
+    this.NextSessionId = BinaryPrimitives.ReadUInt32BigEndian(header[12..]);
+  }
+
+  private void ParseLegacyBody() {
+    // Before metadata format 1.6 MooseFS did not wrap NODE/EDGE/etc. in the
+    // modern 16-byte section envelope. The authoritative checker only relies
+    // on the final 16 zero bytes, so preserve the whole legacy body as opaque
+    // metadata instead of guessing record boundaries.
+    var minimumLength = SignatureSize + MetadataHeaderSize + 16;
+    if (_data.Length < minimumLength) {
+      this.ParseStatus = "truncated";
+      return;
+    }
+
+    this.ParseStatus = _data.AsSpan(_data.Length - 16, 16).IndexOfAnyExcept((byte)0) < 0
+      ? "ok"
+      : "truncated";
+  }
+
+  private void WalkSections() {
+    var offset = SignatureSize + MetadataHeaderSize;
+    while (offset + SectionHeaderSize <= _data.Length) {
+      if (_data.AsSpan(offset, EofMarker.Length).SequenceEqual(EofMarker)) {
+        this.ParseStatus = offset + EofMarker.Length == _data.Length ? "ok" : "trailing-data";
+        return;
+      }
+
+      var tagBytes = _data.AsSpan(offset, 8);
+      if (!IsPlausibleSectionTag(tagBytes)) {
+        this.ParseStatus = "truncated";
+        return;
+      }
+
+      var length64 = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(offset + 8, 8));
+      if (length64 > long.MaxValue) {
+        this.ParseStatus = "truncated";
+        return;
+      }
+
+      var length = (long)length64;
+      var payloadOffset = (long)offset + SectionHeaderSize;
+      if (length > _data.LongLength - payloadOffset) {
+        this.ParseStatus = "truncated";
+        return;
+      }
+
+      var tag = Encoding.ASCII.GetString(tagBytes);
+      _sections.Add(new SectionEntry(tag, payloadOffset, length));
+      offset = checked((int)(payloadOffset + length));
+    }
+
+    this.ParseStatus = "truncated";
+  }
+
+  private void BuildEntries() {
+    var metadata = BuildMetadata();
     _entries.Add(new MooseFsEntry {
       Name = "metadata.ini",
-      Size = meta.Length,
+      Size = metadata.Length,
       IsDirectory = false,
       Offset = 0,
-      Data = meta,
+      Data = metadata,
     });
     _entries.Add(new MooseFsEntry {
       Name = "moosefs-master.bin",
@@ -153,109 +205,49 @@ public sealed class MooseFsReader : IDisposable {
       Data = _data,
     });
 
-    foreach (var s in _sections) {
-      // Bound the per-section payload we materialise so a 4-GB CHNK section
-      // does not allocate 4 GB of synthetic-entry buffer. The section still
-      // appears in metadata.ini's table — we just refuse to mirror the
-      // payload as a separate entry. The full raw image stays accessible
-      // via moosefs-master.bin.
-      if (s.Length <= 0 || s.Length > MaxInMemorySection)
+    foreach (var section in _sections) {
+      if (section.Length <= 0 || section.Length > MaxInMemorySection)
         continue;
-      // Defensive: the walker already bounds Offset+Length to _data.Length,
-      // but re-check before slicing to guard against any future refactor.
-      if (s.Offset < 0 || s.Offset + s.Length > _data.Length)
+      if (section.Offset < 0 || section.Offset + section.Length > _data.LongLength)
         continue;
-      var payload = _data.AsSpan((int)s.Offset, (int)s.Length).ToArray();
+
+      var payload = _data.AsSpan((int)section.Offset, (int)section.Length).ToArray();
       _entries.Add(new MooseFsEntry {
-        Name = $"section_{SanitiseSectionName(s.Tag)}.bin",
+        Name = $"section_{SanitiseSectionName(section.Tag)}.bin",
         Size = payload.Length,
         IsDirectory = false,
-        Offset = s.Offset,
+        Offset = section.Offset,
         Data = payload,
       });
     }
   }
 
-  private void WalkSections() {
-    // Section stream begins after signature for 1.4/1.5, after signature + 16
-    // counter bytes for 1.6+. We pick the offset by checking signature
-    // version: anything other than the 1.4/1.5 strings gets the modern
-    // offset. This still correctly rejects malformed images because the
-    // first section tag must be all-ASCII printable.
-    var sectionStart = HeaderSize;
-    if (this.Signature is not ("MFSM 1.4" or "MFSM 1.5") && _data.Length >= HeaderSize + 16)
-      sectionStart = HeaderSize + 16;
+  private static bool TryParseFileFormatVersion(ReadOnlySpan<byte> signature, out byte version) {
+    version = 0;
+    if (signature.Length != SignatureSize
+        || !signature[..5].SequenceEqual("MFSM "u8)
+        || signature[5] is < (byte)'1' or > (byte)'9'
+        || signature[6] != (byte)'.'
+        || signature[7] is < (byte)'0' or > (byte)'9')
+      return false;
 
-    if (_data.Length < sectionStart + SectionTagSize + SectionLenSize) {
-      this.ParseStatus = "header-only";
-      return;
-    }
-
-    var offset = sectionStart;
-    while (offset + SectionTagSize + SectionLenSize <= _data.Length) {
-      // EOF marker is 16 bytes [MFS EOF MARKER] and is NOT followed by a
-      // length field — once we see it, the walk is complete.
-      if (offset + EofMarker.Length <= _data.Length
-          && _data.AsSpan(offset, EofMarker.Length).SequenceEqual(EofMarker)) {
-        this.ParseStatus = "ok";
-        return;
-      }
-
-      var tagBytes = _data.AsSpan(offset, SectionTagSize);
-      if (!IsPlausibleSectionTag(tagBytes)) {
-        // Section walk derailed. Keep what we have, mark truncated. We do
-        // not throw — header-level surfaces remain useful even if section
-        // walk failed (older / future MooseFS versions, partially-written
-        // images, dump tools that strip framing, …).
-        this.ParseStatus = "truncated";
-        return;
-      }
-      var tag = Encoding.ASCII.GetString(tagBytes).TrimEnd();
-      var lenU64 = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(offset + SectionTagSize, SectionLenSize));
-      // A single section larger than long.MaxValue would mean the image is
-      // pathological or this isn't really a section header — treat as walk
-      // failure rather than overflowing int math.
-      if (lenU64 > long.MaxValue) {
-        this.ParseStatus = "truncated";
-        return;
-      }
-      var len = (long)lenU64;
-      var payloadOffset = (long)offset + SectionTagSize + SectionLenSize;
-      if (payloadOffset + len > _data.Length) {
-        // Section claims more bytes than the image has — truncated dump or
-        // bogus length. Record what we got and stop.
-        this.ParseStatus = "truncated";
-        return;
-      }
-
-      _sections.Add(new SectionEntry(tag, payloadOffset, len));
-      offset = (int)(payloadOffset + len);
-    }
-
-    // Walked past the last possible section header but never saw the EOF
-    // marker — image is truncated. The accumulated sections are still real.
-    this.ParseStatus = "truncated";
-  }
-
-  private static bool IsPlausibleSectionTag(ReadOnlySpan<byte> tagBytes) {
-    // A valid MooseFS section tag is 8 ASCII bytes: 4-char family
-    // ("SESS", "NODE", "EDGE", "CHNK", "FREE", "XATR", "STAT", "OPEN",
-    // "FLCK", "QUOT", "ACLS", …), a space, then a version string like
-    // "1.0" or "2.0". We sanity-check that every byte is printable ASCII —
-    // this rejects random binary that just happens to be at the right
-    // offset without locking us to a fixed family allow-list (MooseFS
-    // adds new section types between minor versions).
-    foreach (var b in tagBytes)
-      if (b is < 0x20 or > 0x7E)
-        return false;
+    version = (byte)(((signature[5] - (byte)'0') << 4) | (signature[7] - (byte)'0'));
     return true;
   }
 
+  private static bool IsPlausibleSectionTag(ReadOnlySpan<byte> tag) {
+    if (tag.Length != 8 || tag[4] != (byte)' ' || tag[6] != (byte)'.')
+      return false;
+
+    for (var i = 0; i < 4; ++i)
+      if (tag[i] is not (>= (byte)'A' and <= (byte)'Z') and not (>= (byte)'0' and <= (byte)'9'))
+        return false;
+
+    return tag[5] is >= (byte)'0' and <= (byte)'9'
+        && tag[7] is >= (byte)'0' and <= (byte)'9';
+  }
+
   private static string SanitiseSectionName(string tag) {
-    // Section tags include a space ("NODE 1.0") which makes for awkward
-    // file names. Collapse whitespace runs to a single underscore and
-    // drop any non-alphanumeric tail so the synthetic entry names stay
-    // POSIX-portable and round-trip through Extract → WriteFile.
     var sb = new StringBuilder(tag.Length);
     foreach (var c in tag) {
       if (char.IsLetterOrDigit(c))
@@ -263,8 +255,8 @@ public sealed class MooseFsReader : IDisposable {
       else if (sb.Length > 0 && sb[^1] != '_')
         sb.Append('_');
     }
-    var s = sb.ToString().TrimEnd('_');
-    return s.Length == 0 ? "unnamed" : s;
+    var result = sb.ToString().TrimEnd('_');
+    return result.Length == 0 ? "unnamed" : result;
   }
 
   private byte[] BuildMetadata() {
@@ -275,37 +267,42 @@ public sealed class MooseFsReader : IDisposable {
     bldr.Append("magic_tag=MFSM\n");
     bldr.Append("magic_offset=0\n");
     bldr.Append(CultureInfo.InvariantCulture, $"image_size={_data.Length}\n");
-    if (this.FileIdCounter.HasValue)
-      bldr.Append(CultureInfo.InvariantCulture, $"file_id_counter={this.FileIdCounter.Value}\n");
+    if (this.IsEmptyBootstrap)
+      bldr.Append("empty_bootstrap=true\n");
+    if (this.FileFormatVersion is byte version)
+      bldr.Append(CultureInfo.InvariantCulture,
+        $"file_format_version={version >> 4}.{version & 0x0F}\n");
+    if (this.MaxNodeId.HasValue)
+      bldr.Append(CultureInfo.InvariantCulture, $"max_node_id={this.MaxNodeId.Value}\n");
     if (this.MetadataVersion.HasValue)
       bldr.Append(CultureInfo.InvariantCulture, $"metadata_version={this.MetadataVersion.Value}\n");
+    if (this.NextSessionId.HasValue)
+      bldr.Append(CultureInfo.InvariantCulture, $"next_session_id={this.NextSessionId.Value}\n");
+    if (this.MetaId.HasValue)
+      bldr.Append(CultureInfo.InvariantCulture, $"meta_id={this.MetaId.Value}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"section_count={_sections.Count}\n");
-    for (var i = 0; i < _sections.Count; i++) {
-      var s = _sections[i];
+    for (var i = 0; i < _sections.Count; ++i) {
+      var section = _sections[i];
       bldr.Append(CultureInfo.InvariantCulture,
-        $"section[{i}]={s.Tag} offset={s.Offset} length={s.Length}\n");
+        $"section[{i}]={section.Tag} offset={section.Offset} length={section.Length}\n");
     }
-    bldr.Append("note=Partial R/O — outer envelope (signature + section index) ");
-    bldr.Append("only. NODE/EDGE/CHNK body decoding is version-specific and ");
-    bldr.Append("requires golden samples to validate honestly. File content ");
-    bldr.Append("lives on chunk servers and is not reachable from this image.\n");
+    bldr.Append("note=Partial metadata-image view only. NODE/EDGE/CHNK body decoding is version-specific; ");
+    bldr.Append("file content lives on chunk servers and is not reachable from metadata.mfs alone.\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  /// <summary>Returns the bytes that back the given entry (in-memory).</summary>
+  /// <summary>Returns the bytes backing a surfaced synthetic entry.</summary>
   public byte[] Extract(MooseFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
+  /// <summary>Releases resources held by this instance.</summary>
   public void Dispose() { }
 
-  /// <summary>One walked section from the master metadata stream.</summary>
-  /// <param name="Tag">The 8-byte ASCII tag (e.g. <c>"NODE 1.0"</c>), trimmed.</param>
-  /// <param name="Offset">Byte offset of the section payload (after the 16-byte tag+length).</param>
-  /// <param name="Length">Length of the section payload in bytes.</param>
+  /// <summary>One walked section from a 1.6+ master metadata stream.</summary>
+  /// <param name="Tag">Eight-byte section tag, for example <c>NODE 1.0</c>.</param>
+  /// <param name="Offset">Byte offset of the section payload.</param>
+  /// <param name="Length">Payload length in bytes.</param>
   public readonly record struct SectionEntry(string Tag, long Offset, long Length);
 }
