@@ -45,7 +45,7 @@ public sealed class Qcow2Writer {
 
     var virtualSize = (long)data.Length;
     var guestClusterCount = checked((int)((virtualSize + ClusterSize - 1) / ClusterSize));
-    var l1Size = (guestClusterCount + L2EntriesPerCluster - 1) / L2EntriesPerCluster;
+    var l1Size = Math.Max(1, (guestClusterCount + L2EntriesPerCluster - 1) / L2EntriesPerCluster);
     if (l1Size > L2EntriesPerCluster)
       throw new NotSupportedException("QCOW2 byte-array writer requires more than one L1 table cluster.");
 
