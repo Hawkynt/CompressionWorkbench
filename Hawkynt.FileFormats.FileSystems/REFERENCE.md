@@ -8435,57 +8435,57 @@ Minimal but spec-keyed writer for OS/2 JFS1 (the original IBM JFS that shipped w
 
 #### `JuiceFsEntry`
 
-Represents a juice fs entry.
+Represents one inspectable part of a JuiceFS metadata backup.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `JuiceFsEntry` | `JuiceFsEntry()` |  |
-| `Data` | `byte[] Data { get; init; }` | Gets or sets the data. |
-| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether is directory. |
-| `Name` | `string Name { get; init; }` | Gets or sets the name. |
-| `Offset` | `long Offset { get; init; }` | Gets or sets the offset. |
-| `Size` | `long Size { get; init; }` | Gets or sets the size. |
+| `Data` | `byte[] Data { get; init; }` | Gets generated entry data. Source-backed entries leave this empty. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | Gets a value indicating whether the entry is a directory. |
+| `Name` | `string Name { get; init; }` | Gets the entry name. |
+| `Offset` | `long Offset { get; init; }` | Gets the byte offset inside the original backup when `UsesSourceData` is true. |
+| `Size` | `long Size { get; init; }` | Gets the logical entry size. |
 
 #### `JuiceFsFormatDescriptor`
 
-Stage 0 detection-only descriptor for JuiceFS artefacts. JuiceFS has no standalone on-disk image format: a volume is the combination of an external metadata engine (Redis / MySQL / TiKV / SQLite / PostgreSQL / etcd / FoundationDB / BadgerDB) plus chunks living in an S3-compatible object store. None of these surfaces are resolvable from a single local file, so R/O extraction is genuinely impossible without those external endpoints; staying Stage 0 is the honest treatment. Surfaces only a synthetic `metadata.ini` and the raw image bytes; no real file-walk is attempted. References: `https://juicefs.com` — official JuiceFS site and architecture documentation (metadata engine + object-store chunks)`https://github.com/juicedata/juicefs` — canonical source
+Descriptor for portable JuiceFS metadata backups produced by `juicefs dump` (JSON) and `juicefs dump --binary` (v1.3+).
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `JuiceFsFormatDescriptor` | `JuiceFsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the supported archive capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets compound extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
+| `Description` | `string Description { get; }` | Gets a description of the supported JuiceFS artefacts. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets recognised extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the algorithm family. |
+| `Id` | `string Id { get; }` | Gets the format id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets conservative JSON signatures. Binary backups deliberately have no offset-zero signature: their identifying magic is in the footer. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets storage methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts inspectable metadata artefacts from the supplied backup. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists inspectable metadata artefacts from the supplied backup. |
 
 #### `JuiceFsReader`
 
-Stage 0 detection-only reader for JuiceFS artefacts. JuiceFS is a POSIX-compatible distributed FS with NO standalone on-disk image format: a volume is the combination of an external metadata engine (Redis / MySQL / TiKV / SQLite / PostgreSQL / etcd / FoundationDB / BadgerDB) and chunks living in S3-compatible object storage (S3 / GCS / MinIO / OSS / OBS / …). Real artefacts in the wild: `juicefs dump` JSON: a plain JSON document starting with `{"Setting":{`; no offset-0 magic.`juicefs dump --binary` (v1.3+): protobuf segments, ends with a 4-byte big-endian BakEOS marker `0x00747083` followed by a protobuf `pb.Footer` and an 8-byte big-endian footer-length trailer (juicedata/juicefs `pkg/meta/backup.go`, `BakMagic = 0x747083`).SQLite metadata backend: a standard SQLite database (`"SQLite format 3\0"`) containing `jfs_node`, `jfs_edge`, `jfs_chunk`, `jfs_setting` tables. Filesystem listing without object-store access would still extract zero bytes for every file. This reader recognises a wrapper-convention tag (ASCII `"JuiceFS"` at offset 0) for surfacing detection only — real JuiceFS files do NOT carry that tag. Even if they did, R/O extraction would still be impossible because (a) inode → chunk-id resolution lives in the metadata engine and (b) chunk bytes live behind an object-store endpoint. Returning empty / zero bytes from `Extract()` would be dishonest; instead we surface the raw image and a self-describing `metadata.ini` that explains why real extraction is structurally impossible.
+Reads portable JuiceFS metadata backups produced by `juicefs dump`. JSON tree dumps and the v1.3+ segmented protobuf encoding are supported.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `JuiceFsReader` | `JuiceFsReader(Stream stream)` | Initializes a new instance of `JuiceFsReader`. |
-| `BakMagic` | `const uint BakMagic` | Real JuiceFS binary-backup magic (BakMagic, juicefs 1.3+). Stored big-endian as the BakEOS marker just before the protobuf footer. Source: juicedata/juicefs pkg/meta/backup.go. |
-| `DumpTag` | `static readonly byte[] DumpTag` | Wrapper-convention detection tag: ASCII "JuiceFS" (7 bytes). NOTE: this is NOT a real JuiceFS signature. Real binary backups store BakMagic 0x00747083 (4 bytes BE) in the EOS marker + protobuf footer at end-of-file; JSON dumps start with '{'; the SQLite backend is a standard SQLite database. |
-| `Entries` | `IReadOnlyList<JuiceFsEntry> Entries { get; }` | Gets the entries. |
-| `TrailingWord` | `uint TrailingWord { get; }` | Gets or sets the trailing word. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(JuiceFsEntry entry)` | Decodes the supplied input. |
+| `JuiceFsReader` | `JuiceFsReader(Stream stream)` | Initializes a reader over a JuiceFS metadata backup. |
+| `BakMagic` | `const uint BakMagic` | Canonical binary-backup magic / end-of-segments marker. |
+| `DumpTag` | `static readonly byte[] DumpTag` | Legacy synthetic tag retained for source compatibility. Real JuiceFS metadata backups do not carry this marker and the reader does not use it. |
+| `Entries` | `IReadOnlyList<JuiceFsEntry> Entries { get; }` | Gets the inspectable entries exposed from the backup. |
+| `TrailingWord` | `uint TrailingWord { get; }` | Legacy compatibility property. Real metadata backups have no offset-eight wrapper word, so this remains zero. |
+| `ValidHeader` | `bool ValidHeader { get; }` | Gets whether the supplied stream parsed as a real JuiceFS metadata backup. |
+| `Dispose` | `void Dispose()` | Releases resources held by this reader. |
+| `Extract` | `byte[] Extract(JuiceFsEntry entry)` | Extracts one metadata-backup entry. |
 
 ### Namespace `FileSystem.Lif`
 
