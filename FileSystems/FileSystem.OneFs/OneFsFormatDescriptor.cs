@@ -16,6 +16,14 @@ namespace FileSystem.OneFs;
 /// to reconstruct arbitrary files or safely rewrite their allocation metadata.
 /// </para>
 /// <para>
+/// The public architecture does expose stable physical geometry: data disks are
+/// divided into 32 MiB cylinder groups containing 8 KiB filesystem blocks, with
+/// an allocation bitmap per group. This descriptor reports that geometry through
+/// <see cref="ILayoutOptimizable"/> but deliberately inherits the interface's
+/// refusing rebuild default. Analysis is therefore available without advertising
+/// the repository's Layout or Compact maintenance verbs.
+/// </para>
+/// <para>
 /// No Dell publication found during the implementation review defines the
 /// historical <c>"OneFS"</c> or <c>"ONEF"</c> literals as fixed offset-zero raw
 /// media signatures. Advertising those bytes caused unrelated files beginning
@@ -24,26 +32,29 @@ namespace FileSystem.OneFs;
 /// </para>
 /// <para>
 /// R/W and the destructive maintenance verbs remain deliberately unavailable.
-/// Implementing add/remove, purge, wipe, relocation/defrag, shrink or relayout
-/// without the raw allocation, protection and transaction formats would corrupt
-/// media while satisfying only this library's own synthetic tests. The reader
-/// instead exposes metadata describing the known architecture plus the original
-/// image as a byte-exact bounded stream.
+/// Safe OneFS writes use distributed two-phase commit and per-node journals;
+/// modifying allocation or tree state on one isolated drive would bypass that
+/// protocol. The reader instead exposes documented geometry and architecture plus
+/// the original image as a byte-exact bounded stream.
 /// </para>
 /// <para>
 /// Clean-room references:
 /// <list type="bullet">
 ///   <item><description><c>https://infohub.delltechnologies.com/en-us/p/onefs-metadata/</c>
 ///     — LIN tree, inode mirrors, IFM/DFM B+ trees and protection metadata.</description></item>
-///   <item><description><c>https://infohub.delltechnologies.com/en-nz/l/dell-powerscale-onefs-technical-overview/file-system-structure/1/</c>
-///     — distributed UFS-based filesystem and global namespace.</description></item>
-///   <item><description>Dell PowerScale OneFS Technical Specifications Guide —
-///     fixed 8 KiB filesystem block size.</description></item>
+///   <item><description>Dell, "High Availability and Data Protection with Dell
+///     PowerScale Scale-Out NAS" — 32 MiB cylinder groups, 8 KiB blocks,
+///     per-group allocation bitmaps and BAM/LBM architecture.</description></item>
+///   <item><description>Dell Info Hub, OneFS data inlining / data reduction —
+///     fixed-address superblocks and the superblock → LIN-master chain.</description></item>
+///   <item><description>Isilon patents US8214400B2 and US7937421B2 — distributed
+///     mirrored index-tree and BAM/LBM behavioural model. Patent material is used
+///     only as an implementation-independent behavioural oracle.</description></item>
 /// </list>
 /// No external implementation code is copied or translated.
 /// </para>
 /// </remarks>
-public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, ILayoutOptimizable {
 
   /// <summary>Gets the registry id.</summary>
   public string Id => "OneFs";
@@ -84,12 +95,13 @@ public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <summary>Gets a description of the intentionally limited inspection surface.</summary>
   public string Description =>
-    "Dell PowerScale / Isilon OneFS — opaque single-image inspection only. " +
-    "OneFS presents a cluster-wide namespace: LIN metadata resolves to mirrored node/drive/block addresses " +
-    "and file metatrees resolve data through distributed protection groups. Dell documents OneFS as UFS-based, " +
-    "but does not publish a standalone raw-drive layout or fixed offset-zero media magic sufficient for offline parsing. " +
-    "The historic 'OneFS'/'ONEF' signature claim was therefore removed. R/W, purge, wipe, defrag, shrink and relayout " +
-    "remain blocked until the raw allocation/protection/transaction format can be proven against a real cluster or checker.";
+    "Dell PowerScale / Isilon OneFS — conservative single-image inspection with documented geometry analysis. " +
+    "OneFS data disks use 8 KiB blocks in 32 MiB cylinder groups, while the namespace and file metatrees resolve " +
+    "through mirrored node/drive/block addresses and distributed protection groups. Fixed-address superblocks point " +
+    "toward the LIN master, but Dell does not publish the byte-level superblock/tree/allocation serialization or an " +
+    "authoritative offset-zero media magic. The historic 'OneFS'/'ONEF' signature claim was therefore removed. " +
+    "R/W, purge, wipe, defrag, shrink and layout rebuild remain blocked until allocation/protection/journal updates can " +
+    "be proven against a real cluster or independent checker.";
 
   /// <summary>Lists the two conservative inspection entries without reading the image payload.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -122,5 +134,29 @@ public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       string.Equals(candidate.Name, entryName, StringComparison.Ordinal))
       ?? throw new FileNotFoundException($"OneFS entry not found: {entryName}", entryName);
     return reader.OpenEntry(entry);
+  }
+
+  /// <summary>
+  /// Reports the fixed physical geometry documented by Dell without reading or
+  /// interpreting proprietary allocation metadata.
+  /// </summary>
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanSeek)
+      throw new ArgumentException("OneFS layout analysis requires a seekable stream.", nameof(image));
+
+    return new LayoutAnalysis {
+      ImageSize = image.Length,
+      CurrentUnitSize = OneFsReader.PhysicalBlockSize,
+      CurrentSlackBytes = 0,
+      OptimalUnitSize = OneFsReader.PhysicalBlockSize,
+      OptimalSlackBytes = 0,
+      Notes = [
+        $"Documented fixed filesystem block size: {OneFsReader.PhysicalBlockSize} bytes.",
+        $"Documented cylinder-group size: {OneFsReader.CylinderGroupSize} bytes ({OneFsReader.BlocksPerCylinderGroup} blocks).",
+        "Each cylinder group has an allocation bitmap, but its raw location/encoding is not public; slack/free-space savings are therefore unknown and intentionally reported as zero.",
+        "Analysis only: rebuilding or patching OneFS geometry is unsupported and the Layout/Compact maintenance verbs remain unavailable.",
+      ],
+    };
   }
 }
