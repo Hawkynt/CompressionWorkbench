@@ -119,7 +119,7 @@ public class CdiTests {
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Create_WritesV35Descriptor_AndRoundTrips() {
+  public void Create_WritesRealV35TrackDescriptor_AndRoundTrips() {
     var payload = "discjuggler-payload"u8.ToArray();
     var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
     using var ms = new MemoryStream();
@@ -131,45 +131,44 @@ public class CdiTests {
     var bytes = ms.ToArray();
     var version = BitConverter.ToUInt32(bytes, bytes.Length - 8);
     var descriptorLength = BitConverter.ToUInt32(bytes, bytes.Length - 4);
-    var descriptorOffset = bytes.Length - descriptorLength;
-    var descriptorStart = checked((int)descriptorOffset);
-    var sectorCount = checked((uint)(descriptorOffset / 2048));
-    byte[] trackMarker = [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF];
+    var descriptorStart = checked(bytes.Length - (int)descriptorLength);
+    byte[] logicalTrackMarker = [
+      0xFF, 0xFF, 0x00, 0x00, 0x01, 0x00,
+      0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+    ];
 
     Assert.Multiple(() => {
       Assert.That(version, Is.EqualTo(0x80000006u));
-      Assert.That(descriptorLength, Is.EqualTo(175u));
-      Assert.That(descriptorOffset, Is.GreaterThan(0));
-      Assert.That(BitConverter.ToUInt16(bytes, descriptorStart + 0), Is.EqualTo(1), "session count");
-      Assert.That(BitConverter.ToUInt16(bytes, descriptorStart + 2), Is.EqualTo(1), "track count");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 4), Is.Zero, "extended preamble selector");
-      Assert.That(bytes.AsSpan(descriptorStart + 8, 10).ToArray(), Is.EqualTo(trackMarker), "track marker 1");
-      Assert.That(bytes.AsSpan(descriptorStart + 18, 10).ToArray(), Is.EqualTo(trackMarker), "track marker 2");
-      Assert.That(bytes[descriptorStart + 32], Is.Zero, "embedded filename length");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 52), Is.Zero, "DJ4 extension selector");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 58), Is.Zero, "pregap sectors");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 62), Is.EqualTo(sectorCount), "track length");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 72), Is.EqualTo(1u), "Mode 1");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 88), Is.Zero, "start LBA");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 92), Is.EqualTo(sectorCount), "total track length");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 112), Is.Zero, "2048-byte sector selector");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 150), Is.Zero, "optional extension selector");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 167), Is.EqualTo(0x80000006u), "trailer version");
-      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 171), Is.EqualTo(175u), "trailer descriptor length");
+      Assert.That(descriptorLength, Is.EqualTo(366u));
+      Assert.That(bytes[descriptorStart], Is.EqualTo(1), "session count");
+      Assert.That(BitConverter.ToUInt16(bytes, descriptorStart + 2), Is.EqualTo(1), "session 1 track count");
+      Assert.That(bytes.AsSpan(descriptorStart + 16, logicalTrackMarker.Length).ToArray(),
+        Is.EqualTo(logicalTrackMarker), "logical Track/Disc Header signature");
     });
-
-    ms.Position = 0;
-    var geometry = FileFormat.Cdi.CdiInPlaceModifier.DetectGeometry(ms);
-    Assert.That(geometry.DataAreaLength, Is.EqualTo(descriptorOffset));
 
     ms.Position = 0;
     using var reader = new FileFormat.Cdi.CdiReader(ms, leaveOpen: true);
-    var file = reader.Entries.FirstOrDefault(entry => !entry.IsDirectory && entry.Name.Equals("DATA.BIN", StringComparison.OrdinalIgnoreCase));
-    Assert.That(file, Is.Not.Null);
+    var track = reader.Tracks.Single();
+    var file = reader.Entries.FirstOrDefault(entry =>
+      !entry.IsDirectory && entry.Name.Equals("DATA.BIN", StringComparison.OrdinalIgnoreCase));
+
     Assert.Multiple(() => {
       Assert.That(reader.CdiVersion, Is.EqualTo(0x80000006u));
+      Assert.That(reader.SessionCount, Is.EqualTo(1));
+      Assert.That(track.Mode, Is.EqualTo(FileFormat.Cdi.CdiTrackMode.Mode1));
+      Assert.That(track.ReadMode, Is.EqualTo(FileFormat.Cdi.CdiReadMode.Mode1_2048));
+      Assert.That(track.PregapSectors, Is.EqualTo(150));
+      Assert.That(track.StoredSectorSize, Is.EqualTo(2048));
+      Assert.That(track.FileOffset, Is.Zero);
+      Assert.That(track.DataOffset, Is.EqualTo(150L * 2048));
+      Assert.That(reader.ReadTrackSector(track, -1), Is.EqualTo(new byte[2048]), "pregap sector");
+      Assert.That(reader.ActiveDataTrack, Is.EqualTo(track));
+      Assert.That(file, Is.Not.Null);
       Assert.That(reader.Extract(file!), Is.EqualTo(payload));
     });
+
+    ms.Position = 0;
+    Assert.Throws<NotSupportedException>(() => _ = FileFormat.Cdi.CdiInPlaceModifier.DetectGeometry(ms));
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
