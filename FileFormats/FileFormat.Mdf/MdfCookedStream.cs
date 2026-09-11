@@ -134,6 +134,11 @@ internal static class MdfIsoOperations {
     EnsureRootName(name);
 
     MutateTransactionally(physical, cooked => {
+      // Removing first is safe because this is the staged copy. It also releases
+      // a trailing extent before capacity is checked, so replacing the last file
+      // in a physically full MDF can reuse its own sectors instead of spuriously
+      // demanding growth that would invalidate the companion MDS.
+      FileSystem.Iso.IsoModifier.RemoveFile(cooked, Path.GetFileName(name), wipeData: true);
       TrimLogicalVolumeSpace(cooked);
       EnsureCapacityForAppend(cooked, data.Length);
       FileSystem.Iso.IsoModifier.AddFile(cooked, Path.GetFileName(name), data);
