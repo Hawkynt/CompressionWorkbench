@@ -36,6 +36,7 @@ internal static class Qcow2Structures {
   internal const ulong CompressedFlag = 1UL << 62;
   internal const ulong ZeroFlag = 1UL;
   internal const ulong ClusterOffsetMask = 0x00FF_FFFF_FFFF_FE00UL;
+  internal const ulong RefcountBlockOffsetMask = 0xFFFF_FFFF_FFFF_FE00UL;
   internal const ulong L1ReservedMask = 0x7F00_0000_0000_01FFUL;
   internal const ulong StandardL2ReservedMask = 0x3F00_0000_0000_01FEUL;
 
@@ -155,6 +156,8 @@ internal static class Qcow2Structures {
        && header.SnapshotsOffset == 0;
 
   internal static long ReadClusterOffset(ulong entry) => checked((long)(entry & ClusterOffsetMask));
+  internal static long ReadRefcountBlockOffset(ulong entry)
+    => checked((long)(entry & RefcountBlockOffsetMask));
 
   internal static ulong ReadUInt64BigEndianAt(Stream stream, long offset) {
     Span<byte> buffer = stackalloc byte[8];
