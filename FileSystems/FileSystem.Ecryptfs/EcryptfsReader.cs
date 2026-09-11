@@ -76,6 +76,16 @@ public sealed class EcryptfsReader : IDisposable {
     return output.ToArray();
   }
 
+  /// <summary>
+  /// Validates a passphrase against the authentication-token packet without
+  /// materializing plaintext in memory. The ciphertext is streamed through the
+  /// normal decoder into <see cref="Stream.Null"/>, so the same key and extent
+  /// path used by extraction is exercised before a destructive mutation starts.
+  /// </summary>
+  /// <exception cref="CryptographicException">The passphrase does not match this lower file.</exception>
+  public void ValidatePassword(string password)
+    => EcryptfsCodec.DecryptTo(this._stream, Stream.Null, this._header, password);
+
   public void Dispose() {
     // The reader never owns the caller's stream.
   }
