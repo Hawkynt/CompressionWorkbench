@@ -4,5 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\FileSystem.Ext\FileSystem.Ext.csproj" />
+    <ProjectReference Include="..\FileSystem.Xfs\FileSystem.Xfs.csproj" />
   </ItemGroup>
 </Project>
