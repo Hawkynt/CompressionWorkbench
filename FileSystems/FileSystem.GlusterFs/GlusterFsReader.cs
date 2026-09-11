@@ -2,126 +2,205 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
+using FileSystem.Ext;
+using FileSystem.Xfs;
 
 namespace FileSystem.GlusterFs;
 
 /// <summary>
-/// Stage 0 detection-only reader for GlusterFS — permanent honest
-/// fallback. GlusterFS itself has <b>no on-disk image format</b>: a
-/// brick is a normal directory on a local POSIX filesystem
-/// (XFS / ext4 / ...) and volume files are stored at their normal
-/// POSIX paths inside that directory. All GlusterFS-specific state
-/// lives in extended attributes (the <c>trusted.gfid</c>,
-/// <c>trusted.glusterfs.dht</c>, <c>trusted.glusterfs.volume-id</c>,
-/// <c>trusted.glusterfs.pathinfo</c> namespace).
+/// Reads a single GlusterFS brick backing-store image by delegating the native
+/// on-disk filesystem to the existing XFS or ext2/3/4 reader.
 ///
-/// Consequences:
-/// <list type="bullet">
-///   <item>There is no superblock or brick header to parse.</item>
-///   <item>Distribution / replication state (DHT hashing → brick
-///   mapping, AFR replicate metadata, EC dispersed metadata, rebalance
-///   bookkeeping) only exists across multiple bricks on multiple
-///   hosts, not inside any single image.</item>
-///   <item>An R/O promotion is fundamentally incompatible with this
-///   project's image-stream contract — recognising a GlusterFS
-///   "volume" would require walking a live POSIX directory tree and
-///   reading xattrs through the host OS, which is outside the
-///   <c>Stream</c>-based <c>IArchiveFormatOperations</c> surface.</item>
-/// </list>
+/// <para>GlusterFS does not define a separate block format. A brick is an export
+/// directory on an ordinary filesystem that supports extended attributes. The
+/// logical volume namespace and DHT/AFR/EC state span multiple bricks, while
+/// object identity and translator metadata are stored in xattrs such as
+/// <c>trusted.gfid</c> and <c>trusted.glusterfs.*</c>. Consequently this reader
+/// intentionally exposes only the physical view of one supplied backing image.
+/// It does not claim to reconstruct a Gluster volume from one brick.</para>
 ///
-/// The 0xCAFE5BAB magic verified by <see cref="Parse"/> is a
-/// workbench-internal probe convention used to dump and round-trip
-/// hand-crafted "brick object" experiments; it is <b>not</b> a real
-/// on-disk GlusterFS marker and no real GlusterFS deployment produces
-/// it. The reader therefore stays a thin two-entry detector
-/// (synthetic <c>metadata.ini</c> + raw <c>gluster-brick.bin</c>) and
-/// will never grow real semantics.
+/// <para>The backing readers currently do not interpret or mutate Gluster xattrs.
+/// Those bytes remain untouched because this type is read-only. The internal
+/// <c>.glusterfs</c> GFID index is omitted from the normal brick listing so it is
+/// not mistaken for user namespace content.</para>
 /// </summary>
 public sealed class GlusterFsReader : IDisposable {
 
-  /// <summary>
-  /// Workbench-internal probe magic (0xCA 0xFE 0x5B 0xAB, 0xCAFE5BAB
-  /// big-endian) used by the detector tests. <b>Not</b> a real
-  /// GlusterFS structure — GlusterFS has no on-disk header at all.
-  /// </summary>
-  public static readonly byte[] BrickMagic = [0xCA, 0xFE, 0x5B, 0xAB];
+  private const int ExtSuperblockOffset = 1024;
+  private const int ExtMagicOffset = ExtSuperblockOffset + 56;
+  private const ushort ExtMagic = 0xEF53;
 
-  private const int HeaderSize = 8;
-
-  private readonly byte[] _data;
+  private readonly Stream _image;
+  private readonly bool _ownsImage;
   private readonly List<GlusterFsEntry> _entries = [];
+  private XfsReader? _xfsReader;
+  private ExtReader? _extReader;
 
   /// <summary>
-  /// Gets the entries.
+  /// Gets the entries in the single-brick physical view.
   /// </summary>
   public IReadOnlyList<GlusterFsEntry> Entries => _entries;
+
   /// <summary>
-  /// Gets or sets the magic word.
-  /// </summary>
-  public uint MagicWord { get; private set; }
-  /// <summary>
-  /// Gets or sets the trailing word.
-  /// </summary>
-  public uint TrailingWord { get; private set; }
-  /// <summary>
-  /// Gets a value indicating whether valid header.
+  /// Gets a value indicating whether a supported backing filesystem was found.
   /// </summary>
   public bool ValidHeader { get; private set; }
 
   /// <summary>
-  /// Initializes a new instance of <see cref="GlusterFsReader"/>.
+  /// Gets the detected backing filesystem name (<c>xfs</c> or <c>ext</c>).
+  /// </summary>
+  public string BackingFileSystem { get; private set; } = "";
+
+  /// <summary>
+  /// Initializes a reader over one brick backing-store image.
   /// </summary>
   public GlusterFsReader(Stream stream) {
-    using var ms = new MemoryStream();
-    stream.CopyTo(ms);
-    _data = ms.ToArray();
+    ArgumentNullException.ThrowIfNull(stream);
+    if (!stream.CanRead)
+      throw new ArgumentException("GlusterFS brick image must be readable.", nameof(stream));
+
+    if (stream.CanSeek) {
+      _image = stream;
+    } else {
+      var buffered = new MemoryStream();
+      stream.CopyTo(buffered);
+      buffered.Position = 0;
+      _image = buffered;
+      _ownsImage = true;
+    }
+
     Parse();
   }
 
   private void Parse() {
-    if (_data.Length < HeaderSize)
-      throw new InvalidDataException("GlusterFS: file too small for brick object header.");
+    if (IsXfs()) {
+      ParseXfs();
+      return;
+    }
 
-    if (!_data.AsSpan(0, 4).SequenceEqual(BrickMagic))
-      throw new InvalidDataException("GlusterFS: missing 0xCAFE5BAB brick magic at offset 0.");
+    if (IsExt()) {
+      ParseExt();
+      return;
+    }
 
-    this.MagicWord = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(0, 4));
-    this.TrailingWord = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(4, 4));
-    this.ValidHeader = true;
-
-    var meta = BuildMetadata();
-    _entries.Add(new GlusterFsEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Offset = 0, Data = meta });
-    _entries.Add(new GlusterFsEntry { Name = "gluster-brick.bin", Size = _data.Length, IsDirectory = false, Offset = 0, Data = _data });
+    throw new InvalidDataException(
+      "GlusterFS: input is not a supported brick backing-store image (expected XFS or ext2/3/4). " +
+      "GlusterFS itself has no standalone image magic; use a backing-filesystem image of one brick.");
   }
 
-  private byte[] BuildMetadata() {
-    var bldr = new StringBuilder();
-    bldr.Append("parse_status=detection-only\n");
-    bldr.Append("format=GlusterFS (no on-disk image; brick = normal directory on local FS)\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"magic_word=0x{this.MagicWord:X8}\n");
-    bldr.Append("magic_offset=0\n");
-    bldr.Append("magic_kind=workbench-internal probe (NOT a real GlusterFS marker)\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"trailing_word=0x{this.TrailingWord:X8}\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"image_size={_data.Length}\n");
-    bldr.Append("stage=0\n");
-    bldr.Append("stage_permanent=true\n");
-    bldr.Append("ro_blocked_reason=GlusterFS has no on-disk image format; bricks are normal ");
-    bldr.Append("directories on XFS/ext4 and state lives in xattrs (trusted.gfid, ");
-    bldr.Append("trusted.glusterfs.*). Walking a live POSIX tree + reading xattrs is outside ");
-    bldr.Append("the image-stream contract.\n");
-    return Encoding.UTF8.GetBytes(bldr.ToString());
+  private bool IsXfs() {
+    if (_image.Length < 4) return false;
+    Span<byte> magic = stackalloc byte[4];
+    ReadAt(0, magic);
+    return magic.SequenceEqual("XFSB"u8);
+  }
+
+  private bool IsExt() {
+    if (_image.Length < ExtMagicOffset + sizeof(ushort)) return false;
+    Span<byte> magic = stackalloc byte[sizeof(ushort)];
+    ReadAt(ExtMagicOffset, magic);
+    return BinaryPrimitives.ReadUInt16LittleEndian(magic) == ExtMagic;
+  }
+
+  private void ParseXfs() {
+    _image.Position = 0;
+    _xfsReader = new XfsReader(_image, leaveOpen: true);
+    this.BackingFileSystem = "xfs";
+    this.ValidHeader = true;
+    AddMetadata(_xfsReader.Entries.Count);
+
+    foreach (var entry in _xfsReader.Entries) {
+      if (IsGlusterInternal(entry.Name)) continue;
+      var captured = entry;
+      _entries.Add(new GlusterFsEntry {
+        Name = BrickPath(entry.Name),
+        Size = entry.Size,
+        IsDirectory = entry.IsDirectory,
+        DataFactory = entry.IsDirectory ? null : () => _xfsReader.Extract(captured),
+      });
+    }
+  }
+
+  private void ParseExt() {
+    _image.Position = 0;
+    _extReader = new ExtReader(_image, leaveOpen: true);
+    this.BackingFileSystem = "ext";
+    this.ValidHeader = true;
+    AddMetadata(_extReader.Entries.Count);
+
+    foreach (var entry in _extReader.Entries) {
+      if (IsGlusterInternal(entry.Name)) continue;
+      var captured = entry;
+      _entries.Add(new GlusterFsEntry {
+        Name = BrickPath(entry.Name),
+        Size = entry.Size,
+        IsDirectory = entry.IsDirectory,
+        DataFactory = entry.IsDirectory ? null : () => _extReader.Extract(captured),
+      });
+    }
+  }
+
+  private void AddMetadata(int backingEntryCount) {
+    var metadata = BuildMetadata(backingEntryCount);
+    _entries.Add(new GlusterFsEntry {
+      Name = "metadata.ini",
+      Size = metadata.Length,
+      Data = metadata,
+    });
+  }
+
+  private byte[] BuildMetadata(int backingEntryCount) {
+    var builder = new StringBuilder();
+    builder.Append("parse_status=single-brick-read-only\n");
+    builder.Append("format=GlusterFS brick backing store\n");
+    builder.Append(CultureInfo.InvariantCulture, $"backing_fs={this.BackingFileSystem}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"image_size={_image.Length}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"backing_entry_count={backingEntryCount}\n");
+    builder.Append("view=physical single-brick namespace\n");
+    builder.Append("gluster_internal_directory=.glusterfs (hidden from normal listing)\n");
+    builder.Append("xattrs=preserved in image but not interpreted\n");
+    builder.Append("cluster_namespace_reconstruction=false\n");
+    builder.Append("mutation=false\n");
+    builder.Append("mutation_blocker=Gluster object identity and DHT/AFR/EC state live in trusted.gfid/trusted.glusterfs.* xattrs; current backing writers do not preserve those attributes during rebuilds.\n");
+    return Encoding.UTF8.GetBytes(builder.ToString());
+  }
+
+  private static string BrickPath(string path) {
+    var normalized = path.Replace('\\', '/').TrimStart('/');
+    return "brick/" + normalized;
+  }
+
+  private static bool IsGlusterInternal(string path) {
+    var normalized = path.Replace('\\', '/').Trim('/');
+    return normalized.Equals(".glusterfs", StringComparison.Ordinal) ||
+           normalized.StartsWith(".glusterfs/", StringComparison.Ordinal);
+  }
+
+  private void ReadAt(long offset, Span<byte> destination) {
+    var original = _image.Position;
+    try {
+      _image.Position = offset;
+      _image.ReadExactly(destination);
+    } finally {
+      _image.Position = original;
+    }
   }
 
   /// <summary>
-  /// Decodes the supplied input.
+  /// Extracts one surfaced entry.
   /// </summary>
   public byte[] Extract(GlusterFsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
-    return entry.Data;
+    if (entry.IsDirectory) return [];
+    return entry.DataFactory?.Invoke() ?? entry.Data;
   }
 
   /// <summary>
-  /// Releases resources held by this instance.
+  /// Releases backing filesystem readers and any spool created for a non-seekable input.
   /// </summary>
-  public void Dispose() { }
+  public void Dispose() {
+    _xfsReader?.Dispose();
+    _extReader?.Dispose();
+    if (_ownsImage) _image.Dispose();
+  }
 }
