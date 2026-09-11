@@ -145,7 +145,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [Apple DOS 3.3](https://en.wikipedia.org/wiki/Apple_DOS) | `AppleDos` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | DOS 3.3, catalog at T17 S15 | [Apple DOS](https://en.wikipedia.org/wiki/Apple_DOS) |
 | [Apple IIgs GS/OS (2IMG)](https://en.wikipedia.org/wiki/Apple_IIGS) | `GsOs` | R/W | ✅ | ✅ rebuild | — | ✅ | — | ✅ | own reader + struct-parity tests | 2IMG wrapper delegating to the inner ProDOS / HFS / DOS 3.3 reader | [2IMG](https://apple2.org.za/gswv/a2zine/Docs/DiskImage_2MG_Info.txt) |
 | [Apple UCSD Pascal](https://en.wikipedia.org/wiki/UCSD_Pascal) | `ApplePascal` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | UCSD Pascal volume | [UCSD p-System](https://en.wikipedia.org/wiki/UCSD_Pascal) |
-| [HFS (Classic)](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) | `Hfs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | [`hmount` / `hls`](https://www.mars.org/home/rob/proj/hfs/) (hfsutils) list the written files | Classic HFS; edits rebuild the catalog | [Inside Macintosh: Files](https://developer.apple.com/library/archive/technotes/tn/tn1150.html) |
+| [HFS (Classic)](https://en.wikipedia.org/wiki/Hierarchical_File_System_(Apple)) | `Hfs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | [`hmount` / `hls`](https://www.mars.org/home/rob/proj/hfs/) (hfsutils) list the written files | Classic HFS; edits rebuild the catalog | [Inside Macintosh: Files](https://developer.apple.com/library/archive/documentation/mac/Files/Files-2.html) |
 | [HFS+](https://en.wikipedia.org/wiki/HFS_Plus) | `HfsPlus` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | [`fsck.hfsplus -fn`](https://packages.debian.org/sid/hfsprogs) + [hfsutils](https://www.mars.org/home/rob/proj/hfs/) + reverse `mkfs.hfsplus` | Edits rebuild the catalog | [TN1150](https://developer.apple.com/library/archive/technotes/tn/tn1150.html) |
 | [MFS (Macintosh File System)](https://en.wikipedia.org/wiki/Macintosh_File_System) | `Mfs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | Macintosh File System (1984) | [MFS](https://en.wikipedia.org/wiki/Macintosh_File_System) |
 | [ProDOS](https://en.wikipedia.org/wiki/Apple_ProDOS) | `ProDos` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [ProDOS technical reference](https://prodos8.com/docs/techref/) |
@@ -191,7 +191,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [G64 (Commodore GCR)](https://en.wikipedia.org/wiki/Commodore_DOS) | `G64` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Raw GCR tracks; the writer GCR-encodes a 1541 image | [G64 (VICE)](https://vice-emu.sourceforge.io/vice_17.html) |
 | [GEMDOS (Atari ST)](https://en.wikipedia.org/wiki/Atari_TOS) | `Gemdos` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | Atari ST FAT variant | [GEMDOS](https://en.wikipedia.org/wiki/Atari_TOS) |
 | [MFS-1 (Acorn Master File System v1)](https://en.wikipedia.org/wiki/BBC_Master) | `Mfs1` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | Acorn MFS-1; geometry-preserving catalog rebuild for edits | [BBC Master](https://en.wikipedia.org/wiki/BBC_Master) |
-| [MSA (Magic Shadow Archiver)](https://en.wikipedia.org/wiki/Atari_ST) | `Msa` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Magic Shadow Archive | [MSA (Atari ST)](https://info-coach.fr/atari/documents/_mydoc/FD_Image_Formats.pdf) |
+| [MSA (Magic Shadow Archiver)](https://en.wikipedia.org/wiki/Atari_ST) | `Msa` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Magic Shadow Archive | [MSA](https://info-coach.fr/atari/documents/_mydoc/FD_Image_Formats.pdf) |
 | [NIB (Commodore nibble dump)](https://en.wikipedia.org/wiki/Commodore_DOS) | `Nib` | R/W | ✅ | ✅ rebuild | ✅ | — | — | ✅ | own reader + struct-parity tests | Raw nibble tracks | [NIB](https://ist.uwaterloo.ca/~schepers/formats.html) |
 | [PlayStation Memory Card](https://en.wikipedia.org/wiki/PlayStation_technical_specifications#Memory_Card) | `Ps1MemoryCard` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Deletion marks the directory frame; add / replace re-pack the blocks | [PS1 memory card](https://www.psdevwiki.com/ps3/PS1_Memory_Card) |
 | [SCL (ZX Spectrum)](https://en.wikipedia.org/wiki/TR-DOS) | `ZxScl` | R/W | ✅ | ✅ moving | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | SCL, `SINCLAIR` magic + checksum | [SCL](https://sinclair.wiki.zxnet.co.uk/wiki/TR-DOS) |
@@ -229,7 +229,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R | — | — | — | — | — | — | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
 | [NWFS386 (Novell NetWare 386 raw)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R | — | — | — | — | — | — | detection of the on-disk signature | NetWare 386 raw-partition structures are proprietary | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
 | [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
-| [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R | — | — | — | — | — | — | detection of the on-disk signature | SGI cluster XFS | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
+| [SGI CXFS](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R | — | — | — | — | — | — | detection of the on-disk signature | SGI cluster XFS | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
 | [Tahoe-LAFS share](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R | — | — | — | — | — | — | detection of the on-disk signature | Shares are capability-encrypted; no read-cap, no plaintext | [Tahoe-LAFS](https://tahoe-lafs.org/) |
 | [TFS (BBN Trans-FS)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | detection of the on-disk signature | BBN Trans-FS; no public on-disk specification | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
 
@@ -344,7 +344,7 @@ cwb recover raw.img --mode files --format Jpeg,Png
 
 If this project saves you time or money, consider supporting its development:
 
-[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsor-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub-Sponsors-EA4AAA?logo=githubsponsors)](https://github.com/sponsors/Hawkynt)
 [![PayPal](https://img.shields.io/badge/PayPal-Donate-00457C?logo=paypal)](https://www.paypal.me/hawkynt)
 
 ## 📜 License
