@@ -125,7 +125,6 @@ public sealed class Qcow2Stream : Stream {
 
   public override long Seek(long offset, SeekOrigin origin) {
     var next = origin switch {
-    {
       SeekOrigin.Begin => offset,
       SeekOrigin.Current => checked(_position + offset),
       SeekOrigin.End => checked(Length + offset),
@@ -168,8 +167,11 @@ public sealed class Qcow2Stream : Stream {
       return;
 
     var hostOffset = Qcow2Structures.ReadClusterOffset(entry);
-    if (hostOffset == 0)
+    if (hostOffset == 0) {
+      if ((entry & Qcow2Structures.CopiedFlag) != 0)
+        throw new InvalidDataException("QCOW2: self-contained standard cluster has copied flag but zero host offset.");
       return;
+    }
 
     Qcow2Structures.ReadExactlyAt(_backing, checked(hostOffset + inClusterOffset), destination);
   }
@@ -204,6 +206,8 @@ public sealed class Qcow2Stream : Stream {
           _backing.Write(source);
           return;
         }
+      } else if ((oldEntry & Qcow2Structures.CopiedFlag) != 0) {
+        throw new InvalidDataException("QCOW2: self-contained standard cluster has copied flag but zero host offset.");
       }
     }
 
@@ -321,6 +325,7 @@ public sealed class Qcow2Stream : Stream {
 
     var tableEntryOffset = checked(_header.RefcountTableOffset + tableIndex * 8);
     var blockEntry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, tableEntryOffset);
+    ValidateRefcountTableEntry(blockEntry);
     var blockOffset = Qcow2Structures.ReadRefcountBlockOffset(blockEntry);
     if (blockOffset == 0)
       return 0;
@@ -348,6 +353,7 @@ public sealed class Qcow2Stream : Stream {
 
     var tableEntryOffset = checked(_header.RefcountTableOffset + tableIndex * 8);
     var entry = Qcow2Structures.ReadUInt64BigEndianAt(_backing, tableEntryOffset);
+    ValidateRefcountTableEntry(entry);
     var existingOffset = Qcow2Structures.ReadRefcountBlockOffset(entry);
     if (existingOffset != 0)
       return existingOffset;
@@ -356,6 +362,13 @@ public sealed class Qcow2Stream : Stream {
     Qcow2Structures.WriteUInt64BigEndianAt(_backing, tableEntryOffset, (ulong)newBlockOffset);
     SetRefcount(newBlockOffset, 1);
     return newBlockOffset;
+  }
+
+  private static void ValidateRefcountTableEntry(ulong entry) {
+    if ((entry & 0x1FFUL) != 0)
+      throw new InvalidDataException("QCOW2: refcount table entry uses reserved low bits.");
+    if ((entry & Qcow2Structures.RefcountBlockOffsetMask) != entry)
+      throw new InvalidDataException("QCOW2: refcount block offset exceeds the supported signed range.");
   }
 
   private long AllocateRefcountedCluster(bool clear) {
