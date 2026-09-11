@@ -1,3 +1,4 @@
+#pragma warning disable CS0618
 using Compression.Registry;
 using Compression.Tests.Documentation;
 using FileSystem.BeeGfs;
@@ -32,6 +33,26 @@ public class BeeGfsDetectionTests {
   }
 
   [Test, Category("Regression")]
+  public void Registry_UsesNativeFailClosedProfile_NotArchiveProjection() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    using var image = LegacyTaggedStream();
+
+    var coverage = FormatRegistry.GetFilesystemDriverCoverage("BeeGfs");
+    var profile = FormatRegistry.ProbeFilesystem("BeeGfs", image);
+
+    Assert.Multiple(() => {
+      Assert.That(FormatRegistry.GetArchiveOps("BeeGfs"), Is.Null);
+      Assert.That(coverage.Binding, Is.EqualTo(FilesystemDriverBindingKind.DescriptorNative));
+      Assert.That(coverage.HasArchiveProjection, Is.False);
+      Assert.That(coverage.HasArchiveMutation, Is.False);
+      Assert.That(coverage.HasNativeReadinessProvider, Is.True);
+      Assert.That(profile.Capabilities, Is.EqualTo(FilesystemDriverCapabilities.None));
+      Assert.That(profile.CanMount, Is.False);
+      Assert.That(profile.CanMountWritable, Is.False);
+    });
+  }
+
+  [Test, Category("Regression")]
   public void LegacySyntheticMagic_DoesNotProduceMountableFilesystem() {
     var descriptor = new BeeGfsFormatDescriptor();
     using var image = LegacyTaggedStream();
@@ -48,6 +69,15 @@ public class BeeGfsDetectionTests {
       Assert.That(limitations, Does.Contain("single-stream"));
       Assert.That(limitations, Does.Contain("ext4").And.Contain("XFS"));
     });
+  }
+
+  [Test, Category("Regression")]
+  public void LegacyReader_RejectsFormerSyntheticMagic() {
+    using var image = LegacyTaggedStream();
+
+    var error = Assert.Throws<NotSupportedException>(() => _ = new BeeGfsReader(image));
+
+    Assert.That(error!.Message, Does.Contain("no standalone single-stream image"));
   }
 
   [TestCase(true)]
