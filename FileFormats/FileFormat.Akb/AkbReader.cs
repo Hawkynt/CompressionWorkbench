@@ -2,174 +2,282 @@ using System.Buffers.Binary;
 
 namespace FileFormat.Akb;
 
-/// <summary>
-/// Reads entries from a Square Enix AKB audio bank (Final Fantasy / Kingdom Hearts era).
-/// Surfaces raw per-entry payload bytes; the per-entry codec (HCA, MSADPCM, IMA-ADPCM, raw PCM)
-/// is intentionally not decoded — game-specific dispatch belongs to the caller.
-/// </summary>
+/// <summary>Reads Square Enix classic AKB and AKB2 audio containers.</summary>
 public sealed class AkbReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private bool _disposed;
+  private readonly byte[] _file;
 
-  /// <summary>Gets the AKB subformat version byte (1 = single-stream v1, 2 = multi-entry v2).</summary>
-  public byte VersionByte { get; }
-
-  /// <summary>Gets the channel-mode byte (1 = mono, 2 = stereo). Informational only.</summary>
-  public byte ChannelMode { get; }
-
-  /// <summary>Gets the sample rate in Hz declared by the bank header.</summary>
-  public uint SampleRate { get; }
-
-  /// <summary>Gets the loop start position in samples; 0 if the bank declares no loop.</summary>
-  public uint LoopStart { get; }
-
-  /// <summary>Gets the loop end position in samples; 0 if the bank declares no loop.</summary>
-  public uint LoopEnd { get; }
-
-  /// <summary>Gets the absolute offset where entry payload data begins.</summary>
-  public uint ContentOffset { get; }
-
-  /// <summary>Gets the total byte length of the content region.</summary>
-  public uint ContentSize { get; }
-
-  /// <summary>Gets all audio entries declared in the bank.</summary>
-  public IReadOnlyList<AkbEntry> Entries { get; }
-
-  /// <summary>
-  /// Initializes a new <see cref="AkbReader"/> from a stream positioned at the start of an AKB file.
-  /// </summary>
-  /// <param name="stream">The seekable stream containing the AKB bank.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   public AkbReader(Stream stream, bool leaveOpen = false) {
-    this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    ArgumentNullException.ThrowIfNull(stream);
+    this._stream = stream;
     this._leaveOpen = leaveOpen;
+    this._file = ReadAll(stream);
+    if (this._file.Length < 0x10)
+      throw new InvalidDataException("AKB file is too small.");
 
-    if (stream.Length < AkbConstants.HeaderSize)
-      throw new InvalidDataException("Stream is too small to contain a valid AKB header.");
+    if (this._file.AsSpan(0, 4).SequenceEqual(AkbConstants.ClassicMagic))
+      this.ParseClassic();
+    else if (this._file.AsSpan(0, 4).SequenceEqual(AkbConstants.Akb2Magic))
+      this.ParseAkb2();
+    else
+      throw new InvalidDataException("AKB signature is neither 'AKB ' nor 'AKB2'.");
+  }
 
-    Span<byte> header = stackalloc byte[AkbConstants.HeaderSize];
-    ReadExact(header);
+  public AkbContainerKind ContainerKind { get; private set; }
+  public byte VersionByte { get; private set; }
+  public IReadOnlyList<AkbEntry> Entries { get; private set; } = [];
 
-    if (!header[..AkbConstants.MagicLength].SequenceEqual(AkbConstants.Magic))
-      throw new InvalidDataException("Invalid AKB magic; expected ASCII 'AKB1'.");
+  /// <summary>Sample rate of the first material, for compatibility with the original reader surface.</summary>
+  public uint SampleRate => this.Entries.Count == 0 ? 0 : (uint)this.Entries[0].SampleRate;
+  /// <summary>Channel count of the first material.</summary>
+  public byte ChannelMode => this.Entries.Count == 0 ? (byte)0 : checked((byte)this.Entries[0].Channels);
+  /// <summary>Primary loop start of the first material.</summary>
+  public uint LoopStart => this.Entries.Count == 0 ? 0 : this.Entries[0].LoopStart;
+  /// <summary>Primary loop end of the first material.</summary>
+  public uint LoopEnd => this.Entries.Count == 0 ? 0 : this.Entries[0].LoopEnd;
 
-    var headerSize = BinaryPrimitives.ReadUInt16LittleEndian(header[4..6]);
-    this.VersionByte = header[6];
-    this.ChannelMode = header[7];
-    this.SampleRate = BinaryPrimitives.ReadUInt32LittleEndian(header[8..12]);
-    this.LoopStart = BinaryPrimitives.ReadUInt32LittleEndian(header[12..16]);
-    this.LoopEnd = BinaryPrimitives.ReadUInt32LittleEndian(header[16..20]);
-    this.ContentOffset = BinaryPrimitives.ReadUInt32LittleEndian(header[20..24]);
-    this.ContentSize = BinaryPrimitives.ReadUInt32LittleEndian(header[24..28]);
-    var entryCount = BinaryPrimitives.ReadUInt32LittleEndian(header[28..32]);
-    // header[32..40] — three reserved/padding UInt32 LE words, ignored.
+  /// <summary>Returns the logical encoded payload, decrypting classic-v3 sdlib XOR where required.</summary>
+  public byte[] Extract(AkbEntry entry) {
+    var result = this.ExtractRaw(entry);
+    if (entry.Encrypted)
+      AkbConstants.TransformPayload(result);
+    return result;
+  }
 
-    if (this.VersionByte != AkbConstants.VersionV1 && this.VersionByte != AkbConstants.VersionV2)
-      throw new NotSupportedException($"Unsupported AKB version byte: 0x{this.VersionByte:X2}.");
+  /// <summary>Returns the exact bytes stored in the AKB payload region.</summary>
+  public byte[] ExtractRaw(AkbEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    ValidateRange(entry.Offset, entry.Size, this._file.LongLength, "AKB payload");
+    return this._file.AsSpan(checked((int)entry.Offset), checked((int)entry.Size)).ToArray();
+  }
 
-    if (headerSize < AkbConstants.HeaderSize)
-      throw new InvalidDataException($"Invalid AKB HeaderSize: {headerSize} (must be at least {AkbConstants.HeaderSize}).");
+  private void ParseClassic() {
+    this.ContainerKind = AkbContainerKind.Classic;
+    this.VersionByte = this._file[0x04];
+    if (this.VersionByte is not (0 or 2 or 3))
+      throw new NotSupportedException($"Unsupported classic AKB version {this.VersionByte}.");
 
-    // v1 files commonly omit the entry table and store a single payload between
-    // ContentOffset and ContentOffset+ContentSize. Synthesize a single entry so the
-    // shape matches v2 callers.
-    if (this.VersionByte == AkbConstants.VersionV1 && entryCount == 0) {
-      ValidateContentBounds(stream.Length);
-      this.Entries = [
-        new AkbEntry {
-          Name = "entry_000.bin",
-          Offset = this.ContentOffset,
-          Size = this.ContentSize,
-          SampleCount = 0,
-          Flags = 0,
-        },
-      ];
-      return;
+    var headerSize = ReadU16(this._file, 0x06);
+    ValidateDeclaredFileSize(this._file);
+    if (headerSize < 0x1C || headerSize > this._file.Length)
+      throw new InvalidDataException($"Classic AKB header size 0x{headerSize:X} is invalid.");
+
+    var codec = ParseCodec(this._file[0x0C], classic: true);
+    var channels = this._file[0x0D];
+    var sampleRate = ReadU16(this._file, 0x0E);
+    var samples = ToUInt(ReadI32(this._file, 0x10));
+    var loopStart = ToUInt(ReadI32(this._file, 0x14));
+    var loopEnd = ToUInt(ReadI32(this._file, 0x18));
+
+    var extraSize = 0;
+    var subheaderSize = 0;
+    byte flags = 0;
+    if (headerSize >= 0x44) {
+      EnsureLength(this._file, 0x44, "classic AKB extended header");
+      extraSize = ReadU16(this._file, 0x1C);
+      subheaderSize = ReadU16(this._file, 0x28);
+      flags = this._file[0x2B];
     }
 
-    if (entryCount > int.MaxValue)
-      throw new InvalidDataException($"Implausible AKB EntryCount: {entryCount}.");
+    var extraOffset = checked(headerSize + subheaderSize);
+    var dataOffset = checked(extraOffset + extraSize);
+    if (dataOffset > this._file.Length)
+      throw new InvalidDataException("Classic AKB payload starts beyond end of file.");
 
-    var tableBytes = checked((long)entryCount * AkbConstants.EntryRecordSize);
-    if (headerSize + tableBytes > this.ContentOffset)
-      throw new InvalidDataException("AKB entry table overlaps the content region.");
+    var extra = extraSize == 0
+      ? []
+      : SliceChecked(this._file, extraOffset, extraSize, "classic AKB extradata");
+    var blockAlign = 0;
+    if (codec == AkbCodec.MsAdpcm) {
+      if (extra.Length < 0x10)
+        throw new InvalidDataException("Classic AKB MS-ADPCM requires 16 bytes of extradata.");
+      blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(extra.AsSpan(2, 2));
+      samples = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(4, 4)));
+      loopStart = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(8, 4)));
+      loopEnd = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(12, 4)));
+      if (this.VersionByte >= 3 && (flags & AkbConstants.FlagEncrypted) != 0)
+        throw new NotSupportedException("Encrypted classic MS-ADPCM is not supported by the known sdlib/vgmstream path.");
+    }
 
-    ValidateContentBounds(stream.Length);
+    if ((flags & AkbConstants.FlagEncrypted) != 0 && (this.VersionByte < 3 || codec != AkbCodec.OggVorbis))
+      throw new NotSupportedException("Known AKB encryption is limited to classic-v3 Ogg Vorbis.");
 
-    this._stream.Position = headerSize;
-    this.Entries = ReadEntries((int)entryCount);
+    var size = this._file.Length - dataOffset;
+    this.Entries = [new AkbEntry {
+      Name = $"entry_000{Extension(codec)}",
+      Offset = dataOffset,
+      Size = size,
+      SampleCount = samples,
+      Flags = flags,
+      Codec = codec,
+      Channels = channels,
+      SampleRate = sampleRate,
+      LoopStart = loopStart,
+      LoopEnd = loopEnd,
+      BlockAlign = blockAlign,
+      ExtraData = extra,
+      Version = this.VersionByte,
+    }];
   }
 
-  /// <summary>
-  /// Reads the raw payload bytes for a given entry. The codec is not decoded — these are the
-  /// raw on-disk bytes between <see cref="AkbEntry.Offset"/> and <see cref="AkbEntry.Offset"/> + <see cref="AkbEntry.Size"/>.
-  /// </summary>
-  /// <param name="entry">The entry to extract.</param>
-  /// <returns>The raw entry payload.</returns>
-  public byte[] Extract(AkbEntry entry) {
-    ArgumentNullException.ThrowIfNull(entry);
-    if (entry.Size == 0)
-      return [];
+  private void ParseAkb2() {
+    this.ContainerKind = AkbContainerKind.Akb2;
+    this.VersionByte = this._file[0x04];
+    ValidateDeclaredFileSize(this._file);
 
-    this._stream.Position = entry.Offset;
-    var buffer = new byte[entry.Size];
-    ReadExact(buffer);
-    return buffer;
-  }
+    var headerSize = ReadU16(this._file, 0x06);
+    var tableCount = this._file[0x0C];
+    if (headerSize < 0x10 || tableCount is < 1 or > 2)
+      throw new InvalidDataException("AKB2 header/table count is invalid.");
 
-  private void ValidateContentBounds(long streamLength) {
-    var contentEnd = (long)this.ContentOffset + this.ContentSize;
-    if (contentEnd > streamLength)
-      throw new InvalidDataException("AKB content region extends past the end of the stream.");
-  }
+    var tablePointerAt = checked(headerSize + (tableCount - 1) * AkbConstants.Akb2EntrySize + 4);
+    EnsureLength(this._file, tablePointerAt + 4, "AKB2 table pointer");
+    var tableOffset = checked((int)ReadU32(this._file, tablePointerAt));
+    EnsureLength(this._file, tableOffset + 0x10, "AKB2 sound table");
+    var tableSize = ReadU16(this._file, tableOffset + 2);
+    var count = this._file[tableOffset + 0x0F];
+    if (tableSize < 0x10 || count == 0)
+      throw new InvalidDataException("AKB2 contains no valid sound-table entries.");
 
-  private List<AkbEntry> ReadEntries(int count) {
     var entries = new List<AkbEntry>(count);
-    Span<byte> buf = stackalloc byte[AkbConstants.EntryRecordSize];
+    for (var index = 0; index < count; ++index) {
+      var recordOffset = checked(tableOffset + tableSize + index * AkbConstants.Akb2EntrySize);
+      EnsureLength(this._file, recordOffset + 8, "AKB2 sound-table entry");
+      var materialRelative = ReadU32(this._file, recordOffset + 4);
+      var materialOffsetLong = (long)tableOffset + materialRelative;
+      if (materialOffsetLong > int.MaxValue)
+        throw new InvalidDataException("AKB2 material offset exceeds supported address space.");
+      var materialOffset = (int)materialOffsetLong;
+      EnsureLength(this._file, materialOffset + 0x1C, "AKB2 material");
 
-    for (var i = 0; i < count; ++i) {
-      ReadExact(buf);
-      var dataOffsetRel = BinaryPrimitives.ReadUInt32LittleEndian(buf[0..4]);
-      var dataSize = BinaryPrimitives.ReadUInt32LittleEndian(buf[4..8]);
-      var sampleCount = BinaryPrimitives.ReadUInt32LittleEndian(buf[8..12]);
-      var flags = BinaryPrimitives.ReadUInt32LittleEndian(buf[12..16]);
+      var codec = ParseCodec(this._file[materialOffset + 1], classic: false);
+      var channels = this._file[materialOffset + 2];
+      var flags = this._file[materialOffset + 3];
+      if ((flags & AkbConstants.FlagEncrypted) != 0)
+        throw new NotSupportedException("Encrypted AKB2 materials have not been observed/documented.");
 
-      // DataOffset is stored relative to ContentOffset — translate to absolute up front
-      // so callers and Extract() never have to remember which frame of reference they're in.
-      var absoluteOffset = (long)this.ContentOffset + dataOffsetRel;
-      if (absoluteOffset + dataSize > (long)this.ContentOffset + this.ContentSize)
-        throw new InvalidDataException($"AKB entry {i} extends past the content region.");
+      var materialSize = ReadU16(this._file, materialOffset + 4);
+      var sampleRate = ReadU16(this._file, materialOffset + 6);
+      var streamSize = ReadU32(this._file, materialOffset + 8);
+      var samples = ToUInt(ReadI32(this._file, materialOffset + 0x0C));
+      var loopStart = ToUInt(ReadI32(this._file, materialOffset + 0x10));
+      var loopEnd = ToUInt(ReadI32(this._file, materialOffset + 0x14));
+      var extraSize = ReadU32(this._file, materialOffset + 0x18);
+      if (materialSize < 0x1C)
+        throw new InvalidDataException("AKB2 material header is smaller than its fixed fields.");
+
+      uint alternateLoopStart = 0;
+      uint alternateLoopEnd = 0;
+      if (materialSize >= 0x24) {
+        EnsureLength(this._file, materialOffset + 0x24, "AKB2 extended material");
+        alternateLoopStart = ToUInt(ReadI32(this._file, materialOffset + 0x1C));
+        alternateLoopEnd = ToUInt(ReadI32(this._file, materialOffset + 0x20));
+      }
+
+      var extraOffset = checked(materialOffset + materialSize);
+      if (extraSize > int.MaxValue)
+        throw new InvalidDataException("AKB2 extradata is too large.");
+      var extra = extraSize == 0
+        ? []
+        : SliceChecked(this._file, extraOffset, checked((int)extraSize), "AKB2 extradata");
+      var dataOffset = checked(extraOffset + (int)extraSize);
+      ValidateRange(dataOffset, streamSize, this._file.LongLength, "AKB2 payload");
+
+      var blockAlign = 0;
+      if (codec == AkbCodec.MsAdpcm) {
+        if (extra.Length < 0x10)
+          throw new InvalidDataException("AKB2 MS-ADPCM requires 16 bytes of extradata.");
+        blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(extra.AsSpan(2, 2));
+        samples = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(4, 4)));
+        loopStart = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(8, 4)));
+        loopEnd = ToUInt(BinaryPrimitives.ReadInt32LittleEndian(extra.AsSpan(12, 4)));
+      }
 
       entries.Add(new AkbEntry {
-        Name = FormatEntryName(i),
-        Offset = absoluteOffset,
-        Size = dataSize,
-        SampleCount = sampleCount,
+        Name = $"entry_{index:D3}{Extension(codec)}",
+        Offset = dataOffset,
+        Size = streamSize,
+        SampleCount = samples,
         Flags = flags,
+        Codec = codec,
+        Channels = channels,
+        SampleRate = sampleRate,
+        LoopStart = loopStart,
+        LoopEnd = loopEnd,
+        AlternateLoopStart = alternateLoopStart,
+        AlternateLoopEnd = alternateLoopEnd,
+        BlockAlign = blockAlign,
+        ExtraData = extra,
+        Version = this.VersionByte,
       });
     }
 
-    return entries;
+    this.Entries = entries;
   }
 
-  internal static string FormatEntryName(int index) => $"entry_{index:D3}.bin";
+  private static AkbCodec ParseCodec(byte value, bool classic) => value switch {
+    0x01 when !classic => AkbCodec.Pcm16Le,
+    0x02 => AkbCodec.MsAdpcm,
+    0x05 => AkbCodec.OggVorbis,
+    0x06 when classic => AkbCodec.M4aAac,
+    _ => throw new NotSupportedException($"Unsupported {(classic ? "classic AKB" : "AKB2")} codec 0x{value:X2}."),
+  };
 
-  private void ReadExact(Span<byte> buffer) {
-    var totalRead = 0;
-    while (totalRead < buffer.Length) {
-      var read = this._stream.Read(buffer[totalRead..]);
-      if (read == 0)
-        throw new EndOfStreamException("Unexpected end of AKB stream.");
-      totalRead += read;
-    }
+  internal static string Extension(AkbCodec codec) => codec switch {
+    AkbCodec.Pcm16Le => ".pcm",
+    AkbCodec.MsAdpcm => ".msadpcm",
+    AkbCodec.OggVorbis => ".ogg",
+    AkbCodec.M4aAac => ".m4a",
+    _ => ".bin",
+  };
+
+  private static byte[] ReadAll(Stream input) {
+    if (input.CanSeek) input.Position = 0;
+    using var memory = new MemoryStream();
+    input.CopyTo(memory);
+    return memory.ToArray();
   }
 
-  /// <inheritdoc />
+  private static void ValidateDeclaredFileSize(byte[] file) {
+    var declared = ReadU32(file, 0x08);
+    if (declared != file.LongLength)
+      throw new InvalidDataException($"AKB declared file size {declared} does not match actual size {file.LongLength}.");
+  }
+
+  private static void EnsureLength(byte[] file, int required, string what) {
+    if (required < 0 || required > file.Length)
+      throw new InvalidDataException($"Truncated {what}.");
+  }
+
+  private static byte[] SliceChecked(byte[] file, int offset, int count, string what) {
+    ValidateRange(offset, count, file.LongLength, what);
+    return file.AsSpan(offset, count).ToArray();
+  }
+
+  private static void ValidateRange(long offset, long size, long length, string what) {
+    if (offset < 0 || size < 0 || offset > length || size > length - offset)
+      throw new InvalidDataException($"{what} range is outside the AKB file.");
+  }
+
+  private static ushort ReadU16(byte[] file, int offset) {
+    EnsureLength(file, checked(offset + 2), "AKB u16 field");
+    return BinaryPrimitives.ReadUInt16LittleEndian(file.AsSpan(offset, 2));
+  }
+
+  private static uint ReadU32(byte[] file, int offset) {
+    EnsureLength(file, checked(offset + 4), "AKB u32 field");
+    return BinaryPrimitives.ReadUInt32LittleEndian(file.AsSpan(offset, 4));
+  }
+
+  private static int ReadI32(byte[] file, int offset) {
+    EnsureLength(file, checked(offset + 4), "AKB i32 field");
+    return BinaryPrimitives.ReadInt32LittleEndian(file.AsSpan(offset, 4));
+  }
+
+  private static uint ToUInt(int value) => value <= 0 ? 0u : checked((uint)value);
+
   public void Dispose() {
-    if (this._disposed)
-      return;
-    this._disposed = true;
     if (!this._leaveOpen)
       this._stream.Dispose();
   }

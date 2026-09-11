@@ -4,5 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Aac\Codec.Aac.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.MsAdpcm\Codec.MsAdpcm.csproj" />
+    <ProjectReference Include="..\..\Codecs\Codec.Vorbis\Codec.Vorbis.csproj" />
+    <ProjectReference Include="..\FileFormat.Mp4\FileFormat.Mp4.csproj" />
   </ItemGroup>
 </Project>
