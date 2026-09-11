@@ -793,7 +793,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 ### Namespace `FileFormat.Mdf`
 
-[`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfReader`](#mdfreader)
+[`MdfEntry`](#mdfentry) · [`MdfFormatDescriptor`](#mdfformatdescriptor) · [`MdfInPlaceModifier`](#mdfinplacemodifier) · [`MdfInPlaceModifier.SectorGeometry`](#mdfinplacemodifiersectorgeometry) · [`MdfLayoutMap`](#mdflayoutmap) · [`MdfReader`](#mdfreader)
 
 #### `MdfEntry`
 
@@ -810,59 +810,73 @@ Represents a file or directory entry in an MDF disc image.
 
 #### `MdfFormatDescriptor`
 
-Alcohol 120% MDF/MDS disc image pair — raw sector data (.mdf) plus a session/track descriptor (.mds). References: `https://cdemu.sourceforge.io` — CDEmu / libMirage — its MDS/MDF parser is the de-facto format documentationNo official specification — proprietary Alcohol Soft format, reverse-engineered
+Alcohol 120% MDF/MDS optical-disc image: sector data in `.mdf` plus session/track metadata in the companion `.mds` descriptor. References: `https://ecma-international.org/publications-and-standards/standards/ecma-119/` — ISO 9660 / ECMA-119 filesystem layout`https://ecma-international.org/publications-and-standards/standards/ecma-130/` — CD-ROM Mode 1 sector framing and EDC/ECC`https://cdemu.sourceforge.io` — CDEmu/libMirage MDS/MDF implementation used as a behavioral reference`https://github.com/aaru-dps/Aaru/tree/devel/Aaru.Images/Alcohol120` — LGPL-2.1-or-later Alcohol 120% implementation used to cross-check MDS structures and track modes
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MdfFormatDescriptor` | `MdfFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region stays byte-identical. Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. The accompanying `.mds` sidecar (if any) is not touched; the modifier only mutates the MDF byte stream. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces root-level ISO 9660 files inside the existing MDF track. The edit is staged transactionally and committed only if the result parses. Physical growth is refused because that would require changing the MDS track descriptors, which are outside the single-stream mutation contract. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a standalone MDF data stream as 2 048-byte cooked ISO sectors. The archive API owns one output stream and therefore cannot emit the MDS sidecar. A small physical tail reserve is left outside ISO's declared volume-space count so a freshly-created image can exercise genuine add / replace semantics without resizing; existing paired images are never grown. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes root-level ISO 9660 files and wipes their former data sectors while preserving the MDF's physical sector count and raw framing. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `MdfInPlaceModifier`
 
-In-place sector-rewrite modifier for an Alcohol 120% MDF disc image. Operates at the raw 2 048-byte user-data region of each CD sector at the fixed byte offset `lba * sectorSize + dataOffset`, where `sectorSize` and `dataOffset` are the geometry detected from the stream (raw 2 352 Mode 1, raw 2 352 Mode 2 Form 1, 2 336-byte sectors, or flat 2 048-byte cooked sectors). MDF framing. Alcohol 120% pairs an `.mdf` sector-stream with an `.mds` metadata sidecar that describes the track layout. The MDF itself has no internal header or footer — it is a flat byte stream of sectors at LBA × sectorSize. The MDS sidecar is not touched by this modifier (the in-place surface only mutates the MDF data); the reader's geometry detection survives any sector rewrite.Scope. Rewrites only the user-data bytes inside an existing sector or appends a brand-new sector at the end of the stream. It does not understand the inner ISO 9660 directory structure — that is the job of `IsoWriter` / its reader. Synthetic entry names of the form `sector-NNNNNN.bin` address a single sector LBA. Multi-track layouts (described in the companion `.mds`) are not parsed — the modifier treats the stream as a single track of sectors at flat LBA offsets. Sync pattern (12 B), 3-byte address, 1-byte mode, and the EDC/ECC tail of raw sectors are preserved on rewrite and synthesised on append.True in-place. Writes touch only the 2 048-byte user-data region of the targeted sector. Bytes outside that region — header bytes of the same sector, every untouched sector, the system area (LBA 0-15), the PVD at LBA 16, and the ISO root directory — stay byte-identical at their original byte offsets.
+Low-level sector access for Alcohol 120% MDF data streams. Existing raw sectors are rewritten as complete sectors so their ECMA-130 EDC/ECC remains consistent with the changed 2 048-byte user-data field.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Routes each input through the sector-rewrite path. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed LBA byte offset. Inputs whose `ArchiveName` doesn't match the schema are refused — inner ISO 9660 directory mutation is delegated to `FileSystem.Iso`. |
-| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Extends the image so that sector `lba` exists, writing `userData` as its 2 048-byte payload. Intermediate sectors are appended with format-correct framing. |
-| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the sector geometry of `image` the same way `MdfReader` does — by probing for the `CD001` PVD signature at LBA 16. Falls back to raw Mode 1 (2 352 / 16) when no probe succeeds. |
-| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats a sector LBA into the synthetic entry name used by the in-place modifier. |
-| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Zeros each named `sector-NNNNNN.bin`. Names that don't match the schema are refused; sectors past EOF are still skipped. The framing bytes of an existing sector are preserved. |
-| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses a synthetic `sector-NNNNNN.bin` entry name and returns the embedded sector LBA. Names that don't match the schema return `false`. |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites the 2 048-byte user-data region of sector `lba` in place. Other bytes — sync/header/EDC for raw sectors, every other sector — are untouched. If `lba` points past current EOF, the image is grown sector-by-sector with appended-sector framing (`AppendSector`). |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Variant of `WriteSector` that reuses a previously-probed geometry, avoiding a redundant PVD probe per call when a caller is rewriting several sectors back-to-back. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros the 2 048-byte user-data region of sector `lba` in place. The sector framing bytes are preserved; only the user data is wiped. Returns `true` if the sector existed (and was zeroed), `false` if `lba` is past EOF. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geom)` | Variant of `ZeroSector` reusing a previously-probed geometry. |
+| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Low-level sector replacement API retained for callers that explicitly work in LBAs. The format descriptor itself now exposes file-level ISO 9660 edits. |
+| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geometry)` | Extends the MDF until `lba` exists. Newly synthesised raw sectors receive a valid sync/header/subheader and ECMA-130 EDC/ECC. |
+| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the sector geometry by probing the ISO 9660 PVD at LBA 16. When no PVD exists, an exact sector-size divisibility check is used before retaining the historical raw-Mode-1 fallback. |
+| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats a synthetic sector name retained for low-level callers. |
+| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Low-level sector wipe API retained for explicit LBA callers. |
+| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses `sector-NNNNNN.bin` into its LBA. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites one 2 048-byte payload. Raw Mode 1 / Mode 2 Form 1 sectors have their EDC and P/Q parity regenerated according to ECMA-130 / ECMA-168. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geometry)` | Writes a payload using a previously detected geometry. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros one existing user-data sector and regenerates raw parity. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geometry)` | Zeros one existing user-data sector using a cached geometry. |
 
 #### `MdfInPlaceModifier.SectorGeometry`
 
-Detected on-disk sector geometry for an MDF image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins.
+Detected physical sector geometry of an MDF data stream.
 
 Implements `IEquatable<SectorGeometry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset)` | Detected on-disk sector geometry for an MDF image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins. |
+| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset)` | Detected physical sector geometry of an MDF data stream. |
 | `DataOffset` | `int DataOffset { get; init; }` |  |
+| `IsRaw` | `bool IsRaw { get; }` | Whether sectors carry ECMA-130 framing around the 2 048-byte payload. |
 | `SectorSize` | `int SectorSize { get; init; }` |  |
+
+#### `MdfLayoutMap`
+
+Projects ISO-9660 logical extents back onto the physical MDF sector stream. Cooked 2 048-byte MDFs can expose genuinely free runs. Raw sectors are kept whole in the map because their sync/header/EDC/ECC bytes are live framing; a sector whose payload is unused is therefore conservatively metadata-reserved. Wipe uses the finer logical view directly and can still scrub that payload.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream physical)` |  |
 
 #### `MdfReader`
 

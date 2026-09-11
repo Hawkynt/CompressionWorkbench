@@ -5,136 +5,130 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Mdf;
 
 /// <summary>
-/// Alcohol 120% MDF/MDS disc image pair — raw sector data (.mdf) plus a session/track descriptor (.mds).
+/// Alcohol 120% MDF/MDS optical-disc image: sector data in <c>.mdf</c> plus
+/// session/track metadata in the companion <c>.mds</c> descriptor.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://cdemu.sourceforge.io</c> — CDEmu / libMirage — its MDS/MDF parser is the de-facto format documentation</description></item>
-///   <item><description>No official specification — proprietary Alcohol Soft format, reverse-engineered</description></item>
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-119/</c> — ISO 9660 / ECMA-119 filesystem layout</description></item>
+///   <item><description><c>https://ecma-international.org/publications-and-standards/standards/ecma-130/</c> — CD-ROM Mode 1 sector framing and EDC/ECC</description></item>
+///   <item><description><c>https://cdemu.sourceforge.io</c> — CDEmu/libMirage MDS/MDF implementation used as a behavioral reference</description></item>
+///   <item><description><c>https://github.com/aaru-dps/Aaru/tree/devel/Aaru.Images/Alcohol120</c> — LGPL-2.1-or-later Alcohol 120% implementation used to cross-check MDS structures and track modes</description></item>
 /// </list>
 /// </summary>
-public sealed class MdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
+public sealed class MdfFormatDescriptor :
+  IFormatDescriptor,
+  IArchiveFormatOperations,
+  IArchiveCreatable,
+  IArchiveModifiable,
+  IArchiveDefragmentable,
+  IArchiveLayoutMap,
+  IArchivePurgeable {
 
+  private const int StandaloneEditReserveSectors = 32;
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Mdf";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "MDF/MDS";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
-    FormatCapabilities.SupportsDirectories;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".mdf";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".mdf", ".mds"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  // MDF has no file-header magic; it is raw sector data.
-  // Detection relies on the ISO 9660 PVD heuristic (CD001 at LBA 16).
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "Alcohol 120% MDF/MDS disc image (R/W via in-place sector rewrite at fixed offsets; inner ISO 9660 directory mutation delegated to FileSystem.Iso; multi-track .mds layouts deferred — the modifier mutates the MDF data only)";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  // MDF itself has no header; the companion MDS does.
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new("MEDIA DESCRIPTOR"u8.ToArray(), Offset: 0, Confidence: 0.99),
+  ];
+
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("iso9660", "ISO 9660")];
+  public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description =>
+    "Alcohol 120% MDF/MDS optical image; ISO 9660 content is editable inside the existing MDF track capacity, " +
+    "with raw-sector EDC/ECC regenerated and the physical sector count kept stable so companion MDS geometry remains valid";
+
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new MdfReader(stream, leaveOpen: true);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.FullPath, e.Size,
-      e.Size, "iso9660", e.IsDirectory, false, null)).ToList();
+    using var reader = new MdfReader(stream, leaveOpen: true);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index,
+      entry.FullPath,
+      entry.Size,
+      entry.Size,
+      "iso9660",
+      entry.IsDirectory,
+      false,
+      null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new MdfReader(stream, leaveOpen: true);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.FullPath, files)) continue;
-      WriteFile(outputDir, e.FullPath, r.Extract(e));
+    using var reader = new MdfReader(stream, leaveOpen: true);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      if (files != null && !MatchesFilter(entry.FullPath, files)) continue;
+      WriteFile(outputDir, entry.FullPath, reader.Extract(entry));
     }
   }
 
   /// <summary>
-  /// Performs the create operation.
+  /// Creates a standalone MDF data stream as 2 048-byte cooked ISO sectors.
+  /// The archive API owns one output stream and therefore cannot emit the MDS
+  /// sidecar. A small physical tail reserve is left outside ISO's declared
+  /// volume-space count so a freshly-created image can exercise genuine add /
+  /// replace semantics without resizing; existing paired images are never grown.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    // WORM: emit plain 2048-byte ISO 9660 sectors. The reader's geometry detection
-    // recognises this. The accompanying .MDS metadata sidecar isn't produced (the
-    // Create API is single-stream); MDS isn't required to extract MDF content.
+    ArgumentNullException.ThrowIfNull(output);
     var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());
+    output.Write(new byte[StandaloneEditReserveSectors * MdfInPlaceModifier.Iso9660SectorSize]);
   }
 
-  // ── IArchiveModifiable ──────────────────────────────────────────────
-
   /// <summary>
-  /// Rewrites raw CD sectors in place. Inputs whose <c>ArchiveName</c> matches
-  /// <c>sector-NNNNNN.bin</c> are written at the fixed byte offset
-  /// <c>lba * sectorSize + dataOffset</c>; everything outside the touched
-  /// 2 048-byte user-data region stays byte-identical.
-  ///
-  /// <para>Inputs not matching the synthetic sector schema are skipped —
-  /// inner-ISO 9660 directory mutation is delegated to <c>FileSystem.Iso</c>
-  /// and is out of scope for the sector-rewrite modifier. The accompanying
-  /// <c>.mds</c> sidecar (if any) is not touched; the modifier only mutates
-  /// the MDF byte stream.</para>
+  /// Adds or replaces root-level ISO 9660 files inside the existing MDF track.
+  /// The edit is staged transactionally and committed only if the result parses.
+  /// Physical growth is refused because that would require changing the MDS
+  /// track descriptors, which are outside the single-stream mutation contract.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
-    MdfInPlaceModifier.AddOrReplaceSectors(archive,
-      inputs.Where(i => !i.IsDirectory).Select(i => (i.ArchiveName, i.ReadContent())));
+    foreach (var (name, data) in FilesOnly(inputs))
+      MdfIsoOperations.AddOrReplace(archive, name, data);
   }
 
   /// <summary>
-  /// Zeros the 2 048-byte user-data region of each named sector. Sector
-  /// framing bytes (sync / address / mode / EDC) on raw geometries are
-  /// preserved so the LBA-to-offset map and the rest of the image remain
-  /// byte-identical.
+  /// Removes root-level ISO 9660 files and wipes their former data sectors while
+  /// preserving the MDF's physical sector count and raw framing.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
-    MdfInPlaceModifier.RemoveSectors(archive, entryNames);
+    foreach (var name in entryNames)
+      MdfIsoOperations.Remove(archive, name);
   }
+
+  /// <inheritdoc />
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)
+    => MdfLayoutMap.Enumerate(archive);
+
+  /// <inheritdoc />
+  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)
+    => MdfIsoOperations.WipeUnusedSpace(image, wipeClusterTips, wipeDeletedEntries);
+
+  /// <inheritdoc />
+  public void Purge(Stream archive)
+    => MdfIsoOperations.Purge(archive);
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive, DefragOptions options)
+    => MdfIsoOperations.Defragment(archive, options);
 }
