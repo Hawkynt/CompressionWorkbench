@@ -279,6 +279,11 @@ public class EndToEndInteropTests {
     ".gho", ".sparseimage", ".mrimgx", ".mrbakx", ".pbf",
     // WORM-minimal writers that don't round-trip user files (SB-only / empty-FS):
     ".bcachefs", ".reiser4",
+    // Formats whose create side needs something the harness cannot invent, and
+    // which refuse rather than guess. PGS (.sup) is a single subtitle stream:
+    // it takes complete display sets, PCS through END, not loose files.
+    // eCryptfs needs a passphrase before a lower file can exist at all.
+    ".sup", ".ecryptfs",
     // Filesystem images (HFS, NTFS, ext, etc. require full FS creation)
     ".hfs", ".hfsp", ".mfs", ".ntfs", ".ext", ".exfat", ".fat", ".img",
     ".ufs", ".xfs", ".jfs", ".reiserfs", ".f2fs", ".romfs", ".minixfs", ".minix",
