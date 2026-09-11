@@ -1,55 +1,78 @@
-using System.Buffers.Binary;
 using Compression.Registry;
+using FileSystem.Ecryptfs;
 
 namespace Compression.Tests.Ecryptfs;
 
 [TestFixture]
 public class EcryptfsDetectionTests {
 
-  // Build a minimal eCryptfs file: marker 0x3C81B7F5 + 8-byte BE decrypted size + 4-byte flags + 4-byte extent-size,
-  // padded out to one extent so the reader can carve the opaque ciphertext blob.
-  private static byte[] BuildMinimalFile(ulong decryptedSize = 4096, uint flags = 0, uint extentSize = 4096, int cipherLen = 4096) {
-    var image = new byte[Math.Max((int)extentSize, 64) + cipherLen];
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0, 4), 0x3C81B7F5u);
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(4, 8), decryptedSize);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(12, 4), flags);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(16, 4), extentSize);
-    for (var i = 0; i < cipherLen; i++) image[Math.Max((int)extentSize, 64) + i] = (byte)((i * 7) ^ 0xA5);
-    return image;
+  private static byte[] CreateImage(byte[] content, string password = "foo", string? encryptionMethod = null) {
+    var descriptor = new EcryptfsFormatDescriptor();
+    using var image = new MemoryStream();
+    ((IArchiveCreatable)descriptor).Create(
+      image,
+      [ArchiveInputInfo.InMemory("payload.bin", content)],
+      new FormatCreateOptions { Password = password, EncryptionMethod = encryptionMethod });
+    return image.ToArray();
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_Properties_AndMagic() {
-    var d = new FileSystem.Ecryptfs.EcryptfsFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Ecryptfs"));
-    Assert.That(d.DisplayName, Is.EqualTo("eCryptfs"));
-    Assert.That(d.Extensions, Does.Contain(".ecryptfs"));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(0));
-    Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0x3C, 0x81, 0xB7, 0xF5 }));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+  public void Descriptor_AdvertisesPasswordAwareRw_WithoutFakeMagic() {
+    var descriptor = new EcryptfsFormatDescriptor();
+    Assert.That(descriptor.Id, Is.EqualTo("Ecryptfs"));
+    Assert.That(descriptor.DisplayName, Is.EqualTo("eCryptfs"));
+    Assert.That(descriptor.Extensions, Does.Contain(".ecryptfs"));
+    Assert.That(descriptor.MagicSignatures, Is.Empty,
+      "The eCryptfs marker is a relation between two random words, not fixed bytes.");
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsPassword), Is.True);
+    Assert.That(descriptor, Is.InstanceOf<IArchiveModifiable>());
+    Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
+    Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
+    Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
   }
 
   [Test, Category("HappyPath")]
-  public void Read_MinimalFile_SurfacesHeader() {
-    using var ms = new MemoryStream(BuildMinimalFile(decryptedSize: 12345, flags: 0x10, extentSize: 4096, cipherLen: 8192));
-    var r = new FileSystem.Ecryptfs.EcryptfsReader(ms);
-    Assert.That(r.ValidHeader, Is.True);
-    Assert.That(r.Marker, Is.EqualTo(0x3C81B7F5u));
-    Assert.That(r.DecryptedSize, Is.EqualTo(12345ul));
-    Assert.That(r.Flags, Is.EqualTo(0x10u));
-    Assert.That(r.ExtentSize, Is.EqualTo(4096u));
+  public void Read_CreatedLowerFile_SurfacesKernelHeaderGeometry() {
+    var content = Enumerable.Range(0, 12345).Select(i => (byte)(i * 37)).ToArray();
+    using var image = new MemoryStream(CreateImage(content), writable: false);
+    using var reader = new EcryptfsReader(image);
 
-    var names = r.Entries.Select(e => e.Name).ToHashSet();
-    Assert.That(names, Does.Contain("FULL.ecryptfs"));
-    Assert.That(names, Does.Contain("metadata.ini"));
-    Assert.That(names, Does.Contain("ciphertext.bin"));
+    Assert.That(reader.Marker, Is.EqualTo(0x3C81B7F5u));
+    Assert.That(reader.DecryptedSize, Is.EqualTo(12345ul));
+    Assert.That(reader.FileVersion, Is.EqualTo(3));
+    Assert.That(reader.Flags & 0x00000002u, Is.Not.Zero);
+    Assert.That(reader.ExtentSize, Is.EqualTo(4096u));
+    Assert.That(reader.HeaderExtentCount, Is.EqualTo(2));
+    Assert.That(reader.MetadataSize, Is.EqualTo(8192));
+    Assert.That(reader.CanonicalLength, Is.EqualTo(8192 + 4 * 4096));
+    Assert.That(reader.CipherDescription, Is.EqualTo("AES-128-CBC"));
+    Assert.That(reader.Entries.Select(e => e.Name), Is.EqualTo(new[] { "content.bin" }));
+  }
+
+  [Test, Category("Interop")]
+  public void PassphraseSignature_MatchesEcryptfsUtilsKnownAnswerVector() {
+    // ecryptfs-utils tests/userspace/verify-passphrase-sig.sh:
+    // pass="foo", default salt 0011223344556677 => 253ca7e88811d184.
+    using var image = new MemoryStream(CreateImage([1, 2, 3], password: "foo"), writable: false);
+    using var reader = new EcryptfsReader(image);
+    Assert.That(reader.PassphraseSignature, Is.EqualTo("253ca7e88811d184"));
   }
 
   [Test, Category("Sad")]
-  public void Read_BadMarker_Throws() {
-    var img = new byte[64];
-    using var ms = new MemoryStream(img);
-    Assert.Throws<InvalidDataException>(() => _ = new FileSystem.Ecryptfs.EcryptfsReader(ms));
+  public void Read_BrokenMarkerRelation_Throws() {
+    var bytes = CreateImage([1, 2, 3]);
+    bytes[12] ^= 0x80;
+    using var image = new MemoryStream(bytes, writable: false);
+    Assert.Throws<InvalidDataException>(() => _ = new EcryptfsReader(image));
+  }
+
+  [Test, Category("Sad")]
+  public void Read_TruncatedCiphertext_Throws() {
+    var bytes = CreateImage(new byte[4097]);
+    Array.Resize(ref bytes, bytes.Length - 1);
+    using var image = new MemoryStream(bytes, writable: false);
+    Assert.Throws<InvalidDataException>(() => _ = new EcryptfsReader(image));
   }
 }
