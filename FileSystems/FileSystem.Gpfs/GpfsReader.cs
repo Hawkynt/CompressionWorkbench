@@ -2,7 +2,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
 using System.Text;
-using Compression.Core.DiskImage;
 
 namespace FileSystem.Gpfs;
 
@@ -42,8 +41,6 @@ public sealed class GpfsReader : IDisposable {
   public static readonly byte[] NsdMagic = [0x43, 0x47, 0x46, 0x5C];
 
   private const int LegacyHeaderSize = 8;
-  private const int SectorSize = 512;
-  private const int GptHeaderOffset = SectorSize;
 
   private readonly byte[] _data;
   private readonly List<GpfsEntry> _entries = [];
@@ -88,47 +85,38 @@ public sealed class GpfsReader : IDisposable {
     if (_data.Length < LegacyHeaderSize)
       throw new InvalidDataException("GPFS: image is too small for a supported NSD envelope.");
 
-    if (GpfsDetectionSource.TryFindGpfsPartitionType(_data))
-      this.ParseNsdV2Gpt();
-    else if (_data.AsSpan(0, 4).SequenceEqual(NsdMagic))
+    if (GpfsDetectionSource.TryReadGpfsPartition(
+          _data,
+          requireCompleteEntryTable: true,
+          out var partitionOffset,
+          out var partitionSize,
+          out var partitionName)) {
+      this.ParseNsdV2Gpt(partitionOffset, partitionSize, partitionName);
+    } else if (_data.AsSpan(0, 4).SequenceEqual(NsdMagic)) {
       this.ParseLegacyFixture();
-    else if (GptParser.IsGpt(_data))
+    } else if (GpfsDetectionSource.HasGptHeader(_data)) {
       throw new InvalidDataException(
-        $"GPFS: GPT is present but contains no {GpfsPartitionTypeGuid:D} IBM GPFS partition.");
-    else
+        $"GPFS: GPT is present but contains no valid {GpfsPartitionTypeGuid:D} IBM GPFS partition.");
+    } else {
       throw new InvalidDataException(
         "GPFS: no NSD v2 GPT/GPFS partition envelope was found. The legacy workbench descriptor fixture was not present either.");
+    }
 
     var meta = this.BuildMetadata();
     _entries.Add(new GpfsEntry { Name = "metadata.ini", Size = meta.Length, IsDirectory = false, Offset = 0, Data = meta });
     _entries.Add(new GpfsEntry { Name = "gpfs-nsd.bin", Size = _data.LongLength, IsDirectory = false, Offset = 0, Data = _data });
   }
 
-  private void ParseNsdV2Gpt() {
-    this.ValidateGptEntryTableBounds();
+  private void ParseNsdV2Gpt(long partitionOffset, long partitionSize, string partitionName) {
+    if (partitionSize <= 0 || partitionOffset < 0 || partitionOffset > _data.LongLength - partitionSize)
+      throw new InvalidDataException(
+        $"GPFS: GPT partition range [{partitionOffset}, {partitionOffset + partitionSize}) exceeds the image bounds.");
 
-    try {
-      using var stream = new MemoryStream(_data, writable: false);
-      var partition = GptParser.Parse(stream)
-        .FirstOrDefault(entry =>
-          string.Equals(entry.TypeCode, GpfsPartitionTypeGuid.ToString("D"), StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidDataException(
-          $"GPFS: GPT does not contain the {GpfsPartitionTypeGuid:D} IBM GPFS partition type.");
-
-      if (partition.StartOffset < 0 || partition.Size <= 0 || partition.StartOffset > _data.LongLength - partition.Size)
-        throw new InvalidDataException(
-          $"GPFS: GPT partition range [{partition.StartOffset}, {partition.StartOffset + partition.Size}) exceeds the image bounds.");
-
-      this.IsNsdV2Gpt = true;
-      this.GpfsPartitionOffset = partition.StartOffset;
-      this.GpfsPartitionSize = partition.Size;
-      this.GpfsPartitionName = partition.Name;
-      this.ValidHeader = true;
-    } catch (InvalidDataException) {
-      throw;
-    } catch (Exception e) when (e is EndOfStreamException or IOException or OverflowException or ArgumentOutOfRangeException) {
-      throw new InvalidDataException($"GPFS: malformed NSD v2 GPT envelope: {e.Message}", e);
-    }
+    this.IsNsdV2Gpt = true;
+    this.GpfsPartitionOffset = partitionOffset;
+    this.GpfsPartitionSize = partitionSize;
+    this.GpfsPartitionName = partitionName;
+    this.ValidHeader = true;
   }
 
   private void ParseLegacyFixture() {
@@ -136,30 +124,6 @@ public sealed class GpfsReader : IDisposable {
     this.TrailingWord = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(4, 4));
     this.UsesLegacyDescriptorSignature = true;
     this.ValidHeader = true;
-  }
-
-  private void ValidateGptEntryTableBounds() {
-    if (_data.Length < GptHeaderOffset + 92)
-      throw new InvalidDataException("GPFS: truncated GPT header.");
-
-    var gpt = _data.AsSpan(GptHeaderOffset);
-    var entriesLba = BinaryPrimitives.ReadUInt64LittleEndian(gpt[72..]);
-    var entryCount = BinaryPrimitives.ReadUInt32LittleEndian(gpt[80..]);
-    var entrySize = BinaryPrimitives.ReadUInt32LittleEndian(gpt[84..]);
-    if (entryCount == 0 || entryCount > int.MaxValue || entrySize < 128 || entrySize > int.MaxValue)
-      throw new InvalidDataException("GPFS: invalid GPT partition-entry geometry.");
-
-    long tableOffset;
-    long tableLength;
-    try {
-      tableOffset = checked((long)entriesLba * SectorSize);
-      tableLength = checked((long)entryCount * entrySize);
-    } catch (OverflowException e) {
-      throw new InvalidDataException("GPFS: GPT partition-entry geometry overflows the supported image range.", e);
-    }
-
-    if (tableOffset < 0 || tableLength <= 0 || tableLength > int.MaxValue || tableOffset > _data.LongLength - tableLength)
-      throw new InvalidDataException("GPFS: GPT partition-entry array lies outside the image.");
   }
 
   private byte[] BuildMetadata() {

@@ -51,8 +51,8 @@ public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<MagicSignature> MagicSignatures => [
     // NSD v2 uses GPT with a single GPFS partition. In the canonical GPT layout
     // the first partition entry begins at LBA 2 (offset 1024) and starts with
-    // this mixed-endian type GUID. GpfsDetectionSource additionally handles a
-    // relocated GPT entry array structurally.
+    // this mixed-endian type GUID. GpfsDetectionSource additionally recognizes
+    // the GPFS type when it appears in another entry of the standard GPT table.
     new(GpfsReader.GpfsPartitionTypeGuidBytes, Offset: 1024, Confidence: 0.98),
   ];
 
@@ -102,8 +102,8 @@ public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Reports the structural envelope without inventing filesystem allocation
-  /// geometry that is not derivable from public on-disk documentation.
+  /// Reports the public NSD envelope without reading the full image or inventing
+  /// filesystem allocation geometry that is not derivable from public documentation.
   /// </summary>
   public LayoutAnalysis AnalyzeLayout(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
@@ -112,17 +112,33 @@ public sealed class GpfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     var originalPosition = image.Position;
     try {
+      var prefixLength = (int)Math.Min(image.Length, GpfsDetectionSource.ProbeLength);
+      var prefix = new byte[prefixLength];
       image.Position = 0;
-      using var reader = new GpfsReader(image);
+      image.ReadExactly(prefix);
+
       var notes = new List<string>();
-      if (reader.IsNsdV2Gpt) {
+      if (GpfsDetectionSource.TryReadGpfsPartition(
+            prefix,
+            requireCompleteEntryTable: false,
+            out var partitionOffset,
+            out var partitionSize,
+            out _)) {
+        if (partitionSize <= 0 || partitionOffset < 0 || partitionOffset > image.Length - partitionSize)
+          throw new InvalidDataException("GPFS: GPT partition range exceeds the image bounds.");
         notes.Add(
-          $"NSD v2 GPT envelope detected; GPFS partition starts at byte {reader.GpfsPartitionOffset:N0} " +
-          $"and spans {reader.GpfsPartitionSize:N0} byte(s).");
-      } else {
+          $"NSD v2 GPT envelope detected; GPFS partition starts at byte {partitionOffset:N0} " +
+          $"and spans {partitionSize:N0} byte(s).");
+      } else if (prefix.AsSpan().StartsWith(GpfsReader.NsdMagic)) {
         notes.Add(
           "Historical workbench descriptor signature detected. It is retained for compatibility only and is not treated as a normative IBM disk signature.");
+      } else if (GpfsDetectionSource.HasGptHeader(prefix)) {
+        throw new InvalidDataException(
+          $"GPFS: GPT is present but contains no {GpfsReader.GpfsPartitionTypeGuid:D} IBM GPFS partition in the probed entry table.");
+      } else {
+        throw new InvalidDataException("GPFS: no supported NSD envelope was found.");
       }
+
       notes.Add(
         "No allocation-unit, free-space, inode or directory geometry is claimed: public IBM documentation describes the NSD envelope and operational structures, not enough byte-level metadata layout for a safe independent offline rewrite.");
       notes.Add(
