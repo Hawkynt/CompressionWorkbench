@@ -1,78 +1,104 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
+using System.Security.Cryptography;
 using Compression.Registry;
 using FileSystem.Ecryptfs;
 
 namespace Compression.Tests.Ecryptfs;
 
-/// <summary>
-/// Pins the stub-tier surface for <see cref="EcryptfsFormatDescriptor"/>.
-/// eCryptfs per-file containers wrap AES-CBC ciphertext extents — without the
-/// mount passphrase + EFEK packets the payload is opaque. These tests prevent
-/// silent capability creep (CanCreate/CanModify) and stop the opaque-blob entry
-/// shape from drifting.
-/// </summary>
 [TestFixture]
 public class EcryptfsStubBehaviorTests {
 
-  private static byte[] BuildMagicOnly(int cipherLen = 256) {
-    // Reader places ciphertext at offset max(ExtentSize, 4096); we set extent=4096.
-    const int extent = 4096;
-    var image = new byte[extent + cipherLen];
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0, 4), 0x3C81B7F5u);
-    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(4, 8), 8192ul);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(12, 4), 0u);
-    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(16, 4), (uint)extent);
-    for (var i = 0; i < cipherLen; i++) image[extent + i] = (byte)((i * 11) ^ 0xC3);
-    return image;
+  private static byte[] CreateImage(byte[] content, string password = "correct horse", string? method = null) {
+    var descriptor = new EcryptfsFormatDescriptor();
+    using var image = new MemoryStream();
+    ((IArchiveCreatable)descriptor).Create(
+      image,
+      [ArchiveInputInfo.InMemory("payload.bin", content)],
+      new FormatCreateOptions { Password = password, EncryptionMethod = method });
+    return image.ToArray();
   }
 
-  [Test, Category("Stub")]
-  public void Stub_DescriptorHonestlyAdvertisesCapabilities_AndOpaqueEntries() {
-    var d = new EcryptfsFormatDescriptor();
+  [TestCase("aes128")]
+  [TestCase("aes192")]
+  [TestCase("aes256")]
+  [Category("Interop")]
+  public void CreateThenExtract_RoundTripsAesPassphraseProfiles(string method) {
+    var content = Enumerable.Range(0, 9001).Select(i => (byte)(i * 73 + 11)).ToArray();
+    var descriptor = new EcryptfsFormatDescriptor();
+    using var image = new MemoryStream(CreateImage(content, method: method), writable: false);
 
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False,
-      "eCryptfs is stub-tier (encrypted ciphertext) — must not advertise CanCreate.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "eCryptfs is stub-tier (encrypted ciphertext) — must not advertise CanModify.");
+    var entries = descriptor.List(image, null);
+    Assert.That(entries, Has.Count.EqualTo(1));
+    Assert.That(entries[0].Name, Is.EqualTo("content.bin"));
+    Assert.That(entries[0].OriginalSize, Is.EqualTo(content.Length));
+    Assert.That(entries[0].IsEncrypted, Is.True);
 
-    var image = BuildMagicOnly(cipherLen: 256);
-    using var ms = new MemoryStream(image, writable: false);
-    var entries = d.List(ms, null);
-
-    var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "FULL.ecryptfs", "metadata.ini", "ciphertext.bin" }),
-      "eCryptfs minimal-image surface must be exactly the documented opaque triple.");
-
-    var outDir = Path.Combine(Path.GetTempPath(), "EcryptfsStub_" + Guid.NewGuid().ToString("N"));
-    Directory.CreateDirectory(outDir);
-    try {
-      using var ms2 = new MemoryStream(image, writable: false);
-      d.Extract(ms2, outDir, password: null, files: null);
-
-      var fullPath = Path.Combine(outDir, "FULL.ecryptfs");
-      Assert.That(File.Exists(fullPath), Is.True, "Extract must produce FULL.ecryptfs.");
-      Assert.That(File.ReadAllBytes(fullPath), Is.EqualTo(image),
-        "FULL.ecryptfs must round-trip the file bytes exactly.");
-
-      var cipherPath = Path.Combine(outDir, "ciphertext.bin");
-      Assert.That(File.Exists(cipherPath), Is.True, "Extract must produce ciphertext.bin.");
-      var expectedCipher = image.AsSpan(4096).ToArray();
-      Assert.That(File.ReadAllBytes(cipherPath), Is.EqualTo(expectedCipher),
-        "ciphertext.bin must round-trip the opaque AES-CBC payload exactly.");
-    } finally {
-      Directory.Delete(outDir, recursive: true);
-    }
+    image.Position = 0;
+    using var reader = new EcryptfsReader(image);
+    Assert.That(reader.ExtractContent("correct horse"), Is.EqualTo(content));
   }
 
-  [Test, Category("Stub")]
-  public void Stub_DoesNotAdvertiseWriteCapability() {
-    var d = new EcryptfsFormatDescriptor();
-    var description = d.Description.ToLowerInvariant();
-    Assert.That(
-      description.Contains("stub") || description.Contains("opaque")
-      || description.Contains("skeleton") || description.Contains("detection"),
-      Is.True,
-      $"eCryptfs Description must honestly flag its stub/detection-only/opaque status. Got: '{d.Description}'.");
+  [Test, Category("Sad")]
+  public void Extract_WrongPassphrase_IsRejectedBeforePayloadDecryption() {
+    using var image = new MemoryStream(CreateImage([1, 2, 3, 4]), writable: false);
+    using var reader = new EcryptfsReader(image);
+    Assert.Throws<CryptographicException>(() => reader.ExtractContent("wrong horse"));
+  }
+
+  [Test, Category("HappyPath")]
+  public void WipeAndShrink_RemoveOnlyProvenDeadBytes() {
+    var content = Enumerable.Range(0, 5000).Select(i => (byte)i).ToArray();
+    var descriptor = new EcryptfsFormatDescriptor();
+    var original = CreateImage(content);
+    using var image = new MemoryStream();
+    image.Write(original);
+    image.Write(Enumerable.Repeat((byte)0xA5, 257).ToArray());
+    image.Position = 0;
+
+    var wiped = ((IWipeEmpty)descriptor).WipeUnusedSpace(image);
+    Assert.That(wiped, Is.GreaterThanOrEqualTo(257));
+    Assert.That(image.ToArray().AsSpan(original.Length, 257).ToArray(), Is.All.Zero);
+
+    image.Position = 0;
+    using (var reader = new EcryptfsReader(image))
+      Assert.That(reader.ExtractContent("correct horse"), Is.EqualTo(content));
+
+    image.Position = 0;
+    using var shrunk = new MemoryStream();
+    ((IArchiveShrinkable)descriptor).Shrink(image, shrunk);
+    Assert.That(shrunk.Length, Is.EqualTo(original.Length));
+    using var shrunkReader = new EcryptfsReader(shrunk);
+    Assert.That(shrunkReader.ExtractContent("correct horse"), Is.EqualTo(content));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Purge_LeavesValidListableEmptyLowerFile() {
+    var descriptor = new EcryptfsFormatDescriptor();
+    using var image = new MemoryStream(CreateImage(Enumerable.Repeat((byte)0x5A, 5000).ToArray()));
+
+    ((IArchivePurgeable)descriptor).Purge(image);
+
+    Assert.That(image.Length, Is.EqualTo(8192));
+    image.Position = 0;
+    Assert.That(descriptor.List(image, null), Is.Empty);
+    image.Position = 0;
+    using var reader = new EcryptfsReader(image);
+    Assert.That(reader.DecryptedSize, Is.Zero);
+    Assert.That(reader.CanonicalLength, Is.EqualTo(8192));
+  }
+
+  [Test, Category("Sad")]
+  public void Create_RequiresPassphrase_AndSingleRegularInput() {
+    var descriptor = (IArchiveCreatable)new EcryptfsFormatDescriptor();
+    using var output = new MemoryStream();
+    Assert.Throws<ArgumentException>(() => descriptor.Create(
+      output,
+      [ArchiveInputInfo.InMemory("a", [1])],
+      new FormatCreateOptions()));
+
+    Assert.Throws<NotSupportedException>(() => descriptor.Create(
+      output,
+      [ArchiveInputInfo.InMemory("a", [1]), ArchiveInputInfo.InMemory("b", [2])],
+      new FormatCreateOptions { Password = "pw" }));
   }
 }
