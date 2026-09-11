@@ -29,12 +29,15 @@ public class NrgAuthoringTests {
 
     var cuex = chunks.Single(static chunk => chunk.Id == "CUEX").Payload;
     Assert.That(cuex.Length, Is.EqualTo(48), "lead-in + two indices per track + lead-out");
+    // The program area starts at LBA 0 with the first track's index 1, so the 150-sector
+    // pregap in front of it occupies the negative LBAs the lead-in also lives in.
+    var audioSectors = audio.Length / AudioSectorSize;
     AssertCue(cuex, 0, adrCtl: 0x01, track: 0x00, index: 0x00, lba: -150);
-    AssertCue(cuex, 1, adrCtl: 0x01, track: 0x01, index: 0x00, lba: 0);
-    AssertCue(cuex, 2, adrCtl: 0x01, track: 0x01, index: 0x01, lba: 150);
-    AssertCue(cuex, 3, adrCtl: 0x41, track: 0x02, index: 0x00, lba: 153);
-    AssertCue(cuex, 4, adrCtl: 0x41, track: 0x02, index: 0x01, lba: 153);
-    AssertCue(cuex, 5, adrCtl: 0x41, track: 0xAA, index: 0x01, lba: 153 + iso.Length / CookedSectorSize);
+    AssertCue(cuex, 1, adrCtl: 0x01, track: 0x01, index: 0x00, lba: -150);
+    AssertCue(cuex, 2, adrCtl: 0x01, track: 0x01, index: 0x01, lba: 0);
+    AssertCue(cuex, 3, adrCtl: 0x41, track: 0x02, index: 0x00, lba: audioSectors);
+    AssertCue(cuex, 4, adrCtl: 0x41, track: 0x02, index: 0x01, lba: audioSectors);
+    AssertCue(cuex, 5, adrCtl: 0x41, track: 0xAA, index: 0x01, lba: audioSectors + iso.Length / CookedSectorSize);
 
     var daox = chunks.Single(static chunk => chunk.Id == "DAOX").Payload;
     Assert.That(daox.Length, Is.EqualTo(22 + 2 * 42));
@@ -53,15 +56,15 @@ public class NrgAuthoringTests {
     var dataStart = checked((long)BinaryPrimitives.ReadUInt64BigEndian(dataRecord[26..]));
     var dataEnd = checked((long)BinaryPrimitives.ReadUInt64BigEndian(dataRecord[34..]));
 
+    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(audioRecord[12..]), Is.EqualTo(AudioSectorSize));
+    Assert.That(audioRecord[14], Is.EqualTo((byte)NrgTrackMode.Audio));
+    Assert.That(System.Text.Encoding.ASCII.GetString(audioRecord[..12]), Is.EqualTo("USABC2600001"));
+    Assert.That(BinaryPrimitives.ReadUInt16BigEndian(dataRecord[12..]), Is.EqualTo(CookedSectorSize));
+    Assert.That(dataRecord[14], Is.EqualTo((byte)NrgTrackMode.Mode1));
     Assert.Multiple(() => {
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(audioRecord[12..]), Is.EqualTo(AudioSectorSize));
-      Assert.That(audioRecord[14], Is.EqualTo((byte)NrgTrackMode.Audio));
-      Assert.That(System.Text.Encoding.ASCII.GetString(audioRecord[..12]), Is.EqualTo("USABC2600001"));
       Assert.That(audioPregap, Is.Zero);
       Assert.That(audioStart - audioPregap, Is.EqualTo(150L * AudioSectorSize));
       Assert.That(audioEnd - audioStart, Is.EqualTo(audio.Length));
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(dataRecord[12..]), Is.EqualTo(CookedSectorSize));
-      Assert.That(dataRecord[14], Is.EqualTo((byte)NrgTrackMode.Mode1));
       Assert.That(dataStart, Is.EqualTo(audioEnd));
       Assert.That(dataEnd - dataStart, Is.EqualTo(iso.Length));
     });

@@ -107,11 +107,11 @@ public static class NrgWriter {
     var sessions = WriteTrackData(output, disc);
     var trailerOffset = checked((ulong)output.Position);
 
+    Span<byte> sinf = stackalloc byte[4];
     foreach (var session in sessions) {
       WriteCuex(output, session);
       WriteDaox(output, session);
 
-      Span<byte> sinf = stackalloc byte[4];
       BinaryPrimitives.WriteUInt32BigEndian(sinf, checked((uint)session.Tracks.Count));
       WriteChunk(output, "SINF"u8, sinf);
     }
