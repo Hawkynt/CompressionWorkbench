@@ -9,8 +9,9 @@ public class GlusterFsDetectionTests {
 
   private static byte[] BuildXfsBrick() {
     var writer = new FileSystem.Xfs.XfsWriter();
-    writer.AddFile("data/hello.txt", "hello from xfs brick"u8.ToArray());
-    writer.AddFile(".glusterfs/ab/internal-gfid", "backend index"u8.ToArray());
+    writer.AddFile("host/brick/data/hello.txt", "hello from xfs brick"u8.ToArray());
+    writer.AddFile("host/brick/.glusterfs/ab/internal-gfid", "backend index"u8.ToArray());
+    writer.AddFile("outside.txt", "not part of the brick"u8.ToArray());
     using var stream = new MemoryStream();
     writer.WriteTo(stream);
     return stream.ToArray();
@@ -18,8 +19,9 @@ public class GlusterFsDetectionTests {
 
   private static byte[] BuildExtBrick() {
     var writer = new FileSystem.Ext.ExtWriter();
-    writer.AddFile("data/hello.txt", "hello from ext brick"u8.ToArray());
-    writer.AddFile(".glusterfs/cd/internal-gfid", "backend index"u8.ToArray());
+    writer.AddFile("srv/brick/data/hello.txt", "hello from ext brick"u8.ToArray());
+    writer.AddFile("srv/brick/.glusterfs/cd/internal-gfid", "backend index"u8.ToArray());
+    writer.AddFile("outside.txt", "not part of the brick"u8.ToArray());
     return writer.Build();
   }
 
@@ -41,7 +43,7 @@ public class GlusterFsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void XfsBackingStore_ListsBrickFilesAndHidesGlusterInternalIndex() {
+  public void XfsBackingStore_InfersBrickRootAndHidesNonBrickContentAndGlusterIndex() {
     var descriptor = new GlusterFsFormatDescriptor();
     using var stream = new MemoryStream(BuildXfsBrick());
 
@@ -51,11 +53,12 @@ public class GlusterFsDetectionTests {
       Assert.That(names, Does.Contain("metadata.ini"));
       Assert.That(names, Does.Contain("brick/data/hello.txt"));
       Assert.That(names.Any(name => name.Contains(".glusterfs", StringComparison.Ordinal)), Is.False);
+      Assert.That(names, Does.Not.Contain("brick/outside.txt"));
     });
   }
 
   [Test, Category("HappyPath")]
-  public void ExtBackingStore_ListsAndExtractsBrickFile() {
+  public void ExtBackingStore_InfersBrickRootAndExtractsBrickFile() {
     using var stream = new MemoryStream(BuildExtBrick());
     using var reader = new GlusterFsReader(stream);
 
@@ -64,8 +67,11 @@ public class GlusterFsDetectionTests {
     Assert.Multiple(() => {
       Assert.That(reader.ValidHeader, Is.True);
       Assert.That(reader.BackingFileSystem, Is.EqualTo("ext"));
+      Assert.That(reader.BrickRoot, Is.EqualTo("srv/brick"));
+      Assert.That(reader.HasGlusterIndex, Is.True);
       Assert.That(Encoding.UTF8.GetString(reader.Extract(entry)), Is.EqualTo("hello from ext brick"));
       Assert.That(reader.Entries.Any(candidate => candidate.Name.Contains(".glusterfs", StringComparison.Ordinal)), Is.False);
+      Assert.That(reader.Entries.Any(candidate => candidate.Name == "brick/outside.txt"), Is.False);
     });
   }
 
@@ -110,7 +116,7 @@ public class GlusterFsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Metadata_DescribesPhysicalViewAndMutationBlocker() {
+  public void Metadata_DescribesPhysicalViewBrickRootAndMutationBlocker() {
     using var stream = new MemoryStream(BuildXfsBrick());
     using var reader = new GlusterFsReader(stream);
     var metadata = reader.Entries.Single(entry => entry.Name == "metadata.ini");
@@ -119,6 +125,8 @@ public class GlusterFsDetectionTests {
     Assert.Multiple(() => {
       Assert.That(text, Does.Contain("parse_status=single-brick-read-only"));
       Assert.That(text, Does.Contain("backing_fs=xfs"));
+      Assert.That(text, Does.Contain("brick_root=host/brick"));
+      Assert.That(text, Does.Contain("gluster_index_detected=true"));
       Assert.That(text, Does.Contain("view=physical single-brick namespace"));
       Assert.That(text, Does.Contain("xattrs=preserved in image but not interpreted"));
       Assert.That(text, Does.Contain("cluster_namespace_reconstruction=false"));
