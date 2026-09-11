@@ -141,7 +141,7 @@ internal sealed class BcacheFsNodeBuilder {
   /// The pointer that names this node: where it is, how much of it was written, and
   /// the identity a reader checks against the node itself.
   /// </summary>
-  internal Key Pointer(long sector, int sectorsWritten) {
+  internal Key Pointer(long sector, int sectorsWritten, byte generation = 0) {
     var value = new byte[48];
     BinaryPrimitives.WriteUInt64LittleEndian(value, 0);                        // mem_ptr
     BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(8), this.Seq);
@@ -150,7 +150,7 @@ internal sealed class BcacheFsNodeBuilder {
     // A pointer repeats the range the node it names is responsible for: the low end
     // here, and the high end as the key's own position.
     WriteBpos(value.AsSpan(20), this.MinKey);
-    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), ExtentPointer(sector));
+    BinaryPrimitives.WriteUInt64LittleEndian(value.AsSpan(40), ExtentPointer(sector, generation: generation));
     return new Key(KeyBtreePtrV2, this.MaxKey, 0, value);
   }
 }
