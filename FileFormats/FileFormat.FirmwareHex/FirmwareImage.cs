@@ -33,11 +33,16 @@ public sealed record FirmwareImage(
   public byte[] ToFlatBinary(byte fill = 0xFF) {
     if (this.Segments.Count == 0) return [];
     var lo = this.Segments.Min(s => s.Address);
-    var hi = this.Segments.Max(s => s.Address + (uint)s.Data.Length);
-    var buf = new byte[hi - lo];
+    var hi = this.Segments.Max(s => (ulong)s.Address + (uint)s.Data.Length);
+    var length = hi - lo;
+    if (length > int.MaxValue)
+      throw new InvalidDataException(
+        $"Firmware image spans {length} bytes and cannot be represented as one managed flat byte array.");
+
+    var buf = new byte[(int)length];
     if (fill != 0) Array.Fill(buf, fill);
     foreach (var (addr, data) in this.Segments)
-      Array.Copy(data, 0, buf, (int)(addr - lo), data.Length);
+      Array.Copy(data, 0, buf, checked((int)((ulong)addr - lo)), data.Length);
     return buf;
   }
 
