@@ -1,6 +1,5 @@
 #pragma warning disable CS1591
 using System.Buffers;
-using System.Buffers.Binary;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
 
@@ -16,8 +15,7 @@ namespace FileFormat.T64;
 /// </list>
 /// </summary>
 public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
-  IArchiveModifiable, IArchiveDefragmentable, IArchiveShrinkable, IArchivePurgeable,
-  IArchiveLayoutMap, IFilesystemBlockMover {
+  IArchiveModifiable, IArchiveDefragmentable, IArchivePurgeable, IArchiveLayoutMap, IFilesystemBlockMover {
 
   private const int HeaderSize = 64;
   private const int EntrySize = 32;
@@ -147,7 +145,7 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>
   /// Defragments a T64 image. The canonical consolidate-at-start path moves
-  /// payloads in place and patches only their absolute data-offset fields.
+  /// normal payloads in place and patches only their absolute data-offset fields.
   /// Other layout modes retain the established rebuild behaviour, but preserve
   /// T64 version, tape name, load address and Commodore file type.
   /// </summary>
@@ -164,6 +162,9 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     archive.Position = 0;
     using var reader = new T64Reader(archive);
+    if (reader.Entries.Any(static e => e.EntryType != 1))
+      throw new InvalidDataException("T64: moving defrag only supports normal directory records (entry type 1).");
+
     var entries = reader.Entries.OrderBy(static e => e.DataOffset).ToArray();
     var imageSize = archive.Length;
     var cursor = (long)HeaderSize + reader.DirectoryEntryCount * EntrySize;
@@ -196,40 +197,6 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       ImageSize: archive.Length, BlockMap: EnumerateLayout(archive).ToList(), Status: "Defragmentation complete"));
   }
 
-  // ── IArchiveShrinkable ───────────────────────────────────────────────
-
-  /// <summary>
-  /// Rebuilds normal T64 records into the smallest byte-tight image while
-  /// preserving version, tape name, start addresses and Commodore file types.
-  /// Images containing non-normal record kinds are copied through unchanged.
-  /// </summary>
-  public void Shrink(Stream input, Stream output) {
-    ArgumentNullException.ThrowIfNull(input);
-    ArgumentNullException.ThrowIfNull(output);
-    if (!input.CanRead || !input.CanSeek)
-      throw new ArgumentException("T64: shrink input must be readable and seekable.", nameof(input));
-    if (!output.CanWrite || !output.CanSeek)
-      throw new ArgumentException("T64: shrink output must be writable and seekable.", nameof(output));
-
-    input.Position = 0;
-    using var reader = new T64Reader(input);
-    if (reader.Entries.Any(static e => e.EntryType != 1)) {
-      CopyOriginal(input, output);
-      return;
-    }
-
-    var rebuilt = BuildCompactImage(reader);
-    if (rebuilt.LongLength >= input.Length) {
-      CopyOriginal(input, output);
-      return;
-    }
-
-    output.Position = 0;
-    output.SetLength(0);
-    output.Write(rebuilt);
-    output.Position = 0;
-  }
-
   // ── IArchivePurgeable ────────────────────────────────────────────────
 
   /// <summary>
@@ -255,13 +222,17 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // ── IArchiveLayoutMap / IWipeEmpty ──────────────────────────────────
 
   /// <summary>
-  /// Enumerates every byte of a T64 image: the fixed header, live and free
-  /// directory slots, live payloads, and proven dead gaps/tail bytes.
+  /// Enumerates every byte of a normal-record T64 image: the fixed header, live
+  /// and free directory slots, live payloads, and proven dead gaps/tail bytes.
+  /// Unknown record kinds fail closed by exposing no free-space map at all.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     archive.Position = 0;
     using var reader = new T64Reader(archive);
+    if (reader.Entries.Any(static e => e.EntryType != 1))
+      yield break;
+
     var liveBySlot = reader.Entries.ToDictionary(static e => e.DirectoryIndex);
 
     yield return new DefragBlockInfo(0, HeaderSize, DefragBlockKind.MetadataReserved, "T64 Header");
@@ -293,7 +264,7 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     archive.Position = 0;
     using var reader = new T64Reader(archive);
     if (reader.Entries.Any(static e => e.EntryType != 1))
-      throw new NotSupportedException("T64 rebuild defrag only supports normal directory records; consolidate-at-start can move other record kinds in place.");
+      throw new InvalidDataException("T64: rebuild defrag only supports normal directory records (entry type 1).");
 
     var tapeName = reader.TapeName;
     var version = reader.Version;
@@ -322,26 +293,6 @@ public sealed class T64FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private static IEnumerable<(string Name, byte[] Data)> ReadEntries(Stream stream) {
     using var reader = new T64Reader(stream);
     return reader.Entries.Select(e => (e.Name, reader.Extract(e))).ToArray();
-  }
-
-  private static byte[] BuildCompactImage(T64Reader reader) {
-    var writer = new T64Writer();
-    foreach (var entry in reader.Entries)
-      writer.AddFile(entry.Name, entry.StartAddress, entry.FileType, reader.Extract(entry));
-    return writer.Build(reader.TapeName, reader.Version);
-  }
-
-  private static void CopyOriginal(Stream input, Stream output) {
-    if (ReferenceEquals(input, output)) {
-      input.Position = 0;
-      return;
-    }
-
-    input.Position = 0;
-    output.Position = 0;
-    output.SetLength(0);
-    input.CopyTo(output);
-    output.Position = 0;
   }
 
   private static void EnsureMutable(Stream archive) {
