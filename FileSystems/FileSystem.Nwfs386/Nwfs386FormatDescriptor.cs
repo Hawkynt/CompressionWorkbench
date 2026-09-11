@@ -77,6 +77,7 @@ public sealed class Nwfs386FormatDescriptor :
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
     "Novell NetWare 386 Traditional filesystem. R/W rebuilds are limited to the " +
