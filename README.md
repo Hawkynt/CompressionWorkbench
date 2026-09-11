@@ -21,7 +21,9 @@
 
 > A pure-managed .NET toolbox for compression, format detection, conversion, container/filesystem operations, and binary analysis — with format-specific coverage documented by the package that owns each domain.
 
-## ✨ Vision
+[![The archive browser](docs/screenshots/archive-browser.png)](docs/screenshots/archive-browser.png)
+
+## 🧭 Vision
 
 CompressionWorkbench is built on a deliberately ambitious premise: **if you have this software, you
 should not need another archiver, format inspector, or compression workbench just because the next
@@ -69,7 +71,59 @@ project is trying to become.
 
 ---
 
-## 🧭 Capability map
+## ✨ Features
+
+- Archive and container formats read, written and inspected through one registry
+- Lossless optimization per format, searching the encoder's own parameter space
+- Binary analysis and forensics — entropy, structure, embedded-object discovery
+- A compression core in pure C#, with the classic algorithms implemented rather than bound to
+- A WPF workbench over the same libraries the CLI uses
+- Published as NuGet packages, each with a generated API reference
+
+## 📦 Installation
+
+```bash
+dotnet add package CompressionWorkbench.Core
+```
+
+The CLI and the desktop workbench come from the [latest release](../../releases/latest); the
+[package table](#-packages) below lists what is published.
+
+## 🚀 Quick start
+
+`Compression.CLI` is the general command-line surface. Representative workflows:
+
+```bash
+cwb formats                              # inspect the registered format surface
+cwb analyze unknown.bin                  # signatures + entropy + trial decompression
+cwb list archive.zip                     # list an addressable container
+cwb extract archive.7z -o ./output       # extract
+cwb create output.zip ./input            # create when the target format supports it
+cwb convert input.tar.gz output.tar.xz    # convert through the cheapest valid path
+cwb optimize input.zip optimized.zip     # search/re-encode for better compression
+cwb auto-extract sample.vhd --recursive  # disk -> partition -> filesystem -> nested payloads
+cwb carve damaged.img                    # recover recognizable files from damaged/raw data
+cwb defragment disk.img --mode pack-start
+```
+
+The dedicated [Compression.CLI README](Compression.CLI/README.md) carries command-specific details,
+but the root README keeps the command map below because the CLI is one of the primary ways to use the
+application.
+
+---
+
+<!-- branch-screenshots:start -->
+## 🖼️ Screenshots
+
+These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
+
+| Archive browser | Binary analysis | Maintenance |
+| :--: | :--: | :--: |
+| [![Archive browser](docs/screenshots/archive-browser.png)](docs/screenshots/archive-browser.png) | [![Binary analysis](docs/screenshots/analysis.png)](docs/screenshots/analysis.png) | [![Maintenance](docs/screenshots/maintenance.png)](docs/screenshots/maintenance.png) |
+
+<!-- branch-screenshots:end -->
+
+## 🗺️ Capability map
 
 CompressionWorkbench is the orchestration and tooling layer around Hawkynt's file-format ecosystem.
 This README stays at that product level; the package READMEs own the exhaustive per-format and
@@ -144,7 +198,7 @@ payload possible without pretending those formats are all the same kind of objec
 
 ---
 
-## 📦 Packages
+## 🧰 Packages
 
 Install only the domains you need. The format ecosystem is split between this repository and the
 [`Hawkynt/PNGCrushCS`](https://github.com/Hawkynt/PNGCrushCS) sibling repository.
@@ -170,29 +224,6 @@ dotnet add package Hawkynt.FileFormats.Video
 All format packages are pure managed code. The CompressionWorkbench packages share the registry and
 core primitives; the image/video sibling packages expose their own generated registries and shared
 image model where appropriate.
-
----
-
-## 🚀 Quick start
-
-`Compression.CLI` is the general command-line surface. Representative workflows:
-
-```bash
-cwb formats                              # inspect the registered format surface
-cwb analyze unknown.bin                  # signatures + entropy + trial decompression
-cwb list archive.zip                     # list an addressable container
-cwb extract archive.7z -o ./output       # extract
-cwb create output.zip ./input            # create when the target format supports it
-cwb convert input.tar.gz output.tar.xz    # convert through the cheapest valid path
-cwb optimize input.zip optimized.zip     # search/re-encode for better compression
-cwb auto-extract sample.vhd --recursive  # disk -> partition -> filesystem -> nested payloads
-cwb carve damaged.img                    # recover recognizable files from damaged/raw data
-cwb defragment disk.img --mode pack-start
-```
-
-The dedicated [Compression.CLI README](Compression.CLI/README.md) carries command-specific details,
-but the root README keeps the command map below because the CLI is one of the primary ways to use the
-application.
 
 ---
 
@@ -277,17 +308,6 @@ data:
 stdout, pipe stdin or set a timeout. `cwb tool init` pre-populates templates for common tools.
 
 ---
-
-<!-- branch-screenshots:start -->
-## UI snapshots
-
-These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
-
-| Archive browser | Binary analysis | Maintenance |
-| :--: | :--: | :--: |
-| [![Archive browser](docs/screenshots/archive-browser.png)](docs/screenshots/archive-browser.png) | [![Binary analysis](docs/screenshots/analysis.png)](docs/screenshots/analysis.png) | [![Maintenance](docs/screenshots/maintenance.png)](docs/screenshots/maintenance.png) |
-
-<!-- branch-screenshots:end -->
 
 ## 🔬 Analysis and forensics
 
@@ -387,7 +407,7 @@ implementation. Once a native handler exists, analysis delegates to the owning p
 
 ---
 
-## 🛠️ Optimization, conversion and maintenance
+## 🔧 Optimization, conversion and maintenance
 
 Three cross-cutting ideas are worth knowing at root level because they combine several packages:
 
@@ -412,48 +432,6 @@ shrink, wipe, layout/optimize or reorder. Those are capabilities, not promises m
 The authoritative per-format cells are in the [archive](Hawkynt.FileFormats.Archives/README.md) and
 [filesystem](Hawkynt.FileFormats.FileSystems/README.md) matrices; the common mechanisms are described
 in [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md).
-
----
-
-## 🏗️ Architecture
-
-The repository separates algorithms, registries, format packages and presentation surfaces rather
-than making every project know every format:
-
-```text
-Compression.Core
-      |
-Compression.Registry <--- source-generated descriptor registration
-      |
-Compression.Lib -------> common detection / operations / conversion
-      |
-      +--> Compression.Analysis
-      +--> Compression.CLI
-      +--> Compression.UI
-      +--> Compression.Shell / Compression.Sfx.* / Compression.Mounting.*
-      |
-      +--> Hawkynt.FileFormats.Audio
-      +--> Hawkynt.FileFormats.Archives
-      +--> Hawkynt.FileFormats.FileSystems
-```
-
-Image and video packages live in the sibling PNGCrushCS repository and integrate at their package
-boundaries instead of being duplicated here.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for project-level dependencies and
-[CONTRIBUTING.md](CONTRIBUTING.md) for registry, format-project and testing conventions.
-
----
-
-## 🧪 Building and testing
-
-```bash
-dotnet build CompressionWorkbench.slnx
-dotnet test
-```
-
-The WPF UI targets Windows. On Linux, `run-wine.sh` builds and launches the self-contained Windows UI
-under Wine.
 
 ---
 
@@ -491,6 +469,48 @@ compression families CompressionWorkbench deals with:
 - **[BRRtools](https://github.com/Optiroc/BRRtools)** — SNES S-DSP BRR encoder/decoder and behavioral oracle for `Codec.Brr`; validation is pinned to BRRtools 3.15 at revision [`5b809f171d6a8fe436f09cd883f26994e58feb35`](https://github.com/Optiroc/BRRtools/commit/5b809f171d6a8fe436f09cd883f26994e58feb35). Upstream has no `LICENSE` file, so it is used as an oracle only and no implementation code is copied.
 - **[Matt Mahoney's data-compression page](https://mattmahoney.net/dc/)** — context-mixing compressors and corpora
 - **[Packing Box](https://github.com/packing-box/awesome-executable-packing)** — curated executable-packer material
+
+---
+
+## 🏗️ Architecture
+
+The repository separates algorithms, registries, format packages and presentation surfaces rather
+than making every project know every format:
+
+```text
+Compression.Core
+      |
+Compression.Registry <--- source-generated descriptor registration
+      |
+Compression.Lib -------> common detection / operations / conversion
+      |
+      +--> Compression.Analysis
+      +--> Compression.CLI
+      +--> Compression.UI
+      +--> Compression.Shell / Compression.Sfx.* / Compression.Mounting.*
+      |
+      +--> Hawkynt.FileFormats.Audio
+      +--> Hawkynt.FileFormats.Archives
+      +--> Hawkynt.FileFormats.FileSystems
+```
+
+Image and video packages live in the sibling PNGCrushCS repository and integrate at their package
+boundaries instead of being duplicated here.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for project-level dependencies and
+[CONTRIBUTING.md](CONTRIBUTING.md) for registry, format-project and testing conventions.
+
+---
+
+## 🛠️ Building
+
+```bash
+dotnet build CompressionWorkbench.slnx
+dotnet test
+```
+
+The WPF UI targets Windows. On Linux, `run-wine.sh` builds and launches the self-contained Windows UI
+under Wine.
 
 ---
 
