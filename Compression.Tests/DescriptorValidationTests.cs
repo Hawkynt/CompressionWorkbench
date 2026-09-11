@@ -27,6 +27,12 @@ public class DescriptorValidationTests {
 
   [TestCaseSource(nameof(AllDescriptors))]
   public void DefaultExtension_StartsWithDot(IFormatDescriptor descriptor) {
+    if (descriptor.DefaultExtension.Length == 0) {
+      Assert.That(descriptor.Extensions.Concat(descriptor.CompoundExtensions), Is.Empty,
+        "An empty DefaultExtension is only valid for formats with no registered extensions");
+      return;
+    }
+
     Assert.That(descriptor.DefaultExtension, Does.StartWith("."),
       $"DefaultExtension '{descriptor.DefaultExtension}' must start with '.'");
   }
