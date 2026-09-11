@@ -4,30 +4,36 @@ using System.Text;
 
 namespace FileFormat.Dtb;
 
-/// <summary>Writer for Flattened Device Tree Blob (FDT v17) images.</summary>
+/// <summary>Writer for tightly packed Flattened Device Tree Blob (FDT v17) images.</summary>
 public sealed class DtbWriter {
   internal sealed record PropertySpec(string NodePath, string Name, byte[] Data);
 
   public static void Write(Stream output, IReadOnlyList<(string Name, byte[] Data)> inputs) {
     ArgumentNullException.ThrowIfNull(inputs);
     var properties = inputs.Select(i => FromArchiveEntry(i.Name, i.Data)).ToList();
-    Write(output, properties, [], 0, addDefaultRootCells: true);
+    Write(output, properties, ["/"], [], 0, addDefaultRootCells: true);
   }
 
   internal static void Write(Stream output, IReadOnlyList<PropertySpec> properties,
-      IReadOnlyList<DtbReader.Reservation> reservations, uint bootCpuidPhys,
-      bool addDefaultRootCells = false) {
+      IReadOnlyList<string> nodePaths, IReadOnlyList<DtbReader.Reservation> reservations,
+      uint bootCpuidPhys, bool addDefaultRootCells = false) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(properties);
+    ArgumentNullException.ThrowIfNull(nodePaths);
     ArgumentNullException.ThrowIfNull(reservations);
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("DTB writing requires a writable, seekable stream.", nameof(output));
+
+    output.Position = 0;
+    output.SetLength(0);
 
     var root = new Node("");
+    foreach (var path in nodePaths)
+      _ = GetOrAddPath(root, NormalizeNodePath(path));
+
     foreach (var property in properties) {
-      var node = root;
-      foreach (var segment in property.NodePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
-        node = node.GetOrAdd(SanitiseNodeName(segment));
-      node.Properties.Add(new PropertySpec(property.NodePath,
-        SanitisePropertyName(property.Name), property.Data));
+      var node = GetOrAddPath(root, NormalizeNodePath(property.NodePath));
+      node.Properties.Add(property);
     }
 
     if (addDefaultRootCells) {
@@ -55,20 +61,20 @@ public sealed class DtbWriter {
     WriteNode(root, structBlock, InternName);
     WriteToken(structBlock, DtbReader.FDT_END);
 
-    const int headerSize = 40;
+    const int HeaderSize = 40;
     var reservationSize = checked((reservations.Count + 1) * 16);
-    var structOffset = checked(headerSize + reservationSize);
+    var structOffset = checked(HeaderSize + reservationSize);
     var structSize = checked((uint)structBlock.Length);
     var stringsOffset = checked((uint)(structOffset + structSize));
     var stringsSize = checked((uint)strings.Length);
     var totalSize = checked(stringsOffset + stringsSize);
 
-    Span<byte> header = stackalloc byte[headerSize];
+    Span<byte> header = stackalloc byte[HeaderSize];
     BinaryPrimitives.WriteUInt32BigEndian(header[0..4], DtbReader.Magic);
     BinaryPrimitives.WriteUInt32BigEndian(header[4..8], totalSize);
     BinaryPrimitives.WriteUInt32BigEndian(header[8..12], (uint)structOffset);
     BinaryPrimitives.WriteUInt32BigEndian(header[12..16], stringsOffset);
-    BinaryPrimitives.WriteUInt32BigEndian(header[16..20], headerSize);
+    BinaryPrimitives.WriteUInt32BigEndian(header[16..20], HeaderSize);
     BinaryPrimitives.WriteUInt32BigEndian(header[20..24], 17);
     BinaryPrimitives.WriteUInt32BigEndian(header[24..28], 16);
     BinaryPrimitives.WriteUInt32BigEndian(header[28..32], bootCpuidPhys);
@@ -78,7 +84,6 @@ public sealed class DtbWriter {
 
     Span<byte> reservation = stackalloc byte[16];
     foreach (var item in reservations) {
-      reservation.Clear();
       BinaryPrimitives.WriteUInt64BigEndian(reservation[..8], item.Address);
       BinaryPrimitives.WriteUInt64BigEndian(reservation[8..], item.Size);
       output.Write(reservation);
@@ -98,17 +103,24 @@ public sealed class DtbWriter {
     var directory = slash < 0 ? "" : normalized[..slash];
     var nodePath = directory.Length == 0 || directory.Equals("_root", StringComparison.OrdinalIgnoreCase)
       ? "/"
-      : "/" + directory;
+      : SanitizeArchiveNodePath(directory);
     var leaf = slash < 0 ? normalized : normalized[(slash + 1)..];
     var isText = leaf.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
     if (isText || leaf.EndsWith(".bin", StringComparison.OrdinalIgnoreCase))
       leaf = leaf[..^4];
 
     if (isText && (data.Length == 0 || data[^1] != 0)) {
-      var text = Encoding.UTF8.GetString(data).Replace("\r\n", "\n");
+      var text = Encoding.UTF8.GetString(data).Replace("\r\n", "\n", StringComparison.Ordinal);
       data = Encoding.UTF8.GetBytes(text.Replace('\n', '\0') + "\0");
     }
     return new PropertySpec(nodePath, SanitisePropertyName(leaf), data);
+  }
+
+  internal static string FromArchiveDirectory(string archiveName) {
+    var normalized = archiveName.Replace('\\', '/').Trim('/');
+    if (normalized.Length == 0 || normalized.Equals("_root", StringComparison.OrdinalIgnoreCase))
+      return "/";
+    return SanitizeArchiveNodePath(normalized);
   }
 
   public static string SanitisePropertyName(string archiveName) {
@@ -122,10 +134,16 @@ public sealed class DtbWriter {
       var keep = c is >= '0' and <= '9'
         || c is >= 'a' and <= 'z'
         || c is >= 'A' and <= 'Z'
-        || c is ',' or '.' or '_' or '+' or '?' or '#' or '-';
+        || c is ',' or '.' or '_' or '+' or '?' or '#' or '-' or '*';
       sb.Append(keep ? c : '_');
     }
     return sb.Length == 0 ? "_" : sb.ToString();
+  }
+
+  private static string SanitizeArchiveNodePath(string path) {
+    var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (segments.Length == 0) return "/";
+    return "/" + string.Join('/', segments.Select(SanitiseNodeName));
   }
 
   private static string SanitiseNodeName(string name) {
@@ -135,10 +153,23 @@ public sealed class DtbWriter {
       var keep = c is >= '0' and <= '9'
         || c is >= 'a' and <= 'z'
         || c is >= 'A' and <= 'Z'
-        || c is ',' or '.' or '_' or '+' or '?' or '#' or '-' or '@';
+        || c is ',' or '.' or '_' or '+' or '?' or '#' or '-' or '*' or '@';
       sb.Append(keep ? c : '_');
     }
     return sb.ToString();
+  }
+
+  private static string NormalizeNodePath(string path) {
+    var normalized = path.Replace('\\', '/').Trim();
+    if (normalized.Length == 0 || normalized == "/") return "/";
+    return "/" + normalized.Trim('/');
+  }
+
+  private static Node GetOrAddPath(Node root, string path) {
+    var node = root;
+    foreach (var segment in path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+      node = node.GetOrAdd(segment);
+    return node;
   }
 
   private static void EnsureCellProperty(Node root, string name, uint value) {
@@ -155,11 +186,11 @@ public sealed class DtbWriter {
     output.WriteByte(0);
     Align4(output);
 
-    var propertyHeader = new byte[8];
+    Span<byte> propertyHeader = stackalloc byte[8];
     foreach (var property in node.Properties) {
       WriteToken(output, DtbReader.FDT_PROP);
-      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader.AsSpan(0, 4), checked((uint)property.Data.Length));
-      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader.AsSpan(4, 4), internName(property.Name));
+      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader[..4], checked((uint)property.Data.Length));
+      BinaryPrimitives.WriteUInt32BigEndian(propertyHeader[4..], internName(property.Name));
       output.Write(propertyHeader);
       output.Write(property.Data);
       Align4(output);

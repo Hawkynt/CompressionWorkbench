@@ -370,47 +370,51 @@ Writes Apple Disk Image (DMG/UDIF) files using raw `mish` blocks. Each input bec
 
 ### Namespace `FileFormat.Dtb`
 
-[`DtbFormatDescriptor`](#dtbformatdescriptor) · [`DtbReader`](#dtbreader) · [`DtbReader.Fdt`](#dtbreaderfdt) · [`DtbReader.Header`](#dtbreaderheader) · [`DtbReader.Property`](#dtbreaderproperty) · [`DtbReader.Reservation`](#dtbreaderreservation) · [`DtbWriter`](#dtbwriter)
+[`DtbFormatDescriptor`](#dtbformatdescriptor) · [`DtbReader`](#dtbreader) · [`DtbReader.Fdt`](#dtbreaderfdt) · [`DtbReader.Header`](#dtbreaderheader) · [`DtbReader.Node`](#dtbreadernode) · [`DtbReader.Property`](#dtbreaderproperty) · [`DtbReader.Reservation`](#dtbreaderreservation) · [`DtbWriter`](#dtbwriter)
 
 #### `DtbFormatDescriptor`
 
-Pseudo-archive descriptor for Flattened Device Tree Blobs (DTB/DTBO). Walks the structure block and emits one entry per leaf property. Property data that parses cleanly as a UTF-8 string list is written as a `.txt` file; anything else is written as raw bytes. A `metadata.ini` summarises the FDT header + memory reservation map. References: `https://github.com/devicetree-org/devicetree-specification` — Devicetree Specification — defines the flattened (FDT/DTB) encoding`https://www.devicetree.org` — devicetree.org portal
+Pseudo-archive descriptor for Flattened Device Tree Blobs (DTB/DTBO). The archive view exposes device-tree nodes as directories and properties as files; `metadata.ini` carries header values that are not themselves properties. References: `https://github.com/devicetree-org/devicetree-specification` — Devicetree Specification v0.4, flattened device-tree encoding`https://github.com/dgibson/dtc/tree/main/libfdt` — libfdt reference behavior for v17 mutable/packed blobs
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DtbFormatDescriptor` | `DtbFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Defragment` | `void Defragment(Stream archive)` | Packs all FDT blocks tightly, equivalent to a logical rebuild defragmentation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Maps the real FDT block layout. Gaps inside header totalsize are proven growth/padding space and are therefore free; bytes outside totalsize remain reserved because they are not described by the FDT and may belong to an enclosing/concatenated payload. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Removes all nodes below root and all properties while preserving reservations and boot CPU metadata. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Writes the smallest packed representation while preserving bytes outside FDT totalsize. |
 
 #### `DtbReader`
 
-Reader for the Flattened Device Tree Blob (FDT/DTB) format used by the Linux kernel and U-Boot to describe hardware. Walks the structure block and yields every leaf property as a `Property` with its slash-delimited node path, property name, and raw bytes.
+Reader for the Flattened Device Tree Blob (FDT/DTB) format used by the Linux kernel and U-Boot to describe hardware. Walks the structure block and yields the node hierarchy plus every property with its slash-delimited node path, property name, and raw bytes.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DtbReader` | `DtbReader()` |  |
 | `FDT_BEGIN_NODE` | `const uint FDT_BEGIN_NODE` | Structure-block tokens. |
-| `FDT_END_NODE` | `const uint FDT_END_NODE` | Defines the fdt end node constant value. |
-| `FDT_END` | `const uint FDT_END` | Defines the fdt end constant value. |
-| `FDT_NOP` | `const uint FDT_NOP` | Defines the fdt nop constant value. |
-| `FDT_PROP` | `const uint FDT_PROP` | Defines the fdt prop constant value. |
+| `FDT_END_NODE` | `const uint FDT_END_NODE` |  |
+| `FDT_END` | `const uint FDT_END` |  |
+| `FDT_NOP` | `const uint FDT_NOP` |  |
+| `FDT_PROP` | `const uint FDT_PROP` |  |
 | `Magic` | `const uint Magic` | FDT magic `0xD00DFEED` (BE u32 at offset 0). |
 | `Read` | `static Fdt Read(ReadOnlySpan<byte> data)` | Parses a full DTB byte span into a `Fdt` record. |
 
@@ -422,20 +426,22 @@ Implements `IEquatable<Fdt>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Fdt` | `Fdt(Header Header, IReadOnlyList<Reservation> Reservations, IReadOnlyList<Property> Properties)` | Parsed FDT blob. |
+| `Fdt` | `Fdt(Header Header, IReadOnlyList<Reservation> Reservations, IReadOnlyList<Node> Nodes, IReadOnlyList<Property> Properties, int ReservationMapEnd)` | Parsed FDT blob. |
 | `Header` | `Header Header { get; init; }` |  |
+| `Nodes` | `IReadOnlyList<Node> Nodes { get; init; }` |  |
 | `Properties` | `IReadOnlyList<Property> Properties { get; init; }` |  |
+| `ReservationMapEnd` | `int ReservationMapEnd { get; init; }` | First byte after the mandatory zero/zero reservation terminator. |
 | `Reservations` | `IReadOnlyList<Reservation> Reservations { get; init; }` |  |
 
 #### `DtbReader.Header`
 
-Parsed FDT header (v17 fields; older versions leave trailing fields at 0).
+Parsed v17 FDT header.
 
 Implements `IEquatable<Header>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Header` | `Header(uint Magic, uint TotalSize, uint OffsetDtStruct, uint OffsetDtStrings, uint OffsetMemRsvmap, uint Version, uint LastCompVersion, uint BootCpuidPhys, uint SizeDtStrings, uint SizeDtStruct)` | Parsed FDT header (v17 fields; older versions leave trailing fields at 0). |
+| `Header` | `Header(uint Magic, uint TotalSize, uint OffsetDtStruct, uint OffsetDtStrings, uint OffsetMemRsvmap, uint Version, uint LastCompVersion, uint BootCpuidPhys, uint SizeDtStrings, uint SizeDtStruct)` | Parsed v17 FDT header. |
 | `BootCpuidPhys` | `uint BootCpuidPhys { get; init; }` |  |
 | `LastCompVersion` | `uint LastCompVersion { get; init; }` |  |
 | `Magic` | `uint Magic { get; init; }` |  |
@@ -447,34 +453,45 @@ Implements `IEquatable<Header>`.
 | `TotalSize` | `uint TotalSize { get; init; }` |  |
 | `Version` | `uint Version { get; init; }` |  |
 
+#### `DtbReader.Node`
+
+A node in the device-tree hierarchy. Root is `"/"`.
+
+Implements `IEquatable<Node>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Node` | `Node(string Path)` | A node in the device-tree hierarchy. Root is `"/"`. |
+| `Path` | `string Path { get; init; }` |  |
+
 #### `DtbReader.Property`
 
-A leaf property in the device tree.
+A property in the device tree.
 
 Implements `IEquatable<Property>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Property` | `Property(string NodePath, string Name, byte[] Data)` | A leaf property in the device tree. |
+| `Property` | `Property(string NodePath, string Name, byte[] Data)` | A property in the device tree. |
 | `Data` | `byte[] Data { get; init; }` | Raw property bytes (BE-ordered cells, NUL-separated strings, etc.). |
 | `Name` | `string Name { get; init; }` | Property name (e.g. `compatible`). |
-| `NodePath` | `string NodePath { get; init; }` | Slash-delimited path, e.g. `/chosen`. Root is `""`. |
+| `NodePath` | `string NodePath { get; init; }` | Slash-delimited path, e.g. `/chosen`. Root is `"/"`. |
 
 #### `DtbReader.Reservation`
 
-A reserved memory range declared in the header's memory-reservation map.
+A reserved memory range declared by the memory-reservation block.
 
 Implements `IEquatable<Reservation>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Reservation` | `Reservation(ulong Address, ulong Size)` | A reserved memory range declared in the header's memory-reservation map. |
+| `Reservation` | `Reservation(ulong Address, ulong Size)` | A reserved memory range declared by the memory-reservation block. |
 | `Address` | `ulong Address { get; init; }` |  |
 | `Size` | `ulong Size { get; init; }` |  |
 
 #### `DtbWriter`
 
-Writer for Flattened Device Tree Blob (FDT v17) images.
+Writer for tightly packed Flattened Device Tree Blob (FDT v17) images.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
