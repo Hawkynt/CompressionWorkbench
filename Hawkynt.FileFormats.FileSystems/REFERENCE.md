@@ -3186,45 +3186,46 @@ Represents a bee gfs entry.
 
 #### `BeeGfsFormatDescriptor`
 
-Stage 0 detection-only descriptor for BeeGFS chunk-file / dump tags. Surfaces only a synthetic `metadata.ini` and the raw image bytes; no real file-walk is attempted because a BeeGFS volume has no standalone on-disk image. References: `https://www.beegfs.io` — official BeeGFS site and documentation portal`https://github.com/ThinkParQ/beegfs` — BeeGFS source (ThinkParQ)`https://en.wikipedia.org/wiki/BeeGFS` — Wikipedia overview
+Describes BeeGFS without inventing a standalone byte-stream image format.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BeeGfsFormatDescriptor` | `BeeGfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the single-stream capabilities. BeeGFS has none because it is not a standalone stream/image format. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category used by the filesystem package. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | BeeGFS has no compound file extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | BeeGFS has no canonical file extension. |
+| `Description` | `string Description { get; }` | Gets the format description. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | BeeGFS has no canonical file extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the registry family. |
+| `Id` | `string Id { get; }` | Gets the registry id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | BeeGFS has no standalone stream header. Target directories are identified structurally by their service metadata, not by magic bytes at offset zero of one file. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | There is no archive/storage method for a synthetic BeeGFS image. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | BeeGFS is not a tar compound format. |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `BeeGfsReader`
 
-Stage 0 detection-only reader for BeeGFS chunk-file / dump tags. BeeGFS (Fraunhofer Parallel Cluster FS, originally FhGFS) is a distributed parallel cluster filesystem. There is no standalone on-disk image format for a BeeGFS volume: the namespace lives across one or more metadata targets (each a directory tree on a regular Linux FS like ext4/xfs, with per-inode metadata stored as files + extended attributes), and the file payload lives across many storage targets (chunk files in a 2-level hash directory layout on the storage targets' regular Linux FS). Reconstructing a single logical file requires the live metadata-server stripe pattern + storage-target map; a single byte-stream cannot represent it. This descriptor therefore only verifies the ASCII tag `"BeeGFS"` (6 bytes, 0x42 0x65 0x65 0x47 0x46 0x53) or the short 4-byte tag `"BeeG"` (0x42 0x65 0x65 0x47 = 0x42656547 BE) at offset 0 of a chunk-file or dump produced by a BeeGFS utility, and surfaces a synthetic `metadata.ini` documenting the tag + a raw `beegfs-chunk.bin` blob containing the file bytes verbatim. Promotion to R/O is not possible from a single stream — see `Description` on the descriptor.
+Legacy compatibility surface for the former synthetic single-stream BeeGFS reader.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BeeGfsReader` | `BeeGfsReader(Stream stream)` | Initializes a new instance of `BeeGfsReader`. |
-| `LongTag` | `static readonly byte[] LongTag` | BeeGFS long tag: ASCII "BeeGFS" (6 bytes). |
-| `ShortTag` | `static readonly byte[] ShortTag` | BeeGFS short tag: ASCII "BeeG" (4 bytes, 0x42656547 BE). |
-| `Entries` | `IReadOnlyList<BeeGfsEntry> Entries { get; }` | Gets the entries. |
-| `Tag` | `string Tag { get; }` | Gets or sets the tag. |
-| `TrailingWord` | `uint TrailingWord { get; }` | Gets or sets the trailing word. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(BeeGfsEntry entry)` | Decodes the supplied input. |
+| `BeeGfsReader` | `BeeGfsReader(Stream stream)` | Initializes a compatibility reader and rejects the unsupported single-stream model. |
+| `LongTag` | `static readonly byte[] LongTag` | Legacy synthetic long tag retained for source compatibility; it is not a BeeGFS on-disk signature. |
+| `ShortTag` | `static readonly byte[] ShortTag` | Legacy synthetic short tag retained for source compatibility; it is not a BeeGFS on-disk signature. |
+| `Entries` | `IReadOnlyList<BeeGfsEntry> Entries { get; }` | Gets the legacy entry collection. A reader instance cannot currently be opened. |
+| `Tag` | `string Tag { get; }` | Gets the legacy tag value. A reader instance cannot currently be opened. |
+| `TrailingWord` | `uint TrailingWord { get; }` | Gets the legacy trailing word. A reader instance cannot currently be opened. |
+| `ValidHeader` | `bool ValidHeader { get; }` | Gets whether a legacy synthetic header was accepted. It is always false. |
+| `Dispose` | `void Dispose()` | Releases resources held by this compatibility surface. |
+| `Extract` | `byte[] Extract(BeeGfsEntry entry)` | Rejects extraction through the retired synthetic reader. |
 
 ### Namespace `FileSystem.Bfs`
 
