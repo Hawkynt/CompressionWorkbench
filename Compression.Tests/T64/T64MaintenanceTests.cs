@@ -113,28 +113,6 @@ public class T64MaintenanceTests {
   }
 
   [Test, Category("RoundTrip")]
-  public void Shrink_TightPacksAndPreservesT64Metadata() {
-    var (input, payload) = BuildGappedImage();
-    using (input)
-    using (var output = new MemoryStream()) {
-      var descriptor = new T64FormatDescriptor();
-      ((IArchiveShrinkable)descriptor).Shrink(input, output);
-
-      Assert.That(output.Length, Is.EqualTo(64 + 32 + payload.Length));
-      using var reader = new T64Reader(output);
-      var entry = reader.Entries.Single();
-      Assert.Multiple(() => {
-        Assert.That(reader.DirectoryEntryCount, Is.EqualTo(1));
-        Assert.That(reader.Version, Is.EqualTo(0x0101));
-        Assert.That(reader.TapeName, Is.EqualTo("GAPPED TAPE"));
-        Assert.That(entry.StartAddress, Is.EqualTo(0x2000));
-        Assert.That(entry.FileType, Is.EqualTo(0x81));
-        Assert.That(reader.Extract(entry), Is.EqualTo(payload));
-      });
-    }
-  }
-
-  [Test, Category("RoundTrip")]
   public void Purge_LeavesValidCanonicalEmptyImage() {
     var (stream, _) = BuildGappedImage();
     using (stream) {
@@ -153,15 +131,30 @@ public class T64MaintenanceTests {
     }
   }
 
+  [Test, Category("ErrorHandling")]
+  public void LayoutMap_UnknownRecordKind_FailsClosed() {
+    var (stream, _) = BuildGappedImage();
+    using (stream) {
+      var raw = stream.ToArray();
+      raw[64] = 2;
+      using var unknown = Writable(raw);
+
+      var descriptor = new T64FormatDescriptor();
+      Assert.That(descriptor.EnumerateLayout(unknown), Is.Empty,
+        "unknown T64 record kinds must never turn undecoded bytes into wipeable free space");
+    }
+  }
+
   [Test, Category("HappyPath")]
-  public void Descriptor_ExposesSupportedMaintenanceCapabilities() {
+  public void Descriptor_ExposesOnlyFormatWideMaintenanceCapabilities() {
     var descriptor = new T64FormatDescriptor();
     Assert.Multiple(() => {
       Assert.That(descriptor, Is.InstanceOf<IArchiveDefragmentable>());
-      Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
       Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
       Assert.That(descriptor, Is.InstanceOf<IArchiveLayoutMap>());
       Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveShrinkable>(),
+        "normal T64 records can be rebuilt tightly, but other defined record kinds cannot yet be faithfully re-authored");
       Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>(),
         "T64 has no selectable filesystem/block geometry to re-layout.");
     });
