@@ -25,6 +25,8 @@ public sealed class MdfFormatDescriptor :
   IArchiveLayoutMap,
   IArchivePurgeable {
 
+  private const int StandaloneEditReserveSectors = 32;
+
   public string Id => "Mdf";
   public string DisplayName => "MDF/MDS";
   public FormatCategory Category => FormatCategory.Archive;
@@ -73,13 +75,17 @@ public sealed class MdfFormatDescriptor :
   /// <summary>
   /// Creates a standalone MDF data stream as 2 048-byte cooked ISO sectors.
   /// The archive API owns one output stream and therefore cannot emit the MDS
-  /// sidecar; existing paired images are never resized by the mutation paths.
+  /// sidecar. A small physical tail reserve is left outside ISO's declared
+  /// volume-space count so a freshly-created image can exercise genuine add /
+  /// replace semantics without resizing; existing paired images are never grown.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
     var iso = new FileSystem.Iso.IsoWriter();
     foreach (var (name, data) in FlatFiles(inputs))
       iso.AddFile(name, data);
     output.Write(iso.Build());
+    output.Write(new byte[StandaloneEditReserveSectors * MdfInPlaceModifier.Iso9660SectorSize]);
   }
 
   /// <summary>
