@@ -88,15 +88,16 @@ public sealed class CdiFormatDescriptor :
   /// <summary>
   /// Adds/replaces ordinary ISO files through the verified rebuild path. The
   /// obsolete footer-only profile emitted by older CompressionWorkbench builds
-  /// keeps its explicit sector namespace for backward compatibility.
+  /// keeps its explicit sector namespace when every requested entry names a
+  /// <c>sector-NNNNNN.bin</c>; ordinary names upgrade through the rebuild path.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(inputs);
 
-    if (UsesLegacySectorNamespace(archive)) {
+    if (UsesLegacySectorNamespace(archive) && InputsAreSectorAddresses(inputs)) {
       CdiInPlaceModifier.AddOrReplaceSectors(archive,
-        inputs.Where(input => !input.IsDirectory).Select(input => (input.ArchiveName, input.ReadContent())));
+        inputs.Select(input => (input.ArchiveName, input.ReadContent())));
       return;
     }
 
@@ -118,13 +119,14 @@ public sealed class CdiFormatDescriptor :
 
   /// <summary>
   /// Removes ordinary ISO files through the verified rebuild path. Legacy
-  /// footer-only images retain their old sector-clearing namespace.
+  /// footer-only images retain their old sector-clearing namespace only for
+  /// explicit <c>sector-NNNNNN.bin</c> requests.
   /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryNames);
 
-    if (UsesLegacySectorNamespace(archive)) {
+    if (UsesLegacySectorNamespace(archive) && entryNames.All(IsSectorAddress)) {
       CdiInPlaceModifier.RemoveSectors(archive, entryNames);
       return;
     }
@@ -141,6 +143,12 @@ public sealed class CdiFormatDescriptor :
 
   private static bool UsesLegacySectorNamespace(Stream archive)
     => CdiDescriptor.TryReadFooter(archive, out var footer) && footer.IsLegacyFooterOnly;
+
+  private static bool InputsAreSectorAddresses(IReadOnlyList<ArchiveInputInfo> inputs)
+    => inputs.Count > 0 && inputs.All(input => !input.IsDirectory && IsSectorAddress(input.ArchiveName));
+
+  private static bool IsSectorAddress(string name)
+    => CdiInPlaceModifier.TryParseSectorEntryName(name, out _);
 
   private static void DeleteExistingIgnoringCase(string root, string archiveName) {
     foreach (var file in Directory.GetFiles(root, "*", SearchOption.AllDirectories)) {
