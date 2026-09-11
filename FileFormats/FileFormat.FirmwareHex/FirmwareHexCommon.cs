@@ -47,8 +47,9 @@ internal static class FirmwareHexCommon {
     }
     for (var i = 0; i < image.Segments.Count; i++) {
       var (a, d) = image.Segments[i];
+      var end = (ulong)a + (uint)d.Length;
       sb.Append(CultureInfo.InvariantCulture,
-        $"segment_{i} = 0x{a:X8} .. 0x{a + (uint)d.Length:X8} ({d.Length} bytes)\n");
+        $"segment_{i} = 0x{a:X8} .. 0x{end:X8} ({d.Length} bytes)\n");
     }
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
