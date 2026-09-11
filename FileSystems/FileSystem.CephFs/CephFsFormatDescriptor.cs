@@ -6,127 +6,223 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.CephFs;
 
 /// <summary>
-/// Stage 0 detection-only descriptor for CephFS / RADOS OSD object
-/// metadata dumps. Surfaces only a synthetic <c>metadata.ini</c> and the
-/// raw image bytes; no real file-walk is attempted.
+/// Portable RADOS pool export support for Ceph / CephFS data pools.
 ///
-/// <para><b>Stage-0 confirmation — promotion to R/O is structurally impossible
-/// from a single image.</b> CephFS has no standalone on-disk image format. A
-/// CephFS volume consists of:</para>
-/// <list type="bullet">
-///   <item><description><b>Metadata</b> (inodes, dirfrags, MDS journal) stored
-///     as RADOS objects inside a dedicated metadata pool, managed by one or
-///     more MDS daemons. Resolving a path requires replaying the MDS journal
-///     and walking dirfrag objects across the metadata pool.</description></item>
-///   <item><description><b>File data</b> striped across many RADOS objects
-///     (default 4 MiB stripe-unit, named <c>{inode}.{stripe-index}</c>) and
-///     placed across OSDs via CRUSH against the cluster's mon-map / osd-map /
-///     CRUSH-map — none of which live in any single file.</description></item>
-///   <item><description>OSDs themselves store those RADOS objects in a
-///     BlueStore (RocksDB + raw-block) or legacy FileStore backend; neither
-///     exposes CephFS-level paths.</description></item>
-/// </list>
-/// <para>Reconstructing a CephFS namespace would require: (a) a full OSD-set
-/// snapshot, (b) the live mon/mds cluster state (osd-map, mds-map, CRUSH-map),
-/// and (c) a BlueStore reader. Even with all three, the result is OSD-level
-/// objects, not CephFS-level paths. Treatment confirmed: stay Stage 0.</para>
+/// <para>CephFS itself has no single disk image: pathname/inode metadata lives in
+/// an MDS-managed RADOS metadata pool and file data is distributed across RADOS
+/// objects. This descriptor therefore operates at the honest self-contained
+/// boundary: the serialized object stream produced by <c>rados export</c> and
+/// consumed by <c>rados import</c>.</para>
 ///
-/// References:
-/// <list type="bullet">
-///   <item><description><c>https://docs.ceph.com/en/latest/cephfs/</c> — official CephFS documentation (MDS, RADOS layout, striping)</description></item>
-///   <item><description><c>https://github.com/ceph/ceph</c> — canonical Ceph source</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Ceph_(software)</c> — Wikipedia overview</description></item>
-/// </list>
+/// <para>The pool dump contains object identifiers, namespaces, locator keys,
+/// object bytes, user xattrs, OMAP headers and OMAP entries. Those semantics are
+/// sufficient for offline object-level create/add/replace/remove, purge,
+/// canonical shrink/compact and a complete byte-layout map without librados or
+/// a live cluster. They are not sufficient to reconstruct CephFS pathnames.</para>
+///
+/// <para>Wire-format reference: Ceph <c>src/tools/RadosDump.*</c>,
+/// <c>src/tools/rados/PoolDump.*</c> and <c>RadosImport.*</c>. Those files are
+/// LGPL-2.1; this implementation was independently written from their public
+/// serialized behavior and format constants.</para>
 /// </summary>
-public sealed class CephFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class CephFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
+    IArchiveCreatable, IArchiveModifiable, IArchiveShrinkable, IArchiveLayoutMap {
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "CephFs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
-  public string DisplayName => "CephFS / RADOS";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+  public string DisplayName => "CephFS / RADOS pool export";
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
-  public string DefaultExtension => ".ceph";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
-  public IReadOnlyList<string> Extensions => [".ceph", ".rados"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest
+    | FormatCapabilities.CanCreate | FormatCapabilities.CanModify | FormatCapabilities.SupportsMultipleEntries;
+  public string DefaultExtension => ".rados";
+  public IReadOnlyList<string> Extensions => [".rados", ".ceph"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // ASCII "CEPH" (0x43455048 BE) at offset 0.
-    new("CEPH"u8.ToArray(), Offset: 0, Confidence: 0.90),
+    new(CephFsReader.RadosExportMagic, Offset: 0, Confidence: 0.99),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
-    "CephFS / RADOS — detection-only — distributed FS, no single-image content surface. " +
-    "Magic 'CEPH' at offset 0 of OSD object metadata. " +
-    "Stage-0 confirmed: metadata lives in a RADOS metadata pool (MDS-managed), " +
-    "file data is striped across many RADOS objects placed via CRUSH across OSDs " +
-    "(BlueStore/FileStore backends); R/O over a single image is structurally impossible " +
-    "without the live mon/mds cluster state.";
+    "Portable Ceph RADOS pool export ('rados export') with object-level R/W. " +
+    "Preserves object bytes, namespaces, locator keys, user xattrs and OMAP state; " +
+    "supports canonical shrink/compact, layout, wipe of importer-ignored trailing bytes, and purge. " +
+    "CephFS pathname reconstruction remains out of scope because it requires the distributed MDS metadata pool and cluster state.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new CephFsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    ResetForRead(stream);
+    using var reader = new CephFsReader(stream);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "Stored", false, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new CephFsReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    ResetForRead(stream);
+    using var reader = new CephFsReader(stream);
+    foreach (var entry in reader.Entries) {
+      if (files != null && !MatchesFilter(entry.Name, files)) continue;
+      WriteFile(outputDir, entry.Name, entry.Data);
     }
   }
 
   Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
-    var r = new CephFsReader(archive);
-    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
-      ?? throw new FileNotFoundException($"CephFS entry not found: {entryName}");
-    var data = r.Extract(entry);
-    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+    ResetForRead(archive);
+    using var reader = new CephFsReader(archive);
+    var entry = reader.Entries.FirstOrDefault(candidate => string.Equals(candidate.Name, entryName, StringComparison.Ordinal))
+      ?? throw new FileNotFoundException($"RADOS object entry not found: {entryName}");
+    return new BoundedEntryStream(new MemoryStream(entry.Data, writable: false), entry.Data.LongLength, leaveOpen: false);
+  }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+
+    var objects = new List<RadosPoolDump.ObjectModel>();
+    var byIdentity = new Dictionary<(string Namespace, string ObjectId), int>();
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var identity = RadosPoolDump.DecodeEntryName(input.ArchiveName);
+      var model = new RadosPoolDump.ObjectModel {
+        Namespace = identity.Namespace,
+        ObjectId = identity.ObjectId,
+        Data = input.ReadContent(),
+      };
+      var key = (identity.Namespace, identity.ObjectId);
+      if (byIdentity.TryGetValue(key, out var existing))
+        objects[existing] = model;
+      else {
+        byIdentity.Add(key, objects.Count);
+        objects.Add(model);
+      }
+    }
+    RadosPoolDump.Write(output, objects);
+  }
+
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var parsed = ReadForRewrite(archive);
+    var byIdentity = parsed.Objects.ToDictionary(
+      static obj => (obj.Namespace, obj.ObjectId), static obj => obj);
+
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      var identity = RadosPoolDump.DecodeEntryName(input.ArchiveName);
+      var key = (identity.Namespace, identity.ObjectId);
+      if (byIdentity.TryGetValue(key, out var existing)) {
+        existing.Data = input.ReadContent();
+        continue;
+      }
+      var added = new RadosPoolDump.ObjectModel {
+        Namespace = identity.Namespace,
+        ObjectId = identity.ObjectId,
+        Data = input.ReadContent(),
+      };
+      parsed.Objects.Add(added);
+      byIdentity.Add(key, added);
+    }
+
+    Rewrite(archive, parsed.Objects);
+  }
+
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var parsed = ReadForRewrite(archive);
+    var identities = new HashSet<(string Namespace, string ObjectId)>();
+    foreach (var name in entryNames) {
+      if (string.IsNullOrEmpty(name)) continue;
+      var identity = RadosPoolDump.DecodeEntryName(name);
+      identities.Add((identity.Namespace, identity.ObjectId));
+    }
+    parsed.Objects.RemoveAll(obj => identities.Contains((obj.Namespace, obj.ObjectId)));
+    Rewrite(archive, parsed.Objects);
+  }
+
+  /// <summary>
+  /// Canonicalizes the serialized pool stream and keeps it only when smaller.
+  /// The canonical writer coalesces DATA writes, xattr/OMAP updates and drops
+  /// object_info bytes that Ceph's pool importer explicitly ignores.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    byte[] original;
+    try {
+      ResetForRead(input);
+      using var copy = new MemoryStream();
+      input.CopyTo(copy);
+      original = copy.ToArray();
+    } catch {
+      throw;
+    }
+
+    byte[] selected = original;
+    try {
+      var parsed = RadosPoolDump.Parse(original);
+      if (parsed.CanRewrite) {
+        using var canonical = new MemoryStream();
+        RadosPoolDump.Write(canonical, parsed.Objects);
+        if (canonical.Length < original.LongLength)
+          selected = canonical.ToArray();
+      }
+    } catch {
+      selected = original;
+    }
+
+    if (output.CanSeek) {
+      output.Position = 0;
+      output.SetLength(0);
+    }
+    output.Write(selected);
+  }
+
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) {
+    ResetForRead(archive);
+    RadosPoolDump.ParsedDump parsed;
+    try {
+      using var reader = new CephFsReader(archive);
+      parsed = reader.Parsed;
+    } catch {
+      yield break;
+    }
+
+    foreach (var extent in parsed.Layout.OrderBy(static e => e.Offset)) {
+      if (extent.Length <= 0) continue;
+      yield return new DefragBlockInfo(
+        extent.Offset,
+        extent.Length,
+        extent.IsFree ? DefragBlockKind.Free : extent.IsPayload ? DefragBlockKind.Used : DefragBlockKind.MetadataReserved,
+        extent.EntryName);
+    }
+  }
+
+  private static RadosPoolDump.ParsedDump ReadForRewrite(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead || !archive.CanWrite || !archive.CanSeek)
+      throw new ArgumentException("RADOS modification requires a readable, writable, seekable stream.", nameof(archive));
+    archive.Position = 0;
+    using var reader = new CephFsReader(archive);
+    if (!reader.CanRewrite)
+      throw new NotSupportedException("This RADOS dump contains future/unknown serialized fields; refusing to rewrite and silently discard them.");
+    return reader.Parsed;
+  }
+
+  private static void Rewrite(Stream archive, IReadOnlyList<RadosPoolDump.ObjectModel> objects) {
+    using var staged = new MemoryStream();
+    RadosPoolDump.Write(staged, objects);
+    archive.Position = 0;
+    archive.SetLength(0);
+    staged.Position = 0;
+    staged.CopyTo(archive);
+    archive.Flush();
+    archive.Position = 0;
+  }
+
+  private static void ResetForRead(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek)
+      stream.Position = 0;
   }
 }
