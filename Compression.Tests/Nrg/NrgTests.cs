@@ -111,41 +111,41 @@ public class NrgTests {
     Assert.That(trailerOffset % 2048, Is.Zero);
 
     var position = trailerOffset;
-    var cuex = ReadChunk(image, ref position, "CUEX", 32);
+    var cuex = ReadChunk(image, ref position, "CUEX", 32).ToArray();
     Assert.Multiple(() => {
       Assert.That(cuex[0], Is.EqualTo(0x41));
       Assert.That(cuex[1], Is.EqualTo(0x00));
       Assert.That(cuex[2], Is.EqualTo(0x00));
-      Assert.That(unchecked((int)BinaryPrimitives.ReadUInt32BigEndian(cuex[4..])), Is.EqualTo(-150));
+      Assert.That(unchecked((int)BinaryPrimitives.ReadUInt32BigEndian(cuex.AsSpan(4))), Is.EqualTo(-150));
       Assert.That(cuex[9], Is.EqualTo(0x01));
       Assert.That(cuex[10], Is.EqualTo(0x00));
-      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex[12..]), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex.AsSpan(12)), Is.Zero);
       Assert.That(cuex[17], Is.EqualTo(0x01));
       Assert.That(cuex[18], Is.EqualTo(0x01));
-      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex[20..]), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex.AsSpan(20)), Is.Zero);
       Assert.That(cuex[25], Is.EqualTo(0xAA));
       Assert.That(cuex[26], Is.EqualTo(0x01));
-      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex[28..]), Is.EqualTo((uint)(trailerOffset / 2048)));
+      Assert.That(BinaryPrimitives.ReadUInt32BigEndian(cuex.AsSpan(28)), Is.EqualTo((uint)(trailerOffset / 2048)));
     });
 
-    var daox = ReadChunk(image, ref position, "DAOX", 64);
-    var track = daox[22..];
+    var daox = ReadChunk(image, ref position, "DAOX", 64).ToArray();
+    var track = daox.AsSpan(22).ToArray();
     Assert.Multiple(() => {
       Assert.That(BinaryPrimitives.ReadUInt32BigEndian(daox), Is.EqualTo(64));
       Assert.That(daox[20], Is.EqualTo(1));
       Assert.That(daox[21], Is.EqualTo(1));
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(track[12..]), Is.EqualTo(2048));
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(track.AsSpan(12)), Is.EqualTo(2048));
       Assert.That(track[14], Is.Zero, "cooked Mode 1");
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(track[16..]), Is.EqualTo(1));
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track[18..]), Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track[26..]), Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track[34..]), Is.EqualTo((ulong)trailerOffset));
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(track.AsSpan(16)), Is.EqualTo(1));
+      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track.AsSpan(18)), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track.AsSpan(26)), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(track.AsSpan(34)), Is.EqualTo((ulong)trailerOffset));
     });
 
-    var sinf = ReadChunk(image, ref position, "SINF", 4);
+    var sinf = ReadChunk(image, ref position, "SINF", 4).ToArray();
     Assert.That(BinaryPrimitives.ReadUInt32BigEndian(sinf), Is.EqualTo(1));
 
-    var mtyp = ReadChunk(image, ref position, "MTYP", 4);
+    var mtyp = ReadChunk(image, ref position, "MTYP", 4).ToArray();
     Assert.That(BinaryPrimitives.ReadUInt32BigEndian(mtyp), Is.EqualTo(0x00000400));
 
     _ = ReadChunk(image, ref position, "END!", 0);

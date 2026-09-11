@@ -40,7 +40,7 @@ public class CsoTests {
 
     var descriptor = new CsoFormatDescriptor();
     using var stream = new MemoryStream(image);
-    var block = descriptor.ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
+    var block = ((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
     Assert.That(block, Is.EqualTo(new byte[BlockSize]));
 
     stream.Position = 0;
@@ -55,7 +55,7 @@ public class CsoTests {
 
     var descriptor = new CsoFormatDescriptor();
     using var stream = new MemoryStream(image);
-    var block = descriptor.ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
+    var block = ((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, "blocks/block_00000.bin", null);
     Assert.That(block, Is.EqualTo(new byte[BlockSize]));
 
     stream.Position = 0;
@@ -149,7 +149,7 @@ public class CsoTests {
     using var output = new MemoryStream();
     foreach (var name in names) {
       stream.Position = 0;
-      output.Write(descriptor.ExtractEntryToMemory(stream, name, null));
+      output.Write(((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, name, null));
     }
     return output.ToArray();
   }

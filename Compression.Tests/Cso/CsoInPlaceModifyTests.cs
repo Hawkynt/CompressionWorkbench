@@ -204,7 +204,7 @@ public class CsoInPlaceModifyTests {
     using var result = new MemoryStream();
     foreach (var name in names) {
       stream.Position = 0;
-      result.Write(descriptor.ExtractEntryToMemory(stream, name, null));
+      result.Write(((IArchiveFormatOperations)descriptor).ExtractEntryToMemory(stream, name, null));
     }
     return result.ToArray();
   }

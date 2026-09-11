@@ -211,7 +211,7 @@ public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Removes the named entries from an existing s5fs image via the in-place
   /// modifier (zeroes file data blocks before returning them to the free
-  /// list, matching the <see cref="IArchiveModifiable.Remove"/> wipe
+  /// list, matching the <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/> wipe
   /// contract). Falls back to the rebuild path for any nested-path entry
   /// the in-place engine won't touch.
   /// </summary>

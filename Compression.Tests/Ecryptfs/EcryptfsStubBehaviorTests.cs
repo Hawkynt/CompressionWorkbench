@@ -44,7 +44,11 @@ public class EcryptfsStubBehaviorTests {
     var replacement = Enumerable.Range(0, 12001).Select(i => (byte)(i * 41 + 3)).ToArray();
     var descriptor = new EcryptfsFormatDescriptor();
     var modifier = (IArchiveModifiable)descriptor;
-    using var image = new MemoryStream(CreateImage([1, 2, 3, 4, 5], password, "aes256"));
+    // Expandable: MemoryStream(byte[]) is fixed-capacity, and the replacement payload here is
+    // larger than the original, so the Add has to grow the image.
+    using var image = new MemoryStream();
+    var seed = CreateImage([1, 2, 3, 4, 5], password, "aes256");
+    image.Write(seed, 0, seed.Length);
 
     image.Position = 0;
     string? signatureBefore;

@@ -482,7 +482,7 @@ public static class RebuildVerb {
   }
 
   /// <summary>A writable scratch stream not bounded by byte[] / MemoryStream size.</summary>
-  internal static FileStream CreateScratchStream()
+  public static FileStream CreateScratchStream()
     => new(Path.Combine(Path.GetTempPath(), "cwb_rebuild_" + Guid.NewGuid().ToString("N") + ".tmp"),
       FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 64 * 1024, FileOptions.DeleteOnClose);
 

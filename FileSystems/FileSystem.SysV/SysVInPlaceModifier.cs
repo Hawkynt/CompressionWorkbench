@@ -29,7 +29,7 @@ namespace FileSystem.SysV;
 ///   data block stays byte-identical at its original offset.</item>
 /// <item><b>Remove</b>: zero the dirent's inode number in place; wipe each
 ///   data block the inode addresses to all-zero (matching the
-///   <see cref="IArchiveModifiable.Remove"/> wipe contract); push the data
+///   <see cref="IArchiveModifiable.Remove(System.IO.Stream, string[])"/> wipe contract); push the data
 ///   blocks onto <c>s_free[]</c> (spilling the cache to a new chain group
 ///   when the 50th entry would overflow); zero the 64-byte inode slot so
 ///   the re-scan rediscovers it. Every untouched inode and every untouched

@@ -59,8 +59,17 @@ internal static class MaintenanceOperationProbe {
 
     var image = Path.Combine(workDirectory, "probe.img");
     try {
-      ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
-        new CompressionOptions { Password = PasswordFor(ops!) }, format, null);
+      // Unencrypted by default. Defragment(Stream) and Purge take no credentials, so a probe
+      // encrypted merely because the format *supports* passwords is one those verbs cannot read --
+      // which is every classic archive format. Only a format that refuses to be created without
+      // one gets the password, on the retry below.
+      try {
+        ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
+          new CompressionOptions(), format, null);
+      } catch when (PasswordFor(ops!) != null) {
+        ArchiveOperations.Create(image, [new ArchiveInput(sourcePath, ProbeName)],
+          new CompressionOptions { Password = PasswordFor(ops!) }, format, null);
+      }
     } catch (Exception ex) {
       Assert.Fail($"{formatId}: advertises a maintenance verb but neither creates the standard probe image "
         + $"nor declares the input inadmissible through IArchiveWriteConstraints: {ex.GetType().Name}: {ex.Message}");

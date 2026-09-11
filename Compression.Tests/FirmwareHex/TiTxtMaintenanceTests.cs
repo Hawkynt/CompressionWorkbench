@@ -112,7 +112,15 @@ public sealed class TiTxtMaintenanceTests {
       Throws.InstanceOf<InvalidDataException>());
   }
 
-  private static MemoryStream StreamOf(string text) => new(Encoding.ASCII.GetBytes(text));
+  // Built empty and written into: MemoryStream(byte[]) is fixed-capacity, and the maintenance
+  // verbs under test grow the image.
+  private static MemoryStream StreamOf(string text) {
+    var result = new MemoryStream();
+    var bytes = Encoding.ASCII.GetBytes(text);
+    result.Write(bytes, 0, bytes.Length);
+    result.Position = 0;
+    return result;
+  }
 
   private static FirmwareImage Parse(MemoryStream stream) {
     stream.Position = 0;

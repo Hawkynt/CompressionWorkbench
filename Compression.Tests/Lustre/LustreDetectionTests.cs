@@ -124,7 +124,7 @@ public class LustreDetectionTests {
     if ((featureIncompat & 0x80) != 0)
       totalBlocks |= (ulong)BinaryPrimitives.ReadUInt32LittleEndian(sb.Slice(0x150, 4)) << 32;
     var descriptorSize = (featureIncompat & 0x80) != 0
-      ? Math.Max(32, BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(0xFE, 2)))
+      ? Math.Max(32, (int)BinaryPrimitives.ReadUInt16LittleEndian(sb.Slice(0xFE, 2)))
       : 32;
     var groupCount = (totalBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup;
     var descriptorTableOffset = (long)(firstDataBlock + 1UL) * blockSize;

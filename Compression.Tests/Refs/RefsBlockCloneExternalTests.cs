@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.ComponentModel;
 using System.Diagnostics;
+using Category = NUnit.Framework.CategoryAttribute;
 using FileSystem.Refs;
 
 namespace Compression.Tests.Refs;

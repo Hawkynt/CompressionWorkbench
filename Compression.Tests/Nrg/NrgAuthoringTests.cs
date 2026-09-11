@@ -53,15 +53,18 @@ public class NrgAuthoringTests {
     var dataStart = checked((long)BinaryPrimitives.ReadUInt64BigEndian(dataRecord[26..]));
     var dataEnd = checked((long)BinaryPrimitives.ReadUInt64BigEndian(dataRecord[34..]));
 
+    // Materialised before the closure: a lambda cannot capture a ref struct.
+    var audioBytes = audioRecord.ToArray();
+    var dataBytes = dataRecord.ToArray();
     Assert.Multiple(() => {
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(audioRecord[12..]), Is.EqualTo(AudioSectorSize));
-      Assert.That(audioRecord[14], Is.EqualTo((byte)NrgTrackMode.Audio));
-      Assert.That(System.Text.Encoding.ASCII.GetString(audioRecord[..12]), Is.EqualTo("USABC2600001"));
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(audioBytes.AsSpan(12)), Is.EqualTo(AudioSectorSize));
+      Assert.That(audioBytes[14], Is.EqualTo((byte)NrgTrackMode.Audio));
+      Assert.That(System.Text.Encoding.ASCII.GetString(audioBytes.AsSpan(0, 12)), Is.EqualTo("USABC2600001"));
       Assert.That(audioPregap, Is.Zero);
       Assert.That(audioStart - audioPregap, Is.EqualTo(150L * AudioSectorSize));
       Assert.That(audioEnd - audioStart, Is.EqualTo(audio.Length));
-      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(dataRecord[12..]), Is.EqualTo(CookedSectorSize));
-      Assert.That(dataRecord[14], Is.EqualTo((byte)NrgTrackMode.Mode1));
+      Assert.That(BinaryPrimitives.ReadUInt16BigEndian(dataBytes.AsSpan(12)), Is.EqualTo(CookedSectorSize));
+      Assert.That(dataBytes[14], Is.EqualTo((byte)NrgTrackMode.Mode1));
       Assert.That(dataStart, Is.EqualTo(audioEnd));
       Assert.That(dataEnd - dataStart, Is.EqualTo(iso.Length));
     });

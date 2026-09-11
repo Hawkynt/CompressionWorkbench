@@ -45,9 +45,13 @@ public sealed class UefiFvReader {
     }
     if (!terminated) throw new InvalidDataException("UefiFv: firmware-volume block map is not terminated inside HeaderLength.");
 
-    var files = UefiFvParser.LiveSlots(layout).Select(slot => new FfsFile(
-      slot.Name, slot.Type, slot.Attributes, slot.RawState, checked((uint)slot.Size),
-      data.Slice(slot.DataOffset, slot.DataLength).ToArray())).ToList();
+    // `data` is a ReadOnlySpan, which a lambda cannot capture, so the slices are materialised
+    // here rather than inside the projection.
+    var files = new List<FfsFile>();
+    foreach (var slot in UefiFvParser.LiveSlots(layout))
+      files.Add(new FfsFile(
+        slot.Name, slot.Type, slot.Attributes, slot.RawState, checked((uint)slot.Size),
+        data.Slice(slot.DataOffset, slot.DataLength).ToArray()));
     var header = new FvHeader(new Guid(data.Slice(fvStart + 16, 16)), fvLength, attributes,
       headerLength, checksum, extOff, revision, blockMap);
     return new FirmwareVolume(fvStart, header, files);
