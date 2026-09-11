@@ -48,6 +48,23 @@ public class AdfWriterTests {
   }
 
   [Test, Category("RoundTrip")]
+  public void RoundTrip_FileBeyondTheHeaderBlockList_UsesExtensionBlocks() {
+    // An Amiga FFS file header names at most 72 data blocks of 512 bytes -- 36 864 in all. Past
+    // that the file is named by a chain of file-extension blocks, and a writer that never emits
+    // one produces a disk whose tail silently reads back as something else. 40 000 bytes forces
+    // the second extension block, so the chain itself is exercised and not merely its first link.
+    var data = new byte[40000];
+    new Random(7).NextBytes(data);
+    var w = new FileSystem.Adf.AdfWriter();
+    w.AddFile("beyond", data);
+    var disk = w.Build();
+
+    using var ms = new MemoryStream(disk);
+    var r = new FileSystem.Adf.AdfReader(ms);
+    Assert.That(r.Extract(r.Entries[0]), Is.EqualTo(data));
+  }
+
+  [Test, Category("RoundTrip")]
   public void FFS_Detected() {
     var w = new FileSystem.Adf.AdfWriter();
     w.AddFile("test", new byte[10]);
