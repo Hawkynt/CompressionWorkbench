@@ -6,21 +6,25 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Wafl;
 
 /// <summary>
-/// Stage-0 descriptor for a flat logical NetApp WAFL volume image. It exposes a
-/// synthetic <c>metadata.ini</c> plus the opaque image bytes and validates the
-/// documented volinfo superblock copies without pretending to understand the
-/// aggregate/FlexVol namespace.
-///
-/// <para>
-/// <b>Stage-0 confirmed.</b> NetApp's current ONTAP EMS documentation identifies
-/// volinfo as the WAFL superblock, places its two copies at VBNs 1 and 2 and
-/// publishes magic <c>0xdab8fbab</c>. NetApp patents describe the 4 KiB block
-/// model and volinfo/fsinfo/inode-file hierarchy. They do not publish enough of
-/// modern aggregate/FlexVol and RAID mapping, allocation maps or snapshot
-/// reachability to make offline mutation safe. Compact, defrag, wipe, shrink,
-/// re-layout and purge therefore remain unavailable.
-/// </para>
+/// Conservative read-only descriptor for flat logical NetApp WAFL volume images.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Stage 0 validates the documented volinfo roots at VBNs 1 and 2 using NetApp's
+/// published <c>0xdab8fbab</c> magic. Stage 1 follows the additional public
+/// volinfo contract for the classic 32-bit direct-fsinfo profile: volinfo carries
+/// a backward-compatible fsinfo magic and a VBN lookup table whose entry zero
+/// references the active fsinfo block. Candidate references are accepted only
+/// when their target blocks carry that fsinfo magic, and ambiguity fails closed.
+/// </para>
+/// <para>
+/// This does not yet decode the inode file or namespace, and it does not turn a
+/// physical ONTAP RAID member into a logical VBN image. Version-specific inode
+/// layouts, FlexVol VVBN/PVBN mapping, allocation maps, snapshots and consistency
+/// point commit/checksum rules remain prerequisites for safe mutation. Compact,
+/// defrag, wipe, shrink, re-layout and purge therefore remain unavailable.
+/// </para>
+/// </remarks>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
   /// <summary>Gets the id.</summary>
@@ -64,9 +68,9 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "NetApp WAFL — Stage-0 confirmed: documented volinfo detection plus opaque streaming for a flat logical VBN image. " +
-    "ONTAP documents volinfo copies at VBNs 1/2 with magic 0xdab8fbab; the previous repository-only ASCII 'wafd' signature was removed. " +
-    "Modern FlexVol aggregate/RAID mapping and snapshot/free-space reachability are not public at the byte level needed for safe offline R/W, " +
+    "NetApp WAFL — Stage 0 documented volinfo detection plus Stage 1 structural volinfo→fsinfo traversal for the disclosed classic 32-bit direct-fsinfo profile. " +
+    "Verified fsinfo blocks are listable/extractable while inode and namespace decoding remain intentionally unavailable. " +
+    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, allocation maps and snapshot/free-space reachability are still required for safe offline R/W, " +
     "so compact/defrag/wipe/shrink/layout/purge remain disabled.";
 
   /// <summary>Lists the entries in the supplied container.</summary>
@@ -108,7 +112,8 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       return new MemoryStream(reader.Extract(entry), writable: false);
 
     // WaflReader does not own seekable caller streams, so disposing the reader
-    // leaves this bounded view over the original archive alive.
+    // leaves a bounded raw-image view alive. Small structural entries are backed
+    // by their own 4 KiB copy and remain valid independently as well.
     return reader.OpenEntry(entry);
   }
 }
