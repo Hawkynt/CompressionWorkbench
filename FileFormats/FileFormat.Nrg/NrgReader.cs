@@ -48,7 +48,7 @@ public sealed class NrgReader : IDisposable {
       this._trackOffset = track.Offset;
       this._sectorSize = track.SectorSize;
       this._dataOffset = track.DataOffset;
-      this._dataAreaEnd = TrackEnd(track, footer.FooterOffset > 0 ? footer.FooterOffset : stream.Length);
+      this._dataAreaEnd = TrackEnd(track, footer.TrailerOffset);
     } else {
       var end = footer.Version != 0 ? footer.TrailerOffset : stream.Length;
       (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream, 0, end);
@@ -116,100 +116,103 @@ public sealed class NrgReader : IDisposable {
     return false;
   }
 
-  private static IEnumerable<TrackCandidate> ReadTrackCandidates(Stream stream, FooterInfo footer) {
+  private static List<TrackCandidate> ReadTrackCandidates(Stream stream, FooterInfo footer) {
+    var result = new List<TrackCandidate>();
     var position = footer.TrailerOffset;
-    while (position <= footer.FooterOffset - 8) {
-      stream.Position = position;
-      Span<byte> header = stackalloc byte[8];
-      if (!ReadExactly(stream, header))
-        yield break;
+    var header = new byte[8];
 
-      var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
-      var payloadStart = position + 8;
-      if (payloadLength > (ulong)(footer.FooterOffset - payloadStart))
-        yield break;
+    while (position <= footer.FooterOffset - header.Length) {
+      stream.Position = position;
+      if (!ReadExactly(stream, header))
+        break;
+
+      var headerSpan = header.AsSpan();
+      var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(headerSpan[4..]);
+      var payloadStart = position + header.Length;
+      if (payloadStart > footer.FooterOffset || payloadLength > (ulong)(footer.FooterOffset - payloadStart))
+        break;
       var payloadEnd = payloadStart + payloadLength;
 
-      if (header[..4].SequenceEqual("ETN2"u8)) {
-        foreach (var candidate in ReadEtn2Candidates(stream, payloadStart, payloadLength))
-          yield return candidate;
-      } else if (header[..4].SequenceEqual("ETNF"u8)) {
-        foreach (var candidate in ReadEtnfCandidates(stream, payloadStart, payloadLength))
-          yield return candidate;
-      } else if (header[..4].SequenceEqual("DAOX"u8)) {
-        foreach (var candidate in ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: true))
-          yield return candidate;
-      } else if (header[..4].SequenceEqual("DAOI"u8)) {
-        foreach (var candidate in ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: false))
-          yield return candidate;
-      }
+      if (headerSpan[..4].SequenceEqual("ETN2"u8))
+        ReadEtn2Candidates(stream, payloadStart, payloadLength, result);
+      else if (headerSpan[..4].SequenceEqual("ETNF"u8))
+        ReadEtnfCandidates(stream, payloadStart, payloadLength, result);
+      else if (headerSpan[..4].SequenceEqual("DAOX"u8))
+        ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: true, result);
+      else if (headerSpan[..4].SequenceEqual("DAOI"u8))
+        ReadDaoCandidates(stream, payloadStart, payloadLength, isV2: false, result);
 
       position = payloadEnd;
-      if (header[..4].SequenceEqual("END!"u8))
-        yield break;
+      if (headerSpan[..4].SequenceEqual("END!"u8))
+        break;
     }
+
+    return result;
   }
 
-  private static IEnumerable<TrackCandidate> ReadEtn2Candidates(Stream stream, long payloadStart, uint payloadLength) {
+  private static void ReadEtn2Candidates(Stream stream, long payloadStart, uint payloadLength, List<TrackCandidate> result) {
     const int recordSize = 32;
-    Span<byte> record = stackalloc byte[recordSize];
+    var record = new byte[recordSize];
     for (long relative = 0; relative + recordSize <= payloadLength; relative += recordSize) {
       stream.Position = payloadStart + relative;
       if (!ReadExactly(stream, record))
-        yield break;
+        return;
 
-      var offset = BinaryPrimitives.ReadUInt64BigEndian(record);
-      var length = BinaryPrimitives.ReadUInt64BigEndian(record[8..]);
+      var span = record.AsSpan();
+      var offset = BinaryPrimitives.ReadUInt64BigEndian(span);
+      var length = BinaryPrimitives.ReadUInt64BigEndian(span[8..]);
       if (offset > long.MaxValue || length > long.MaxValue)
         continue;
-      if (TryDecodeMode(record[19], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
-        yield return new(checked((long)offset), checked((long)length), sectorSize, dataOffset);
+      if (TryDecodeMode(span[19], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
+        result.Add(new(checked((long)offset), checked((long)length), sectorSize, dataOffset));
     }
   }
 
-  private static IEnumerable<TrackCandidate> ReadEtnfCandidates(Stream stream, long payloadStart, uint payloadLength) {
+  private static void ReadEtnfCandidates(Stream stream, long payloadStart, uint payloadLength, List<TrackCandidate> result) {
     const int recordSize = 20;
-    Span<byte> record = stackalloc byte[recordSize];
+    var record = new byte[recordSize];
     for (long relative = 0; relative + recordSize <= payloadLength; relative += recordSize) {
       stream.Position = payloadStart + relative;
       if (!ReadExactly(stream, record))
-        yield break;
+        return;
 
-      var offset = BinaryPrimitives.ReadUInt32BigEndian(record);
-      var length = BinaryPrimitives.ReadUInt32BigEndian(record[4..]);
-      if (TryDecodeMode(record[11], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
-        yield return new(offset, length, sectorSize, dataOffset);
+      var span = record.AsSpan();
+      var offset = BinaryPrimitives.ReadUInt32BigEndian(span);
+      var length = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
+      if (TryDecodeMode(span[11], declaredSectorSize: 0, out var sectorSize, out var dataOffset))
+        result.Add(new(offset, length, sectorSize, dataOffset));
     }
   }
 
-  private static IEnumerable<TrackCandidate> ReadDaoCandidates(Stream stream, long payloadStart, uint payloadLength, bool isV2) {
+  private static void ReadDaoCandidates(Stream stream, long payloadStart, uint payloadLength, bool isV2, List<TrackCandidate> result) {
     const int daoHeaderSize = 22;
     var recordSize = isV2 ? 42 : 30;
     if (payloadLength < daoHeaderSize)
-      yield break;
+      return;
 
     var record = new byte[recordSize];
     for (long relative = daoHeaderSize; relative + recordSize <= payloadLength; relative += recordSize) {
       stream.Position = payloadStart + relative;
       if (!ReadExactly(stream, record))
-        yield break;
+        return;
 
-      var declaredSectorSize = BinaryPrimitives.ReadUInt16BigEndian(record.AsSpan(12, 2));
-      var mode = record[14];
+      var span = record.AsSpan();
+      var declaredSectorSize = BinaryPrimitives.ReadUInt16BigEndian(span.Slice(12, 2));
+      var mode = span[14];
       ulong start;
       ulong end;
       if (isV2) {
-        start = BinaryPrimitives.ReadUInt64BigEndian(record.AsSpan(26, 8));
-        end = BinaryPrimitives.ReadUInt64BigEndian(record.AsSpan(34, 8));
+        start = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(26, 8));
+        end = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(34, 8));
       } else {
-        start = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(22, 4));
-        end = BinaryPrimitives.ReadUInt32BigEndian(record.AsSpan(26, 4));
+        start = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(22, 4));
+        end = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(26, 4));
       }
 
       if (start > long.MaxValue || end > long.MaxValue || end < start)
         continue;
       if (TryDecodeMode(mode, declaredSectorSize, out var sectorSize, out var dataOffset))
-        yield return new(checked((long)start), checked((long)(end - start)), sectorSize, dataOffset);
+        result.Add(new(checked((long)start), checked((long)(end - start)), sectorSize, dataOffset));
     }
   }
 
