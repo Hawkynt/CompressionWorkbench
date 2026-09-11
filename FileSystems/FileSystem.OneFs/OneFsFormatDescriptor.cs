@@ -65,9 +65,13 @@ public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// <summary>Gets the format category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
 
-  /// <summary>Gets the conservative read-only capabilities.</summary>
+  /// <summary>
+  /// Gets the conservative inspection capabilities. Integrity testing is not
+  /// advertised: without a verified superblock/tree parser, successfully copying
+  /// an opaque image does not prove that the filesystem is structurally sound.
+  /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract;
 
   /// <summary>Gets the conventional extension for explicitly supplied raw media.</summary>
   public string DefaultExtension => ".onefs";
@@ -100,8 +104,8 @@ public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     "through mirrored node/drive/block addresses and distributed protection groups. Fixed-address superblocks point " +
     "toward the LIN master, but Dell does not publish the byte-level superblock/tree/allocation serialization or an " +
     "authoritative offset-zero media magic. The historic 'OneFS'/'ONEF' signature claim was therefore removed. " +
-    "R/W, purge, wipe, defrag, shrink and layout rebuild remain blocked until allocation/protection/journal updates can " +
-    "be proven against a real cluster or independent checker.";
+    "Integrity testing, R/W, purge, wipe, defrag, shrink and layout rebuild remain blocked until the raw structures " +
+    "and allocation/protection/journal updates can be proven against genuine media and an independent checker.";
 
   /// <summary>Lists the two conservative inspection entries without reading the image payload.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
