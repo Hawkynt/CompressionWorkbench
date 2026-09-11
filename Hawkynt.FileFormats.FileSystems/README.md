@@ -34,7 +34,8 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 
 | State | Meaning |
 | --- | --- |
-| **R** | Open, list and extract only. For network, distributed and encrypted formats this is detection of the on-disk signature plus whatever metadata the object carries. |
+| **N/A** | The domain is registered, but it is not representable by the package's current single-stream image/container abstraction. |
+| **R** | Open, list and extract an existing image/container. |
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
@@ -133,7 +134,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) | `Ufs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | FreeBSD kernel mount r/w + [`fsck_ffs`](https://man.freebsd.org/cgi/man.cgi?query=fsck_ffs) under QEMU | UFS1 / FFS | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) |
 | [UNIX System V FS](https://en.wikipedia.org/wiki/Unix_File_System) | `SysV` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | host-kernel `sysv` mount reads byte-exact | System V filesystem | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
 | [VxFS (Veritas)](https://en.wikipedia.org/wiki/Veritas_File_System) | `VxFs` | R/W | ✅ | ✅ moving | ✅ | — | — | ✅ | Linux `freevxfs` driver mounts the written volume | One fileset, direct extents, flat root; edits rebuild the volume | [freevxfs](https://github.com/torvalds/linux/tree/master/fs/freevxfs) |
-| [Xenix FS](https://en.wikipedia.org/wiki/Xenix) | `Xenix` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | host-kernel `sysv` (`detect_xenix`) mount reads byte-exact | — | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
+| [Xenix FS](https://en.wikipedia.org/wiki/Xenix) | `Xenix` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | host-kernel `sysv` mount reads byte-exact | — | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
 | [XFS](https://en.wikipedia.org/wiki/XFS) | `Xfs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | host-kernel `xfs` mount r/w + [`xfs_repair -n`](https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git) | XFS v5 | [XFS documentation](https://kernel.org/doc/html/latest/filesystems/xfs/index.html) |
 | [ZFS](https://en.wikipedia.org/wiki/ZFS) | `Zfs` | R/W | ✅ | ✅ moving | — | ✅ | ✅ | ✅ | [`zdb -l`](https://github.com/openzfs/zfs) label path; own reader + struct-parity tests | OpenZFS v28 single-vdev profile; edits rebuild the pool | [OpenZFS documentation](https://openzfs.github.io/openzfs-docs/) |
 
@@ -215,7 +216,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
-| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | R | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | [official target-directory layout](https://doc.beegfs.io/latest/advanced_topics/manual_installation.html) | Directory-backed distributed targets on ext4/XFS; no standalone BeeGFS byte-stream/image | [BeeGFS manual installation](https://doc.beegfs.io/latest/advanced_topics/manual_installation.html) |
 | [CephFS / RADOS](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R | — | — | — | — | — | — | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R | — | — | — | — | — | — | detection of the on-disk signature | Payload is encrypted; plaintext needs the FEK | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
@@ -336,7 +337,8 @@ cwb recover raw.img --mode files --format Jpeg,Png
 - **Reiser4** remains WORM: the current writer captures the empty native tree but stores added files in a payload area the reiser4 driver does not see. It must not be promoted until the native tree writer owns those files.
 - **GFS2** R/W is the standalone `lock_nolock` profile with regular files in the root directory; small files are stuffed and larger files use the indirect tree. Existing-image edits rebuild the volume while preserving its size floor and lock-table value. ExHash/nested-directory writing, journal replay, cluster-lock-manager state and extended attributes remain out of scope.
 - **NSS** is detection only: Novell never published the format, and the writer deliberately emits a container under its own magic that no NetWare or OES release would take for a pool. What was learned from real media is in [NSS-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md).
-- Network, distributed and encrypted formats carry no self-contained image: a single server object, brick or share is recognised and its metadata surfaced, and nothing more is inferred.
+- **BeeGFS** is N/A at the stream-image layer: its metadata and storage targets are directories on local filesystems, and one logical namespace can span multiple targets. Supporting it requires a directory-/multi-target snapshot contract rather than another byte-stream parser.
+- Other network, distributed and encrypted formats may expose a self-contained server object, brick or share through the current stream contract; those rows describe only that object, not an inferred whole cluster namespace.
 - Disk-image container support and inner-filesystem support are separate capabilities; a container marked R/W edits the filesystem inside it through that filesystem's own descriptor.
 
 ## ❤️ Support
