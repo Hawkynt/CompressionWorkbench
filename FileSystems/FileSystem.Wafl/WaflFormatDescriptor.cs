@@ -6,22 +6,22 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Wafl;
 
 /// <summary>
-/// Stage-0 descriptor for NetApp WAFL (Write-Anywhere File Layout) volume images.
-/// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes; no real
-/// inode walk is attempted.
+/// Stage-0 descriptor for a flat logical NetApp WAFL volume image. It exposes a
+/// synthetic <c>metadata.ini</c> plus the opaque image bytes and validates the
+/// documented volinfo superblock copies without pretending to understand the
+/// aggregate/FlexVol namespace.
 ///
 /// <para>
-/// <b>Stage-0 confirmed.</b> A read/write promotion was investigated against the
-/// publicly available material (Hitz 1994 TR-3002, NetApp patents US5819292 and
-/// US6289356, later NetApp WAFL papers, and the independent Aaru investigation).
-/// Those sources publish the tree-of-blocks design and the 4 KiB allocation unit,
-/// but not the byte-complete modern ONTAP mapping needed to translate FlexVol
-/// virtual blocks through aggregate/RAID members or to prove snapshot reachability.
-/// Consequently compact/defrag/wipe/shrink/re-layout/purge are deliberately not
-/// advertised: each would risk treating still-referenced blocks as disposable.
+/// <b>Stage-0 confirmed.</b> NetApp's current ONTAP EMS documentation identifies
+/// volinfo as the WAFL superblock, places its two copies at VBNs 1 and 2 and
+/// publishes magic <c>0xdab8fbab</c>. NetApp patents describe the 4 KiB block
+/// model and volinfo/fsinfo/inode-file hierarchy. They do not publish enough of
+/// modern aggregate/FlexVol and RAID mapping, allocation maps or snapshot
+/// reachability to make offline mutation safe. Compact, defrag, wipe, shrink,
+/// re-layout and purge therefore remain unavailable.
 /// </para>
 /// </summary>
-public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, ILayoutOptimizable {
+public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
   /// <summary>Gets the id.</summary>
   public string Id => "Wafl";
@@ -45,10 +45,13 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>Gets the compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
 
-  /// <summary>Gets the magic signatures.</summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new("wafd"u8.ToArray(), Offset: 0, Confidence: 0.90),
-  ];
+  /// <summary>
+  /// Gets fixed-offset signatures usable by the generic detector. WAFL volinfo
+  /// is at fixed VBNs 1 and 2, but the published material does not define one
+  /// stable byte offset for the volinfo-magic field inside every ONTAP generation;
+  /// content validation is therefore performed by <see cref="WaflReader"/>.
+  /// </summary>
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
 
   /// <summary>Gets the methods.</summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
@@ -61,10 +64,10 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "NetApp WAFL — Stage-0 confirmed: detection plus opaque streaming only. " +
-    "Public NetApp material fixes the allocation unit at 4 KiB and documents the tree/consistency-point model, " +
-    "but not the byte-complete FlexVol aggregate/RAID mapping or snapshot reachability needed for safe offline R/W. " +
-    "Layout analysis therefore reports the fixed 4 KiB geometry only; compact/defrag/wipe/shrink/layout rewrite/purge stay disabled.";
+    "NetApp WAFL — Stage-0 confirmed: documented volinfo detection plus opaque streaming for a flat logical VBN image. " +
+    "ONTAP documents volinfo copies at VBNs 1/2 with magic 0xdab8fbab; the previous repository-only ASCII 'wafd' signature was removed. " +
+    "Modern FlexVol aggregate/RAID mapping and snapshot/free-space reachability are not public at the byte level needed for safe offline R/W, " +
+    "so compact/defrag/wipe/shrink/layout/purge remain disabled.";
 
   /// <summary>Lists the entries in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -104,30 +107,8 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     if (!archive.CanSeek)
       return new MemoryStream(reader.Extract(entry), writable: false);
 
-    // Seekable inputs are not owned by WaflReader. Its disposal after this return
-    // therefore leaves the bounded view alive while still avoiding a second copy
-    // of a potentially multi-terabyte WAFL aggregate image.
+    // WaflReader does not own seekable caller streams, so disposing the reader
+    // leaves this bounded view over the original archive alive.
     return reader.OpenEntry(entry);
-  }
-
-  /// <summary>
-  /// Reports the only layout fact that is normative in the public WAFL material:
-  /// the fixed 4 KiB allocation block. Free-space/slack accounting requires the
-  /// private allocation maps and is intentionally not guessed.
-  /// </summary>
-  public LayoutAnalysis AnalyzeLayout(Stream image) {
-    using var reader = new WaflReader(image);
-    return new LayoutAnalysis {
-      ImageSize = reader.ImageSize,
-      CurrentUnitSize = WaflReader.BlockSize,
-      CurrentSlackBytes = 0,
-      OptimalUnitSize = WaflReader.BlockSize,
-      OptimalSlackBytes = 0,
-      Notes = [
-        "WAFL uses fixed 4096-byte allocation blocks in the published format design.",
-        "Slack/free-space values are unavailable at Stage 0; zero means not computed, not that the volume has no slack.",
-        "Offline re-layout is intentionally unavailable until FlexVol aggregate/RAID mappings and snapshot reachability can be parsed and validated.",
-      ],
-    };
   }
 }
