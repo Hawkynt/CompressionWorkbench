@@ -109,6 +109,34 @@ missing proprietary header definitions. It is therefore treated only as a source
 of behavioral/symbol-name clues; no code, layout or expressive structure from it
 is reused here.
 
+## Genuine-media oracle path
+
+Dell publicly distributes a OneFS Simulator specifically for testing. Dell's own
+community linked the 9.5.0.0 simulator ZIP, and the simulator installation guide
+states that the ZIP contains an OVA. Independent inspection of that OVA reports a
+small sparse appliance with 22 VMDKs: one 16 GiB system disk, one 512 MiB device,
+and twenty 5 GiB SCSI data disks. Those data VMDKs are the best available oracle
+for the next raw-format step because they are genuine Dell-authored OneFS media,
+not synthetic bytes invented by this repository.
+
+The intended clean-room oracle procedure is:
+
+1. obtain the simulator from Dell's own download channel;
+2. extract the OVA/VMDKs without redistributing them;
+3. identify which 5 GiB VMDKs are initialized `/ifs` data drives;
+4. reconstruct each sparse VMDK as logical raw sectors using this repository's
+   existing VMDK reader;
+5. compare the same 8 KiB block positions across many drives and fresh simulator
+   clusters to find the repeated fixed-address superblock candidates;
+6. change one controlled cluster property at a time, then diff those candidates;
+7. validate any inferred magic/version/root-address fields against live `isi get`,
+   cluster upgrade behavior and more than one simulator version before adding a
+   detector or parser.
+
+This run could verify the public simulator packaging and disk inventory, but the
+execution environment could not resolve `dl.dell.com`, so no simulator bytes were
+used and no claim about the missing raw offsets or magic is made here.
+
 ## What remains unknown at byte level
 
 No authoritative publication or independently licensed implementation found in
@@ -176,6 +204,10 @@ Primary / official material:
 - Dell KB, **How to obtain a LIN from an NFS file handle** (little-endian exported
   LIN encoding):
   https://www.dell.com/support/kbdoc/en-us/000019498/isilon-onefs-how-to-obtain-a-lin-from-an-nfs-file-handle
+- Dell OneFS Simulator Installation Guide:
+  https://www.dell.com/support/manuals/en-us/isilon-onefs/ifs_pub_onefs_simulator_guide/installing-onefs-simulator
+- Dell community, **Upgrading OneFS Simulator** (Dell-hosted 9.5 simulator link):
+  https://www.dell.com/community/en/conversations/isilon/upgrading-onefs-simulator/647f8bdcf4ccf8a8dec07295
 
 Implementation-independent patent evidence:
 
@@ -193,6 +225,8 @@ Implementation-independent patent evidence:
 Dell documentation and patents are used only to determine factual architecture,
 public behavior, constants/geometry and acceptance boundaries. Patent pseudocode
 is not copied or translated. The unlicensed `cp-migrate` repository is not a code
-source. No external implementation code, comments, naming structure or control
-flow is reproduced. The implementation remains original managed C# under this
-repository's license, with no new dependency.
+source. Dell simulator binaries are not committed or redistributed; when
+available they are suitable only as a behavioral/raw-media oracle. No external
+implementation code, comments, naming structure or control flow is reproduced.
+The implementation remains original managed C# under this repository's license,
+with no new dependency.
