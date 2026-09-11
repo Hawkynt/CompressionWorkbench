@@ -104,7 +104,7 @@ public sealed class IntelHexReader {
       throw new InvalidDataException(
         $"IntelHex: record type 0x{type:X2} requires {expectedPayloadLength} data bytes, got {payloadLength} in '{line}'.");
 
-    if (type is 0x02 or 0x03 or 0x04 or 0x05 && address != 0)
+    if ((type is 0x02 or 0x03 or 0x04 or 0x05) && address != 0)
       throw new InvalidDataException(
         $"IntelHex: record type 0x{type:X2} requires address 0000, got {address:X4} in '{line}'.");
   }
