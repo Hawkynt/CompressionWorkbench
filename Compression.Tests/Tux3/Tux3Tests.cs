@@ -207,7 +207,7 @@ public class Tux3Tests {
 
   [Test, Category("Regression")]
   public void OverflowingDeclaredVolume_FailsClosed() {
-    var image = BuildNativeImage(volBlocks: ulong.MaxValue, blockBits: 62);
+    var image = BuildNativeImage(volBlocks: ulong.MaxValue, blockBits: 12);
     var descriptor = new Tux3FormatDescriptor();
 
     using var layoutStream = new MemoryStream(image, writable: false);
