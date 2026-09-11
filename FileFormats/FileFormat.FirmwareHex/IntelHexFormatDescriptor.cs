@@ -9,15 +9,17 @@ namespace FileFormat.FirmwareHex;
 /// <summary>
 /// Pseudo-archive descriptor for Intel HEX firmware files. Decodes the ASCII
 /// records into a flat binary (<c>firmware.bin</c>) and surfaces a
-/// <c>metadata.ini</c> with record count, declared start address, and gap count.
+/// <c>metadata.ini</c> with record count, declared start address, and sparse
+/// segment layout.
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description>Intel "Hexadecimal Object File Format Specification", Rev. A (1988) — the defining document</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Intel_HEX</c> — record types and checksum rules</description></item>
+///   <item><description><c>https://developerhelp.microchip.com/xwiki/bin/view/software-tools/ipe/sqtp-file-format-specification/intel-hex/</c> — record layout and checksum rules</description></item>
 /// </list>
 /// </summary>
-public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable {
+public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable,
+    IArchiveModifiable, IArchiveDefragmentable {
 
   /// <summary>
   /// Gets the id.
@@ -36,7 +38,7 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -95,13 +97,19 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// <summary>
   /// Writes a fresh Intel HEX file: the single payload input becomes the data
   /// records, and a <c>metadata.ini</c> alongside it -- the one this descriptor's
-  /// own reader renders -- supplies the base and start addresses that a flat
-  /// binary cannot carry.
+  /// own reader renders -- supplies the sparse segment map and start-address form
+  /// that a flat binary cannot carry.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     FirmwareHexWriter.WriteIntelHex(output, FirmwareHexWriter.ImageFrom(inputs, "IntelHex"));
   }
+
+  // IArchiveModifiable and IArchiveDefragmentable intentionally use their shared
+  // verified staged-rebuild implementations. Rebuilding is the native edit model
+  // for a line-oriented HEX file: there are no allocation structures to patch in
+  // place, and the rendered metadata now preserves sparse address runs and the
+  // distinction between type-03 CS:IP and type-05 linear start records.
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     using var reader = new StreamReader(stream, Encoding.ASCII, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
