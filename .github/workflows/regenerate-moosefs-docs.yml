@@ -1,0 +1,42 @@
+name: Regenerate MooseFS docs
+
+on:
+  push:
+    branches: [feature/moosefs-maintenance]
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+      - name: Rewrite filesystem support matrix
+        env:
+          CWB_WRITE_DOCS: '1'
+        run: >-
+          dotnet test Compression.Tests/Compression.Tests.csproj
+          --configuration Release
+          --filter FullyQualifiedName~FilesystemReadmeIsCurrentTests.TheSupportMatrix_SaysWhatTheCodeSays
+          --nologo
+      - name: Commit generated matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Hawkynt.FileFormats.FileSystems/README.md; then
+            echo 'Support matrix already current.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Hawkynt.FileFormats.FileSystems/README.md
+          git commit -m '* regenerate filesystem support matrix'
+          git push
