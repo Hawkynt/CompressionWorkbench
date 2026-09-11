@@ -1,160 +1,126 @@
 #pragma warning disable CS1591
 using Compression.Registry;
-using Compression.Registry.Streaming;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.OneFs;
 
 /// <summary>
-/// Stage 0 detection-only descriptor for Dell EMC Isilon OneFS LIN-tree
-/// root images. Surfaces only a synthetic <c>metadata.ini</c> and the raw
-/// image bytes; no real file-walk is attempted.
-///
-/// <para>
-/// <b>Why R/O promotion is impossible (per CONTRIBUTING.md promotion gates):</b>
-/// </para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// <b>No single-image content surface.</b> OneFS is a clustered scale-out NAS
-/// — every file is split into "protection groups" striped across drives and
-/// nodes with FEC (Forward Error Correction, N+M:B layout, e.g. N+2:1). A
-/// single drive/node image carries only one stripe; the file data cannot be
-/// reconstructed without the peer nodes. A read-only reader from one image
-/// can never return correct file bytes.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <b>LIN tree is cluster-wide.</b> The Logical Inode Number tree (the OneFS
-/// metadata index) lives across nodes, not in a single superblock. There is
-/// no per-image inode-to-block mapping to walk.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <b>Proprietary on-disk format, no public specification.</b> Dell EMC has
-/// never published the OneFS on-disk format. No open-source reverse-engineered
-/// reader exists. Without a spec we cannot honour the CONTRIBUTING rule
-/// "never advertise capabilities you cannot prove against a real spec".
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// <b>FreeBSD/UFS ancestry does NOT give us a UFS reader fallback.</b> OneFS
-/// runs on a FreeBSD-derived kernel, but the filesystem layer is entirely
-/// proprietary — it is NOT FFS/UFS at the on-disk level. UFS1 places its
-/// superblock magic <c>0x00011954</c> at offset 8192; OneFS images have the
-/// ASCII <c>"OneFS"</c> tag at offset 0 and no UFS superblock. Routing OneFS
-/// images through <c>UfsReader</c> would fail the magic check and (if forced)
-/// return arbitrary bytes — the textbook mutual-compensation trap.
-/// </description>
-/// </item>
-/// </list>
-///
-/// <para>
-/// <b>Conclusion:</b> Stage-0 detection only. Surface the magic, raw bytes,
-/// and a <c>metadata.ini</c> documenting the limitation. R/O promotion is
-/// blocked on (a) Dell EMC publishing the spec and (b) a multi-node ingest
-/// path — neither is in reach.
-/// </para>
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>Dell EMC "PowerScale OneFS Technical Overview" whitepaper — high-level architecture only; no on-disk spec is published</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/OneFS_distributed_file_system</c> — Wikipedia article</description></item>
-/// </list>
+/// Conservative inspection descriptor for Dell PowerScale / Isilon OneFS media.
 /// </summary>
+/// <remarks>
+/// <para>
+/// OneFS is a distributed filesystem. Dell documents a global namespace, a LIN
+/// B+ tree whose values are mirrored inode addresses on node/drive/block tuples,
+/// and IFM metatrees that map logical file blocks into protection groups spread
+/// through the cluster. A single raw drive therefore does not carry enough state
+/// to reconstruct arbitrary files or safely rewrite their allocation metadata.
+/// </para>
+/// <para>
+/// No Dell publication found during the implementation review defines the
+/// historical <c>"OneFS"</c> or <c>"ONEF"</c> literals as fixed offset-zero raw
+/// media signatures. Advertising those bytes caused unrelated files beginning
+/// with either string to be identified as OneFS. Detection is consequently by
+/// explicit selection or the unambiguous <c>.onefs</c> extension only.
+/// </para>
+/// <para>
+/// R/W and the destructive maintenance verbs remain deliberately unavailable.
+/// Implementing add/remove, purge, wipe, relocation/defrag, shrink or relayout
+/// without the raw allocation, protection and transaction formats would corrupt
+/// media while satisfying only this library's own synthetic tests. The reader
+/// instead exposes metadata describing the known architecture plus the original
+/// image as a byte-exact bounded stream.
+/// </para>
+/// <para>
+/// Clean-room references:
+/// <list type="bullet">
+///   <item><description><c>https://infohub.delltechnologies.com/en-us/p/onefs-metadata/</c>
+///     — LIN tree, inode mirrors, IFM/DFM B+ trees and protection metadata.</description></item>
+///   <item><description><c>https://infohub.delltechnologies.com/en-nz/l/dell-powerscale-onefs-technical-overview/file-system-structure/1/</c>
+///     — distributed UFS-based filesystem and global namespace.</description></item>
+///   <item><description>Dell PowerScale OneFS Technical Specifications Guide —
+///     fixed 8 KiB filesystem block size.</description></item>
+/// </list>
+/// No external implementation code is copied or translated.
+/// </para>
+/// </remarks>
 public sealed class OneFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+  /// <summary>Gets the registry id.</summary>
   public string Id => "OneFs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "Dell EMC Isilon OneFS";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+
+  /// <summary>Gets the format category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+
+  /// <summary>Gets the conservative read-only capabilities.</summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+
+  /// <summary>Gets the conventional extension for explicitly supplied raw media.</summary>
   public string DefaultExtension => ".onefs";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+
+  /// <summary>Gets the recognized extensions.</summary>
   public IReadOnlyList<string> Extensions => [".onefs"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+
+  /// <summary>Gets compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // ASCII "OneFS" (5 bytes) at offset 0 — long tag form.
-    new("OneFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
-    // ASCII "ONEF" (0x4F4E4546 BE) at offset 0 — short tag form.
-    new("ONEF"u8.ToArray(), Offset: 0, Confidence: 0.85),
-  ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description =>
-    "Dell EMC Isilon OneFS — Stage 0, detection-only — proprietary distributed/clustered FS, " +
-    "no single-image content surface (file data is FEC-striped across nodes). " +
-    "FreeBSD-derived kernel but filesystem layer is NOT UFS-compatible (no UFS1 superblock at 8192). " +
-    "No public on-disk spec; R/O promotion blocked. " +
-    "Magic 'OneFS' / 'ONEF' at offset 0 of LIN-tree root.";
 
   /// <summary>
-  /// Lists the entries in the supplied container.
+  /// Gets fixed magic signatures. Dell does not publish an authoritative
+  /// offset-zero raw-media signature, so OneFS intentionally has none.
   /// </summary>
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+
+  /// <summary>Gets the pseudo-archive storage method.</summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+
+  /// <summary>Gets the tar compression format id.</summary>
+  public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the algorithm family.</summary>
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+
+  /// <summary>Gets a description of the intentionally limited inspection surface.</summary>
+  public string Description =>
+    "Dell PowerScale / Isilon OneFS — opaque single-image inspection only. " +
+    "OneFS presents a cluster-wide namespace: LIN metadata resolves to mirrored node/drive/block addresses " +
+    "and file metatrees resolve data through distributed protection groups. Dell documents OneFS as UFS-based, " +
+    "but does not publish a standalone raw-drive layout or fixed offset-zero media magic sufficient for offline parsing. " +
+    "The historic 'OneFS'/'ONEF' signature claim was therefore removed. R/W, purge, wipe, defrag, shrink and relayout " +
+    "remain blocked until the raw allocation/protection/transaction format can be proven against a real cluster or checker.";
+
+  /// <summary>Lists the two conservative inspection entries without reading the image payload.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new OneFsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    using var reader = new OneFsReader(stream, leaveOpen: true);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Extracts selected inspection entries through bounded streams.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new OneFsReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    using var reader = new OneFsReader(stream, leaveOpen: true);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory)
+        continue;
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files))
+        continue;
+
+      using var source = reader.OpenEntry(entry);
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      source.CopyTo(target);
     }
   }
 
   Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(entryName);
-    var r = new OneFsReader(archive);
-    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
-      ?? throw new FileNotFoundException($"OneFS entry not found: {entryName}");
-    var data = r.Extract(entry);
-    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+
+    using var reader = new OneFsReader(archive, leaveOpen: true);
+    var entry = reader.Entries.FirstOrDefault(candidate =>
+      string.Equals(candidate.Name, entryName, StringComparison.Ordinal))
+      ?? throw new FileNotFoundException($"OneFS entry not found: {entryName}", entryName);
+    return reader.OpenEntry(entry);
   }
 }
