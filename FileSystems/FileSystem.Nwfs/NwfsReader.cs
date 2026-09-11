@@ -29,6 +29,8 @@ public sealed class NwfsReader {
   private readonly int _blockSize;
   private readonly uint _firstSegmentBlock;
   private readonly uint _rootDirectoryBlock;
+  private readonly uint _secondDirectoryBlock;
+  private readonly uint _totalBlocks;
 
   /// <summary>What the volume calls itself.</summary>
   public string VolumeName { get; }
@@ -36,13 +38,22 @@ public sealed class NwfsReader {
   /// <summary>Bytes to a block on this volume.</summary>
   public int BlockSize => this._blockSize;
 
+  internal long DataAreaOffset => this._dataAreaOffset;
+  internal uint FirstSegmentBlock => this._firstSegmentBlock;
+  internal uint RootDirectoryBlock => this._rootDirectoryBlock;
+  internal uint SecondDirectoryBlock => this._secondDirectoryBlock;
+  internal uint TotalBlocks => this._totalBlocks;
+
   private NwfsReader(byte[] image, long dataAreaOffset, int blockSize, uint firstSegmentBlock,
-                     uint rootDirectoryBlock, string volumeName) {
+                     uint rootDirectoryBlock, uint secondDirectoryBlock, uint totalBlocks,
+                     string volumeName) {
     this._image = image;
     this._dataAreaOffset = dataAreaOffset;
     this._blockSize = blockSize;
     this._firstSegmentBlock = firstSegmentBlock;
     this._rootDirectoryBlock = rootDirectoryBlock;
+    this._secondDirectoryBlock = secondDirectoryBlock;
+    this._totalBlocks = totalBlocks;
     this.VolumeName = volumeName;
   }
 
@@ -66,17 +77,23 @@ public sealed class NwfsReader {
     var entry = image.AsSpan((int)volumeArea + 32);
     var nameLength = Math.Min(entry[0], (byte)NwfsLayout.MaxVolumeNameLength);
     var name = Encoding.ASCII.GetString(entry.Slice(1, nameLength));
+    var totalBlocks = BinaryPrimitives.ReadUInt32LittleEndian(entry[32..]);
     var firstSegmentBlock = BinaryPrimitives.ReadUInt32LittleEndian(entry[36..]);
     var blockValue = BinaryPrimitives.ReadUInt32LittleEndian(entry[44..]);
-    if (blockValue == 0) return null;
+    if (totalBlocks == 0 || blockValue == 0) return null;
     var blockSize = (int)(256 / blockValue * 1024);
     if (!NwfsLayout.IsValidBlockSize(blockSize)) return null;
 
     var rootDirectory = BinaryPrimitives.ReadUInt32LittleEndian(entry[48..]);
+    var secondDirectory = BinaryPrimitives.ReadUInt32LittleEndian(entry[52..]);
     var dataArea = volumeArea + NwfsLayout.VolumeAreaBytes;
     if (dataArea >= image.Length) return null;
 
-    return new NwfsReader(image, dataArea, blockSize, firstSegmentBlock, rootDirectory, name);
+    var volumeBytes = (long)totalBlocks * blockSize;
+    if (volumeBytes <= 0 || dataArea + volumeBytes > image.Length) return null;
+
+    return new NwfsReader(image, dataArea, blockSize, firstSegmentBlock, rootDirectory,
+                          secondDirectory, totalBlocks, name);
   }
 
   /// <summary>
@@ -105,14 +122,35 @@ public sealed class NwfsReader {
       : -1;
   }
 
-  private long BlockOffset(uint block) =>
-    this._dataAreaOffset + (long)(block - this._firstSegmentBlock) * this._blockSize;
+  internal long BlockOffset(uint block) {
+    if (block < this._firstSegmentBlock) return -1;
+    var relative = (long)block - this._firstSegmentBlock;
+    return relative >= this._totalBlocks ? -1 : this._dataAreaOffset + relative * this._blockSize;
+  }
 
-  private uint NextBlock(uint block) {
-    var at = this._dataAreaOffset + (long)(block - this._firstSegmentBlock) * NwfsLayout.FatEntryBytes + 4;
-    return at + 4 > this._image.Length
-      ? NwfsLayout.NoBlock
-      : BinaryPrimitives.ReadUInt32LittleEndian(this._image.AsSpan((int)at));
+  internal bool TryReadFatEntry(uint block, out uint index, out uint next) {
+    index = next = NwfsLayout.NoBlock;
+    if (block < this._firstSegmentBlock) return false;
+    var relative = (long)block - this._firstSegmentBlock;
+    if (relative >= this._totalBlocks) return false;
+    var at = this._dataAreaOffset + relative * NwfsLayout.FatEntryBytes;
+    if (at < 0 || at + NwfsLayout.FatEntryBytes > this._image.Length) return false;
+    index = BinaryPrimitives.ReadUInt32LittleEndian(this._image.AsSpan((int)at));
+    next = BinaryPrimitives.ReadUInt32LittleEndian(this._image.AsSpan((int)at + 4));
+    return true;
+  }
+
+  internal uint NextBlock(uint block)
+    => this.TryReadFatEntry(block, out _, out var next) ? next : NwfsLayout.NoBlock;
+
+  internal IEnumerable<uint> WalkChain(uint firstBlock) {
+    var block = firstBlock;
+    var seen = new HashSet<uint>();
+    while (block != NwfsLayout.NoBlock && seen.Count < this._totalBlocks && seen.Add(block)) {
+      if (this.BlockOffset(block) < 0) yield break;
+      yield return block;
+      block = this.NextBlock(block);
+    }
   }
 
   private sealed record Raw(uint ParentId, bool IsDirectory, string Name, uint Length, uint FirstBlock, uint DirectoryId);
@@ -120,10 +158,8 @@ public sealed class NwfsReader {
   private List<Raw> ReadDirectory() {
     var items = new List<Raw>();
     var perBlock = this._blockSize / NwfsLayout.DirectoryEntryBytes;
-    var block = this._rootDirectoryBlock;
-    var guard = 0;
 
-    while (block != NwfsLayout.NoBlock && guard++ < 1 << 20) {
+    foreach (var block in this.WalkChain(this._rootDirectoryBlock)) {
       var at = this.BlockOffset(block);
       if (at < 0 || at + this._blockSize > this._image.Length) break;
 
@@ -148,8 +184,6 @@ public sealed class NwfsReader {
           : new Raw(parent, false, name, BinaryPrimitives.ReadUInt32LittleEndian(e[48..]),
                     BinaryPrimitives.ReadUInt32LittleEndian(e[52..]), 0));
       }
-
-      block = this.NextBlock(block);
     }
 
     return items;
@@ -195,10 +229,10 @@ public sealed class NwfsReader {
     var data = new byte[item.Length];
     var block = item.FirstBlock;
     var written = 0;
-    var guard = 0;
 
-    while (block != NwfsLayout.NoBlock && written < data.Length && guard++ < 1 << 24) {
-      var at = this.BlockOffset(block);
+    foreach (var current in this.WalkChain(block)) {
+      if (written >= data.Length) break;
+      var at = this.BlockOffset(current);
       if (at < 0 || at >= this._image.Length) break;
 
       var take = Math.Min(this._blockSize, data.Length - written);
@@ -207,7 +241,6 @@ public sealed class NwfsReader {
 
       this._image.AsSpan((int)at, take).CopyTo(data.AsSpan(written));
       written += take;
-      block = this.NextBlock(block);
     }
 
     return data;

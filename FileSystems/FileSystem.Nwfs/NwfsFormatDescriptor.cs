@@ -7,138 +7,99 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Nwfs;
 
 /// <summary>
-/// Read-only descriptor for NWFS386 (Novell NetWare 386 / "Traditional NetWare
-/// File System") — used in NetWare 2.x/3.x/4.x and as the SYS: filesystem in
-/// 5.x/6.x. NSS (Novell Storage Services) replaced it for new volumes from
-/// 1998 but NWFS images still surface in archaeology / migration workflows.
-///
-/// **PROVENANCE**: Novell never released the on-disk format. What is read and
-/// written here follows the public reverse-engineering of it (notably the
-/// zhmu/nwfs project, whose documentation and reader were both checked
-/// against). Volumes written by <see cref="NwfsWriter" /> are read back by that
-/// project's own <c>transfer</c> tool — directory tree, sizes and file bytes
-/// all agreeing — so contents are no longer merely detected.
-///
-/// Still out of scope: suballocation, Turbo FAT, compression, mirrored
-/// partitions, volumes spanning several partitions, and the salvage area.
-/// A volume using any of those reads only as far as its plain structures go.
-///
-/// Magic: <c>HOTFIX00</c> — 8 ASCII bytes at byte offset <c>0x4000</c> (16384,
-/// = sector 32 at 512 B sectors). Confidence 0.85: 8 bytes of ASCII at a
-/// fixed offset is high-signal, but because the layout is RE-derived we keep
-/// a small margin below the 0.9-0.95 used for spec-stable filesystems.
-/// "MIRROR00" and "NetWare Volumes" are detected as corroboration but not
-/// used for primary signature matching.
-///
-/// References:
-/// <list type="bullet">
-///   <item><description><c>https://github.com/zhmu/nwfs</c> — primary reverse-engineering project, incl. <c>doc/nwfs386.md</c></description></item>
-///   <item><description><c>https://github.com/jeffmerkey/netware-file-system</c> — secondary reference</description></item>
-/// </list>
+/// NWFS386 (Novell NetWare 386 / Traditional NetWare File System) descriptor.
+/// The supported writable profile is deliberately narrow: one ordinary volume,
+/// ordinary FAT chains and DOS namespace directory entries. Suballocation,
+/// compressed files, Turbo FAT, mirrored/spanned volumes and salvage recovery
+/// remain outside the writable profile.
 /// </summary>
-public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+/// <remarks>
+/// <para>Novell did not publish the complete traditional filesystem layout. The
+/// implementation follows publicly documented NetWare behaviour plus the
+/// independently released NetWare filesystem implementation by Jeff Merkey.
+/// That implementation is LGPL-2.1-or-later; this code uses the public on-disk
+/// behaviour and constants rather than copying its implementation structure.</para>
+/// <para>References:</para>
+/// <list type="bullet">
+///   <item><description><c>https://www.novell.com/documentation/developer/nlm_enu/data/sdk663.html</c> — 128-byte Directory Entry Table records</description></item>
+///   <item><description><c>https://www.novell.com/documentation/nw6p/pdfdoc/trouble/trouble.pdf</c> — duplicate FAT and directory tables</description></item>
+///   <item><description><c>https://github.com/jeffmerkey/netware-file-system</c> — LGPL-2.1-or-later behavioural/reference implementation</description></item>
+/// </list>
+/// </remarks>
+public sealed class NwfsFormatDescriptor
+  : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable,
+    IArchiveDefragmentable, IArchiveShrinkable, IFilesystemExtentMap, ILayoutOptimizable,
+    IFormatOptionsSchema {
+
   public string Id => "Nwfs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "NWFS (Novell NetWare 386 Traditional Filesystem)";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".nwfs";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".nwfs", ".nwvol", ".netware"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // "HOTFIX00" at byte offset 0x4000 (sector 32 with 512 B sectors). 8 bytes
-    // of ASCII at a fixed offset is high-confidence; we rate this 0.85 (not
-    // 0.9+) because the layout is derived from public reverse engineering
-    // rather than a vendor-published spec.
     new(NwfsHeaders.HotfixMagic, Offset: (int)NwfsHeaders.HotfixOffset, Confidence: 0.85),
-    // The same header on a whole disk rather than an image of the partition
-    // alone: a partition starting at sector 32 puts it 0x4000 further on.
     new(NwfsHeaders.HotfixMagic, Offset: 0x8000, Confidence: 0.80),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
-    "NWFS (Novell NetWare 386 Traditional Filesystem) — best-effort detection from public RE; contents cannot be validated.";
+    "NWFS (Traditional NetWare File System) — plain single-volume read/write profile with rebuild-based maintenance.";
+
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    FilesystemSchemaPresets.PowerOfTwoSize(
+      key: "BlockSize", displayName: "Block size",
+      min: 1024, max: 256 * 1024, defaultLabel: "4 KB",
+      description: "NetWare allocation-block size (1 KB through 256 KB, power of two)."),
+    FilesystemSchemaPresets.VolumeLabel(NwfsLayout.MaxVolumeNameLength),
+  ];
 
   /// <summary>
-  /// Lists the entries in the supplied container.
+  /// Lists the real filesystem namespace when the supported volume profile can
+  /// be opened. If it cannot, falls back to forensic renderings of the bytes so
+  /// partially recognised images remain inspectable without pretending they are
+  /// writable filesystems.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var entries = new List<ArchiveEntryInfo>();
+    var volume = TryReadVolume(stream);
+    if (volume != null) {
+      var entries = new List<ArchiveEntryInfo>();
+      foreach (var item in volume.List())
+        entries.Add(new ArchiveEntryInfo(entries.Count, item.Path, item.Length, item.Length, "stored",
+                                         item.IsDirectory, false, null));
+      return entries;
+    }
+
+    var entriesFallback = new List<ArchiveEntryInfo>();
     byte[] image;
     try {
       image = ReadAllBounded(stream);
     } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.nwfs", 0, 0, "stored", false, false, null));
-      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
-      return entries;
+      entriesFallback.Add(new ArchiveEntryInfo(0, "FULL.nwfs", 0, 0, "stored", false, false, null));
+      entriesFallback.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+      return entriesFallback;
     }
 
     NwfsHeaders hdr;
     try {
       hdr = NwfsHeaders.TryParse(image);
     } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.nwfs", image.LongLength, image.LongLength, "stored", false, false, null));
-      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
-      return entries;
+      entriesFallback.Add(new ArchiveEntryInfo(0, "FULL.nwfs", image.LongLength, image.LongLength, "stored", false, false, null));
+      entriesFallback.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
+      return entriesFallback;
     }
 
-    var idx = 0;
-    entries.Add(new ArchiveEntryInfo(idx++, "FULL.nwfs", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(idx++, "metadata.ini", 0, 0, "stored", false, false, null));
+    entriesFallback.Add(new ArchiveEntryInfo(0, "FULL.nwfs", image.LongLength, image.LongLength, "stored", false, false, null));
+    entriesFallback.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
     if (hdr.AnyValid)
-      entries.Add(new ArchiveEntryInfo(idx++, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
-
-    // When the headers lead to a volume, the files on it are listed as well.
-    var volume = TryReadVolume(stream);
-    if (volume != null)
-      foreach (var item in volume.List())
-        entries.Add(new ArchiveEntryInfo(idx++, item.Path, item.Length, item.Length, "stored",
-                                         item.IsDirectory, false, null));
-
-    return entries;
+      entriesFallback.Add(new ArchiveEntryInfo(2, "volume_header.bin", hdr.HeaderRaw.LongLength, hdr.HeaderRaw.LongLength, "stored", false, false, null));
+    return entriesFallback;
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     byte[] image;
     try {
@@ -164,12 +125,179 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       WriteIfMatch(outputDir, "volume_header.bin", hdr.HeaderRaw, files);
 
     if (volume == null) return;
-
     foreach (var item in volume.List()) {
-      if (item.IsDirectory) continue;
+      if (item.IsDirectory) {
+        if (files is not { Length: > 0 } || MatchesFilter(item.Path, files))
+          Directory.CreateDirectory(Path.Combine(outputDir, item.Path.Replace('/', Path.DirectorySeparatorChar)));
+        continue;
+      }
       WriteIfMatch(outputDir, item.Path, volume.Read(item), files);
     }
   }
+
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
+    var writer = NewWriter(options);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) writer.AddDirectory(input.ArchiveName);
+      else writer.AddFile(input.ArchiveName, input.ReadContent());
+    }
+    var image = writer.Build();
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(image);
+    output.Flush();
+  }
+
+  /// <summary>
+  /// Adds/replaces entries transactionally by reading the supported namespace,
+  /// authoring a fresh volume of the same capacity and committing only after the
+  /// replacement image exists in full.
+  /// </summary>
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    ArgumentNullException.ThrowIfNull(inputs);
+    var snapshot = NwfsMaintenance.Read(archive);
+    foreach (var input in inputs) {
+      var name = NormalizePath(input.ArchiveName);
+      if (input.IsDirectory) {
+        if (name.Length > 0 && !snapshot.Directories.Contains(name, StringComparer.OrdinalIgnoreCase))
+          snapshot.Directories.Add(name);
+        continue;
+      }
+      snapshot.Files[name] = input.ReadContent();
+    }
+    NwfsMaintenance.Replace(archive, NwfsMaintenance.Build(snapshot, minimumImageSize: snapshot.ImageLength));
+  }
+
+  /// <summary>
+  /// Removes files or whole directory subtrees through the same transactional
+  /// rebuild. The fresh image is zero-initialised, so removed payload bytes are
+  /// not carried into free blocks.
+  /// </summary>
+  public void Remove(Stream archive, string[] entryNames) {
+    ArgumentNullException.ThrowIfNull(entryNames);
+    var snapshot = NwfsMaintenance.Read(archive);
+    var removed = entryNames.Select(NormalizePath).Where(static n => n.Length > 0).ToArray();
+    static bool Matches(string candidate, string removed)
+      => candidate.Equals(removed, StringComparison.OrdinalIgnoreCase)
+         || candidate.StartsWith(removed + "/", StringComparison.OrdinalIgnoreCase);
+
+    foreach (var key in snapshot.Files.Keys.Where(k => removed.Any(r => Matches(k, r))).ToArray())
+      snapshot.Files.Remove(key);
+    snapshot.Directories.RemoveAll(d => removed.Any(r => Matches(d, r)));
+    NwfsMaintenance.Replace(archive, NwfsMaintenance.Build(snapshot, minimumImageSize: snapshot.ImageLength));
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException("NWFS rebuild defragmentation supports ConsolidateAtStart.");
+    options.CancellationToken.ThrowIfCancellationRequested();
+    var before = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "scanning", 0, 0, -1, Math.Max(1, archive.Length), before, "Reading NWFS allocation map"));
+    var snapshot = NwfsMaintenance.Read(archive);
+    var rebuilt = NwfsMaintenance.Build(snapshot, minimumImageSize: snapshot.ImageLength);
+    options.CancellationToken.ThrowIfCancellationRequested();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "committing", 0.95, -1, 0, Math.Max(1, rebuilt.LongLength), null, "Committing packed NWFS image"));
+    NwfsMaintenance.Replace(archive, rebuilt);
+    var after = this.EnumerateExtents(archive).ToList();
+    options.OnProgress?.Invoke(new DefragProgressEvent(
+      "complete", 1, -1, -1, Math.Max(1, archive.Length), after, "NWFS files packed at the start of the volume"));
+  }
+
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var snapshot = NwfsMaintenance.Read(input);
+    var rebuilt = NwfsMaintenance.Build(snapshot);
+    output.Position = 0;
+    output.SetLength(0);
+    if (rebuilt.LongLength < input.Length)
+      output.Write(rebuilt);
+    else {
+      input.Position = 0;
+      input.CopyTo(output);
+    }
+    output.Flush();
+    output.Position = 0;
+  }
+
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    var snapshot = NwfsMaintenance.Read(image);
+    var optimal = NwfsMaintenance.FindOptimalBlockSize(snapshot);
+    return new LayoutAnalysis {
+      ImageSize = snapshot.ImageLength,
+      CurrentUnitSize = snapshot.BlockSize,
+      CurrentSlackBytes = NwfsMaintenance.FileSlack(snapshot, snapshot.BlockSize),
+      OptimalUnitSize = optimal,
+      OptimalSlackBytes = NwfsMaintenance.FileSlack(snapshot, optimal),
+      RequiresRebuild = ["BlockSize"],
+      Notes = [
+        $"Supported writable profile: plain single-volume NWFS; current block size {snapshot.BlockSize:N0} bytes.",
+        $"Tight rebuilt size at the recommended block size: {NwfsMaintenance.EstimateTightImageLength(snapshot, optimal):N0} bytes.",
+      ],
+    };
+  }
+
+  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.MakeSparse || options.DeduplicateWithLinks)
+      throw new NotSupportedException("Traditional NWFS has no supported sparse-file or hard-link reclaim path.");
+
+    var snapshot = NwfsMaintenance.Read(source);
+    var blockSize = options.UnitSize > 0 ? options.UnitSize : NwfsMaintenance.FindOptimalBlockSize(snapshot);
+    string? volumeName = null;
+    if (options.Parameters != null) {
+      if (options.Parameters.TryGetValue("BlockSize", out var explicitBlock)
+          || options.Parameters.TryGetValue("ClusterSize", out explicitBlock)) {
+        var parsed = ParseSize(explicitBlock);
+        if (parsed > 0) blockSize = parsed;
+      }
+      if (options.Parameters.TryGetValue("VolumeLabel", out var label) && !string.IsNullOrWhiteSpace(label))
+        volumeName = label;
+    }
+    if (!NwfsLayout.IsValidBlockSize(blockSize))
+      throw new ArgumentOutOfRangeException(nameof(options), $"{blockSize} is not a valid NWFS block size.");
+
+    var rebuilt = NwfsMaintenance.Build(snapshot, blockSize, Math.Max(0, options.ImageSize), volumeName);
+    target.Position = 0;
+    target.SetLength(0);
+    target.Write(rebuilt);
+    target.Flush();
+    target.Position = 0;
+  }
+
+  public IReadOnlyList<DefragBlockInfo> EnumerateExtents(Stream image)
+    => NwfsMaintenance.EnumerateExtents(image);
+
+  private static NwfsWriter NewWriter(FormatCreateOptions options) {
+    var blockSize = ParseSize(options.GetString("BlockSize"));
+    if (blockSize <= 0) blockSize = ParseSize(options.GetString("ClusterSize"));
+    if (blockSize <= 0) blockSize = 4096;
+    var volumeName = options.GetOption("VolumeLabel", "SYS");
+    if (string.IsNullOrWhiteSpace(volumeName)) volumeName = "SYS";
+    var minimumSize = 0L;
+    if (long.TryParse(options.GetString("ImageSize"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var requested)
+        && requested > 0)
+      minimumSize = requested;
+    return new NwfsWriter { BlockSize = blockSize, VolumeName = volumeName, MinimumImageSize = minimumSize };
+  }
+
+  private static int ParseSize(string? value) {
+    var parsed = FilesystemSchemaPresets.ParseSize(value);
+    if (parsed > 0) return parsed;
+    return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var raw) ? raw : 0;
+  }
+
+  private static string NormalizePath(string path)
+    => (path ?? string.Empty).Replace('\\', '/').Trim('/');
 
   private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
     if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
@@ -179,65 +307,38 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   private static byte[] BuildMetadata(NwfsHeaders h, long imageSize, NwfsReader? volume) {
     var b = new StringBuilder();
     var ic = CultureInfo.InvariantCulture;
-    // "ok" only when the headers led all the way to a volume and its directory
-    // was walked. Magic bytes alone say where to look, not that anything is there.
     b.Append(ic, $"parse_status={(volume != null ? "ok" : "partial")}\n");
     b.Append("detection_basis=reverse_engineered\n");
     b.Append(ic, $"hotfix_found={h.HotfixFound}\n");
-    if (h.HotfixFound)
-      b.Append(ic, $"hotfix_offset={h.HotfixFoundOffset}\n");
+    if (h.HotfixFound) b.Append(ic, $"hotfix_offset={h.HotfixFoundOffset}\n");
     b.Append(ic, $"mirror_found={h.MirrorFound}\n");
-    if (h.MirrorFound)
-      b.Append(ic, $"mirror_offset={h.MirrorFoundOffset}\n");
+    if (h.MirrorFound) b.Append(ic, $"mirror_offset={h.MirrorFoundOffset}\n");
     b.Append(ic, $"volumes_found={h.VolumesFound}\n");
-    if (h.VolumesFound)
-      b.Append(ic, $"volumes_offset={h.VolumesFoundOffset}\n");
-    var detected = string.Join("+",
-      new[] {
-        h.HotfixFound ? "HOTFIX00" : null,
-        h.MirrorFound ? "MIRROR00" : null,
-        h.VolumesFound ? "NetWare Volumes" : null,
-      }.Where(s => s != null));
+    if (h.VolumesFound) b.Append(ic, $"volumes_offset={h.VolumesFoundOffset}\n");
+    var detected = string.Join("+", new[] {
+      h.HotfixFound ? "HOTFIX00" : null,
+      h.MirrorFound ? "MIRROR00" : null,
+      h.VolumesFound ? "NetWare Volumes" : null,
+    }.Where(static s => s != null));
     b.Append(ic, $"detected_magic={(detected.Length > 0 ? detected : "none")}\n");
-    if (imageSize >= 0)
-      b.Append(ic, $"volume_size_if_visible={imageSize}\n");
-
+    if (imageSize >= 0) b.Append(ic, $"volume_size_if_visible={imageSize}\n");
     if (volume != null) {
       var items = volume.List();
       b.Append(ic, $"volume_name={volume.VolumeName}\n");
       b.Append(ic, $"block_size={volume.BlockSize}\n");
-      b.Append(ic, $"file_count={items.Count(i => !i.IsDirectory)}\n");
-      b.Append(ic, $"directory_count={items.Count(i => i.IsDirectory)}\n");
+      b.Append(ic, $"file_count={items.Count(static i => !i.IsDirectory)}\n");
+      b.Append(ic, $"directory_count={items.Count(static i => i.IsDirectory)}\n");
     }
-
     return Encoding.UTF8.GetBytes(b.ToString());
   }
 
-  // Bounded read — must NOT pull multi-GB images into memory when the carver
-  // runs us speculatively. NWFS HOTFIX header lives at offset 0x4000 with the
-  // immediately-following MIRROR sector; "NetWare Volumes" lives within the
-  // first ~96 KB. 64 KB covers HOTFIX/MIRROR comfortably and lets the
-  // free-form scan find Volumes too.
   private const int HeaderReadCap = 64 * 1024;
-
-  /// <summary>
-  /// How much of an image is taken in to read a volume's files. The headers are
-  /// read from the first 64 KB and cost nothing; the whole image is only taken
-  /// once those headers say there is a NetWare volume here to read.
-  /// </summary>
   private const long VolumeReadCap = 512L * 1024 * 1024;
 
-  /// <summary>
-  /// The volume in <paramref name="stream" />, or null when there is none or it
-  /// cannot be reached — a stream that will not seek back, or an image past the
-  /// size worth taking in.
-  /// </summary>
   private static NwfsReader? TryReadVolume(Stream stream) {
     if (!stream.CanSeek) return null;
-
     try {
       if (stream.Length > VolumeReadCap) return null;
-
       stream.Position = 0;
       using var ms = new MemoryStream();
       stream.CopyTo(ms);
@@ -248,10 +349,11 @@ public sealed class NwfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   private static byte[] ReadAllBounded(Stream stream) {
+    if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     var buf = new byte[8192];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
+    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, (int)Math.Min(buf.Length, HeaderReadCap - ms.Length))) > 0)
       ms.Write(buf, 0, read);
     return ms.ToArray();
   }
