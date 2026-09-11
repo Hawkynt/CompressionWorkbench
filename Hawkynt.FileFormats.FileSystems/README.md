@@ -230,7 +230,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [NWFS386 (Novell NetWare 386 raw)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R | — | — | — | — | — | — | detection of the on-disk signature | NetWare 386 raw-partition structures are proprietary | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
 | [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
 | [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R | — | — | — | — | — | — | detection of the on-disk signature | SGI cluster XFS | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
-| [Tahoe-LAFS share](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R | — | — | — | — | — | — | detection of the on-disk signature | Shares are capability-encrypted; no read-cap, no plaintext | [Tahoe-LAFS](https://tahoe-lafs.org/) |
+| [Tahoe-LAFS share](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R | ✅ | ✅ rebuild | ✅ | ✅ | — | — | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
 | [TFS (BBN Trans-FS)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | detection of the on-disk signature | BBN Trans-FS; no public on-disk specification | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
 
 <!-- SUPPORT:END -->
