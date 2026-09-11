@@ -5,94 +5,99 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.TahoeLafs;
 
 /// <summary>
-/// Read-only descriptor for Tahoe-LAFS share buckets — single on-disk
-/// share files emitted by a Tahoe-LAFS storage server. Each share holds
-/// capability-encrypted ciphertext (one of N Reed-Solomon shares; K
-/// needed to reconstruct). Detection by the 4-byte big-endian version
-/// prefix at offset 0 (0x00000001 immutable, 0x00000002 mutable). The
-/// share payload is surfaced as a single opaque ciphertext entry —
-/// decryption requires the read-cap and is out of scope.
+/// Descriptor for Tahoe-LAFS storage-server share containers. Immutable-share
+/// containers use a 12-byte versioned header; mutable-share containers use the
+/// distinct 32-byte <c>Tahoe mutable container vN</c> magic and fixed lease area.
+/// The enclosed share data is surfaced opaquely because reconstructing Tahoe
+/// plaintext requires capabilities, encryption keys and enough erasure shares.
+///
+/// <para>
+/// The archive-style namespace intentionally remains read-only: changing an
+/// opaque share payload is not equivalent to a valid Tahoe file mutation.
+/// Maintenance is limited to the outer storage container. Mutable containers
+/// may contain unused growth space between share data and their extra-lease
+/// table; that region can be mapped/wiped, the lease table can be packed forward
+/// for defrag, and the trailing unused capacity can be removed for shrink.
+/// Immutable containers are already packed and therefore pass through unchanged.
+/// </para>
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://github.com/tahoe-lafs/tahoe-lafs</c> — canonical implementation — share-file layout lives in the source docs</description></item>
-///   <item><description><c>https://tahoe-lafs.org/</c> — project home</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Tahoe-LAFS</c> — Wikipedia article</description></item>
+///   <item><description><c>https://github.com/tahoe-lafs/tahoe-lafs/blob/master/src/allmydata/storage/immutable.py</c> — immutable storage-container layout</description></item>
+///   <item><description><c>https://github.com/tahoe-lafs/tahoe-lafs/blob/master/src/allmydata/storage/mutable.py</c> — mutable storage-container layout</description></item>
+///   <item><description><c>https://tahoe-lafs.readthedocs.io/en/latest/specifications/mutable.html</c> — mutable-file format documentation</description></item>
 /// </list>
 /// </summary>
-public sealed class TahoeLafsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+public sealed class TahoeLafsFormatDescriptor :
+  IFormatDescriptor,
+  IArchiveFormatOperations,
+  IArchiveShrinkable,
+  IArchiveDefragmentable,
+  IArchiveLayoutMap {
+
   public string Id => "TahoeLafs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "Tahoe-LAFS share";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+
   public string DefaultExtension => ".tahoe-share";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".tahoe-share", ".share"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
+
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // 4-byte big-endian share version at offset 0.
+    // Immutable storage-container schemas. Version 2 changes lease-secret
+    // storage; it is not the mutable-share format.
     new([0x00, 0x00, 0x00, 0x01], Offset: 0, Confidence: 0.55),
     new([0x00, 0x00, 0x00, 0x02], Offset: 0, Confidence: 0.55),
+    // Mutable shares have a separate, high-confidence 32-byte storage magic.
+    new(TahoeLafsContainer.MutableV1Magic.ToArray(), Offset: 0, Confidence: 0.98),
+    new(TahoeLafsContainer.MutableV2Magic.ToArray(), Offset: 0, Confidence: 0.98),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "Tahoe-LAFS share bucket — capability-encrypted Reed-Solomon share, surfaced opaque.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+  public string? TarCompressionFormatId => null;
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+  public string Description => "Tahoe-LAFS storage-server share container — read-only opaque share data with mutable-container pack/wipe/shrink maintenance.";
+
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new TahoeLafsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    using var reader = new TahoeLafsReader(stream);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new TahoeLafsReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    using var reader = new TahoeLafsReader(stream);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      if (files != null && !MatchesFilter(entry.Name, files)) continue;
+      WriteFile(outputDir, entry.Name, reader.Extract(entry));
     }
   }
+
+  /// <summary>
+  /// Removes unused mutable-container growth space. Immutable share containers
+  /// are already tightly framed and are copied byte-for-byte.
+  /// </summary>
+  public void Shrink(Stream input, Stream output)
+    => TahoeLafsMaintenance.Shrink(input, output);
+
+  /// <summary>
+  /// Packs a mutable share's extra-lease table directly behind live share data,
+  /// leaving the original physical length as zeroed free tail space.
+  /// Immutable share containers need no physical re-layout.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => TahoeLafsMaintenance.Defragment(archive);
+
+  public void Defragment(Stream archive, DefragOptions options)
+    => TahoeLafsMaintenance.Defragment(archive, options);
+
+  /// <summary>
+  /// Maps required headers, share data and leases plus only those gaps which the
+  /// mutable storage-container fields prove to be unused.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)
+    => TahoeLafsMaintenance.EnumerateLayout(archive);
 }
