@@ -206,4 +206,8 @@ public sealed class CxfsFormatDescriptor :
   /// <inheritdoc />
   public void Remove(Stream archive, string[] entryNames)
     => this._xfs.Remove(archive, entryNames);
+
+  /// <inheritdoc />
+  public void Purge(Stream archive)
+    => ((IArchivePurgeable)this._xfs).Purge(archive);
 }
