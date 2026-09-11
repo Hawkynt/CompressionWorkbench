@@ -9840,7 +9840,7 @@ Writes a Long Range Zip (lrzip) container with the LZMA subtype. Other methods a
 
 Commodore 64 Lynx/LNX archive. The format stores a textual PETSCII-ish directory and uncompressed file extents in 254-byte blocks mirroring a 1541 sector with its two link bytes removed.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9862,12 +9862,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Lynx data extents are inherently contiguous and ordered by the directory. Defragmentation therefore consists of validating that layout and dropping transport/trailing padding after the last allocated archive block; intrinsic per-block padding is part of the format. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the layout. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the exact byte layout: live directory text, directory padding, REL side sectors, logical file bytes, per-file block padding, and any trailer beyond the archive allocation. Explicit free extents make generic forensic wiping safe for this format. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Performs the extract entry to memory operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Performs the open entry operation. |
+| `Purge` | `void Purge(Stream archive)` | Removes all live entries in one pass while preserving the input archive's BASIC preamble and Lynx signature. The empty directory is emitted at its minimum one-block allocation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds the directory at its smallest whole-254-byte allocation and copies the complete existing data area byte-for-byte. This preserves REL side sectors and file-type metadata, while reclaiming directory blocks left behind after removals and any trailing transport data. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros only byte ranges that the Lynx layout proves unused: directory padding, payload block padding and trailing transport data. Live file bytes and REL side-sector metadata are retained. |
 
 ### Namespace `FileFormat.Lz4`
 
@@ -20814,11 +20817,11 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `ZipLayoutMap`
 
-Walks the ZIP central directory and emits the byte-level layout of every local file header, compressed data payload, the central directory itself, and the EOCD record as `DefragBlockInfo` tiles.
+Walks a ZIP central directory and emits a fail-closed byte-level layout of local headers, compressed payloads, optional data descriptors, the central directory and EOCD.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` | Enumerates the value. |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` |  |
 
 #### `ZipModifier`
 
