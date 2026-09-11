@@ -20,19 +20,26 @@ namespace FileSystem.GlusterFs;
 /// which to distinguish a brick image automatically. The former workbench-only
 /// 0xCAFE5BAB probe convention is deliberately not recognised as GlusterFS.</para>
 ///
-/// <para>Mutating maintenance operations are intentionally not advertised. A
-/// Gluster brick relies on <c>trusted.gfid</c> and <c>trusted.glusterfs.*</c>
-/// xattrs for identity, DHT layout, replication/heal and related state. The
-/// current backing-filesystem rebuild paths do not preserve those attributes,
-/// so create/modify/defrag/shrink/layout/wipe/purge would risk silent brick
-/// corruption.</para>
+/// <para>The native XFS/ext layers can now read Gluster xattrs and conservatively
+/// mutate the common short-form/in-inode storage cases. This descriptor remains
+/// read-only until every xattr storage form that a maintenance operation can
+/// encounter (including ext external blocks/EA inodes and XFS leaf/btree/remote
+/// attributes) is preserved. Advertising a rebuild-based mutation before then
+/// could silently discard <c>trusted.gfid</c> or <c>trusted.glusterfs.*</c> state.</para>
+///
+/// <para>Gluster volume operations such as rebalance, fix-layout, and remove-brick
+/// are explicitly outside this single-image abstraction. They coordinate multiple
+/// bricks and belong to a live cluster/volume control plane, not an offline brick
+/// image editor.</para>
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/Setting-Up-Volumes/</c> — a volume is a logical collection of export-directory bricks</description></item>
 ///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/GlusterFS-Introduction/</c> — backing filesystems must support extended attributes</description></item>
-///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/Managing-Volumes/</c> — shrink/rebalance/fix-layout are cluster operations</description></item>
-///   <item><description><c>https://github.com/gluster/glusterfs</c> — canonical implementation, dual GPLv2/LGPLv3+</description></item>
+///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/Managing-Volumes/</c> — remove-brick/rebalance/fix-layout are volume operations</description></item>
+///   <item><description><c>https://docs.kernel.org/filesystems/ext4/attributes.html</c> — ext4 xattr on-disk layout</description></item>
+///   <item><description><c>https://www.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — XFS short-form attribute layout</description></item>
+///   <item><description><c>https://github.com/gluster/glusterfs</c> — canonical GlusterFS implementation, dual GPLv2/LGPLv3+</description></item>
 /// </list>
 /// </summary>
 public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -89,9 +96,10 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
   public string Description =>
     "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. GlusterFS has no " +
     "standalone image format; the supplied .gluster image is treated as one brick's backing " +
-    "filesystem. The .glusterfs GFID index is hidden from normal listings. trusted.gfid and " +
-    "trusted.glusterfs.* xattrs remain preserved in the raw image but are not interpreted, so " +
-    "cluster namespace reconstruction and all mutations remain disabled.";
+    "filesystem. The .glusterfs GFID index is hidden from normal listings. Native backing " +
+    "accessors can read trusted.gfid/trusted.glusterfs.* and mutate inline/short-form xattrs, " +
+    "but archive mutations stay disabled until external/leaf/btree xattr forms are safe. " +
+    "Cluster rebalance, fix-layout, and remove-brick are intentionally out of scope.";
 
   /// <summary>
   /// Lists the entries in the supplied brick backing-store image.
