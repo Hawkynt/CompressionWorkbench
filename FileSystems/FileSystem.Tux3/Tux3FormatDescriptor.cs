@@ -5,15 +5,23 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Tux3;
 
 /// <summary>
-/// Read-only native-superblock descriptor for the linux-tux3 research filesystem.
+/// Native-superblock descriptor for the linux-tux3 research filesystem.
 /// </summary>
 /// <remarks>
 /// The descriptor recognises real linux-tux3 disk-format revisions and parses the packed,
 /// big-endian <c>struct disksuper</c> at byte 4096. Native tree traversal and mutation are not
 /// implemented, so Create/Modify/Defragment capabilities are intentionally withheld rather than
 /// routing files through a private side-table that no TUX3 implementation understands.
+///
+/// <para>The on-disk <c>volblocks</c> field does, however, define the native volume boundary.
+/// Bytes after that boundary are outside the TUX3 volume and can therefore be reported as free,
+/// wiped, and removed by shrink without interpreting or modifying any native tree. Everything
+/// inside the declared volume remains fail-closed as metadata-reserved until allocation-tree
+/// traversal exists.</para>
 /// </remarks>
-public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, ISyntheticEntryNames {
+public sealed class Tux3FormatDescriptor :
+  IFormatDescriptor, IArchiveFormatOperations, ISyntheticEntryNames, IFilesystemExtentMap, IArchiveShrinkable {
+
   private static readonly HashSet<string> SyntheticNames =
     new(StringComparer.OrdinalIgnoreCase) { "FULL.tux3", "metadata.ini", "superblock.bin" };
 
@@ -59,7 +67,8 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <inheritdoc />
   public string Description =>
-    "TUX3 version-tree research filesystem — native big-endian superblock detection/metadata; tree traversal and writing not yet implemented.";
+    "TUX3 version-tree research filesystem — native big-endian superblock detection/metadata, " +
+    "fail-closed layout mapping, external-padding wipe/shrink; native tree traversal and writing not yet implemented.";
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -79,6 +88,103 @@ public sealed class Tux3FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Directory.CreateDirectory(Path.GetDirectoryName(target) ?? outputDir);
       using var output = File.Create(target);
       reader.ExtractTo(entry, output);
+    }
+  }
+
+  /// <summary>
+  /// Enumerates the provable byte layout without guessing at undecoded TUX3 allocation state.
+  /// The declared native volume is reserved wholesale; only trailing bytes outside it are free.
+  /// Invalid or arithmetically unrepresentable volume metadata reserves the complete physical image.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanRead || !image.CanSeek)
+      return [];
+
+    var imageLength = image.Length;
+    try {
+      using var reader = new Tux3Reader(image);
+      if (!TryGetDeclaredVolumeLength(reader, out var volumeLength))
+        return ReserveWholeImage(imageLength);
+
+      if (volumeLength >= imageLength)
+        return ReserveWholeImage(imageLength);
+
+      return [
+        new DefragBlockInfo(0, volumeLength, DefragBlockKind.MetadataReserved, "TUX3 volume (allocation map unresolved)"),
+        new DefragBlockInfo(volumeLength, imageLength - volumeLength, DefragBlockKind.Free, "Trailing bytes outside TUX3 volume"),
+      ];
+    } catch (InvalidDataException) {
+      return ReserveWholeImage(imageLength);
+    } catch (IOException) {
+      return ReserveWholeImage(imageLength);
+    }
+  }
+
+  /// <summary>
+  /// Removes only bytes beyond the volume size declared by <c>volblocks * blocksize</c>.
+  /// Malformed, truncated, or arithmetically invalid images are copied through unchanged.
+  /// </summary>
+  public void Shrink(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("TUX3 shrink requires a readable, seekable input stream.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("TUX3 shrink requires a writable, seekable output stream.", nameof(output));
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("TUX3 shrink requires distinct input and output streams.", nameof(output));
+
+    var copyLength = input.Length;
+    try {
+      using var reader = new Tux3Reader(input);
+      if (TryGetDeclaredVolumeLength(reader, out var volumeLength) && volumeLength <= input.Length)
+        copyLength = volumeLength;
+    } catch (InvalidDataException) {
+      // Total operation: malformed input is copied through unchanged.
+    } catch (IOException) {
+      // Total operation: an unreadable metadata surface is copied through unchanged.
+    }
+
+    input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    CopyPrefix(input, output, copyLength);
+  }
+
+  private static bool TryGetDeclaredVolumeLength(Tux3Reader reader, out long length) {
+    length = 0;
+    // The reference format reserves a 4 KiB superblock area as the maximum block size.
+    // Treat larger shifts as corrupt rather than trusting them for destructive maintenance.
+    if (!reader.ValidSuperblock || reader.VolBlocks == 0 || reader.BlockBits > 12)
+      return false;
+
+    var blockSize = 1UL << reader.BlockBits;
+    if (reader.VolBlocks > (ulong)long.MaxValue / blockSize)
+      return false;
+
+    var declared = reader.VolBlocks * blockSize;
+    if (declared < Tux3Reader.SuperblockOffset + Tux3Reader.DiskSuperSize)
+      return false;
+
+    length = (long)declared;
+    return true;
+  }
+
+  private static IEnumerable<DefragBlockInfo> ReserveWholeImage(long imageLength)
+    => imageLength == 0
+      ? []
+      : [new DefragBlockInfo(0, imageLength, DefragBlockKind.MetadataReserved, "TUX3 image (volume boundary unresolved)")];
+
+  private static void CopyPrefix(Stream input, Stream output, long count) {
+    var buffer = new byte[128 * 1024];
+    while (count > 0) {
+      var requested = (int)Math.Min(buffer.Length, count);
+      var read = input.Read(buffer, 0, requested);
+      if (read <= 0)
+        throw new EndOfStreamException("TUX3 input ended before the expected image boundary.");
+      output.Write(buffer, 0, read);
+      count -= read;
     }
   }
 }
