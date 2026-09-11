@@ -3,6 +3,10 @@ using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Net;
 using System.Text;
+using Compression.Core.Streams;
+using FileFormat.Bzip2;
+using FileFormat.Lzfse;
+using FileFormat.Lzma;
 
 namespace FileFormat.Dmg;
 
@@ -11,14 +15,16 @@ namespace FileFormat.Dmg;
 /// XML plist, and mish block tables to expose each partition as an entry.
 /// </summary>
 public sealed class DmgReader : IDisposable {
-  private const uint BlockTypeZeroFill  = 0x00000000;
-  private const uint BlockTypeRaw       = 0x00000001;
-  private const uint BlockTypeZlib      = 0x80000005;
-  private const uint BlockTypeBzip2     = 0x80000006;
-  private const uint BlockTypeLzfse     = 0x80000007;
-  private const uint BlockTypeLzma      = 0x80000008;
-  private const uint BlockTypeComment   = 0x7FFFFFFE;
-  private const uint BlockTypeTerminator= 0xFFFFFFFF;
+  internal const uint BlockTypeZeroFill   = 0x00000000;
+  internal const uint BlockTypeRaw        = 0x00000001;
+  internal const uint BlockTypeIgnore     = 0x00000002;
+  internal const uint BlockTypeAdc        = 0x80000004;
+  internal const uint BlockTypeZlib       = 0x80000005;
+  internal const uint BlockTypeBzip2      = 0x80000006;
+  internal const uint BlockTypeLzfse      = 0x80000007;
+  internal const uint BlockTypeLzma       = 0x80000008;
+  internal const uint BlockTypeComment    = 0x7FFFFFFE;
+  internal const uint BlockTypeTerminator = 0xFFFFFFFF;
 
   private const int KolySize = 512;
   private const int SectorSize = 512;
@@ -28,11 +34,15 @@ public sealed class DmgReader : IDisposable {
   private readonly List<PartitionInfo> _partitions = [];
 
   public IReadOnlyList<DmgEntry> Entries => _entries;
+  internal long DataForkOffset { get; private set; }
+  internal long DataForkLength { get; private set; }
   internal long XmlOffset { get; private set; }
   internal long XmlLength { get; private set; }
+  internal long FileLength => _data.LongLength;
   internal byte[] KolyTrailer { get; private set; } = [];
   internal IReadOnlyList<PartitionInfo> Partitions => _partitions;
   internal bool IsWorkbenchRawProfile =>
+    DataForkOffset == 0 && DataForkLength == XmlOffset &&
     _partitions.All(p => p.HasLogicalSizeMarker && IsRawMish(p.Mish));
 
   /// <summary>
@@ -56,11 +66,16 @@ public sealed class DmgReader : IDisposable {
     if (!kolySpan[..4].SequenceEqual("koly"u8))
       throw new InvalidDataException("DMG: missing 'koly' trailer signature.");
 
+    DataForkOffset = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[24..]));
+    DataForkLength = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[32..]));
     XmlOffset = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[216..]));
     XmlLength = checked((long)BinaryPrimitives.ReadUInt64BigEndian(kolySpan[224..]));
     KolyTrailer = kolySpan.ToArray();
 
-    if (XmlLength <= 0 || XmlOffset < 0 || XmlOffset + XmlLength > kolyOff)
+    if (DataForkOffset < 0 || DataForkLength < 0 ||
+        checked(DataForkOffset + DataForkLength) > kolyOff)
+      throw new InvalidDataException("DMG: invalid data-fork region in koly trailer.");
+    if (XmlLength <= 0 || XmlOffset < 0 || checked(XmlOffset + XmlLength) > kolyOff)
       throw new InvalidDataException("DMG: invalid XML plist region in koly trailer.");
 
     var xmlText = Encoding.UTF8.GetString(_data, checked((int)XmlOffset), checked((int)XmlLength));
@@ -157,16 +172,24 @@ public sealed class DmgReader : IDisposable {
   internal static MishTable? ParseMish(byte[] mish) {
     if (mish.Length < 204 || !mish.AsSpan(0, 4).SequenceEqual("mish"u8)) return null;
 
+    var version = BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(4));
+    if (version != 1)
+      throw new NotSupportedException($"DMG: unsupported mish version {version}.");
+
     var firstSector = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(8));
     var sectorCount = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(16));
     var dataStart = BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(24));
     var numEntries = BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(200));
-    if (numEntries > 100_000) return null;
+    if (numEntries > 100_000)
+      throw new InvalidDataException("DMG: unreasonable mish block-entry count.");
+
+    var requiredLength = checked(204L + (long)numEntries * 40);
+    if (requiredLength > mish.LongLength)
+      throw new InvalidDataException("DMG: truncated mish block table.");
 
     var blocks = new List<BlockEntry>((int)numEntries);
     var off = 204;
     for (var i = 0u; i < numEntries; i++) {
-      if (off + 40 > mish.Length) break;
       blocks.Add(new BlockEntry(
         BinaryPrimitives.ReadUInt32BigEndian(mish.AsSpan(off)),
         BinaryPrimitives.ReadUInt64BigEndian(mish.AsSpan(off + 8)),
@@ -202,20 +225,40 @@ public sealed class DmgReader : IDisposable {
 
     var output = new byte[(int)physicalBytes];
     foreach (var block in table.Blocks) {
-      if (block.Type == BlockTypeComment || block.Type == BlockTypeTerminator) continue;
+      if (block.Type is BlockTypeComment or BlockTypeTerminator) continue;
+
       var destOffset = checked((long)block.SectorOffset * SectorSize);
       var destLength = checked((long)block.SectorCount * SectorSize);
-      if (destLength == 0 || destOffset < 0 || destOffset + destLength > output.LongLength) continue;
+      if (destLength == 0) continue;
+      if (destOffset < 0 || checked(destOffset + destLength) > output.LongLength)
+        throw new InvalidDataException("DMG: mish chunk points outside its partition sector range.");
 
       switch (block.Type) {
-        case BlockTypeZeroFill: break;
-        case BlockTypeRaw: ExtractRaw(block, destOffset, destLength, output); break;
-        case BlockTypeZlib: ExtractZlib(block, destOffset, destLength, output); break;
-        case BlockTypeBzip2: ExtractBzip2(block, destOffset, destLength, output); break;
-        case BlockTypeLzfse:
-        case BlockTypeLzma:
-        default:
+        case BlockTypeZeroFill:
+        case BlockTypeIgnore:
           break;
+        case BlockTypeRaw:
+          ExtractRaw(block, destOffset, destLength, output);
+          break;
+        case BlockTypeZlib:
+          ExtractStream(block, destOffset, destLength, output, "zlib",
+            static source => new ZLibStream(source, CompressionMode.Decompress, leaveOpen: false));
+          break;
+        case BlockTypeBzip2:
+          ExtractStream(block, destOffset, destLength, output, "bzip2",
+            static source => new Bzip2Stream(source, CompressionStreamMode.Decompress, leaveOpen: false));
+          break;
+        case BlockTypeLzfse:
+          ExtractBuffered(block, destOffset, destLength, output, "LZFSE", LzfseStream.Decompress);
+          break;
+        case BlockTypeLzma:
+          ExtractBuffered(block, destOffset, destLength, output, "LZMA", LzmaStream.Decompress);
+          break;
+        case BlockTypeAdc:
+          ExtractAdc(block, destOffset, destLength, output);
+          break;
+        default:
+          throw new NotSupportedException($"DMG: unsupported mish chunk type 0x{block.Type:X8}.");
       }
     }
 
@@ -224,29 +267,97 @@ public sealed class DmgReader : IDisposable {
   }
 
   private void ExtractRaw(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    var srcOffset = checked((long)block.CompressedOffset);
-    var srcLength = checked((long)block.CompressedLength);
-    if (srcOffset < 0 || srcOffset + srcLength > _data.LongLength) return;
-    var copyLen = checked((int)Math.Min(srcLength, destLength));
-    _data.AsSpan(checked((int)srcOffset), copyLen).CopyTo(output.AsSpan(checked((int)destOffset)));
+    var (srcOffset, srcLength) = ResolveSourceRange(block);
+    if (srcLength != destLength)
+      throw new InvalidDataException(
+        $"DMG: raw chunk stores {srcLength} bytes for a {destLength}-byte sector range.");
+    _data.AsSpan(srcOffset, srcLength).CopyTo(output.AsSpan(checked((int)destOffset), checked((int)destLength)));
   }
 
-  private void ExtractZlib(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    var srcOffset = checked((long)block.CompressedOffset);
-    var srcLength = checked((long)block.CompressedLength);
-    if (srcOffset < 0 || srcLength < 2 || srcOffset + srcLength > _data.LongLength) return;
+  private void ExtractAdc(BlockEntry block, long destOffset, long destLength, byte[] output) {
+    var (srcOffset, srcLength) = ResolveSourceRange(block);
     try {
-      using var src = new MemoryStream(_data, checked((int)srcOffset + 2), checked((int)srcLength - 2));
-      using var deflate = new DeflateStream(src, CompressionMode.Decompress);
-      using var dst = new MemoryStream(output, checked((int)destOffset), checked((int)destLength));
-      deflate.CopyTo(dst);
-    } catch {
-      // Unsupported or corrupt compressed block: retain zero-fill in this region.
+      DmgAdcDecoder.Decode(_data.AsSpan(srcOffset, srcLength),
+        output.AsSpan(checked((int)destOffset), checked((int)destLength)));
+    } catch (Exception ex) when (ex is InvalidDataException or OverflowException) {
+      throw new InvalidDataException($"DMG: corrupt ADC chunk at data-fork offset {block.CompressedOffset}.", ex);
     }
   }
 
-  private static void ExtractBzip2(BlockEntry block, long destOffset, long destLength, byte[] output) {
-    _ = block; _ = destOffset; _ = destLength; _ = output;
+  private void ExtractStream(BlockEntry block, long destOffset, long destLength, byte[] output,
+      string codec, Func<Stream, Stream> decoderFactory) {
+    var (srcOffset, srcLength) = ResolveSourceRange(block);
+    try {
+      using var source = new MemoryStream(_data, srcOffset, srcLength, writable: false);
+      using var decoder = decoderFactory(source);
+      ReadDecodedExactly(decoder, output.AsSpan(checked((int)destOffset), checked((int)destLength)), codec);
+    } catch (NotSupportedException) {
+      throw;
+    } catch (Exception ex) when (ex is not OutOfMemoryException) {
+      throw new InvalidDataException($"DMG: corrupt {codec} chunk at data-fork offset {block.CompressedOffset}.", ex);
+    }
+  }
+
+  private void ExtractBuffered(BlockEntry block, long destOffset, long destLength, byte[] output,
+      string codec, Action<Stream, Stream> decoder) {
+    var (srcOffset, srcLength) = ResolveSourceRange(block);
+    try {
+      using var source = new MemoryStream(_data, srcOffset, srcLength, writable: false);
+      using var decoded = new MemoryStream(checked((int)destLength));
+      decoder(source, decoded);
+      if (decoded.Length != destLength)
+        throw new InvalidDataException(
+          $"DMG: {codec} chunk decoded {decoded.Length} bytes, expected {destLength}.");
+      decoded.GetBuffer().AsSpan(0, checked((int)destLength))
+        .CopyTo(output.AsSpan(checked((int)destOffset), checked((int)destLength)));
+    } catch (NotSupportedException) {
+      throw;
+    } catch (Exception ex) when (ex is not OutOfMemoryException) {
+      throw new InvalidDataException($"DMG: corrupt {codec} chunk at data-fork offset {block.CompressedOffset}.", ex);
+    }
+  }
+
+  private (int Offset, int Length) ResolveSourceRange(BlockEntry block) {
+    long offset;
+    long length;
+    try {
+      offset = checked(DataForkOffset + (long)block.CompressedOffset);
+      length = checked((long)block.CompressedLength);
+    } catch (OverflowException ex) {
+      throw new InvalidDataException("DMG: chunk source range overflows the address space.", ex);
+    }
+
+    var dataForkEnd = checked(DataForkOffset + DataForkLength);
+    if (offset < DataForkOffset || length < 0 || checked(offset + length) > dataForkEnd ||
+        checked(offset + length) > _data.LongLength)
+      throw new InvalidDataException("DMG: mish chunk points outside the UDIF data fork.");
+
+    try {
+      return (checked((int)offset), checked((int)length));
+    } catch (OverflowException ex) {
+      throw new NotSupportedException("DMG chunk is too large for the in-memory reader.", ex);
+    }
+  }
+
+  internal (long Offset, long Length) GetStoredRange(BlockEntry block) {
+    var (offset, length) = ResolveSourceRange(block);
+    return (offset, length);
+  }
+
+  private static void ReadDecodedExactly(Stream decoder, Span<byte> destination, string codec) {
+    var done = 0;
+    while (done < destination.Length) {
+      var read = decoder.Read(destination[done..]);
+      if (read == 0)
+        throw new InvalidDataException(
+          $"DMG: truncated {codec} chunk; decoded {done} of {destination.Length} bytes.");
+      done += read;
+    }
+
+    Span<byte> extra = stackalloc byte[1];
+    if (decoder.Read(extra) != 0)
+      throw new InvalidDataException(
+        $"DMG: {codec} chunk expands beyond its declared sector range.");
   }
 
   /// <summary>

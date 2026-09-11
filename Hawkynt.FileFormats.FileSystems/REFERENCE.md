@@ -317,9 +317,9 @@ Represents a dmg entry.
 
 #### `DmgFormatDescriptor`
 
-Apple disk image (DMG/UDIF) — "koly" trailer + XML plist block map (blkx) with zlib/bzip2/ADC-compressed chunks. References: `http://newosxbook.com/DMG.html` — Jonathan Levin's UDIF format write-up — the standard unofficial reference (Apple never published a spec)`https://github.com/darlinghq/darling-dmg` — darling-dmg — open-source DMG/UDIF implementation`https://en.wikipedia.org/wiki/Apple_Disk_Image` — format overview
+Apple disk image (DMG/UDIF) — "koly" trailer + XML plist block map (blkx) with per-chunk raw/zlib/bzip2/ADC/LZFSE/LZMA storage. References: `https://newosxbook.com/DMG.html` — Jonathan Levin's UDIF format write-up — the standard unofficial reference (Apple never published a specification)`https://github.com/libyal/libmodi/blob/main/documentation/Mac%20OS%20disk%20image%20types.asciidoc` — independently documented koly/blkx structures`https://github.com/SecurityRonin/dmg-forensic` — Apache-2.0 independent reader used as a behavioural cross-reference; no implementation code is copied here
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -336,13 +336,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces partitions in the raw UDIF profile emitted by this writer. Existing partition payload offsets are preserved; new data occupies the old plist tail and only the blkx/plist + koly index are rewritten. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces partitions. The raw UDIF profile emitted here uses a metadata-tail edit; other readable UDIF profiles are decoded, rebuilt and verified before the original stream is replaced. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the byte-level container layout. Foreign/unknown gaps are conservatively reserved; only provably unreachable bytes in this writer's raw profile are exposed as free and therefore wipeable. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single DMG partition as a bounded read-only `Stream`. The reader's per-entry extractor reconstructs the partition's raw sectors; they are wrapped in a `BoundedEntryStream` sized to the entry's size. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes partitions from the raw UDIF profile by dropping their blkx records. Payload bytes are left as unreachable data-fork slack so unrelated partitions never need to move. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes partitions. Raw-profile payload bytes become reclaimable slack; foreign readable profiles are rebuilt into the canonical raw profile. |
 
 #### `DmgReader`
 

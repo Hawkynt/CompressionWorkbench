@@ -10025,12 +10025,12 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 #### `LzfseStream`
 
-Provides static methods for compressing and decompressing data using Apple's LZFSE block format with LZVN as the sub-algorithm.
+Provides static methods for compressing and decompressing data using Apple's LZFSE block format with LZVN as the encoder's sub-algorithm.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes an LZFSE-format stream to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an LZFSE-format stream from `input` and writes the result to `output`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
 
 ### Namespace `FileFormat.Lzg`
 
