@@ -104,7 +104,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Cdi`
 
-[`CdiEntry`](#cdientry) · [`CdiFormatDescriptor`](#cdiformatdescriptor) · [`CdiInPlaceModifier`](#cdiinplacemodifier) · [`CdiInPlaceModifier.SectorGeometry`](#cdiinplacemodifiersectorgeometry) · [`CdiReader`](#cdireader)
+[`CdiEntry`](#cdientry) · [`CdiFormatDescriptor`](#cdiformatdescriptor) · [`CdiInPlaceModifier`](#cdiinplacemodifier) · [`CdiInPlaceModifier.SectorGeometry`](#cdiinplacemodifiersectorgeometry) · [`CdiReadMode`](#cdireadmode) · [`CdiReader`](#cdireader) · [`CdiTrackInfo`](#cditrackinfo) · [`CdiTrackMode`](#cditrackmode)
 
 #### `CdiEntry`
 
@@ -121,74 +121,128 @@ Represents a file or directory entry in a DiscJuggler CDI disc image.
 
 #### `CdiFormatDescriptor`
 
-DiscJuggler CDI disc image (Padus) — track data plus trailing session/track descriptor blocks. References: `https://en.wikipedia.org/wiki/DiscJuggler` — background on the creating toolCDIrip source — the DiscJuggler layout was reverse-engineered by the disc-preservation community; Padus never published a spec
+DiscJuggler CDI disc image (Padus) — CD track data followed by a trailing session/track descriptor. The public specification was never released. Descriptor parsing follows the independently documented on-disk layout and is cross-checked against CDIrip, Aaru and mkdcdisc; see `docs/CDI-ON-DISK.md`.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CdiFormatDescriptor` | `CdiFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region — including the 8-byte CDI footer — stays byte-identical (the footer migrates with the new EOF when the data area grows past the previous end). Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries and the trailing CDI footer are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces ordinary ISO files through a verified rebuild when the image is the layout-preserving single-track Mode-1 profile. Mixed/multisession images are readable but intentionally refused for mutation because a rebuild would silently discard their audio tracks, pregaps or session map. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-defragments the supported single-track profile. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-defragments with progress/cancellation while preserving the profile gate. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Purge` | `void Purge(Stream archive)` | Purges only profiles whose optical layout the creator can preserve. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes ordinary ISO files through the same profile-preserving rebuild path. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks by verified rebuild only when rebuilding preserves the optical layout profile. |
 
 #### `CdiInPlaceModifier`
 
-In-place sector-rewrite modifier for a DiscJuggler CDI disc image. Operates at the raw 2 048-byte user-data region of each CD sector at the fixed byte offset `lba * sectorSize + dataOffset`, where `sectorSize` and `dataOffset` are the geometry detected from the data area (raw 2 352 Mode 1, raw 2 352 Mode 2 Form 1, 2 336-byte sectors, or flat 2 048-byte cooked sectors). CDI framing. A CDI image is a stream of CD sectors followed by an 8-byte footer at EOF: 4 bytes LE version identifier (one of 0x80000004 / 0x80000005 / 0x80000006), then 4 bytes LE offset-from-EOF to the session descriptor (typically 0 in clean-room CDIs). The footer is kept byte-identical across in-place rewrites and is relocated past the new EOF whenever the data area grows (Append / past-EOF Write).Scope. Rewrites only the user-data bytes inside an existing sector or appends a brand-new sector at the end of the data area. It does not understand the inner ISO 9660 directory structure — that is the job of `IsoWriter` / its reader. Synthetic entry names of the form `sector-NNNNNN.bin` address a single sector LBA. Sync pattern (12 B), 3-byte address, 1-byte mode, and the EDC/ECC tail of raw sectors are preserved when an existing sector is rewritten and synthesised (sync + zero address + mode byte + zero EDC) when a brand-new sector is appended.True in-place. Writes touch only the 2 048-byte user-data region of the targeted sector. Bytes outside that region — header bytes of the same sector, every untouched sector, the system area (LBA 0-15), the PVD at LBA 16, the ISO root directory, and the trailing 8-byte CDI footer — stay byte-identical at their original byte offsets (the footer migrates to follow the new EOF when the data area grows).
+Low-level sector-rewrite helper retained for legacy CompressionWorkbench CDI images whose body is one flat sector geometry followed by an 8-byte version/zero trailer. Real DiscJuggler descriptors may describe multiple sessions, pregaps and tracks with different stored sector sizes, so this API refuses those images instead of pretending one global LBA-to-byte formula exists.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Routes each input through the sector-rewrite path. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed LBA byte offset. Inputs whose `ArchiveName` doesn't match the schema are refused — inner ISO 9660 directory mutation is delegated to `FileSystem.Iso`. |
-| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Extends the data area so that sector `lba` exists, writing `userData` as its 2 048-byte payload. Intermediate sectors (between the previous EOF sector and `lba`) are appended with the format-correct sync + zero address + mode byte + zero EDC framing for raw geometries, or plain zeros for cooked. The trailing 8-byte CDI footer, if present, is preserved verbatim and rewritten at the new EOF. |
-| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the sector geometry of `image` the same way `CdiReader` does — by probing for the `CD001` PVD signature at LBA 16 inside the data area. Falls back to raw Mode 1 (2 352 / 16) when no probe succeeds. Trailing 8-byte CDI footer is excluded from the data area when its version identifier matches a known CDI release. |
-| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats a sector LBA into the synthetic entry name used by the in-place modifier. |
-| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Zeros each named `sector-NNNNNN.bin`. Names that don't match the schema are refused; sectors past the data-area EOF are still skipped. The framing bytes of an existing sector — sync/address/mode/EDC — and the trailing CDI footer are preserved. |
-| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses a synthetic `sector-NNNNNN.bin` entry name and returns the embedded sector LBA. Names that don't match the schema return `false`. |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites the 2 048-byte user-data region of sector `lba` in place. Other bytes — sync/header/EDC for raw sectors, every other sector, every other region of the image, and the trailing 8-byte CDI footer — are untouched. If `lba` points past the current data-area EOF, the image is grown sector-by-sector with appended-sector framing (`AppendSector`) and the footer is relocated to the new EOF. |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Variant of `WriteSector` that reuses a previously-probed geometry, avoiding a redundant PVD probe per call when a caller is rewriting several sectors back-to-back. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros the 2 048-byte user-data region of sector `lba` in place. The sector framing bytes and the trailing CDI footer are preserved; only the user data is wiped. Returns `true` if the sector existed (and was zeroed), `false` if `lba` is past the data-area EOF. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geom)` | Variant of `ZeroSector` reusing a previously-probed geometry. |
+| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Applies a sequence of low-level sector replacements to a legacy flat image. |
+| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Extends a legacy footer-only CDI so that `lba` exists. |
+| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the flat sector geometry of a legacy footer-only CDI image. Descriptor-bearing DiscJuggler images are rejected because their geometry is per track; use `Tracks` and `ReadTrackSector` for those. |
+| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats a sector LBA as the low-level synthetic sector name. |
+| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Zeros a sequence of low-level synthetic sector addresses in a legacy flat image. |
+| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses a synthetic `sector-NNNNNN.bin` low-level sector name. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites one 2,048-byte user-data sector in a legacy flat-layout image. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Rewrites one sector using an already detected legacy geometry. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros one existing sector's 2,048-byte user-data region in a legacy flat image. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geom)` | Zeros one existing sector using an already detected legacy geometry. |
 
 #### `CdiInPlaceModifier.SectorGeometry`
 
-Detected on-disk sector geometry for a CDI image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins. `DataAreaLength` is the byte length of the sector-bearing region (everything up to the 8-byte footer when present, otherwise the whole stream).
+Detected on-disk sector geometry for a legacy footer-only image. `DataAreaLength` excludes the old 8-byte trailer.
 
 Implements `IEquatable<SectorGeometry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset, long DataAreaLength)` | Detected on-disk sector geometry for a CDI image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins. `DataAreaLength` is the byte length of the sector-bearing region (everything up to the 8-byte footer when present, otherwise the whole stream). |
+| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset, long DataAreaLength)` | Detected on-disk sector geometry for a legacy footer-only image. `DataAreaLength` excludes the old 8-byte trailer. |
 | `DataAreaLength` | `long DataAreaLength { get; init; }` |  |
 | `DataOffset` | `int DataOffset { get; init; }` |  |
 | `SectorSize` | `int SectorSize { get; init; }` |  |
 
+#### `CdiReadMode`
+
+How DiscJuggler stored each sector of a track in the CDI body.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mode1_2048` | `0` | Cooked Mode 1, 2048 bytes per sector. |
+| `Mode2_2336` | `1` | Cooked Mode 2, 2336 bytes per sector. |
+| `Raw2352` | `2` | Raw 2352-byte sector. |
+| `Raw2352_Q16` | `3` | Raw 2352-byte sector followed by 16 bytes of P/Q subchannel data. |
+| `Raw2352_Pw96` | `4` | Raw 2352-byte sector followed by 96 bytes of P-W subchannel data. |
+
 #### `CdiReader`
 
-Reads the ISO 9660 file system embedded in a DiscJuggler CDI disc image. CDI files store raw CD sector data followed by a session descriptor block at the end of the file. The footer begins with a 4-byte signature field identifying the CDI version, followed by a 4-byte offset (from EOF) to the start of the session descriptor. Known CDI footer signatures (last 4 bytes before the offset field): 0x80000004 — CDI v20x80000005 — CDI v30x80000006 — CDI v3.5 This reader probes the footer, then heuristically detects the sector geometry and parses the embedded ISO 9660 file system from the data area.
+Reads DiscJuggler CDI images, including mixed sector geometries and multisession layouts. The trailing descriptor is used when present; legacy CompressionWorkbench footer-only images retain geometry probing as a compatibility fallback.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CdiReader` | `CdiReader(Stream stream, bool leaveOpen = false)` | Initializes a new `CdiReader` from a CDI stream. |
+| `ActiveDataTrack` | `CdiTrackInfo ActiveDataTrack { get; }` | Gets the latest data track whose sector 16 contains an ISO 9660 primary volume descriptor. This is normally the second-session data track on a self-booting Dreamcast CDI. |
 | `CdiVersion` | `uint CdiVersion { get; }` | Gets the CDI version identifier read from the footer, or 0 if no valid CDI footer was found. |
-| `Entries` | `IReadOnlyList<CdiEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
+| `Entries` | `IReadOnlyList<CdiEntry> Entries { get; }` | Gets all file and directory entries found in the selected ISO 9660 filesystem. |
+| `SessionCount` | `int SessionCount { get; }` | Gets the number of parsed sessions. |
+| `Tracks` | `IReadOnlyList<CdiTrackInfo> Tracks { get; }` | Gets the parsed physical track table. Legacy footer-only images expose an empty list. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(CdiEntry entry)` | Extracts the raw data for a file entry. |
+| `Extract` | `byte[] Extract(CdiEntry entry)` | Extracts the raw logical data for a filesystem file entry. |
+| `ReadTrackSector` | `byte[] ReadTrackSector(CdiTrackInfo track, int sectorIndex)` | Reads one physical stored sector from a parsed track. Sector zero is index 1/the first post-pregap sector; negative indices address index 0/pregap sectors down to `-PregapSectors`. Audio tracks therefore return their native 2352-byte samples, while read modes 3/4 also include their appended subchannel bytes. |
+
+#### `CdiTrackInfo`
+
+One physical track described by a DiscJuggler CDI session table. File offsets refer to the CDI body before the trailing descriptor. `FileOffset` points at index 0/pregap; `DataOffset` points at index 1, the first post-pregap sector.
+
+Implements `IEquatable<CdiTrackInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CdiTrackInfo` | `CdiTrackInfo(int SessionNumber, int TrackNumber, CdiTrackMode Mode, CdiReadMode ReadMode, int PregapSectors, int SectorCount, int DataSectorCount, int StartLba, int StoredSectorSize, int Control, long FileOffset, long DataOffset)` | One physical track described by a DiscJuggler CDI session table. File offsets refer to the CDI body before the trailing descriptor. `FileOffset` points at index 0/pregap; `DataOffset` points at index 1, the first post-pregap sector. |
+| `Control` | `int Control { get; init; }` |  |
+| `DataOffset` | `long DataOffset { get; init; }` |  |
+| `DataSectorCount` | `int DataSectorCount { get; init; }` |  |
+| `EndLbaExclusive` | `long EndLbaExclusive { get; }` | Disc LBA immediately after this track's post-pregap data. |
+| `FileOffset` | `long FileOffset { get; init; }` |  |
+| `IsData` | `bool IsData { get; }` | Whether this is a filesystem/data track rather than CD-DA audio. |
+| `Mode` | `CdiTrackMode Mode { get; init; }` |  |
+| `PregapSectors` | `int PregapSectors { get; init; }` |  |
+| `ReadMode` | `CdiReadMode ReadMode { get; init; }` |  |
+| `SectorCount` | `int SectorCount { get; init; }` |  |
+| `SessionNumber` | `int SessionNumber { get; init; }` |  |
+| `StartLba` | `int StartLba { get; init; }` |  |
+| `StoredSectorSize` | `int StoredSectorSize { get; init; }` |  |
+| `TrackNumber` | `int TrackNumber { get; init; }` |  |
+
+#### `CdiTrackMode`
+
+Optical track kind stored in a DiscJuggler CDI descriptor.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Audio` | `0` | 2352-byte CD-DA audio sectors. |
+| `Mode1` | `1` | Mode 1 data track. |
+| `Mode2` | `2` | Mode 2 / CD-XA data track. |
 
 ### Namespace `FileFormat.Cso`
 
