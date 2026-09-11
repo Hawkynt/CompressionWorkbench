@@ -63,6 +63,7 @@ public static class PartitionTypeDatabase {
       "C12A7328-F81F-11D2-BA4B-00A0C93EC93B" => "EFI System Partition",
       "21686148-6449-6E6F-744E-656564454649" => "BIOS Boot",
       "024DEE41-33E7-11D3-9D69-0008C781F39F" => "MBR Partition Scheme",
+      "37AFFC90-EF7D-4E96-91C3-2D7AE055B174" => "IBM GPFS",
       // Microsoft
       "E3C9E316-0B5C-4DB8-817D-F92DF00215AE" => "Microsoft Reserved",
       "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7" => "Microsoft Basic Data",
