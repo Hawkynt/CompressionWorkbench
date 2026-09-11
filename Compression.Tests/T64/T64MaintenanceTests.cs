@@ -104,10 +104,10 @@ public class T64MaintenanceTests {
 
       Assert.Multiple(() => {
         Assert.That(wiped, Is.EqualTo(32 + 4 + 3));
-        Assert.That(raw.AsSpan(96, 32).ToArray(), Is.All.Zero);
-        Assert.That(raw.AsSpan(128, 4).ToArray(), Is.All.Zero);
+        Assert.That(raw.AsSpan(96, 32).ToArray(), Is.All.EqualTo(0));
+        Assert.That(raw.AsSpan(128, 4).ToArray(), Is.All.EqualTo(0));
         Assert.That(raw.AsSpan(132, payload.Length).ToArray(), Is.EqualTo(payload));
-        Assert.That(raw.AsSpan(132 + payload.Length, 3).ToArray(), Is.All.Zero);
+        Assert.That(raw.AsSpan(132 + payload.Length, 3).ToArray(), Is.All.EqualTo(0));
       });
     }
   }
@@ -182,7 +182,7 @@ public class T64MaintenanceTests {
     image[64] = 1;
     image[65] = 0x81;
     BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(66), 0x2000);
-    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(68), 0x2000 + payload.Length);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(68), (ushort)(0x2000 + payload.Length));
     BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(72), payloadOffset);
     "GAPTEST"u8.CopyTo(image.AsSpan(80));
     image.AsSpan(87, 9).Fill(0x20);
