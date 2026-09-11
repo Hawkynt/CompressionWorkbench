@@ -1,7 +1,6 @@
 #pragma warning disable CS1591
 using Compression.Registry;
 using Compression.Registry.Streaming;
-using FileSystem.Xfs;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.Cxfs;
@@ -11,26 +10,20 @@ namespace FileSystem.Cxfs;
 ///
 /// <para>SGI documents CXFS as using the same filesystem structure as XFS and
 /// creating the filesystem with the same <c>mkfs</c> command. CXFS clustering,
-/// metadata-server selection and mount policy live in the external cluster
-/// database / XVM management layer rather than in a different file/directory
-/// disk format. Consequently all offline filesystem-image operations delegate
-/// to the XFS backend.</para>
+/// metadata-server selection, fencing and mount policy live in the external
+/// cluster database / XVM management layer, not in another filesystem format.</para>
 ///
-/// <para>This descriptor deliberately does not claim to author the surrounding
-/// CXFS cluster database, XVM volume definition, fencing policy or metadata
-/// server configuration. It handles the filesystem image that CXFS places on
-/// that storage.</para>
+/// <para>Read support delegates the filesystem walk to the repository's XFS
+/// reader. Authoring deliberately targets the pre-CRC XFS v4 family
+/// (<c>mkfs.xfs -m crc=0</c>) instead of emitting the repository's modern XFS-v5
+/// profile and calling it CXFS. The writable profile is conservative: 4 KiB
+/// blocks, 256-byte v2 inodes, root-level regular files and rebuild-style edits.
+/// Unsupported v4/v5 structures remain readable but are refused for mutation.</para>
 ///
-/// <para>Extension-only detection (<c>.cxfs</c>) avoids first-match collision
-/// with <see cref="XfsFormatDescriptor"/> because CXFS has no distinct filesystem
-/// magic: both are XFS on disk.</para>
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>SGI "CXFS Administration Guide" — "CXFS uses the same filesystem structure as XFS" and is created with the same <c>mkfs</c></description></item>
-///   <item><description><c>https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — "XFS Algorithms &amp; Data Structures"</description></item>
-///   <item><description><c>https://github.com/torvalds/linux/tree/master/fs/xfs</c> — Linux XFS reference implementation, consulted as a behavioral reference only</description></item>
-/// </list>
+/// <para>This descriptor does not claim to author the surrounding CXFS cluster
+/// database, XVM volume definition, fencing policy or metadata-server
+/// configuration. Extension-only detection avoids colliding with XFS because
+/// both use the same <c>XFSB</c> filesystem magic.</para>
 /// </summary>
 public sealed class CxfsFormatDescriptor :
   IFormatDescriptor,
@@ -40,138 +33,62 @@ public sealed class CxfsFormatDescriptor :
   IArchiveWriteConstraints,
   IArchiveModifiable,
   IArchiveDefragmentable,
-  IFilesystemExtentMap,
-  IFilesystemBlockMover,
-  IWipeEmpty,
-  IFormatOptionsSchema,
-  ILayoutOptimizable {
+  IFormatOptionsSchema {
 
-  private readonly XfsFormatDescriptor _xfs = new();
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "VolumeLabel", DisplayName: "Volume Label", Kind: FormatOptionKind.String, Default: "",
+      Description: "CXFS/XFS volume label stored in sb_fname (max 12 ASCII chars)."),
+  ];
 
-  /// <inheritdoc />
-  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => this._xfs.OptionsSchema;
+  public long? MaxTotalArchiveSize => int.MaxValue;
+  public long? MinTotalArchiveSize => CxfsV4Writer.MinAgBlocks * CxfsV4Writer.BlockSize * CxfsV4Writer.AgCount;
 
-  /// <inheritdoc />
-  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)
-    => this._xfs.EnumerateExtents(image);
-
-  /// <inheritdoc />
-  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
-    => this._xfs.MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
-
-  /// <inheritdoc />
-  public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
-    => this._xfs.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
-
-  /// <inheritdoc />
-  public void Defragment(Stream archive)
-    => this._xfs.Defragment(archive);
-
-  /// <inheritdoc />
-  public void Defragment(Stream archive, DefragOptions options)
-    => this._xfs.Defragment(archive, options);
-
-  /// <inheritdoc />
-  public long? MaxTotalArchiveSize => this._xfs.MaxTotalArchiveSize;
-
-  /// <inheritdoc />
-  public long? MinTotalArchiveSize => this._xfs.MinTotalArchiveSize;
-
-  /// <inheritdoc />
   public string AcceptedInputsDescription =>
-    "CXFS filesystem image (same on-disk filesystem structure as XFS); cluster database and XVM configuration are external.";
+    "CXFS-compatible XFS v4 image profile: root-level regular files, 4 KiB blocks, 256-byte v2 inodes; cluster/XVM configuration is external.";
 
-  /// <inheritdoc />
-  public bool CanAccept(ArchiveInputInfo input, out string? reason)
-    => this._xfs.CanAccept(input, out reason);
+  public bool CanAccept(ArchiveInputInfo input, out string? reason) {
+    ArgumentNullException.ThrowIfNull(input);
+    if (input.IsDirectory) {
+      reason = "The current CXFS v4 writer supports root-level regular files only.";
+      return false;
+    }
+    var name = input.ArchiveName.Replace('\\', '/').Trim('/');
+    if (name.Length == 0 || name.Contains('/')) {
+      reason = "The current CXFS v4 writer supports root-level regular files only.";
+      return false;
+    }
+    if (System.Text.Encoding.UTF8.GetByteCount(name) > 255) {
+      reason = "XFS directory entry names are limited to 255 UTF-8 bytes in this profile.";
+      return false;
+    }
+    reason = null;
+    return true;
+  }
 
-  /// <inheritdoc />
-  public long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)
-    => this._xfs.WipeUnusedSpace(image, wipeClusterTips, wipeDeletedEntries);
-
-  /// <inheritdoc />
-  public void Shrink(Stream input, Stream output)
-    => ((IArchiveShrinkable)this._xfs).Shrink(input, output);
-
-  /// <inheritdoc />
-  public LayoutAnalysis AnalyzeLayout(Stream image)
-    => ((ILayoutOptimizable)this._xfs).AnalyzeLayout(image);
-
-  /// <inheritdoc />
-  public LayoutReclaim ReclaimSupport => ((ILayoutOptimizable)this._xfs).ReclaimSupport;
-
-  /// <inheritdoc />
-  public void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)
-    => ((ILayoutOptimizable)this._xfs).RebuildStreaming(source, target, options);
-
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
   public string Id => "Cxfs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "SGI CXFS (Cluster XFS)";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
+    FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries;
   public string DefaultExtension => ".cxfs";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".cxfs"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  // CXFS has no distinct filesystem signature: the filesystem is XFS on disk.
-  // Extension-only detection prevents a first-match fight with FileSystem.Xfs.
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
   public string Description =>
-    "SGI CXFS filesystem image — R/W via the XFS filesystem backend because SGI defines CXFS as using the same filesystem structure as XFS. " +
-    "CXFS cluster database, XVM topology, fencing and metadata-server configuration are external and are not represented by this image descriptor.";
+    "SGI CXFS filesystem image — XFS on disk with external cluster/XVM state. " +
+    "Read support accepts XFS-compatible images; create and mutation use a conservative XFS-v4 (crc=0) CXFS profile.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var r = new CxfsReader(stream);
     return r.Entries.Select((e, i) => new ArchiveEntryInfo(
       i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var r = new CxfsReader(stream);
     foreach (var e in r.Entries) {
@@ -191,23 +108,73 @@ public sealed class CxfsFormatDescriptor :
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
   }
 
-  /// <inheritdoc />
-  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)
-    => this._xfs.Create(output, inputs, options);
+  public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(inputs);
+    ArgumentNullException.ThrowIfNull(options);
 
-  /// <inheritdoc />
-  public void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)
-    => this._xfs.CreateFromStreams(output, inputs, options);
+    var writer = new CxfsV4Writer();
+    writer.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
+    foreach (var input in inputs) {
+      if (!this.CanAccept(input, out var reason))
+        throw new NotSupportedException(reason);
+      writer.AddFile(input.ArchiveName, input.ReadContent());
+    }
+    writer.WriteTo(output);
+  }
 
-  /// <inheritdoc />
-  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)
-    => this._xfs.Add(archive, inputs);
+  public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
+    EnsureMutationProfile(archive);
+    foreach (var input in inputs)
+      if (!this.CanAccept(input, out var reason))
+        throw new NotSupportedException(reason);
 
-  /// <inheritdoc />
-  public void Remove(Stream archive, string[] entryNames)
-    => this._xfs.Remove(archive, entryNames);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var input in inputs) {
+        var target = Path.Combine(tmpDir, input.ArchiveName);
+        File.WriteAllBytes(target, input.ReadContent());
+      }
+    });
+  }
 
-  /// <inheritdoc />
-  public void Purge(Stream archive)
-    => ((IArchivePurgeable)this._xfs).Purge(archive);
+  public void Remove(Stream archive, string[] entryNames) {
+    EnsureMutationProfile(archive);
+    var remove = new HashSet<string>(entryNames ?? [], StringComparer.OrdinalIgnoreCase);
+    RebuildVerb.EditViaRebuild(archive, this, this, tmpDir => {
+      foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.TopDirectoryOnly))
+        if (remove.Contains(Path.GetFileName(file)))
+          File.Delete(file);
+    });
+  }
+
+  public void Defragment(Stream archive)
+    => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
+
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException("The CXFS v4 rebuild profile currently supports ConsolidateAtStart only.");
+    EnsureMutationProfile(archive);
+    RebuildVerb.RebuildInPlace(archive, this, this,
+      onProgress: options.OnProgress, cancellationToken: options.CancellationToken);
+  }
+
+  public void Shrink(Stream input, Stream output) {
+    EnsureMutationProfile(input);
+    ((IArchiveShrinkable)this).ShrinkDefault(input, output);
+  }
+
+  private void EnsureMutationProfile(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!CxfsV4Writer.IsSupportedMutationProfile(archive))
+      throw new NotSupportedException(
+        "CXFS mutation is limited to the conservative XFS-v4/crc=0 profile; broader XFS/CXFS images remain read-only.");
+
+    archive.Position = 0;
+    using var reader = new CxfsReader(archive);
+    if (!reader.DelegatedToXfs || reader.Entries.Any(e => e.IsDirectory || e.Name.Contains('/')))
+      throw new NotSupportedException(
+        "CXFS mutation currently supports root-level regular files only; nested or unsupported directory layouts remain read-only.");
+    archive.Position = 0;
+  }
 }
