@@ -4,28 +4,10 @@ namespace FileFormat.Cdi;
 
 /// <summary>
 /// Reads the ISO 9660 file system embedded in a DiscJuggler CDI disc image.
-/// CDI files store raw CD sector data followed by a session descriptor block
-/// at the end of the file.  The footer begins with a 4-byte signature field
-/// identifying the CDI version, followed by a 4-byte offset (from EOF) to the
-/// start of the session descriptor.
-/// <para>
-/// Known CDI footer signatures (last 4 bytes before the offset field):
-/// <list type="bullet">
-///   <item>0x80000004 — CDI v2</item>
-///   <item>0x80000005 — CDI v3</item>
-///   <item>0x80000006 — CDI v3.5</item>
-/// </list>
-/// This reader probes the footer, then heuristically detects the sector geometry
-/// and parses the embedded ISO 9660 file system from the data area.
-/// </para>
+/// CDI files store CD-sector data followed by a session/track descriptor. The
+/// last eight bytes identify the CDI version and locate that descriptor.
 /// </summary>
 public sealed class CdiReader : IDisposable {
-  // Known CDI version identifiers stored in the footer
-  private const uint CdiV2  = 0x80000004;
-  private const uint CdiV3  = 0x80000005;
-  private const uint CdiV35 = 0x80000006;
-
-  // ISO 9660 constants
   private const int Iso9660SectorSize = 2048;
   private const int RawSectorSize = 2352;
   private const int SectorSize2336 = 2336;
@@ -35,10 +17,10 @@ public sealed class CdiReader : IDisposable {
 
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
-  private bool _disposed;
-
   private readonly int _sectorSize;
   private readonly int _dataOffset;
+  private readonly long _dataAreaLength;
+  private bool _disposed;
 
   /// <summary>Gets the CDI version identifier read from the footer, or 0 if no valid CDI footer was found.</summary>
   public uint CdiVersion { get; }
@@ -53,10 +35,19 @@ public sealed class CdiReader : IDisposable {
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   public CdiReader(Stream stream, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
-    this._leaveOpen = leaveOpen;
+    if (!stream.CanRead || !stream.CanSeek)
+      throw new ArgumentException("CDI reading requires a readable, seekable stream.", nameof(stream));
 
-    this.CdiVersion = ReadFooterVersion(stream);
-    (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream);
+    this._leaveOpen = leaveOpen;
+    if (CdiDescriptor.TryReadFooter(stream, out var footer)) {
+      this.CdiVersion = footer.Version;
+      this._dataAreaLength = footer.DescriptorOffset;
+    } else {
+      this.CdiVersion = 0;
+      this._dataAreaLength = stream.Length;
+    }
+
+    (this._sectorSize, this._dataOffset) = DetectSectorGeometry(stream, this._dataAreaLength);
 
     var entries = new List<CdiEntry>();
     TryParseIso9660(entries);
@@ -75,62 +66,33 @@ public sealed class CdiReader : IDisposable {
     if (entry.Size == 0)
       return [];
 
-    return ReadFileData(entry.StartLba, (int)entry.Size);
+    return ReadFileData(entry.StartLba, checked((int)entry.Size));
   }
 
-  // -------------------------------------------------------------------------
-  // Footer parsing
-  // -------------------------------------------------------------------------
-
-  private static uint ReadFooterVersion(Stream stream) {
-    // The CDI footer is at the end of the file.
-    // Layout (reading from EOF backwards):
-    //   last 4 bytes : 4-byte LE offset from EOF to start of session descriptor
-    //   preceding 4 bytes : version identifier (one of CdiV2/V3/V3.5)
-    if (stream.Length < 8)
-      return 0;
-
-    stream.Position = stream.Length - 8;
-    Span<byte> tail = stackalloc byte[8];
-    if (stream.Read(tail) < 8)
-      return 0;
-
-    var versionId = ReadUInt32LE(tail, 0);
-    if (versionId == CdiV2 || versionId == CdiV3 || versionId == CdiV35)
-      return versionId;
-
-    return 0;
-  }
-
-  // -------------------------------------------------------------------------
-  // Sector geometry detection
-  // -------------------------------------------------------------------------
-
-  private static (int SectorSize, int DataOffset) DetectSectorGeometry(Stream stream) {
-    if (TryProbe(stream, RawSectorSize, Mode1DataOffset))
+  private static (int SectorSize, int DataOffset) DetectSectorGeometry(Stream stream, long dataAreaLength) {
+    if (TryProbe(stream, RawSectorSize, Mode1DataOffset, dataAreaLength))
       return (RawSectorSize, Mode1DataOffset);
 
-    if (TryProbe(stream, RawSectorSize, Mode2Form1DataOffset))
+    if (TryProbe(stream, RawSectorSize, Mode2Form1DataOffset, dataAreaLength))
       return (RawSectorSize, Mode2Form1DataOffset);
 
-    if (TryProbe(stream, SectorSize2336, 8))
+    if (TryProbe(stream, SectorSize2336, 8, dataAreaLength))
       return (SectorSize2336, 8);
 
-    if (TryProbe(stream, Iso9660SectorSize, 0))
+    if (TryProbe(stream, Iso9660SectorSize, 0, dataAreaLength))
       return (Iso9660SectorSize, 0);
 
     return (RawSectorSize, Mode1DataOffset);
   }
 
-  private static bool TryProbe(Stream stream, int sectorSize, int dataOffset) {
+  private static bool TryProbe(Stream stream, int sectorSize, int dataOffset, long dataAreaLength) {
     var pvdPos = (long)PvdLba * sectorSize + dataOffset;
-    if (pvdPos + 6 > stream.Length)
+    if (pvdPos + 6 > dataAreaLength)
       return false;
 
     Span<byte> sig = stackalloc byte[6];
     stream.Position = pvdPos;
-    var read = stream.Read(sig);
-    if (read < 6)
+    if (stream.Read(sig) < sig.Length)
       return false;
 
     return sig[0] == 1 &&
@@ -140,10 +102,6 @@ public sealed class CdiReader : IDisposable {
            sig[4] == (byte)'0' &&
            sig[5] == (byte)'1';
   }
-
-  // -------------------------------------------------------------------------
-  // ISO 9660 parsing
-  // -------------------------------------------------------------------------
 
   private void TryParseIso9660(List<CdiEntry> entries) {
     var pvd = ReadSector(PvdLba);
@@ -155,8 +113,8 @@ public sealed class CdiReader : IDisposable {
         pvd[3] != (byte)'0' || pvd[4] != (byte)'0' || pvd[5] != (byte)'1')
       return;
 
-    var rootLba = (int)ReadUInt32LE(pvd.AsSpan(), 156 + 2);
-    var rootSize = (int)ReadUInt32LE(pvd.AsSpan(), 156 + 10);
+    var rootLba = checked((int)ReadUInt32LE(pvd.AsSpan(), 156 + 2));
+    var rootSize = checked((int)ReadUInt32LE(pvd.AsSpan(), 156 + 10));
 
     WalkDirectory(rootLba, rootSize, "", entries);
   }
@@ -207,8 +165,8 @@ public sealed class CdiReader : IDisposable {
     if (record.Length < 34)
       return;
 
-    var dataLba = (int)ReadUInt32LE(record, 2);
-    var dataLen = (int)ReadUInt32LE(record, 10);
+    var dataLba = checked((int)ReadUInt32LE(record, 2));
+    var dataLen = checked((int)ReadUInt32LE(record, 10));
     var flags = record[25];
     var idLen = record[32];
 
@@ -239,10 +197,6 @@ public sealed class CdiReader : IDisposable {
       WalkDirectory(dataLba, dataLen, fullPath, entries);
   }
 
-  // -------------------------------------------------------------------------
-  // Data extraction
-  // -------------------------------------------------------------------------
-
   private byte[] ReadFileData(int startLba, int size) {
     var result = new byte[size];
     var written = 0;
@@ -263,10 +217,12 @@ public sealed class CdiReader : IDisposable {
   }
 
   private byte[]? ReadSector(int lba) {
+    if (lba < 0)
+      return null;
+
     var sectorStart = (long)lba * this._sectorSize;
     var dataStart = sectorStart + this._dataOffset;
-
-    if (dataStart + Iso9660SectorSize > this._stream.Length)
+    if (dataStart < 0 || dataStart + Iso9660SectorSize > this._dataAreaLength)
       return null;
 
     this._stream.Position = dataStart;
@@ -282,10 +238,6 @@ public sealed class CdiReader : IDisposable {
     return buf;
   }
 
-  // -------------------------------------------------------------------------
-  // Helpers
-  // -------------------------------------------------------------------------
-
   private static uint ReadUInt32LE(ReadOnlySpan<byte> data, int offset) =>
     (uint)(data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24));
 
@@ -296,10 +248,11 @@ public sealed class CdiReader : IDisposable {
 
   /// <inheritdoc />
   public void Dispose() {
-    if (!this._disposed) {
-      this._disposed = true;
-      if (!this._leaveOpen)
-        this._stream.Dispose();
-    }
+    if (this._disposed)
+      return;
+
+    this._disposed = true;
+    if (!this._leaveOpen)
+      this._stream.Dispose();
   }
 }

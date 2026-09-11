@@ -1,37 +1,39 @@
+using Compression.Registry;
+
 namespace Compression.Tests.Cdi;
 
 [TestFixture]
 public class CdiTests {
 
-  // Builds a minimal CDI-like image: flat ISO 9660 sectors followed by the
-  // CDI v3 footer (version identifier + 4-byte LE offset from EOF).
-  private static byte[] BuildCdi(string fileName, byte[] fileData) {
+  // Backward-compatibility fixture for the footer-only profile emitted by older
+  // CompressionWorkbench builds.
+  private static byte[] BuildLegacyCdi(string fileName, byte[] fileData) {
     const int sectorSize = 2048;
     const int pvdLba = 16;
     const int rootDirLba = 18;
     const int fileLba = 19;
-    const uint CdiV3 = 0x80000005;
+    const uint cdiV3 = 0x80000005;
 
     var totalSectors = fileLba + 2;
     var isoBuf = new byte[totalSectors * sectorSize];
-
-    // File data
     fileData.AsSpan().CopyTo(isoBuf.AsSpan(fileLba * sectorSize));
 
-    // Root directory
     var dirPos = rootDirLba * sectorSize;
-    var dot = new byte[34]; dot[0] = 34; dot[2] = rootDirLba; dot[25] = 0x02; dot[32] = 1; dot[33] = 0x00;
+    var dot = new byte[34];
+    dot[0] = 34; dot[2] = rootDirLba; dot[25] = 0x02; dot[32] = 1; dot[33] = 0x00;
     dot.AsSpan().CopyTo(isoBuf.AsSpan(dirPos)); dirPos += 34;
-    var dotdot = new byte[34]; dotdot[0] = 34; dotdot[2] = rootDirLba; dotdot[25] = 0x02; dotdot[32] = 1; dotdot[33] = 0x01;
+    var dotdot = new byte[34];
+    dotdot[0] = 34; dotdot[2] = rootDirLba; dotdot[25] = 0x02; dotdot[32] = 1; dotdot[33] = 0x01;
     dotdot.AsSpan().CopyTo(isoBuf.AsSpan(dirPos)); dirPos += 34;
 
     var isoName = fileName.ToUpperInvariant() + ";1";
     var idLen = (byte)isoName.Length;
     var recLen = (byte)(33 + idLen + ((33 + idLen) % 2));
     var rec = new byte[recLen];
-    rec[0] = recLen; rec[2] = (byte)fileLba; rec[6] = (byte)fileLba;
-    var sz = (uint)fileData.Length; BitConverter.GetBytes(sz).CopyTo(rec, 10); // LE at offset 10
-    rec[32] = idLen; System.Text.Encoding.ASCII.GetBytes(isoName).CopyTo(rec, 33);
+    rec[0] = recLen; rec[2] = fileLba; rec[6] = fileLba;
+    BitConverter.GetBytes((uint)fileData.Length).CopyTo(rec, 10);
+    rec[32] = idLen;
+    System.Text.Encoding.ASCII.GetBytes(isoName).CopyTo(rec, 33);
     rec.AsSpan().CopyTo(isoBuf.AsSpan(dirPos));
     dirPos += recLen;
 
@@ -42,64 +44,40 @@ public class CdiTests {
     pvd[156 + 25] = 0x02; pvd[156 + 32] = 1;
     pvd.AsSpan().CopyTo(isoBuf.AsSpan(pvdLba * sectorSize));
 
-    // CDI footer: 8 bytes — 4-byte LE version ID + 4-byte LE offset from EOF to session descriptor
-    // For our minimal image the session descriptor doesn't exist; offset is 0.
-    var footer = new byte[8];
-    footer[0] = unchecked((byte)CdiV3);
-    footer[1] = unchecked((byte)(CdiV3 >> 8));
-    footer[2] = unchecked((byte)(CdiV3 >> 16));
-    footer[3] = unchecked((byte)(CdiV3 >> 24));
-    // offset bytes 4-7 = 0 (no session data follows)
-
-    var result = new byte[isoBuf.Length + footer.Length];
+    var result = new byte[isoBuf.Length + 8];
     isoBuf.AsSpan().CopyTo(result);
-    footer.AsSpan().CopyTo(result.AsSpan(isoBuf.Length));
+    BitConverter.GetBytes(cdiV3).CopyTo(result, isoBuf.Length);
     return result;
   }
 
   [Test, Category("HappyPath")]
-  public void Read_Cdi_DetectsV3Footer() {
-    var data = "CDI content"u8.ToArray();
-    var cdi = BuildCdi("test.txt", data);
+  public void Read_Cdi_DetectsLegacyV3Footer() {
+    var cdi = BuildLegacyCdi("test.txt", "CDI content"u8.ToArray());
     using var ms = new MemoryStream(cdi);
-
-    var r = new FileFormat.Cdi.CdiReader(ms);
-    Assert.That(r.CdiVersion, Is.EqualTo(0x80000005u));
+    using var reader = new FileFormat.Cdi.CdiReader(ms);
+    Assert.That(reader.CdiVersion, Is.EqualTo(0x80000005u));
   }
 
   [Test, Category("HappyPath")]
-  public void Read_Cdi_ListsFile() {
+  public void Read_Cdi_ListsAndExtractsFile() {
     var data = "DiscJuggler content"u8.ToArray();
-    var cdi = BuildCdi("readme.txt", data);
+    var cdi = BuildLegacyCdi("readme.txt", data);
     using var ms = new MemoryStream(cdi);
+    using var reader = new FileFormat.Cdi.CdiReader(ms);
 
-    var r = new FileFormat.Cdi.CdiReader(ms);
-    Assert.That(r.Entries, Has.Count.GreaterThan(0));
-    var file = r.Entries.FirstOrDefault(e => !e.IsDirectory);
+    var file = reader.Entries.FirstOrDefault(entry => !entry.IsDirectory);
     Assert.That(file, Is.Not.Null);
-    Assert.That(file!.Size, Is.EqualTo(data.Length));
-  }
-
-  [Test, Category("HappyPath")]
-  public void Read_Cdi_ExtractReturnsData() {
-    var data = new byte[200];
-    Random.Shared.NextBytes(data);
-    var cdi = BuildCdi("data.bin", data);
-    using var ms = new MemoryStream(cdi);
-
-    var r = new FileFormat.Cdi.CdiReader(ms);
-    var file = r.Entries.FirstOrDefault(e => !e.IsDirectory);
-    Assert.That(file, Is.Not.Null);
-
-    var extracted = r.Extract(file!);
-    Assert.That(extracted[..data.Length], Is.EqualTo(data));
+    Assert.Multiple(() => {
+      Assert.That(file!.Size, Is.EqualTo(data.Length));
+      Assert.That(reader.Extract(file), Is.EqualTo(data));
+    });
   }
 
   [Test, Category("HappyPath")]
   public void Read_NoFooter_VersionIsZero() {
     using var ms = new MemoryStream(new byte[2352 * 32]);
-    var r = new FileFormat.Cdi.CdiReader(ms);
-    Assert.That(r.CdiVersion, Is.EqualTo(0u));
+    using var reader = new FileFormat.Cdi.CdiReader(ms);
+    Assert.That(reader.CdiVersion, Is.EqualTo(0u));
   }
 
   [Test, Category("HappyPath")]
@@ -111,11 +89,13 @@ public class CdiTests {
       Size = 4096,
       StartLba = 22,
     };
-    Assert.That(entry.Name, Is.EqualTo("GAME.EXE"));
-    Assert.That(entry.FullPath, Is.EqualTo("GAME/GAME.EXE"));
-    Assert.That(entry.IsDirectory, Is.False);
-    Assert.That(entry.Size, Is.EqualTo(4096));
-    Assert.That(entry.StartLba, Is.EqualTo(22));
+    Assert.Multiple(() => {
+      Assert.That(entry.Name, Is.EqualTo("GAME.EXE"));
+      Assert.That(entry.FullPath, Is.EqualTo("GAME/GAME.EXE"));
+      Assert.That(entry.IsDirectory, Is.False);
+      Assert.That(entry.Size, Is.EqualTo(4096));
+      Assert.That(entry.StartLba, Is.EqualTo(22));
+    });
   }
 
   [Test, Category("HappyPath")]
@@ -125,36 +105,87 @@ public class CdiTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_ReportsWormCapability() {
-    var d = new FileFormat.Cdi.CdiFormatDescriptor();
-    Assert.That(d.Capabilities.HasFlag(Compression.Registry.FormatCapabilities.CanCreate), Is.True);
+  public void Descriptor_ReportsReadWriteAndMaintenanceCapabilities() {
+    var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
+    Assert.Multiple(() => {
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
+      Assert.That(descriptor, Is.InstanceOf<IArchiveDefragmentable>());
+      Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
+      Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IWipeEmpty>());
+      Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>());
+    });
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
-  public void Create_HasCdiFooter_AndRoundTrips() {
+  public void Create_WritesV35Descriptor_AndRoundTrips() {
     var payload = "discjuggler-payload"u8.ToArray();
-    var tmp = Path.GetTempFileName();
-    try {
-      File.WriteAllBytes(tmp, payload);
-      var d = new FileFormat.Cdi.CdiFormatDescriptor();
-      using var ms = new MemoryStream();
-      ((Compression.Registry.IArchiveCreatable)d).Create(
-        ms,
-        [new Compression.Registry.ArchiveInputInfo(tmp, "data.bin", false)],
-        new Compression.Registry.FormatCreateOptions());
+    var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
+    using var ms = new MemoryStream();
+    ((IArchiveCreatable)descriptor).Create(
+      ms,
+      [ArchiveInputInfo.InMemory("data.bin", payload)],
+      new FormatCreateOptions());
 
-      // Verify the CDI v2 footer (uint32 LE 0x80000004 + uint32 LE 0).
-      var bytes = ms.ToArray();
-      Assert.That(BitConverter.ToUInt32(bytes, bytes.Length - 8), Is.EqualTo(0x80000004u));
+    var bytes = ms.ToArray();
+    var version = BitConverter.ToUInt32(bytes, bytes.Length - 8);
+    var descriptorLength = BitConverter.ToUInt32(bytes, bytes.Length - 4);
+    var descriptorOffset = bytes.Length - descriptorLength;
 
-      ms.Position = 0;
-      var r = new FileFormat.Cdi.CdiReader(ms);
-      Assert.That(r.CdiVersion, Is.EqualTo(0x80000004u));
-      var fileEntry = r.Entries.FirstOrDefault(e => !e.IsDirectory && e.Name.StartsWith("DATA"));
-      Assert.That(fileEntry, Is.Not.Null);
-      Assert.That(r.Extract(fileEntry!)[..payload.Length], Is.EqualTo(payload));
-    } finally {
-      File.Delete(tmp);
-    }
+    Assert.Multiple(() => {
+      Assert.That(version, Is.EqualTo(0x80000006u));
+      Assert.That(descriptorLength, Is.GreaterThan(8u));
+      Assert.That(descriptorOffset, Is.GreaterThan(0));
+      Assert.That(BitConverter.ToUInt16(bytes, checked((int)descriptorOffset)), Is.EqualTo(1));
+      Assert.That(BitConverter.ToUInt16(bytes, checked((int)descriptorOffset) + 2), Is.EqualTo(1));
+    });
+
+    ms.Position = 0;
+    var geometry = FileFormat.Cdi.CdiInPlaceModifier.DetectGeometry(ms);
+    Assert.That(geometry.DataAreaLength, Is.EqualTo(descriptorOffset));
+
+    ms.Position = 0;
+    using var reader = new FileFormat.Cdi.CdiReader(ms, leaveOpen: true);
+    var file = reader.Entries.FirstOrDefault(entry => !entry.IsDirectory && entry.Name.Equals("DATA.BIN", StringComparison.OrdinalIgnoreCase));
+    Assert.That(file, Is.Not.Null);
+    Assert.Multiple(() => {
+      Assert.That(reader.CdiVersion, Is.EqualTo(0x80000006u));
+      Assert.That(reader.Extract(file!), Is.EqualTo(payload));
+    });
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void Descriptor_AddReplaceRemoveAndPurge_RoundTripFiles() {
+    var descriptor = new FileFormat.Cdi.CdiFormatDescriptor();
+    var creator = (IArchiveCreatable)descriptor;
+    var modifier = (IArchiveModifiable)descriptor;
+    using var ms = new MemoryStream();
+
+    creator.Create(ms, [ArchiveInputInfo.InMemory("old.bin", "old"u8)], new FormatCreateOptions());
+    modifier.Add(ms, [
+      ArchiveInputInfo.InMemory("old.bin", "replacement"u8),
+      ArchiveInputInfo.InMemory("new.bin", "new"u8),
+    ]);
+
+    Assert.That(ReadFile(ms, "old.bin"), Is.EqualTo("replacement"u8.ToArray()));
+    Assert.That(ReadFile(ms, "new.bin"), Is.EqualTo("new"u8.ToArray()));
+
+    modifier.Remove(ms, ["new.bin"]);
+    Assert.That(ReadFile(ms, "new.bin"), Is.Null);
+    Assert.That(ReadFile(ms, "old.bin"), Is.EqualTo("replacement"u8.ToArray()));
+
+    ((IArchivePurgeable)descriptor).Purge(ms);
+    ms.Position = 0;
+    using var reader = new FileFormat.Cdi.CdiReader(ms, leaveOpen: true);
+    Assert.That(reader.Entries.Where(entry => !entry.IsDirectory), Is.Empty);
+  }
+
+  private static byte[]? ReadFile(Stream image, string name) {
+    image.Position = 0;
+    using var reader = new FileFormat.Cdi.CdiReader(image, leaveOpen: true);
+    var entry = reader.Entries.FirstOrDefault(candidate =>
+      !candidate.IsDirectory && candidate.FullPath.Equals(name, StringComparison.OrdinalIgnoreCase));
+    return entry == null ? null : reader.Extract(entry);
   }
 }
