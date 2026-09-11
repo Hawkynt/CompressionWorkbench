@@ -23,8 +23,15 @@ public sealed class TahoeLafsReader : IDisposable {
   /// <summary>Gets the storage-container schema version.</summary>
   public uint Version { get; private set; }
 
-  /// <summary>Gets the actual opaque share-data length in bytes.</summary>
-  public long DataSize { get; private set; }
+  /// <summary>
+  /// Gets the actual opaque share-data length in bytes. Retained as <see cref="uint"/>
+  /// for source compatibility with the original reader; the current reader is
+  /// byte-array backed and therefore cannot represent a payload approaching 4 GiB.
+  /// </summary>
+  public uint DataSize { get; private set; }
+
+  /// <summary>Gets the actual opaque share-data length without the legacy API width.</summary>
+  public long ActualDataSize { get; private set; }
 
   /// <summary>
   /// Gets the legacy 32-bit immutable data-length header field. Modern Tahoe
@@ -48,6 +55,8 @@ public sealed class TahoeLafsReader : IDisposable {
   /// <summary>Initializes a new Tahoe-LAFS share-container reader.</summary>
   public TahoeLafsReader(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek)
+      stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -58,7 +67,8 @@ public sealed class TahoeLafsReader : IDisposable {
     _layout = TahoeLafsContainer.Parse(_data);
     this.ShareKind = _layout.Kind;
     this.Version = _layout.Version;
-    this.DataSize = _layout.DataLength;
+    this.ActualDataSize = _layout.DataLength;
+    this.DataSize = checked((uint)_layout.DataLength);
     this.HeaderDataSize = _layout.LegacyDataLength;
     this.LeaseCount = _layout.LeaseCount;
     this.LeaseOffset = _layout.LeaseOffset;
@@ -96,7 +106,7 @@ public sealed class TahoeLafsReader : IDisposable {
     bldr.Append("format=Tahoe-LAFS storage share\n");
     bldr.Append("share_kind=").Append(this.ShareKind == TahoeLafsShareKind.Immutable ? "immutable" : "mutable").Append('\n');
     bldr.Append(CultureInfo.InvariantCulture, $"container_version={this.Version}\n");
-    bldr.Append(CultureInfo.InvariantCulture, $"data_size={this.DataSize}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"data_size={this.ActualDataSize}\n");
     if (this.HeaderDataSize is { } headerDataSize)
       bldr.Append(CultureInfo.InvariantCulture, $"legacy_header_data_size={headerDataSize}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"lease_count={this.LeaseCount}\n");
