@@ -14,8 +14,10 @@ namespace FileSystem.Lustre;
 /// <remarks>
 /// The layout facts used here come from the Linux ext4 on-disk documentation. In particular,
 /// block-group descriptors locate the block bitmaps, one clear bitmap bit means one free block,
-/// and a BLOCK_UNINIT group does not carry a trustworthy on-disk bitmap. Lustre documents
-/// ldiskfs as its ext4-derived backing filesystem. No external implementation code is copied.
+/// and a BLOCK_UNINIT group does not carry a trustworthy on-disk bitmap. Destructive maintenance
+/// additionally requires metadata_csum and verifies the superblock, group descriptor and block
+/// bitmap checksums before trusting allocation state. Lustre documents ldiskfs as its ext4-derived
+/// backing filesystem. No external implementation code is copied.
 /// </remarks>
 internal static class LustreLdiskfsMaintenance {
   private const int SuperblockOffset = 1024;
@@ -27,8 +29,10 @@ internal static class LustreLdiskfsMaintenance {
   private const uint IncompatJournalDev = 0x0008;
   private const uint IncompatMetaBg = 0x0010;
   private const uint Incompat64Bit = 0x0080;
+  private const uint IncompatCsumSeed = 0x2000;
 
   private const uint RoCompatBigalloc = 0x0200;
+  private const uint RoCompatMetadataCsum = 0x0400;
   private const uint RoCompatReadOnly = 0x1000;
 
   private const ushort BgBlockUninit = 0x0002;
@@ -43,7 +47,8 @@ internal static class LustreLdiskfsMaintenance {
     long DescriptorTableOffset,
     uint FeatureCompat,
     uint FeatureIncompat,
-    uint FeatureRoCompat);
+    uint FeatureRoCompat,
+    uint ChecksumSeed);
 
   /// <summary>
   /// Wipes only complete blocks that the initialized ldiskfs allocation bitmap proves free.
@@ -65,20 +70,13 @@ internal static class LustreLdiskfsMaintenance {
 
     for (uint group = 0; group < geometry.GroupCount; ++group) {
       ReadDescriptor(image, geometry, group, descriptor);
+      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
+
       var flags = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(0x12, 2));
       if ((flags & BgBlockUninit) != 0)
         continue;
 
-      var bitmapBlock = ReadBlockBitmapBlock(descriptor, geometry.DescriptorSize);
-      if (bitmapBlock >= geometry.TotalBlocks)
-        throw new InvalidDataException($"Lustre/ldiskfs: group {group} block bitmap points outside the volume ({bitmapBlock}).");
-
-      var bitmapOffset = CheckedByteOffset(bitmapBlock, geometry.BlockSize);
-      if (bitmapOffset + geometry.BlockSize > image.Length)
-        throw new InvalidDataException($"Lustre/ldiskfs: group {group} block bitmap is truncated.");
-
-      image.Position = bitmapOffset;
-      image.ReadExactly(bitmap);
+      ReadAndValidateBlockBitmap(image, geometry, group, descriptor, bitmap);
 
       var groupFirst = (ulong)geometry.FirstDataBlock + (ulong)group * geometry.BlocksPerGroup;
       if (groupFirst >= geometry.TotalBlocks)
@@ -187,12 +185,20 @@ internal static class LustreLdiskfsMaintenance {
 
     var firstDataBlock = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(20, 4));
     var blocksPerGroup = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(32, 4));
-    if (blocksPerGroup == 0)
-      throw new InvalidDataException("Lustre/ldiskfs: s_blocks_per_group is zero.");
+    if (blocksPerGroup == 0 || (ulong)blocksPerGroup > (ulong)blockSize * 8)
+      throw new InvalidDataException($"Lustre/ldiskfs: invalid s_blocks_per_group value {blocksPerGroup} for {blockSize}-byte blocks.");
 
     var featureCompat = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(92, 4));
     var featureIncompat = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(96, 4));
     var featureRoCompat = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(100, 4));
+
+    uint checksumSeed = 0;
+    if ((featureRoCompat & RoCompatMetadataCsum) != 0) {
+      ValidateSuperblockChecksum(superblock);
+      checksumSeed = (featureIncompat & IncompatCsumSeed) != 0
+        ? BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(0x270, 4))
+        : Crc32c(0xFFFFFFFFu, superblock.AsSpan(104, 16));
+    }
 
     ulong totalBlocks = BinaryPrimitives.ReadUInt32LittleEndian(superblock.AsSpan(4, 4));
     if ((featureIncompat & Incompat64Bit) != 0)
@@ -203,10 +209,9 @@ internal static class LustreLdiskfsMaintenance {
     var descriptorSize = 32;
     if ((featureIncompat & Incompat64Bit) != 0) {
       descriptorSize = BinaryPrimitives.ReadUInt16LittleEndian(superblock.AsSpan(0xFE, 2));
-      if (descriptorSize < 32) descriptorSize = 32;
+      if (descriptorSize < 64 || descriptorSize > blockSize || (descriptorSize & 7) != 0)
+        throw new InvalidDataException($"Lustre/ldiskfs: invalid 64-bit group descriptor size {descriptorSize}.");
     }
-    if (descriptorSize > blockSize)
-      throw new InvalidDataException($"Lustre/ldiskfs: group descriptor size {descriptorSize} exceeds block size {blockSize}.");
 
     var groupCount64 = (totalBlocks - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup;
     if (groupCount64 is 0 or > uint.MaxValue)
@@ -226,10 +231,14 @@ internal static class LustreLdiskfsMaintenance {
 
     return new Geometry(
       blockSize, totalBlocks, firstDataBlock, blocksPerGroup, groupCount,
-      descriptorSize, descriptorTableOffset, featureCompat, featureIncompat, featureRoCompat);
+      descriptorSize, descriptorTableOffset, featureCompat, featureIncompat, featureRoCompat,
+      checksumSeed);
   }
 
   private static void ValidateWritableProfile(Geometry geometry) {
+    if ((geometry.FeatureRoCompat & RoCompatMetadataCsum) == 0)
+      throw new NotSupportedException(
+        "Lustre destructive maintenance requires ldiskfs metadata_csum so corrupted allocation bitmaps can be detected before any block is overwritten.");
     if ((geometry.FeatureIncompat & IncompatRecover) != 0)
       throw new NotSupportedException("Lustre maintenance refuses an ldiskfs image that still needs journal recovery; replay it first.");
     if ((geometry.FeatureIncompat & IncompatJournalDev) != 0)
@@ -249,12 +258,17 @@ internal static class LustreLdiskfsMaintenance {
       throw new NotSupportedException("Lustre shrink does not yet rewrite SPARSE_SUPER2 backup locations.");
 
     var descriptor = new byte[geometry.DescriptorSize];
+    var bitmap = new byte[geometry.BlockSize];
     for (uint group = 0; group < geometry.GroupCount; ++group) {
       ReadDescriptor(image, geometry, group, descriptor);
+      ValidateGroupDescriptorChecksum(geometry, group, descriptor);
+
       var flags = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(0x12, 2));
       if ((flags & BgBlockUninit) != 0)
         throw new NotSupportedException(
           $"Lustre shrink refuses lazy BLOCK_UNINIT group {group}; its on-disk allocation bitmap is not authoritative yet.");
+
+      ReadAndValidateBlockBitmap(image, geometry, group, descriptor, bitmap);
     }
   }
 
@@ -266,11 +280,84 @@ internal static class LustreLdiskfsMaintenance {
     image.ReadExactly(destination);
   }
 
+  private static void ReadAndValidateBlockBitmap(
+      Stream image,
+      Geometry geometry,
+      uint group,
+      ReadOnlySpan<byte> descriptor,
+      byte[] bitmap) {
+    var bitmapBlock = ReadBlockBitmapBlock(descriptor, geometry.DescriptorSize);
+    if (bitmapBlock >= geometry.TotalBlocks)
+      throw new InvalidDataException($"Lustre/ldiskfs: group {group} block bitmap points outside the volume ({bitmapBlock}).");
+
+    var bitmapOffset = CheckedByteOffset(bitmapBlock, geometry.BlockSize);
+    if (bitmapOffset + geometry.BlockSize > image.Length)
+      throw new InvalidDataException($"Lustre/ldiskfs: group {group} block bitmap is truncated.");
+
+    image.Position = bitmapOffset;
+    image.ReadExactly(bitmap);
+    ValidateBlockBitmapChecksum(geometry, group, descriptor, bitmap);
+  }
+
   private static ulong ReadBlockBitmapBlock(ReadOnlySpan<byte> descriptor, int descriptorSize) {
     ulong block = BinaryPrimitives.ReadUInt32LittleEndian(descriptor[..4]);
     if (descriptorSize >= 64)
       block |= (ulong)BinaryPrimitives.ReadUInt32LittleEndian(descriptor.Slice(0x20, 4)) << 32;
     return block;
+  }
+
+  private static void ValidateSuperblockChecksum(ReadOnlySpan<byte> superblock) {
+    var expected = BinaryPrimitives.ReadUInt32LittleEndian(superblock.Slice(0x3FC, 4));
+    var actual = Crc32c(0xFFFFFFFFu, superblock[..0x3FC]);
+    if (actual != expected)
+      throw new InvalidDataException(
+        $"Lustre/ldiskfs: superblock metadata checksum mismatch (stored 0x{expected:X8}, calculated 0x{actual:X8}).");
+  }
+
+  private static void ValidateGroupDescriptorChecksum(Geometry geometry, uint group, byte[] descriptor) {
+    var expected = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(0x1E, 2));
+    var copy = (byte[])descriptor.Clone();
+    BinaryPrimitives.WriteUInt16LittleEndian(copy.AsSpan(0x1E, 2), 0);
+
+    Span<byte> groupBytes = stackalloc byte[4];
+    BinaryPrimitives.WriteUInt32LittleEndian(groupBytes, group);
+    var actual = Crc32c(Crc32c(geometry.ChecksumSeed, groupBytes), copy);
+    if ((ushort)actual != expected)
+      throw new InvalidDataException(
+        $"Lustre/ldiskfs: group {group} descriptor checksum mismatch (stored 0x{expected:X4}, calculated 0x{(ushort)actual:X4}).");
+  }
+
+  private static void ValidateBlockBitmapChecksum(
+      Geometry geometry,
+      uint group,
+      ReadOnlySpan<byte> descriptor,
+      ReadOnlySpan<byte> bitmap) {
+    var meaningfulBytes = checked((int)(((ulong)geometry.BlocksPerGroup + 7) / 8));
+    if (meaningfulBytes > bitmap.Length)
+      throw new InvalidDataException($"Lustre/ldiskfs: group {group} block bitmap geometry exceeds its bitmap block.");
+
+    var actual = Crc32c(geometry.ChecksumSeed, bitmap[..meaningfulBytes]);
+    uint expected = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.Slice(0x18, 2));
+    if (geometry.DescriptorSize >= 64)
+      expected |= (uint)BinaryPrimitives.ReadUInt16LittleEndian(descriptor.Slice(0x38, 2)) << 16;
+
+    var matches = geometry.DescriptorSize >= 64
+      ? actual == expected
+      : (ushort)actual == (ushort)expected;
+    if (!matches)
+      throw new InvalidDataException(
+        $"Lustre/ldiskfs: group {group} block bitmap checksum mismatch (stored 0x{expected:X8}, calculated 0x{actual:X8}).");
+  }
+
+  private static uint Crc32c(uint seed, ReadOnlySpan<byte> data) {
+    const uint polynomial = 0x82F63B78u;
+    var crc = seed;
+    foreach (var value in data) {
+      crc ^= value;
+      for (var bit = 0; bit < 8; ++bit)
+        crc = (crc & 1) != 0 ? (crc >> 1) ^ polynomial : crc >> 1;
+    }
+    return crc;
   }
 
   private static long CheckedByteOffset(ulong block, int blockSize) {
