@@ -118,7 +118,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     BinaryPrimitives.WriteUInt32BigEndian(mtyp, CdRomMediumType);
     WriteChunk(output, "MTYP"u8, mtyp);
 
-    WriteChunk(output, "END!"u8, []);
+    WriteChunk(output, "END!"u8, ReadOnlySpan<byte>.Empty);
 
     Span<byte> footer = stackalloc byte[12];
     "NER5"u8.CopyTo(footer);
