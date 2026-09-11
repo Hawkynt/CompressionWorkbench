@@ -4593,87 +4593,160 @@ Minimal uncompressed AIFF (FORM/AIFF) writer: a COMM chunk describing the big-en
 
 ### Namespace `FileFormat.Akb`
 
-[`AkbEntry`](#akbentry) · [`AkbFormatDescriptor`](#akbformatdescriptor) · [`AkbReader`](#akbreader) · [`AkbWriter`](#akbwriter)
+[`AkbCodec`](#akbcodec) · [`AkbContainerKind`](#akbcontainerkind) · [`AkbEntry`](#akbentry) · [`AkbFormatDescriptor`](#akbformatdescriptor) · [`AkbReader`](#akbreader) · [`AkbWriteEntry`](#akbwriteentry) · [`AkbWriter`](#akbwriter)
+
+#### `AkbCodec`
+
+Codec identifiers stored in Square Enix AKB material headers.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Pcm16Le` | `1` | Little-endian signed PCM16; observed in AKB2. |
+| `MsAdpcm` | `2` | Microsoft ADPCM. |
+| `OggVorbis` | `5` | Complete Ogg Vorbis stream. |
+| `M4aAac` | `6` | Complete M4A/MP4 AAC stream; observed in classic AKB. |
+
+#### `AkbContainerKind`
+
+AKB container generation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Classic` | `0` | Classic `"AKB "` single-material container. |
+| `Akb2` | `1` | `"AKB2"` table/material container. |
 
 #### `AkbEntry`
 
-Represents a single audio entry within a Square Enix AKB audio bank.
+One logical AKB material and its on-disk metadata.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AkbEntry` | `AkbEntry()` |  |
-| `Flags` | `uint Flags { get; init; }` | Gets the per-entry flags word; bit 0 indicates a looping sample. |
-| `Name` | `string Name { get; init; }` | Gets the synthetic display name (e.g. `entry_000.bin`). |
-| `Offset` | `long Offset { get; init; }` | Gets the absolute byte offset of the entry's audio data within the AKB stream. |
-| `SampleCount` | `uint SampleCount { get; init; }` | Gets the duration of the entry in samples (codec-dependent interpretation). |
-| `Size` | `long Size { get; init; }` | Gets the byte length of the entry's audio data. |
+| `AlternateLoopEnd` | `uint AlternateLoopEnd { get; init; }` |  |
+| `AlternateLoopStart` | `uint AlternateLoopStart { get; init; }` |  |
+| `BlockAlign` | `int BlockAlign { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Codec` | `AkbCodec Codec { get; init; }` |  |
+| `Encrypted` | `bool Encrypted { get; }` |  |
+| `ExtraData` | `byte[] ExtraData { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `LoopEnd` | `uint LoopEnd { get; init; }` |  |
+| `LoopStart` | `uint LoopStart { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+| `SampleCount` | `uint SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `Version` | `byte Version { get; init; }` |  |
 
 #### `AkbFormatDescriptor`
 
-Square Enix AKB audio bank descriptor — surfaces per-entry raw audio payloads plus a synthetic `metadata.ini` entry containing bank-wide header fields (sample rate, channel mode, loop points). References: `https://github.com/vgmstream/vgmstream` — vgmstream — implements AKB parsing; the de-facto referenceSquare Enix never published the AKB layout; header fields were recovered by the VGM ripping community
+Square Enix classic AKB / AKB2 audio container. The layout is implemented independently from the public behaviour documented by vgmstream's AKB parser and cross-checked against Memoria's AKB2 writer. Classic AKB carries one material; AKB2 carries a sound table with one or more materials.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveLayoutMap`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IContainerRemuxable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AkbFormatDescriptor` | `AkbFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The synthetic `metadata.ini` entry is materialised on the fly; all other entries delegate to the reader's per-entry extract and are wrapped in a `BoundedEntryStream` sized to their logical length. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+| `Remux` | `void Remux(Stream source, Stream output, IReadOnlyList<ArchiveInputInfo> replacements, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `AkbReader`
 
-Reads entries from a Square Enix AKB audio bank (Final Fantasy / Kingdom Hearts era). Surfaces raw per-entry payload bytes; the per-entry codec (HCA, MSADPCM, IMA-ADPCM, raw PCM) is intentionally not decoded — game-specific dispatch belongs to the caller.
+Reads Square Enix classic AKB and AKB2 audio containers.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AkbReader` | `AkbReader(Stream stream, bool leaveOpen = false)` | Initializes a new `AkbReader` from a stream positioned at the start of an AKB file. |
-| `ChannelMode` | `byte ChannelMode { get; }` | Gets the channel-mode byte (1 = mono, 2 = stereo). Informational only. |
-| `ContentOffset` | `uint ContentOffset { get; }` | Gets the absolute offset where entry payload data begins. |
-| `ContentSize` | `uint ContentSize { get; }` | Gets the total byte length of the content region. |
-| `Entries` | `IReadOnlyList<AkbEntry> Entries { get; }` | Gets all audio entries declared in the bank. |
-| `LoopEnd` | `uint LoopEnd { get; }` | Gets the loop end position in samples; 0 if the bank declares no loop. |
-| `LoopStart` | `uint LoopStart { get; }` | Gets the loop start position in samples; 0 if the bank declares no loop. |
-| `SampleRate` | `uint SampleRate { get; }` | Gets the sample rate in Hz declared by the bank header. |
-| `VersionByte` | `byte VersionByte { get; }` | Gets the AKB subformat version byte (1 = single-stream v1, 2 = multi-entry v2). |
+| `AkbReader` | `AkbReader(Stream stream, bool leaveOpen = false)` |  |
+| `ChannelMode` | `byte ChannelMode { get; }` | Channel count of the first material. |
+| `ContainerKind` | `AkbContainerKind ContainerKind { get; }` |  |
+| `Entries` | `IReadOnlyList<AkbEntry> Entries { get; }` |  |
+| `LoopEnd` | `uint LoopEnd { get; }` | Primary loop end of the first material. |
+| `LoopStart` | `uint LoopStart { get; }` | Primary loop start of the first material. |
+| `SampleRate` | `uint SampleRate { get; }` | Sample rate of the first material, for compatibility with the original reader surface. |
+| `VersionByte` | `byte VersionByte { get; }` |  |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(AkbEntry entry)` | Reads the raw payload bytes for a given entry. The codec is not decoded — these are the raw on-disk bytes between `Offset` and `Offset` + `Size`. |
+| `ExtractRaw` | `byte[] ExtractRaw(AkbEntry entry)` | Returns the exact bytes stored in the AKB payload region. |
+| `Extract` | `byte[] Extract(AkbEntry entry)` | Returns the logical encoded payload, decrypting classic-v3 sdlib XOR where required. |
+
+#### `AkbWriteEntry`
+
+Logical material supplied to `AkbWriter`.
+
+Implements `IEquatable<AkbWriteEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AkbWriteEntry` | `AkbWriteEntry(string Name, byte[] Data, AkbCodec Codec, int SampleRate, int Channels, uint SampleCount = 0, uint LoopStart = 0, uint LoopEnd = 0, uint AlternateLoopStart = 0, uint AlternateLoopEnd = 0, int BlockAlign = 0, uint Flags = 0)` | Logical material supplied to `AkbWriter`. |
+| `AlternateLoopEnd` | `uint AlternateLoopEnd { get; init; }` |  |
+| `AlternateLoopStart` | `uint AlternateLoopStart { get; init; }` |  |
+| `BlockAlign` | `int BlockAlign { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Codec` | `AkbCodec Codec { get; init; }` |  |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Flags` | `uint Flags { get; init; }` |  |
+| `LoopEnd` | `uint LoopEnd { get; init; }` |  |
+| `LoopStart` | `uint LoopStart { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `SampleCount` | `uint SampleCount { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
 
 #### `AkbWriter`
 
-Creates a Square Enix AKB v2 audio bank from caller-supplied raw audio payloads. The codec is not encoded — supplied bytes are stored verbatim into the content region.
+Writes real Square Enix classic AKB and AKB2 containers.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AkbWriter` | `AkbWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `AkbWriter` that will write AKB v2 to `stream`. |
-| `ChannelMode` | `byte ChannelMode { get; set; }` | Gets or sets the channel-mode byte (1 = mono, 2 = stereo). Defaults to mono. |
-| `LoopEnd` | `uint LoopEnd { get; set; }` | Gets or sets the loop end position (samples). 0 means no loop. |
-| `LoopStart` | `uint LoopStart { get; set; }` | Gets or sets the loop start position (samples). 0 means no loop. |
-| `SampleRate` | `uint SampleRate { get; set; }` | Gets or sets the bank-wide sample rate written to the header. Defaults to 44100 Hz. |
-| `AddEntry` | `void AddEntry(string name, byte[] data, uint sampleCount = 0, uint flags = 0)` | Adds an entry to the bank. The supplied bytes are stored verbatim — caller is responsible for any codec encoding (HCA, MSADPCM, etc.). |
+| `AkbWriter` | `AkbWriter(Stream stream, bool leaveOpen = false)` |  |
+| `ChannelMode` | `byte ChannelMode { get; set; }` |  |
+| `ClassicVersion` | `byte ClassicVersion { get; set; }` |  |
+| `ContainerKind` | `AkbContainerKind ContainerKind { get; set; }` |  |
+| `Encrypt` | `bool Encrypt { get; set; }` |  |
+| `Entries` | `IReadOnlyList<AkbWriteEntry> Entries { get; }` |  |
+| `LoopEnd` | `uint LoopEnd { get; set; }` |  |
+| `LoopStart` | `uint LoopStart { get; set; }` |  |
+| `SampleRate` | `uint SampleRate { get; set; }` |  |
+| `VersionByte` | `byte VersionByte { get; set; }` |  |
+| `AddEncodedEntry` | `void AddEncodedEntry(AkbWriteEntry entry)` |  |
+| `AddEntry` | `void AddEntry(string name, byte[] data, uint sampleCount = 0, uint flags = 0)` | Compatibility entry adder. Complete Ogg/M4A streams are detected by signature; all other bytes are treated as PCM16LE. New code should use `AddEncodedEntry`. |
 | `Dispose` | `void Dispose()` |  |
-| `Finish` | `void Finish()` | Serializes the bank to the underlying stream. Called automatically on Dispose. |
+| `Write` | `void Write()` | Serializes all queued materials to the target stream. |
 
 ### Namespace `FileFormat.Alac`
 
