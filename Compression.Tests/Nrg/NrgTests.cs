@@ -79,26 +79,30 @@ public class NrgTests {
     Assert.That(trailerOffset, Is.LessThan(image.Length - 12));
 
     var position = trailerOffset;
-    AssertChunk(image, ref position, "ETN2", 32, payload => {
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(payload), Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(payload[8..]), Is.EqualTo((ulong)trailerOffset));
-      Assert.That(payload[19], Is.Zero, "cooked Mode 1");
+    var etn2 = ReadChunk(image, ref position, "ETN2", 32);
+    Assert.Multiple(() => {
+      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt64BigEndian(etn2[8..]), Is.EqualTo((ulong)trailerOffset));
+      Assert.That(etn2[19], Is.Zero, "cooked Mode 1");
     });
-    AssertChunk(image, ref position, "SINF", 4,
-      payload => Assert.That(BinaryPrimitives.ReadUInt32BigEndian(payload), Is.EqualTo(1)));
-    AssertChunk(image, ref position, "MTYP", 4,
-      payload => Assert.That(BinaryPrimitives.ReadUInt32BigEndian(payload), Is.EqualTo(0x00000400)));
-    AssertChunk(image, ref position, "END!", 0, null);
+
+    var sinf = ReadChunk(image, ref position, "SINF", 4);
+    Assert.That(BinaryPrimitives.ReadUInt32BigEndian(sinf), Is.EqualTo(1));
+
+    var mtyp = ReadChunk(image, ref position, "MTYP", 4);
+    Assert.That(BinaryPrimitives.ReadUInt32BigEndian(mtyp), Is.EqualTo(0x00000400));
+
+    _ = ReadChunk(image, ref position, "END!", 0);
     Assert.That(position, Is.EqualTo(image.Length - 12));
   }
 
-  private static void AssertChunk(byte[] image, ref int position, string id, int expectedLength, Action<ReadOnlySpan<byte>>? inspect) {
+  private static ReadOnlySpan<byte> ReadChunk(byte[] image, ref int position, string id, int expectedLength) {
     Assert.That(System.Text.Encoding.ASCII.GetString(image, position, 4), Is.EqualTo(id));
     var length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(image.AsSpan(position + 4, 4)));
     Assert.That(length, Is.EqualTo(expectedLength));
     var payload = image.AsSpan(position + 8, length);
-    inspect?.Invoke(payload);
     position += 8 + length;
+    return payload;
   }
 
   [Test, Category("HappyPath"), Category("RoundTrip")]
