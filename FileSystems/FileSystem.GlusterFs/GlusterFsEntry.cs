@@ -30,4 +30,9 @@ public sealed class GlusterFsEntry {
   /// Lazily materializes an entry delegated to the backing filesystem reader.
   /// </summary>
   internal Func<byte[]>? DataFactory { get; init; }
+
+  /// <summary>
+  /// Native path inside the backing filesystem, used for xattr lookup.
+  /// </summary>
+  internal string? BackingPath { get; init; }
 }
