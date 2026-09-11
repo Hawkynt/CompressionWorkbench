@@ -28,6 +28,7 @@ public sealed class IntelHexRwTests {
 
   [TestCase(":0100000412E9\n:00000001FF\n", TestName = "Reader_RejectsWrongExtendedLinearPayloadLength")]
   [TestCase(":020001040001F8\n:00000001FF\n", TestName = "Reader_RejectsNonZeroExtendedLinearAddressField")]
+  [TestCase(":00000101FE\n", TestName = "Reader_RejectsNonZeroEofAddressField")]
   [TestCase(":00000001FF\n:00000001FF\n", TestName = "Reader_RejectsRecordAfterEof")]
   [Category("EdgeCase")]
   public void Reader_RejectsMalformedControlRecords(string text)
