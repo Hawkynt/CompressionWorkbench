@@ -24,6 +24,17 @@ public class CxfsDetectionTests {
     return output.ToArray();
   }
 
+  private static string VolumeLabel(Stream image) {
+    var bytes = image switch {
+      MemoryStream ms => ms.ToArray(),
+      _ => throw new ArgumentException("Test helper expects a memory stream.", nameof(image)),
+    };
+    var field = bytes.AsSpan(108, 12);
+    var end = field.IndexOf((byte)0);
+    if (end >= 0) field = field[..end];
+    return Encoding.ASCII.GetString(field);
+  }
+
   [Test, Category("HappyPath")]
   public void Detector_UsesExtensionBecauseCxfsHasNoDistinctFilesystemMagic() {
     var d = new CxfsFormatDescriptor();
@@ -58,6 +69,7 @@ public class CxfsDetectionTests {
       Assert.That(d, Is.Not.InstanceOf<ILayoutOptimizable>());
       Assert.That(d, Is.Not.InstanceOf<IFilesystemExtentMap>());
       Assert.That(d, Is.Not.InstanceOf<IFilesystemBlockMover>());
+      Assert.That(d.MaxTotalArchiveSize, Is.EqualTo(1L << 30));
     });
   }
 
@@ -145,6 +157,27 @@ public class CxfsDetectionTests {
     Assert.That(d.List(image, null).Where(e => !e.IsDirectory), Is.Empty);
     var version = BinaryPrimitives.ReadUInt16BigEndian(image.ToArray().AsSpan(100, 2));
     Assert.That(version & 0xF, Is.EqualTo(4));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void RebuildMaintenance_PreservesVolumeLabel() {
+    var d = new CxfsFormatDescriptor();
+    var options = new FormatCreateOptions();
+    options.FormatSpecific["VolumeLabel"] = "CXFSVOL";
+    using var image = new MemoryStream();
+    d.Create(image, [ArchiveInputInfo.InMemory("a.txt", "A"u8.ToArray())], options);
+
+    Assert.That(VolumeLabel(image), Is.EqualTo("CXFSVOL"));
+    d.Add(image, [ArchiveInputInfo.InMemory("b.txt", "B"u8.ToArray())]);
+    Assert.That(VolumeLabel(image), Is.EqualTo("CXFSVOL"));
+    d.Remove(image, ["b.txt"]);
+    Assert.That(VolumeLabel(image), Is.EqualTo("CXFSVOL"));
+    d.Defragment(image);
+    Assert.That(VolumeLabel(image), Is.EqualTo("CXFSVOL"));
+
+    using var shrunk = new MemoryStream();
+    d.Shrink(image, shrunk);
+    Assert.That(VolumeLabel(shrunk), Is.EqualTo("CXFSVOL"));
   }
 
   [Test, Category("RoundTrip")]
