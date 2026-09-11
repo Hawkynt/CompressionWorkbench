@@ -1,28 +1,45 @@
 using System.Text;
 using Compression.Registry;
+using FileSystem.Ext;
 using FileSystem.GlusterFs;
+using FileSystem.Xfs;
 
 namespace Compression.Tests.GlusterFs;
 
 [TestFixture]
 public class GlusterFsDetectionTests {
 
+  private static readonly byte[] Gfid = [
+    0x10, 0x32, 0x54, 0x76, 0x98, 0xBA, 0xDC, 0xFE,
+    0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+  ];
+
   private static byte[] BuildXfsBrick() {
-    var writer = new FileSystem.Xfs.XfsWriter();
+    var writer = new XfsWriter();
     writer.AddFile("host/brick/data/hello.txt", "hello from xfs brick"u8.ToArray());
     writer.AddFile("host/brick/.glusterfs/ab/internal-gfid", "backend index"u8.ToArray());
     writer.AddFile("outside.txt", "not part of the brick"u8.ToArray());
     using var stream = new MemoryStream();
     writer.WriteTo(stream);
+    XfsExtendedAttributes.Set(stream, "host/brick/data/hello.txt", "trusted.gfid", Gfid);
     return stream.ToArray();
   }
 
   private static byte[] BuildExtBrick() {
-    var writer = new FileSystem.Ext.ExtWriter();
+    var writer = new ExtWriter();
     writer.AddFile("srv/brick/data/hello.txt", "hello from ext brick"u8.ToArray());
     writer.AddFile("srv/brick/.glusterfs/cd/internal-gfid", "backend index"u8.ToArray());
     writer.AddFile("outside.txt", "not part of the brick"u8.ToArray());
-    return writer.Build();
+    var bytes = writer.Build(
+      blockSize: 1024,
+      totalBlocks: 4096,
+      version: ExtWriter.ExtVersion.Ext4,
+      journal: false,
+      volumeLabel: "gluster",
+      inodeSize: 256);
+    using var stream = new MemoryStream(bytes, writable: true);
+    ExtExtendedAttributes.Set(stream, "srv/brick/data/hello.txt", "trusted.gfid", Gfid);
+    return stream.ToArray();
   }
 
   [Test, Category("HappyPath")]
@@ -70,9 +87,19 @@ public class GlusterFsDetectionTests {
       Assert.That(reader.BrickRoot, Is.EqualTo("srv/brick"));
       Assert.That(reader.HasGlusterIndex, Is.True);
       Assert.That(Encoding.UTF8.GetString(reader.Extract(entry)), Is.EqualTo("hello from ext brick"));
+      Assert.That(reader.ReadExtendedAttributes(entry)["trusted.gfid"], Is.EqualTo(Gfid));
       Assert.That(reader.Entries.Any(candidate => candidate.Name.Contains(".glusterfs", StringComparison.Ordinal)), Is.False);
       Assert.That(reader.Entries.Any(candidate => candidate.Name == "brick/outside.txt"), Is.False);
     });
+  }
+
+  [Test, Category("HappyPath")]
+  public void XfsBackingStore_SurfacesNativeGlusterXattrs() {
+    using var stream = new MemoryStream(BuildXfsBrick());
+    using var reader = new GlusterFsReader(stream);
+    var entry = reader.Entries.Single(candidate => candidate.Name == "brick/data/hello.txt");
+
+    Assert.That(reader.ReadExtendedAttributes(entry)["trusted.gfid"], Is.EqualTo(Gfid));
   }
 
   [Test, Category("HappyPath")]
@@ -101,7 +128,7 @@ public class GlusterFsDetectionTests {
   }
 
   [Test, Category("Regression")]
-  public void Descriptor_DoesNotAdvertiseMutationsThatWouldDiscardGlusterXattrs() {
+  public void Descriptor_DoesNotAdvertiseMutationsUntilAllXattrStorageFormsAreSafe() {
     var descriptor = new GlusterFsFormatDescriptor();
 
     Assert.Multiple(() => {
@@ -116,7 +143,7 @@ public class GlusterFsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Metadata_DescribesPhysicalViewBrickRootAndMutationBlocker() {
+  public void Metadata_DescribesXattrProgressAndClusterOperationBoundary() {
     using var stream = new MemoryStream(BuildXfsBrick());
     using var reader = new GlusterFsReader(stream);
     var metadata = reader.Entries.Single(entry => entry.Name == "metadata.ini");
@@ -127,10 +154,11 @@ public class GlusterFsDetectionTests {
       Assert.That(text, Does.Contain("backing_fs=xfs"));
       Assert.That(text, Does.Contain("brick_root=host/brick"));
       Assert.That(text, Does.Contain("gluster_index_detected=true"));
-      Assert.That(text, Does.Contain("view=physical single-brick namespace"));
-      Assert.That(text, Does.Contain("xattrs=preserved in image but not interpreted"));
+      Assert.That(text, Does.Contain("xattrs=readable through native backing-filesystem accessors"));
+      Assert.That(text, Does.Contain("xattr_mutation=native inline/short-form subset only"));
       Assert.That(text, Does.Contain("cluster_namespace_reconstruction=false"));
-      Assert.That(text, Does.Contain("trusted.gfid/trusted.glusterfs.*"));
+      Assert.That(text, Does.Contain("cluster_operations=rebalance,fix-layout,remove-brick are outside the single-image abstraction"));
+      Assert.That(text, Does.Contain("external/leaf/btree xattr mutation is not complete yet"));
     });
   }
 }
