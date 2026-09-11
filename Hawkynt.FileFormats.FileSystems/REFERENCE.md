@@ -879,7 +879,19 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Nrg`
 
-[`NrgEntry`](#nrgentry) · [`NrgFormatDescriptor`](#nrgformatdescriptor) · [`NrgInPlaceModifier`](#nrginplacemodifier) · [`NrgInPlaceModifier.SectorGeometry`](#nrginplacemodifiersectorgeometry) · [`NrgReader`](#nrgreader)
+[`NrgDiscDefinition`](#nrgdiscdefinition) · [`NrgEntry`](#nrgentry) · [`NrgFormatDescriptor`](#nrgformatdescriptor) · [`NrgInPlaceModifier`](#nrginplacemodifier) · [`NrgInPlaceModifier.SectorGeometry`](#nrginplacemodifiersectorgeometry) · [`NrgReader`](#nrgreader) · [`NrgSessionDefinition`](#nrgsessiondefinition) · [`NrgTrackDefinition`](#nrgtrackdefinition) · [`NrgTrackMode`](#nrgtrackmode) · [`NrgWriter`](#nrgwriter)
+
+#### `NrgDiscDefinition`
+
+A complete NRG disc authoring description.
+
+Implements `IEquatable<NrgDiscDefinition>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NrgDiscDefinition` | `NrgDiscDefinition(IReadOnlyList<NrgSessionDefinition> Sessions)` | A complete NRG disc authoring description. |
+| `CdText` | `byte[] CdText { get; init; }` | Optional raw CD-TEXT packs. The byte length must be a multiple of 18. |
+| `Sessions` | `IReadOnlyList<NrgSessionDefinition> Sessions { get; init; }` | Sessions in physical order. |
 
 #### `NrgEntry`
 
@@ -896,9 +908,9 @@ Represents a file or directory entry in a Nero NRG disc image.
 
 #### `NrgFormatDescriptor`
 
-Nero Burning ROM NRG disc image — trailing NER5/NERO footer pointing at a chunked session/track descriptor area. References: `https://cdemu.sourceforge.io` — CDEmu / libMirage — its NRG parser is the de-facto format documentation`https://en.wikipedia.org/wiki/NRG_(file_format)` — WikipediaNo official specification — proprietary Nero format, reverse-engineered
+Nero Burning ROM NRG disc image — a sector stream followed by a chunked session/track descriptor and a trailing NERO/NER5 footer. References: `https://cdemu.sourceforge.io` — CDEmu / libMirage NRG parser, used as a behavioural oracle for the reverse-engineered chunk layout`https://problemkaputt.de/psx-spx.htm` — independently documented NRG CUEX/DAOX/ETN structuresNo official public Nero specification is available; the format is proprietary and reverse-engineered
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -915,45 +927,49 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveModifiable`
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Rewrites raw CD sectors in place. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed byte offset `lba * sectorSize + dataOffset`; everything outside the touched 2 048-byte user-data region — including the trailing NRG footer — stays byte-identical (the footer migrates with the new EOF when the data area grows past the previous end). Inputs not matching the synthetic sector schema are skipped — inner-ISO 9660 directory mutation is delegated to `FileSystem.Iso` and is out of scope for the sector-rewrite modifier. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Zeros the 2 048-byte user-data region of each named sector. Sector framing bytes (sync / address / mode / EDC) on raw geometries and the trailing NRG footer are preserved so the LBA-to-offset map and the rest of the image remain byte-identical. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces named ISO entries through a verified rebuild. Multi-track or audio NRGs are deliberately refused here because flattening them to the generic single-ISO create profile would destroy disc structure. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the generic archive API profile: one DAO session containing one cooked Mode-1 ISO 9660 track. Call `Write` directly for multi-session, mixed data/audio, pregap, MCN, ISRC, CD-TEXT or raw-sector authoring. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-defragments the single-data-track R/W profile. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Progress-reporting rebuild defrag for the single-data-track R/W profile. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts ISO 9660 entries from the first readable data track. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the ISO 9660 entries from the first readable data track in the supplied container. |
+| `Purge` | `void Purge(Stream archive)` | Purges the single-data-track R/W profile to a valid empty NRG. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named ISO entries through the same profile-gated verified rebuild. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Tight-packs the single-data-track profile. Multi-track/audio images are copied through unchanged rather than being flattened into one ISO track. |
 
 #### `NrgInPlaceModifier`
 
-In-place sector-rewrite modifier for a Nero Burning ROM NRG disc image. Operates at the raw 2 048-byte user-data region of each CD sector at the fixed byte offset `lba * sectorSize + dataOffset`, where `sectorSize` and `dataOffset` are the geometry detected from the data area (raw 2 352 Mode 1, raw 2 352 Mode 2 Form 1, 2 336-byte sectors, or flat 2 048-byte cooked sectors). NRG framing. An NRG image is a stream of CD sectors followed by a footer at EOF identifying the format version: NRG v2: last 12 bytes — "NER5" + uint64 BE chunk-table offset.NRG v1: last 8 bytes — "NERO" + uint32 BE chunk-table offset. The footer is preserved byte-identical across in-place rewrites and is relocated past the new EOF whenever the data area grows.Scope. Rewrites only the user-data bytes inside an existing sector or appends a brand-new sector at the end of the data area. It does not understand the inner ISO 9660 directory structure — that is the job of `IsoWriter` / its reader. Synthetic entry names of the form `sector-NNNNNN.bin` address a single sector LBA. Multi-track DAOI/CUEX layouts are not parsed — the modifier treats the stream as a single track of sectors at flat LBA offsets. Sync pattern (12 B), 3-byte address, 1-byte mode, and the EDC/ECC tail of raw sectors are preserved on rewrite and synthesised on append.True in-place. Writes touch only the 2 048-byte user-data region of the targeted sector. Bytes outside that region — header bytes of the same sector, every untouched sector, the system area (LBA 0-15), the PVD at LBA 16, the ISO root directory, and the trailing NRG footer — stay byte-identical at their original byte offsets (the footer migrates to follow the new EOF when the data area grows).
+Low-level fixed-LBA sector editor for single-track NRG images whose ISO data track begins at file offset zero. This is intentionally narrower than the descriptor's public file-level R/W path: ordinary file CRUD uses a verified extract/edit/re-create rebuild so ISO directory metadata stays coherent.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Routes each input through the sector-rewrite path. Inputs whose `ArchiveName` matches `sector-NNNNNN.bin` are written at the fixed LBA byte offset. Inputs whose `ArchiveName` doesn't match the schema are refused — inner ISO 9660 directory mutation is delegated to `FileSystem.Iso`. |
-| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Extends the data area so that sector `lba` exists, writing `userData` as its 2 048-byte payload. Intermediate sectors are appended with format-correct framing. The trailing NRG footer is preserved verbatim and rewritten at the new EOF. |
-| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the sector geometry of `image` the same way `NrgReader` does — by probing for the `CD001` PVD signature at LBA 16 inside the data area. Falls back to raw Mode 1 (2 352 / 16) when no probe succeeds. NRG v2 ("NER5") and v1 ("NERO") footers are excluded from the data area. |
-| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats a sector LBA into the synthetic entry name used by the in-place modifier. |
-| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Zeros each named `sector-NNNNNN.bin`. Names that don't match the schema are refused; sectors past the data-area EOF are still skipped. The framing bytes of an existing sector and the trailing NRG footer are preserved. |
-| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses a synthetic `sector-NNNNNN.bin` entry name and returns the embedded sector LBA. Names that don't match the schema return `false`. |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites the 2 048-byte user-data region of sector `lba` in place. Other bytes — sync/header/EDC for raw sectors, every other sector, every other region of the image, and the trailing NRG footer — are untouched. If `lba` points past the current data-area EOF, the image is grown sector-by-sector with appended-sector framing (`AppendSector`) and the footer is relocated to the new EOF. |
-| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom)` | Variant of `WriteSector` that reuses a previously-probed geometry, avoiding a redundant PVD probe per call when a caller is rewriting several sectors back-to-back. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros the 2 048-byte user-data region of sector `lba` in place. The sector framing bytes and the trailing NRG footer are preserved; only the user data is wiped. Returns `true` if the sector existed (and was zeroed), `false` if `lba` is past the data-area EOF. |
-| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geom)` | Variant of `ZeroSector` reusing a previously-probed geometry. |
+| `AddOrReplaceSectors` | `static void AddOrReplaceSectors(Stream image, IEnumerable<ValueTuple<string, byte[]>> inputs)` | Rewrites sectors named through the synthetic low-level namespace. |
+| `AppendSector` | `static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geometry)` | Appends sectors only to a footer-less raw image. Extending an NRG image is not a byte-local operation because its descriptor records track offsets and sizes; callers wanting growth must use the descriptor's rebuild editor. |
+| `DetectGeometry` | `static SectorGeometry DetectGeometry(Stream image)` | Detects the single-track geometry from the ISO PVD at LBA 16. The NERO/ NER5 footer's trailer pointer is honoured, so chunk metadata is never mistaken for sector data. |
+| `FormatSectorEntryName` | `static string FormatSectorEntryName(int lba)` | Formats an LBA using the synthetic low-level sector namespace. |
+| `RemoveSectors` | `static void RemoveSectors(Stream image, IEnumerable<string> entryNames)` | Zeros sectors named through the synthetic low-level namespace. |
+| `TryParseSectorEntryName` | `static bool TryParseSectorEntryName(string entryName, out int lba)` | Parses a synthetic `sector-NNNNNN.bin` LBA name. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData)` | Rewrites one existing 2,048-byte user-data sector. If the requested LBA would extend a real NRG image, the operation is refused because moving the descriptor requires rewriting ETN/DAO offsets and sizes as well. |
+| `WriteSector` | `static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geometry)` | Rewrites a sector using an already detected geometry. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba)` | Zeros one existing sector's 2,048-byte user-data region. |
+| `ZeroSector` | `static bool ZeroSector(Stream image, int lba, SectorGeometry geometry)` | Zeros one existing sector using an already detected geometry. |
 
 #### `NrgInPlaceModifier.SectorGeometry`
 
-Detected on-disk sector geometry for an NRG image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins. `DataAreaLength` excludes the trailing NRG footer (12 bytes for v2, 8 bytes for v1) when present.
+Detected sector geometry. `DataOffset` is the byte offset of the 2,048-byte user-data region. `DataAreaLength` is the byte offset at which the NRG descriptor begins, not merely EOF minus the footer.
 
 Implements `IEquatable<SectorGeometry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset, long DataAreaLength)` | Detected on-disk sector geometry for an NRG image. `DataOffset` is the byte offset within a sector where the 2 048 B of ISO user data begins. `DataAreaLength` excludes the trailing NRG footer (12 bytes for v2, 8 bytes for v1) when present. |
+| `SectorGeometry` | `SectorGeometry(int SectorSize, int DataOffset, long DataAreaLength)` | Detected sector geometry. `DataOffset` is the byte offset of the 2,048-byte user-data region. `DataAreaLength` is the byte offset at which the NRG descriptor begins, not merely EOF minus the footer. |
 | `DataAreaLength` | `long DataAreaLength { get; init; }` |  |
 | `DataOffset` | `int DataOffset { get; init; }` |  |
 | `SectorSize` | `int SectorSize { get; init; }` |  |
 
 #### `NrgReader`
 
-Reads the ISO 9660 file system embedded in a Nero Burning ROM NRG disc image. NRG images carry a footer at the end of the file identifying the format version and providing a chunk table that describes the track layout. Footer layout: NRG v2: last 12 bytes — "NER5" (4 bytes) + uint64 BE offset to chunk table.NRG v1: last 8 bytes — "NERO" (4 bytes) + uint32 BE offset to chunk table. This reader parses the footer to locate the data area, then heuristically detects the sector geometry and parses the ISO 9660 file system.
+Reads the ISO 9660 data track embedded in a Nero Burning ROM NRG image. NRG stores disc sectors first, then a chunked session/track descriptor, and finally a footer pointing back to that descriptor.
 
 Implements `IDisposable`.
 
@@ -964,6 +980,59 @@ Implements `IDisposable`.
 | `Version` | `int Version { get; }` | Gets the NRG format version detected from the footer (1 or 2), or 0 if no valid footer was found. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(NrgEntry entry)` | Extracts the raw data for a file entry. |
+
+#### `NrgSessionDefinition`
+
+One NRG session. Track numbers are assigned globally and consecutively across sessions.
+
+Implements `IEquatable<NrgSessionDefinition>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NrgSessionDefinition` | `NrgSessionDefinition(IReadOnlyList<NrgTrackDefinition> Tracks)` | One NRG session. Track numbers are assigned globally and consecutively across sessions. |
+| `Mcn` | `string Mcn { get; init; }` | Optional 13-digit media catalog number (MCN/EAN-13). |
+| `Tracks` | `IReadOnlyList<NrgTrackDefinition> Tracks { get; init; }` | Tracks in this session. |
+
+#### `NrgTrackDefinition`
+
+One track to be written into an NRG disc image.
+
+Implements `IEquatable<NrgTrackDefinition>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NrgTrackDefinition` | `NrgTrackDefinition(NrgTrackMode Mode, byte[] Data)` | One track to be written into an NRG disc image. |
+| `CopyPermitted` | `bool CopyPermitted { get; init; }` | Whether the Q-subchannel control byte advertises digital-copy permission. |
+| `Data` | `byte[] Data { get; init; }` | Track bytes, already encoded in the sector representation selected by `Mode`. |
+| `Isrc` | `string Isrc { get; init; }` | Optional 12-character ISRC for this track. |
+| `Mode` | `NrgTrackMode Mode { get; init; }` | On-disc/storage mode. |
+| `PregapData` | `byte[] PregapData { get; init; }` | Optional pregap bytes. When supplied they must contain exactly `PregapSectors` sectors, or, when `PregapSectors` is zero, determine the pregap length themselves. Raw framed and subchannel modes require explicit bytes because an all-zero sector would not be valid framing. |
+| `PregapSectors` | `int PregapSectors { get; init; }` | Number of sectors in index 00 before index 01. Defaults to no stored pregap. |
+
+#### `NrgTrackMode`
+
+NRG v2 track storage modes understood by Nero-compatible readers.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Mode1` | `0` | Cooked Mode 1, 2,048 bytes per sector. |
+| `Mode2Form1` | `2` | Cooked Mode 2 Form 1, 2,048 bytes per sector. |
+| `Mode2Form2` | `3` | Mode 2 Form 2 / almost-full sector, 2,336 bytes per sector. |
+| `Mode1Raw` | `5` | Raw Mode 1, 2,352 bytes per sector. |
+| `Mode2Raw` | `6` | Raw Mode 2, 2,352 bytes per sector. |
+| `Audio` | `7` | Raw CD-DA audio, 2,352 bytes per sector. |
+| `Mode1RawWithSubchannel` | `15` | Raw Mode 1 plus 96-byte subchannel, 2,448 bytes per sector. |
+| `AudioWithSubchannel` | `16` | Raw CD-DA audio plus 96-byte subchannel, 2,448 bytes per sector. |
+| `Mode2RawWithSubchannel` | `17` | Raw Mode 2 plus 96-byte subchannel, 2,448 bytes per sector. |
+
+#### `NrgWriter`
+
+Writes Nero NRG v2 images using the DAO profile (`CUEX` + `DAOX` per session). This profile can represent multiple sessions, mixed data/audio tracks, pregaps, MCN, ISRC, raw sector modes and optional 96-byte subchannel data without flattening them into one ISO track.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetSectorSize` | `static int GetSectorSize(NrgTrackMode mode)` | Gets the stored sector size implied by an NRG mode code. |
+| `Write` | `static void Write(Stream output, NrgDiscDefinition disc)` | Writes `disc` as an NRG v2 image. |
 
 ### Namespace `FileFormat.Pfs0`
 
