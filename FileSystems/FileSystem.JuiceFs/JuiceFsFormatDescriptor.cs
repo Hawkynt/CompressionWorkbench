@@ -6,123 +6,88 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.JuiceFs;
 
 /// <summary>
-/// Stage 0 detection-only descriptor for JuiceFS artefacts.
-/// JuiceFS has no standalone on-disk image format: a volume is the
-/// combination of an external metadata engine (Redis / MySQL / TiKV /
-/// SQLite / PostgreSQL / etcd / FoundationDB / BadgerDB) plus chunks
-/// living in an S3-compatible object store. None of these surfaces are
-/// resolvable from a single local file, so R/O extraction is genuinely
-/// impossible without those external endpoints; staying Stage 0 is the
-/// honest treatment.
-/// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes;
-/// no real file-walk is attempted.
+/// Descriptor for portable JuiceFS metadata backups produced by
+/// <c>juicefs dump</c> (JSON) and <c>juicefs dump --binary</c> (v1.3+).
+/// </summary>
+/// <remarks>
+/// JuiceFS itself is distributed: metadata lives in a metadata engine and file
+/// payloads live in object storage. A dump therefore cannot provide offline file
+/// bytes. This descriptor exposes the backup's metadata faithfully, including a
+/// namespace manifest for JSON dumps and individual protobuf segments for binary
+/// dumps. JSON backups can be shrunk losslessly by removing insignificant
+/// whitespace; block-layout verbs do not apply to these metadata artefacts.
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://juicefs.com</c> — official JuiceFS site and architecture documentation (metadata engine + object-store chunks)</description></item>
-///   <item><description><c>https://github.com/juicedata/juicefs</c> — canonical source</description></item>
+///   <item><description><c>https://juicefs.com/docs/community/metadata_dump_load/</c> — official dump/load documentation</description></item>
+///   <item><description><c>https://github.com/juicedata/juicefs/blob/main/pkg/meta/dump.go</c> — canonical JSON backup schema</description></item>
+///   <item><description><c>https://github.com/juicedata/juicefs/blob/main/pkg/meta/backup.go</c> — canonical binary backup framing</description></item>
 /// </list>
-/// </summary>
-public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+/// </remarks>
+public sealed class JuiceFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable {
+  /// <summary>Gets the format id.</summary>
   public string Id => "JuiceFs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "JuiceFS";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+  /// <summary>Gets the category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+  /// <summary>Gets the supported archive capabilities.</summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+  /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".juicefs";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+  /// <summary>Gets recognised extensions.</summary>
   public IReadOnlyList<string> Extensions => [".juicefs"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+  /// <summary>Gets compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
   /// <summary>
-  /// Gets the magic signatures.
+  /// Gets conservative JSON signatures. Binary backups deliberately have no
+  /// offset-zero signature: their identifying magic is in the footer.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Wrapper-convention tag: ASCII "JuiceFS" (7 bytes) at offset 0.
-    // Note: real JuiceFS artefacts have NO offset-0 magic. The binary
-    // backup (juicefs dump --binary, JuiceFS 1.3+) stores its BakMagic
-    // 0x00747083 (4 bytes BE) in the BakEOS marker + protobuf footer
-    // at end-of-file (juicedata/juicefs pkg/meta/backup.go). The JSON
-    // dump (juicefs dump) is plain JSON. The SQLite metadata backend
-    // is a standard SQLite database (magic "SQLite format 3\0").
-    // The offset-0 "JuiceFS" tag here is the project's own wrapper
-    // marker for surfacing detection — not a real JuiceFS signature.
-    new("JuiceFS"u8.ToArray(), Offset: 0, Confidence: 0.90),
+    new("{\n  \"Setting\":"u8.ToArray(), Offset: 0, Confidence: 0.72),
+    new("{\"Setting\":"u8.ToArray(), Offset: 0, Confidence: 0.68),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
+  /// <summary>Gets storage methods.</summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("metadata", "JuiceFS metadata backup")];
+  /// <summary>Gets the tar compression format id.</summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
+  /// <summary>Gets the algorithm family.</summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
+  /// <summary>Gets a description of the supported JuiceFS artefacts.</summary>
   public string Description =>
-    "JuiceFS — detection-only — distributed POSIX FS with NO standalone on-disk image " +
-    "format: a volume = external metadata DB (Redis/MySQL/TiKV/SQLite/PostgreSQL/etcd/" +
-    "FoundationDB/BadgerDB) + chunks in S3-compatible object storage. R/O is structurally " +
-    "impossible from a single local file because (a) inode→chunk-id resolution lives in " +
-    "the metadata engine and (b) chunk bytes live behind an object-store endpoint. The " +
-    "binary backup's real signature is the BakMagic 0x00747083 (4 bytes BE) in the EOS " +
-    "marker + protobuf footer at end-of-file (juicefs 1.3+); the JSON dump is plain JSON; " +
-    "the SQLite backend uses the standard SQLite header. The offset-0 'JuiceFS' tag is a " +
-    "wrapper convention for surfacing detection only.";
+    "JuiceFS portable metadata backups: real juicefs dump JSON and v1.3+ segmented protobuf backups. " +
+    "The backup contains namespace/chunk metadata but no file payload bytes; those remain in the configured " +
+    "object store. JSON dumps support lossless representation-only shrink by stripping insignificant whitespace. " +
+    "Defrag, wipe, layout and offline purge are intentionally not claimed because those operations belong to the " +
+    "live metadata-engine/object-store pair, not to a metadata backup file.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  /// <summary>Lists inspectable metadata artefacts from the supplied backup.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new JuiceFsReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    using var reader = new JuiceFsReader(stream);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "metadata", entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Extracts inspectable metadata artefacts from the supplied backup.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new JuiceFsReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    using var reader = new JuiceFsReader(stream);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory || files != null && !MatchesFilter(entry.Name, files))
+        continue;
+      WriteFile(outputDir, entry.Name, reader.Extract(entry));
     }
   }
 
   Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryName);
-    var r = new JuiceFsReader(archive);
-    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
-      ?? throw new FileNotFoundException($"JuiceFS entry not found: {entryName}");
-    var data = r.Extract(entry);
-    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+    using var reader = new JuiceFsReader(archive);
+    var entry = reader.Entries.FirstOrDefault(candidate => candidate.Name == entryName)
+      ?? throw new FileNotFoundException($"JuiceFS metadata-backup entry not found: {entryName}");
+    var data = reader.Extract(entry);
+    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.LongLength, leaveOpen: false);
   }
+
+  void IArchiveShrinkable.Shrink(Stream input, Stream output) => JuiceFsShrinker.Shrink(input, output);
 }
