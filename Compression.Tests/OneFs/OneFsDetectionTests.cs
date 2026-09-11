@@ -1,6 +1,7 @@
 using System.Text;
 using Compression.Registry;
 using Compression.Registry.Streaming;
+using Compression.Tests.Documentation;
 using FileSystem.OneFs;
 
 namespace Compression.Tests.OneFs;
@@ -8,8 +9,8 @@ namespace Compression.Tests.OneFs;
 /// <summary>
 /// Acceptance tests for the conservative OneFS single-image inspection surface.
 /// The tests intentionally do not invent an on-disk filesystem image: Dell's
-/// public material documents cluster architecture, not a standalone raw-drive
-/// serialization that this suite could author independently.
+/// public material documents cluster architecture and physical geometry, not a
+/// complete standalone raw-drive serialization that this suite could author.
 /// </summary>
 [TestFixture]
 public class OneFsDetectionTests {
@@ -83,13 +84,50 @@ public class OneFsDetectionTests {
       Assert.That(text, Does.Contain("parse_status=opaque-single-image"));
       Assert.That(text, Does.Contain("stage=0"));
       Assert.That(text, Does.Contain("authoritative_raw_magic=not_published"));
+      Assert.That(text, Does.Contain("superblock_magic=known-to-exist-value-not-publicly-verified"));
+      Assert.That(text, Does.Contain("superblock_locations=multiple-fixed-block-addresses-values-not-publicly-verified"));
+      Assert.That(text, Does.Contain("superblock_role=references-LIN-master"));
       Assert.That(text, Does.Contain($"physical_block_size={OneFsReader.PhysicalBlockSize}"));
+      Assert.That(text, Does.Contain($"cylinder_group_size={OneFsReader.CylinderGroupSize}"));
+      Assert.That(text, Does.Contain($"blocks_per_cylinder_group={OneFsReader.BlocksPerCylinderGroup}"));
+      Assert.That(text, Does.Contain("allocation_tracking=per-cylinder-group-bitmap-serialization-not-published"));
       Assert.That(text, Does.Contain("LIN B+ tree"));
       Assert.That(text, Does.Contain("protection groups"));
+      Assert.That(text, Does.Contain("two-phase commit"));
       Assert.That(text, Does.Contain("rw_promotion=blocked"));
       Assert.That(text, Does.Contain("maintenance=blocked"));
-      Assert.That(text, Does.Contain("UFS-based"));
+      Assert.That(text, Does.Contain("FreeBSD-derived"));
     });
+  }
+
+  [Test, Category("HappyPath")]
+  public void LayoutAnalysis_ReportsDocumentedFixedGeometryWithoutReadingImage() {
+    var descriptor = new OneFsFormatDescriptor();
+    using var image = new MemoryStream(BuildOpaqueImage(4096));
+    image.Position = 73;
+
+    var layout = (ILayoutOptimizable)descriptor;
+    var analysis = layout.AnalyzeLayout(image);
+
+    Assert.Multiple(() => {
+      Assert.That(analysis.ImageSize, Is.EqualTo(image.Length));
+      Assert.That(analysis.CurrentUnitSize, Is.EqualTo(OneFsReader.PhysicalBlockSize));
+      Assert.That(analysis.OptimalUnitSize, Is.EqualTo(OneFsReader.PhysicalBlockSize));
+      Assert.That(analysis.PotentialSavingsBytes, Is.Zero,
+        "Unknown allocation/slack must not be turned into invented savings.");
+      Assert.That(analysis.Notes, Has.Some.Contains("33554432"));
+      Assert.That(analysis.Notes, Has.Some.Contains("4096 blocks"));
+      Assert.That(image.Position, Is.EqualTo(73),
+        "Geometry analysis is documentary and must not scan the opaque image.");
+      Assert.That(FilesystemSupportMatrix.RelaysOut(descriptor), Is.False,
+        "Analysis-only ILayoutOptimizable must not advertise a working Layout rebuild.");
+    });
+
+    using var target = new MemoryStream();
+    Assert.That(
+      () => layout.RebuildStreaming(image, target, new LayoutRebuildOptions()),
+      Throws.TypeOf<NotSupportedException>(),
+      "No creator exists, so the default layout rebuild must fail closed.");
   }
 
   [Test, Category("Regression")]
@@ -112,7 +150,7 @@ public class OneFsDetectionTests {
   }
 
   [Test, Category("Stub")]
-  public void WriteAndMaintenanceCapabilities_RemainBlocked() {
+  public void WriteAndDestructiveMaintenanceCapabilities_RemainBlocked() {
     var descriptor = new OneFsFormatDescriptor();
 
     Assert.Multiple(() => {
@@ -123,7 +161,8 @@ public class OneFsDetectionTests {
       Assert.That(descriptor, Is.Not.InstanceOf<IArchivePurgeable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveShrinkable>());
-      Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>());
+      Assert.That(descriptor, Is.InstanceOf<ILayoutOptimizable>(),
+        "Documented fixed geometry is safe to analyze even though rewriting it is not.");
       Assert.That(descriptor, Is.Not.InstanceOf<IWipeEmpty>());
     });
   }
