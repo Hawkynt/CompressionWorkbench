@@ -206,16 +206,37 @@ public class Tux3Tests {
   }
 
   [Test, Category("Regression")]
-  public void OverflowingDeclaredVolume_FailsClosed() {
-    var image = BuildNativeImage(volBlocks: ulong.MaxValue, blockBits: 12);
+  public void OverflowingDeclaredVolume_FailsClosedInsteadOfTrustingWrappedShift() {
+    const ushort blockBits = 12;
+    const ulong volBlocks = (1UL << 52) + 3;
+    const ulong wrappedLength = volBlocks << blockBits;
+    var image = BuildNativeImage(volBlocks: volBlocks, blockBits: blockBits);
+    image[^1] = 0xA5;
     var descriptor = new Tux3FormatDescriptor();
 
-    using var layoutStream = new MemoryStream(image, writable: false);
-    Assert.That(descriptor.EnumerateExtents(layoutStream), Is.Empty);
+    Assert.That(wrappedLength, Is.EqualTo(3UL << blockBits),
+      "The regression fixture must wrap a mathematically >64-bit volume into a plausible small boundary.");
 
-    using var input = new MemoryStream(image, writable: false);
-    using var output = new MemoryStream();
-    descriptor.Shrink(input, output);
-    Assert.That(output.ToArray(), Is.EqualTo(image));
+    using var layoutStream = new MemoryStream(image, writable: false);
+    var extents = descriptor.EnumerateExtents(layoutStream).ToArray();
+    Assert.That(extents, Has.Length.EqualTo(1));
+    Assert.Multiple(() => {
+      Assert.That(extents[0].Offset, Is.Zero);
+      Assert.That(extents[0].Length, Is.EqualTo(image.LongLength));
+      Assert.That(extents[0].Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+    });
+
+    var wipeCopy = image.ToArray();
+    using var wipeStream = new MemoryStream(wipeCopy, writable: true);
+    var wiped = ((IWipeEmpty)descriptor).WipeUnusedSpace(wipeStream, wipeClusterTips: false, wipeDeletedEntries: false);
+    Assert.Multiple(() => {
+      Assert.That(wiped, Is.Zero);
+      Assert.That(wipeCopy, Is.EqualTo(image));
+    });
+
+    using var shrinkInput = new MemoryStream(image, writable: false);
+    using var shrinkOutput = new MemoryStream();
+    descriptor.Shrink(shrinkInput, shrinkOutput);
+    Assert.That(shrinkOutput.ToArray(), Is.EqualTo(image));
   }
 }
