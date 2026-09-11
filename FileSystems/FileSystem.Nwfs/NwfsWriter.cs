@@ -33,6 +33,7 @@ namespace FileSystem.Nwfs;
 public sealed class NwfsWriter {
 
   private readonly List<(string Path, byte[] Data)> _files = [];
+  private readonly HashSet<string> _directories = new(StringComparer.OrdinalIgnoreCase);
 
   /// <summary>Bytes to a block. A NetWare volume may use 1 KB to 256 KB, by powers of two.</summary>
   public int BlockSize { get; set; } = 4096;
@@ -49,11 +50,25 @@ public sealed class NwfsWriter {
   /// <summary>When the volume and everything on it is dated.</summary>
   public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
+  /// <summary>
+  /// Minimum total image length. Zero means tight-pack. The writer rounds a
+  /// larger request up to a whole allocation block and leaves the added blocks
+  /// free in the FAT.
+  /// </summary>
+  public long MinimumImageSize { get; set; }
+
   /// <summary>Adds a file. Directories in <paramref name="path" /> are made as needed.</summary>
   public void AddFile(string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((path.Replace('\\', '/').Trim('/'), data));
+  }
+
+  /// <summary>Adds an explicit directory, including an empty one.</summary>
+  public void AddDirectory(string path) {
+    ArgumentNullException.ThrowIfNull(path);
+    var normalized = path.Replace('\\', '/').Trim('/');
+    if (normalized.Length > 0) this._directories.Add(normalized);
   }
 
   private sealed class Directory {
@@ -67,6 +82,8 @@ public sealed class NwfsWriter {
   public byte[] Build() {
     if (!NwfsLayout.IsValidBlockSize(this.BlockSize))
       throw new InvalidOperationException($"block size {this.BlockSize} is not one NetWare names");
+    if (this.MinimumImageSize < 0)
+      throw new InvalidOperationException("minimum image size cannot be negative");
 
     var volumeName = this.VolumeName.ToUpperInvariant();
     if (volumeName.Length is 0 or > NwfsLayout.MaxVolumeNameLength)
@@ -78,24 +95,32 @@ public sealed class NwfsWriter {
     var directories = new List<Directory>();
     var nextDirectoryId = NwfsLayout.RootDirectoryId + 1;
 
-    var placed = new List<(Directory Parent, string Name, byte[] Data)>();
-    foreach (var (path, data) in this._files) {
-      var pieces = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-      if (pieces.Length == 0) throw new InvalidOperationException("a file needs a name");
-
+    Directory EnsureDirectory(string path) {
       var here = root;
-      for (var i = 0; i < pieces.Length - 1; ++i) {
-        var name = Normalise(pieces[i]);
+      foreach (var piece in path.Split('/', StringSplitOptions.RemoveEmptyEntries)) {
+        var name = Normalise(piece);
         if (!here.Children.TryGetValue(name, out var child)) {
           child = new Directory { Name = name, Id = nextDirectoryId++, ParentId = here.Id };
           here.Children[name] = child;
           directories.Add(child);
         }
-
         here = child;
       }
+      return here;
+    }
 
-      placed.Add((here, Normalise(pieces[^1]), data));
+    foreach (var path in this._directories.Order(StringComparer.OrdinalIgnoreCase))
+      _ = EnsureDirectory(path);
+
+    var placed = new List<(Directory Parent, string Name, byte[] Data)>();
+    foreach (var (path, data) in this._files) {
+      var pieces = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+      if (pieces.Length == 0) throw new InvalidOperationException("a file needs a name");
+
+      var parent = pieces.Length == 1
+        ? root
+        : EnsureDirectory(string.Join('/', pieces[..^1]));
+      placed.Add((parent, Normalise(pieces[^1]), data));
     }
 
     var entriesPerBlock = this.BlockSize / NwfsLayout.DirectoryEntryBytes;
@@ -104,16 +129,28 @@ public sealed class NwfsWriter {
 
     var fileBlocks = 0;
     foreach (var (_, _, data) in placed)
-      fileBlocks += (data.Length + this.BlockSize - 1) / this.BlockSize;
+      fileBlocks = checked(fileBlocks + (data.Length + this.BlockSize - 1) / this.BlockSize);
+
+    var hotfixOffset = (long)this.PartitionStartSector * NwfsLayout.SectorSize + NwfsLayout.HotfixOffsetInPartition;
+    var volumeAreaOffset = hotfixOffset + (long)this.RedirectionSectors * NwfsLayout.SectorSize;
+    var dataAreaOffset = volumeAreaOffset + NwfsLayout.VolumeAreaBytes;
+    var minimumBlocksLong = this.MinimumImageSize <= dataAreaOffset
+      ? 0
+      : (this.MinimumImageSize - dataAreaOffset + this.BlockSize - 1) / this.BlockSize;
+    if (minimumBlocksLong > int.MaxValue)
+      throw new InvalidOperationException("requested NWFS image is too large for the managed writer");
+    var minimumBlocks = (int)minimumBlocksLong;
 
     // The FAT lives in the data area and so describes itself. Its size depends
-    // on the block count, which depends on its size, so settle the two.
+    // on the block count, which depends on its size, so settle the two. A caller
+    // may reserve extra free blocks by requesting a minimum image length.
     var fatBlocks = 1;
     int totalBlocks;
     while (true) {
-      totalBlocks = fatBlocks + directoryBlocks * 2 + fileBlocks;
+      totalBlocks = Math.Max(minimumBlocks, checked(fatBlocks + directoryBlocks * 2 + fileBlocks));
       var needed = Math.Max(1, ((long)totalBlocks * NwfsLayout.FatEntryBytes + this.BlockSize - 1) / this.BlockSize);
       if (needed == fatBlocks) break;
+      if (needed > int.MaxValue) throw new InvalidOperationException("NWFS FAT is too large for the managed writer");
       fatBlocks = (int)needed;
     }
 
@@ -121,11 +158,10 @@ public sealed class NwfsWriter {
     var firstDirectoryCopyBlock = firstDirectoryBlock + (uint)directoryBlocks;
     var firstFileBlock = firstDirectoryCopyBlock + (uint)directoryBlocks;
 
-    var hotfixOffset = (long)this.PartitionStartSector * NwfsLayout.SectorSize + NwfsLayout.HotfixOffsetInPartition;
-    var volumeAreaOffset = hotfixOffset + (long)this.RedirectionSectors * NwfsLayout.SectorSize;
-    var dataAreaOffset = volumeAreaOffset + NwfsLayout.VolumeAreaBytes;
-
-    var image = new byte[dataAreaOffset + (long)totalBlocks * this.BlockSize];
+    var imageLength = checked(dataAreaOffset + (long)totalBlocks * this.BlockSize);
+    if (imageLength > int.MaxValue)
+      throw new InvalidOperationException("NWFS writer currently supports images up to 2 GiB");
+    var image = new byte[(int)imageLength];
     var stamp = DosTimestamp(this.Timestamp);
 
     WritePartitionTable(image, this.PartitionStartSector,
@@ -234,8 +270,8 @@ public sealed class NwfsWriter {
 
   private static string Normalise(string name) {
     var upper = name.ToUpperInvariant();
-    if (upper.Length > NwfsLayout.MaxNameLength)
-      throw new InvalidOperationException($"'{name}' is longer than the twelve characters an entry holds");
+    if (upper.Length is 0 or > NwfsLayout.MaxNameLength)
+      throw new InvalidOperationException($"'{name}' must be 1 to twelve characters long");
     return upper;
   }
 
