@@ -17,7 +17,7 @@ public class EcryptfsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Descriptor_AdvertisesPasswordAwareWorm_WithoutFakeMagic() {
+  public void Descriptor_AdvertisesPasswordAwareRw_WithoutFakeMagic() {
     var descriptor = new EcryptfsFormatDescriptor();
     Assert.That(descriptor.Id, Is.EqualTo("Ecryptfs"));
     Assert.That(descriptor.DisplayName, Is.EqualTo("eCryptfs"));
@@ -25,9 +25,9 @@ public class EcryptfsDetectionTests {
     Assert.That(descriptor.MagicSignatures, Is.Empty,
       "The eCryptfs marker is a relation between two random words, not fixed bytes.");
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
     Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsPassword), Is.True);
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
-      "The generic mutation API carries no passphrase, so plaintext replacement cannot be exposed honestly.");
+    Assert.That(descriptor, Is.InstanceOf<IArchiveModifiable>());
     Assert.That(descriptor, Is.InstanceOf<IArchiveShrinkable>());
     Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
     Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
