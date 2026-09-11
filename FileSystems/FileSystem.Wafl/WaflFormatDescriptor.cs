@@ -6,122 +6,128 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Wafl;
 
 /// <summary>
-/// Stage 0 detection-only descriptor for NetApp WAFL (Write-Anywhere File
-/// Layout) volume images. Surfaces only a synthetic <c>metadata.ini</c>
-/// and the raw image bytes; no real file-walk is attempted.
+/// Stage-0 descriptor for NetApp WAFL (Write-Anywhere File Layout) volume images.
+/// Surfaces only a synthetic <c>metadata.ini</c> and the raw image bytes; no real
+/// inode walk is attempted.
 ///
 /// <para>
-/// <b>Stage-0 confirmed.</b> An R/O promotion attempt was investigated
-/// against the publicly available material (Hitz 1994 TR3002, NetApp
-/// patents WO1994029807 / US6289356, archived ONTAP whitepapers) and
-/// declined. The high-level tree-of-blocks design (root inode → inode
-/// file → metadata files + user files; 4 KB blocks; FSinfo block at a
-/// fixed location anchoring two redundant copies) is published, but the
-/// exact byte-level on-disk encoding used by current ONTAP releases is
-/// not — neither the inode record layout, the FBN → VBN → PVBN
-/// translation tables, the FlexVol container-file mapping, nor the
-/// RAID-DP parity scheme used for block addressing have a public spec
-/// adequate to extract files from a single-image dump. WAFL is heavily
-/// patented and proprietary; no open-source reader exists. The full
-/// investigation record is captured in this XML doc, the metadata.ini
-/// surface, and the README stub-tier table.
+/// <b>Stage-0 confirmed.</b> A read/write promotion was investigated against the
+/// publicly available material (Hitz 1994 TR-3002, NetApp patents US5819292 and
+/// US6289356, later NetApp WAFL papers, and the independent Aaru investigation).
+/// Those sources publish the tree-of-blocks design and the 4 KiB allocation unit,
+/// but not the byte-complete modern ONTAP mapping needed to translate FlexVol
+/// virtual blocks through aggregate/RAID members or to prove snapshot reachability.
+/// Consequently compact/defrag/wipe/shrink/re-layout/purge are deliberately not
+/// advertised: each would risk treating still-referenced blocks as disposable.
 /// </para>
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>Hitz, Lau, Malcolm — "File System Design for an NFS File Server Appliance" (USENIX Winter 1994; NetApp TR-3002), the defining WAFL paper</description></item>
-///   <item><description>NetApp patents WO1994029807 / US6289356 — the published block-layout details</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout</c> — Wikipedia article</description></item>
-/// </list>
 /// </summary>
-public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
+public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, ILayoutOptimizable {
 
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+  /// <summary>Gets the id.</summary>
   public string Id => "Wafl";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
+
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "NetApp WAFL";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
+
+  /// <summary>Gets the category.</summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
+
+  /// <summary>Gets the capabilities.</summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
+
+  /// <summary>Gets the default extension.</summary>
   public string DefaultExtension => ".wafl";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
+
+  /// <summary>Gets the extensions.</summary>
   public IReadOnlyList<string> Extensions => [".wafl"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
+
+  /// <summary>Gets the compound extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
+
+  /// <summary>Gets the magic signatures.</summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // "wafd" (0x77 0x61 0x66 0x64) — WAFL FSinfo block tag at offset 0.
     new("wafd"u8.ToArray(), Offset: 0, Confidence: 0.90),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
-  public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
-  public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description =>
-    "NetApp WAFL — detection-only (Stage-0 confirmed) — proprietary ONTAP filesystem; " +
-    "on-disk tree-of-blocks is partially reverse-engineered from Hitz 1994 + NetApp patents " +
-    "but FBN/VBN/PVBN translation, FlexVol container mapping, RAID-DP block placement, and " +
-    "NVRAM consistency-point gap make a safe single-image R/O reader infeasible from public spec. " +
-    "Magic 'wafd' at offset 0 of FSinfo block.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
+  /// <summary>Gets the methods.</summary>
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
+
+  /// <summary>Gets the tar compression format id.</summary>
+  public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the family.</summary>
+  public AlgorithmFamily Family => AlgorithmFamily.Archive;
+
+  /// <summary>Gets the description.</summary>
+  public string Description =>
+    "NetApp WAFL — Stage-0 confirmed: detection plus opaque streaming only. " +
+    "Public NetApp material fixes the allocation unit at 4 KiB and documents the tree/consistency-point model, " +
+    "but not the byte-complete FlexVol aggregate/RAID mapping or snapshot reachability needed for safe offline R/W. " +
+    "Layout analysis therefore reports the fixed 4 KiB geometry only; compact/defrag/wipe/shrink/layout rewrite/purge stay disabled.";
+
+  /// <summary>Lists the entries in the supplied container.</summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var r = new WaflReader(stream);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
-      i, e.Name, e.Size, e.Size, "Stored", e.IsDirectory, false, null)).ToList();
+    using var reader = new WaflReader(stream);
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index,
+      entry.Name,
+      entry.Size,
+      entry.Size,
+      "Stored",
+      entry.IsDirectory,
+      false,
+      null)).ToList();
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
+  /// <summary>Extracts the supplied pseudo-entries.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    var r = new WaflReader(stream);
-    foreach (var e in r.Entries) {
-      if (e.IsDirectory) continue;
-      if (files != null && !MatchesFilter(e.Name, files)) continue;
-      WriteFile(outputDir, e.Name, r.Extract(e));
+    using var reader = new WaflReader(stream);
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) continue;
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files)) continue;
+
+      using var source = reader.OpenEntry(entry);
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      source.CopyTo(target);
     }
   }
 
   Stream IArchiveFormatOperations.OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
-    ArgumentNullException.ThrowIfNull(entryName);
-    var r = new WaflReader(archive);
-    var entry = r.Entries.FirstOrDefault(e => e.Name == entryName)
-      ?? throw new FileNotFoundException($"WAFL entry not found: {entryName}");
-    var data = r.Extract(entry);
-    return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+
+    using var reader = new WaflReader(archive);
+    var entry = reader.Entries.FirstOrDefault(candidate => candidate.Name == entryName)
+      ?? throw new FileNotFoundException($"WAFL entry not found: {entryName}", entryName);
+
+    if (!archive.CanSeek)
+      return new MemoryStream(reader.Extract(entry), writable: false);
+
+    // Seekable inputs are not owned by WaflReader. Its disposal after this return
+    // therefore leaves the bounded view alive while still avoiding a second copy
+    // of a potentially multi-terabyte WAFL aggregate image.
+    return reader.OpenEntry(entry);
+  }
+
+  /// <summary>
+  /// Reports the only layout fact that is normative in the public WAFL material:
+  /// the fixed 4 KiB allocation block. Free-space/slack accounting requires the
+  /// private allocation maps and is intentionally not guessed.
+  /// </summary>
+  public LayoutAnalysis AnalyzeLayout(Stream image) {
+    using var reader = new WaflReader(image);
+    return new LayoutAnalysis {
+      ImageSize = reader.ImageSize,
+      CurrentUnitSize = WaflReader.BlockSize,
+      CurrentSlackBytes = 0,
+      OptimalUnitSize = WaflReader.BlockSize,
+      OptimalSlackBytes = 0,
+      Notes = [
+        "WAFL uses fixed 4096-byte allocation blocks in the published format design.",
+        "Slack/free-space values are unavailable at Stage 0; zero means not computed, not that the volume has no slack.",
+        "Offline re-layout is intentionally unavailable until FlexVol aggregate/RAID mappings and snapshot reachability can be parsed and validated.",
+      ],
+    };
   }
 }

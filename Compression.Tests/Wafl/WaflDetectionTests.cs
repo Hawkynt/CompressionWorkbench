@@ -1,19 +1,15 @@
 using System.Buffers.Binary;
 using System.Text;
 using Compression.Registry;
+using Compression.Registry.Streaming;
 using FileSystem.Wafl;
 
 namespace Compression.Tests.Wafl;
 
 /// <summary>
-/// Stage 0 acceptance gate for <see cref="WaflFormatDescriptor"/>:
-/// pins the detection magic, surface entry shape, and the honest
-/// "detection-only / Stage-0 confirmed" Description. WAFL is
-/// confirmed to remain Stage-0 — the public spec (Hitz 1994 +
-/// NetApp patents) is structurally informative but not byte-precise
-/// enough for a single-image R/O reader. The full investigation
-/// rationale is captured in <see cref="WaflFormatDescriptor"/> XML doc
-/// and the synthetic metadata.ini surfaced by the reader.
+/// Acceptance gates for the deliberately narrow WAFL implementation. Public
+/// WAFL material is enough for header detection and fixed-block geometry, but
+/// not for a safe modern ONTAP aggregate/FlexVol traversal or writer.
 /// </summary>
 [TestFixture]
 public class WaflDetectionTests {
@@ -22,113 +18,144 @@ public class WaflDetectionTests {
     var image = new byte[8 + payloadLen];
     Encoding.ASCII.GetBytes("wafd").CopyTo(image.AsSpan(0, 4));
     BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(4, 4), version);
-    for (var i = 0; i < payloadLen; i++) image[8 + i] = (byte)(i & 0xFF);
+    for (var i = 0; i < payloadLen; ++i) image[8 + i] = (byte)(i & 0xFF);
     return image;
   }
 
   [Test, Category("HappyPath")]
   public void Detector_IdentifiesByMagic() {
-    var d = new WaflFormatDescriptor();
-    Assert.That(d.Id, Is.EqualTo("Wafl"));
-    Assert.That(d.Extensions, Does.Contain(".wafl"));
-    Assert.That(d.MagicSignatures, Has.Count.EqualTo(1));
-    Assert.That(d.MagicSignatures[0].Offset, Is.EqualTo(0));
-    Assert.That(d.MagicSignatures[0].Bytes, Is.EqualTo("wafd"u8.ToArray()));
-    Assert.That(d, Is.Not.InstanceOf<IArchiveCreatable>());
+    var descriptor = new WaflFormatDescriptor();
+    Assert.That(descriptor.Id, Is.EqualTo("Wafl"));
+    Assert.That(descriptor.Extensions, Does.Contain(".wafl"));
+    Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(1));
+    Assert.That(descriptor.MagicSignatures[0].Offset, Is.EqualTo(0));
+    Assert.That(descriptor.MagicSignatures[0].Bytes, Is.EqualTo("wafd"u8.ToArray()));
   }
 
   [Test, Category("HappyPath")]
-  public void List_ReturnsTwoEntries() {
-    var d = new WaflFormatDescriptor();
-    using var ms = new MemoryStream(BuildMinimal(version: 0x200, payloadLen: 256));
-    var entries = d.List(ms, password: null);
-    var names = entries.Select(e => e.Name).ToList();
-    Assert.That(names, Is.EquivalentTo(new[] { "metadata.ini", "wafl-volume.bin" }));
+  public void List_ReturnsMetadataAndOpaqueVolume() {
+    var descriptor = new WaflFormatDescriptor();
+    using var stream = new MemoryStream(BuildMinimal(version: 0x200, payloadLen: 256));
+    var entries = descriptor.List(stream, password: null);
+    Assert.That(entries.Select(entry => entry.Name), Is.EquivalentTo(new[] { "metadata.ini", "wafl-volume.bin" }));
   }
 
   [Test, Category("HappyPath")]
-  public void Reader_ParsesVersion_AndSurfacesFullImage() {
-    using var ms = new MemoryStream(BuildMinimal(version: 0x300, payloadLen: 512));
-    var r = new WaflReader(ms);
-    Assert.That(r.ValidHeader, Is.True);
-    Assert.That(r.Version, Is.EqualTo(0x300u));
-    var volume = r.Entries.Single(e => e.Name == "wafl-volume.bin");
-    Assert.That(volume.Size, Is.EqualTo(8 + 512));
+  public void Reader_ParsesVersion_WithoutDuplicatingRawImage() {
+    var image = BuildMinimal(version: 0x300, payloadLen: 512);
+    using var stream = new MemoryStream(image, writable: false);
+    using var reader = new WaflReader(stream);
+
+    Assert.Multiple(() => {
+      Assert.That(reader.ValidHeader, Is.True);
+      Assert.That(reader.Version, Is.EqualTo(0x300u));
+      Assert.That(reader.ImageSize, Is.EqualTo(image.Length));
+    });
+
+    var volume = reader.Entries.Single(entry => entry.Name == "wafl-volume.bin");
+    Assert.That(volume.Size, Is.EqualTo(image.Length));
+    Assert.That(volume.Data, Is.Empty, "The raw image pseudo-entry must not duplicate a potentially huge WAFL image in RAM.");
+    Assert.That(reader.Extract(volume), Is.EqualTo(image), "The buffered compatibility API still has to materialize correctly when explicitly requested.");
+  }
+
+  [Test, Category("HappyPath")]
+  public void OpenEntry_StreamsOpaqueVolumeThroughBoundedView() {
+    var image = BuildMinimal(version: 0x400, payloadLen: 1024);
+    var descriptor = (IArchiveFormatOperations)new WaflFormatDescriptor();
+    using var archive = new MemoryStream(image, writable: false);
+    using var entry = descriptor.OpenEntry(archive, "wafl-volume.bin", password: null);
+
+    Assert.That(entry, Is.TypeOf<BoundedEntryStream>());
+    Assert.That(entry.Length, Is.EqualTo(image.Length));
+
+    var roundTrip = new byte[image.Length];
+    entry.ReadExactly(roundTrip);
+    Assert.That(roundTrip, Is.EqualTo(image));
+  }
+
+  [Test, Category("HappyPath")]
+  public void AnalyzeLayout_ReportsPublishedFixedBlockSize_WithoutClaimingRewrite() {
+    var descriptor = new WaflFormatDescriptor();
+    using var image = new MemoryStream(BuildMinimal(payloadLen: 4096));
+
+    var analysis = descriptor.AnalyzeLayout(image);
+    Assert.Multiple(() => {
+      Assert.That(analysis.ImageSize, Is.EqualTo(image.Length));
+      Assert.That(analysis.CurrentUnitSize, Is.EqualTo(WaflReader.BlockSize));
+      Assert.That(analysis.OptimalUnitSize, Is.EqualTo(WaflReader.BlockSize));
+      Assert.That(analysis.PotentialSavingsBytes, Is.Zero);
+      Assert.That(analysis.Notes.Any(note => note.Contains("not computed", StringComparison.OrdinalIgnoreCase)), Is.True);
+    });
+
+    using var target = new MemoryStream();
+    Assert.Throws<NotSupportedException>(() =>
+      ((ILayoutOptimizable)descriptor).RebuildStreaming(image, target, new LayoutRebuildOptions()));
   }
 
   [Test, Category("Sad")]
   public void Reader_RejectsMissingMagic() {
-    var img = new byte[64];
-    img[0] = 0xDE; img[1] = 0xAD; img[2] = 0xBE; img[3] = 0xEF;
-    using var ms = new MemoryStream(img);
-    Assert.Throws<InvalidDataException>(() => _ = new WaflReader(ms));
+    var image = new byte[64];
+    image[0] = 0xDE;
+    image[1] = 0xAD;
+    image[2] = 0xBE;
+    image[3] = 0xEF;
+    using var stream = new MemoryStream(image);
+    Assert.Throws<InvalidDataException>(() => _ = new WaflReader(stream));
   }
 
   [Test, Category("Sad")]
   public void Reader_RejectsTooSmall() {
-    using var ms = new MemoryStream(new byte[4]);
-    Assert.Throws<InvalidDataException>(() => _ = new WaflReader(ms));
+    using var stream = new MemoryStream(new byte[4]);
+    Assert.Throws<InvalidDataException>(() => _ = new WaflReader(stream));
   }
 
   [Test, Category("Stub")]
-  public void Description_FlagsDetectionOnly() {
-    var d = new WaflFormatDescriptor();
-    Assert.That(d.Description.ToLowerInvariant(), Does.Contain("detection-only"),
-      $"WAFL Description must flag Stage 0 honestly. Got: '{d.Description}'.");
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
-    Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+  public void Descriptor_DoesNotAdvertiseUnsafeWriteOrMaintenanceVerbs() {
+    var descriptor = new WaflFormatDescriptor();
+
+    Assert.Multiple(() => {
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.False);
+      Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False);
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchiveShrinkable>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IWipeEmpty>());
+      Assert.That(descriptor, Is.Not.InstanceOf<IArchivePurgeable>());
+    });
   }
 
-  /// <summary>
-  /// Locks in the Stage-0 confirmation outcome from the R/O promotion
-  /// investigation. If anyone later flips the Description to advertise
-  /// real file walking, this test fails and forces them to update the
-  /// docs trail in <c>docs/wafl-stage0-rationale.md</c> and the README.
-  /// Captures the four upgrade blockers documented in the investigation:
-  /// FBN/VBN/PVBN translation, FlexVol container mapping, RAID-DP stripe
-  /// walk, NVRAM consistency-point replay.
-  /// </summary>
   [Test, Category("Stub")]
-  public void Description_PinsStage0Confirmation_AndUpgradeBlockers() {
-    var d = new WaflFormatDescriptor();
-    var desc = d.Description.ToLowerInvariant();
-    Assert.That(desc, Does.Contain("stage-0 confirmed"),
-      "Stage-0 outcome must be explicitly pinned in the Description.");
-    Assert.That(desc, Does.Contain("detection-only"),
-      "Honest detection-only marker must be retained.");
-    Assert.That(desc, Does.Contain("proprietary"),
-      "Honest reason must mention the proprietary nature.");
-
-    // The upgrade-blocker bag — at least one of each family must be cited so
-    // a casual reader knows why we can't ship R/O without a multi-week
-    // reverse-engineering effort against the live ONTAP volume manager.
-    Assert.That(
-      desc.Contains("flexvol") || desc.Contains("raid-dp") ||
-      desc.Contains("nvram") || desc.Contains("vbn"),
-      Is.True,
-      $"Description must cite at least one ONTAP-coupling blocker. Got: '{d.Description}'.");
+  public void Description_PinsStage0Confirmation_AndModernOntapBlockers() {
+    var description = new WaflFormatDescriptor().Description.ToLowerInvariant();
+    Assert.Multiple(() => {
+      Assert.That(description, Does.Contain("stage-0 confirmed"));
+      Assert.That(description, Does.Contain("opaque streaming"));
+      Assert.That(description, Does.Contain("4 kib"));
+      Assert.That(description, Does.Contain("flexvol"));
+      Assert.That(description, Does.Contain("raid"));
+      Assert.That(description, Does.Contain("snapshot"));
+    });
   }
 
-  /// <summary>
-  /// The metadata.ini surface is part of the Stage-0 contract — downstream
-  /// forensic tooling parses <c>parse_status</c>, <c>stage</c>, and
-  /// <c>upgrade_blockers</c> to surface the honest "this is opaque" message.
-  /// Lock those keys against silent drift.
-  /// </summary>
   [Test, Category("Stub")]
-  public void Metadata_DocumentsStage0_AndUpgradeBlockers() {
-    using var ms = new MemoryStream(BuildMinimal(version: 0x100, payloadLen: 64));
-    var r = new WaflReader(ms);
-    var meta = r.Entries.Single(e => e.Name == "metadata.ini");
-    var text = Encoding.UTF8.GetString(meta.Data);
+  public void Metadata_DocumentsGeometry_AndWhyMaintenanceStaysDisabled() {
+    using var stream = new MemoryStream(BuildMinimal(version: 0x100, payloadLen: 64));
+    using var reader = new WaflReader(stream);
+    var metadata = reader.Entries.Single(entry => entry.Name == "metadata.ini");
+    var text = Encoding.UTF8.GetString(metadata.Data);
 
-    Assert.That(text, Does.Contain("parse_status=detection-only"));
-    Assert.That(text, Does.Contain("stage=0"));
-    Assert.That(text, Does.Contain("upgrade_blockers="));
-    Assert.That(text, Does.Contain("references="));
-    // Pin the named blockers so a silent edit can't strip them.
-    Assert.That(text, Does.Contain("flexvol"));
-    Assert.That(text, Does.Contain("raid-dp"));
-    Assert.That(text, Does.Contain("nvram"));
+    Assert.Multiple(() => {
+      Assert.That(text, Does.Contain("parse_status=detection-only"));
+      Assert.That(text, Does.Contain("stage=0"));
+      Assert.That(text, Does.Contain("allocation_block_size=4096"));
+      Assert.That(text, Does.Contain("layout_analysis=fixed-4k-block-size-only"));
+      Assert.That(text, Does.Contain("maintenance_support=none"));
+      Assert.That(text, Does.Contain("upgrade_blockers="));
+      Assert.That(text, Does.Contain("flexvol"));
+      Assert.That(text, Does.Contain("raid"));
+      Assert.That(text, Does.Contain("snapshot"));
+      Assert.That(text, Does.Contain("references="));
+    });
   }
 }
