@@ -191,7 +191,7 @@ public sealed class LynxTests {
 
     Assert.Multiple(() => {
       Assert.That(shrunk.Length, Is.LessThan(bloatedLength));
-      Assert.That(shrunk.Length % LynxReader.BlockSize, Is.Zero);
+      Assert.That(shrunk.Length % 254, Is.Zero);
       Assert.That(ReadDirectoryBlockCount(shrunk.ToArray()), Is.EqualTo(1));
     });
     shrunk.Position = 0;
