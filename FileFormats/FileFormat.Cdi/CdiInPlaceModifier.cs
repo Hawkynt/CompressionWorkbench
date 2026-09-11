@@ -4,10 +4,12 @@ using System.Globalization;
 namespace FileFormat.Cdi;
 
 /// <summary>
-/// Low-level sector-rewrite helper for DiscJuggler CDI images. Existing sectors
-/// can be rewritten without changing the trailing session descriptor. Growing a
-/// genuine descriptor-bearing image is intentionally refused because the track
-/// length fields would have to be rewritten as well.
+/// Low-level sector-rewrite helper retained for legacy CompressionWorkbench CDI
+/// images whose body is one flat sector geometry followed by an 8-byte
+/// version/zero trailer. Real DiscJuggler descriptors may describe multiple
+/// sessions, pregaps and tracks with different stored sector sizes, so this API
+/// refuses those images instead of pretending one global LBA-to-byte formula
+/// exists.
 /// </summary>
 public static class CdiInPlaceModifier {
   private const string Label = "CDI";
@@ -24,20 +26,34 @@ public static class CdiInPlaceModifier {
   ];
 
   /// <summary>
-  /// Detected on-disk sector geometry. <see cref="DataAreaLength"/> ends where
-  /// the DiscJuggler descriptor begins, not merely eight bytes before EOF.
+  /// Detected on-disk sector geometry for a legacy footer-only image.
+  /// <see cref="DataAreaLength"/> excludes the old 8-byte trailer.
   /// </summary>
   public readonly record struct SectorGeometry(int SectorSize, int DataOffset, long DataAreaLength);
 
-  /// <summary>Detects the sector geometry by probing the ISO 9660 PVD at LBA 16.</summary>
+  /// <summary>
+  /// Detects the flat sector geometry of a legacy footer-only CDI image.
+  /// Descriptor-bearing DiscJuggler images are rejected because their geometry
+  /// is per track; use <see cref="CdiReader.Tracks"/> and
+  /// <see cref="CdiReader.ReadTrackSector"/> for those.
+  /// </summary>
   public static SectorGeometry DetectGeometry(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
+    EnsureLegacyFlatLayout(image);
+
     var dataLen = DetectDataAreaLength(image);
     if (TryProbe(image, RawSectorSize, Mode1DataOffset, dataLen)) return new(RawSectorSize, Mode1DataOffset, dataLen);
     if (TryProbe(image, RawSectorSize, Mode2Form1DataOffset, dataLen)) return new(RawSectorSize, Mode2Form1DataOffset, dataLen);
     if (TryProbe(image, SectorSize2336, 8, dataLen)) return new(SectorSize2336, 8, dataLen);
     if (TryProbe(image, Iso9660SectorSize, 0, dataLen)) return new(Iso9660SectorSize, 0, dataLen);
     return new(RawSectorSize, Mode1DataOffset, dataLen);
+  }
+
+  private static void EnsureLegacyFlatLayout(Stream image) {
+    if (CdiDescriptor.TryReadFooter(image, out var footer) && !footer.IsLegacyFooterOnly)
+      throw new NotSupportedException(
+        "CDI: flat-LBA sector editing is only valid for the legacy footer-only profile. " +
+        "A real DiscJuggler descriptor can assign different stored sector sizes and pregaps per track.");
   }
 
   private static long DetectDataAreaLength(Stream image)
@@ -54,10 +70,7 @@ public static class CdiInPlaceModifier {
            sig[3] == (byte)'0' && sig[4] == (byte)'0' && sig[5] == (byte)'1';
   }
 
-  /// <summary>
-  /// Rewrites one 2,048-byte user-data sector. Legacy footer-only images may be
-  /// extended; genuine descriptor-bearing images may only rewrite existing LBAs.
-  /// </summary>
+  /// <summary>Rewrites one 2,048-byte user-data sector in a legacy flat-layout image.</summary>
   public static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData) {
     ArgumentNullException.ThrowIfNull(image);
     if (lba < 0) throw new ArgumentOutOfRangeException(nameof(lba));
@@ -69,9 +82,10 @@ public static class CdiInPlaceModifier {
     WriteSector(image, lba, userData, geom);
   }
 
-  /// <summary>Rewrites one sector using an already detected geometry.</summary>
+  /// <summary>Rewrites one sector using an already detected legacy geometry.</summary>
   public static void WriteSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom) {
     ArgumentNullException.ThrowIfNull(image);
+    EnsureLegacyFlatLayout(image);
     if (lba < 0) throw new ArgumentOutOfRangeException(nameof(lba));
     if (userData.Length != Iso9660SectorSize)
       throw new ArgumentException(
@@ -90,22 +104,15 @@ public static class CdiInPlaceModifier {
     AppendSector(image, lba, userData, geom);
   }
 
-  /// <summary>
-  /// Extends a legacy footer-only CDI so that <paramref name="lba"/> exists.
-  /// Genuine DiscJuggler descriptors are not grown because doing so without
-  /// updating their track records would make the container internally inconsistent.
-  /// </summary>
+  /// <summary>Extends a legacy footer-only CDI so that <paramref name="lba"/> exists.</summary>
   public static void AppendSector(Stream image, int lba, ReadOnlySpan<byte> userData, SectorGeometry geom) {
     ArgumentNullException.ThrowIfNull(image);
+    EnsureLegacyFlatLayout(image);
     if (lba < 0) throw new ArgumentOutOfRangeException(nameof(lba));
     if (userData.Length != Iso9660SectorSize)
       throw new ArgumentException(
         $"Sector user data must be exactly {Iso9660SectorSize} bytes; got {userData.Length}.",
         nameof(userData));
-
-    if (CdiDescriptor.TryReadFooter(image, out var descriptor) && !descriptor.IsLegacyFooterOnly)
-      throw new NotSupportedException(
-        "CDI: growing a descriptor-bearing image requires updating its track table; only existing sectors can be rewritten in place.");
 
     byte[]? footer = null;
     if (geom.DataAreaLength < image.Length) {
@@ -149,7 +156,7 @@ public static class CdiInPlaceModifier {
     image.Write(sector);
   }
 
-  /// <summary>Zeros one existing sector's 2,048-byte user-data region.</summary>
+  /// <summary>Zeros one existing sector's 2,048-byte user-data region in a legacy flat image.</summary>
   public static bool ZeroSector(Stream image, int lba) {
     ArgumentNullException.ThrowIfNull(image);
     if (lba < 0) return false;
@@ -157,9 +164,10 @@ public static class CdiInPlaceModifier {
     return ZeroSector(image, lba, geom);
   }
 
-  /// <summary>Zeros one existing sector using an already detected geometry.</summary>
+  /// <summary>Zeros one existing sector using an already detected legacy geometry.</summary>
   public static bool ZeroSector(Stream image, int lba, SectorGeometry geom) {
     ArgumentNullException.ThrowIfNull(image);
+    EnsureLegacyFlatLayout(image);
     if (lba < 0) return false;
     var endOfSector = (long)lba * geom.SectorSize + geom.SectorSize;
     if (endOfSector > geom.DataAreaLength) return false;
@@ -187,7 +195,7 @@ public static class CdiInPlaceModifier {
   public static string FormatSectorEntryName(int lba)
     => string.Create(CultureInfo.InvariantCulture, $"sector-{lba:D6}.bin");
 
-  /// <summary>Applies a sequence of low-level sector replacements.</summary>
+  /// <summary>Applies a sequence of low-level sector replacements to a legacy flat image.</summary>
   public static void AddOrReplaceSectors(Stream image, IEnumerable<(string ArchiveName, byte[] Data)> inputs) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -205,7 +213,7 @@ public static class CdiInPlaceModifier {
     }
   }
 
-  /// <summary>Zeros a sequence of low-level synthetic sector addresses.</summary>
+  /// <summary>Zeros a sequence of low-level synthetic sector addresses in a legacy flat image.</summary>
   public static void RemoveSectors(Stream image, IEnumerable<string> entryNames) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(entryNames);
