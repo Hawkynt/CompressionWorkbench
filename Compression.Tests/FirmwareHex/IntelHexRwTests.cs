@@ -132,7 +132,7 @@ public sealed class IntelHexRwTests {
       using var input = new MemoryStream(image, writable: false);
       descriptor.Extract(input, directory, null, null);
       return Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
-        .ToDictionary(path => Path.GetFileName(path), File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
+        .ToDictionary(path => Path.GetFileName(path)!, File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
     } finally {
       try { Directory.Delete(directory, recursive: true); } catch { /* best effort */ }
     }
