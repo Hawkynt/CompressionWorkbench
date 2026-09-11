@@ -132,13 +132,30 @@ public class CdiTests {
     var version = BitConverter.ToUInt32(bytes, bytes.Length - 8);
     var descriptorLength = BitConverter.ToUInt32(bytes, bytes.Length - 4);
     var descriptorOffset = bytes.Length - descriptorLength;
+    var descriptorStart = checked((int)descriptorOffset);
+    var sectorCount = checked((uint)(descriptorOffset / 2048));
+    byte[] trackMarker = [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF];
 
     Assert.Multiple(() => {
       Assert.That(version, Is.EqualTo(0x80000006u));
-      Assert.That(descriptorLength, Is.GreaterThan(8u));
+      Assert.That(descriptorLength, Is.EqualTo(175u));
       Assert.That(descriptorOffset, Is.GreaterThan(0));
-      Assert.That(BitConverter.ToUInt16(bytes, checked((int)descriptorOffset)), Is.EqualTo(1));
-      Assert.That(BitConverter.ToUInt16(bytes, checked((int)descriptorOffset) + 2), Is.EqualTo(1));
+      Assert.That(BitConverter.ToUInt16(bytes, descriptorStart + 0), Is.EqualTo(1), "session count");
+      Assert.That(BitConverter.ToUInt16(bytes, descriptorStart + 2), Is.EqualTo(1), "track count");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 4), Is.Zero, "extended preamble selector");
+      Assert.That(bytes.AsSpan(descriptorStart + 8, 10).ToArray(), Is.EqualTo(trackMarker), "track marker 1");
+      Assert.That(bytes.AsSpan(descriptorStart + 18, 10).ToArray(), Is.EqualTo(trackMarker), "track marker 2");
+      Assert.That(bytes[descriptorStart + 32], Is.Zero, "embedded filename length");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 52), Is.Zero, "DJ4 extension selector");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 58), Is.Zero, "pregap sectors");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 62), Is.EqualTo(sectorCount), "track length");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 72), Is.EqualTo(1u), "Mode 1");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 88), Is.Zero, "start LBA");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 92), Is.EqualTo(sectorCount), "total track length");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 112), Is.Zero, "2048-byte sector selector");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 150), Is.Zero, "optional extension selector");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 167), Is.EqualTo(0x80000006u), "trailer version");
+      Assert.That(BitConverter.ToUInt32(bytes, descriptorStart + 171), Is.EqualTo(175u), "trailer descriptor length");
     });
 
     ms.Position = 0;
