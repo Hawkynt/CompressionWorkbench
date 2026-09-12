@@ -52,6 +52,14 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" PrivateAssets="all" />
+    <!-- The ICO/CUR and ANI bridges onto Hawkynt.FileFormats.Images. They are separate assemblies
+         rather than sources compiled in here because the image package carries support assemblies
+         whose type names collide with this one's: Compression.Core.BitIO.BitOrder, and this
+         assembly's own FitsHdu, NiftiReader, WadEntry and Wad2Entry. Keeping the reference behind
+         an assembly boundary is the same reason FileFormat.Gif and FileFormat.PngCrushAdapters are
+         separate. -->
+    <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" PrivateAssets="all" />
     <!-- AppImage and Snap read a SquashFs payload; the filesystem package ships the same project. -->
     <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" PrivateAssets="all" />
   </ItemGroup>

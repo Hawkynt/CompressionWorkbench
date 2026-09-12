@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CompressionWorkbench.FileFormat.Ani</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The RIFF 'ACON' walk, the anih header, the rate/seq chunks and the INFO metadata live in
+      PNGCrushCS. This project keeps only the shapes the archive side lists and creates against.
+
+      Compile assets are private to this bridge assembly for the same reason as FileFormat.Ico:
+      the package's support assemblies share type names with the archive package.
+    -->
+    <!--
+      1.0.0.748 is not published yet. The build number is version.pl's commit count for
+      Hawkynt.FileFormats.Images/, which stands at 747 on PNGCrushCS main, so the squash merge of
+      Hawkynt/PNGCrushCS#424 makes it 748. A bare version is a FLOOR to NuGet, not an exact match,
+      so any release at or above that number satisfies this and no second bump is needed — but
+      until one is published this project cannot restore. See the pull request for the sequencing.
+    -->
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.748" PrivateAssets="compile" />
+  </ItemGroup>
+
+</Project>

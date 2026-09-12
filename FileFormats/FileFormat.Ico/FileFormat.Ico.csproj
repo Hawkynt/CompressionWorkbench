@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>CompressionWorkbench.FileFormat.Ico</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      ICO/CUR byte parsing and writing lives in PNGCrushCS. This project keeps only the archive
+      view of an icon bundle: the display name an entry is listed under, and the decision to hand
+      an entry to the caller as a file a viewer will open rather than as the bare payload.
+
+      Its compile assets are private to this bridge assembly, as in FileFormat.Gif and
+      FileFormat.PngCrushAdapters. The package carries support assemblies whose namespaces overlap
+      CompressionWorkbench's own — Compression.Core.BitIO.BitOrder, and the archive package's
+      FitsHdu, NiftiReader, WadEntry and Wad2Entry all collide — so the reference has to stop at
+      an assembly boundary that does not also contain those. Runtime assets still flow onward.
+    -->
+    <!--
+      1.0.0.748 is not published yet. The build number is version.pl's commit count for
+      Hawkynt.FileFormats.Images/, which stands at 747 on PNGCrushCS main, so the squash merge of
+      Hawkynt/PNGCrushCS#424 makes it 748. A bare version is a FLOOR to NuGet, not an exact match,
+      so any release at or above that number satisfies this and no second bump is needed — but
+      until one is published this project cannot restore. See the pull request for the sequencing.
+    -->
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.748" PrivateAssets="compile" />
+  </ItemGroup>
+
+</Project>
