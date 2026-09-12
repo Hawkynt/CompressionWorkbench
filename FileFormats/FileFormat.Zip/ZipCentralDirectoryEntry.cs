@@ -67,44 +67,30 @@ internal static class ZipCentralDirectoryEntry {
     var commentBytes = entry.Comment != null ? Encoding.UTF8.GetBytes(entry.Comment) : null;
     var flags = ZipConstants.FlagUtf8;
 
-    // Set encrypted flag
     if (entry.IsEncrypted)
       flags |= ZipConstants.FlagEncrypted;
-    // Implode: preserve bits 1 (8K dict) and 2 (literal tree)
     if (entry.CompressionMethod == ZipCompressionMethod.Implode)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
-    byte[]? zip64Extra = null;
-    var compSize = (uint)Math.Min(entry.CompressedSize, uint.MaxValue);
-    var uncompSize = (uint)Math.Min(entry.UncompressedSize, uint.MaxValue);
-    var localOffset = (uint)Math.Min(entry.LocalHeaderOffset, uint.MaxValue);
+    var needUncompressed64 = entry.UncompressedSize > uint.MaxValue;
+    var needCompressed64 = entry.CompressedSize > uint.MaxValue;
+    var needOffset64 = entry.LocalHeaderOffset > uint.MaxValue;
 
-    if (entry.IsZip64) {
-      compSize = ZipConstants.Zip64Sentinel32;
-      uncompSize = ZipConstants.Zip64Sentinel32;
-      localOffset = ZipConstants.Zip64Sentinel32;
-      zip64Extra = BuildZip64ExtraField(entry.UncompressedSize, entry.CompressedSize, entry.LocalHeaderOffset);
-    }
+    var compSize = needCompressed64 ? ZipConstants.Zip64Sentinel32 : (uint)entry.CompressedSize;
+    var uncompSize = needUncompressed64 ? ZipConstants.Zip64Sentinel32 : (uint)entry.UncompressedSize;
+    var localOffset = needOffset64 ? ZipConstants.Zip64Sentinel32 : (uint)entry.LocalHeaderOffset;
 
-    // Merge all extra field data
-    var totalExtraLen = (zip64Extra?.Length ?? 0) + (entry.ExtraField?.Length ?? 0);
-    byte[]? combinedExtra = null;
-    if (totalExtraLen > 0) {
-      combinedExtra = new byte[totalExtraLen];
-      var pos = 0;
-      if (zip64Extra != null) {
-        zip64Extra.CopyTo(combinedExtra, pos);
-        pos += zip64Extra.Length;
-      }
-      if (entry.ExtraField != null)
-        entry.ExtraField.CopyTo(combinedExtra, pos);
-    }
+    var zip64Extra = entry.IsZip64
+      ? BuildZip64ExtraField(entry, needUncompressed64, needCompressed64, needOffset64)
+      : null;
+    var combinedExtra = MergeExtraFields(zip64Extra, entry.ExtraField);
 
-    var commentLen = (ushort)(commentBytes?.Length ?? 0);
+    if (fileNameBytes.Length > ushort.MaxValue)
+      throw new InvalidDataException("ZIP file name exceeds the 65535-byte header limit.");
+    if ((commentBytes?.Length ?? 0) > ushort.MaxValue)
+      throw new InvalidDataException("ZIP file comment exceeds the 65535-byte header limit.");
 
-    var versionNeeded = entry.IsZip64 ? ZipConstants.VersionNeeded45
-      : entry.CompressionMethod == ZipCompressionMethod.WinZipAes ? ZipConstants.VersionNeeded51
-      : ZipConstants.VersionNeeded20;
+    var versionNeeded = ZipCompatibility.GetVersionNeeded(entry);
 
     writer.Write(ZipConstants.CentralDirectorySignature);
     writer.Write(ZipConstants.VersionMadeBy20);
@@ -118,7 +104,7 @@ internal static class ZipCentralDirectoryEntry {
     writer.Write(uncompSize);
     writer.Write((ushort)fileNameBytes.Length);
     writer.Write((ushort)(combinedExtra?.Length ?? 0));
-    writer.Write(commentLen);
+    writer.Write((ushort)(commentBytes?.Length ?? 0));
     writer.Write((ushort)0); // disk number start
     writer.Write((ushort)0); // internal attributes
     writer.Write(entry.ExternalAttributes);
@@ -155,14 +141,44 @@ internal static class ZipCentralDirectoryEntry {
     }
   }
 
-  private static byte[] BuildZip64ExtraField(long uncompressedSize, long compressedSize, long localHeaderOffset) {
-    using var ms = new MemoryStream();
-    using var writer = new BinaryWriter(ms);
+  private static byte[] BuildZip64ExtraField(
+      ZipEntry entry,
+      bool includeUncompressedSize,
+      bool includeCompressedSize,
+      bool includeLocalHeaderOffset) {
+    using var payload = new MemoryStream();
+    using (var payloadWriter = new BinaryWriter(payload, Encoding.UTF8, leaveOpen: true)) {
+      if (includeUncompressedSize)
+        payloadWriter.Write(entry.UncompressedSize);
+      if (includeCompressedSize)
+        payloadWriter.Write(entry.CompressedSize);
+      if (includeLocalHeaderOffset)
+        payloadWriter.Write(entry.LocalHeaderOffset);
+    }
+
+    using var result = new MemoryStream();
+    using var writer = new BinaryWriter(result);
     writer.Write(ZipConstants.Zip64ExtraFieldTag);
-    writer.Write((ushort)24); // size of data
-    writer.Write(uncompressedSize);
-    writer.Write(compressedSize);
-    writer.Write(localHeaderOffset);
-    return ms.ToArray();
+    writer.Write((ushort)payload.Length);
+    writer.Write(payload.GetBuffer(), 0, (int)payload.Length);
+    return result.ToArray();
+  }
+
+  private static byte[]? MergeExtraFields(byte[]? first, byte[]? second) {
+    var totalLength = (first?.Length ?? 0) + (second?.Length ?? 0);
+    if (totalLength == 0)
+      return null;
+    if (totalLength > ushort.MaxValue)
+      throw new InvalidDataException("ZIP extra fields exceed the 65535-byte header limit.");
+
+    var result = new byte[totalLength];
+    var position = 0;
+    if (first != null) {
+      first.CopyTo(result, position);
+      position += first.Length;
+    }
+    if (second != null)
+      second.CopyTo(result, position);
+    return result;
   }
 }
