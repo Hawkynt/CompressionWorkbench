@@ -96,7 +96,9 @@ public sealed class MkvAudioMuxTests {
         .Single(static element => element.Id == 0xF1);
       var relative = reader.ReadUnsigned(clusterPosition);
       var absolute = checked(segment.Value.BodyOffset + (long)relative);
-      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual([0x1F, 0x43, 0xB6, 0x75]), Is.True,
+      // A collection expression has no type of its own, so the comparand is named: SequenceEqual on a
+      // Span needs a ReadOnlySpan to infer from.
+      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual(stackalloc byte[] { 0x1F, 0x43, 0xB6, 0x75 }), Is.True,
         $"CueClusterPosition {relative} does not point to a Cluster element");
     }
   }
