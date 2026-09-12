@@ -37,28 +37,17 @@ public sealed class ZipEntry {
   /// <summary>Gets or sets the general-purpose bit flags from the ZIP header.</summary>
   internal ushort GeneralPurposeFlags { get; set; }
 
-  /// <summary>
-  /// Gets the actual compression method wrapped by method 99 (WinZip AES).
-  /// Null for ordinary entries and for AES entries read without decoding the AES extra field.
-  /// </summary>
-  internal ZipCompressionMethod? WrappedCompressionMethod { get; set; }
-
   /// <summary>Gets the offset of the local file header in the archive.</summary>
   internal long LocalHeaderOffset { get; set; }
 
   /// <summary>Gets whether this entry is a directory.</summary>
   public bool IsDirectory => FileName.EndsWith('/');
 
-  /// <summary>Gets whether the entry sizes require ZIP64 fields in the local header.</summary>
-  internal bool NeedsZip64Sizes =>
+  /// <summary>Gets whether this entry requires ZIP64 extensions.</summary>
+  internal bool IsZip64 =>
     CompressedSize > uint.MaxValue ||
-    UncompressedSize > uint.MaxValue;
-
-  /// <summary>Gets whether the local-header offset requires ZIP64 in the central directory.</summary>
-  internal bool NeedsZip64Offset => LocalHeaderOffset > uint.MaxValue;
-
-  /// <summary>Gets whether any part of this entry requires ZIP64 extensions.</summary>
-  internal bool IsZip64 => NeedsZip64Sizes || NeedsZip64Offset;
+    UncompressedSize > uint.MaxValue ||
+    LocalHeaderOffset > uint.MaxValue;
 
   /// <summary>
   /// Converts a DateTime to MS-DOS date/time format.

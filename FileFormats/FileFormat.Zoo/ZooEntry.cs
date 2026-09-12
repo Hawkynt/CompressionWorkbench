@@ -7,7 +7,7 @@ public enum ZooCompressionMethod : byte {
   /// <summary>File data is stored verbatim with no compression.</summary>
   Store = ZooConstants.MethodStore,
 
-  /// <summary>File data is compressed using normal Zoo LZW (9–13 bit, LSB-first).</summary>
+  /// <summary>File data is compressed using LZW (9–13 bit, LSB-first).</summary>
   Lzw = ZooConstants.MethodLzw,
 }
 
@@ -15,21 +15,22 @@ public enum ZooCompressionMethod : byte {
 /// Represents a single file entry in a Zoo archive.
 /// </summary>
 public sealed class ZooEntry {
-  /// <summary>Gets or sets the short filename (up to 12 characters).</summary>
+  /// <summary>Gets or sets the short filename (up to 12 characters, DOS 8.3 style).</summary>
   public string FileName { get; set; } = string.Empty;
 
   /// <summary>
-  /// Gets or sets the portable long pathname carried by a type-2 directory entry.
+  /// Gets or sets the long filename.  When non-null and non-empty the entry is
+  /// written as type 2 (long-name entry); otherwise it is written as type 1.
   /// </summary>
   public string? LongFileName { get; set; }
 
-  /// <summary>Gets the effective display name.</summary>
+  /// <summary>Gets the effective display name: <see cref="LongFileName"/> when available, otherwise <see cref="FileName"/>.</summary>
   public string EffectiveName => !string.IsNullOrEmpty(this.LongFileName) ? this.LongFileName! : this.FileName;
 
   /// <summary>Gets or sets the compression method.</summary>
   public ZooCompressionMethod CompressionMethod { get; set; }
 
-  /// <summary>Gets or sets the CRC-16 of the uncompressed data.</summary>
+  /// <summary>Gets or sets the CRC-16 (ARC polynomial) of the uncompressed data.</summary>
   public ushort Crc16 { get; set; }
 
   /// <summary>Gets or sets the uncompressed size in bytes.</summary>
@@ -38,28 +39,33 @@ public sealed class ZooEntry {
   /// <summary>Gets or sets the compressed size in bytes.</summary>
   public uint CompressedSize { get; set; }
 
-  /// <summary>Gets or sets the last modification date/time.</summary>
-  public DateTime LastModified { get; set; } = new(1980, 1, 1);
+  /// <summary>Gets or sets the last-modification date/time.</summary>
+  public DateTime LastModified { get; set; } = new DateTime(1980, 1, 1);
 
   /// <summary>Gets or sets whether this entry has been marked as deleted.</summary>
   public bool IsDeleted { get; set; }
 
-  /// <summary>Gets or sets the minimum Zoo major version required to extract this entry.</summary>
-  public byte MajorVersion { get; set; } = ZooConstants.ExtractMajorVersion;
+  /// <summary>Gets or sets the major version of the tool that created the entry.</summary>
+  public byte MajorVersion { get; set; } = ZooConstants.MajorVersion;
 
-  /// <summary>Gets or sets the minimum Zoo minor version required to extract this entry.</summary>
-  public byte MinorVersion { get; set; } = ZooConstants.ExtractMinorVersion;
+  /// <summary>Gets or sets the minor version of the tool that created the entry.</summary>
+  public byte MinorVersion { get; set; } = ZooConstants.MinorVersion;
 
-  /// <summary>Offset of this entry's directory header within the archive stream.</summary>
+  /// <summary>
+  /// Offset of this entry's directory header within the archive stream.
+  /// Set by the reader; not relevant for the writer.
+  /// </summary>
   internal long HeaderOffset { get; set; }
 
-  /// <summary>Offset at which the compressed member data begins.</summary>
+  /// <summary>
+  /// Offset at which the compressed data begins within the archive stream.
+  /// Set by the writer before writing and by the reader while parsing.
+  /// </summary>
   internal long DataOffset { get; set; }
 
-  /// <summary>Canonical directory-entry byte length.</summary>
-  internal int DirectorySize { get; set; }
+  // ── MS-DOS date/time helpers (shared with the writer) ────────────────────
 
-  /// <summary>Encodes a <see cref="DateTime"/> as MS-DOS date/time words.</summary>
+  /// <summary>Encodes a <see cref="DateTime"/> as a pair of MS-DOS date and time words.</summary>
   internal static (ushort Date, ushort Time) ToMsDosDateTime(DateTime dt) {
     if (dt.Year < 1980)
       dt = new DateTime(1980, 1, 1);
@@ -69,14 +75,14 @@ public sealed class ZooEntry {
     return (date, time);
   }
 
-  /// <summary>Decodes MS-DOS date/time words.</summary>
+  /// <summary>Decodes a pair of MS-DOS date and time words into a <see cref="DateTime"/>.</summary>
   internal static DateTime FromMsDosDateTime(ushort date, ushort time) {
-    var year = ((date >> 9) & 0x7F) + 1980;
+    var year  = ((date >> 9) & 0x7F) + 1980;
     var month = Math.Clamp((date >> 5) & 0x0F, 1, 12);
-    var day = Math.Clamp(date & 0x1F, 1, 31);
-    var hour = Math.Clamp((time >> 11) & 0x1F, 0, 23);
-    var min = Math.Clamp((time >> 5) & 0x3F, 0, 59);
-    var sec = Math.Clamp((time & 0x1F) * 2, 0, 59);
+    var day   = Math.Clamp(date & 0x1F, 1, 31);
+    var hour  = Math.Clamp((time >> 11) & 0x1F, 0, 23);
+    var min   = Math.Clamp((time >> 5)  & 0x3F, 0, 59);
+    var sec   = Math.Clamp((time & 0x1F) * 2,   0, 59);
 
     try {
       return new DateTime(year, month, day, hour, min, sec);

@@ -42,8 +42,6 @@ internal static class ZipEndOfCentralDirectory {
   /// </summary>
   public static void Write(BinaryWriter writer, long cdOffset, long cdSize, int count, string? comment) {
     var commentBytes = comment != null ? System.Text.Encoding.UTF8.GetBytes(comment) : null;
-    if ((commentBytes?.Length ?? 0) > ushort.MaxValue)
-      throw new InvalidDataException("ZIP archive comment exceeds the 65535-byte EOCD limit.");
 
     var needZip64 = cdOffset > uint.MaxValue || cdSize > uint.MaxValue || count > ushort.MaxValue;
 

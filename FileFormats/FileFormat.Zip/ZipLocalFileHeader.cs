@@ -52,9 +52,6 @@ internal static class ZipLocalFileHeader {
   public static void Write(BinaryWriter writer, ZipEntry entry, bool encrypted = false) {
     var (date, time) = ZipEntry.ToMsDosDateTime(entry.LastModified);
     var fileNameBytes = Encoding.UTF8.GetBytes(entry.FileName);
-    if (fileNameBytes.Length > ushort.MaxValue)
-      throw new InvalidDataException("ZIP file name exceeds the 65535-byte header limit.");
-
     var flags = ZipConstants.FlagUtf8;
     if (encrypted)
       flags |= ZipConstants.FlagEncrypted;
@@ -62,19 +59,34 @@ internal static class ZipLocalFileHeader {
     if (entry.CompressionMethod == ZipCompressionMethod.Implode)
       flags |= (ushort)(entry.GeneralPurposeFlags & 0x0006);
 
-    // A local header needs ZIP64 values only when one of its size fields overflows.
+    // Combine ZIP64 and entry extra fields
     byte[]? zip64Extra = null;
     var compSize = (uint)Math.Min(entry.CompressedSize, uint.MaxValue);
     var uncompSize = (uint)Math.Min(entry.UncompressedSize, uint.MaxValue);
 
-    if (entry.NeedsZip64Sizes) {
+    if (entry.IsZip64) {
       compSize = ZipConstants.Zip64Sentinel32;
       uncompSize = ZipConstants.Zip64Sentinel32;
       zip64Extra = BuildZip64ExtraField(entry.UncompressedSize, entry.CompressedSize);
     }
 
-    var combinedExtra = MergeExtraFields(zip64Extra, entry.ExtraField);
-    var versionNeeded = ZipCompatibility.GetVersionNeeded(entry);
+    // Merge all extra field data
+    var totalExtraLen = (zip64Extra?.Length ?? 0) + (entry.ExtraField?.Length ?? 0);
+    byte[]? combinedExtra = null;
+    if (totalExtraLen > 0) {
+      combinedExtra = new byte[totalExtraLen];
+      var pos = 0;
+      if (zip64Extra != null) {
+        zip64Extra.CopyTo(combinedExtra, pos);
+        pos += zip64Extra.Length;
+      }
+      if (entry.ExtraField != null)
+        entry.ExtraField.CopyTo(combinedExtra, pos);
+    }
+
+    var versionNeeded = entry.IsZip64 ? ZipConstants.VersionNeeded45
+      : entry.CompressionMethod == ZipCompressionMethod.WinZipAes ? ZipConstants.VersionNeeded51
+      : ZipConstants.VersionNeeded20;
 
     writer.Write(ZipConstants.LocalFileHeaderSignature);
     writer.Write(versionNeeded);
@@ -117,27 +129,9 @@ internal static class ZipLocalFileHeader {
     using var ms = new MemoryStream();
     using var writer = new BinaryWriter(ms);
     writer.Write(ZipConstants.Zip64ExtraFieldTag);
-    writer.Write((ushort)16);
+    writer.Write((ushort)16); // size of data
     writer.Write(uncompressedSize);
     writer.Write(compressedSize);
     return ms.ToArray();
-  }
-
-  private static byte[]? MergeExtraFields(byte[]? first, byte[]? second) {
-    var totalLength = (first?.Length ?? 0) + (second?.Length ?? 0);
-    if (totalLength == 0)
-      return null;
-    if (totalLength > ushort.MaxValue)
-      throw new InvalidDataException("ZIP extra fields exceed the 65535-byte header limit.");
-
-    var result = new byte[totalLength];
-    var position = 0;
-    if (first != null) {
-      first.CopyTo(result, position);
-      position += first.Length;
-    }
-    if (second != null)
-      second.CopyTo(result, position);
-    return result;
   }
 }

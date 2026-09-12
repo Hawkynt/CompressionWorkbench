@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using Compression.Core.Checksums;
 using Compression.Core.Dictionary.Lzh;
@@ -12,249 +11,171 @@ public sealed class LhaWriter {
   private readonly List<(string name, byte[] data)> _files = [];
   private readonly string _method;
   private readonly int _positionBits;
-  private readonly LhaArchiverGeneration _generation;
-  private readonly LhaHeaderLevel _headerLevel;
 
   /// <summary>
   /// Initializes a new <see cref="LhaWriter"/>.
   /// </summary>
   /// <param name="method">Compression method (default "-lh5-").</param>
-  /// <param name="generation">Archiver family/generation that constrains allowed method IDs.</param>
-  /// <param name="headerLevel">Physical LHA header layout. Independent of <paramref name="generation"/>.</param>
-  public LhaWriter(
-      string method = LhaConstants.MethodLh5,
-      LhaArchiverGeneration generation = LhaArchiverGeneration.Extended,
-      LhaHeaderLevel headerLevel = LhaHeaderLevel.Level1) {
-    ArgumentNullException.ThrowIfNull(method);
-    if (!LhaCompatibility.IsImplemented(method))
-      throw new NotSupportedException($"Unsupported LHA compression method for writing: {method}");
-
-    LhaCompatibility.EnsureSupported(generation, method);
-
+  public LhaWriter(string method = LhaConstants.MethodLh5) {
     this._method = method;
-    this._generation = generation;
-    this._headerLevel = headerLevel;
     this._positionBits = method switch {
-      LhaConstants.MethodLh0 or LhaConstants.MethodLz4 or LhaConstants.MethodPm0 => 0,
-      LhaConstants.MethodLzs => -1,
-      LhaConstants.MethodLz5 => -2,
-      LhaConstants.MethodLh1 => -3,
-      LhaConstants.MethodPm1 => -5,
-      LhaConstants.MethodPm2 => -6,
-      LhaConstants.MethodLh2 or LhaConstants.MethodLh3 => LzhConstants.Lh5PositionBits,
+      LhaConstants.MethodLh0 => 0,
+      LhaConstants.MethodLzs => -1, // sentinel: use LzsEncoder
+      LhaConstants.MethodLz5 => -2, // sentinel: use Lz5Encoder
+      LhaConstants.MethodLh1 => -3, // sentinel: use Lh1Encoder
+      LhaConstants.MethodPm0 => -4, // sentinel: PMA store
+      LhaConstants.MethodPm1 => -5, // sentinel: PMA PPMd order-2
+      LhaConstants.MethodPm2 => -6, // sentinel: PMA PPMd order-3
+      LhaConstants.MethodLh2 => LzhConstants.Lh5PositionBits, // uses lh5-compatible format
+      LhaConstants.MethodLh3 => LzhConstants.Lh5PositionBits, // uses lh5-compatible format
       LhaConstants.MethodLh4 => LzhConstants.Lh4PositionBits,
       LhaConstants.MethodLh5 => LzhConstants.Lh5PositionBits,
       LhaConstants.MethodLh6 => LzhConstants.Lh6PositionBits,
       LhaConstants.MethodLh7 => LzhConstants.Lh7PositionBits,
-      _ => throw new UnreachableException(),
+      _ => LzhConstants.Lh5PositionBits
     };
   }
 
-  /// <summary>Adds a file to the archive.</summary>
+  /// <summary>
+  /// Adds a file to the archive.
+  /// </summary>
+  /// <param name="name">The file name.</param>
+  /// <param name="data">The file data.</param>
   public void AddFile(string name, byte[] data) {
-    ArgumentNullException.ThrowIfNull(name);
-    ArgumentNullException.ThrowIfNull(data);
     this._files.Add((name, data));
   }
 
-  /// <summary>Writes the archive to a stream.</summary>
+  /// <summary>
+  /// Writes the archive to a stream.
+  /// </summary>
+  /// <param name="output">The stream to write to.</param>
   public void WriteTo(Stream output) {
-    ArgumentNullException.ThrowIfNull(output);
     foreach (var (name, data) in this._files)
-      this.WriteEntry(output, name, data);
+      WriteEntry(output, name, data);
   }
 
-  /// <summary>Creates an LHA archive as a byte array.</summary>
+  /// <summary>
+  /// Creates an LHA archive as a byte array.
+  /// </summary>
+  /// <returns>The LHA archive bytes.</returns>
   public byte[] ToArray() {
     using var ms = new MemoryStream();
     this.WriteTo(ms);
     return ms.ToArray();
   }
 
-  /// <summary>Creates an LHA archive split into multiple volumes.</summary>
-  public static byte[][] CreateSplit(
-      long maxVolumeSize,
-      IEnumerable<(string Name, byte[] Data)> entries,
-      string method = LhaConstants.MethodLh5,
-      LhaArchiverGeneration generation = LhaArchiverGeneration.Extended,
-      LhaHeaderLevel headerLevel = LhaHeaderLevel.Level1) {
-    var writer = new LhaWriter(method, generation, headerLevel);
-    foreach (var (name, data) in entries)
-      writer.AddFile(name, data);
-    return Compression.Core.Streams.VolumeHelper.SplitIntoVolumes(writer.ToArray(), maxVolumeSize);
-  }
-
   private void WriteEntry(Stream output, string name, byte[] data) {
-    var storedMethod = this.GetStoredMethod();
     byte[] compressed;
-    var method = this._method;
+    string method;
 
-    if (data.Length == 0 || this._positionBits == 0) {
+    if (this._method == LhaConstants.MethodLh0 || this._method == LhaConstants.MethodPm0 || data.Length == 0) {
       compressed = data;
+      method = this._method == LhaConstants.MethodPm0 ? LhaConstants.MethodPm0 : LhaConstants.MethodLh0;
     } else if (this._positionBits == -5) {
+      // -pm1- PMA PPMd order-2
       compressed = PmaEncoder.Encode(data, 2);
+      method = this._method;
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodPm0;
+      }
     } else if (this._positionBits == -6) {
+      // -pm2- PMA PPMd order-3
       compressed = PmaEncoder.Encode(data, 3);
+      method = this._method;
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodPm0;
+      }
     } else if (this._positionBits == -1) {
+      // -lzs- plain LZSS
       compressed = LzsEncoder.Encode(data);
+      method = this._method;
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodLh0;
+      }
     } else if (this._positionBits == -2) {
+      // -lz5- plain LZSS
       compressed = Lz5Encoder.Encode(data);
+      method = this._method;
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodLh0;
+      }
     } else if (this._positionBits == -3) {
+      // -lh1- adaptive Huffman
       compressed = Lh1Encoder.Encode(data);
+      method = this._method;
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodLh0;
+      }
     } else {
       var encoder = new LzhEncoder(this._positionBits);
       compressed = encoder.Encode(data);
+      method = this._method;
+
+      // If compression didn't help, store instead
+      if (compressed.Length >= data.Length) {
+        compressed = data;
+        method = LhaConstants.MethodLh0;
+      }
     }
 
-    if (this._positionBits != 0 && compressed.Length >= data.Length) {
-      compressed = data;
-      method = storedMethod;
-    }
-
-    LhaCompatibility.EnsureSupported(this._generation, method);
-
-    var nameBytes = Encoding.ASCII.GetBytes(name);
     var crc = Crc16.Compute(data);
-    var timestamp = DateTime.Now;
+    var nameBytes = Encoding.ASCII.GetBytes(name);
 
-    switch (this._headerLevel) {
-      case LhaHeaderLevel.Level0:
-        WriteLevel0Header(output, method, compressed.Length, data.Length, timestamp, nameBytes, crc);
-        break;
-      case LhaHeaderLevel.Level1:
-        WriteLevel1Header(output, method, compressed.Length, data.Length, timestamp, nameBytes, crc);
-        break;
-      case LhaHeaderLevel.Level2:
-        WriteLevel2Header(output, method, compressed.Length, data.Length, timestamp, nameBytes, crc);
-        break;
-      default:
-        throw new ArgumentOutOfRangeException(nameof(this._headerLevel), this._headerLevel, "Unsupported LHA header level.");
-    }
+    // Write level 1 header
+    // header_size = bytes from offset 2 through end of base header (including first ext-size field)
+    // = 5(method) + 4(compressed) + 4(original) + 4(timestamp) + 1(reserved) + 1(level)
+    //   + 1(nameLen) + nameLen + 2(crc) + 1(osId) + 2(nextExtSize=0)
+    var headerPayloadSize = 5 + 4 + 4 + 4 + 1 + 1 + 1 + nameBytes.Length + 2 + 1 + 2;
 
-    output.Write(compressed);
-  }
+    // Build header payload bytes for checksum computation
+    using var headerMs = new MemoryStream();
+    using var hw = new BinaryWriter(headerMs, Encoding.ASCII, leaveOpen: true);
+    hw.Write(Encoding.ASCII.GetBytes(method)); // method (5 bytes)
+    hw.Write((uint)compressed.Length); // compressed size
+    hw.Write((uint)data.Length); // original size
+    hw.Write(MsdosTimestamp(DateTime.Now)); // timestamp
+    hw.Write((byte)0x20); // reserved
+    hw.Write((byte)1); // header level = 1
+    hw.Write((byte)nameBytes.Length); // name length
+    hw.Write(nameBytes); // name
+    hw.Write(crc); // CRC-16
+    hw.Write(LhaConstants.OsIdentifierUnix);
+    hw.Write((ushort)0); // no extended headers
+    hw.Flush();
 
-  private string GetStoredMethod() => this._method switch {
-    LhaConstants.MethodLz4 or LhaConstants.MethodLzs or LhaConstants.MethodLz5 => LhaConstants.MethodLz4,
-    LhaConstants.MethodPm0 or LhaConstants.MethodPm1 or LhaConstants.MethodPm2 => LhaConstants.MethodPm0,
-    _ => LhaConstants.MethodLh0,
-  };
-
-  private static void WriteLevel0Header(
-      Stream output,
-      string method,
-      int compressedSize,
-      int originalSize,
-      DateTime timestamp,
-      byte[] nameBytes,
-      ushort crc) {
-    using var payloadStream = new MemoryStream();
-    using (var writer = new BinaryWriter(payloadStream, Encoding.ASCII, leaveOpen: true)) {
-      writer.Write(Encoding.ASCII.GetBytes(method));
-      writer.Write((uint)compressedSize);
-      writer.Write((uint)originalSize);
-      writer.Write(MsdosTimestamp(timestamp));
-      writer.Write((byte)0x20);
-      writer.Write((byte)LhaHeaderLevel.Level0);
-      writer.Write(CheckedNameLength(nameBytes, 233, LhaHeaderLevel.Level0));
-      writer.Write(nameBytes);
-      writer.Write(crc);
-    }
-
-    var payload = payloadStream.ToArray();
-    if (payload.Length > byte.MaxValue)
-      throw new InvalidDataException("LHA level-0 header exceeds its one-byte size limit.");
-
-    using var outputWriter = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
-    outputWriter.Write((byte)payload.Length);
-    outputWriter.Write(CalculateChecksum(payload));
-    outputWriter.Write(payload);
-  }
-
-  private static void WriteLevel1Header(
-      Stream output,
-      string method,
-      int compressedSize,
-      int originalSize,
-      DateTime timestamp,
-      byte[] nameBytes,
-      ushort crc) {
-    using var payloadStream = new MemoryStream();
-    using (var writer = new BinaryWriter(payloadStream, Encoding.ASCII, leaveOpen: true)) {
-      writer.Write(Encoding.ASCII.GetBytes(method));
-      writer.Write((uint)compressedSize);
-      writer.Write((uint)originalSize);
-      writer.Write(MsdosTimestamp(timestamp));
-      writer.Write((byte)0x20);
-      writer.Write((byte)LhaHeaderLevel.Level1);
-      writer.Write(CheckedNameLength(nameBytes, 230, LhaHeaderLevel.Level1));
-      writer.Write(nameBytes);
-      writer.Write(crc);
-      writer.Write(LhaConstants.OsIdentifierUnix);
-      writer.Write((ushort)0);
-    }
-
-    var payload = payloadStream.ToArray();
-    if (payload.Length > byte.MaxValue)
-      throw new InvalidDataException("LHA level-1 header exceeds its one-byte size limit.");
-
-    using var outputWriter = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
-    outputWriter.Write((byte)payload.Length);
-    outputWriter.Write(CalculateChecksum(payload));
-    outputWriter.Write(payload);
-  }
-
-  private static void WriteLevel2Header(
-      Stream output,
-      string method,
-      int compressedSize,
-      int originalSize,
-      DateTime timestamp,
-      byte[] nameBytes,
-      ushort crc) {
-    var filenameExtensionSize = checked(nameBytes.Length + 3);
-    if (filenameExtensionSize > ushort.MaxValue)
-      throw new InvalidDataException("LHA level-2 filename extension exceeds its 16-bit size limit.");
-
-    var unpaddedHeaderSize = checked(26 + filenameExtensionSize);
-    var paddingSize = (unpaddedHeaderSize & byte.MaxValue) == 0 ? 1 : 0;
-    var totalHeaderSize = checked(unpaddedHeaderSize + paddingSize);
-    if (totalHeaderSize > ushort.MaxValue)
-      throw new InvalidDataException("LHA level-2 header exceeds its 16-bit total-size limit.");
-
-    var unixSeconds = new DateTimeOffset(timestamp).ToUnixTimeSeconds();
-    if (unixSeconds < 0 || unixSeconds > uint.MaxValue)
-      throw new ArgumentOutOfRangeException(nameof(timestamp), "LHA level-2 timestamp is outside the 32-bit UNIX-time range.");
+    var headerPayload = headerMs.ToArray();
+    byte checksum = 0;
+    foreach (var b in headerPayload)
+      checksum += b;
 
     using var writer = new BinaryWriter(output, Encoding.ASCII, leaveOpen: true);
-    writer.Write((ushort)totalHeaderSize);
-    writer.Write(Encoding.ASCII.GetBytes(method));
-    writer.Write((uint)compressedSize);
-    writer.Write((uint)originalSize);
-    writer.Write((uint)unixSeconds);
-    writer.Write((byte)0);
-    writer.Write((byte)LhaHeaderLevel.Level2);
-    writer.Write(crc);
-    writer.Write(LhaConstants.OsIdentifierUnix);
-    writer.Write((ushort)filenameExtensionSize);
-    writer.Write((byte)0x01);
-    writer.Write(nameBytes);
-    writer.Write((ushort)0);
-    if (paddingSize != 0)
-      writer.Write((byte)0);
+    writer.Write((byte)headerPayloadSize); // header size
+    writer.Write(checksum); // checksum
+    writer.Write(headerPayload);
+
+    // Write compressed data
+    writer.Write(compressed);
   }
 
-  private static byte CheckedNameLength(byte[] nameBytes, int maximum, LhaHeaderLevel level) {
-    if (nameBytes.Length > maximum)
-      throw new InvalidDataException($"LHA {level} filename exceeds the {maximum}-byte base-header limit.");
-    return (byte)nameBytes.Length;
-  }
-
-  private static byte CalculateChecksum(ReadOnlySpan<byte> bytes) {
-    byte checksum = 0;
-    foreach (var value in bytes)
-      checksum += value;
-    return checksum;
+  /// <summary>
+  /// Creates an LHA archive split into multiple volumes.
+  /// </summary>
+  /// <param name="maxVolumeSize">Maximum size of each volume in bytes.</param>
+  /// <param name="entries">The entries to add (name, data pairs).</param>
+  /// <param name="method">Compression method (default "-lh5-").</param>
+  /// <returns>An array of byte arrays, one per volume.</returns>
+  public static byte[][] CreateSplit(long maxVolumeSize,
+      IEnumerable<(string Name, byte[] Data)> entries,
+      string method = LhaConstants.MethodLh5) {
+    var writer = new LhaWriter(method);
+    foreach (var (name, data) in entries)
+      writer.AddFile(name, data);
+    return Compression.Core.Streams.VolumeHelper.SplitIntoVolumes(writer.ToArray(), maxVolumeSize);
   }
 
   private static uint MsdosTimestamp(DateTime dt) {
