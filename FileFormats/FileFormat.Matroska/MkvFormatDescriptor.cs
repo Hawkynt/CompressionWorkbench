@@ -6,8 +6,8 @@ namespace FileFormat.Matroska;
 
 /// <summary>
 /// Surfaces a Matroska/WebM file as an archive: one entry per demuxed track,
-/// plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can
-/// additionally be packet-preserving demuxed and muxed through the audio pipeline.
+/// plus attachments, plus chapters XML when present. Single-audio-track files also
+/// participate in the packet-preserving audio remux graph.
 /// </summary>
 public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
   IFileInternalLayoutMap, IFileInternalChunkMover, IAudioContainerFormat, IAudioDemuxSource, IAudioMuxTarget {
@@ -18,7 +18,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the display name.
   /// </summary>
-  public string DisplayName => "MKV / WebM";
+  public string DisplayName => "MKV / WebM (demuxed)";
   /// <summary>
   /// Gets the category.
   /// </summary>
@@ -27,7 +27,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -50,11 +50,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("stored", "Stored"),
-    new("opus", "WebM Opus audio"),
-    new("vorbis", "WebM Vorbis audio"),
-  ];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored / packet-preserving mux")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -66,7 +62,7 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Matroska / WebM container; tracks + attachments + chapters extractable, with packet-preserving WebM Opus/Vorbis audio mux/remux.";
+  public string Description => "Matroska / WebM container; tracks + attachments + chapters extractable, with encoded-audio packet mux/remux.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -102,23 +98,77 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
-  /// <inheritdoc />
-  public IReadOnlyList<string> SupportedMuxCodecs => WebmAudioAdapter.SupportedCodecs;
+  /// <summary>Gets the encoded audio codecs the Matroska writer can carry without re-encoding.</summary>
+  public IReadOnlyList<string> SupportedMuxCodecs => MkvAudioMuxer.SupportedCodecs;
 
   /// <inheritdoc />
   public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
     ArgumentNullException.ThrowIfNull(options);
-    return WebmAudioAdapter.CanMux(stream, out reason);
+    return MkvAudioMuxer.CanMux(stream, out reason);
   }
 
   /// <inheritdoc />
   public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    WebmAudioAdapter.Mux(output, stream);
+    MkvAudioMuxer.Mux(output, stream);
   }
 
-  /// <inheritdoc />
-  public bool TryDemux(Stream input, out AudioEncodedStream? stream) => WebmAudioAdapter.TryDemux(input, out stream);
+  /// <summary>
+  /// Exposes the single supported audio track as encoded packets. Multi-audio-track files remain
+  /// available through the archive/demux surface because <see cref="AudioEncodedStream"/> represents
+  /// one logical encoded stream and silently choosing one track would lose information.
+  /// </summary>
+  public bool TryDemux(Stream input, out AudioEncodedStream? stream) {
+    ArgumentNullException.ThrowIfNull(input);
+    try {
+      if (input.CanSeek)
+        input.Position = 0;
+      using var memory = new MemoryStream();
+      input.CopyTo(memory);
+      var tracks = new MkvDemuxer().Demux(memory.ToArray()).Tracks
+        .Where(static track => track.TrackType == "audio")
+        .Select(track => (Track: track, Codec: MkvAudioMuxer.CanonicalCodecId(track.CodecId)))
+        .Where(static item => item.Codec is not null)
+        .ToArray();
+
+      if (tracks.Length != 1) {
+        stream = null;
+        return false;
+      }
+
+      var (track, codec) = tracks[0];
+      if (!MkvAudioMuxer.SupportedCodecs.Contains(codec!, StringComparer.OrdinalIgnoreCase) ||
+          track.AudioSampleRate <= 0 || track.AudioChannels <= 0 || track.Frames.Count == 0) {
+        stream = null;
+        return false;
+      }
+
+      var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        ["matroska-codec-id"] = track.CodecId,
+      };
+      if (!string.IsNullOrWhiteSpace(track.Language))
+        properties["language"] = track.Language!;
+
+      var packets = track.Frames
+        .Select(frame => new AudioPacket(
+          frame.Data,
+          DurationSamples: MkvAudioMuxer.InferDurationSamples(codec!, frame.Data)))
+        .ToArray();
+      if (packets.Any(static packet => packet.DurationSamples <= 0)) {
+        stream = null;
+        return false;
+      }
+
+      stream = new AudioEncodedStream(
+        new AudioStreamFormat(codec!, track.AudioSampleRate, track.AudioChannels, track.AudioBitDepth, properties),
+        packets,
+        track.CodecPrivate);
+      return true;
+    } catch (InvalidDataException) {
+      stream = null;
+      return false;
+    }
+  }
 
   private readonly MkvCuesFrontOptimizer _optimizer = new();
 
