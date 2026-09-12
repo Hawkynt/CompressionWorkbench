@@ -38,20 +38,39 @@ public static class FilesystemSupportMatrix {
   /// <summary>What a hand-written row carries that the code cannot supply.</summary>
   private sealed record Row(string Family, string? Link, string Proof, string Notes, string Reference);
 
+  /// <summary>The assembly the meta-package compiles its formats into.</summary>
+  private const string PackageAssembly = "Hawkynt.FileFormats.FileSystems";
+
+  private const string ContainersBegin = "<!-- BUNDLED-CONTAINERS:BEGIN";
+  private const string ContainersEnd = "<!-- BUNDLED-CONTAINERS:END";
+
   /// <summary>
-  /// Every descriptor the package bundles: all of <c>FileSystem.*</c>, plus the
-  /// <c>FileFormat.*</c> disk-image projects the meta-project references by name.
+  /// Every descriptor the package bundles: everything compiled into the package
+  /// assembly, every <c>FileSystem.*</c> project that still builds on its own,
+  /// plus the <c>FileFormat.*</c> disk-image projects named in the meta-project's
+  /// bundled-containers region.
   /// </summary>
+  /// <remarks>
+  /// Only that region is read, not the whole project file: the package also
+  /// references stream codecs (ZIP, LZMA, zstd, …) that its readers decompress
+  /// with, and those are not filesystem formats and have no row here.
+  /// </remarks>
   public static IReadOnlyList<IFormatDescriptor> Descriptors(string repositoryRoot) {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var project = File.ReadAllText(Path.Combine(repositoryRoot, "Hawkynt.FileFormats.FileSystems", "Hawkynt.FileFormats.FileSystems.csproj"));
-    var containers = Regex.Matches(project, @"FileFormats\\(FileFormat\.[A-Za-z0-9]+)\\")
+    var begin = project.IndexOf(ContainersBegin, StringComparison.Ordinal);
+    var end = project.IndexOf(ContainersEnd, StringComparison.Ordinal);
+    if (begin < 0 || end < begin)
+      throw new InvalidDataException($"{PackageAssembly}.csproj carries no '{ContainersBegin}' / '{ContainersEnd}' region.");
+    var containers = Regex.Matches(project[begin..end], @"FileFormats\\(FileFormat\.[A-Za-z0-9]+)\\")
       .Select(m => m.Groups[1].Value)
       .ToHashSet(StringComparer.Ordinal);
     return FormatRegistry.All
       .Where(d => {
         var assembly = d.GetType().Assembly.GetName().Name ?? "";
-        return assembly.StartsWith("FileSystem.", StringComparison.Ordinal) || containers.Contains(assembly);
+        return assembly == PackageAssembly
+            || assembly.StartsWith("FileSystem.", StringComparison.Ordinal)
+            || containers.Contains(assembly);
       })
       .OrderBy(d => d.Id, StringComparer.Ordinal)
       .ToList();

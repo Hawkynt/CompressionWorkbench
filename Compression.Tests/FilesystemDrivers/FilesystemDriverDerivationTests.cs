@@ -48,7 +48,7 @@ public sealed class FilesystemDriverDerivationTests {
   [Test, Category("Driver"), Category("Contract")]
   public void EveryRegisteredFilesystemDescriptor_HasAtLeastReadOnlyDriverDerivationSurface() {
     var filesystemDescriptors = FormatRegistry.All
-      .Where(descriptor => descriptor.GetType().Assembly.GetName().Name
+      .Where(descriptor => descriptor.GetType().Namespace
         ?.StartsWith("FileSystem.", StringComparison.Ordinal) == true)
       .ToArray();
 

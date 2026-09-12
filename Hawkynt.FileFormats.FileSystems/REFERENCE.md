@@ -102,6 +102,71 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(BinCueEntry entry)` | Extracts the raw data for a file entry. |
 
+### Namespace `FileFormat.Bzip2`
+
+[`Bzip2BuildingBlock`](#bzip2buildingblock) · [`Bzip2FormatDescriptor`](#bzip2formatdescriptor) · [`Bzip2Stream`](#bzip2stream)
+
+#### `Bzip2BuildingBlock`
+
+Exposes bzip2 as a benchmarkable building block. Produces a complete bzip2 stream ("BZh" signature, block-size digit, one or more Burrows-Wheeler blocks and the stream footer carrying the combined CRC), so the payload is self-terminating and no extra uncompressed-size header is prepended.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bzip2BuildingBlock` | `Bzip2BuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `Bzip2FormatDescriptor`
+
+Describes bzip 2 format.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bzip2FormatDescriptor` | `Bzip2FormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Block size 1..9 in units of 100 KB (1 = 100 KB blocks, 9 = 900 KB blocks). A larger block lets the Burrows-Wheeler transform see more context at once, which only helps once the input is bigger than the block. The optimizer searches these to find the smallest output for the given input. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Performs the compress optimal operation. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
+| `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |
+| `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` | Validates the supplied data. |
+| `WrapCompress` | `Stream WrapCompress(Stream output)` | Performs the wrap compress operation. |
+| `WrapDecompress` | `Stream WrapDecompress(Stream input)` | Performs the wrap decompress operation. |
+
+#### `Bzip2Stream`
+
+Stream for reading and writing bzip2 format data.
+
+Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Bzip2Stream` | `Bzip2Stream(Stream stream, CompressionStreamMode mode, int blockSize100k = 9, bool leaveOpen = false)` | Initializes a new `Bzip2Stream`. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
+
 ### Namespace `FileFormat.Cdi`
 
 [`CdiEntry`](#cdientry) · [`CdiFormatDescriptor`](#cdiformatdescriptor) · [`CdiInPlaceModifier`](#cdiinplacemodifier) · [`CdiInPlaceModifier.SectorGeometry`](#cdiinplacemodifiersectorgeometry) · [`CdiReadMode`](#cdireadmode) · [`CdiReader`](#cdireader) · [`CdiTrackInfo`](#cditrackinfo) · [`CdiTrackMode`](#cditrackmode)
@@ -808,6 +873,93 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes entries by closing their allocated block range and truncating the shifted tail. REL side-sector blocks are removed together with their data blocks. |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds the directory at its smallest whole-254-byte allocation and copies the complete existing data area byte-for-byte. This preserves REL side sectors and file-type metadata, while reclaiming directory blocks left behind after removals and any trailing transport data. |
 | `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros only byte ranges that the Lynx layout proves unused: directory padding, payload block padding and trailing transport data. Live file bytes and REL side-sector metadata are retained. |
+
+### Namespace `FileFormat.Lzfse`
+
+[`LzfseFormatDescriptor`](#lzfseformatdescriptor) · [`LzfseStream`](#lzfsestream)
+
+#### `LzfseFormatDescriptor`
+
+Describes lzfse format.
+
+Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzfseFormatDescriptor` | `LzfseFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `LzfseStream`
+
+Provides static methods for compressing and decompressing data using Apple's LZFSE block format with LZVN as the encoder's sub-algorithm.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes an LZFSE-format stream to `output`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
+
+### Namespace `FileFormat.Lzma`
+
+[`LzmaConstants`](#lzmaconstants) · [`LzmaFormatDescriptor`](#lzmaformatdescriptor) · [`LzmaStream`](#lzmastream)
+
+#### `LzmaConstants`
+
+Constants for the LZMA alone (.lzma) file format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultDictionarySize` | `const int DefaultDictionarySize` | Default dictionary size: 8 MiB. |
+| `HeaderSize` | `const int HeaderSize` | Total size of the LZMA alone header in bytes (1 properties + 4 dict size + 8 uncompressed size). |
+| `UnknownSize` | `const long UnknownSize` | Sentinel value stored in the uncompressed-size field when the size is unknown. The decoder uses end-of-stream marker detection in this case. |
+
+#### `LzmaFormatDescriptor`
+
+Describes lzma format.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LzmaFormatDescriptor` | `LzmaFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The tunable LZMA knobs: compression level, dictionary size and the lc/lp/pb literal/position modelling bits. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Performs the compress optimal operation. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `LzmaStream`
+
+Provides static methods for reading and writing the LZMA alone (.lzma) file format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static void Compress(Stream input, Stream output, int dictionarySize = 8388608, int lc = 3, int lp = 0, int pb = 2, LzmaCompressionLevel level = 1)` | Compresses data from `input` and writes the LZMA alone stream to `output`. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an LZMA alone stream from `input` and writes the result to `output`. |
 
 ### Namespace `FileFormat.Mdf`
 
@@ -2148,6 +2300,329 @@ Writes a VMware VMDK virtual disk, emitting the descriptor and the grain directo
 | `VmdkWriter` | `VmdkWriter()` |  |
 | `Build` | `byte[] Build()` | Builds a monolithic sparse VMDK with a proper two-level grain directory/table structure, including the redundant grain directory that VMware/qemu emit by default. |
 | `SetDiskData` | `void SetDiskData(byte[] data)` | Sets the disk data. |
+
+### Namespace `FileFormat.Zip`
+
+[`ParallelZipCreator`](#parallelzipcreator) · [`ZipCompatibility`](#zipcompatibility) · [`ZipCompatibilityProfile`](#zipcompatibilityprofile) · [`ZipCompressionMethod`](#zipcompressionmethod) · [`ZipEncryptionMethod`](#zipencryptionmethod) · [`ZipEntry`](#zipentry) · [`ZipFormatDescriptor`](#zipformatdescriptor) · [`ZipLayoutMap`](#ziplayoutmap) · [`ZipModifier`](#zipmodifier) · [`ZipReader`](#zipreader) · [`ZipWriter`](#zipwriter)
+
+#### `ParallelZipCreator`
+
+Parallel ZIP creation: entries are compressed independently in parallel, then written sequentially via `AddRawEntry`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateZipParallel` | `static void CreateZipParallel(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, string password, ZipCompressionMethod method, DeflateCompressionLevel level, HashSet<string> incompressible, int maxThreads, ZipEncryptionMethod encryptionMethod = 1)` | Compresses ZIP entries in parallel and writes them sequentially. Only Deflate / Deflate64 / Store benefit from pre-compression; other methods fall through to sequential `AddEntry`. |
+
+#### `ZipCompatibility`
+
+Resolves ZIP feature requirements and enforces a writer compatibility ceiling.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnsureSupported` | `static void EnsureSupported(ZipCompatibilityProfile profile, ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Throws when the requested features would exceed `profile`. |
+| `GetVersionNeeded` | `static ushort GetVersionNeeded(ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Returns the minimum PKWARE ZIP version required to extract an entry using the supplied features. When several features apply, the highest minimum wins, as required by APPNOTE.TXT section 4.4.3.2. |
+| `IsSupported` | `static bool IsSupported(ZipCompatibilityProfile profile, ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Returns whether all requested features fit within `profile`. |
+
+#### `ZipCompatibilityProfile`
+
+Maximum ZIP feature level that a writer may require from an extractor. Values are the PKWARE "version needed to extract" numbers.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zip10` | `10` | ZIP 1.0: store and the legacy Shrink/Reduce/Implode methods. |
+| `Zip20` | `20` | ZIP 2.0: directories, Deflate, and traditional PKZIP encryption. |
+| `Zip21` | `21` | ZIP 2.1: adds Deflate64. |
+| `Zip45` | `45` | ZIP 4.5: adds ZIP64. |
+| `Zip46` | `46` | ZIP 4.6: adds BZip2. |
+| `Zip51` | `51` | ZIP 5.1: adds AES encryption. |
+| `Zip63` | `63` | ZIP 6.3: adds the modern LZMA, PPMd and Zstandard method family used here. |
+
+#### `ZipCompressionMethod`
+
+ZIP compression methods.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Store` | `0` | No compression (store). |
+| `Shrink` | `1` | Shrink (LZW with partial clearing). |
+| `Reduce1` | `2` | Reduce with compression factor 1. |
+| `Reduce2` | `3` | Reduce with compression factor 2. |
+| `Reduce3` | `4` | Reduce with compression factor 3. |
+| `Reduce4` | `5` | Reduce with compression factor 4. |
+| `Implode` | `6` | Implode (LZ77 + Shannon-Fano trees). |
+| `Deflate` | `8` | Deflate compression. |
+| `Deflate64` | `9` | Deflate64 (Enhanced Deflate) compression. |
+| `BZip2` | `12` | BZip2 compression. |
+| `Lzma` | `14` | LZMA compression. |
+| `Zstd` | `93` | Zstandard compression. |
+| `Ppmd` | `98` | PPMd version I, Rev 1 compression. |
+| `WinZipAes` | `99` | WinZip AES encryption (actual method stored in extra field). |
+
+#### `ZipEncryptionMethod`
+
+ZIP encryption method selection.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No encryption. |
+| `Aes256` | `1` | WinZip AES-256 encryption (AE-2). |
+| `PkzipTraditional` | `2` | Traditional PKZIP encryption (weak, for compatibility). |
+
+#### `ZipEntry`
+
+Represents a single entry in a ZIP archive.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZipEntry` | `ZipEntry()` |  |
+| `Comment` | `string Comment { get; set; }` | Gets or sets the file comment. |
+| `CompressedSize` | `long CompressedSize { get; set; }` | Gets or sets the compressed size in bytes. |
+| `CompressionMethod` | `ZipCompressionMethod CompressionMethod { get; set; }` | Gets or sets the compression method. |
+| `Crc32` | `uint Crc32 { get; set; }` | Gets or sets the CRC-32 of the uncompressed data. |
+| `ExternalAttributes` | `uint ExternalAttributes { get; set; }` | Gets or sets the external file attributes. |
+| `ExtraField` | `byte[] ExtraField { get; set; }` | Gets or sets the extra field data. |
+| `FileName` | `string FileName { get; set; }` | Gets or sets the file name (including path within the archive). |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this entry is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; set; }` | Gets or sets whether this entry is encrypted. |
+| `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last modification date/time. |
+| `UncompressedSize` | `long UncompressedSize { get; set; }` | Gets or sets the uncompressed size in bytes. |
+
+#### `ZipFormatDescriptor`
+
+ZIP archive — the universal container with per-entry compression methods. References: `https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE.TXT — the canonical .ZIP file format specification`https://en.wikipedia.org/wiki/ZIP_(file_format)` — Wikipedia overviewInfo-ZIP zip/unzip — long-standing open reference implementations
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZipFormatDescriptor` | `ZipFormatDescriptor()` |  |
+| `CanonicalSizes` | `IReadOnlyList<long> CanonicalSizes { get; }` | A ZIP has no fixed media geometry; the single canonical size is the archive's minimal terminated length — the last byte of the end-of-central- directory record (plus its comment). Anything past that is trailing junk. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ZIP archive. Uses `ZipModifier` for true O(touched bytes) random-access I/O — only the central directory, the EOCD, and the appended file's local file header + compressed data are read or written. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create` for the STORE method. STORE entries are uncompressed, so the local header can be written with the pre-known `Size` up front and the payload copied in 64 KB chunks while the CRC is computed incrementally and patched back into the header — peak memory is the copy buffer regardless of entry size. Output is byte-identical to `Create` with `Method=store`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a ZIP archive from `inputs`. Honors all of `FormatCreateOptions`: method, level, dict-size, threads, password, encryption mode, and incompressibility hints. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts every entry then re-creates the archive in listing order. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts every entry then re-creates the archive per the requested mode. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single ZIP entry as a read-only `Stream` bounded to its uncompressed size. The DEFLATE / store / etc. decoder runs against the entry's local-header bytes, the result is wrapped in a `BoundedEntryStream` sized to `UncompressedSize` so the next entry's bytes — which immediately follow in the source — can never bleed into the returned view even if the underlying decoder over-reads by a chunk boundary. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries from an existing ZIP archive. Uses `ZipModifier` for O(touched bytes) random-access I/O. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Drops any bytes trailing the end-of-central-directory record — tape/disk padding, a stale second EOCD left by an in-place editor, or data appended after the archive was finalized. The central directory, every local file entry and the EOCD (including its comment) are copied through byte-identically, so the shrunk archive lists and extracts identically. When there is no trailing junk the output is byte-identical to the input. |
+| `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
+| `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |
+| `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` | Validates the supplied data. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all dead bytes in the ZIP archive: gaps between local file entries, orphan data left after `RemoveFile`, and any padding regions not covered by the layout map. |
+
+#### `ZipLayoutMap`
+
+Walks a ZIP central directory and emits a fail-closed byte-level layout of local headers, compressed payloads, optional data descriptors, the central directory and EOCD.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream archive)` |  |
+
+#### `ZipModifier`
+
+Random-access in-place modifier for ZIP archives. Reads and writes only the central directory, the EOCD record, and (for new files) the appended local file header + compressed data — never the entire archive payload. Lets callers operate on multi-GB ZIP files without rebuild cost.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddFile` | `static void AddFile(Stream zip, string name, byte[] data, DateTime? lastModified = null)` | Adds a file to an existing ZIP archive, encoding it with Deflate. If an entry with the same name already exists the caller should `RemoveFile` it first; this method just appends. |
+| `RemoveFile` | `static bool RemoveFile(Stream zip, string name, bool wipeData = true)` | Removes a named entry from a ZIP archive. Returns true if found and removed. When `wipeData` is true (default) the orphan LFH+data bytes are zeroed; otherwise they remain readable in-place but are no longer referenced by any CD entry. |
+
+#### `ZipReader`
+
+Reads entries from a ZIP archive.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZipReader` | `ZipReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `ZipReader` from a stream. |
+| `Comment` | `string Comment { get; }` | Gets the archive comment. |
+| `Entries` | `IReadOnlyList<ZipEntry> Entries { get; }` | Gets the entries in the ZIP archive. |
+| `Dispose` | `void Dispose()` |  |
+| `ExtractEntryRaw` | `ValueTuple<ZipCompressionMethod, uint, long, byte[]> ExtractEntryRaw(ZipEntry entry)` | Extracts the raw compressed bytes for an entry without decompressing. Returns the method, CRC-32, uncompressed size, and raw bitstream. Useful for restreaming between formats sharing the same codec (e.g., ZIP Deflate → Gzip). |
+| `ExtractEntry` | `byte[] ExtractEntry(ZipEntry entry)` | Performs the extract entry operation. |
+| `OpenEntry` | `Stream OpenEntry(ZipEntry entry)` | Opens a stream to read the decompressed data for an entry. |
+| `TryCopyEntryTo` | `bool TryCopyEntryTo(ZipEntry entry, Stream destination)` | Extracts the data for an entry. |
+
+#### `ZipWriter`
+
+Creates a ZIP archive.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZipWriter` | `ZipWriter(Stream stream, bool leaveOpen = false, DeflateCompressionLevel compressionLevel = 6, string password = null, ZipEncryptionMethod encryptionMethod = 1, ZipCompatibilityProfile compatibilityProfile = 63)` | Initializes a new `ZipWriter`. |
+| `Bzip2BlockSize` | `int Bzip2BlockSize { get; set; }` | BZip2 block size multiplier 1-9 (N × 100 KB). Used when method is BZip2. |
+| `Comment` | `string Comment { get; set; }` | Gets or sets the archive comment. |
+| `LzmaDictionarySize` | `int LzmaDictionarySize { get; set; }` | LZMA dictionary size in bytes (4096 to 1GB). Used when method is LZMA. |
+| `LzmaLevel` | `LzmaCompressionLevel LzmaLevel { get; set; }` | LZMA compression level. Used when method is LZMA. |
+| `PpmdMemorySizeMB` | `int PpmdMemorySizeMB { get; set; }` | PPMd memory size in megabytes (1-256). Used when method is PPMd. |
+| `PpmdOrder` | `int PpmdOrder { get; set; }` | PPMd model order (2-16). Used when method is PPMd. |
+| `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry. |
+| `AddEntry` | `void AddEntry(string fileName, byte[] data, ZipCompressionMethod method = 8, DateTime? lastModified = null)` | Adds a file entry from a byte array. |
+| `AddRawEntry` | `void AddRawEntry(string fileName, byte[] compressedData, ZipCompressionMethod method, uint crc32, long uncompressedSize, DateTime? lastModified = null)` | Adds a pre-compressed entry. The data is already compressed and will not be re-compressed. |
+| `AddStreamingStoredEntry` | `void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null)` | Adds a STORE entry whose payload is streamed in bounded chunks rather than buffered in RAM. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZipCompressionMethod method = 8, string password = null, ZipCompatibilityProfile compatibilityProfile = 63)` | Creates a ZIP archive split into multiple volumes. |
+| `Dispose` | `void Dispose()` |  |
+| `Finish` | `void Finish()` | Writes the central directory and finishes the archive. |
+
+### Namespace `FileFormat.Zlib`
+
+[`ZlibConstants`](#zlibconstants) · [`ZlibFormatDescriptor`](#zlibformatdescriptor) · [`ZlibRawHelper`](#zlibrawhelper) · [`ZlibStream`](#zlibstream)
+
+#### `ZlibConstants`
+
+Constants for the zlib compressed data format (RFC 1950).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressionMethodDeflate` | `const int CompressionMethodDeflate` | Deflate compression method identifier. |
+| `DefaultWindowBits` | `const int DefaultWindowBits` | Default window size exponent (15 → 32 KB window). |
+| `HeaderSize` | `const int HeaderSize` | Size of the zlib header in bytes (CMF + FLG). |
+| `LevelDefault` | `const int LevelDefault` | Compressor used default algorithm. |
+| `LevelFast` | `const int LevelFast` | Compressor used fast algorithm. |
+| `LevelFastest` | `const int LevelFastest` | Compressor used fastest algorithm. |
+| `LevelMaximum` | `const int LevelMaximum` | Compressor used maximum compression. |
+| `TrailerSize` | `const int TrailerSize` | Size of the Adler-32 trailer in bytes. |
+
+#### `ZlibFormatDescriptor`
+
+Describes zlib format.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZlibFormatDescriptor` | `ZlibFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The Deflate compression level applied to the Zlib payload. The optimizer searches these tiers to find the smallest output for the input. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Performs the compress optimal operation. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `ZlibRawHelper`
+
+Low-level helpers for working with raw Deflate bitstreams inside Zlib framing. Enables zero-decompression restreaming between formats sharing the Deflate codec.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Unwrap` | `static ValueTuple<byte[], uint> Unwrap(ReadOnlySpan<byte> zlibData)` | Extracts the raw Deflate bitstream from Zlib data without decompressing. Also returns the Adler-32 checksum from the trailer. |
+| `Wrap` | `static byte[] Wrap(ReadOnlySpan<byte> deflateData, uint adler32)` | Wraps a raw Deflate bitstream in Zlib framing. The caller must provide the Adler-32 of the uncompressed data. |
+
+#### `ZlibStream`
+
+Compresses and decompresses data in the zlib format (RFC 1950).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, DeflateCompressionLevel level = 6)` | Compresses a byte span to zlib format. |
+| `Compress` | `static void Compress(Stream input, Stream output, DeflateCompressionLevel level = 6, int windowBits = 15)` | Compresses data to zlib format. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses zlib-formatted data from a byte span. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses zlib-formatted data. |
+
+### Namespace `FileFormat.Zstd`
+
+[`ZstdBuildingBlock`](#zstdbuildingblock) · [`ZstdCompressionLevel`](#zstdcompressionlevel) · [`ZstdFormatDescriptor`](#zstdformatdescriptor) · [`ZstdStream`](#zstdstream)
+
+#### `ZstdBuildingBlock`
+
+Exposes Zstandard as a benchmarkable building block. Produces a spec-compliant Zstandard frame (magic 0xFD2FB528, frame header, data blocks, content checksum), so the payload is self-terminating and no extra uncompressed-size header is prepended.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZstdBuildingBlock` | `ZstdBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `ZstdCompressionLevel`
+
+Compression level for Zstandard.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Fastest` | `1` | Fastest compression: chain depth 4. |
+| `Fast` | `3` | Fast compression: chain depth 16. |
+| `Default` | `6` | Default compression: chain depth 64. |
+| `Best` | `9` | Best compression: chain depth 128. |
+
+#### `ZstdFormatDescriptor`
+
+Describes zstd format.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZstdFormatDescriptor` | `ZstdFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Compression level 1..9 (higher = smaller/slower). The optimizer searches these to find the smallest output for the given input. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Performs the compress optimal operation. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `WrapCompress` | `Stream WrapCompress(Stream output)` | Performs the wrap compress operation. |
+| `WrapDecompress` | `Stream WrapDecompress(Stream input)` | Performs the wrap decompress operation. |
+
+#### `ZstdStream`
+
+Stream for reading and writing Zstandard (zstd) compressed data (RFC 8878). Wraps an underlying stream and provides transparent compression or decompression.
+
+Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZstdStream` | `ZstdStream(Stream stream, CompressionStreamMode mode, ZstdCompressionLevel level, bool leaveOpen = false, ZstdDictionary dictionary = null)` | Initializes a new `ZstdStream` with a typed compression level. |
+| `ZstdStream` | `ZstdStream(Stream stream, CompressionStreamMode mode, int compressionLevel = 3, bool leaveOpen = false, ZstdDictionary dictionary = null)` | Initializes a new `ZstdStream`. |
+| `CompressBlock` | `protected override void CompressBlock(byte[] buffer, int offset, int count)` |  |
+| `DecompressBlock` | `protected override int DecompressBlock(byte[] buffer, int offset, int count)` |  |
+| `FinishCompression` | `protected override void FinishCompression()` |  |
 
 ### Namespace `FileSystem.Adf`
 

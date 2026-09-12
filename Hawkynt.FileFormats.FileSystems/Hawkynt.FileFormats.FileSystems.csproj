@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Meta-package. Has no source code of its own; bundles every filesystem
-         reader / writer + every disk-image container DLL into a single NuGet
-         drop. Folder + .csproj filename equal $(MSBuildProjectName) so the
-         .NET 10 SDK can default $(PackageId) without -p:PackageId overrides
-         (see Compression.Core/Hawkynt.Compression.Core.csproj for the rationale). -->
+    <!-- Every filesystem reader / writer and every disk-image container compiles
+         straight into this assembly; only the projects another package also ships
+         stay separate, so their types keep a single identity. Folder + .csproj
+         filename equal $(MSBuildProjectName) so the .NET 10 SDK can default
+         $(PackageId) without -p:PackageId overrides (see
+         Compression.Core/Hawkynt.Compression.Core.csproj for the rationale). -->
     <RootNamespace>Hawkynt.FileFormats.FileSystems</RootNamespace>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <NoWarn>$(NoWarn);CS2008</NoWarn>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <IsPackable>true</IsPackable>
     <Title>Hawkynt FileFormats FileSystems</Title>
@@ -24,113 +24,49 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
   </ItemGroup>
 
-  <!-- FileSystem.* — every filesystem reader / writer (modern + retro). -->
+  <!-- Reference template blocks captured byte-exact from `mkfs.reiser4 -fffy`. The
+       writer reproduces the same minimum-viable empty filesystem layout: 25
+       reserved blocks (0-15 jump area, 16 master, 17 format40 SB, 18 bitmap,
+       19-20 journal, 21 status, 22 backup, 23 twig root, 24 leaf with root dir).
+       Only the mkfs_id and UUID vary per-image; everything else is deterministic
+       for a fresh empty filesystem. LogicalName keeps the resource ids the writer
+       asks for unchanged now that it compiles into this assembly. -->
   <ItemGroup>
-    <ProjectReference Include="..\FileSystems\FileSystem.Adf\FileSystem.Adf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Apfs\FileSystem.Apfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.AdvFs\FileSystem.AdvFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.AppleDos\FileSystem.AppleDos.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Atari8\FileSystem.Atari8.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Bbc\FileSystem.Bbc.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.BcacheFs\FileSystem.BcacheFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Bfs\FileSystem.Bfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Btrfs\FileSystem.Btrfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.CbmNibble\FileSystem.CbmNibble.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.CpcDsk\FileSystem.CpcDsk.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Cpm\FileSystem.Cpm.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.CramFs\FileSystem.CramFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.D64\FileSystem.D64.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.D71\FileSystem.D71.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.D81\FileSystem.D81.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.DoubleSpace\FileSystem.DoubleSpace.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Erofs\FileSystem.Erofs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.ExFat\FileSystem.ExFat.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ps1MemoryCard\FileSystem.Ps1MemoryCard.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ext\FileSystem.Ext.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ext1\FileSystem.Ext1.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.F2fs\FileSystem.F2fs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Fat\FileSystem.Fat.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Gfs2\FileSystem.Gfs2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Hammer\FileSystem.Hammer.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Hammer2\FileSystem.Hammer2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Hfs\FileSystem.Hfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.HfsPlus\FileSystem.HfsPlus.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Hpfs\FileSystem.Hpfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Iso\FileSystem.Iso.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Jffs2\FileSystem.Jffs2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Jfs\FileSystem.Jfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Lif\FileSystem.Lif.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.LittleFs\FileSystem.LittleFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Mfs\FileSystem.Mfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.MinixFs\FileSystem.MinixFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.MinixV1\FileSystem.MinixV1.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.MinixV2\FileSystem.MinixV2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Nilfs2\FileSystem.Nilfs2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Tux2\FileSystem.Tux2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Tux3\FileSystem.Tux3.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.SmartFs\FileSystem.SmartFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.DragonFs\FileSystem.DragonFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Msa\FileSystem.Msa.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Nss\FileSystem.Nss.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ntfs\FileSystem.Ntfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Nwfs\FileSystem.Nwfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ocfs2\FileSystem.Ocfs2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.OpenVms\FileSystem.OpenVms.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Os9Rbf\FileSystem.Os9Rbf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.ProDos\FileSystem.ProDos.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Refs\FileSystem.Refs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Reiser4\FileSystem.Reiser4.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.ReiserFs\FileSystem.ReiserFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.RomFs\FileSystem.RomFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Rt11\FileSystem.Rt11.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Sfs\FileSystem.Sfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.TFat\FileSystem.TFat.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.TrDos\FileSystem.TrDos.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ubifs\FileSystem.Ubifs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Udf\FileSystem.Udf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Ufs\FileSystem.Ufs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Vdfs\FileSystem.Vdfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.VxFs\FileSystem.VxFs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Xfs\FileSystem.Xfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Yaffs2\FileSystem.Yaffs2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.Zfs\FileSystem.Zfs.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileSystems\FileSystem.ZxScl\FileSystem.ZxScl.csproj" PrivateAssets="all" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_16.bin" LogicalName="FileSystem.Reiser4.Templates.block_16.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_17.bin" LogicalName="FileSystem.Reiser4.Templates.block_17.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_18.bin" LogicalName="FileSystem.Reiser4.Templates.block_18.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_21.bin" LogicalName="FileSystem.Reiser4.Templates.block_21.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_22.bin" LogicalName="FileSystem.Reiser4.Templates.block_22.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_23.bin" LogicalName="FileSystem.Reiser4.Templates.block_23.bin" />
+    <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_24.bin" LogicalName="FileSystem.Reiser4.Templates.block_24.bin" />
   </ItemGroup>
 
-  <!-- FileFormat.* — disk-image containers (carry an inner filesystem). -->
+  <!-- Stream codecs the absorbed readers decompress with. Each is shipped by
+       another meta-package too, so it stays a project of its own: compiling it
+       into this assembly as well would give its types two identities. -->
   <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.BinCue\FileFormat.BinCue.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Cdi\FileFormat.Cdi.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Cso\FileFormat.Cso.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Dmg\FileFormat.Dmg.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Ewf\FileFormat.Ewf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Ipsw\FileFormat.Ipsw.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Mdf\FileFormat.Mdf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Nrg\FileFormat.Nrg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Lzma\FileFormat.Lzma.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- BUNDLED-CONTAINERS:BEGIN — FileFormat.* projects whose descriptors belong in the support matrix; read by Compression.Tests/Documentation/FilesystemSupportMatrix.cs -->
+  <ItemGroup>
     <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Qcow2\FileFormat.Qcow2.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Tap\FileFormat.Tap.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.UImage\FileFormat.UImage.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.UefiFv\FileFormat.UefiFv.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Vdi\FileFormat.Vdi.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Vhd\FileFormat.Vhd.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Vhdx\FileFormat.Vhdx.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Vmdk\FileFormat.Vmdk.csproj" PrivateAssets="all" />
   </ItemGroup>
-
-  <!-- Firmware / embedded boot images. Adjacent to the disk-image domain — they
-       carry filesystem-shaped payloads (UEFI FFS, U-Boot uImage body) or
-       describe board-level boot setup (Device Tree Blob, Intel HEX / Motorola
-       S-Record / TI-TXT firmware dumps). -->
-  <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.Dtb\FileFormat.Dtb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.FirmwareHex\FileFormat.FirmwareHex.csproj" PrivateAssets="all" />
-  </ItemGroup>
+  <!-- BUNDLED-CONTAINERS:END -->
 
   <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
@@ -143,11 +79,10 @@
     </ItemGroup>
   </Target>
 
-  <!-- Keep the NuGet bundle exhaustive too. The Remove eliminates the
-       legacy explicit subset above; the glob makes new FileSystem.* projects
-       part of the package automatically. -->
+  <!-- Keep the NuGet bundle exhaustive: a FileSystem.* project that stays out of
+       this assembly (because another package ships it too, or because it is new)
+       is still packaged. -->
   <ItemGroup>
-    <ProjectReference Remove="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
     <ProjectReference Include="..\FileSystems\FileSystem.*\FileSystem.*.csproj" PrivateAssets="all" />
   </ItemGroup>
 

@@ -164,10 +164,13 @@ dotnet publish Compression.UI -c Release --self-contained -r win-x64 -o publish/
 
 ## Adding a Format
 
-Each format lives in its own project under the folder for its family:
-`FileFormats/FileFormat.*` for archives, compression streams and containers,
-`FileSystems/FileSystem.*` for on-disk filesystems, `Codecs/Codec.*` for audio
-codecs. The folder decides which meta-package ships it.
+Each format lives under the folder for its family: `FileFormats/FileFormat.*` for
+archives, compression streams and containers, `Codecs/Codec.*` for audio codecs.
+The folder decides which meta-package ships it. Filesystems and disk-image
+containers have no project of their own — their sources sit under
+`Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.*` and
+`Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.*` and compile straight
+into the meta-package assembly.
 
 ### Step 1: Create the Project
 
@@ -275,12 +278,13 @@ meta-package that ships the family — `Hawkynt.FileFormats.Archives`,
 <ProjectReference Include="..\FileFormats\FileFormat.YourFormat\FileFormat.YourFormat.csproj" />
 ```
 
-A `FileSystems/FileSystem.*` project needs neither edit: both `Compression.Lib`
-and `Hawkynt.FileFormats.FileSystems` pick it up through an exhaustive glob, and
+A filesystem needs neither edit: its sources compile into
+`Hawkynt.FileFormats.FileSystems`, which `Compression.Lib` references, and
 `Compression.Tests/Operations/FilesystemDriverCoverageTests.cs` then requires it
 to have a derivable driver path.
 
-Add the project to `CompressionWorkbench.slnx`.
+Add the project to `CompressionWorkbench.slnx`. A filesystem has no project of
+its own, so there is nothing to add.
 
 The Roslyn source generator discovers the `IFormatDescriptor` implementation automatically at compile time. No manual registration is needed -- the CLI, UI, and format detection pipeline will all pick up the new format.
 
