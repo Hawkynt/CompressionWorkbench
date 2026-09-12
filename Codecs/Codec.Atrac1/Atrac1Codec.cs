@@ -69,8 +69,8 @@ public sealed class Atrac1Codec {
       var su = this._units[ch];
       var gb = new BitReader(frame.Slice(ch * SuSize, SuSize));
 
-      ParseBsm(gb, su.Log2BlockCount);
-      UnpackDequant(gb, su, this._spec);
+      ParseBsm(ref gb, su.Log2BlockCount);
+      UnpackDequant(ref gb, su, this._spec);
       ImdctBlock(su);
       SubbandSynthesis(su, outCh[ch]);
     }
@@ -103,7 +103,7 @@ public sealed class Atrac1Codec {
 
   // ── block size mode ────────────────────────────────────────────────────────────
 
-  private static void ParseBsm(BitReader gb, int[] log2BlockCount) {
+  private static void ParseBsm(ref BitReader gb, int[] log2BlockCount) {
     for (var i = 0; i < 2; ++i) {
       var tmp = gb.GetBits(2);
       if ((tmp & 1) != 0)
@@ -121,7 +121,7 @@ public sealed class Atrac1Codec {
 
   // ── spectrum unpack / dequant ─────────────────────────────────────────────────
 
-  private static void UnpackDequant(BitReader gb, SoundUnit su, float[] spec) {
+  private static void UnpackDequant(ref BitReader gb, SoundUnit su, float[] spec) {
     var idwls = new int[MaxBfu];
     var idsfs = new int[MaxBfu];
 
@@ -200,8 +200,13 @@ public sealed class Atrac1Codec {
         pos += blockSize;
       }
 
+      // A single block is windowed over its first 32 samples only; the rest of the band is the
+      // spectrum straight through. FFmpeg copies a flat 240 samples here, which for the two 128-sample
+      // bands runs past the end of the band buffer into the one declared after it -- harmless there
+      // because the spill is overwritten before anything reads it, and an exception here. The samples
+      // that are actually read are the ones up to the band's own length, so those are what is copied.
       if (numBlocks == 1)
-        Array.Copy(su.Spectrum[0], refPos + 16, this._bands[bandNum], 32, 240);
+        Array.Copy(su.Spectrum[0], refPos + 16, this._bands[bandNum], 32, bandSamples - 32);
 
       refPos += bandSamples;
     }
