@@ -17,7 +17,9 @@ internal static class AsfWriteSupport {
   internal static string AcceptedInputsDescription =>
     "ASF accepts FULL.asf; metadata.ini; metadata/tags.ini; streams/stream_NN.info.txt + stream_NN.bin; " +
     "or WAV audio at the root / streams/stream_NN/*.wav. Fresh encoding supports PCM, IEEE float pass-through, G.711 A-law and mu-law; " +
-    "other WAVEFORMATEX codecs are remuxed byte-exact from stream_NN.bin.";
+    "other WAVEFORMATEX codecs are remuxed byte-exact from stream_NN.bin. " +
+    "Video and mixed multi-track containers use the codec-preserving artifacts instead: " +
+    "streams/stream_NN.properties.bin + stream_NN.bin, optional stream_NN.objects.csv, and metadata/preserved-header.bin.";
 
   internal static bool CanAccept(ArchiveInputInfo input, out string? reason) {
     if (input.IsDirectory) {
@@ -29,7 +31,8 @@ internal static class AsfWriteSupport {
     if (IsFull(name) || name.Equals("metadata.ini", StringComparison.OrdinalIgnoreCase) ||
         name.Equals("metadata/tags.ini", StringComparison.OrdinalIgnoreCase) ||
         name.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
-        TryStreamNumber(name, ".bin", out _) || TryStreamNumber(name, ".info.txt", out _)) {
+        TryStreamNumber(name, ".bin", out _) || TryStreamNumber(name, ".info.txt", out _) ||
+        IsContainerArtifact(name)) {
       reason = null;
       return true;
     }
@@ -127,7 +130,7 @@ internal static class AsfWriteSupport {
     if (stream.ExtraData is { Length: > 0 } extra)
       text.AppendLine($"extra_data_hex = {Convert.ToHexString(extra)}");
     if (depayloaded is not null && depayloaded.TryGetValue(stream.StreamNumber, out var data) && data.Objects.Count > 0)
-      text.AppendLine($"object_sizes = {string.Join(',', data.Objects.Select(static item => item.Length))}");
+      text.AppendLine($"object_sizes = {string.Join(',', data.Objects.Select(static item => item.Data.Length))}");
     return text.ToString();
   }
 
@@ -503,6 +506,18 @@ internal static class AsfWriteSupport {
     if (values.Any(static value => value <= 0) || values.Sum(static value => (long)value) != payloadLength)
       throw new InvalidDataException("ASF object_sizes must be positive and sum exactly to stream_NN.bin length.");
     return values;
+  }
+
+  /// <summary>
+  /// Reports whether a write input belongs to the codec-preserving container vocabulary rather
+  /// than the audio-oriented one. These artifacts are what carry a video or mixed multi-track
+  /// container through a rebuild, so the descriptor routes them to <see cref="AsfRemuxer"/>.
+  /// </summary>
+  internal static bool IsContainerArtifact(string name) {
+    var normalized = Normalize(name);
+    return normalized.Equals(AsfRemuxer.PreservedHeaderPath, StringComparison.OrdinalIgnoreCase)
+      || TryStreamNumber(normalized, ".properties.bin", out _)
+      || TryStreamNumber(normalized, ".objects.csv", out _);
   }
 
   private static bool IsFull(string name)
