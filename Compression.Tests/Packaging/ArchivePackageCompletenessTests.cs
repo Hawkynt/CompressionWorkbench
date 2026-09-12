@@ -47,6 +47,13 @@ public sealed class ArchivePackageCompletenessTests {
       .Select(include => Path.GetFileNameWithoutExtension(include.Replace('\\', Path.DirectorySeparatorChar)))
       .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    // Archive-domain formats exclusive to this package are compiled into its assembly from
+    // FileFormats/FileFormat.*, so a source folder bundles a format just as a reference does.
+    var compiledIn = Path.Combine(packageDir, "FileFormats");
+    if (Directory.Exists(compiledIn))
+      foreach (var dir in Directory.EnumerateDirectories(compiledIn))
+        includes.Add(Path.GetFileName(dir));
+
     Assert.Multiple(() => {
       foreach (var expected in ExpectedArchiveProjects)
         Assert.That(includes, Does.Contain(expected),

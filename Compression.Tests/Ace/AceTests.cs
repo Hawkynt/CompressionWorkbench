@@ -79,9 +79,9 @@ public class AceEncoderDecoderTests {
 
     var compressed = AceEncoder.EncodeBlock(data);
     var decoded10 = AceDecoder.DecodeBlock(compressed, data.Length,
-      AceConstants.DefaultDictBits, AceConstants.CompAce10);
+      CoreAceConstants.DefaultDictBits, CoreAceConstants.CompAce10);
     var decoded20 = AceDecoder.DecodeBlock(compressed, data.Length,
-      AceConstants.DefaultDictBits, AceConstants.CompAce20);
+      CoreAceConstants.DefaultDictBits, CoreAceConstants.CompAce20);
 
     Assert.That(decoded10, Is.EqualTo(data));
     Assert.That(decoded20, Is.EqualTo(data));
