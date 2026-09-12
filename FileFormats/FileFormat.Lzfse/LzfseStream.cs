@@ -10,7 +10,9 @@ namespace FileFormat.Lzfse;
 /// LZFSE is a block-based compression format developed by Apple. Each block starts with a 4-byte
 /// little-endian magic number identifying the block type. Decoding supports Apple's entropy-coded
 /// <c>bvx1</c>/<c>bvx2</c> blocks, LZVN <c>bvxn</c> blocks, uncompressed <c>bvx-</c> blocks and
-/// <c>bvx$</c> end markers. Compression intentionally remains the simpler LZVN/raw profile.
+/// <c>bvx$</c> end markers. Compression authors the entropy-coded <c>bvx2</c> block, the LZVN
+/// <c>bvxn</c> block or the stored <c>bvx-</c> block, choosing per block whichever is smallest;
+/// <c>bvx1</c> is read but never written, as Apple's own compressor does not emit it either.
 /// </remarks>
 public static class LzfseStream {
   private const uint MagicEndOfStream = 0x24787662;
@@ -18,7 +20,11 @@ public static class LzfseStream {
   private const uint MagicLzfseV1 = 0x31787662;
   private const uint MagicLzfseV2 = 0x32787662;
   private const uint MagicLzvn = 0x6E787662;
-  private const int LzvnBlockSize = 65536;
+  private const int BlockSize = LzfseFseEncoder.MaxBlockRawBytes;
+
+  // Hash-chain candidates the bvx2 match search tries at each position. Four is
+  // Apple's own default trade-off between parse quality and encode time.
+  private const int MatchSearchDepth = 4;
 
   /// <summary>
   /// Compresses data from <paramref name="input"/> and writes an LZFSE-format stream to <paramref name="output"/>.
@@ -27,7 +33,7 @@ public static class LzfseStream {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    var rawBuffer = new byte[LzvnBlockSize];
+    var rawBuffer = new byte[BlockSize];
     Span<byte> header = stackalloc byte[12];
 
     while (true) {
@@ -36,14 +42,24 @@ public static class LzfseStream {
         break;
 
       var rawSpan = rawBuffer.AsSpan(0, bytesRead);
-      var compressed = Lzvn.Compress(rawSpan);
+      var lzvn = Lzvn.Compress(rawSpan);
+      var lzvnWins = lzvn.Length < bytesRead;
+      var bestFallbackBytes = lzvnWins ? 12 + lzvn.Length : 8 + bytesRead;
 
-      if (compressed.Length < bytesRead) {
+      // The entropy-coded block is taken only when it beats the block this writer
+      // would otherwise have emitted, so no input ever grows because of it.
+      var entropy = LzfseFseEncoder.EncodeBlock(rawSpan, MatchSearchDepth);
+      if (entropy is { Length: > 0 } && entropy.Length < bestFallbackBytes) {
+        output.Write(entropy);
+        continue;
+      }
+
+      if (lzvnWins) {
         BinaryPrimitives.WriteUInt32LittleEndian(header, MagicLzvn);
         BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)bytesRead);
-        BinaryPrimitives.WriteUInt32LittleEndian(header[8..], (uint)compressed.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[8..], (uint)lzvn.Length);
         output.Write(header[..12]);
-        output.Write(compressed);
+        output.Write(lzvn);
       } else {
         BinaryPrimitives.WriteUInt32LittleEndian(header, MagicUncompressed);
         BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)bytesRead);
