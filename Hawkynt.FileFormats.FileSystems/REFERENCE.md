@@ -4990,46 +4990,57 @@ Represents a cxfs entry.
 
 #### `CxfsFormatDescriptor`
 
-R/O descriptor for SGI CXFS (Cluster XFS) volume images. Because the on-disk format is XFS-compatible (same `"XFSB"` superblock magic, same `dinode` / dir2 / dir3 layout), the reader delegates content extraction to `XfsReader` and surfaces the underlying file tree. CXFS-specific cluster metadata (sb_features2 flags, cluster UUIDs, distributed-lock bookkeeping) is intentionally ignored — those are the CMS / dmF / RGM layers, not file content. If the XFS reader cannot walk the image the descriptor falls back to a Stage-0 `metadata.ini` + `cxfs-volume.bin` surface so the volume is still identifiable. Extension-only detection (`.cxfs`) avoids first-match collision with the vanilla FileSystem.Xfs descriptor — both share the same magic bytes. References: SGI "CXFS Administration Guide" (SGI techpubs) — the vendor documentation of the cluster layer`https://mirrors.edge.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf` — "XFS Algorithms & Data Structures", the on-disk spec CXFS volumes follow`https://en.wikipedia.org/wiki/CXFS` — Wikipedia overview
+R/W descriptor for SGI CXFS filesystem images. SGI documents CXFS as using the same filesystem structure as XFS and creating the filesystem with the same `mkfs` command. CXFS clustering, metadata-server selection, fencing and mount policy live in the external cluster database / XVM management layer, not in another filesystem format.Read support delegates the filesystem walk to the repository's XFS reader. Authoring deliberately targets the pre-CRC XFS v4 family (`mkfs.xfs -m crc=0`) instead of emitting the repository's modern XFS-v5 profile and calling it CXFS. The writable profile is conservative: 4 KiB blocks, 256-byte v2 inodes, dir2 short-form directories and rebuild-style edits. Unsupported v4/v5 structures remain readable but are refused for mutation.This descriptor does not claim to author the surrounding CXFS cluster database, XVM volume definition, fencing policy or metadata-server configuration. Extension-only detection avoids colliding with XFS because both use the same `XFSB` filesystem magic.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IArchiveWriteConstraints`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CxfsFormatDescriptor` | `CxfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `CxfsReader`
 
-R/O reader for SGI CXFS (Cluster XFS) volume images via delegation to `XfsReader`. CXFS is SGI's clustered extension of XFS. The on-disk format is XFS-compatible — same `"XFSB"` superblock magic at offset 0, same `xfs_dsb` layout, same `dinode` (IN magic) layout, and same dir2/dir3 directory block formats. CXFS-specific bits live in `sb_features2` (offset 0x82) and in cluster-tracking fields that the lock-managing layer (CMS / dmF) consults at mount time; they do not modify the file/directory on-disk structures.Because of that, a CXFS DAT image whose XFS layer is well-formed is readable by the vanilla XFS reader. This reader first tries the XFS reader; on success it surfaces the underlying XFS entries to the caller (cluster metadata is intentionally ignored — that is the distributed-lock / quorum / RGM layer, not file content). On failure it falls back to the Stage-0 `metadata.ini` + `cxfs-volume.bin` surface so the descriptor still identifies the image.Honest caveat: real CXFS production volumes may use SGI-private fork formats for cluster-quota and DMAPI metadata that the open-source XFS reader does not understand; such inodes will simply be skipped by the XFS reader (it ignores unknown `di_format` values), and any data lurking in CXFS-only metadata regions will not be surfaced. Plain file content stored as XFS extents / inline data IS readable.
+Reader for the filesystem image used by SGI CXFS. SGI documents CXFS as using the same filesystem structure as XFS and creating that filesystem with the same `mkfs`. The CXFS cluster database, XVM topology, metadata-server state and fencing policy live outside the XFS filesystem image. Accordingly this reader delegates the real file walk to `XfsReader`.The `sb_features2` value exposed here is ordinary XFS superblock metadata. It is useful diagnostics for historical images, but it is not a CXFS discriminator and no bit is treated as a CXFS marker.When the XFS layer is too incomplete to contain a plausible root directory, the reader falls back to a small detection surface containing `metadata.ini` and the untouched image bytes. A valid empty XFS filesystem is not mistaken for that fallback merely because it has zero directory entries.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CxfsReader` | `CxfsReader(Stream stream)` | Initializes a new instance of `CxfsReader`. |
-| `SbFeatures2Offset` | `const int SbFeatures2Offset` | Offset of sb_features2 field in the XFS superblock (xfs_dsb). |
+| `CxfsReader` | `CxfsReader(Stream stream)` |  |
+| `SbFeatures2Offset` | `const int SbFeatures2Offset` | Offset of the XFS `sb_features2` field in `xfs_dsb`. |
 | `XfsbMagic` | `static readonly byte[] XfsbMagic` | XFS superblock magic: ASCII "XFSB" (0x58465342 BE). |
-| `DelegatedToXfs` | `bool DelegatedToXfs { get; }` | True when the XFS reader successfully walked the image and produced at least one real file/directory entry. False when we fell back to the Stage-0 metadata-only surface. |
-| `Entries` | `IReadOnlyList<CxfsEntry> Entries { get; }` | Gets the entries. |
-| `SbFeatures2` | `uint SbFeatures2 { get; }` | Gets or sets the sb features 2. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `XfsMagic` | `uint XfsMagic { get; }` | Gets or sets the xfs magic. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(CxfsEntry entry)` | Decodes the supplied input. |
+| `DelegatedToXfs` | `bool DelegatedToXfs { get; }` | True when the XFS reader successfully accepted the filesystem, including a valid filesystem whose root directory is empty. False only when the detection-only fallback was required. |
+| `Entries` | `IReadOnlyList<CxfsEntry> Entries { get; }` |  |
+| `SbFeatures2` | `uint SbFeatures2 { get; }` |  |
+| `ValidHeader` | `bool ValidHeader { get; }` |  |
+| `XfsMagic` | `uint XfsMagic { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(CxfsEntry entry)` |  |
 
 ### Namespace `FileSystem.D64`
 

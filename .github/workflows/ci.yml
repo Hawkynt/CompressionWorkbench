@@ -126,7 +126,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils bcachefs-tools
+          sudo apt-get install -y p7zip-full gzip bzip2 xz-utils zstd lz4 tar cpio genisoimage mtools qemu-utils gfs2-utils bcachefs-tools xfsprogs
           # cabextract and wimlib-imagex are the tools that OWN the CAB and WIM formats.
           # Both reference tests fall back to 7-Zip when they are absent, so without these
           # two packages the owning readers were never asked -- which is what #85 and #86

@@ -7,69 +7,48 @@ using FileSystem.Xfs;
 namespace FileSystem.Cxfs;
 
 /// <summary>
-/// R/O reader for SGI CXFS (Cluster XFS) volume images via delegation to
-/// <see cref="XfsReader"/>.
+/// Reader for the filesystem image used by SGI CXFS.
 ///
-/// <para>CXFS is SGI's clustered extension of XFS. The on-disk format is
-/// XFS-compatible — same <c>"XFSB"</c> superblock magic at offset 0, same
-/// <c>xfs_dsb</c> layout, same <c>dinode</c> (IN magic) layout, and same
-/// dir2/dir3 directory block formats. CXFS-specific bits live in
-/// <c>sb_features2</c> (offset 0x82) and in cluster-tracking fields that
-/// the lock-managing layer (CMS / dmF) consults at mount time; they do
-/// not modify the file/directory on-disk structures.</para>
+/// <para>SGI documents CXFS as using the same filesystem structure as XFS and
+/// creating that filesystem with the same <c>mkfs</c>. The CXFS cluster database,
+/// XVM topology, metadata-server state and fencing policy live outside the XFS
+/// filesystem image. Accordingly this reader delegates the real file walk to
+/// <see cref="XfsReader"/>.</para>
 ///
-/// <para>Because of that, a CXFS DAT image whose XFS layer is well-formed
-/// is readable by the vanilla XFS reader. This reader first tries the
-/// XFS reader; on success it surfaces the underlying XFS entries to the
-/// caller (cluster metadata is intentionally ignored — that is the
-/// distributed-lock / quorum / RGM layer, not file content). On failure
-/// it falls back to the Stage-0 <c>metadata.ini</c> + <c>cxfs-volume.bin</c>
-/// surface so the descriptor still identifies the image.</para>
+/// <para>The <c>sb_features2</c> value exposed here is ordinary XFS superblock
+/// metadata. It is useful diagnostics for historical images, but it is not a
+/// CXFS discriminator and no bit is treated as a CXFS marker.</para>
 ///
-/// <para>Honest caveat: real CXFS production volumes may use SGI-private
-/// fork formats for cluster-quota and DMAPI metadata that the open-source
-/// XFS reader does not understand; such inodes will simply be skipped by
-/// the XFS reader (it ignores unknown <c>di_format</c> values), and any
-/// data lurking in CXFS-only metadata regions will not be surfaced. Plain
-/// file content stored as XFS extents / inline data IS readable.</para>
+/// <para>When the XFS layer is too incomplete to contain a plausible root
+/// directory, the reader falls back to a small detection surface containing
+/// <c>metadata.ini</c> and the untouched image bytes. A valid empty XFS filesystem
+/// is not mistaken for that fallback merely because it has zero directory
+/// entries.</para>
 /// </summary>
 public sealed class CxfsReader : IDisposable {
 
   /// <summary>XFS superblock magic: ASCII "XFSB" (0x58465342 BE).</summary>
   public static readonly byte[] XfsbMagic = "XFSB"u8.ToArray();
 
-  /// <summary>Offset of sb_features2 field in the XFS superblock (xfs_dsb).</summary>
-  public const int SbFeatures2Offset = 0x82;
+  /// <summary>Offset of the XFS <c>sb_features2</c> field in <c>xfs_dsb</c>.</summary>
+  public const int SbFeatures2Offset = 0xC8;
 
   private readonly byte[] _data;
   private readonly List<CxfsEntry> _entries = [];
 
-  /// <summary>
-  /// Gets the entries.
-  /// </summary>
   public IReadOnlyList<CxfsEntry> Entries => _entries;
-  /// <summary>
-  /// Gets or sets the xfs magic.
-  /// </summary>
   public uint XfsMagic { get; private set; }
-  /// <summary>
-  /// Gets or sets the sb features 2.
-  /// </summary>
   public uint SbFeatures2 { get; private set; }
-  /// <summary>
-  /// Gets a value indicating whether valid header.
-  /// </summary>
   public bool ValidHeader { get; private set; }
 
-  /// <summary>True when the XFS reader successfully walked the image and
-  /// produced at least one real file/directory entry. False when we fell
-  /// back to the Stage-0 metadata-only surface.</summary>
+  /// <summary>True when the XFS reader successfully accepted the filesystem,
+  /// including a valid filesystem whose root directory is empty. False only
+  /// when the detection-only fallback was required.</summary>
   public bool DelegatedToXfs { get; private set; }
 
-  /// <summary>
-  /// Initializes a new instance of <see cref="CxfsReader"/>.
-  /// </summary>
   public CxfsReader(Stream stream) {
+    ArgumentNullException.ThrowIfNull(stream);
+    if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     _data = ms.ToArray();
@@ -78,33 +57,28 @@ public sealed class CxfsReader : IDisposable {
 
   private void Parse() {
     if (_data.Length < SbFeatures2Offset + 4)
-      throw new InvalidDataException("CXFS: file too small for XFS superblock + sb_features2.");
+      throw new InvalidDataException("CXFS/XFS: file too small for the XFS superblock + sb_features2 field.");
 
     if (!_data.AsSpan(0, 4).SequenceEqual(XfsbMagic))
-      throw new InvalidDataException("CXFS: missing 'XFSB' superblock magic at offset 0.");
+      throw new InvalidDataException("CXFS/XFS: missing 'XFSB' superblock magic at offset 0.");
 
     this.XfsMagic = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(0, 4));
     this.SbFeatures2 = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(SbFeatures2Offset, 4));
     this.ValidHeader = true;
 
-    // First attempt: delegate the XFS layer walk. Real CXFS images store
-    // file content via the same XFS dinodes / extents, so the vanilla XFS
-    // reader returns real entries. Cluster-private metadata is ignored —
-    // documented above.
     if (TryDelegateToXfs())
       return;
 
-    // Stage-0 fallback when the XFS reader returned nothing (no walkable
-    // root inode, or this is a CXFS-internal dump without file content).
     BuildFallback();
   }
 
   private bool TryDelegateToXfs() {
     try {
       using var xfsStream = new MemoryStream(_data, writable: false);
-      var xfs = new XfsReader(xfsStream);
+      using var xfs = new XfsReader(xfsStream);
       var xfsEntries = xfs.Entries;
-      if (xfsEntries.Count == 0)
+
+      if (xfsEntries.Count == 0 && !HasPlausibleRootDirectory())
         return false;
 
       foreach (var xe in xfsEntries) {
@@ -121,10 +95,57 @@ public sealed class CxfsReader : IDisposable {
       this.DelegatedToXfs = true;
       return true;
     } catch {
-      // Any XFS-layer failure (malformed inode, unsupported fork format,
-      // truncated image) -> fall back to detection-only metadata.
       return false;
     }
+  }
+
+  private bool HasPlausibleRootDirectory() {
+    if (_data.Length < 128)
+      return false;
+
+    var blockSize = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(4, 4));
+    var rootIno = BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(56, 8));
+    var agBlocks = BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(84, 4));
+    var inodeSize = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(104, 2));
+    var agBlkLog = _data[124];
+
+    if (blockSize == 0 || inodeSize == 0 || agBlocks == 0 || rootIno == 0 || blockSize < inodeSize)
+      return false;
+
+    var inodesPerBlock = blockSize / inodeSize;
+    if (inodesPerBlock == 0)
+      return false;
+
+    var inoPbLog = 0;
+    for (var v = inodesPerBlock; v > 1; v >>= 1)
+      ++inoPbLog;
+
+    var aginoLog = agBlkLog + inoPbLog;
+    if (aginoLog is <= 0 or >= 63)
+      return false;
+
+    var agNo = rootIno >> aginoLog;
+    var agInoMask = (1UL << aginoLog) - 1;
+    var agIno = rootIno & agInoMask;
+    var block = agIno / inodesPerBlock;
+    var slot = agIno % inodesPerBlock;
+
+    ulong byteOffset;
+    try {
+      byteOffset = checked(((agNo * agBlocks) + block) * blockSize + slot * inodeSize);
+    } catch (OverflowException) {
+      return false;
+    }
+
+    if (byteOffset > int.MaxValue || byteOffset + inodeSize > (ulong)_data.LongLength)
+      return false;
+
+    var off = (int)byteOffset;
+    if (BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(off, 2)) != 0x494E)
+      return false;
+
+    var mode = BinaryPrimitives.ReadUInt16BigEndian(_data.AsSpan(off + 2, 2));
+    return (mode & 0xF000) == 0x4000;
   }
 
   private void BuildFallback() {
@@ -136,27 +157,21 @@ public sealed class CxfsReader : IDisposable {
   private byte[] BuildMetadata() {
     var bldr = new StringBuilder();
     bldr.Append("parse_status=detection-only-fallback\n");
-    bldr.Append("format=SGI CXFS (cluster XFS) superblock\n");
+    bldr.Append("format=SGI CXFS filesystem image (XFS on disk)\n");
     bldr.Append("magic_tag=XFSB\n");
     bldr.Append("magic_offset=0\n");
     bldr.Append(CultureInfo.InvariantCulture, $"sb_features2_offset=0x{SbFeatures2Offset:X2}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"sb_features2=0x{this.SbFeatures2:X8}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"image_size={_data.Length}\n");
-    bldr.Append("note=XFS layer reader could not walk this image; surfacing detection metadata only. ");
-    bldr.Append("CXFS shares XFS 'XFSB' magic; cluster-aware bits live in sb_features2 and require SGI/Trusted XFS tools.\n");
+    bldr.Append("note=XFS filesystem layer could not be walked; surfacing detection metadata only. ");
+    bldr.Append("CXFS cluster configuration is external (cluster database/XVM), not encoded as a separate filesystem signature.\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public byte[] Extract(CxfsEntry entry) {
     ArgumentNullException.ThrowIfNull(entry);
     return entry.Data;
   }
 
-  /// <summary>
-  /// Releases resources held by this instance.
-  /// </summary>
   public void Dispose() { }
 }

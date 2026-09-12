@@ -143,6 +143,83 @@ public class Atrac1Tests {
     Assert.That(w[0], Is.EqualTo(-0.00001461907f * 2.0f).Within(1e-9));
   }
 
+  /// <summary>
+  /// Assembles one 212-byte ATRAC1 sound unit from the field values the format defines:
+  /// the three block-size-mode selectors, the BFU-count selector plus its two auxiliary
+  /// fields, then the word-length, scale-factor and mantissa arrays.
+  /// </summary>
+  private static byte[] BuildSoundUnit(int bsmLow, int bsmMid, int bsmHigh, int bfuSelector,
+      int[] wordLengthIndices, int[] scaleFactorIndices, int mantissa) {
+    var frame = new byte[Atrac1Codec.SoundUnitSize];
+    var position = 0;
+
+    void Write(int value, int count) {
+      for (var bit = count - 1; bit >= 0; --bit) {
+        if (((value >> bit) & 1) != 0)
+          frame[position >> 3] |= (byte)(1 << (7 - (position & 7)));
+        ++position;
+      }
+    }
+
+    Write(bsmLow, 2);
+    Write(bsmMid, 2);
+    Write(bsmHigh, 2);
+    Write(0, 2);
+    Write(bfuSelector, 3);
+    Write(0, 2);
+    Write(0, 3);
+
+    var bfus = Atrac1Tables.BfuAmountTab1[bfuSelector];
+    for (var i = 0; i < bfus; ++i)
+      Write(wordLengthIndices[i], 4);
+    for (var i = 0; i < bfus; ++i)
+      Write(scaleFactorIndices[i], 6);
+    for (var i = 0; i < bfus; ++i) {
+      var wordLength = wordLengthIndices[i] == 0 ? 0 : wordLengthIndices[i] + 1;
+      for (var k = 0; k < Atrac1Tables.SpecsPerBfu[i]; ++k)
+        Write(mantissa, wordLength);
+    }
+
+    return frame;
+  }
+
+  /// <summary>
+  /// The block-size-mode field is eight bits wide and sits in front of the BFU-count selector.
+  /// A sound unit that declares quantised content in its lowest ten BFUs must therefore decode
+  /// to something audible; a decoder that does not advance past the block-size-mode field reads
+  /// that field as the BFU-count selector, then reads the word lengths eight bits early, and the
+  /// declared content silently disappears.
+  /// </summary>
+  [Test]
+  public void BlockSizeModeField_IsConsumedBeforeTheBfuCountSelector() {
+    var wordLengths = new int[52];
+    var scaleFactors = new int[52];
+    for (var i = 0; i < 10; ++i) {
+      wordLengths[i] = 2;
+      scaleFactors[i] = 45;
+    }
+
+    var frame = BuildSoundUnit(0, 0, 0, bfuSelector: 7, wordLengths, scaleFactors, mantissa: 3);
+    var pcm = new Atrac1Codec(1).Decode(frame);
+
+    Assert.That(pcm.Any(static sample => sample != 0), Is.True,
+      "a sound unit that declares quantised mantissas must not decode to digital silence");
+  }
+
+  /// <summary>
+  /// Long windows (one IMDCT block per QMF band) take the branch that copies the non-overlapped
+  /// remainder of the transform into the band buffer. The low and middle bands hold 128 samples
+  /// each, so the copy must stay inside them.
+  /// </summary>
+  [Test]
+  public void LongWindowSoundUnit_DoesNotOverrunTheLowAndMiddleBandBuffers() {
+    var frame = BuildSoundUnit(2, 2, 3, bfuSelector: 7, new int[52], new int[52], mantissa: 0);
+
+    short[]? pcm = null;
+    Assert.That(() => pcm = new Atrac1Codec(1).Decode(frame), Throws.Nothing);
+    Assert.That(pcm, Has.Length.EqualTo(Atrac1Codec.SamplesPerFrame));
+  }
+
   [Test]
   public void Sine32Window_MatchesSineGenerator() {
     var w = Atrac1Tables.Sine32;
