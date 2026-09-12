@@ -215,6 +215,7 @@ Writes Windows ICO bundles. Inputs are individual image files (PNG or BMP). PNG 
 | `IcoWriter` | `IcoWriter()` |  |
 | `BuildCur` | `static byte[] BuildCur(IReadOnlyList<Image> images)` | Performs the build cur operation. |
 | `BuildIco` | `static byte[] BuildIco(IReadOnlyList<Image> images)` | Performs the build ico operation. |
+| `EncodePayload` | `static ValueTuple<byte[], int, int, int, bool> EncodePayload(byte[] imageFile)` | Encodes one whole image file into the payload an entry carries, with the size and depth taken from it. |
 
 #### `IcoWriter.Image`
 
