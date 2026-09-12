@@ -4584,7 +4584,7 @@ A clean-room implementation of the Context Tree Weighting (CTW) method: a bounde
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.Mcm`
 
-[`McmBuildingBlock`](#mcmbuildingblock) · [`McmCompressor`](#mcmcompressor)
+[`McmBuildingBlock`](#mcmbuildingblock) · [`McmCompressionProfile`](#mcmcompressionprofile) · [`McmCompressor`](#mcmcompressor)
 
 #### `McmBuildingBlock`
 
@@ -4602,14 +4602,28 @@ Implements `IBuildingBlock`.
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
 
+#### `McmCompressionProfile`
+
+Selects the amount of model structure used by the reduced clean-room MCM implementation. The names mirror MCM's public command-line compression modes, but the managed implementation is independent rather than a port of the GPL implementation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Turbo` | `1` | Local byte contexts only; lowest memory and CPU cost. |
+| `Fast` | `2` | Adds the medium-order context group. |
+| `Mid` | `3` | Adds the wide and sparse context group. |
+| `High` | `4` | Adds one secondary-symbol-estimation refinement stage. |
+| `Max` | `5` | Uses the full reduced model with both refinement stages. |
+
 #### `McmCompressor`
 
 A clean-room implementation of the MCM architecture: several small context-mixers, each specialised on a group of related contexts, combined by a final mixing stage into one prediction — a two-level mixing network.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the two-level context-mixing network. |
-| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses MCM-style compressed data. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data)` | Compresses data using the full reduced two-level context-mixing network. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, McmCompressionProfile profile)` | Compresses data using the selected reduced MCM profile. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed)` | Decompresses data produced by the full reduced MCM profile. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> compressed, McmCompressionProfile profile)` | Decompresses data produced by the selected reduced MCM profile. |
 
 ### Namespace `Compression.Core.Entropy.ContextMixing.Paq8hp`
 
@@ -4926,13 +4940,17 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 #### `PpmdBuildingBlock`
 
-Exposes PPMd (Prediction by Partial Matching, variant H) as a benchmarkable building block. Wraps the existing `PpmdModelH` context-tree model with `PpmdRangeEncoder`/`PpmdRangeDecoder` range coding. Unlike the simpler order-2 fallback used by the plain `BB_PPM` block, this uses a full context trie with per-context escape estimation (PPM Method D) and periodic rescaling, matching the model family 7-Zip calls "PPMd". Header: 1-byte order, 4-byte LE original size, then the range-coded stream.
+Exposes PPMd (Prediction by Partial Matching, variant H) as a benchmarkable building block. Wraps the existing `PpmdModelH` context-tree model with `PpmdRangeEncoder`/`PpmdRangeDecoder` range coding. Unlike the simpler order-3 fallback used by the plain `BB_PPM` block, this uses a full context trie with per-context escape estimation (PPM Method D) and periodic rescaling, matching the model family 7-Zip calls "PPMd". Header: 1-byte order, 4-byte LE original size, then the range-coded stream.
 
 Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PpmdBuildingBlock` | `PpmdBuildingBlock()` |  |
+| `PpmdBuildingBlock` | `PpmdBuildingBlock()` | Creates a PPMd building block with the default model order. |
+| `PpmdBuildingBlock` | `PpmdBuildingBlock(int order)` | Creates a PPMd building block with the supplied model order. |
+| `DefaultOrder` | `const int DefaultOrder` | Default PPMd-H model order. |
+| `MaxOrder` | `const int MaxOrder` | Maximum model order supported by the managed PPMd-H model. |
+| `MinOrder` | `const int MinOrder` | Minimum PPMd-H model order exposed by the standalone optimizer. |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |

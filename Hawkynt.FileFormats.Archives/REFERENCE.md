@@ -4426,7 +4426,7 @@ Writes a Microsoft Compiled HTML Help (.chm) file. Supports two modes: Stored (d
 
 Describes cmix format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4442,8 +4442,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Arithmetic-coder endings exposed to the shared optimizer. Legacy preserves historical managed output; Compact omits up to three redundant trailing bytes. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the compact arithmetic finalization. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `CmixStream`
@@ -4452,7 +4455,7 @@ cmix file format by Byron Knoll. Format: Byte 0: bit7=dict flag (0), bits 0-6 = 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical four-byte finalization. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Collada`
@@ -11419,13 +11422,26 @@ Implements `IEquatable<ChunkEntry>`.
 
 ### Namespace `FileFormat.Mcm`
 
-[`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+[`McmCompressionMode`](#mcmcompressionmode) · [`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+
+#### `McmCompressionMode`
+
+Compression modes available to the managed MCM stream writer.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Legacy` | `0` |  |
+| `Turbo` | `1` |  |
+| `Fast` | `2` |  |
+| `Mid` | `3` |  |
+| `High` | `4` |  |
+| `Max` | `5` |  |
 
 #### `McmFormatDescriptor`
 
 Describes mcm format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11441,8 +11457,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Searchable MCM modes. Legacy preserves the writer's historical payload; the remaining modes progressively enable more of the reduced clean-room context-mixing graph and therefore trade CPU/memory for coding density. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the highest-effort managed MCM profile. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected profile. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `McmStream`
@@ -11451,7 +11470,8 @@ Represents a mcm stream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical managed payload. |
+| `Compress` | `static void Compress(Stream input, Stream output, McmCompressionMode mode)` | Encodes the supplied input using the selected managed MCM mode. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Mdb`
@@ -14953,7 +14973,7 @@ Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file forma
 
 Describes ppmd format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14969,17 +14989,20 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd-H model order. 7-Zip exposes orders 2 through 32; the optimizer searches the complete finite range because the best context depth depends on the input. The managed model's memory-size constructor parameter is not currently an effective capacity limit, so memory is deliberately not advertised as a knob. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with format-specific PPMd tunables. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `PpmdStream`
 
-PPMd stream container format. Layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), then the raw output of `PpmBuildingBlock` (which includes its own 1-byte order + 4-byte LE size header).
+PPMd stream container format. Current layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), 1-byte format version, then the raw output of `PpmdBuildingBlock` (1-byte order, 4-byte LE original size, range-coded data).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the default PPMd-H model order. |
+| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Encodes the supplied input with the requested PPMd-H model order. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Ppt`
@@ -15601,7 +15624,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 Describes ref pack format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15617,8 +15640,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | RefPack has three useful encoder-search levers without changing the wire format: history reach, hash-chain search depth, and whether positions skipped by a match are indexed. The generic optimizer exhaustively searches the 24 finite combinations and keeps the smallest stream for the actual data. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Exhaustively searches the RefPack encoder settings and writes the smallest result. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using explicit RefPack match-search settings. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `RefPackStream`
@@ -17551,7 +17577,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Szdd`
 
-[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
+[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzCompressOptimizer`](#szcompressoptimizer) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
 
 #### `SzCompressFormatDescriptor`
 
@@ -17579,6 +17605,15 @@ Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input using the fast legacy parser. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested parse strategy. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `SzCompressOptimizer`
+
+Size optimizer for the older Microsoft `"SZ "` COMPRESS stream used by the QBasic-era tooling. The emitted stream remains the original 12-byte header plus SZDD-compatible LZSS body; only the token parse is improved.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses `input` as an optimized legacy `"SZ "` stream and returns the complete encoded file. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as an optimized legacy `"SZ "` stream and writes it to `output`. |
 
 #### `SzOptimizer`
 

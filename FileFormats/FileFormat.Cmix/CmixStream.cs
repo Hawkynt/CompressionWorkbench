@@ -19,12 +19,34 @@ public static class CmixStream {
   private const int ProbMax = 1 << ProbBits; // 4096
   private const int ProbInit = ProbMax / 2;  // 2048
 
+  /// <summary>Arithmetic-coder termination strategy.</summary>
+  internal enum FinalizationMode {
+    /// <summary>Historical managed encoding: write the complete 32-bit upper bound.</summary>
+    Legacy,
+    /// <summary>Write the shortest decoder-independent byte prefix contained by the final interval.</summary>
+    Compact,
+  }
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   /// <summary>
-  /// Encodes the supplied input.
+  /// Encodes the supplied input using the historical four-byte finalization.
   /// </summary>
-  public static void Compress(Stream input, Stream output) {
+  public static void Compress(Stream input, Stream output) => Compress(input, output, FinalizationMode.Legacy);
+
+  /// <summary>
+  /// Encodes the supplied input using the requested arithmetic-coder finalization.
+  /// </summary>
+  /// <remarks>
+  /// Finalization changes only the redundant bytes used to terminate the arithmetic
+  /// code. It does not alter the probability model or require a stream-format flag.
+  /// </remarks>
+  internal static void Compress(Stream input, Stream output, FinalizationMode finalization) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (finalization is not (FinalizationMode.Legacy or FinalizationMode.Compact))
+      throw new ArgumentOutOfRangeException(nameof(finalization));
+
     using var ms = new MemoryStream();
     input.CopyTo(ms);
     var data = ms.ToArray();
@@ -61,13 +83,16 @@ public static class CmixStream {
       EncodeByte(enc, b, bitTree);
     }
 
-    enc.Flush();
+    enc.Flush(finalization);
   }
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public static void Decompress(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+
     // Read 5-byte header
     var h0 = input.ReadByte();
     var h1 = input.ReadByte();
@@ -142,6 +167,7 @@ public static class CmixStream {
   private sealed class ArithEncoder {
     private uint _low;
     private uint _high = 0xFFFFFFFFu;
+    private byte _bytesWrittenBeforeFinalization;
     private readonly Stream _out;
 
     public ArithEncoder(Stream output) => _out = output;
@@ -165,16 +191,41 @@ public static class CmixStream {
     private void Normalize() {
       while ((_low ^ _high) < Top) {
         _out.WriteByte((byte)(_high >> 24));
+        if (_bytesWrittenBeforeFinalization < 3)
+          ++_bytesWrittenBeforeFinalization;
         _low <<= 8;
         _high = (_high << 8) | 0xFFu;
       }
     }
 
-    public void Flush() {
+    public void Flush(FinalizationMode finalization) {
+      if (finalization == FinalizationMode.Compact) {
+        // Find the largest byte-aligned suffix range fully contained in the final
+        // arithmetic interval. Every possible value of the omitted bytes then lies
+        // inside the interval, so decoder EOF padding (0x00, 0xFF, or anything else)
+        // cannot change the decoded symbols. Keep at least four physical arithmetic
+        // bytes overall because the historical managed decoder bootstraps a 32-bit code.
+        var maxOmittedBytes = _bytesWrittenBeforeFinalization;
+        for (var omittedBytes = (int)maxOmittedBytes; omittedBytes > 0; --omittedBytes) {
+          var mask = (1u << (omittedBytes * 8)) - 1u;
+          var start = ((ulong)_low + mask) & ~(ulong)mask;
+          if (start + mask > _high)
+            continue;
+
+          WriteCodePrefix((uint)start, 4 - omittedBytes);
+          return;
+        }
+      }
+
       for (var i = 0; i < 4; i++) {
         _out.WriteByte((byte)(_high >> 24));
         _high <<= 8;
       }
+    }
+
+    private void WriteCodePrefix(uint code, int byteCount) {
+      for (var shift = 24; byteCount-- > 0; shift -= 8)
+        _out.WriteByte((byte)(code >> shift));
     }
   }
 

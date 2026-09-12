@@ -7,7 +7,7 @@ namespace FileFormat.Mcm;
 /// <summary>
 /// Describes mcm format.
 /// </summary>
-public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -24,7 +24,8 @@ public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
+    FormatCapabilities.SupportsOptimize;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -46,7 +47,7 @@ public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("mcm", "MCM")];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("mcm", "MCM", SupportsOptimize: true)];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
@@ -58,7 +59,29 @@ public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Mathieu Chartier's Multi-Context Mixing compressor";
+  public string Description => "MCM-style context-mixing stream with clean-room reduced profile optimization";
+
+  /// <summary>
+  /// Searchable MCM modes. Legacy preserves the writer's historical payload;
+  /// the remaining modes progressively enable more of the reduced clean-room
+  /// context-mixing graph and therefore trade CPU/memory for coding density.
+  /// </summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: "Mode",
+      DisplayName: "Compression mode",
+      Kind: FormatOptionKind.Enum,
+      Default: "Legacy",
+      AllowedValues: ["Legacy", "Turbo", "Fast", "Mid", "High", "Max"],
+      Description: "Legacy preserves existing streams; Turbo through Max progressively enable more managed MCM model groups and SSE refinement."),
+  ];
+
+  internal static McmCompressionMode ParseMode(FormatCreateOptions options) {
+    var raw = options.GetString("Mode");
+    return raw is not null && Enum.TryParse<McmCompressionMode>(raw, ignoreCase: true, out var mode) && Enum.IsDefined(mode)
+      ? mode
+      : McmCompressionMode.Legacy;
+  }
 
   /// <summary>
   /// Decodes the supplied input.
@@ -68,4 +91,14 @@ public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperat
   /// Encodes the supplied input.
   /// </summary>
   public void Compress(Stream input, Stream output) => McmStream.Compress(input, output);
+  /// <summary>
+  /// Encodes the supplied input with the selected profile.
+  /// </summary>
+  public void Compress(Stream input, Stream output, FormatCreateOptions options) =>
+    McmStream.Compress(input, output, ParseMode(options));
+  /// <summary>
+  /// Encodes with the highest-effort managed MCM profile.
+  /// </summary>
+  public void CompressOptimal(Stream input, Stream output) =>
+    McmStream.Compress(input, output, McmCompressionMode.Max);
 }
