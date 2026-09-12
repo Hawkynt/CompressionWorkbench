@@ -13,13 +13,13 @@ public sealed class ZipWriter : IDisposable {
   private readonly DeflateCompressionLevel _compressionLevel;
   private readonly string? _password;
   private readonly ZipEncryptionMethod _encryptionMethod;
+  private readonly ZipCompatibilityProfile _compatibilityProfile;
   private readonly List<ZipEntry> _entries = [];
   private bool _finished;
+  private bool _finishAttempted;
   private bool _disposed;
 
-  /// <summary>
-  /// Gets or sets the archive comment.
-  /// </summary>
+  /// <summary>Gets or sets the archive comment.</summary>
   public string? Comment { get; set; }
 
   /// <summary>LZMA dictionary size in bytes (4096 to 1GB). Used when method is LZMA.</summary>
@@ -46,32 +46,26 @@ public sealed class ZipWriter : IDisposable {
   /// <param name="compressionLevel">The Deflate compression level to use.</param>
   /// <param name="password">Optional password for encryption.</param>
   /// <param name="encryptionMethod">The encryption method to use when a password is set.</param>
+  /// <param name="compatibilityProfile">Maximum ZIP feature level the output may require.</param>
   public ZipWriter(Stream stream, bool leaveOpen = false,
     DeflateCompressionLevel compressionLevel = DeflateCompressionLevel.Default,
     string? password = null,
-    ZipEncryptionMethod encryptionMethod = ZipEncryptionMethod.Aes256) {
+    ZipEncryptionMethod encryptionMethod = ZipEncryptionMethod.Aes256,
+    ZipCompatibilityProfile compatibilityProfile = ZipCompatibilityProfile.Zip63) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
     this._compressionLevel = compressionLevel;
     this._password = password;
     this._encryptionMethod = password != null ? encryptionMethod : ZipEncryptionMethod.None;
+    this._compatibilityProfile = compatibilityProfile;
   }
 
-  /// <summary>
-  /// Adds a file entry from a byte array.
-  /// </summary>
-  /// <param name="fileName">The file name in the archive.</param>
-  /// <param name="data">The file data.</param>
-  /// <param name="method">The compression method.</param>
-  /// <param name="lastModified">The last modification time.</param>
+  /// <summary>Adds a file entry from a byte array.</summary>
   public void AddEntry(string fileName, byte[] data, ZipCompressionMethod method = ZipCompressionMethod.Deflate, DateTime? lastModified = null) {
     if (this._finished)
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
-    // Compute CRC
     var crc = Crc32.Compute(data);
-
-    // Compress if needed
     byte[] compressedData;
     switch (method) {
       case ZipCompressionMethod.Store:
@@ -149,7 +143,6 @@ public sealed class ZipWriter : IDisposable {
         throw new NotSupportedException($"Unsupported compression method for writing: {method}");
     }
 
-    // Apply encryption if password is set
     byte[]? aesExtraField = null;
     var storedMethod = method;
     var encrypted = this._password != null && this._encryptionMethod != ZipEncryptionMethod.None;
@@ -170,6 +163,7 @@ public sealed class ZipWriter : IDisposable {
     var entry = new ZipEntry {
       FileName = fileName,
       CompressionMethod = storedMethod,
+      WrappedCompressionMethod = storedMethod == ZipCompressionMethod.WinZipAes ? method : null,
       Crc32 = crc,
       CompressedSize = compressedData.Length,
       UncompressedSize = data.Length,
@@ -177,31 +171,20 @@ public sealed class ZipWriter : IDisposable {
       LocalHeaderOffset = this._stream.Position,
       ExtraField = aesExtraField,
       IsEncrypted = encrypted,
-      // Set Implode flags: bit 1 = 8K dictionary, bit 2 = literal tree
       GeneralPurposeFlags = (ushort)(method == ZipCompressionMethod.Implode ? 0x0006 : 0),
     };
 
-    // Write local header
+    this.EnsureCompatible(entry, method);
+
     var writer = new BinaryWriter(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
     ZipLocalFileHeader.Write(writer, entry, encrypted);
-
-    // Write data
     this._stream.Write(compressedData);
-
     this._entries.Add(entry);
   }
 
   /// <summary>
-  /// Adds a pre-compressed entry. The data is already compressed and will not be
-  /// re-compressed. Useful for restreaming between formats (e.g., Gzip → ZIP) or
-  /// for injecting optimally-compressed data.
+  /// Adds a pre-compressed entry. The data is already compressed and will not be re-compressed.
   /// </summary>
-  /// <param name="fileName">The file name in the archive.</param>
-  /// <param name="compressedData">The pre-compressed data.</param>
-  /// <param name="method">The compression method that was used.</param>
-  /// <param name="crc32">CRC-32 of the original uncompressed data.</param>
-  /// <param name="uncompressedSize">Size of the original uncompressed data.</param>
-  /// <param name="lastModified">The last modification time.</param>
   public void AddRawEntry(string fileName, byte[] compressedData, ZipCompressionMethod method,
       uint crc32, long uncompressedSize, DateTime? lastModified = null) {
     if (this._finished)
@@ -227,6 +210,7 @@ public sealed class ZipWriter : IDisposable {
     var entry = new ZipEntry {
       FileName = fileName,
       CompressionMethod = storedMethod,
+      WrappedCompressionMethod = storedMethod == ZipCompressionMethod.WinZipAes ? method : null,
       Crc32 = crc32,
       CompressedSize = compressedData.Length,
       UncompressedSize = uncompressedSize,
@@ -236,6 +220,8 @@ public sealed class ZipWriter : IDisposable {
       IsEncrypted = encrypted,
     };
 
+    this.EnsureCompatible(entry, method);
+
     var writer = new BinaryWriter(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
     ZipLocalFileHeader.Write(writer, entry, encrypted);
     this._stream.Write(compressedData);
@@ -243,33 +229,14 @@ public sealed class ZipWriter : IDisposable {
   }
 
   /// <summary>
-  /// Adds a STORE (uncompressed) entry whose payload is streamed from
-  /// <paramref name="data"/> in bounded 64 KB chunks rather than buffered into
-  /// RAM. The local file header is written up front with the pre-known
-  /// <paramref name="size"/> (STORE ⇒ compressed size = uncompressed size) and
-  /// a placeholder CRC, the payload is copied while the CRC is computed
-  /// incrementally, and the 4-byte CRC field in the just-written header is
-  /// patched in place. Peak memory is the 64 KB copy buffer regardless of
-  /// <paramref name="size"/>.
+  /// Adds a STORE entry whose payload is streamed in bounded chunks rather than buffered in RAM.
   /// </summary>
-  /// <remarks>
-  /// <para>Produces byte-identical output to
-  /// <c>AddEntry(name, data, ZipCompressionMethod.Store, lastModified)</c> for
-  /// the same payload: same header, same CRC, same data, same central-directory
-  /// entry. The CRC patch leaves no trace because the final bytes equal what a
-  /// CRC-first single-pass write would have produced.</para>
-  /// <para>Requires a seekable output stream (to patch the CRC). Encryption is
-  /// not supported on this path — callers needing encrypted STORE must use the
-  /// buffered <see cref="AddEntry(string, byte[], ZipCompressionMethod, DateTime?)"/>.</para>
-  /// </remarks>
-  /// <param name="fileName">The file name in the archive.</param>
-  /// <param name="size">The entry's logical (uncompressed) byte size.</param>
-  /// <param name="data">The source stream supplying exactly <paramref name="size"/> bytes.</param>
-  /// <param name="lastModified">The last modification time.</param>
   public void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null) {
     if (this._finished)
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
     ArgumentNullException.ThrowIfNull(data);
+    if (size < 0)
+      throw new ArgumentOutOfRangeException(nameof(size));
     if (this._password != null && this._encryptionMethod != ZipEncryptionMethod.None)
       throw new NotSupportedException("Streaming STORE does not support encryption; use the buffered AddEntry.");
     if (!this._stream.CanSeek)
@@ -278,7 +245,7 @@ public sealed class ZipWriter : IDisposable {
     var entry = new ZipEntry {
       FileName = fileName,
       CompressionMethod = ZipCompressionMethod.Store,
-      Crc32 = 0, // patched after the payload is streamed
+      Crc32 = 0,
       CompressedSize = size,
       UncompressedSize = size,
       LastModified = lastModified ?? new DateTime(1980, 1, 1),
@@ -286,13 +253,13 @@ public sealed class ZipWriter : IDisposable {
       IsEncrypted = false,
     };
 
+    this.EnsureCompatible(entry, ZipCompressionMethod.Store);
+
     var headerOffset = this._stream.Position;
     var writer = new BinaryWriter(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
     ZipLocalFileHeader.Write(writer, entry, encrypted: false);
     writer.Flush();
-    var dataOffset = this._stream.Position;
 
-    // Stream the payload, computing the CRC incrementally.
     var crc = new Crc32();
     if (size > 0) {
       var buffer = new byte[64 * 1024];
@@ -311,67 +278,59 @@ public sealed class ZipWriter : IDisposable {
     var endOffset = this._stream.Position;
     entry.Crc32 = crc.Value;
 
-    // Patch the 4-byte CRC field in the local header (offset 14 from header
-    // start: sig(4)+ver(2)+flags(2)+method(2)+time(2)+date(2) = 14).
     this._stream.Position = headerOffset + 14;
     Span<byte> crcBytes = stackalloc byte[4];
     System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(crcBytes, entry.Crc32);
     this._stream.Write(crcBytes);
     this._stream.Position = endOffset;
-    _ = dataOffset;
 
     this._entries.Add(entry);
   }
 
-  /// <summary>
-  /// Adds a directory entry.
-  /// </summary>
-  /// <param name="name">The directory name (should end with '/').</param>
-  /// <param name="lastModified">The last modification time.</param>
+  /// <summary>Adds a directory entry.</summary>
   public void AddDirectory(string name, DateTime? lastModified = null) {
     if (!name.EndsWith('/'))
       name += '/';
-
     AddEntry(name, [], ZipCompressionMethod.Store, lastModified);
   }
 
-  /// <summary>
-  /// Writes the central directory and finishes the archive.
-  /// </summary>
+  /// <summary>Writes the central directory and finishes the archive.</summary>
   public void Finish() {
-    if (this._finished)
+    if (this._finished || this._finishAttempted)
       return;
 
-    this._finished = true;
+    // One-shot: a Finish that threw leaves a half-written central directory, and
+    // disposal must not run it a second time and let the same failure escape
+    // Dispose, where a caller has no way to react to it.
+    this._finishAttempted = true;
 
     var writer = new BinaryWriter(this._stream, System.Text.Encoding.UTF8, leaveOpen: true);
-
-    // Write central directory
     var cdOffset = this._stream.Position;
+    var countNeedsZip64 = this._entries.Count > ushort.MaxValue;
+    var offsetNeedsZip64 = cdOffset > uint.MaxValue;
+    if (countNeedsZip64 || offsetNeedsZip64)
+      ZipCompatibility.EnsureSupported(this._compatibilityProfile, ZipCompressionMethod.Store, zip64: true);
+
     foreach (var entry in this._entries)
       ZipCentralDirectoryEntry.Write(writer, entry);
     var cdSize = this._stream.Position - cdOffset;
 
-    // Write end of central directory
-    ZipEndOfCentralDirectory.Write(writer, cdOffset, cdSize, this._entries.Count, Comment);
+    if (cdSize > uint.MaxValue)
+      ZipCompatibility.EnsureSupported(this._compatibilityProfile, ZipCompressionMethod.Store, zip64: true);
 
+    ZipEndOfCentralDirectory.Write(writer, cdOffset, cdSize, this._entries.Count, Comment);
     writer.Flush();
+    this._finished = true;
   }
 
-  /// <summary>
-  /// Creates a ZIP archive split into multiple volumes.
-  /// </summary>
-  /// <param name="maxVolumeSize">Maximum size of each volume in bytes.</param>
-  /// <param name="entries">The entries to add (name, data pairs).</param>
-  /// <param name="method">The compression method.</param>
-  /// <param name="password">Optional password for encryption.</param>
-  /// <returns>An array of byte arrays, one per volume.</returns>
+  /// <summary>Creates a ZIP archive split into multiple volumes.</summary>
   public static byte[][] CreateSplit(long maxVolumeSize,
       IEnumerable<(string Name, byte[] Data)> entries,
       ZipCompressionMethod method = ZipCompressionMethod.Deflate,
-      string? password = null) {
+      string? password = null,
+      ZipCompatibilityProfile compatibilityProfile = ZipCompatibilityProfile.Zip63) {
     using var ms = new MemoryStream();
-    using (var writer = new ZipWriter(ms, leaveOpen: true, password: password)) {
+    using (var writer = new ZipWriter(ms, leaveOpen: true, password: password, compatibilityProfile: compatibilityProfile)) {
       foreach (var (name, data) in entries)
         writer.AddEntry(name, data, method);
       writer.Finish();
@@ -389,5 +348,15 @@ public sealed class ZipWriter : IDisposable {
       if (!this._leaveOpen)
         this._stream.Dispose();
     }
+  }
+
+  private void EnsureCompatible(ZipEntry entry, ZipCompressionMethod actualMethod) {
+    var encryption = entry.IsEncrypted ? this._encryptionMethod : ZipEncryptionMethod.None;
+    ZipCompatibility.EnsureSupported(
+      this._compatibilityProfile,
+      actualMethod,
+      encryption,
+      entry.IsZip64,
+      entry.IsDirectory);
   }
 }

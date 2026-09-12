@@ -19,10 +19,12 @@ namespace FileFormat.RealMedia;
 /// both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (<c>28_8</c>)
 /// is Int4-deinterleaved and decoded to a mono 8 kHz WAV via <c>Codec.Ra288</c>; RealAudio Lossless
 /// (<c>ralf</c>) is decoded to per-channel 16-bit WAVs via <c>Codec.Ralf</c>; sipr and atrc are
-/// likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on
-/// failure and parsing degrades gracefully.
+/// likewise decoded to per-channel WAVs. RMFF audio can also be packet-demuxed and remuxed without
+/// re-encoding; fresh muxing is supported for AC-3/dnet while native RealAudio codecs reuse preserved
+/// MDPR type-specific data from their source container. Decode paths degrade gracefully on failure.
 /// </summary>
-public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract {
+public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract,
+  IAudioContainerFormat, IAudioDemuxSource, IAudioMuxTarget {
 
   /// <summary>
   /// Gets the id.
@@ -40,7 +42,7 @@ public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
+    FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
@@ -76,7 +78,7 @@ public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "RealMedia (.rm/.rmvb) / RealAudio (.ra) container; full file + per-stream payloads + metadata.";
+  public string Description => "RealMedia (.rm/.rmvb) / RealAudio (.ra) container; demuxed streams, metadata, and audio packet mux/remux.";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -95,6 +97,23 @@ public sealed class RealMediaFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// </summary>
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password)
     => AudioPseudoArchive.ExtractEntry(BuildEntries(input), entryName, output);
+
+  public IReadOnlyList<string> SupportedMuxCodecs => RealMediaMuxer.SupportedCodecs;
+
+  public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
+    ArgumentNullException.ThrowIfNull(options);
+    return RealMediaMuxer.CanMux(stream, out reason);
+  }
+
+  public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)
+    => RealMediaMuxer.Mux(output, stream, options);
+
+  public bool TryDemux(Stream input, out AudioEncodedStream? stream) {
+    ArgumentNullException.ThrowIfNull(input);
+    using var buffer = new MemoryStream();
+    input.CopyTo(buffer);
+    return RealMediaMuxer.TryDemux(buffer.ToArray(), out stream);
+  }
 
   private static IReadOnlyList<AudioPseudoArchive.Entry> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();

@@ -22,11 +22,26 @@ internal static class ZipConstants {
   /// <summary>Data descriptor signature (optional).</summary>
   public const uint DataDescriptorSignature = 0x08074B50;
 
-  /// <summary>Version needed to extract (2.0 for Deflate).</summary>
+  /// <summary>Version needed to extract (1.0, baseline/legacy methods).</summary>
+  public const ushort VersionNeeded10 = 10;
+
+  /// <summary>Version needed to extract (2.0, Deflate/directories/traditional encryption).</summary>
   public const ushort VersionNeeded20 = 20;
 
-  /// <summary>Version needed to extract (4.5 for ZIP64).</summary>
+  /// <summary>Version needed to extract (2.1, Deflate64).</summary>
+  public const ushort VersionNeeded21 = 21;
+
+  /// <summary>Version needed to extract (4.5, ZIP64).</summary>
   public const ushort VersionNeeded45 = 45;
+
+  /// <summary>Version needed to extract (4.6, BZip2).</summary>
+  public const ushort VersionNeeded46 = 46;
+
+  /// <summary>Version needed to extract (5.1, AES encryption).</summary>
+  public const ushort VersionNeeded51 = 51;
+
+  /// <summary>Version needed to extract (6.3, LZMA/PPMd/Zstandard family used by this writer).</summary>
+  public const ushort VersionNeeded63 = 63;
 
   /// <summary>Version made by (2.0 on FAT filesystem).</summary>
   public const ushort VersionMadeBy20 = 20;
@@ -48,7 +63,4 @@ internal static class ZipConstants {
 
   /// <summary>General purpose bit flag: entry is encrypted.</summary>
   public const ushort FlagEncrypted = 0x0001;
-
-  /// <summary>Version needed for AES encryption.</summary>
-  public const ushort VersionNeeded51 = 51;
 }

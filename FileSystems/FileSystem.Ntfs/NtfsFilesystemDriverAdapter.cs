@@ -5,12 +5,12 @@ using Compression.Registry;
 namespace FileSystem.Ntfs;
 
 /// <summary>
-/// Native NTFS driver sidecar. Namespace identity is based on the MFT record
-/// number rather than path text, so rename/unlink can later preserve open-handle
-/// identity. The reader already decodes resident/non-resident $DATA, sparse
-/// runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories. Mounted
-/// writes remain fail-closed until $LogFile transactions/replay and the full
-/// file-reference (MFT record + sequence number) are part of the mutable core.
+/// Native NTFS driver sidecar. Namespace identity uses the complete native file
+/// reference identity available in a FILE record: MFT segment number plus its
+/// sequence number. The reader already decodes resident/non-resident $DATA,
+/// sparse runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories.
+/// Mounted writes remain fail-closed until $LogFile transactions/replay and the
+/// remaining mutable namespace/index semantics are part of the mounted core.
 /// </summary>
 public sealed class NtfsFilesystemDriverAdapter :
   IFilesystemDriverAdapter,
@@ -24,11 +24,12 @@ public sealed class NtfsFilesystemDriverAdapter :
     try {
       var geometry = NtfsDriverGeometry.Parse(image);
       using var reader = new NtfsReader(image, leaveOpen: true);
-      ValidateNamespace(reader.Entries, geometry);
+      var identities = NtfsMountIdentityScanner.Read(image, geometry, reader.Entries);
+      ValidateNamespace(identities.Entries, geometry);
 
       return new FilesystemDriverProfile(
         FormatId,
-        "NTFS native MFT reader",
+        "NTFS native MFT file-reference reader",
         FilesystemDriverCapabilities.EnumerateDirectories |
         FilesystemDriverCapabilities.ReadData |
         FilesystemDriverCapabilities.RandomAccess |
@@ -40,8 +41,9 @@ public sealed class NtfsFilesystemDriverAdapter :
         CanMount: true,
         CanMountWritable: false,
         [
-          "MFT record numbers provide path-independent object identity for the read-only mounted snapshot.",
-          "The current namespace reader retains one preferred $FILE_NAME per MFT record; expose all $FILE_NAME attributes plus the MFT sequence number before claiming durable hard-link/file-reference identity.",
+          "Mounted node ids use the MFT segment number plus FILE-record sequence number, so a reused MFT slot cannot alias a stale file reference.",
+          "$FILE_NAME parent references are checked against the live parent FILE-record sequence before the namespace is published.",
+          "The current namespace reader still retains one preferred $FILE_NAME per MFT record; reconstruct every live alias from the parent $I30 indexes before claiming complete hard-link enumeration.",
           "File data is decoded by the native NTFS reader; the transitional positional handle spools that decoded stream while a direct resident/data-run/LZNT1 positional handle is completed.",
           "$LogFile restart/replay and transactional publication are not implemented, so writable mounting remains disabled even though offline add/remove/block-move primitives exist.",
         ]);
@@ -115,12 +117,13 @@ public sealed class NtfsFilesystemDriverAdapter :
 
     var available = profile.CanMount
       ? readRequired |
+        FilesystemDriverReadinessLayer.NativeStableNodeIds |
         FilesystemDriverReadinessLayer.AllocationMap |
         FilesystemDriverReadinessLayer.ValidationCorpus
       : FilesystemDriverReadinessLayer.None;
     var blockers = new List<string>(profile.Limitations);
     if (target == FilesystemDriverTarget.ReadWrite) {
-      blockers.Add("Expose the MFT sequence number and every live $FILE_NAME attribute so file references and hard links survive rename/unlink/reuse correctly.");
+      blockers.Add("Reconstruct and validate every live hard-link alias from $INDEX_ROOT/$INDEX_ALLOCATION $I30 entries instead of the current one-preferred-$FILE_NAME namespace projection.");
       blockers.Add("Move resident/data-run/LZNT1 reads and writes behind direct positional handles; remove whole-file materialization from the mounted path.");
       blockers.Add("Implement arbitrary-directory create/unlink/mkdir/rmdir/rename/link with $INDEX_ROOT/$INDEX_ALLOCATION B+tree split/merge and correct namespace collation.");
       blockers.Add("Implement resident↔non-resident conversion, sparse/compressed run-list growth, truncate and $Bitmap allocation as bounded block-device transactions.");
@@ -138,9 +141,12 @@ public sealed class NtfsFilesystemDriverAdapter :
       blockers.Distinct(StringComparer.Ordinal).ToArray());
   }
 
-  private static void ValidateNamespace(IReadOnlyList<NtfsEntry> entries, NtfsDriverGeometry geometry) {
+  private static void ValidateNamespace(
+      IReadOnlyList<NtfsMountedEntryIdentity> entries,
+      NtfsDriverGeometry geometry) {
     var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var entry in entries) {
+    foreach (var mounted in entries) {
+      var entry = mounted.Entry;
       if (entry.MftRecord <= 15)
         throw new InvalidDataException($"NTFS user namespace unexpectedly exposed reserved MFT record {entry.MftRecord} as '{entry.Name}'.");
       var path = Normalize(entry.Name);
@@ -175,10 +181,11 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
       throw new ArgumentException("NTFS mounted reads require a readable, seekable image.", nameof(image));
     _image = image;
     _leaveOpen = leaveOpen;
+    var geometry = NtfsDriverGeometry.Parse(image);
     _reader = new NtfsReader(image, leaveOpen: true);
-    var records = _reader.Entries.ToArray();
-    var root = new FilesystemNodeId(5, 0);
-    var (nodes, links) = BuildNamespace(records, root);
+    var identityMap = NtfsMountIdentityScanner.Read(image, geometry, _reader.Entries);
+    var root = new FilesystemNodeId(5, identityMap.RootSequence);
+    var (nodes, links) = BuildNamespace(identityMap.Entries, root, identityMap.RootHardLinkCount);
     _namespace = new ReadOnlyFilesystemSnapshotSession(profile, root, nodes, links);
   }
 
@@ -212,17 +219,27 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
   }
 
   private (FilesystemSnapshotNode[] Nodes, FilesystemSnapshotDirectoryEntry[] Links) BuildNamespace(
-      IReadOnlyList<NtfsEntry> records,
-      FilesystemNodeId rootId) {
+      IReadOnlyList<NtfsMountedEntryIdentity> records,
+      FilesystemNodeId rootId,
+      ushort rootHardLinkCount) {
     var nodes = new Dictionary<uint, FilesystemSnapshotNode>();
     var links = new List<FilesystemSnapshotDirectoryEntry>(records.Count);
     var pathToNode = new Dictionary<string, FilesystemNodeId>(StringComparer.OrdinalIgnoreCase) {
       [string.Empty] = rootId,
     };
     nodes[5] = new FilesystemSnapshotNode(
-      rootId, default, string.Empty, FilesystemNodeKind.Directory, 0, 0);
+      rootId,
+      default,
+      string.Empty,
+      FilesystemNodeKind.Directory,
+      0,
+      0,
+      LinkCount: Math.Max(1U, rootHardLinkCount));
 
-    foreach (var record in records.OrderBy(r => Depth(r.Name)).ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)) {
+    foreach (var mounted in records
+      .OrderBy(static mounted => Depth(mounted.Entry.Name))
+      .ThenBy(static mounted => mounted.Entry.Name, StringComparer.OrdinalIgnoreCase)) {
+      var record = mounted.Entry;
       var path = Normalize(record.Name);
       var slash = path.LastIndexOf('/');
       var parentPath = slash < 0 ? string.Empty : path[..slash];
@@ -230,7 +247,7 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
       if (!pathToNode.TryGetValue(parentPath, out var parent))
         throw new InvalidDataException($"NTFS entry '{path}' has no decoded parent '{parentPath}'.");
 
-      var nodeId = new FilesystemNodeId(record.MftRecord, 0);
+      var nodeId = new FilesystemNodeId(record.MftRecord, mounted.Sequence);
       if (!nodes.TryGetValue(record.MftRecord, out var existing)) {
         var captured = record;
         Func<IFilesystemFileHandle>? open = null;
@@ -253,6 +270,7 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
             : FilesystemNodeKind.RegularFile,
           record.IsDirectory ? 0 : record.Size,
           record.IsDirectory ? 0 : record.Size,
+          LinkCount: Math.Max(1U, mounted.HardLinkCount),
           Modified: ToOffset(record.LastModified),
           SymbolicLinkTarget: record.LinkTarget,
           OpenReadHandle: open);
@@ -260,8 +278,10 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
         var expectedKind = record.IsDirectory ? FilesystemNodeKind.Directory
           : record.IsSymlink ? FilesystemNodeKind.SymbolicLink
           : FilesystemNodeKind.RegularFile;
-        if (existing.Kind != expectedKind || existing.Size != (record.IsDirectory ? 0 : record.Size))
-          throw new InvalidDataException($"NTFS aliases for MFT record {record.MftRecord} disagree on object metadata.");
+        if (existing.NodeId != nodeId
+            || existing.Kind != expectedKind
+            || existing.Size != (record.IsDirectory ? 0 : record.Size))
+          throw new InvalidDataException($"NTFS aliases for MFT record {record.MftRecord} disagree on object identity or metadata.");
       }
 
       links.Add(new FilesystemSnapshotDirectoryEntry(parent, name, nodeId));
@@ -272,7 +292,7 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
     return (nodes.Values.ToArray(), links.ToArray());
   }
 
-  private static int Depth(string path) => Normalize(path).Count(c => c == '/');
+  private static int Depth(string path) => Normalize(path).Count(static c => c == '/');
   private static string Normalize(string path) => path.Replace('\\', '/').Trim('/');
   private static DateTimeOffset? ToOffset(DateTime? value) {
     if (value == null) return null;

@@ -8,17 +8,28 @@ using Compression.Core.Dictionary.Rar;
 namespace FileFormat.Rar;
 
 /// <summary>
-/// Creates RAR4 archives. Supports Store and compressed (LZ+Huffman) methods,
-/// with optional AES-128-CBC encryption.
-/// RAR4 uses the v2.9 (UnPack29) compression algorithm.
+/// Creates archives in the shared RAR 1.5-4.x container family. RAR4 targets support Store and
+/// compressed (LZ+Huffman) methods with optional AES-128-CBC encryption; RAR 1.5 compatibility
+/// deliberately emits stored, non-solid, unencrypted members with <c>UNP_VER=15</c>.
 /// </summary>
 public sealed class Rar4Writer : IDisposable {
+  private static readonly Encoding Rar15FileNameEncoding;
+
+  static Rar4Writer() {
+    Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    Rar15FileNameEncoding = Encoding.GetEncoding(
+      437,
+      EncoderFallback.ExceptionFallback,
+      DecoderFallback.ExceptionFallback);
+  }
+
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
   private readonly int _method;
   private readonly int _windowBits;
   private readonly bool _solid;
   private readonly string? _password;
+  private readonly RarCompatibility _targetCompatibility;
   private Rar3Encoder? _solidEncoder;
   private bool _isFirstFile = true;
   private bool _headerWritten;
@@ -26,19 +37,42 @@ public sealed class Rar4Writer : IDisposable {
   private bool _disposed;
 
   /// <summary>
-  /// Initializes a new <see cref="Rar4Writer"/>.
+  /// Initializes a writer for the RAR 1.5-4.x container family.
   /// </summary>
-  /// <param name="stream">The stream to write the RAR4 archive to.</param>
+  /// <param name="stream">The stream to write the RAR archive to.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
   /// <param name="method">RAR4 compression method (0x30=Store, 0x31-0x35=compressed). Default Normal.</param>
   /// <param name="windowBits">Window size as log2 (15-22). Default 20 (1MB).</param>
   /// <param name="solid">Whether to create a solid archive.</param>
-  /// <param name="password">Optional password for AES-128 encryption.</param>
+  /// <param name="password">Optional password for RAR3/4 AES-128 encryption.</param>
+  /// <param name="targetCompatibility">RAR generation that must be able to read the emitted archive.</param>
   public Rar4Writer(Stream stream, bool leaveOpen = false,
       byte method = RarConstants.Rar4MethodNormal,
-      int windowBits = 20, bool solid = false, string? password = null) {
+      int windowBits = 20, bool solid = false, string? password = null,
+      RarCompatibility targetCompatibility = RarCompatibility.Rar4) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._targetCompatibility = targetCompatibility;
+
+    if (targetCompatibility is not (RarCompatibility.Rar4 or RarCompatibility.Rar1_5))
+      throw new ArgumentOutOfRangeException(nameof(targetCompatibility), targetCompatibility,
+        "Rar4Writer can emit only the shared RAR 1.5-4.x container family.");
+
+    if (targetCompatibility == RarCompatibility.Rar1_5) {
+      if (method != RarConstants.Rar4MethodStore)
+        throw new NotSupportedException("RAR 1.5 target currently supports stored members only; Unpack15 compression is not implemented yet.");
+      if (solid)
+        throw new NotSupportedException("RAR 1.5 target does not use the later solid-archive semantics.");
+      if (password != null)
+        throw new NotSupportedException("RAR 1.5 target cannot use RAR3/4 AES encryption.");
+
+      this._method = RarConstants.Rar4MethodStore;
+      this._windowBits = 16;
+      this._solid = false;
+      this._password = null;
+      return;
+    }
+
     this._method = method;
     this._windowBits = Math.Clamp(windowBits, 15, 22);
     this._solid = solid;
@@ -79,12 +113,10 @@ public sealed class Rar4Writer : IDisposable {
       }
     }
 
-    // Encrypt compressed data if password is set
     byte[]? salt = null;
     if (this._password != null) {
       salt = RandomNumberGenerator.GetBytes(8);
       var (key, iv) = KeyDerivation.Rar3DeriveKey(this._password, salt);
-      // Pad to 16-byte boundary for AES
       var padded = (compressed.Length + 15) & ~15;
       if (padded != compressed.Length) {
         var tmp = new byte[padded];
@@ -94,10 +126,16 @@ public sealed class Rar4Writer : IDisposable {
       compressed = AesCryptor.EncryptCbcNoPaddingAny(compressed, key, iv);
     }
 
-    // Build file header
-    var nameBytes = Encoding.UTF8.GetBytes(fileName);
+    byte[] nameBytes;
+    try {
+      nameBytes = this._targetCompatibility == RarCompatibility.Rar1_5
+        ? Rar15FileNameEncoding.GetBytes(fileName)
+        : Encoding.UTF8.GetBytes(fileName);
+    } catch (EncoderFallbackException exception) {
+      throw new NotSupportedException(
+        $"Filename '{fileName}' cannot be represented by the RAR 1.5 OEM code page.", exception);
+    }
 
-    // File flags
     var fileFlags = RarConstants.Rar4FlagAddSize;
     if (this._solid && !this._isFirstFile)
       fileFlags |= RarConstants.Rar4FlagSolid;
@@ -105,30 +143,26 @@ public sealed class Rar4Writer : IDisposable {
       fileFlags |= RarConstants.Rar4FlagEncrypted;
     this._isFirstFile = false;
 
-    // Determine UnPack version
-    var unpackVer = actualMethod == RarConstants.Rar4MethodStore ? (byte)20 : (byte)29;
+    var unpackVer = this._targetCompatibility == RarCompatibility.Rar1_5
+      ? (byte)15
+      : actualMethod == RarConstants.Rar4MethodStore ? (byte)20 : (byte)29;
 
-    // Dictionary size shift for header
-    // dictSizeShift = windowBits - 16 (0-6), stored in bits 5-7 of flags
-    var dictShift = Math.Clamp(this._windowBits - 16, 0, 7);
-    fileFlags |= (ushort)((dictShift & 0x07) << 5);
+    // RAR 1.5 has only the 64 KiB-era dictionary semantics and stored members do not need
+    // the later window-size bits. RAR 2.9+ records the selected dictionary in bits 5-7.
+    if (this._targetCompatibility != RarCompatibility.Rar1_5) {
+      var dictShift = Math.Clamp(this._windowBits - 16, 0, 7);
+      fileFlags |= (ushort)((dictShift & 0x07) << 5);
+    }
 
-    // MS-DOS date/time
     var dosTime = modifiedTime != null ? MsDosDateTime(modifiedTime.Value) : MsDosDateTime(DateTimeOffset.Now);
 
-    // Build the file header:
-    // HEAD_CRC(2) + HEAD_TYPE(1) + HEAD_FLAGS(2) + HEAD_SIZE(2) + PACK_SIZE(4) + UNP_SIZE(4)
-    // + HOST_OS(1) + FILE_CRC(4) + FTIME(4) + UNP_VER(1) + METHOD(1) + NAME_SIZE(2) + ATTR(4)
-    // + FILE_NAME(nameSize) [+ SALT(8) if encrypted]
+    // HEAD_SIZE includes the seven-byte generic header and all file-specific fields.
     var saltSize = salt != null ? 8 : 0;
-    var headerBodySize = 7 + 4 + 4 + 1 + 4 + 4 + 1 + 1 + 2 + 4 + nameBytes.Length + saltSize;
-    // HEAD_SIZE includes itself
-    var headSize = (ushort)(headerBodySize);
+    var headSize = checked((ushort)(32 + nameBytes.Length + saltSize));
 
     using var headerMs = new MemoryStream();
     using var bw = new BinaryWriter(headerMs, Encoding.ASCII, leaveOpen: true);
 
-    // Placeholder for CRC (will overwrite)
     bw.Write((ushort)0); // HEAD_CRC
     bw.Write(RarConstants.Rar4TypeFile); // HEAD_TYPE
     bw.Write(fileFlags); // HEAD_FLAGS
@@ -144,15 +178,12 @@ public sealed class Rar4Writer : IDisposable {
     bw.Write((uint)0x20); // ATTR (archive attribute)
     bw.Write(nameBytes); // FILE_NAME
     if (salt != null)
-      bw.Write(salt); // SALT (8 bytes)
+      bw.Write(salt);
     bw.Flush();
 
     var headerData = headerMs.ToArray();
-
-    // Compute CRC-16 over header from HEAD_TYPE onwards (offset 2)
     var headerCrc32 = Crc32.Compute(headerData.AsSpan(2));
-    var headerCrc16 = (ushort)(headerCrc32 & 0xFFFF);
-    BinaryPrimitives.WriteUInt16LittleEndian(headerData, headerCrc16);
+    BinaryPrimitives.WriteUInt16LittleEndian(headerData, (ushort)(headerCrc32 & 0xFFFF));
 
     this._stream.Write(headerData);
     this._stream.Write(compressed);
@@ -201,31 +232,47 @@ public sealed class Rar4Writer : IDisposable {
     if (this._headerWritten) return;
     this._headerWritten = true;
 
-    // RAR4 signature
     this._stream.Write(RarConstants.Rar4Signature);
+    WriteMainHeader();
+  }
 
-    // Main archive header: type 0x73
-    ushort mainFlags = 0;
-    if (this._solid) mainFlags |= RarConstants.Rar4FlagSolid;
+  private void WriteMainHeader() {
+    // RAR 1.5-4.x MAIN_HEAD is 13 bytes: generic seven-byte block header plus
+    // RESERVED1(2) and RESERVED2(4). Older readers rely on this exact layout.
+    using var ms = new MemoryStream();
+    using var bw = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
 
-    WriteSimpleHeader(RarConstants.Rar4TypeMain, mainFlags);
+    ushort flags = 0;
+    if (this._solid)
+      flags |= 0x0008; // MHD_SOLID; FILE_HEAD's solid flag is a different bit.
+
+    bw.Write((ushort)0); // HEAD_CRC
+    bw.Write(RarConstants.Rar4TypeMain); // HEAD_TYPE
+    bw.Write(flags); // HEAD_FLAGS
+    bw.Write((ushort)13); // HEAD_SIZE
+    bw.Write((ushort)0); // RESERVED1
+    bw.Write((uint)0); // RESERVED2
+    bw.Flush();
+
+    var headerData = ms.ToArray();
+    var crc32 = Crc32.Compute(headerData.AsSpan(2));
+    BinaryPrimitives.WriteUInt16LittleEndian(headerData, (ushort)(crc32 & 0xFFFF));
+    this._stream.Write(headerData);
   }
 
   private void WriteSimpleHeader(byte type, ushort flags) {
     using var ms = new MemoryStream();
     using var bw = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
 
-    bw.Write((ushort)0); // HEAD_CRC placeholder
-    bw.Write(type); // HEAD_TYPE
-    bw.Write(flags); // HEAD_FLAGS
-    ushort headSize = 7; // minimum: CRC(2) + TYPE(1) + FLAGS(2) + SIZE(2)
-    bw.Write(headSize); // HEAD_SIZE
+    bw.Write((ushort)0);
+    bw.Write(type);
+    bw.Write(flags);
+    bw.Write((ushort)7);
     bw.Flush();
 
     var headerData = ms.ToArray();
     var crc32 = Crc32.Compute(headerData.AsSpan(2));
-    var crc16 = (ushort)(crc32 & 0xFFFF);
-    BinaryPrimitives.WriteUInt16LittleEndian(headerData, crc16);
+    BinaryPrimitives.WriteUInt16LittleEndian(headerData, (ushort)(crc32 & 0xFFFF));
 
     this._stream.Write(headerData);
   }

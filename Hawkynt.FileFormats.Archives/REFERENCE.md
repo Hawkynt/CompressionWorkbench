@@ -2502,7 +2502,30 @@ Implements `IEquatable<StreamingMember>`.
 
 ### Namespace `FileFormat.Arc`
 
-[`ArcCompressionMethod`](#arccompressionmethod) · [`ArcConstants`](#arcconstants) · [`ArcEntry`](#arcentry) · [`ArcFormatDescriptor`](#arcformatdescriptor) · [`ArcModifier`](#arcmodifier) · [`ArcReader`](#arcreader) · [`ArcWriter`](#arcwriter)
+[`ArcCompatibility`](#arccompatibility) · [`ArcCompatibilityProfile`](#arccompatibilityprofile) · [`ArcCompressionMethod`](#arccompressionmethod) · [`ArcConstants`](#arcconstants) · [`ArcEntry`](#arcentry) · [`ArcFormatDescriptor`](#arcformatdescriptor) · [`ArcModifier`](#arcmodifier) · [`ArcReader`](#arcreader) · [`ArcWriter`](#arcwriter)
+
+#### `ArcCompatibility`
+
+Resolves method availability for historical ARC-family profiles.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnsureSupported` | `static void EnsureSupported(ArcCompatibilityProfile profile, ArcCompressionMethod method)` | Throws when the method is not valid for the selected historical profile. |
+| `IsSupported` | `static bool IsSupported(ArcCompatibilityProfile profile, ArcCompressionMethod method)` | Returns whether `method` can be emitted for `profile`. |
+
+#### `ArcCompatibilityProfile`
+
+Historical ARC-family capability profiles. A profile limits the compression method IDs that may be emitted; it does not change the ARC entry layout.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `SeaArc2` | `0` | SEA ARC 2.x: store, pack and squeeze. |
+| `SeaArc40` | `1` | SEA ARC 4.0: adds old-style Lempel-Ziv crunching (method 5). |
+| `SeaArc41` | `2` | SEA ARC 4.1: adds new-style crunching (method 6). |
+| `SeaArc46` | `3` | SEA ARC 4.6: adds the improved-hash cruncher (method 7). |
+| `SeaArc50` | `4` | SEA ARC 5.0+: adds dynamic LZW with adaptive reset (method 8). |
+| `PkArc` | `5` | PKARC/PKXARC family: ARC methods plus Phil Katz's Squashed method 9. |
+| `Extended` | `6` | All ARC-family methods implemented by this writer. |
 
 #### `ArcCompressionMethod`
 
@@ -2619,10 +2642,10 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ArcWriter` | `ArcWriter(Stream stream, ArcCompressionMethod defaultMethod = 2, bool leaveOpen = false)` | Initializes a new `ArcWriter`. |
-| `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, ArcCompressionMethod method, DateTimeOffset lastModified = null)` | Adds a file entry to the archive using a specific compression method. |
-| `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, DateTimeOffset lastModified = null)` | Adds a file entry to the archive using the writer's default compression method. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ArcCompressionMethod method = 2)` | Creates an ARC archive split into multiple volumes. |
+| `ArcWriter` | `ArcWriter(Stream stream, ArcCompressionMethod defaultMethod = 2, bool leaveOpen = false, ArcCompatibilityProfile compatibilityProfile = 6)` | Initializes a new `ArcWriter`. |
+| `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, ArcCompressionMethod method, DateTimeOffset lastModified = null)` | Adds a file using a specific compression method. |
+| `AddEntry` | `void AddEntry(string fileName, ReadOnlySpan<byte> data, DateTimeOffset lastModified = null)` | Adds a file using the writer's default compression method. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ArcCompressionMethod method = 2, ArcCompatibilityProfile compatibilityProfile = 6)` | Creates an ARC archive split into multiple volumes. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive marker and flushes the stream. |
 
@@ -4426,7 +4449,7 @@ Writes a Microsoft Compiled HTML Help (.chm) file. Supports two modes: Stored (d
 
 Describes cmix format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4442,8 +4465,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Arithmetic-coder endings exposed to the shared optimizer. Legacy preserves historical managed output; Compact omits up to three redundant trailing bytes. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the compact arithmetic finalization. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `CmixStream`
@@ -4452,7 +4478,7 @@ cmix file format by Byron Knoll. Format: Byte 0: bit7=dict flag (0), bits 0-6 = 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical four-byte finalization. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Collada`
@@ -7833,13 +7859,37 @@ Builds minimal FreeArc archives (.arc) that can be read by `FreeArcReader`. All 
 
 ### Namespace `FileFormat.Freeze`
 
-[`FreezeFormatDescriptor`](#freezeformatdescriptor) · [`FreezeStream`](#freezestream)
+[`FreezeCompatibility`](#freezecompatibility) · [`FreezeCompressionOptions`](#freezecompressionoptions) · [`FreezeFormatDescriptor`](#freezeformatdescriptor) · [`FreezeParsingStrategy`](#freezeparsingstrategy) · [`FreezePositionTableMode`](#freezepositiontablemode) · [`FreezeStream`](#freezestream)
+
+#### `FreezeCompatibility`
+
+Wire-format generation targeted by the encoder.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Freeze2x` | `0` | Freeze 2.x: 1F 9F magic, 8 KiB ring, 256-byte matches and per-stream position table header. |
+| `Freeze1x` | `1` | Freeze 1.x: 1F 9E magic, 4 KiB ring, 60-byte matches and fixed historical position table. |
+
+#### `FreezeCompressionOptions`
+
+Controls the interoperable Freeze encoder's compatibility target, match search and position coding.
+
+Implements `IEquatable<FreezeCompressionOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FreezeCompressionOptions` | `FreezeCompressionOptions()` |  |
+| `DefaultSearchDepth` | `const int DefaultSearchDepth` | Default match-search depth used by the managed writer. |
+| `Parsing` | `FreezeParsingStrategy Parsing { get; init; }` | Match-selection strategy. Historical Freeze uses delayed parsing unless `-g` is requested. |
+| `PositionTable` | `FreezePositionTableMode PositionTable { get; init; }` | How the per-stream static position Huffman table is chosen. |
+| `SearchDepth` | `int SearchDepth { get; init; }` | Maximum number of hash-chain candidates examined per input position. |
+| `TargetCompatibility` | `FreezeCompatibility TargetCompatibility { get; init; }` | Wire-format generation to emit. The default remains Freeze 2.x. |
 
 #### `FreezeFormatDescriptor`
 
-Describes freeze format.
+Describes interoperable Freeze 1.x and 2.x streams.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -7855,18 +7905,40 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The finite Freeze encoder knobs searched by the generic compression optimizer. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Compresses for the default Freeze 2.x target with the highest-effort built-in match search and a per-input position table. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input using the default Freeze 2.x target. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input honoring compatibility and format-specific optimizer options. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. The stream magic selects Freeze 1.x or 2.x internally. |
+
+#### `FreezeParsingStrategy`
+
+Strategy used to choose between an immediately available match and one starting a byte later.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Lazy` | `0` | Use the historical delayed parser: prefer an equally long or longer match one byte later. |
+| `Greedy` | `1` | Emit the longest match available at the current position, corresponding to historical `freeze -g`. |
+
+#### `FreezePositionTableMode`
+
+Controls the static Huffman table used for the upper bits of match positions.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Default` | `0` | Use the compatibility target's historical position table. |
+| `Optimized` | `1` | Derive a valid per-input table. Available only to Freeze 2.x, whose stream header carries the table. |
 
 #### `FreezeStream`
 
-Provides static methods for compressing and decompressing data using the Freeze 2.0 format.
+Reads and writes the interoperable Freeze 1.x and 2.x stream formats used by the original `freeze`/`melt` utilities.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes a Freeze 2.0 stream to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Freeze 2.0 stream from `input` and writes the result to `output`. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` using the default Freeze 2.x compatibility target. |
+| `Compress` | `static void Compress(Stream input, Stream output, FreezeCompressionOptions options)` | Compresses data using the requested compatibility target, LZ match search and position-table strategy. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses a Freeze 1.x or 2.x stream. The magic selects the historical decoder profile. |
 
 ### Namespace `FileFormat.GameMaker`
 
@@ -10075,7 +10147,29 @@ Provides managed LZG compression and decompression compatible with liblzg's 16-b
 
 ### Namespace `FileFormat.Lzh`
 
-[`LhaConstants`](#lhaconstants) · [`LhaEntry`](#lhaentry) · [`LhaModifier`](#lhamodifier) · [`LhaReader`](#lhareader) · [`LhaWriter`](#lhawriter) · [`LzhFormatDescriptor`](#lzhformatdescriptor) · [`LzhLayoutMap`](#lzhlayoutmap)
+[`LhaArchiverGeneration`](#lhaarchivergeneration) · [`LhaCompatibility`](#lhacompatibility) · [`LhaConstants`](#lhaconstants) · [`LhaEntry`](#lhaentry) · [`LhaHeaderLevel`](#lhaheaderlevel) · [`LhaModifier`](#lhamodifier) · [`LhaReader`](#lhareader) · [`LhaWriter`](#lhawriter) · [`LzhFormatDescriptor`](#lzhformatdescriptor) · [`LzhLayoutMap`](#lzhlayoutmap)
+
+#### `LhaArchiverGeneration`
+
+Historical archiver family/generation used to constrain which method IDs the writer may emit. This is independent from the physical LHA header level.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `LArc` | `0` | Original LArc family: -lz4-, -lzs- and -lz5-. |
+| `LhArc1` | `1` | LHarc 1.x family: -lh0- and -lh1-. |
+| `Lha2` | `2` | LHa / LHarc 2.x family: -lh0- through the LHa-era LH methods. |
+| `PmArc1` | `3` | PMarc generation 1: -pm0- and -pm1-. |
+| `PmArc2` | `4` | PMarc generation 2: -pm0-, -pm1- and -pm2-. |
+| `Extended` | `5` | All method IDs implemented by this writer. |
+
+#### `LhaCompatibility`
+
+Compatibility rules for LHA/LZH method generations.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnsureSupported` | `static void EnsureSupported(LhaArchiverGeneration generation, string method)` | Throws when a method is not valid for the selected archiver generation. |
+| `IsSupported` | `static bool IsSupported(LhaArchiverGeneration generation, string method)` | Returns whether the generation may emit the requested method ID. |
 
 #### `LhaConstants`
 
@@ -10119,6 +10213,16 @@ Represents an entry in an LHA/LZH archive.
 | `OriginalSize` | `long OriginalSize { get; set; }` | Gets or sets the original (uncompressed) size in bytes. |
 | `OsId` | `byte OsId { get; set; }` | Gets or sets the OS identifier. |
 
+#### `LhaHeaderLevel`
+
+Physical LHA header layout, independent of compression-method generation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Level0` | `0` | Traditional LArc/LHarc fixed header with a one-byte size/checksum. |
+| `Level1` | `1` | LHa transitional header with OS id and extended-header chain. |
+| `Level2` | `2` | LHa long-name header with 16-bit total size and UNIX timestamp. |
+
 #### `LhaModifier`
 
 Random-access in-place modifier for LHA/LZH archives. Add appends a new entry just before the implicit EOF (the LHA writer doesn't emit an explicit terminator; readers stop at a header_size byte of 0 or end-of-stream). Remove walks the entry chain, locates the target, and shifts trailing bytes forward to compact.
@@ -10147,9 +10251,9 @@ Creates LHA/LZH archives.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `LhaWriter` | `LhaWriter(string method = "-lh5-")` | Initializes a new `LhaWriter`. |
+| `LhaWriter` | `LhaWriter(string method = "-lh5-", LhaArchiverGeneration generation = 5, LhaHeaderLevel headerLevel = 1)` | Initializes a new `LhaWriter`. |
 | `AddFile` | `void AddFile(string name, byte[] data)` | Adds a file to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, string method = "-lh5-")` | Creates an LHA archive split into multiple volumes. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, string method = "-lh5-", LhaArchiverGeneration generation = 5, LhaHeaderLevel headerLevel = 1)` | Creates an LHA archive split into multiple volumes. |
 | `ToArray` | `byte[] ToArray()` | Creates an LHA archive as a byte array. |
 | `WriteTo` | `void WriteTo(Stream output)` | Writes the archive to a stream. |
 
@@ -11419,13 +11523,26 @@ Implements `IEquatable<ChunkEntry>`.
 
 ### Namespace `FileFormat.Mcm`
 
-[`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+[`McmCompressionMode`](#mcmcompressionmode) · [`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+
+#### `McmCompressionMode`
+
+Compression modes available to the managed MCM stream writer.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Legacy` | `0` |  |
+| `Turbo` | `1` |  |
+| `Fast` | `2` |  |
+| `Mid` | `3` |  |
+| `High` | `4` |  |
+| `Max` | `5` |  |
 
 #### `McmFormatDescriptor`
 
 Describes mcm format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11441,8 +11558,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Searchable MCM modes. Legacy preserves the writer's historical payload; the remaining modes progressively enable more of the reduced clean-room context-mixing graph and therefore trade CPU/memory for coding density. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the highest-effort managed MCM profile. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected profile. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `McmStream`
@@ -11451,7 +11571,8 @@ Represents a mcm stream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical managed payload. |
+| `Compress` | `static void Compress(Stream input, Stream output, McmCompressionMode mode)` | Encodes the supplied input using the selected managed MCM mode. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Mdb`
@@ -11906,13 +12027,15 @@ Implements `IEquatable<ProgramStream>`.
 
 #### `MpegTsFormatDescriptor`
 
-Pseudo-archive descriptor for MPEG-2 Transport Streams. Each detected elementary stream is exposed as `stream_<PID>_<type>.bin` containing the concatenated PES payload bytes for that PID. References: `https://www.itu.int/rec/T-REC-H.222.0` — ITU-T H.222.0 / ISO/IEC 13818-1 — MPEG-2 Systems (transport stream) standard`https://en.wikipedia.org/wiki/MPEG_transport_stream` — Wikipedia
+Pseudo-archive descriptor for MPEG-2 Transport Streams. Each detected elementary stream is exposed as `stream_<PID>_<type>.bin` containing the concatenated raw PES bytes for that PID. The same representation can be muxed back into TS/M2TS and edited through the archive rebuild contract without transcoding. References: `https://www.itu.int/rec/T-REC-H.222.0` — ITU-T H.222.0 / ISO/IEC 13818-1 — MPEG-2 Systems (transport stream) standard`https://ffmpeg.org/doxygen/trunk/mpegtsenc_8c_source.html` — FFmpeg MPEG-TS muxer, used as an LGPL-2.1+ behavioral interoperability oracle
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MpegTsFormatDescriptor` | `MpegTsFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Describes the typed pseudo-archive inputs accepted by the muxer. |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -11923,8 +12046,11 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Maximum cumulative raw-PES input size; TS itself has no descriptor-imposed ceiling. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Checks whether an input belongs to the descriptor's raw-PES mux representation. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a fresh TS/M2TS container from the descriptor's raw-PES entries. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
@@ -11943,6 +12069,7 @@ Reader for MPEG-2 Transport Stream files (`.ts`, `.m2ts`, `.mts`) per ISO/IEC 13
 | `SyncByte` | `const byte SyncByte` | Defines the sync byte constant value. |
 | `Read` | `static TransportStream Read(ReadOnlySpan<byte> data)` | Parses a complete TS file. Auto-detects 188 vs 192 byte packet stride from the position of the second sync byte. |
 | `StreamTypeName` | `static string StreamTypeName(byte type)` | Maps the 8-bit stream_type value from a PMT entry to a short identifier used in emitted entry filenames (e.g. `"h264"`). |
+| `TryParseStreamTypeName` | `static bool TryParseStreamTypeName(string name, out byte type)` | Maps a descriptor stream-type filename token back to its PMT stream_type byte. |
 
 #### `MpegTsReader.ElementaryStream`
 
@@ -11953,6 +12080,7 @@ Implements `IEquatable<ElementaryStream>`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ElementaryStream` | `ElementaryStream(int Pid, byte StreamType, int ProgramNumber, byte[] Payload)` | One detected elementary stream within the TS file. |
+| `PayloadUnitStarts` | `IReadOnlyList<int> PayloadUnitStarts { get; init; }` | Offsets into `Payload` that began in a TS packet with payload_unit_start_indicator set. |
 | `Payload` | `byte[] Payload { get; init; }` |  |
 | `Pid` | `int Pid { get; init; }` |  |
 | `ProgramNumber` | `int ProgramNumber { get; init; }` |  |
@@ -11981,6 +12109,7 @@ Implements `IEquatable<TransportStream>`.
 | `TransportStream` | `TransportStream(int PacketCount, int PacketSizeUsed, IReadOnlyList<Program> Programs, IReadOnlyList<ElementaryStream> Streams)` | Result of parsing a TS file. |
 | `PacketCount` | `int PacketCount { get; init; }` |  |
 | `PacketSizeUsed` | `int PacketSizeUsed { get; init; }` |  |
+| `PayloadUnitOrder` | `IReadOnlyList<int> PayloadUnitOrder { get; init; }` | Elementary PIDs in the order their payload-unit-start packets were encountered. |
 | `Programs` | `IReadOnlyList<Program> Programs { get; init; }` |  |
 | `Streams` | `IReadOnlyList<ElementaryStream> Streams { get; init; }` |  |
 
@@ -14953,7 +15082,7 @@ Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file forma
 
 Describes ppmd format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14969,17 +15098,20 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | PPMd-H model order. 7-Zip exposes orders 2 through 32; the optimizer searches the complete finite range because the best context depth depends on the input. The managed model's memory-size constructor parameter is not currently an effective capacity limit, so memory is deliberately not advertised as a knob. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with format-specific PPMd tunables. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `PpmdStream`
 
-PPMd stream container format. Layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), then the raw output of `PpmBuildingBlock` (which includes its own 1-byte order + 4-byte LE size header).
+PPMd stream container format. Current layout: 4-byte magic (0x8F 0xAF 0xAC 0x84), 1-byte format version, then the raw output of `PpmdBuildingBlock` (1-byte order, 4-byte LE original size, range-coded data).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input with the default PPMd-H model order. |
+| `Compress` | `static void Compress(Stream input, Stream output, int order)` | Encodes the supplied input with the requested PPMd-H model order. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Ppt`
@@ -15358,21 +15490,31 @@ Reads and writes non-streaming QuickLZ 1.5.0 level-1 and level-3 packets.
 
 ### Namespace `FileFormat.Rar`
 
-[`Rar4Writer`](#rar4writer) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarReader`](#rarreader) · [`RarWriter`](#rarwriter)
+[`Rar4Writer`](#rar4writer) · [`RarCompatibility`](#rarcompatibility) · [`RarEntry`](#rarentry) · [`RarFormatDescriptor`](#rarformatdescriptor) · [`RarInPlaceAdder`](#rarinplaceadder) · [`RarInPlaceRemover`](#rarinplaceremover) · [`RarLayoutMap`](#rarlayoutmap) · [`RarReader`](#rarreader) · [`RarWriter`](#rarwriter)
 
 #### `Rar4Writer`
 
-Creates RAR4 archives. Supports Store and compressed (LZ+Huffman) methods, with optional AES-128-CBC encryption. RAR4 uses the v2.9 (UnPack29) compression algorithm.
+Creates archives in the shared RAR 1.5-4.x container family. RAR4 targets support Store and compressed (LZ+Huffman) methods with optional AES-128-CBC encryption; RAR 1.5 compatibility deliberately emits stored, non-solid, unencrypted members with `UNP_VER=15`.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null)` | Initializes a new `Rar4Writer`. |
+| `Rar4Writer` | `Rar4Writer(Stream stream, bool leaveOpen = false, byte method = 51, int windowBits = 20, bool solid = false, string password = null, RarCompatibility targetCompatibility = 1)` | Initializes a writer for the RAR 1.5-4.x container family. |
 | `AddFile` | `void AddFile(string fileName, ReadOnlySpan<byte> data, DateTimeOffset? modifiedTime = null)` | Adds a file entry to the archive. |
 | `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, byte method = 51, string password = null)` | Creates a RAR4 archive split into multiple volumes. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the end-of-archive header and flushes. |
+
+#### `RarCompatibility`
+
+Writer generation targeted by RAR archive creation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Rar5` | `0` | RAR 5.x container and codec generation. |
+| `Rar4` | `1` | RAR 2.9-4.x container/codec generation written by the managed RAR4 writer. |
+| `Rar1_5` | `2` | RAR 1.50 compatibility: classic `Rar! 1A 07 00` container with `UNP_VER=15`. The current writer deliberately supports stored members only for this target. |
 
 #### `RarEntry`
 
@@ -15393,9 +15535,9 @@ Represents an entry in a RAR archive.
 
 #### `RarFormatDescriptor`
 
-RAR archive (RAR4 and RAR5 container framing). References: `https://www.rarlab.com/technote.htm` — RAR 5.0 archive format technote (RARLAB, official)unrar source distribution (rarlab.com) — de-facto reference for RAR4 decoding`https://en.wikipedia.org/wiki/RAR_(file_format)` — Wikipedia overview
+RAR archive reader/writer with selectable RAR 1.5, RAR4 and RAR5 creation targets. References: `https://www.rarlab.com/technote.htm` — RAR 5.0 archive format technote (RARLAB, official)RAR 1.5-4.x technical notes / unrar source distribution — legacy container and decoder compatibility`https://en.wikipedia.org/wiki/RAR_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15410,10 +15552,11 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 | `Family` | `AlgorithmFamily Family { get; }` |  |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. The legacy rar4/rar5/rar15 names remain accepted as compatibility aliases. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Writer-generation constraint shown independently of the compression method. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Appends new files directly to supported RAR5 archives. The in-place adder validates the complete block profile and all name collisions before its first write, so an unsupported profile can safely fall back without taking a whole-archive transaction snapshot. Same-name updates deliberately take the rebuild path because remove+add is a two-step transaction. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a RAR archive from `inputs`. Selects RAR4 or RAR5 based on `options.MethodName` and resolves dictionary / level from `options.DictSize` / `options.Level`. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Builds a RAR archive from `inputs`. `TargetCompatibility` selects the container generation independently of compression level. Legacy MethodName values `rar5`, `rar4` and `rar15` remain compatibility aliases when the explicit option is absent. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction — routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -15570,9 +15713,9 @@ Implements `IDisposable`.
 
 #### `RealMediaFormatDescriptor`
 
-Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on failure and parsing degrades gracefully.
+Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. RMFF audio can also be packet-demuxed and remuxed without re-encoding; fresh muxing is supported for AC-3/dnet while native RealAudio codecs reuse preserved MDPR type-specific data from their source container. Decode paths degrade gracefully on failure.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15588,10 +15731,14 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.RefPack`
 
@@ -15601,7 +15748,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 Describes ref pack format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -15617,8 +15764,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | RefPack has three useful encoder-search levers without changing the wire format: history reach, hash-chain search depth, and whether positions skipped by a match are indexed. The generic optimizer exhaustively searches the 24 finite combinations and keeps the smallest stream for the actual data. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Exhaustively searches the RefPack encoder settings and writes the smallest result. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using explicit RefPack match-search settings. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `RefPackStream`
@@ -17620,7 +17770,7 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressQBasic` | `static byte[] CompressQBasic(ReadOnlySpan<byte> data)` | Compresses `data` in the older "SZ " (QBasic) COMPRESS variant and returns the result. The body is the same LZSS stream as SZDD, wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32 uncompressed length). Round-trips through `Decompress`. |
+| `CompressQBasic` | `static byte[] CompressQBasic(ReadOnlySpan<byte> data)` | Compresses `data` in the older "SZ " (QBasic) COMPRESS variant and returns the result. It uses the same LZSS token encoding as SZDD but starts the ring two bytes earlier, and is wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32 uncompressed length). Round-trips through `Decompress`. |
 | `CompressQBasic` | `static void CompressQBasic(Stream input, Stream output)` | Stream overload of `CompressQBasic`. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, char missingChar = '_')` | Compresses `data` in SZDD format and returns the result as a new byte array. |
 | `Compress` | `static void Compress(Stream input, Stream output, char missingChar = '_')` | Compresses `input` in SZDD format and writes the result to `output`. |
@@ -19073,17 +19223,18 @@ Metadata and layout options used when creating a CommunitySupported VMware VIB. 
 
 ### Namespace `FileFormat.VobSub`
 
-[`VobSubFormatDescriptor`](#vobsubformatdescriptor) · [`VobSubReader`](#vobsubreader) · [`VobSubReader.Index`](#vobsubreaderindex) · [`VobSubReader.IndexEntry`](#vobsubreaderindexentry) · [`VobSubReader.Pair`](#vobsubreaderpair)
+[`VobSubFormatDescriptor`](#vobsubformatdescriptor) · [`VobSubReader`](#vobsubreader) · [`VobSubReader.Index`](#vobsubreaderindex) · [`VobSubReader.IndexEntry`](#vobsubreaderindexentry) · [`VobSubReader.Pair`](#vobsubreaderpair) · [`VobSubWriter`](#vobsubwriter) · [`VobSubWriter.Frame`](#vobsubwriterframe) · [`VobSubWriter.FrameKind`](#vobsubwriterframekind) · [`VobSubWriter.Pair`](#vobsubwriterpair)
 
 #### `VobSubFormatDescriptor`
 
-Pseudo-archive descriptor for VobSub DVD subtitles. The primary file is the textual `.idx`; the binary `.sub` sibling is resolved by replacing the extension. Each subtitle frame from the `.sub` is exposed as `subtitle_NNN.bin`. References: `http://sam.zoy.org/writings/dvd/subtitles/` — Sam Hocevar's classic DVD subtitle (SPU/RLE) format descriptionVobSub / DirectVobSub (Gabest) — the defining tool producing .idx/.sub pairs
+Pseudo-archive descriptor for VobSub DVD subtitles. The primary file is the textual `.idx`; the binary `.sub` sibling is resolved by replacing the extension. Each subtitle frame from the `.sub` is exposed as `subtitle_NNN.bin`. References: `http://sam.zoy.org/writings/dvd/subtitles/` — Sam Hocevar's classic DVD subtitle (SPU/RLE) format descriptionISO/IEC 13818-1 — MPEG-2 program-stream / PES framing used by the `.sub` sideVobSub / DirectVobSub (Gabest) — the defining tool producing .idx/.sub pairs
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VobSubFormatDescriptor` | `VobSubFormatDescriptor()` |  |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -19094,8 +19245,12 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds or replaces frames in an existing pair. A replacement `index.idx` may be supplied to append timestamps; all pre-existing `.bin` frame chunks that are not replaced remain byte-identical. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates a VobSub pair from `index.idx` plus one frame per timestamp. `subtitle_NNN.bin` is copied byte-for-byte as already-framed MPEG-PS data; `subtitle_NNN.spu` is packetized as DVD Private Stream 1. |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `ExtractPair` | `void ExtractPair(byte[] idxBytes, byte[] subBytes, string outputDir, string[] files)` | Extracts entries given both files explicitly (preferred when the caller has filesystem access and can locate the sibling .sub). |
@@ -19103,6 +19258,8 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `ListPair` | `List<ArchiveEntryInfo> ListPair(byte[] idxBytes, byte[] subBytes)` | Lists entries given both files explicitly (preferred when the caller has filesystem access and can locate the sibling .sub). |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single VobSub entry as a bounded read-only stream. The `metadata.ini` + `index.idx` + per-frame entries each produce a decoded byte buffer; the matched buffer is wrapped in a `BoundedEntryStream` sized to its logical length. |
+| `Purge` | `void Purge(Stream archive)` | Removes every subtitle frame while retaining a valid empty index/sub pair. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named subtitle frames and their timestamp directives, then concatenates the surviving already-framed chunks without re-encoding them. |
 
 #### `VobSubReader`
 
@@ -19154,6 +19311,48 @@ Implements `IEquatable<Pair>`.
 | `Pair` | `Pair(Index Index, IReadOnlyList<byte[]> Frames)` | Header/Body bundle of a parsed VobSub pair. |
 | `Frames` | `IReadOnlyList<byte[]> Frames { get; init; }` |  |
 | `Index` | `Index Index { get; init; }` |  |
+
+#### `VobSubWriter`
+
+Builds VobSub `.idx`/`.sub` pairs from either already-framed VobSub program-stream chunks or raw DVD sub-picture (SPU) packets.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Build` | `static Pair Build(string indexTemplate, IReadOnlyList<Frame> frames, IReadOnlyList<TimeSpan> timestamps = null)` | Builds a VobSub pair. When `timestamps` is omitted, timestamps are read from `indexTemplate`. Supplying them is used by pair-aware editing when frames are removed and the surviving timestamp set changes. |
+| `RewriteIndex` | `static string RewriteIndex(string indexTemplate, IReadOnlyList<TimeSpan> timestamps, IReadOnlyList<long> offsets)` | Rewrites only the timestamp/file-position directives of an index template. All non-timestamp directives and comments are retained verbatim. |
+
+#### `VobSubWriter.Frame`
+
+One subtitle frame supplied to the writer.
+
+Implements `IEquatable<Frame>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Frame` | `Frame(byte[] Data, FrameKind Kind = 0)` | One subtitle frame supplied to the writer. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `Kind` | `FrameKind Kind { get; init; }` |  |
+
+#### `VobSubWriter.FrameKind`
+
+Describes how one subtitle frame should be written.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ProgramStream` | `0` | The bytes already contain the MPEG program-stream framing and are copied exactly. |
+| `RawSpu` | `1` | The bytes are one raw DVD SPU packet and are wrapped in MPEG-2 PS/PES framing. |
+
+#### `VobSubWriter.Pair`
+
+The two files that make up a VobSub subtitle stream.
+
+Implements `IEquatable<Pair>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Pair` | `Pair(byte[] IndexBytes, byte[] SubBytes)` | The two files that make up a VobSub subtitle stream. |
+| `IndexBytes` | `byte[] IndexBytes { get; init; }` |  |
+| `SubBytes` | `byte[] SubBytes { get; init; }` |  |
 
 ### Namespace `FileFormat.Vpk`
 
@@ -20795,7 +20994,7 @@ Reads Zarr v2 and v3 array metadata and exposes the chunks of the array as archi
 
 ### Namespace `FileFormat.Zip`
 
-[`ParallelZipCreator`](#parallelzipcreator) · [`ZipCompressionMethod`](#zipcompressionmethod) · [`ZipEncryptionMethod`](#zipencryptionmethod) · [`ZipEntry`](#zipentry) · [`ZipFormatDescriptor`](#zipformatdescriptor) · [`ZipLayoutMap`](#ziplayoutmap) · [`ZipModifier`](#zipmodifier) · [`ZipReader`](#zipreader) · [`ZipWriter`](#zipwriter)
+[`ParallelZipCreator`](#parallelzipcreator) · [`ZipCompatibility`](#zipcompatibility) · [`ZipCompatibilityProfile`](#zipcompatibilityprofile) · [`ZipCompressionMethod`](#zipcompressionmethod) · [`ZipEncryptionMethod`](#zipencryptionmethod) · [`ZipEntry`](#zipentry) · [`ZipFormatDescriptor`](#zipformatdescriptor) · [`ZipLayoutMap`](#ziplayoutmap) · [`ZipModifier`](#zipmodifier) · [`ZipReader`](#zipreader) · [`ZipWriter`](#zipwriter)
 
 #### `ParallelZipCreator`
 
@@ -20804,6 +21003,30 @@ Parallel ZIP creation: entries are compressed independently in parallel, then wr
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CreateZipParallel` | `static void CreateZipParallel(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, string password, ZipCompressionMethod method, DeflateCompressionLevel level, HashSet<string> incompressible, int maxThreads, ZipEncryptionMethod encryptionMethod = 1)` | Compresses ZIP entries in parallel and writes them sequentially. Only Deflate / Deflate64 / Store benefit from pre-compression; other methods fall through to sequential `AddEntry`. |
+
+#### `ZipCompatibility`
+
+Resolves ZIP feature requirements and enforces a writer compatibility ceiling.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnsureSupported` | `static void EnsureSupported(ZipCompatibilityProfile profile, ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Throws when the requested features would exceed `profile`. |
+| `GetVersionNeeded` | `static ushort GetVersionNeeded(ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Returns the minimum PKWARE ZIP version required to extract an entry using the supplied features. When several features apply, the highest minimum wins, as required by APPNOTE.TXT section 4.4.3.2. |
+| `IsSupported` | `static bool IsSupported(ZipCompatibilityProfile profile, ZipCompressionMethod method, ZipEncryptionMethod encryption = 0, bool zip64 = false, bool isDirectory = false)` | Returns whether all requested features fit within `profile`. |
+
+#### `ZipCompatibilityProfile`
+
+Maximum ZIP feature level that a writer may require from an extractor. Values are the PKWARE "version needed to extract" numbers.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zip10` | `10` | ZIP 1.0: store and the legacy Shrink/Reduce/Implode methods. |
+| `Zip20` | `20` | ZIP 2.0: directories, Deflate, and traditional PKZIP encryption. |
+| `Zip21` | `21` | ZIP 2.1: adds Deflate64. |
+| `Zip45` | `45` | ZIP 4.5: adds ZIP64. |
+| `Zip46` | `46` | ZIP 4.6: adds BZip2. |
+| `Zip51` | `51` | ZIP 5.1: adds AES encryption. |
+| `Zip63` | `63` | ZIP 6.3: adds the modern LZMA, PPMd and Zstandard method family used here. |
 
 #### `ZipCompressionMethod`
 
@@ -20937,7 +21160,7 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZipWriter` | `ZipWriter(Stream stream, bool leaveOpen = false, DeflateCompressionLevel compressionLevel = 6, string password = null, ZipEncryptionMethod encryptionMethod = 1)` | Initializes a new `ZipWriter`. |
+| `ZipWriter` | `ZipWriter(Stream stream, bool leaveOpen = false, DeflateCompressionLevel compressionLevel = 6, string password = null, ZipEncryptionMethod encryptionMethod = 1, ZipCompatibilityProfile compatibilityProfile = 63)` | Initializes a new `ZipWriter`. |
 | `Bzip2BlockSize` | `int Bzip2BlockSize { get; set; }` | BZip2 block size multiplier 1-9 (N × 100 KB). Used when method is BZip2. |
 | `Comment` | `string Comment { get; set; }` | Gets or sets the archive comment. |
 | `LzmaDictionarySize` | `int LzmaDictionarySize { get; set; }` | LZMA dictionary size in bytes (4096 to 1GB). Used when method is LZMA. |
@@ -20946,9 +21169,9 @@ Implements `IDisposable`.
 | `PpmdOrder` | `int PpmdOrder { get; set; }` | PPMd model order (2-16). Used when method is PPMd. |
 | `AddDirectory` | `void AddDirectory(string name, DateTime? lastModified = null)` | Adds a directory entry. |
 | `AddEntry` | `void AddEntry(string fileName, byte[] data, ZipCompressionMethod method = 8, DateTime? lastModified = null)` | Adds a file entry from a byte array. |
-| `AddRawEntry` | `void AddRawEntry(string fileName, byte[] compressedData, ZipCompressionMethod method, uint crc32, long uncompressedSize, DateTime? lastModified = null)` | Adds a pre-compressed entry. The data is already compressed and will not be re-compressed. Useful for restreaming between formats (e.g., Gzip → ZIP) or for injecting optimally-compressed data. |
-| `AddStreamingStoredEntry` | `void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null)` | Adds a STORE (uncompressed) entry whose payload is streamed from `data` in bounded 64 KB chunks rather than buffered into RAM. The local file header is written up front with the pre-known `size` (STORE ⇒ compressed size = uncompressed size) and a placeholder CRC, the payload is copied while the CRC is computed incrementally, and the 4-byte CRC field in the just-written header is patched in place. Peak memory is the 64 KB copy buffer regardless of `size`. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZipCompressionMethod method = 8, string password = null)` | Creates a ZIP archive split into multiple volumes. |
+| `AddRawEntry` | `void AddRawEntry(string fileName, byte[] compressedData, ZipCompressionMethod method, uint crc32, long uncompressedSize, DateTime? lastModified = null)` | Adds a pre-compressed entry. The data is already compressed and will not be re-compressed. |
+| `AddStreamingStoredEntry` | `void AddStreamingStoredEntry(string fileName, long size, Stream data, DateTime? lastModified = null)` | Adds a STORE entry whose payload is streamed in bounded chunks rather than buffered in RAM. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZipCompressionMethod method = 8, string password = null, ZipCompatibilityProfile compatibilityProfile = 63)` | Creates a ZIP archive split into multiple volumes. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the central directory and finishes the archive. |
 
@@ -21061,7 +21284,26 @@ Zling: ROLZ + Huffman block compressor by Zhang Li. Format: blocks of (uint8 fla
 
 ### Namespace `FileFormat.Zoo`
 
-[`ZooCompressionMethod`](#zoocompressionmethod) · [`ZooConstants`](#zooconstants) · [`ZooEntry`](#zooentry) · [`ZooFormatDescriptor`](#zooformatdescriptor) · [`ZooModifier`](#zoomodifier) · [`ZooReader`](#zooreader) · [`ZooWriter`](#zoowriter)
+[`ZooCompatibility`](#zoocompatibility) · [`ZooCompatibilityProfile`](#zoocompatibilityprofile) · [`ZooCompressionMethod`](#zoocompressionmethod) · [`ZooConstants`](#zooconstants) · [`ZooEntry`](#zooentry) · [`ZooFormatDescriptor`](#zooformatdescriptor) · [`ZooModifier`](#zoomodifier) · [`ZooReader`](#zooreader) · [`ZooWriter`](#zoowriter)
+
+#### `ZooCompatibility`
+
+Compatibility rules for Zoo archive and entry versions.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetArchiveVersion` | `static ValueTuple<byte, byte> GetArchiveVersion(ZooCompatibilityProfile profile)` | Returns the minimum Zoo version required to manipulate the archive form. |
+| `GetExtractVersion` | `static ValueTuple<byte, byte> GetExtractVersion(ZooCompressionMethod method)` | Returns the minimum Zoo version required to extract an emitted packing method. |
+| `SupportsLongNames` | `static bool SupportsLongNames(ZooCompatibilityProfile profile)` | Returns whether the archive generation supports type-2 long-name directory entries. |
+
+#### `ZooCompatibilityProfile`
+
+Historical Zoo writer-generation target. This controls archive-header and directory-entry capabilities; per-entry extraction requirements are derived independently from the compression method actually emitted.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Zoo140` | `0` | Zoo 1.40-compatible archive manipulation: 34-byte type-0 archive header and type-1 directory entries with DOS-style short names only. |
+| `Zoo200` | `1` | Zoo 2.00-compatible archive manipulation: extended 42-byte archive header and type-2 directory entries for portable long names and paths. |
 
 #### `ZooCompressionMethod`
 
@@ -21070,7 +21312,7 @@ Compression method used for a `ZooEntry`.
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `Store` | `0` | File data is stored verbatim with no compression. |
-| `Lzw` | `1` | File data is compressed using LZW (9–13 bit, LSB-first). |
+| `Lzw` | `1` | File data is compressed using normal Zoo LZW (9–13 bit, LSB-first). |
 
 #### `ZooConstants`
 
@@ -21078,19 +21320,26 @@ Constants for the Zoo archive format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ArchiveHeaderSize` | `const int ArchiveHeaderSize` | Total size in bytes of the archive header. |
-| `DefaultHeaderText` | `const string DefaultHeaderText` | Default archive header text (ASCII, null-terminated, padded to 20 bytes). |
-| `DirectoryEntryFixedSize` | `const int DirectoryEntryFixedSize` | Size in bytes of the fixed part of a directory entry (before the filename). Covers: tag(4) + type(1) + method(1) + nextOffset(4) + dataOffset(4) + date(2) + time(2) + crc16(2) + origSize(4) + compSize(4) + majorVer(1) + minorVer(1) + deleted(1) + structure(1) + commentOffset(4) + commentLength(2) = 38 bytes. |
-| `LzwMaxBits` | `const int LzwMaxBits` | Maximum LZW code width in bits (standard Zoo). |
+| `ArchiveHeaderSize` | `const int ArchiveHeaderSize` | Canonical Zoo 2.x type-1 archive-header size. |
+| `ArchiveHeaderTypeExtended` | `const byte ArchiveHeaderTypeExtended` | Archive-header type used by Zoo 2.x extended headers. |
+| `DefaultHeaderText` | `const string DefaultHeaderText` | Default human-readable archive header text. |
+| `DirectoryEntryFixedSize` | `const int DirectoryEntryFixedSize` | Fixed part of any directory entry, up to the 13-byte short filename at offset 38. |
+| `DirectoryEntryType1Size` | `const int DirectoryEntryType1Size` | Canonical size of a type-1 directory entry including its 13-byte short filename. |
+| `DirectoryEntryType2FixedSize` | `const int DirectoryEntryType2FixedSize` | Fixed size of a type-2 directory entry before its variable section. |
+| `ExtractMajorVersion` | `const byte ExtractMajorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
+| `ExtractMinorVersion` | `const byte ExtractMinorVersion` | Minimum Zoo version required to extract Store and normal LZW entries. |
+| `LzwMaxBits` | `const int LzwMaxBits` | Maximum LZW code width in bits. |
 | `LzwMinBits` | `const int LzwMinBits` | Initial LZW code width in bits. |
-| `Magic` | `const uint Magic` | Magic number present in the archive header and every directory entry (0xFDC4A7DC). |
-| `MajorVersion` | `const byte MajorVersion` | Major version number written into headers created by this library. |
-| `MaxShortNameLength` | `const int MaxShortNameLength` | Maximum short filename length (13 bytes including null terminator, so 12 characters). |
-| `MethodLzw` | `const byte MethodLzw` | Compression method: file is compressed with LZW (variable-width, 9–13 bits, LSB-first). |
+| `Magic` | `const uint Magic` | Magic number present in the archive header and every directory entry. |
+| `MaxShortNameLength` | `const int MaxShortNameLength` | Maximum short filename length (13 bytes including null terminator). |
+| `MethodLzw` | `const byte MethodLzw` | Compression method: normal Zoo LZW. |
 | `MethodStore` | `const byte MethodStore` | Compression method: file is stored without compression. |
-| `MinorVersion` | `const byte MinorVersion` | Minor version number written into headers created by this library. |
-| `TypeFile` | `const byte TypeFile` | Entry type for a standard file entry. |
-| `TypeLongName` | `const byte TypeLongName` | Entry type for a file entry that carries a long (extended) filename. |
+| `MinimumArchiveHeaderSize` | `const int MinimumArchiveHeaderSize` | Minimum/legacy type-0 Zoo archive-header size. |
+| `NoTimezone` | `const byte NoTimezone` | Timezone sentinel used when no timezone is known. |
+| `SystemIdPortable` | `const ushort SystemIdPortable` | Portable pathname/filesystem syntax identifier. |
+| `TypeFile` | `const byte TypeFile` | Entry type for a standard short-name file entry. |
+| `TypeLongName` | `const byte TypeLongName` | Entry type for a file entry with a variable portable-name section. |
+| `FileLeader` | `static ReadOnlySpan<byte> FileLeader { get; }` | Five-byte marker placed immediately before member payloads. |
 
 #### `ZooEntry`
 
@@ -21101,14 +21350,14 @@ Represents a single file entry in a Zoo archive.
 | `ZooEntry` | `ZooEntry()` |  |
 | `CompressedSize` | `uint CompressedSize { get; set; }` | Gets or sets the compressed size in bytes. |
 | `CompressionMethod` | `ZooCompressionMethod CompressionMethod { get; set; }` | Gets or sets the compression method. |
-| `Crc16` | `ushort Crc16 { get; set; }` | Gets or sets the CRC-16 (ARC polynomial) of the uncompressed data. |
-| `EffectiveName` | `string EffectiveName { get; }` | Gets the effective display name: `LongFileName` when available, otherwise `FileName`. |
-| `FileName` | `string FileName { get; set; }` | Gets or sets the short filename (up to 12 characters, DOS 8.3 style). |
+| `Crc16` | `ushort Crc16 { get; set; }` | Gets or sets the CRC-16 of the uncompressed data. |
+| `EffectiveName` | `string EffectiveName { get; }` | Gets the effective display name. |
+| `FileName` | `string FileName { get; set; }` | Gets or sets the short filename (up to 12 characters). |
 | `IsDeleted` | `bool IsDeleted { get; set; }` | Gets or sets whether this entry has been marked as deleted. |
-| `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last-modification date/time. |
-| `LongFileName` | `string LongFileName { get; set; }` | Gets or sets the long filename. When non-null and non-empty the entry is written as type 2 (long-name entry); otherwise it is written as type 1. |
-| `MajorVersion` | `byte MajorVersion { get; set; }` | Gets or sets the major version of the tool that created the entry. |
-| `MinorVersion` | `byte MinorVersion { get; set; }` | Gets or sets the minor version of the tool that created the entry. |
+| `LastModified` | `DateTime LastModified { get; set; }` | Gets or sets the last modification date/time. |
+| `LongFileName` | `string LongFileName { get; set; }` | Gets or sets the portable long pathname carried by a type-2 directory entry. |
+| `MajorVersion` | `byte MajorVersion { get; set; }` | Gets or sets the minimum Zoo major version required to extract this entry. |
+| `MinorVersion` | `byte MinorVersion { get; set; }` | Gets or sets the minimum Zoo minor version required to extract this entry. |
 | `OriginalSize` | `uint OriginalSize { get; set; }` | Gets or sets the uncompressed size in bytes. |
 
 #### `ZooFormatDescriptor`
@@ -21154,30 +21403,30 @@ Random-access in-place modifier for Zoo archives. Zoo entries are linked togethe
 
 #### `ZooReader`
 
-Reads entries from a Zoo archive.
+Reads entries from Zoo archives, including canonical Zoo 2.x type-2 variable directory records.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZooReader` | `ZooReader(Stream stream, bool leaveOpen = false)` | Initializes a new `ZooReader` and reads the directory. |
-| `Entries` | `IReadOnlyList<ZooEntry> Entries { get; }` | Gets the entries present in the archive (deleted entries are included; check `IsDeleted`). |
+| `ZooReader` | `ZooReader(Stream stream, bool leaveOpen = false)` | Initializes a reader over a seekable Zoo archive. |
+| `Entries` | `IReadOnlyList<ZooEntry> Entries { get; }` | Gets archive entries, including entries marked deleted. |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractEntry` | `byte[] ExtractEntry(ZooEntry entry)` | Extracts and decompresses the data for an entry. |
+| `ExtractEntry` | `byte[] ExtractEntry(ZooEntry entry)` | Extracts and verifies one Zoo entry. |
 
 #### `ZooWriter`
 
-Creates a Zoo archive.
+Creates Zoo archives with an explicit historical compatibility target.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ZooWriter` | `ZooWriter(Stream stream, bool leaveOpen = false, ZooCompressionMethod defaultMethod = 1)` | Initializes a new `ZooWriter`. |
+| `ZooWriter` | `ZooWriter(Stream stream, bool leaveOpen = false, ZooCompressionMethod defaultMethod = 1, ZooCompatibilityProfile compatibilityProfile = 1)` | Initializes a new `ZooWriter`. |
 | `AddEntry` | `void AddEntry(string fileName, byte[] data, ZooCompressionMethod? method = null, DateTime? lastModified = null)` | Adds a file entry to the archive. |
-| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries)` | Creates a Zoo archive split into multiple volumes. |
+| `CreateSplit` | `static byte[][] CreateSplit(long maxVolumeSize, IEnumerable<ValueTuple<string, byte[]>> entries, ZooCompressionMethod method = 1, ZooCompatibilityProfile compatibilityProfile = 1)` | Creates a Zoo archive split into multiple volumes. |
 | `Dispose` | `void Dispose()` |  |
-| `Finish` | `void Finish()` | Finalises the archive by patching all `nextOffset` chain pointers. Must be called (or the writer disposed) for a valid archive. |
+| `Finish` | `void Finish()` | Finalises linked directory offsets and flushes the archive. |
 
 ### Namespace `FileFormat.Zpaq`
 

@@ -1165,9 +1165,9 @@ Represents a qcow 2 entry.
 
 #### `Qcow2FormatDescriptor`
 
-QEMU Copy-On-Write v2/v3 (qcow2) disk image — two-level L1/L2 cluster-mapped sparse virtual disk. References: `docs/interop/qcow2.rst` in the QEMU source tree — the authoritative on-disk specification`https://gitlab.com/qemu-project/qemu` — canonical QEMU repository`https://en.wikipedia.org/wiki/Qcow` — Wikipedia overview
+QEMU Copy-On-Write v2/v3 (qcow2) disk image — two-level L1/L2 cluster-mapped sparse virtual disk. References: `https://www.qemu.org/docs/master/interop/qcow2.html` — authoritative QCOW2 on-disk specification`https://www.qemu.org/docs/master/tools/qemu-img.html` — qemu-img maintenance behavior
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IPartitionEditable`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -1194,18 +1194,19 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Performs the open guest disk stream operation. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
 
 #### `Qcow2LayoutMap`
 
-Walks a QCOW2 image and emits the byte-level layout: header, L1 table, L2 tables, refcount table, refcount blocks, and data clusters.
+Walks the active QCOW2 mapping plus the refcount metadata and emits a fail-closed byte-level host layout. Host clusters with refcount zero are explicitly reported as free, enabling forensic wipe without confusing guest disk offsets with container offsets. Allocated clusters not understood by the active mapping (for example snapshot metadata/data) remain metadata-reserved.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream stream)` | Enumerates the value. |
+| `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream stream)` | Enumerates the physical host-file layout. |
 
 #### `Qcow2Reader`
 
-Reads QCOW2 (QEMU Copy-On-Write v2/v3) disk images. Supports uncompressed, zlib-compressed, and zero clusters. Magic: 0x514649FB ("QFI\xFB") at offset 0, big-endian header. Streams reads via `SectorCache` so opening a multi-TB image does not load the whole file into RAM — only the header, L1/L2 tables and (during `ExtractDisk`) the requested cluster bytes are fetched on demand.
+Reads self-contained QCOW2 v2/v3 disk images with standard L2 entries. Supports unallocated, zero, uncompressed and deflate-compressed guest clusters. Backing files, encryption and incompatible v3 feature profiles are rejected instead of being interpreted as zero-filled data.
 
 Implements `IDisposable`.
 
@@ -1215,38 +1216,41 @@ Implements `IDisposable`.
 | `Entries` | `IReadOnlyList<Qcow2Entry> Entries { get; }` | Gets the entries. |
 | `VirtualSize` | `long VirtualSize { get; }` | Virtual disk size in bytes. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the full virtual disk image, resolving all L1/L2 table entries. Zero L2 entries yield zero-filled clusters; compressed entries are inflated via raw deflate. |
+| `ExtractDisk` | `byte[] ExtractDisk()` | Extracts the full virtual disk image, resolving all active L1/L2 table entries. |
 
 #### `Qcow2Stream`
 
-Provides seekable read/write access to the virtual disk content of an uncompressed QCOW2 v2/v3 image. Translates virtual offsets through the L1 and L2 tables. Reads from unallocated clusters return zeros. Writes to unallocated clusters allocate new clusters at EOF and update L2 entries and refcounts.
+Seekable access to the active guest disk of a self-contained QCOW2 image. Reads resolve standard, zero, unallocated and deflate-compressed clusters. Writes are enabled only for flat standard-refcount profiles and honour QCOW2 copy-on-write semantics for shared L2 and data clusters.
 
 Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CanRead` | `override bool CanRead { get; }` | Gets a value indicating whether can read. |
-| `CanSeek` | `override bool CanSeek { get; }` | Gets a value indicating whether can seek. |
-| `CanWrite` | `override bool CanWrite { get; }` | Gets a value indicating whether can write. |
-| `Length` | `override long Length { get; }` | Gets the length. |
-| `Position` | `override long Position { get; set; }` | Gets or sets the position. |
-| `Dispose` | `protected override void Dispose(bool disposing)` | Releases resources held by this instance. |
-| `Flush` | `override void Flush()` | Performs the flush operation. |
-| `Read` | `override int Read(byte[] buffer, int offset, int count)` | Reads the value from the supplied input. |
-| `Seek` | `override long Seek(long offset, SeekOrigin origin)` | Performs the seek operation. |
-| `SetLength` | `override void SetLength(long value)` | Sets the length. |
-| `TryOpen` | `static Qcow2Stream TryOpen(Stream stream)` | Tries to open a `Qcow2Stream` for an uncompressed QCOW2 image. Returns `null` if the stream is not a valid QCOW2 or uses unsupported features. |
-| `Write` | `override void Write(byte[] buffer, int offset, int count)` | Writes the value to the supplied output. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `TryOpen` | `static Qcow2Stream TryOpen(Stream backing, bool leaveOpen = true)` | Attempts to open a supported QCOW2 image as a virtual guest-disk stream. |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
 
 #### `Qcow2Writer`
 
-Writes QCOW2 v2 disk images in WORM mode. Takes a single raw disk image and wraps it in a QCOW2 container with uncompressed clusters. Layout: header (cluster 0) → L1 table (cluster 1) → L2 tables → refcount table → refcount block → data clusters. Each cluster has a refcount of 1, and every L1/L2 entry that points at such a single-refcount cluster carries the `QCOW_OFLAG_COPIED` flag (bit 63). This matches the arrangement `qemu-img create` produces, so `qemu-img check` reports no errors.
+Writes canonical self-contained QCOW2 v2 images with 64 KiB clusters and 16-bit eager refcounts. Sparse mode leaves all-zero guest clusters unallocated; dense mode physically allocates every guest cluster without changing guest bytes.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Qcow2Writer` | `Qcow2Writer()` |  |
-| `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the disk image. |
-| `WriteTo` | `void WriteTo(Stream output)` | Writes the to to the supplied output. |
+| `SetDiskImage` | `void SetDiskImage(byte[] data)` | Sets the raw guest disk image to wrap. |
+| `WriteTo` | `void WriteTo(Stream output)` | Writes a canonical sparse QCOW2 image. |
+| `WriteTo` | `void WriteTo(Stream output, bool sparse)` | Writes a canonical QCOW2 image. |
 
 ### Namespace `FileFormat.T64`
 
@@ -3416,45 +3420,46 @@ Represents a bee gfs entry.
 
 #### `BeeGfsFormatDescriptor`
 
-Stage 0 detection-only descriptor for BeeGFS chunk-file / dump tags. Surfaces only a synthetic `metadata.ini` and the raw image bytes; no real file-walk is attempted because a BeeGFS volume has no standalone on-disk image. References: `https://www.beegfs.io` — official BeeGFS site and documentation portal`https://github.com/ThinkParQ/beegfs` — BeeGFS source (ThinkParQ)`https://en.wikipedia.org/wiki/BeeGFS` — Wikipedia overview
+Describes BeeGFS without inventing a standalone byte-stream image format.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BeeGfsFormatDescriptor` | `BeeGfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the single-stream capabilities. BeeGFS has none because it is not a standalone stream/image format. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category used by the filesystem package. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | BeeGFS has no compound file extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | BeeGFS has no canonical file extension. |
+| `Description` | `string Description { get; }` | Gets the format description. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | BeeGFS has no canonical file extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the registry family. |
+| `Id` | `string Id { get; }` | Gets the registry id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | BeeGFS has no standalone stream header. Target directories are identified structurally by their service metadata, not by magic bytes at offset zero of one file. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | There is no archive/storage method for a synthetic BeeGFS image. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | BeeGFS is not a tar compound format. |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `BeeGfsReader`
 
-Stage 0 detection-only reader for BeeGFS chunk-file / dump tags. BeeGFS (Fraunhofer Parallel Cluster FS, originally FhGFS) is a distributed parallel cluster filesystem. There is no standalone on-disk image format for a BeeGFS volume: the namespace lives across one or more metadata targets (each a directory tree on a regular Linux FS like ext4/xfs, with per-inode metadata stored as files + extended attributes), and the file payload lives across many storage targets (chunk files in a 2-level hash directory layout on the storage targets' regular Linux FS). Reconstructing a single logical file requires the live metadata-server stripe pattern + storage-target map; a single byte-stream cannot represent it. This descriptor therefore only verifies the ASCII tag `"BeeGFS"` (6 bytes, 0x42 0x65 0x65 0x47 0x46 0x53) or the short 4-byte tag `"BeeG"` (0x42 0x65 0x65 0x47 = 0x42656547 BE) at offset 0 of a chunk-file or dump produced by a BeeGFS utility, and surfaces a synthetic `metadata.ini` documenting the tag + a raw `beegfs-chunk.bin` blob containing the file bytes verbatim. Promotion to R/O is not possible from a single stream — see `Description` on the descriptor.
+Legacy compatibility surface for the former synthetic single-stream BeeGFS reader.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BeeGfsReader` | `BeeGfsReader(Stream stream)` | Initializes a new instance of `BeeGfsReader`. |
-| `LongTag` | `static readonly byte[] LongTag` | BeeGFS long tag: ASCII "BeeGFS" (6 bytes). |
-| `ShortTag` | `static readonly byte[] ShortTag` | BeeGFS short tag: ASCII "BeeG" (4 bytes, 0x42656547 BE). |
-| `Entries` | `IReadOnlyList<BeeGfsEntry> Entries { get; }` | Gets the entries. |
-| `Tag` | `string Tag { get; }` | Gets or sets the tag. |
-| `TrailingWord` | `uint TrailingWord { get; }` | Gets or sets the trailing word. |
-| `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether valid header. |
-| `Dispose` | `void Dispose()` | Releases resources held by this instance. |
-| `Extract` | `byte[] Extract(BeeGfsEntry entry)` | Decodes the supplied input. |
+| `BeeGfsReader` | `BeeGfsReader(Stream stream)` | Initializes a compatibility reader and rejects the unsupported single-stream model. |
+| `LongTag` | `static readonly byte[] LongTag` | Legacy synthetic long tag retained for source compatibility; it is not a BeeGFS on-disk signature. |
+| `ShortTag` | `static readonly byte[] ShortTag` | Legacy synthetic short tag retained for source compatibility; it is not a BeeGFS on-disk signature. |
+| `Entries` | `IReadOnlyList<BeeGfsEntry> Entries { get; }` | Gets the legacy entry collection. A reader instance cannot currently be opened. |
+| `Tag` | `string Tag { get; }` | Gets the legacy tag value. A reader instance cannot currently be opened. |
+| `TrailingWord` | `uint TrailingWord { get; }` | Gets the legacy trailing word. A reader instance cannot currently be opened. |
+| `ValidHeader` | `bool ValidHeader { get; }` | Gets whether a legacy synthetic header was accepted. It is always false. |
+| `Dispose` | `void Dispose()` | Releases resources held by this compatibility surface. |
+| `Extract` | `byte[] Extract(BeeGfsEntry entry)` | Rejects extraction through the retired synthetic reader. |
 
 ### Namespace `FileSystem.Bfs`
 
@@ -4733,7 +4738,27 @@ Builds a Commodore 1541 D64 disk image from a set of files, filling in the BAM a
 
 ### Namespace `FileSystem.D71`
 
-[`D71BlockMover`](#d71blockmover) · [`D71Entry`](#d71entry) · [`D71ExtentMap`](#d71extentmap) · [`D71FormatDescriptor`](#d71formatdescriptor) · [`D71Modifier`](#d71modifier) · [`D71Reader`](#d71reader) · [`D71Writer`](#d71writer)
+[`D71BlockDevice`](#d71blockdevice) · [`D71BlockMover`](#d71blockmover) · [`D71Entry`](#d71entry) · [`D71ExtentMap`](#d71extentmap) · [`D71FilesystemDriverAdapter`](#d71filesystemdriveradapter) · [`D71FilesystemSession`](#d71filesystemsession) · [`D71FormatDescriptor`](#d71formatdescriptor) · [`D71Modifier`](#d71modifier) · [`D71MountValidator`](#d71mountvalidator) · [`D71MountValidator.ValidationResult`](#d71mountvalidatorvalidationresult) · [`D71Reader`](#d71reader) · [`D71Writer`](#d71writer)
+
+#### `D71BlockDevice`
+
+Sector-addressable view of the data portion of a standard 70-track D71. The optional per-sector error table in 351062-byte images remains outside the exposed block geometry and is therefore preserved by ordinary writes.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D71BlockDevice` | `D71BlockDevice(Stream stream, bool writable, bool leaveOpen = true)` |  |
+| `DataLength` | `const int DataLength` |  |
+| `LogicalSectorSize` | `const int LogicalSectorSize` |  |
+| `SectorCount` | `const int SectorCount` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
 
 #### `D71BlockMover`
 
@@ -4766,6 +4791,50 @@ Walks a Commodore 1571 D71 image (349,696 bytes, 70 tracks, 256-byte sectors, do
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Enumerates the value. |
+
+#### `D71FilesystemDriverAdapter`
+
+Native mount-grade filesystem sidecar for standard Commodore 1571 D71 images.
+
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D71FilesystemDriverAdapter` | `D71FilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
+
+#### `D71FilesystemSession`
+
+Root-only CBM DOS namespace session over a 1571 D71 sector device. Node ids remain stable for the lifetime of the session, including across rename and unlink while an already-open handle still exists.
+
+Implements `IDisposable`, `IFilesystemSession`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D71FilesystemSession` | `D71FilesystemSession(IRandomAccessBlockDevice device, FilesystemDriverProfile profile, bool readOnly, bool ownsDevice = true)` |  |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` |  |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
 
 #### `D71FormatDescriptor`
 
@@ -4817,6 +4886,25 @@ In-place D71 modifier — same blueprint as `D64Modifier`, adapted for the 1571'
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data, byte fileType = 130)` | Adds a file to an existing D71 image with O(touched bytes) I/O. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file with O(touched bytes) I/O. Returns true if removed. |
 
+#### `D71MountValidator`
+
+Strict mount-time validation for the ordinary 1571 CBM DOS namespace that the writable session can mutate without inventing REL, extended-directory, or non-standard allocation semantics.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Validate` | `static ValidationResult Validate(ReadOnlySpan<byte> image)` |  |
+
+#### `D71MountValidator.ValidationResult`
+
+Implements `IEquatable<ValidationResult>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidationResult` | `ValidationResult(bool CanRead, bool CanWrite, IReadOnlyList<string> Limitations)` |  |
+| `CanRead` | `bool CanRead { get; init; }` |  |
+| `CanWrite` | `bool CanWrite { get; init; }` |  |
+| `Limitations` | `IReadOnlyList<string> Limitations { get; init; }` |  |
+
 #### `D71Reader`
 
 Reads the directory of a double-sided Commodore 1571 D71 disk image and extracts the files it holds.
@@ -4837,13 +4925,33 @@ Builds a double-sided Commodore 1571 D71 disk image from a set of files, filling
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `D71Writer` | `D71Writer()` |  |
-| `AddFile` | `void AddFile(string name, byte fileType, byte[] data)` | Performs the add file operation. |
-| `AddFile` | `void AddFile(string name, byte[] data)` | Performs the add file operation. |
+| `AddFile` | `void AddFile(string name, byte fileType, byte[] data)` |  |
+| `AddFile` | `void AddFile(string name, byte[] data)` |  |
 | `Build` | `byte[] Build(string diskName = "DISK", string diskId = "00")` | Builds the complete D71 image. |
 
 ### Namespace `FileSystem.D81`
 
-[`D81BlockMover`](#d81blockmover) · [`D81Entry`](#d81entry) · [`D81ExtentMap`](#d81extentmap) · [`D81FormatDescriptor`](#d81formatdescriptor) · [`D81Modifier`](#d81modifier) · [`D81Reader`](#d81reader) · [`D81Writer`](#d81writer)
+[`D81BlockDevice`](#d81blockdevice) · [`D81BlockMover`](#d81blockmover) · [`D81Entry`](#d81entry) · [`D81ExtentMap`](#d81extentmap) · [`D81FilesystemDriverAdapter`](#d81filesystemdriveradapter) · [`D81FilesystemSession`](#d81filesystemsession) · [`D81FormatDescriptor`](#d81formatdescriptor) · [`D81Modifier`](#d81modifier) · [`D81MountValidator`](#d81mountvalidator) · [`D81MountValidator.ValidationResult`](#d81mountvalidatorvalidationresult) · [`D81Reader`](#d81reader) · [`D81Writer`](#d81writer)
+
+#### `D81BlockDevice`
+
+Sector-addressable view of the data portion of a standard 80-track D81. The optional 3200-byte sector-error table is intentionally outside the exposed geometry and is preserved by ordinary block writes.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D81BlockDevice` | `D81BlockDevice(Stream stream, bool writable, bool leaveOpen = true)` |  |
+| `DataLength` | `const int DataLength` |  |
+| `LogicalSectorSize` | `const int LogicalSectorSize` |  |
+| `SectorCount` | `const int SectorCount` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
 
 #### `D81BlockMover`
 
@@ -4876,6 +4984,50 @@ Walks a Commodore 1581 D81 image (819,200 bytes, 80 tracks × 40 sectors, 256-by
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Enumerates the value. |
+
+#### `D81FilesystemDriverAdapter`
+
+Native mount-grade filesystem sidecar for standard Commodore 1581 D81 images.
+
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D81FilesystemDriverAdapter` | `D81FilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
+
+#### `D81FilesystemSession`
+
+Root-only CBM DOS namespace session over a 1581 D81 sector device. Node ids remain stable for the lifetime of the session, including across rename and unlink while an already-open handle still exists.
+
+Implements `IDisposable`, `IFilesystemSession`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `D81FilesystemSession` | `D81FilesystemSession(IRandomAccessBlockDevice device, FilesystemDriverProfile profile, bool readOnly, bool ownsDevice = true)` |  |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` |  |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
 
 #### `D81FormatDescriptor`
 
@@ -4926,6 +5078,25 @@ In-place D81 modifier — same blueprint as `D64Modifier` / `D71Modifier`, adapt
 | --- | --- | --- |
 | `AddFile` | `static void AddFile(Stream image, string name, byte[] data, byte fileType = 130)` | Adds a file with O(touched bytes) I/O. |
 | `RemoveFile` | `static bool RemoveFile(Stream image, string name, bool wipeData = true)` | Removes a named file with O(touched bytes) I/O. |
+
+#### `D81MountValidator`
+
+Strict mount-time validation for the ordinary 1581 CBM DOS namespace that the writable session can mutate without REL, partition/subdirectory, or extended-directory semantics.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Validate` | `static ValidationResult Validate(ReadOnlySpan<byte> image)` |  |
+
+#### `D81MountValidator.ValidationResult`
+
+Implements `IEquatable<ValidationResult>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidationResult` | `ValidationResult(bool CanRead, bool CanWrite, IReadOnlyList<string> Limitations)` |  |
+| `CanRead` | `bool CanRead { get; init; }` |  |
+| `CanWrite` | `bool CanWrite { get; init; }` |  |
+| `Limitations` | `IReadOnlyList<string> Limitations { get; init; }` |  |
 
 #### `D81Reader`
 
@@ -5677,7 +5848,7 @@ Builds a valid, uncompressed EROFS image from a set of files and their (possibly
 
 ### Namespace `FileSystem.ExFat`
 
-[`ExFatBlockMover`](#exfatblockmover) · [`ExFatEntry`](#exfatentry) · [`ExFatExtentMap`](#exfatextentmap) · [`ExFatFormatDescriptor`](#exfatformatdescriptor) · [`ExFatModifier`](#exfatmodifier) · [`ExFatReader`](#exfatreader) · [`ExFatRemover`](#exfatremover) · [`ExFatWriter`](#exfatwriter)
+[`ExFatBlockMover`](#exfatblockmover) · [`ExFatEntry`](#exfatentry) · [`ExFatExtentMap`](#exfatextentmap) · [`ExFatFilesystemDriverAdapter`](#exfatfilesystemdriveradapter) · [`ExFatFormatDescriptor`](#exfatformatdescriptor) · [`ExFatModifier`](#exfatmodifier) · [`ExFatReader`](#exfatreader) · [`ExFatRemover`](#exfatremover) · [`ExFatWriter`](#exfatwriter)
 
 #### `ExFatBlockMover`
 
@@ -5721,6 +5892,22 @@ Walks an exFAT image and yields its actual on-disk byte layout — the reserved 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Enumerate` | `static IEnumerable<DefragBlockInfo> Enumerate(Stream image)` | Single-pass walker. Parses the VBR, then for each directory entry set (File 0x85 + Stream 0xC0 + Name 0xC1) walks the FAT chain (or the contiguous range when `GeneralSecondaryFlags.NoFatChain` is set), emitting one `DefragBlockInfo` per contiguous run. |
+
+#### `ExFatFilesystemDriverAdapter`
+
+Native mounted exFAT read path. The existing offline modifier remains separate: it has proven root-level in-place mutations, but does not yet implement the complete nested namespace and ordered dirty/FAT/bitmap/directory publication required for a writable kernel-facing filesystem session.
+
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExFatFilesystemDriverAdapter` | `ExFatFilesystemDriverAdapter()` |  |
+| `FormatId` | `string FormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `ExFatFormatDescriptor`
 
@@ -8196,14 +8383,16 @@ Walks an ISO 9660 image and yields its actual on-disk byte layout — the 32 KiB
 
 Native ISO 9660 filesystem sidecar. The archive descriptor remains the offline editor surface; this adapter gives mount backends a stable namespace and positional file handles without extracting entries into temporary files or byte arrays.
 
-Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IsoFilesystemDriverAdapter` | `IsoFilesystemDriverAdapter()` |  |
 | `FormatId` | `string FormatId { get; }` |  |
 | `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `IsoFormatDescriptor`
@@ -8260,11 +8449,11 @@ Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `IsoReader` | `IsoReader(Stream stream, bool leaveOpen = false, bool useJoliet = true)` | Opens an ISO 9660 image from the given stream. When `useJoliet` is `true` (the default) and the image carries a Joliet Supplementary Volume Descriptor, the long UCS-2 names from the Joliet directory tree are returned; otherwise the primary ECMA-119 tree (short uppercased names) is read. |
+| `IsoReader` | `IsoReader(Stream stream, bool leaveOpen = false, bool useJoliet = true)` | Opens an ISO 9660 image from the given stream. When `useJoliet` is `true` (the default) and the image carries a Joliet Supplementary Volume Descriptor, the long UCS-2 names from the Joliet directory tree are returned; otherwise the primary ECMA-119 tree is read. |
 | `Entries` | `IReadOnlyList<IsoEntry> Entries { get; }` | All entries found in the image. |
 | `Dispose` | `void Dispose()` |  |
-| `ExtractTo` | `void ExtractTo(IsoEntry entry, Stream destination)` | Copies an entry's bytes into `destination` a block at a time, so an entry larger than a byte[] can hold is extracted like any other. |
-| `Extract` | `byte[] Extract(IsoEntry entry)` | Extracts the raw data for the given entry. |
+| `ExtractTo` | `void ExtractTo(IsoEntry entry, Stream destination)` | Copies an entry's logical bytes into `destination`. Multi-extent file sections are concatenated in directory-record order as required by ECMA-119. |
+| `Extract` | `byte[] Extract(IsoEntry entry)` | Extracts the logical data for the given entry. |
 
 #### `IsoWriter`
 
@@ -10238,7 +10427,7 @@ Walks an NTFS image and yields its actual on-disk byte layout — the boot secto
 
 #### `NtfsFilesystemDriverAdapter`
 
-Native NTFS driver sidecar. Namespace identity is based on the MFT record number rather than path text, so rename/unlink can later preserve open-handle identity. The reader already decodes resident/non-resident $DATA, sparse runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories. Mounted writes remain fail-closed until $LogFile transactions/replay and the full file-reference (MFT record + sequence number) are part of the mutable core.
+Native NTFS driver sidecar. Namespace identity uses the complete native file reference identity available in a FILE record: MFT segment number plus its sequence number. The reader already decodes resident/non-resident $DATA, sparse runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories. Mounted writes remain fail-closed until $LogFile transactions/replay and the remaining mutable namespace/index semantics are part of the mounted core.
 
 Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
@@ -13254,27 +13443,27 @@ The storage-server share-container family carried by a Tahoe-LAFS share file.
 
 #### `TfsFormatDescriptor`
 
-Read-only descriptor for BBN Trans-FS (TFS). TFS is a transactional filesystem developed at BBN; the on-disk format is poorly documented publicly so this descriptor is intentionally detection-only — it emits the raw image as a single opaque entry rather than guessing layout. References: BBN Laboratories technical reports on Trans-FS — the only substantive documentation; not stably archived online
+Conservative read-only descriptor for the format historically registered as BBN Trans-FS (TFS) in CompressionWorkbench.
 
 Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `TfsFormatDescriptor` | `TfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 
 ### Namespace `FileSystem.Ti99`
 
@@ -13697,9 +13886,9 @@ Represents a tux 2 entry.
 
 #### `Tux2FormatDescriptor`
 
-Opaque/manual descriptor for Daniel Phillips's TUX2 phase-tree research filesystem.
+Descriptor for Daniel Phillips's TUX2 phase-tree research filesystem.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryNames`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemBlockMover`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13715,21 +13904,38 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ISyntheticEntryName
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` |  |
 | `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` |  |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` |  |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the Ext2 interoperability profile TUX2 explicitly targeted. This is not a reconstruction of an unpublished standalone phase-tree serialization. |
+| `Defragment` | `void Defragment(Stream archive)` |  |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` |  |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` |  |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` |  |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` |  |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` |  |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` |  |
 
 #### `Tux2Reader`
 
-Opaque reader for the historical TUX2 research filesystem.
+Reader for Daniel Phillips's historical TUX2 research filesystem.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Tux2Reader` | `Tux2Reader(Stream stream)` | Initializes a reader over the selected image. |
-| `Entries` | `IReadOnlyList<Tux2Entry> Entries { get; }` | Gets the entries exposed by this opaque reader. |
+| `Entries` | `IReadOnlyList<Tux2Entry> Entries { get; }` | Gets the entries exposed by the opaque fallback reader. |
+| `IsSupportedExt2CompatibilityProfile` | `bool IsSupportedExt2CompatibilityProfile { get; }` | Gets whether the superblock is a structurally plausible pointer-based Ext2 profile that the TUX2 descriptor may hand to CompressionWorkbench's Ext2 implementation. This is deliberately stricter than `LooksLikeExt2` and deliberately says nothing about TUX2 provenance. |
 | `Length` | `long Length { get; }` | Gets the total size of the selected image. |
 | `LooksLikeExt2` | `bool LooksLikeExt2 { get; }` | Gets whether the image carries the Ext2 family superblock magic at the canonical offset. This is only a compatibility hint, not a TUX2 identity test. |
 | `Dispose` | `void Dispose()` |  |
@@ -13963,14 +14169,16 @@ Walks a UDF (ECMA-167) image and yields its actual on-disk byte layout — the 3
 
 Native UDF filesystem sidecar. The archive descriptor remains the offline editor surface; mount backends receive a parsed stable namespace plus positional file handles over the decoded allocation-descriptor map.
 
-Implements `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `UdfFilesystemDriverAdapter` | `UdfFilesystemDriverAdapter()` |  |
 | `FormatId` | `string FormatId { get; }` |  |
 | `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `UdfFormatDescriptor`
@@ -14025,7 +14233,7 @@ In-place UDF (ECMA-167) modifier — true random-access editing without rebuildi
 
 #### `UdfReader`
 
-Reads the directory tree of a UDF volume image and extracts the files it holds.
+Reads the directory tree of a UDF volume image and extracts the files it holds. Type-1 ECMA-167 partition references are resolved through the Logical Volume Descriptor's ordered partition-map table instead of assuming partition reference 0.
 
 Implements `IDisposable`.
 

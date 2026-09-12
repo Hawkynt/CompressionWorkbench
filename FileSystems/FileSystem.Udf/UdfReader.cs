@@ -7,73 +7,61 @@ namespace FileSystem.Udf;
 
 /// <summary>
 /// Reads the directory tree of a UDF volume image and extracts the files it holds.
+/// Type-1 ECMA-167 partition references are resolved through the Logical Volume
+/// Descriptor's ordered partition-map table instead of assuming partition reference 0.
 /// </summary>
 public sealed class UdfReader : IDisposable {
   private const int SectorSize = 2048;
   private const uint ExtentLengthMask = 0x3FFFFFFF;
   private const int ExtentTypeShift = 30;
 
-  // Structures are read on demand: copying a multi-gigabyte volume in capped the
-  // reader at what a byte[] can address, which UDF's 32-bit block numbers do not.
   private readonly ImageAccessor _img;
   private readonly long _len;
   private readonly List<UdfEntry> _entries = [];
+  private readonly Dictionary<ushort, PartitionDescriptorInfo> _partitions = [];
+  private readonly List<PartitionMapInfo> _partitionMaps = [];
+  private readonly HashSet<(ushort PartitionReference, uint Block)> _visitedDirectories = [];
 
-  private long _partitionStart; // in sectors
   private int _blockSize = SectorSize;
 
   /// <summary>Gets the entries.</summary>
   public IReadOnlyList<UdfEntry> Entries => _entries;
 
   /// <summary>Total size of the backing image in bytes.</summary>
-  public long Length => this._len;
+  public long Length => _len;
 
   /// <summary>Decoded logical block size.</summary>
-  internal int LogicalBlockSize => this._blockSize;
+  internal int LogicalBlockSize => _blockSize;
 
   /// <summary>Initializes a new UDF reader.</summary>
   public UdfReader(Stream stream, bool leaveOpen = false) {
     ArgumentNullException.ThrowIfNull(stream);
     if (stream.CanSeek)
       stream.Position = 0;
-    _img = new ImageAccessor(stream, leaveOpen: true);
+    _img = new ImageAccessor(stream, leaveOpen);
     _len = _img.Length;
     Parse();
   }
 
-  private byte U8(long off) => off >= 0 && off < _len ? _img.Read(off, 1)[0] : (byte)0;
+  private byte U8(long off) => off >= 0 && off < _len ? _img.ReadByte(off) : (byte)0;
 
   private ushort U16(long off)
     => off >= 0 && off + 2 <= _len
-      ? BinaryPrimitives.ReadUInt16LittleEndian(_img.Read(off, 2))
+      ? _img.ReadUInt16(off)
       : (ushort)0;
 
   private uint U32(long off)
     => off >= 0 && off + 4 <= _len
-      ? BinaryPrimitives.ReadUInt32LittleEndian(_img.Read(off, 4))
+      ? _img.ReadUInt32(off)
       : 0u;
 
   private ulong U64(long off)
     => off >= 0 && off + 8 <= _len
-      ? BinaryPrimitives.ReadUInt64LittleEndian(_img.Read(off, 8))
+      ? _img.ReadUInt64(off)
       : 0ul;
 
-  /// <summary>
-  /// Logical block sizes ECMA-167 volumes are recorded with, most common first.
-  /// The Anchor Volume Descriptor Pointer is the only descriptor at a fixed
-  /// address (logical block 256), and that address is counted in logical blocks
-  /// — so until the anchor is found the block size is unknown and has to be
-  /// probed, exactly as udftools does.
-  /// </summary>
   private static readonly int[] CandidateBlockSizes = [2048, 512, 1024, 4096, 8192, 16384, 32768];
 
-  /// <summary>
-  /// True when a descriptor tag sits at <paramref name="offset" /> with the
-  /// given identifier and records <paramref name="expectedLocation" /> as its
-  /// own address. The ECMA-167 §7.2 TagChecksum is verified too, so a run of
-  /// file data that happens to start with the anchor's tag identifier cannot be
-  /// mistaken for a descriptor.
-  /// </summary>
   private bool IsTagAt(long offset, ushort identifier, uint expectedLocation) {
     if (offset < 0 || offset + 16 > _len)
       return false;
@@ -92,12 +80,6 @@ public sealed class UdfReader : IDisposable {
     return sum == tag[4];
   }
 
-  /// <summary>
-  /// Locates the Anchor Volume Descriptor Pointer and, with it, the volume's
-  /// logical block size. ECMA-167 §3/8.4 puts an anchor at logical block 256 and
-  /// at the last block of the volume (and optionally 256 blocks before it); each
-  /// is tried for every plausible block size.
-  /// </summary>
   private long FindAnchor() {
     foreach (var blockSize in CandidateBlockSizes) {
       var totalBlocks = _len / blockSize;
@@ -105,18 +87,15 @@ public sealed class UdfReader : IDisposable {
         continue;
 
       foreach (var block in new[] { 256L, totalBlocks - 1, totalBlocks - 257 }) {
-        if (block < 256)
+        if (block < 256 || block > uint.MaxValue)
           continue;
         var offset = block * blockSize;
-        if (!this.IsTagAt(offset, 2, (uint)block))
+        if (!IsTagAt(offset, 2, (uint)block))
           continue;
-        // The sequence the candidate names has to describe a volume of the same
-        // block size, so a run of file data that survives the tag checks cannot
-        // carry the read off to the wrong addresses in silence.
-        if (!this.SequenceDeclaresBlockSize(U32(offset + 20), U32(offset + 16), blockSize))
+        if (!SequenceDeclaresBlockSize(U32(offset + 20), U32(offset + 16), blockSize))
           continue;
 
-        this._blockSize = blockSize;
+        _blockSize = blockSize;
         return offset;
       }
     }
@@ -124,10 +103,6 @@ public sealed class UdfReader : IDisposable {
     throw new InvalidDataException("UDF: no Anchor Volume Descriptor Pointer found.");
   }
 
-  /// <summary>
-  /// True when the volume descriptor sequence at <paramref name="location" />
-  /// holds a Logical Volume Descriptor declaring <paramref name="blockSize" />.
-  /// </summary>
   private bool SequenceDeclaresBlockSize(uint location, uint byteLength, int blockSize) {
     var descriptors = Math.Min(byteLength / (uint)blockSize, 64);
     for (var i = 0u; i < descriptors; ++i) {
@@ -149,9 +124,6 @@ public sealed class UdfReader : IDisposable {
     if (_len < 257L * 512)
       throw new InvalidDataException("UDF: image too small.");
 
-    // ECMA-167 §2/9.1: the Volume Recognition Sequence starts at byte 32768 and
-    // occupies consecutive logical sectors, whose size is 2048 or the block size
-    // when that is larger. Scanning at the 2048 stride covers both.
     var foundNsr = false;
     for (var sector = 16L; sector < 24 && sector * SectorSize + 6 < _len; ++sector) {
       var off = sector * SectorSize;
@@ -164,67 +136,178 @@ public sealed class UdfReader : IDisposable {
     if (!foundNsr)
       throw new InvalidDataException("UDF: no NSR02/NSR03 descriptor found.");
 
-    var avdpOff = this.FindAnchor();
-
+    var avdpOff = FindAnchor();
     var mainVdsLoc = U32(avdpOff + 20);
     var mainVdsLen = U32(avdpOff + 16);
-    long partStart = 0;
-    long fsdLbn = 0;
+    long lvdOffset = -1;
 
-    var vdsSectors = (int)(mainVdsLen / (uint)_blockSize);
-    for (var i = 0; i < vdsSectors && i < 64; ++i) {
+    var vdsSectors = checked((int)Math.Min(mainVdsLen / (uint)_blockSize, 64));
+    for (var i = 0; i < vdsSectors; ++i) {
       var off = ((long)mainVdsLoc + i) * _blockSize;
       if (off + 512 > _len)
-        break;
+        throw new InvalidDataException("UDF: volume descriptor sequence runs outside the image.");
 
       var tagId = U16(off);
       if (tagId == 5) {
-        partStart = U32(off + 188);
+        var partitionNumber = U16(off + 22);
+        var start = U32(off + 188);
+        var length = U32(off + 192);
+        if (!_partitions.TryAdd(partitionNumber, new(start, length)))
+          throw new InvalidDataException($"UDF: duplicate Partition Descriptor number {partitionNumber}.");
       } else if (tagId == 6) {
         var declared = checked((int)U32(off + 212));
-        if (declared > 0)
-          _blockSize = declared;
-        fsdLbn = U32(off + 252);
+        if (declared != _blockSize)
+          throw new InvalidDataException(
+            $"UDF: Logical Volume Descriptor block size {declared} disagrees with anchor geometry {_blockSize}.");
+        lvdOffset = off;
       } else if (tagId == 8) {
         break;
       }
     }
 
-    _partitionStart = partStart;
+    if (lvdOffset < 0)
+      throw new InvalidDataException("UDF: no Logical Volume Descriptor found.");
+    if (_partitions.Count == 0)
+      throw new InvalidDataException("UDF: no Partition Descriptor found.");
 
-    var fsdOffset = PartitionOffset(fsdLbn);
-    if (fsdOffset + 512 > _len)
-      return;
+    ParsePartitionMaps(lvdOffset);
+
+    // UDF maps LogicalVolumeContentsUse to a long_ad naming the File Set Descriptor.
+    var fsdLbn = U32(lvdOffset + 252);
+    var fsdPartitionReference = U16(lvdOffset + 256);
+    var fsdOffset = PartitionOffset(fsdPartitionReference, fsdLbn);
+    if (fsdOffset < 0 || fsdOffset + 512 > _len)
+      throw new InvalidDataException("UDF: File Set Descriptor lies outside the image.");
     if (U16(fsdOffset) != 256)
-      return;
+      throw new InvalidDataException("UDF: Logical Volume Contents Use does not reference a File Set Descriptor.");
 
     var rootIcbLen = U32(fsdOffset + 400);
     var rootIcbLbn = U32(fsdOffset + 404);
-    ReadDirectory(rootIcbLbn, checked((int)rootIcbLen), "");
+    var rootPartitionReference = U16(fsdOffset + 408);
+    ReadDirectory(rootPartitionReference, rootIcbLbn, checked((int)rootIcbLen), "");
   }
 
-  // The Partition Starting Location (ECMA-167 §3/10.5.9) is counted in logical
-  // blocks, not in 2048-byte sectors: scaling it by a fixed 2048 addressed the
-  // wrong place on every volume whose block size is not 2048.
-  private long PartitionOffset(long lbn)
-    => checked((_partitionStart + lbn) * (long)_blockSize);
+  private void ParsePartitionMaps(long lvdOffset) {
+    var mapTableLength = U32(lvdOffset + 264);
+    var mapCount = U32(lvdOffset + 268);
+    if (mapCount == 0)
+      throw new InvalidDataException("UDF: Logical Volume Descriptor has no partition maps.");
+    if (mapTableLength > _blockSize - 440)
+      throw new InvalidDataException("UDF: partition map table exceeds its Logical Volume Descriptor block.");
 
-  private void ReadDirectory(long icbLbn, int icbLen, string basePath) {
-    var feOffset = PartitionOffset(icbLbn);
-    if (feOffset + 200 > _len)
-      return;
+    var start = lvdOffset + 440;
+    var end = checked(start + mapTableLength);
+    var pos = start;
+    for (var reference = 0u; reference < mapCount; ++reference) {
+      if (pos + 2 > end)
+        throw new InvalidDataException("UDF: partition map table ends before NumberOfPartitionMaps entries were decoded.");
+      var type = U8(pos);
+      var length = U8(pos + 1);
+      if (length < 2 || pos + length > end)
+        throw new InvalidDataException($"UDF: partition map {reference} has invalid length {length}.");
+
+      if (type == 1) {
+        if (length != 6)
+          throw new InvalidDataException($"UDF: Type 1 partition map {reference} has length {length}, expected 6.");
+        var volumeSequenceNumber = U16(pos + 2);
+        var partitionNumber = U16(pos + 4);
+        var limitation = volumeSequenceNumber == 1
+          ? null
+          : $"Type 1 partition map {reference} addresses volume sequence {volumeSequenceNumber}; multi-volume UDF sets are not supported.";
+        if (!_partitions.ContainsKey(partitionNumber))
+          limitation = $"Type 1 partition map {reference} names missing Partition Descriptor {partitionNumber}.";
+        _partitionMaps.Add(new(partitionNumber, limitation));
+      } else if (type == 2) {
+        _partitionMaps.Add(new(null,
+          $"UDF Type 2 partition map {reference} requires virtual/sparable/metadata remapping that is not implemented."));
+      } else {
+        _partitionMaps.Add(new(null, $"UDF partition map {reference} has unsupported type {type}."));
+      }
+
+      pos += length;
+    }
+
+    if (pos > end)
+      throw new InvalidDataException("UDF: partition map table is truncated.");
+  }
+
+  private long PartitionOffset(ushort partitionReference, long lbn) {
+    if (partitionReference >= _partitionMaps.Count)
+      throw new InvalidDataException($"UDF: partition reference {partitionReference} is outside the Logical Volume Descriptor map table.");
+    if (lbn < 0)
+      throw new InvalidDataException("UDF: negative logical block number.");
+
+    var map = _partitionMaps[partitionReference];
+    if (map.Limitation is { } limitation)
+      throw new NotSupportedException(limitation);
+    if (map.PartitionNumber is not { } number || !_partitions.TryGetValue(number, out var partition))
+      throw new InvalidDataException($"UDF: partition reference {partitionReference} cannot be resolved.");
+    if ((ulong)lbn >= partition.BlockCount)
+      throw new InvalidDataException(
+        $"UDF: logical block {lbn} lies outside partition reference {partitionReference} ({partition.BlockCount} blocks). ");
+
+    return checked(((long)partition.StartBlock + lbn) * _blockSize);
+  }
+
+  private bool TryPartitionRange(
+      ushort partitionReference,
+      uint block,
+      long length,
+      out long physicalOffset,
+      out string? limitation) {
+    physicalOffset = 0;
+    limitation = null;
+    try {
+      if (partitionReference >= _partitionMaps.Count) {
+        limitation = $"UDF partition reference {partitionReference} is outside the Logical Volume Descriptor map table.";
+        return false;
+      }
+      var map = _partitionMaps[partitionReference];
+      if (map.Limitation is { } mapLimitation) {
+        limitation = mapLimitation;
+        return false;
+      }
+      if (map.PartitionNumber is not { } number || !_partitions.TryGetValue(number, out var partition)) {
+        limitation = $"UDF partition reference {partitionReference} cannot be resolved.";
+        return false;
+      }
+      var partitionBytes = checked((long)partition.BlockCount * _blockSize);
+      var relative = checked((long)block * _blockSize);
+      if (length < 0 || relative < 0 || relative > partitionBytes || length > partitionBytes - relative) {
+        limitation = $"UDF extent [{block}, +{length} bytes] lies outside partition reference {partitionReference}.";
+        return false;
+      }
+      physicalOffset = checked((long)partition.StartBlock * _blockSize + relative);
+      if (physicalOffset < 0 || physicalOffset > _len || length > _len - physicalOffset) {
+        limitation = "UDF recorded extent lies outside the backing image.";
+        return false;
+      }
+      return true;
+    } catch (OverflowException) {
+      limitation = "UDF extent address overflows the image address space.";
+      return false;
+    }
+  }
+
+  private void ReadDirectory(ushort partitionReference, uint icbLbn, int icbLen, string basePath) {
+    if (!_visitedDirectories.Add((partitionReference, icbLbn)))
+      throw new InvalidDataException($"UDF: directory '{basePath}' forms a cycle or reuses an already visited ICB.");
+
+    var feOffset = PartitionOffset(partitionReference, icbLbn);
+    if (feOffset + 216 > _len)
+      throw new InvalidDataException($"UDF: directory '{basePath}' File Entry lies outside the image.");
 
     var feTag = U16(feOffset);
     if (feTag is not (261 or 266))
-      return;
+      throw new InvalidDataException($"UDF: directory '{basePath}' ICB has unsupported descriptor tag {feTag}.");
 
     int lEa, lAd;
     long adStart;
     var icbFlags = U16(feOffset + 34);
     var fileType = U8(feOffset + 27);
     var infoLengthRaw = U64(feOffset + 56);
-    if (infoLengthRaw > long.MaxValue)
-      throw new InvalidDataException("UDF: directory information length exceeds supported signed range.");
+    if (infoLengthRaw > int.MaxValue)
+      throw new NotSupportedException("UDF: directories larger than the managed directory-buffer limit are not yet mountable.");
     var infoLength = (long)infoLengthRaw;
 
     if (feTag == 261) {
@@ -238,14 +321,13 @@ public sealed class UdfReader : IDisposable {
     }
 
     if (fileType != 4)
-      return;
+      throw new InvalidDataException($"UDF: directory '{basePath}' ICB has file type {fileType}, expected directory type 4.");
 
-    var dirData = ReadAllocData(adStart, lAd, icbFlags & 0x07, infoLength);
-    if (dirData is null)
-      return;
+    var dirData = ReadAllocData(partitionReference, adStart, lAd, icbFlags & 0x07, infoLength)
+      ?? throw new InvalidDataException($"UDF: directory '{basePath}' allocation descriptors cannot be decoded safely.");
 
     var pos = 0;
-    while (pos + 38 < dirData.Length) {
+    while (pos + 38 <= dirData.Length) {
       var fidTag = BinaryPrimitives.ReadUInt16LittleEndian(dirData.AsSpan(pos));
       if (fidTag != 257) {
         var nextBlock = ((pos / _blockSize) + 1) * _blockSize;
@@ -259,7 +341,7 @@ public sealed class UdfReader : IDisposable {
       var fidIdLen = dirData[pos + 19];
       var fidLen = (38 + lIu + fidIdLen + 3) & ~3;
       if (fidLen <= 0 || pos > dirData.Length - fidLen)
-        break;
+        throw new InvalidDataException($"UDF: directory '{basePath}' contains a truncated File Identifier Descriptor.");
 
       var fidFlags = dirData[pos + 18];
       var isParent = (fidFlags & 0x08) != 0;
@@ -267,21 +349,21 @@ public sealed class UdfReader : IDisposable {
       var isDir = (fidFlags & 0x02) != 0;
       var childIcbLen = BinaryPrimitives.ReadUInt32LittleEndian(dirData.AsSpan(pos + 20));
       var childIcbLbn = BinaryPrimitives.ReadUInt32LittleEndian(dirData.AsSpan(pos + 24));
+      var childPartitionReference = BinaryPrimitives.ReadUInt16LittleEndian(dirData.AsSpan(pos + 28));
 
       if (!isParent && !isDeleted && fidIdLen > 0) {
         var nameStart = pos + 38 + lIu;
         if (nameStart > dirData.Length - fidIdLen)
-          break;
+          throw new InvalidDataException($"UDF: directory '{basePath}' contains a truncated file identifier name.");
 
         var name = OstaCompressedUnicode.Decode(dirData.AsSpan(nameStart, fidIdLen));
-
         var fullPath = string.IsNullOrEmpty(basePath) ? name : $"{basePath}/{name}";
         if (isDir) {
           _entries.Add(new UdfEntry { Name = fullPath, IsDirectory = true });
-          ReadDirectory(childIcbLbn, checked((int)childIcbLen), fullPath);
+          ReadDirectory(childPartitionReference, childIcbLbn, checked((int)childIcbLen), fullPath);
         } else {
-          var childSize = GetFileSize(childIcbLbn);
-          var layout = GetFileDataLayout(childIcbLbn, childSize);
+          var childSize = GetFileSize(childPartitionReference, childIcbLbn);
+          var layout = GetFileDataLayout(childPartitionReference, childIcbLbn, childSize);
           var contiguousOffset = layout.Segments is [{ ZeroFill: false } only] ? only.PhysicalOffset : 0;
           _entries.Add(new UdfEntry {
             Name = fullPath,
@@ -298,99 +380,92 @@ public sealed class UdfReader : IDisposable {
     }
   }
 
-  private long GetFileSize(long icbLbn) {
-    var off = PartitionOffset(icbLbn);
+  private long GetFileSize(ushort partitionReference, uint icbLbn) {
+    var off = PartitionOffset(partitionReference, icbLbn);
     if (off + 64 > _len)
-      return 0;
+      throw new InvalidDataException("UDF: file ICB lies outside the image.");
     var tag = U16(off);
     if (tag is not (261 or 266))
-      return 0;
+      throw new InvalidDataException($"UDF: file ICB has unsupported descriptor tag {tag}.");
     var size = U64(off + 56);
     if (size > long.MaxValue)
       throw new InvalidDataException("UDF: file information length exceeds supported signed range.");
     return (long)size;
   }
 
-  /// <summary>One decoded allocation descriptor.</summary>
-  private readonly record struct AllocationDescriptor(int ExtentType, long Length, uint Block, ushort Partition);
+  private readonly record struct AllocationDescriptor(int ExtentType, long Length, uint Block, ushort PartitionReference);
 
-  /// <summary>
-  /// Walks an allocation descriptor list, following the continuations that
-  /// ECMA-167 §4/14.14.1.1 records as extent type 3. Once a File Entry's own
-  /// descriptor area is full the rest of the list lives in an Allocation Extent
-  /// Descriptor (tag 258) in a block of its own, and a reader that stops at the
-  /// type-3 entry sees only as much of the object as fitted in the entry — for
-  /// a directory that means most of its children vanish.
-  /// </summary>
-  private IEnumerable<AllocationDescriptor> EnumerateAllocationDescriptors(long adStart, int lAd, int adType) {
+  private IEnumerable<AllocationDescriptor> EnumerateAllocationDescriptors(
+      ushort containingPartitionReference,
+      long adStart,
+      int lAd,
+      int adType) {
     if (adType is not (0 or 1))
       yield break;
 
     var stride = adType == 0 ? 8 : 16;
-    var visited = new HashSet<long>();
+    var visited = new HashSet<(ushort PartitionReference, uint Block)>();
     var pos = adStart;
-    var end = adStart + lAd;
+    var end = checked(adStart + lAd);
 
     while (true) {
       if (pos < 0 || end > _len || end < pos)
         yield break;
 
-      long? continuation = null;
+      (ushort PartitionReference, uint Block)? continuation = null;
       while (pos + stride <= end) {
         var raw = U32(pos);
         var extentType = (int)(raw >> ExtentTypeShift);
         var length = (long)(raw & ExtentLengthMask);
         var block = U32(pos + 4);
-        var partition = adType == 1 ? U16(pos + 8) : (ushort)0;
+        var partitionReference = adType == 1 ? U16(pos + 8) : containingPartitionReference;
         pos += stride;
 
         if (length == 0)
           continue;
 
         if (extentType == 3) {
-          // The continuation replaces the rest of this list; anything after it
-          // in the current block is not part of the object.
-          continuation = block;
+          continuation = (partitionReference, block);
           break;
         }
 
-        yield return new(extentType, length, block, partition);
+        yield return new(extentType, length, block, partitionReference);
       }
 
-      if (continuation is not { } nextBlock)
+      if (continuation is not { } next)
         yield break;
+      if (!visited.Add(next))
+        throw new InvalidDataException("UDF: allocation-descriptor continuation chain contains a cycle.");
 
-      long nextOffset;
-      try {
-        nextOffset = PartitionOffset(nextBlock);
-      } catch (OverflowException) {
-        yield break;
-      }
-
-      // A continuation pointing back at a block already walked would loop for
-      // ever; refusing to revisit one bounds the walk.
-      if (!visited.Add(nextOffset))
-        yield break;
+      var nextOffset = PartitionOffset(next.PartitionReference, next.Block);
       if (nextOffset < 0 || nextOffset + 24 > _len)
-        yield break;
-      // ECMA-167 §4/14.5: the continuation block opens with an Allocation
-      // Extent Descriptor whose header says how many bytes of descriptors follow.
+        throw new InvalidDataException("UDF: Allocation Extent Descriptor lies outside the image.");
       if (U16(nextOffset) != 258)
-        yield break;
+        throw new InvalidDataException("UDF: allocation-descriptor continuation does not reference an Allocation Extent Descriptor.");
 
       var nextLength = U32(nextOffset + 20);
       pos = nextOffset + 24;
-      end = pos + nextLength;
+      end = checked(pos + nextLength);
+      if (end > _len)
+        throw new InvalidDataException("UDF: Allocation Extent Descriptor payload lies outside the image.");
     }
   }
 
-  private UdfFileDataLayout GetFileDataLayout(long icbLbn, long informationLength) {
+  private UdfFileDataLayout GetFileDataLayout(
+      ushort containingPartitionReference,
+      uint icbLbn,
+      long informationLength) {
     if (informationLength < 0)
       return new([], "UDF file has a negative logical length.");
     if (informationLength == 0)
       return new([], null);
 
-    var off = PartitionOffset(icbLbn);
+    long off;
+    try {
+      off = PartitionOffset(containingPartitionReference, icbLbn);
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or OverflowException) {
+      return new([], e.Message);
+    }
     if (off < 0 || off > _len - 216)
       return new([], "UDF File Entry lies outside the image.");
 
@@ -431,32 +506,29 @@ public sealed class UdfReader : IDisposable {
 
     var segments = new List<UdfDataSegment>();
     long logicalOffset = 0;
+    try {
+      foreach (var ad in EnumerateAllocationDescriptors(containingPartitionReference, adStart, lAd, adType)) {
+        if (logicalOffset >= informationLength)
+          break;
 
-    foreach (var ad in this.EnumerateAllocationDescriptors(adStart, lAd, adType)) {
-      if (logicalOffset >= informationLength)
-        break;
-
-      if (ad.Partition != 0)
-        return new(segments, $"UDF long allocation descriptor references partition map {ad.Partition}; only the decoded primary partition is supported.");
-
-      var logicalLength = Math.Min(ad.Length, informationLength - logicalOffset);
-      if (ad.ExtentType == 0) {
-        long physicalOffset;
-        try {
-          physicalOffset = PartitionOffset(ad.Block);
-        } catch (OverflowException) {
-          return new(segments, "UDF file extent address overflows the image address space.");
+        var logicalLength = Math.Min(ad.Length, informationLength - logicalOffset);
+        if (ad.ExtentType == 0) {
+          if (!TryPartitionRange(ad.PartitionReference, ad.Block, logicalLength, out var physicalOffset, out var limitation))
+            return new(segments, limitation);
+          segments.Add(new(logicalOffset, logicalLength, physicalOffset, ZeroFill: false));
+        } else if (ad.ExtentType is 1 or 2) {
+          segments.Add(new(logicalOffset, logicalLength, 0, ZeroFill: true));
+        } else {
+          return new(segments, $"UDF allocation descriptor has unsupported extent type {ad.ExtentType}.");
         }
-        if (physicalOffset < 0 || physicalOffset > _len - logicalLength)
-          return new(segments, "UDF recorded file extent lies outside the backing image.");
-        segments.Add(new(logicalOffset, logicalLength, physicalOffset, ZeroFill: false));
-      } else {
-        // ECMA-167 allocation descriptor types 1 and 2 are unrecorded ranges.
-        // Their logical bytes read as zeroes and consume no source-data bytes.
-        segments.Add(new(logicalOffset, logicalLength, 0, ZeroFill: true));
-      }
 
-      logicalOffset += logicalLength;
+        logicalOffset += logicalLength;
+      }
+    } catch (Exception e) when (e is InvalidDataException or NotSupportedException or OverflowException) {
+      // Say both what went wrong and how much of the file it costs: the cause alone
+      // does not tell a caller whether anything is still addressable.
+      return new(segments,
+        $"{e.Message} UDF allocation descriptors cover {logicalOffset} of {informationLength} logical file bytes.");
     }
 
     if (logicalOffset != informationLength)
@@ -465,7 +537,12 @@ public sealed class UdfReader : IDisposable {
     return new(segments, null);
   }
 
-  private byte[]? ReadAllocData(long adStart, int lAd, int adType, long infoLength) {
+  private byte[]? ReadAllocData(
+      ushort containingPartitionReference,
+      long adStart,
+      int lAd,
+      int adType,
+      long infoLength) {
     if (infoLength < 0 || infoLength > int.MaxValue)
       return null;
 
@@ -483,28 +560,27 @@ public sealed class UdfReader : IDisposable {
       return null;
 
     var zeroBuffer = new byte[8192];
-    foreach (var ad in this.EnumerateAllocationDescriptors(adStart, lAd, adType)) {
+    foreach (var ad in EnumerateAllocationDescriptors(containingPartitionReference, adStart, lAd, adType)) {
       if (ms.Length >= infoLength)
         break;
-      if (ad.Partition != 0)
-        return null;
 
       var take = Math.Min(ad.Length, infoLength - ms.Length);
       if (take <= 0)
         continue;
 
       if (ad.ExtentType == 0) {
-        var physical = PartitionOffset(ad.Block);
-        if (physical < 0 || physical > _len - take)
+        if (!TryPartitionRange(ad.PartitionReference, ad.Block, take, out var physical, out _))
           return null;
         _img.CopyTo(physical, ms, take);
-      } else {
+      } else if (ad.ExtentType is 1 or 2) {
         var remaining = take;
         while (remaining > 0) {
           var chunk = checked((int)Math.Min(zeroBuffer.Length, remaining));
           ms.Write(zeroBuffer, 0, chunk);
           remaining -= chunk;
         }
+      } else {
+        return null;
       }
     }
 
@@ -560,7 +636,10 @@ public sealed class UdfReader : IDisposable {
   }
 
   /// <summary>Releases resources held by this instance.</summary>
-  public void Dispose() => this._img.Dispose();
+  public void Dispose() => _img.Dispose();
+
+  private readonly record struct PartitionDescriptorInfo(uint StartBlock, uint BlockCount);
+  private readonly record struct PartitionMapInfo(ushort? PartitionNumber, string? Limitation);
 
   private sealed record UdfFileDataLayout(
     IReadOnlyList<UdfDataSegment> Segments,

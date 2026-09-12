@@ -18,8 +18,17 @@ public static class RefPackStream {
   /// <summary>Maximum uncompressed size encodable in a 3-byte BE field (16 MB - 1).</summary>
   private const int MaxUncompressedSize = 0xFFFFFF;
 
-  /// <summary>Window size for the LZ77 match finder (131072 = 128 KB, must be power of 2).</summary>
-  private const int WindowSize = 131072;
+  /// <summary>Default RefPack history window. The format can encode distances through 131072 bytes.</summary>
+  internal const int DefaultWindowSize = 131072;
+
+  /// <summary>Default hash-chain search depth used by the normal encoder.</summary>
+  internal const int DefaultSearchDepth = 128;
+
+  /// <summary>Window sizes searched by the schema-driven optimizer.</summary>
+  internal static readonly int[] OptimizationWindowSizes = [1024, 16384, 131072];
+
+  /// <summary>Hash-chain depths searched by the schema-driven optimizer.</summary>
+  internal static readonly int[] OptimizationSearchDepths = [16, 64, 128, 512];
 
   /// <summary>Maximum literals that can be encoded in a single 1-byte literal-run opcode.</summary>
   private const int MaxLiteralRun = 112;
@@ -58,7 +67,7 @@ public static class RefPackStream {
     ArgumentNullException.ThrowIfNull(output);
 
     var data = ReadAllBytes(input);
-    var compressed = CompressCore(data);
+    var compressed = CompressCore(data, DefaultWindowSize, DefaultSearchDepth, quick: false);
     output.Write(compressed);
   }
 
@@ -78,7 +87,43 @@ public static class RefPackStream {
   /// <exception cref="ArgumentException">
   /// Thrown when the input data exceeds the maximum encodable size (16 MB - 1).
   /// </exception>
-  public static byte[] Compress(ReadOnlySpan<byte> data) => CompressCore(data);
+  public static byte[] Compress(ReadOnlySpan<byte> data)
+    => CompressCore(data, DefaultWindowSize, DefaultSearchDepth, quick: false);
+
+  /// <summary>
+  /// Compresses with explicit match-search settings. The wire format is unchanged;
+  /// only the encoder's candidate search changes.
+  /// </summary>
+  internal static byte[] Compress(ReadOnlySpan<byte> data, int windowSize, int searchDepth, bool quick) {
+    if (Array.IndexOf(OptimizationWindowSizes, windowSize) < 0)
+      throw new ArgumentOutOfRangeException(nameof(windowSize), windowSize, "RefPack window must be 1024, 16384, or 131072 bytes.");
+    if (searchDepth <= 0)
+      throw new ArgumentOutOfRangeException(nameof(searchDepth), searchDepth, "Search depth must be positive.");
+
+    return CompressCore(data, windowSize, searchDepth, quick);
+  }
+
+  /// <summary>
+  /// Exhaustively searches the finite RefPack encoder settings and returns the
+  /// smallest stream. This backs direct <c>CompressOptimal</c> callers; the
+  /// generic workbench optimizer performs the same search through the descriptor schema.
+  /// </summary>
+  internal static byte[] CompressOptimal(ReadOnlySpan<byte> data) {
+    byte[]? best = null;
+
+    foreach (var windowSize in OptimizationWindowSizes)
+      foreach (var searchDepth in OptimizationSearchDepths)
+        for (var quickIndex = 0; quickIndex < 2; ++quickIndex) {
+          // CompressionOptimizer enumerates Boolean values as true, false. Keep
+          // the direct optimal path deterministic with that same tie ordering.
+          var quick = quickIndex == 0;
+          var candidate = CompressCore(data, windowSize, searchDepth, quick);
+          if (best is null || candidate.Length < best.Length)
+            best = candidate;
+        }
+
+    return best!;
+  }
 
   // ── Decompression core ────────────────────────────────────────────────────
 
@@ -196,7 +241,7 @@ public static class RefPackStream {
 
   // ── Compression core ──────────────────────────────────────────────────────
 
-  private static byte[] CompressCore(ReadOnlySpan<byte> input) {
+  private static byte[] CompressCore(ReadOnlySpan<byte> input, int windowSize, int searchDepth, bool quick) {
     if (input.Length > MaxUncompressedSize)
       throw new ArgumentException($"Input size {input.Length} exceeds the maximum encodable size of {MaxUncompressedSize} bytes.", nameof(input));
 
@@ -215,18 +260,19 @@ public static class RefPackStream {
       return ms.ToArray();
     }
 
-    var matchFinder = new HashChainMatchFinder(WindowSize);
+    var matchFinder = new HashChainMatchFinder(windowSize, searchDepth);
     var pendingLiterals = new List<byte>();
     var pos = 0;
 
     while (pos < input.Length) {
-      // Find longest match (minimum 3 bytes)
+      // FindMatch owns insertion of the current position. Calling InsertPosition
+      // again for a literal creates a self-link and cuts older candidates off.
       var maxLen = Math.Min(input.Length - pos, 1028);
-      var match = pos >= 3
-        ? matchFinder.FindMatch(input, pos, WindowSize - 1, maxLen, 3)
-        : default;
+      var match = matchFinder.FindMatch(input, pos, windowSize, maxLen, 3);
 
-      // Clamp match to encodable length given the distance
+      // Clamp match to encodable length given the distance. A smaller optimizer
+      // window can deliberately hide a farther, unencodable short match and let
+      // the finder choose a useful nearer candidate instead.
       var usableLength = ClampMatchLength(match.Distance, match.Length);
 
       if (usableLength >= 3) {
@@ -236,15 +282,16 @@ public static class RefPackStream {
         // Encode match with the narrowest opcode that fits
         EmitMatch(ms, match.Distance, usableLength, pendingLiterals, input, pos);
 
-        // Insert skipped positions into hash chain
-        for (var i = 1; i < usableLength; ++i)
-          if (pos + i + 2 < input.Length)
+        // Full search indexes positions skipped by a match so later references
+        // may start inside it. Quick mode intentionally indexes only the match
+        // start, trading ratio for less match-finder work.
+        if (!quick)
+          for (var i = 1; i < usableLength; ++i)
             matchFinder.InsertPosition(input, pos + i);
 
         pos += usableLength;
       } else {
         pendingLiterals.Add(input[pos]);
-        matchFinder.InsertPosition(input, pos);
         ++pos;
       }
     }

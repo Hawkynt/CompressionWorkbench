@@ -1,128 +1,223 @@
 #pragma warning disable CS1591
-using System.Buffers.Binary;
 using Compression.Registry;
 
 namespace FileFormat.Qcow2;
 
 /// <summary>
-/// Walks a QCOW2 image and emits the byte-level layout: header, L1 table,
-/// L2 tables, refcount table, refcount blocks, and data clusters.
+/// Walks the active QCOW2 mapping plus the refcount metadata and emits a
+/// fail-closed byte-level host layout. Host clusters with refcount zero are
+/// explicitly reported as free, enabling forensic wipe without confusing guest
+/// disk offsets with container offsets. Allocated clusters not understood by the
+/// active mapping (for example snapshot metadata/data) remain metadata-reserved.
 /// </summary>
 public static class Qcow2LayoutMap {
+  private sealed record KnownBlock(DefragBlockKind Kind, string? Name, DefragBlockClass? Classification);
 
-  private static readonly byte[] Magic = [0x51, 0x46, 0x49, 0xFB];
-
-  /// <summary>
-  /// Enumerates the value.
-  /// </summary>
+  /// <summary>Enumerates the physical host-file layout.</summary>
   public static IEnumerable<DefragBlockInfo> Enumerate(Stream stream) {
     ArgumentNullException.ThrowIfNull(stream);
-    stream.Position = 0;
+    try {
+      return Build(stream);
+    } catch (InvalidDataException) {
+      return [];
+    } catch (NotSupportedException) {
+      return [];
+    } catch (IOException) {
+      return [];
+    } catch (OverflowException) {
+      return [];
+    }
+  }
 
-    if (stream.Length < 72)
-      yield break;
+  private static IReadOnlyList<DefragBlockInfo> Build(Stream stream) {
+    if (!stream.CanRead || !stream.CanSeek)
+      return [];
 
-    var buf = new byte[stream.Length];
-    stream.Position = 0;
-    stream.ReadExactly(buf);
+    var header = Qcow2Structures.ReadHeader(stream);
+    if (header.CryptMethod != 0 || header.IncompatibleFeatures != 0 || header.RefcountOrder != 4)
+      return [];
+    if (header.RefcountTableOffset <= 0 || header.RefcountTableClusters <= 0)
+      return [];
 
-    if (!buf.AsSpan(0, 4).SequenceEqual(Magic))
-      yield break;
+    var clusterSize = header.ClusterSize;
+    var hostClusterCount = (stream.Length + clusterSize - 1) / clusterSize;
+    if (hostClusterCount == 0)
+      return [];
 
-    var version = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(4));
-    if (version is not (2 or 3))
-      yield break;
+    var known = new Dictionary<long, KnownBlock>();
+    MarkRange(known, 0, clusterSize, clusterSize,
+      new KnownBlock(DefragBlockKind.MetadataReserved, $"QCOW2 Header (v{header.Version})", DefragBlockClass.Directory));
 
-    var clusterBits = (int)BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(20));
-    if (clusterBits < 9 || clusterBits > 21)
-      yield break;
+    if (header.L1Size > 0) {
+      var l1Bytes = checked((long)header.L1Size * sizeof(ulong));
+      var l1Span = Qcow2Structures.AlignUp(l1Bytes, clusterSize);
+      MarkRange(known, header.L1TableOffset, l1Span, clusterSize,
+        new KnownBlock(DefragBlockKind.MetadataReserved, "L1 table", DefragBlockClass.Directory));
+    }
 
-    var clusterSize = 1 << clusterBits;
-    var l2Entries = clusterSize / 8;
-    var virtualSize = (long)BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(24));
-    var l1Size = (int)BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(36));
-    var l1TableOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(40));
-    var refcountTableOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(48));
-    var refcountTableClusters = (int)BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(56));
+    MarkRange(
+      known,
+      header.RefcountTableOffset,
+      checked((long)header.RefcountTableClusters * clusterSize),
+      clusterSize,
+      new KnownBlock(DefragBlockKind.MetadataReserved, "Refcount table", DefragBlockClass.Directory));
 
-    // Header cluster
-    yield return new DefragBlockInfo(0, clusterSize, DefragBlockKind.MetadataReserved,
-      FileName: $"QCOW2 Header (v{version})");
+    var refcountTableCapacity = checked((long)header.RefcountTableClusters * clusterSize / sizeof(ulong));
+    var refcountBlocksNeeded = (hostClusterCount + header.RefcountEntriesPerBlock - 1) / header.RefcountEntriesPerBlock;
+    if (refcountBlocksNeeded > refcountTableCapacity)
+      return [];
 
-    // L1 table
-    if (l1Size > 0 && l1TableOffset > 0) {
-      var l1ByteSize = (long)l1Size * 8;
-      var l1AlignedSize = ((l1ByteSize + clusterSize - 1) / clusterSize) * clusterSize;
-      yield return new DefragBlockInfo(l1TableOffset, l1AlignedSize, DefragBlockKind.MetadataReserved,
-        FileName: $"L1 Table ({l1Size} entries)");
+    for (var tableIndex = 0L; tableIndex < refcountBlocksNeeded; ++tableIndex) {
+      var tableEntry = Qcow2Structures.ReadUInt64BigEndianAt(
+        stream,
+        checked(header.RefcountTableOffset + tableIndex * sizeof(ulong)));
+      var blockOffset = Qcow2Structures.ReadRefcountBlockOffset(tableEntry);
+      if (blockOffset == 0)
+        continue;
+      if ((blockOffset & (clusterSize - 1L)) != 0 || blockOffset > stream.Length - clusterSize)
+        return [];
+      MarkRange(known, blockOffset, clusterSize, clusterSize,
+        new KnownBlock(DefragBlockKind.MetadataReserved, "Refcount block", DefragBlockClass.Directory));
+    }
 
-      // Walk L1 -> L2 tables -> data clusters
-      for (var l1Idx = 0; l1Idx < l1Size; l1Idx++) {
-        var l1EntryOff = (int)(l1TableOffset + l1Idx * 8L);
-        if (l1EntryOff + 8 > buf.Length) break;
+    var guestClusterCount = (header.VirtualSize + clusterSize - 1) / clusterSize;
+    for (var l1Index = 0; l1Index < header.L1Size; ++l1Index) {
+      var l1Entry = Qcow2Structures.ReadUInt64BigEndianAt(
+        stream,
+        checked(header.L1TableOffset + l1Index * sizeof(ulong)));
+      if ((l1Entry & Qcow2Structures.L1ReservedMask) != 0)
+        return [];
+      var l2TableOffset = Qcow2Structures.ReadClusterOffset(l1Entry);
+      if (l2TableOffset == 0)
+        continue;
+      if ((l2TableOffset & (clusterSize - 1L)) != 0 || l2TableOffset > stream.Length - clusterSize)
+        return [];
 
-        var l1Entry = BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(l1EntryOff));
-        var l2TableOffset = (long)(l1Entry & 0x00FFFFFFFFFFFE00UL);
-        if (l2TableOffset == 0) continue;
+      MarkRange(known, l2TableOffset, clusterSize, clusterSize,
+        new KnownBlock(DefragBlockKind.MetadataReserved, "L2 table", DefragBlockClass.Directory));
 
-        yield return new DefragBlockInfo(l2TableOffset, clusterSize, DefragBlockKind.MetadataReserved,
-          FileName: $"L2 Table {l1Idx}");
+      var guestBase = (long)l1Index * header.L2Entries;
+      var entries = (int)Math.Min(header.L2Entries, Math.Max(0, guestClusterCount - guestBase));
+      for (var l2Index = 0; l2Index < entries; ++l2Index) {
+        var l2Entry = Qcow2Structures.ReadUInt64BigEndianAt(
+          stream,
+          checked(l2TableOffset + l2Index * sizeof(ulong)));
+        if (l2Entry == 0)
+          continue;
 
-        // Data clusters referenced by this L2 table
-        var totalClusters = (int)((virtualSize + clusterSize - 1) / clusterSize);
-        for (var l2Idx = 0; l2Idx < l2Entries; l2Idx++) {
-          var clusterIdx = l1Idx * l2Entries + l2Idx;
-          if (clusterIdx >= totalClusters) break;
+        if ((l2Entry & Qcow2Structures.CompressedFlag) != 0) {
+          var (compressedOffset, compressedLength) =
+            Qcow2Structures.DecodeCompressedRange(l2Entry, header.ClusterBits, stream.Length);
+          MarkRange(known, compressedOffset, compressedLength, clusterSize,
+            new KnownBlock(DefragBlockKind.Used, "Guest data (compressed)", DefragBlockClass.Cold));
+          continue;
+        }
 
-          var l2EntryOff = (int)(l2TableOffset + l2Idx * 8L);
-          if (l2EntryOff + 8 > buf.Length) break;
+        if ((l2Entry & Qcow2Structures.StandardL2ReservedMask) != 0)
+          return [];
+        if (header.Version == 2 && (l2Entry & Qcow2Structures.ZeroFlag) != 0)
+          return [];
 
-          var l2Entry = BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(l2EntryOff));
-          if (l2Entry == 0) continue;
+        var hostOffset = Qcow2Structures.ReadClusterOffset(l2Entry);
+        if (hostOffset == 0)
+          continue;
+        if ((hostOffset & (clusterSize - 1L)) != 0 || hostOffset > stream.Length - clusterSize)
+          return [];
 
-          var isCompressed = (l2Entry & (1UL << 62)) != 0;
-          if (isCompressed) {
-            // Compressed cluster: size is encoded in the descriptor
-            var compSizeBits = clusterBits - 8;
-            var descriptor = l2Entry & 0x3FFFFFFFFFFFFFFFUL;
-            var compSizeMask = (1UL << compSizeBits) - 1UL;
-            var compSize = (long)((descriptor & compSizeMask) + 1);
-            var hostSectors = descriptor >> compSizeBits;
-            var hostOffset = (long)hostSectors * 512;
+        var isZero = header.Version >= 3 && (l2Entry & Qcow2Structures.ZeroFlag) != 0;
+        MarkRange(
+          known,
+          hostOffset,
+          clusterSize,
+          clusterSize,
+          isZero
+            ? new KnownBlock(DefragBlockKind.Free, "Zero-cluster preallocation", null)
+            : new KnownBlock(DefragBlockKind.Used, "Guest data", DefragBlockClass.Normal));
+      }
+    }
 
-            yield return new DefragBlockInfo(hostOffset, compSize, DefragBlockKind.Used,
-              FileName: $"Cluster {clusterIdx} (compressed)",
-              Classification: DefragBlockClass.Cold);
-          } else {
-            var hostOffset = (long)(l2Entry & 0x00FFFFFFFFFFFE00UL);
-            if (hostOffset > 0) {
-              yield return new DefragBlockInfo(hostOffset, clusterSize, DefragBlockKind.Used,
-                FileName: $"Cluster {clusterIdx}",
-                Classification: DefragBlockClass.Normal);
-            }
-          }
+    var result = new List<DefragBlockInfo>();
+    long cachedTableIndex = -1;
+    byte[]? cachedRefcountBlock = null;
+
+    for (var hostCluster = 0L; hostCluster < hostClusterCount; ++hostCluster) {
+      var refcount = ReadRefcount(hostCluster);
+      known.TryGetValue(hostCluster, out var knownBlock);
+      if (knownBlock is { Kind: not DefragBlockKind.Free } && refcount == 0)
+        return [];
+
+      var block = knownBlock ?? (refcount == 0
+        ? new KnownBlock(DefragBlockKind.Free, null, null)
+        : new KnownBlock(DefragBlockKind.MetadataReserved, "Allocated QCOW2 structure/snapshot", DefragBlockClass.Directory));
+      var offset = checked(hostCluster * (long)clusterSize);
+      var length = Math.Min(clusterSize, stream.Length - offset);
+      AppendCoalesced(result, offset, length, block);
+    }
+
+    return result;
+
+    ushort ReadRefcount(long hostCluster) {
+      var tableIndex = hostCluster / header.RefcountEntriesPerBlock;
+      var blockIndex = checked((int)(hostCluster % header.RefcountEntriesPerBlock));
+      if (tableIndex != cachedTableIndex) {
+        var tableEntry = Qcow2Structures.ReadUInt64BigEndianAt(
+          stream,
+          checked(header.RefcountTableOffset + tableIndex * sizeof(ulong)));
+        var blockOffset = Qcow2Structures.ReadRefcountBlockOffset(tableEntry);
+        cachedTableIndex = tableIndex;
+        if (blockOffset == 0) {
+          cachedRefcountBlock = null;
+        } else {
+          if ((blockOffset & (clusterSize - 1L)) != 0 || blockOffset > stream.Length - clusterSize)
+            throw new InvalidDataException("QCOW2: refcount block points outside the image.");
+          cachedRefcountBlock = new byte[clusterSize];
+          Qcow2Structures.ReadExactlyAt(stream, blockOffset, cachedRefcountBlock);
         }
       }
+
+      if (cachedRefcountBlock is null)
+        return 0;
+      return System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(
+        cachedRefcountBlock.AsSpan(blockIndex * sizeof(ushort), sizeof(ushort)));
     }
+  }
 
-    // Refcount table
-    if (refcountTableOffset > 0 && refcountTableClusters > 0) {
-      var rtSize = (long)refcountTableClusters * clusterSize;
-      yield return new DefragBlockInfo(refcountTableOffset, rtSize, DefragBlockKind.MetadataReserved,
-        FileName: "Refcount Table");
+  private static void MarkRange(
+      Dictionary<long, KnownBlock> known,
+      long offset,
+      long length,
+      int clusterSize,
+      KnownBlock block) {
+    if (offset < 0 || length <= 0)
+      throw new InvalidDataException("QCOW2: invalid mapped host range.");
+    var first = offset / clusterSize;
+    var last = checked((offset + length - 1) / clusterSize);
+    for (var cluster = first; cluster <= last; ++cluster) {
+      if (!known.TryGetValue(cluster, out var existing) || Rank(block.Kind) > Rank(existing.Kind))
+        known[cluster] = block;
+    }
+  }
 
-      // Walk refcount table entries to find refcount blocks
-      var rtEntries = (int)(rtSize / 8);
-      for (var i = 0; i < rtEntries; i++) {
-        var entryOff = (int)(refcountTableOffset + i * 8L);
-        if (entryOff + 8 > buf.Length) break;
+  private static int Rank(DefragBlockKind kind) => kind switch {
+    DefragBlockKind.MetadataReserved => 3,
+    DefragBlockKind.Used => 2,
+    DefragBlockKind.Free => 1,
+    _ => 3,
+  };
 
-        var rbOffset = (long)BinaryPrimitives.ReadUInt64BigEndian(buf.AsSpan(entryOff));
-        if (rbOffset == 0) continue;
-
-        yield return new DefragBlockInfo(rbOffset, clusterSize, DefragBlockKind.MetadataReserved,
-          FileName: $"Refcount Block {i}");
+  private static void AppendCoalesced(List<DefragBlockInfo> result, long offset, long length, KnownBlock block) {
+    if (length <= 0)
+      return;
+    if (result.Count > 0) {
+      var previous = result[^1];
+      if (previous.Offset + previous.Length == offset
+          && previous.Kind == block.Kind
+          && previous.FileName == block.Name
+          && previous.Classification == block.Classification) {
+        result[^1] = previous with { Length = previous.Length + length };
+        return;
       }
     }
+    result.Add(new DefragBlockInfo(offset, length, block.Kind, block.Name, block.Classification));
   }
 }
