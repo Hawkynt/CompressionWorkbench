@@ -4426,7 +4426,7 @@ Writes a Microsoft Compiled HTML Help (.chm) file. Supports two modes: Stored (d
 
 Describes cmix format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -4442,8 +4442,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Arithmetic-coder endings exposed to the shared optimizer. Legacy preserves historical managed output; Compact omits up to three redundant trailing bytes. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the compact arithmetic finalization. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested optimizer parameters. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `CmixStream`
@@ -4452,7 +4455,7 @@ cmix file format by Byron Knoll. Format: Byte 0: bit7=dict flag (0), bits 0-6 = 
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical four-byte finalization. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Collada`

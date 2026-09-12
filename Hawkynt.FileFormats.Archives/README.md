@@ -55,7 +55,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Brotli](https://en.wikipedia.org/wiki/Brotli) | `Brotli` | `.br` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc7932) |
 | BSC | `Bsc` | `.bsc` | ✅ | ✅ | ✅ | Managed BWT+MTF+RLE payload; optimizer searches block size/context order; full libbsc QLFC/LZP parity remains open | [GitHub](https://github.com/IlyaGrebnov/libbsc) |
 | [bzip2](https://en.wikipedia.org/wiki/Bzip2) | `Bzip2` | `.bz2` `.bzip2` | ✅ | ✅ | ✅ |  | [sourceware.org](https://sourceware.org/bzip2/manual/manual.html) |
-| cmix | `Cmix` | `.cmix` | ✅ | ✅ | — |  | [GitHub](https://github.com/byronknoll/cmix) |
+| cmix | `Cmix` | `.cmix` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/byronknoll/cmix) |
 | [Unix compress (.Z)](https://en.wikipedia.org/wiki/Compress_(software)) | `Compress` | `.z` | ✅ | ✅ | ✅ |  | [pubs.opengroup.org](https://pubs.opengroup.org/onlinepubs/9699919799/utilities/compress.html) |
 | CP/M Crunch | `Crunch` | `.cru` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Crunch) |
 | CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/fusiyuan2010/CSC) |
