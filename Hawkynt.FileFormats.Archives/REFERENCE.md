@@ -17659,7 +17659,7 @@ Reader and writer for the Microsoft SZDD / COMPRESS.EXE file format. SZDD uses a
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CompressQBasic` | `static byte[] CompressQBasic(ReadOnlySpan<byte> data)` | Compresses `data` in the older "SZ " (QBasic) COMPRESS variant and returns the result. The body is the same LZSS stream as SZDD, wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32 uncompressed length). Round-trips through `Decompress`. |
+| `CompressQBasic` | `static byte[] CompressQBasic(ReadOnlySpan<byte> data)` | Compresses `data` in the older "SZ " (QBasic) COMPRESS variant and returns the result. It uses the same LZSS token encoding as SZDD but starts the ring two bytes earlier, and is wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32 uncompressed length). Round-trips through `Decompress`. |
 | `CompressQBasic` | `static void CompressQBasic(Stream input, Stream output)` | Stream overload of `CompressQBasic`. |
 | `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, char missingChar = '_')` | Compresses `data` in SZDD format and returns the result as a new byte array. |
 | `Compress` | `static void Compress(Stream input, Stream output, char missingChar = '_')` | Compresses `input` in SZDD format and writes the result to `output`. |
