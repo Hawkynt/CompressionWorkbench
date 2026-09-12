@@ -19,9 +19,9 @@ internal static class SzddConstants {
   /// ASCII "SZ " followed by 0x88, 0xF0, 0x27, 0x33, 0xD1. Produced by the
   /// 1980s Microsoft <c>COMPRESS.EXE</c> and QBasic distribution tooling; the
   /// later SZDD format replaced byte 2 (<c>0x20</c> → <c>'D'</c>) and the
-  /// trailing 0xD1, and added a 2-byte mode/missing-char field. The token
-  /// encoding is shared with SZDD, but QBasic starts the 4096-byte ring two
-  /// bytes earlier.
+  /// trailing 0xD1, and added a 2-byte mode/missing-char field. Neither this
+  /// toolkit's old reader nor 7-Zip groks it; the LZSS body is otherwise the
+  /// same 4096-byte ring as SZDD.
   /// </summary>
   public static ReadOnlySpan<byte> QBasicMagic => [0x53, 0x5A, 0x20, 0x88, 0xF0, 0x27, 0x33, 0xD1];
 
@@ -50,17 +50,8 @@ internal static class SzddConstants {
   /// <summary>Byte value used to pre-fill the ring buffer.</summary>
   public const byte WindowFill = 0x20; // space
 
-  /// <summary>Initial write position for standard SZDD / EXPAND streams (4096 - 16 = 4080).</summary>
-  public const int StandardWindowInitPos = WindowSize - 16;
-
-  /// <summary>Initial write position for the older QBasic "SZ " variant (4096 - 18 = 4078).</summary>
-  public const int QBasicWindowInitPos = WindowSize - 18;
-
-  /// <summary>
-  /// Compatibility alias for QBasic-only code predating the explicit variant names.
-  /// Standard SZDD code must use <see cref="StandardWindowInitPos"/> instead.
-  /// </summary>
-  public const int WindowInitPos = QBasicWindowInitPos;
+  /// <summary>Initial write position in the ring buffer (4096 - 18 = 4078).</summary>
+  public const int WindowInitPos = 4078;
 
   /// <summary>Minimum match length that qualifies for a back-reference.</summary>
   public const int MinMatchLength = 3;

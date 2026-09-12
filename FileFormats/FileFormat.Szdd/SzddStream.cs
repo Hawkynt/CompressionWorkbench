@@ -81,10 +81,9 @@ public static class SzddStream {
 
   /// <summary>
   /// Compresses <paramref name="data"/> in the older "SZ " (QBasic) COMPRESS
-  /// variant and returns the result. It uses the same LZSS token encoding as
-  /// SZDD but starts the ring two bytes earlier, and is wrapped in the 12-byte
-  /// "SZ " header (8-byte magic + little-endian u32 uncompressed length).
-  /// Round-trips through <see cref="Decompress(ReadOnlySpan{byte})"/>.
+  /// variant and returns the result. The body is the same LZSS stream as SZDD,
+  /// wrapped in the 12-byte "SZ " header (8-byte magic + little-endian u32
+  /// uncompressed length). Round-trips through <see cref="Decompress(ReadOnlySpan{byte})"/>.
   /// </summary>
   public static byte[] CompressQBasic(ReadOnlySpan<byte> data) =>
     CompressCore(data, missingChar: '\0', qbasic: true);
@@ -112,7 +111,7 @@ public static class SzddStream {
     // Initialise ring buffer
     var window = new byte[SzddConstants.WindowSize];
     window.AsSpan().Fill(SzddConstants.WindowFill);
-    var wpos = qbasic ? SzddConstants.QBasicWindowInitPos : SzddConstants.StandardWindowInitPos;
+    var wpos = SzddConstants.WindowInitPos;
 
     // Hash chain for fast match finding.
     // head[hash] = most recent window position with that hash, or -1.
@@ -193,7 +192,7 @@ public static class SzddStream {
 
     // Build header + body. The QBasic variant has a 12-byte header (8-byte magic
     // + u32 length); the SZDD variant a 14-byte header (magic + mode + missing
-    // char + u32 length). The token syntax is identical; the ring origin differs.
+    // char + u32 length). The LZSS body is identical.
     if (qbasic) {
       var qResult = new byte[SzddConstants.QBasicHeaderSize + bodyBytes.Length];
       var qHdr = qResult.AsSpan(0, SzddConstants.QBasicHeaderSize);
@@ -290,7 +289,7 @@ public static class SzddStream {
 
     // Both the modern "SZDD" (14-byte header, u32 length at offset 10) and the
     // older "SZ " / QBasic variant (12-byte header, u32 length at offset 8) share
-    // the LZSS token syntax, but use different initial ring positions as well as headers.
+    // the identical 4096-byte-ring LZSS body, so only the header geometry differs.
     var isQBasic = data[..SzddConstants.MagicLength].SequenceEqual(SzddConstants.QBasicMagic);
     var headerSize = isQBasic ? SzddConstants.QBasicHeaderSize : SzddConstants.HeaderSize;
     if (data.Length < headerSize)
@@ -305,7 +304,7 @@ public static class SzddStream {
     // Initialise ring buffer.
     var window = new byte[SzddConstants.WindowSize];
     window.AsSpan().Fill(SzddConstants.WindowFill);
-    var wpos = isQBasic ? SzddConstants.QBasicWindowInitPos : SzddConstants.StandardWindowInitPos;
+    var wpos = SzddConstants.WindowInitPos;
 
     var output = new byte[uncompressedSize];
     var outPos = 0;
