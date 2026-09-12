@@ -78,19 +78,36 @@ public class AudioReadmeStateTests {
   };
 
   /// <summary>
-  /// Every project the package bundles, from both places they are declared: the package csproj and
-  /// <c>Directory.Build.props</c>, which is where the AMR projects are added so they take part in
-  /// static-graph restore. Reading only the csproj would silently miss those four.
+  /// Every format the package ships, from both places they live: the per-format source folders
+  /// under <c>Hawkynt.FileFormats.Audio/Codecs</c> and <c>.../FileFormats</c>, which compile
+  /// straight into the package assembly, and the <c>ProjectReference</c>s in the package csproj,
+  /// which are the formats shared with another package and so still ship as separate DLLs.
+  /// Reading only one of the two would silently shrink the expected row set.
   /// </summary>
   private static HashSet<string> BundledProjects(string prefix) {
-    var text = File.ReadAllText(FindRepositoryFile(PackageDirectory, PackageDirectory + ".csproj"))
-               + File.ReadAllText(FindRepositoryFile("Directory.Build.props"));
-    return Regex
-      .Matches(text, @"(?:Codecs|FileFormats)[\\/]((?:Codec|FileFormat)\.[A-Za-z0-9]+)[\\/]")
+    var csproj = FindRepositoryFile(PackageDirectory, PackageDirectory + ".csproj");
+    var names = Regex
+      .Matches(File.ReadAllText(csproj), @"(?:Codecs|FileFormats)[\\/]((?:Codec|FileFormat)\.[A-Za-z0-9]+)[\\/]")
       .Select(static m => m.Groups[1].Value)
-      .Where(name => name.StartsWith(prefix, StringComparison.Ordinal))
       .ToHashSet(StringComparer.Ordinal);
+
+    var packageDirectory = Path.GetDirectoryName(csproj)!;
+    foreach (var group in new[] { "Codecs", "FileFormats" }) {
+      var path = Path.Combine(packageDirectory, group);
+      if (Directory.Exists(path))
+        foreach (var folder in Directory.EnumerateDirectories(path))
+          names.Add(Path.GetFileName(folder));
+    }
+
+    return names.Where(name => name.StartsWith(prefix, StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
   }
+
+  /// <summary>
+  /// Whether an assembly carries descriptors the package ships: the package assembly itself, into
+  /// which every audio-only format compiles, or one of the shared format assemblies it bundles.
+  /// </summary>
+  private static bool IsBundledAssembly(string assemblyName, HashSet<string> bundledProjects)
+    => assemblyName == PackageDirectory || bundledProjects.Contains(assemblyName);
 
   private static string ReadMatrix() {
     var readme = File.ReadAllText(FindRepositoryFile(PackageDirectory, "README.md"));
@@ -157,7 +174,7 @@ public class AudioReadmeStateTests {
     FormatRegistration.EnsureInitialized();
     var bundled = BundledProjects("FileFormat.");
     var expected = FormatRegistry.All
-      .Where(d => bundled.Contains(d.GetType().Assembly.GetName().Name ?? string.Empty))
+      .Where(d => IsBundledAssembly(d.GetType().Assembly.GetName().Name ?? string.Empty, bundled))
       .Select(static d => d.Id)
       .ToHashSet(StringComparer.Ordinal);
 
