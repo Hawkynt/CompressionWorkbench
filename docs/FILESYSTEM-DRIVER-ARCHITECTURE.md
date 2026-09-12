@@ -29,7 +29,7 @@ Consequently a mount backend receives an already-open `IFilesystemSession`, neve
 
 Filesystem-driver coverage is no longer a hand-maintained shortlist.
 
-`Compression.Lib` and `Hawkynt.FileFormats.FileSystems` reference `FileSystems/FileSystem.*/*.csproj` through an exhaustive project glob. The registry source generator marks descriptors declared below a `FileSystem.*` namespace as filesystem descriptors and discovers public `IFilesystemDriverAdapter` sidecars without reflection. Registry initialization then requires every marked filesystem descriptor to have one of these paths:
+`Hawkynt.FileFormats.FileSystems` compiles every `FileSystems/FileSystem.*` source tree it owns, and `Compression.Lib` references that one assembly (plus a glob over any `FileSystem.*` project that still builds on its own). The registry source generator marks descriptors declared below a `FileSystem.*` namespace as filesystem descriptors and discovers public `IFilesystemDriverAdapter` sidecars without reflection. Registry initialization then requires every marked filesystem descriptor to have one of these paths:
 
 - the descriptor itself implements a native `IFilesystemDriverProvider`;
 - a generated native `IFilesystemDriverAdapter` sidecar exists for its format ID; or

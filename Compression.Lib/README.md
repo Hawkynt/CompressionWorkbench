@@ -4,11 +4,12 @@ Umbrella library over every `FileFormat.*`, `FileSystem.*` and `Codec.*` project
 providing one API for detection, archive and image operations, maintenance verbs
 and conversion.
 
-`FileFormat.*` and `Codec.*` projects are referenced by name;
-`FileSystems/FileSystem.*` is picked up through an exhaustive glob, so a new
-filesystem joins the build without a csproj edit. Registration is emitted by the
-Roslyn source generator in `Compression.Registry.Generator` — there is no
-reflection and no hand-maintained list.
+`FileFormat.*` and `Codec.*` projects are referenced by name; the filesystems and
+disk-image containers arrive as one reference to `Hawkynt.FileFormats.FileSystems`,
+which compiles them, so a new filesystem joins the build without a csproj edit.
+Registration is emitted by the Roslyn source generator in
+`Compression.Registry.Generator` — there is no reflection and no hand-maintained
+list.
 
 ## Key Components
 
