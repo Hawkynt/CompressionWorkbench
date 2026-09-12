@@ -36,7 +36,7 @@ public class FilesystemCrudCycleTests {
       .Where(id => {
         var ops = FormatRegistry.GetArchiveOps(id);
         return ops is IArchiveCreatable
-            && (ops.GetType().Assembly.GetName().Name ?? "").Contains("FileSystem", StringComparison.Ordinal)
+            && (ops.GetType().Namespace ?? "").StartsWith("FileSystem.", StringComparison.Ordinal)
             && Enum.TryParse<FormatDetector.Format>(id, out _);
       });
 

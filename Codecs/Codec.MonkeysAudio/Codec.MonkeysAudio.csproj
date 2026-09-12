@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <RootNamespace>Codec.MonkeysAudio</RootNamespace>
-  </PropertyGroup>
-
-</Project>

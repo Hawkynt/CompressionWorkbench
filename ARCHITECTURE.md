@@ -17,7 +17,7 @@ CompressionWorkbench.slnx
 |
 +-- Format projects (one project per format, all discovered by the generator)
 |   +-- FileFormats/FileFormat.*          Archives, compression streams, containers, installers
-|   +-- FileSystems/FileSystem.*          On-disk filesystems and compressed-volume files
+|   +-- FileSystems/FileSystem.*          On-disk filesystems another package also ships
 |   +-- Codecs/Codec.*                    Audio codecs
 |
 +-- Analysis
@@ -42,7 +42,8 @@ CompressionWorkbench.slnx
 |
 +-- NuGet meta-packages (bundle the format projects for downstream consumers)
 |   +-- Hawkynt.FileFormats.Archives
-|   +-- Hawkynt.FileFormats.FileSystems
+|   +-- Hawkynt.FileFormats.FileSystems   Also compiles FileSystems/FileSystem.* and the
+|   |                                     disk-image FileFormats/FileFormat.* sources it owns
 |   +-- Hawkynt.FileFormats.Audio
 |   +-- Hawkynt.Algorithms.Hashing
 |   +-- Hawkynt.Algorithms.Checksums
@@ -135,7 +136,7 @@ The generator emits two files:
 
 ## How to Add a New Format
 
-1. Create a new project under `FileFormats/FileFormat.YourFormat` (or `FileSystems/FileSystem.YourFs`, or `Codecs/Codec.YourCodec` — the folder decides which family the format joins).
+1. Create a new project under `FileFormats/FileFormat.YourFormat` (or `Codecs/Codec.YourCodec` — the folder decides which family the format joins). A filesystem gets no project of its own: its sources go under `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.YourFs`, in namespace `FileSystem.YourFs`.
 
 2. Implement `IFormatDescriptor` with metadata (ID, display name, extensions, magic bytes, capabilities):
    ```csharp
@@ -161,9 +162,9 @@ The generator emits two files:
 
 3. Implement `IStreamFormatOperations` (for compression streams) or `IArchiveFormatOperations` (for multi-file archives).
 
-4. Add a `<ProjectReference>` to `Compression.Lib.csproj`, and to the matching `Hawkynt.FileFormats.*` meta-package. A `FileSystems/FileSystem.*` project is covered by an existing glob in both and needs neither edit.
+4. Add a `<ProjectReference>` to `Compression.Lib.csproj`, and to the matching `Hawkynt.FileFormats.*` meta-package. A filesystem needs neither edit — its sources already compile into the meta-package assembly, which `Compression.Lib` references.
 
-5. Add the project to `CompressionWorkbench.slnx`.
+5. Add the project to `CompressionWorkbench.slnx`. A filesystem has no project, so nothing to add.
 
 The source generator automatically discovers the new descriptor at the next build. No other changes are needed -- format detection, the CLI, and the UI will all pick up the new format.
 

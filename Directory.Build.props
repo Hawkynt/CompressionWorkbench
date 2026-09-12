@@ -27,17 +27,7 @@
 
   </PropertyGroup>
 
-  <!-- These references must participate in restore/project-graph construction. Keeping them in
-       Directory.Build.targets adds them too late for reliable static graph restore on CI. -->
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Compression.Lib' Or '$(MSBuildProjectName)' == 'Compression.Tests'">
-    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrNb\FileFormat.AmrNb.csproj" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrWb\FileFormat.AmrWb.csproj" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(MSBuildProjectName)' == 'Hawkynt.FileFormats.Audio'">
-    <ProjectReference Include="$(MSBuildThisFileDirectory)Codecs\Codec.AmrNb\Codec.AmrNb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)Codecs\Codec.AmrWb\Codec.AmrWb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrNb\FileFormat.AmrNb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="$(MSBuildThisFileDirectory)FileFormats\FileFormat.AmrWb\FileFormat.AmrWb.csproj" PrivateAssets="all" />
-  </ItemGroup>
+  <!-- The AMR codecs and containers needed a hand-placed reference here so they took part in
+       static graph restore. They now compile into Hawkynt.FileFormats.Audio along with every
+       other audio-only format, so a plain reference to that package carries them. -->
 </Project>

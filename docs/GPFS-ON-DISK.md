@@ -390,7 +390,7 @@ Those are experiments, not TODO-shaped excuses to guess.
 
 ## Repository oracle model
 
-`FileSystems/FileSystem.Gpfs/GpfsOracleModel.cs` parses only diagnostic text and
+`Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Gpfs/GpfsOracleModel.cs` parses only diagnostic text and
 represents the verified semantic facts above. Tests use published IBM examples,
 including the 14-disk `mmfsckx` case, an allocation-map mismatch, a replicated
 `tsdbfs` inode, `mmfileid` ownership and a three-replica `mmgetlocation` record.

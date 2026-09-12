@@ -1,7 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-
-  <PropertyGroup>
-    <RootNamespace>Codec.Ay8910</RootNamespace>
-  </PropertyGroup>
-
-</Project>
