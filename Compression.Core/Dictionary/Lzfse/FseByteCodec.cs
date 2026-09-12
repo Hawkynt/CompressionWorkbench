@@ -36,7 +36,7 @@ internal static class FseByteCodec {
         ++distinct;
 
     var tableLog = ChooseTableLog(distinct, symbols.Length);
-    var normalized = FseNormalizer.Normalize(counts, maxSymbol, tableLog);
+    var normalized = FseEncoder.NormalizeCounts(counts, maxSymbol, tableLog);
 
     var header = new byte[3 + (maxSymbol + 1) * 2];
     FseEncoder.WriteNormalizedCounts(header, 0, normalized, maxSymbol, tableLog);

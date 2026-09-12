@@ -3989,7 +3989,7 @@ On-disk RAID metadata format a member superblock was recognised as.
 
 ### Namespace `Compression.Core.Entropy`
 
-[`ArithmeticBuildingBlock`](#arithmeticbuildingblock) · [`BpeBuildingBlock`](#bpebuildingblock) · [`BpeConstructionStrategy`](#bpeconstructionstrategy) · [`DmcBuildingBlock`](#dmcbuildingblock) · [`EliasDeltaBuildingBlock`](#eliasdeltabuildingblock) · [`EliasGammaBuildingBlock`](#eliasgammabuildingblock) · [`FibonacciBuildingBlock`](#fibonaccibuildingblock) · [`FseBuildingBlock`](#fsebuildingblock) · [`GolombBuildingBlock`](#golombbuildingblock) · [`GolombFixedMBuildingBlock`](#golombfixedmbuildingblock) · [`GolombProfile`](#golombprofile) · [`LevenshteinBuildingBlock`](#levenshteinbuildingblock) · [`OmegaBuildingBlock`](#omegabuildingblock) · [`RangeCodingBuildingBlock`](#rangecodingbuildingblock) · [`ShannonFanoBuildingBlock`](#shannonfanobuildingblock) · [`TunstallBuildingBlock`](#tunstallbuildingblock) · [`UnaryBuildingBlock`](#unarybuildingblock)
+[`ArithmeticBuildingBlock`](#arithmeticbuildingblock) · [`BpeBuildingBlock`](#bpebuildingblock) · [`BpeConstructionStrategy`](#bpeconstructionstrategy) · [`DmcBuildingBlock`](#dmcbuildingblock) · [`EliasDeltaBuildingBlock`](#eliasdeltabuildingblock) · [`EliasGammaBuildingBlock`](#eliasgammabuildingblock) · [`FibonacciBuildingBlock`](#fibonaccibuildingblock) · [`FseBuildingBlock`](#fsebuildingblock) · [`GolombBuildingBlock`](#golombbuildingblock) · [`GolombFixedMBuildingBlock`](#golombfixedmbuildingblock) · [`GolombProfile`](#golombprofile) · [`LevenshteinBuildingBlock`](#levenshteinbuildingblock) · [`OmegaBuildingBlock`](#omegabuildingblock) · [`RangeCodingBuildingBlock`](#rangecodingbuildingblock) · [`ShannonFanoBuildingBlock`](#shannonfanobuildingblock) · [`TansBuildingBlock`](#tansbuildingblock) · [`TunstallBuildingBlock`](#tunstallbuildingblock) · [`UnaryBuildingBlock`](#unarybuildingblock)
 
 #### `ArithmeticBuildingBlock`
 
@@ -4100,7 +4100,7 @@ Implements `IBuildingBlock`.
 
 #### `FseBuildingBlock`
 
-Exposes FSE (Finite State Entropy) / tANS as a benchmarkable building block. Uses a state machine where transitions encode symbol probability information. Table size is 1024 (tableLog=10). Symbols are spread proportionally to frequency. Encoding processes symbols in reverse (ANS is LIFO).
+Exposes Finite State Entropy (FSE), the table-based ANS variant used by Zstandard, as a benchmarkable building block.
 
 Implements `IBuildingBlock`.
 
@@ -4214,6 +4214,22 @@ Implements `IBuildingBlock`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ShannonFanoBuildingBlock` | `ShannonFanoBuildingBlock()` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` |  |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` |  |
+
+#### `TansBuildingBlock`
+
+Exposes table-based Asymmetric Numeral Systems (tANS) as a benchmarkable entropy coder.
+
+Implements `IBuildingBlock`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TansBuildingBlock` | `TansBuildingBlock()` |  |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
@@ -4732,7 +4748,17 @@ Implements `IBuildingBlock`.
 
 ### Namespace `Compression.Core.Entropy.Fse`
 
-[`FseDecoder`](#fsedecoder) · [`FseEncoder`](#fseencoder) · [`FseTable`](#fsetable) · [`HuffmanFse`](#huffmanfse)
+[`FseByteCodec`](#fsebytecodec) · [`FseDecoder`](#fsedecoder) · [`FseEncoder`](#fseencoder) · [`FseTable`](#fsetable) · [`HuffmanFse`](#huffmanfse)
+
+#### `FseByteCodec`
+
+Self-describing byte-oriented wrapper around the reusable FSE/tANS state coder.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultTableLog` | `const int DefaultTableLog` | The default FSE table log used by the FSE building block. |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, int tableLog = 10)` | Compresses a byte sequence using a normalized FSE/tANS table. |
+| `Decompress` | `static byte[] Decompress(ReadOnlySpan<byte> data)` | Decompresses a sequence produced by `Compress`. |
 
 #### `FseDecoder`
 

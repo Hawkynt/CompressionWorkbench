@@ -94,7 +94,16 @@ public sealed class FseEncoder {
   /// <param name="maxSymbol">The maximum symbol value to consider.</param>
   /// <param name="tableLog">The log2 of the target table size.</param>
   /// <returns>Normalized counts array where -1 means sub-probability (1 entry), 0 means absent.</returns>
-  /// <exception cref="ArgumentException">No symbols with non-zero frequency.</exception>
+  /// <exception cref="ArgumentException">
+  /// No symbols with non-zero frequency, or more distinct symbols than the table has entries.
+  /// </exception>
+  /// <remarks>
+  /// The table has to hold every symbol that occurs -- a symbol with no entry cannot be coded at all
+  /// -- so the entries are handed out as one per present symbol first and the rest in proportion to
+  /// the counts. Scaling proportionally and repairing the total afterwards does not work: with an
+  /// alphabet near the table's size the proportional shares already overspend the table, and taking
+  /// the difference back out of one symbol drives it to zero or below.
+  /// </remarks>
   public static short[] NormalizeCounts(int[] counts, int maxSymbol, int tableLog) {
     var tableSize = 1 << tableLog;
     var total = 0L;
@@ -111,6 +120,11 @@ public sealed class FseEncoder {
     if (total == 0)
       throw new ArgumentException("At least one symbol must have a non-zero count.", nameof(counts));
 
+    if (nonZeroCount > tableSize)
+      throw new ArgumentException(
+        $"{nonZeroCount} distinct symbols do not fit a table of {tableSize} entries; raise the table log.",
+        nameof(tableLog));
+
     var normalized = new short[maxSymbol + 1];
 
     // Special case: single symbol gets all entries
@@ -121,52 +135,68 @@ public sealed class FseEncoder {
           return normalized;
         }
 
-    // First pass: compute proportional counts
-    var distributed = 0;
-    var largestSymbol = -1;
-    var largestCount = 0L;
+    // One entry per present symbol is reserved; what is left over is what the counts compete for.
+    var budget = tableSize - nonZeroCount;
+    var slots = new int[maxSymbol + 1];
+    var handedOut = 0;
 
     for (var s = 0; s <= maxSymbol; ++s) {
-      if (counts[s] == 0) {
-        normalized[s] = 0;
+      if (counts[s] <= 0)
         continue;
-      }
 
-      if (counts[s] > largestCount) {
-        largestCount = counts[s];
-        largestSymbol = s;
-      }
-
-      // Proportional scaling with rounding
-      var proportional = ((long)counts[s] * tableSize + total / 2) / total;
-
-      if (proportional < 1) {
-        // Sub-probability: gets exactly 1 table slot
-        normalized[s] = -1;
-        distributed += 1;
-      }
-      else {
-        normalized[s] = (short)proportional;
-        distributed += (int)proportional;
-      }
+      // Rounded down, so the shares can never overspend the budget.
+      var share = (int)((long)counts[s] * budget / total);
+      slots[s] = 1 + share;
+      handedOut += share;
     }
 
-    // Adjust: the sum must equal tableSize
-    // Give the remainder to the largest symbol
-    var remainder = tableSize - distributed;
-    if (largestSymbol < 0)
-      return normalized;
+    // Rounding down leaves entries unspent; they go to the symbols that lost the most to it, which
+    // is the largest-remainder method -- deterministic, and it never takes an entry away again.
+    DistributeRoundingRemainder(slots, counts, maxSymbol, total, budget, budget - handedOut);
 
-    normalized[largestSymbol] += (short)remainder;
+    for (var s = 0; s <= maxSymbol; ++s) {
+      if (counts[s] <= 0)
+        continue;
 
-    // Safety: if the largest symbol ended up at 0 or below, fix it
-    if (normalized[largestSymbol] >= 1)
-      return normalized;
-
-    normalized[largestSymbol] = 1;
-    RedistributeExcess(normalized, maxSymbol, tableSize);
+      // A symbol whose share of the table is below a single entry still gets one, and says so: the
+      // decoder places those at the top of the table before spreading the rest.
+      normalized[s] = slots[s] == 1 && (long)counts[s] * tableSize < total ? (short)-1 : (short)slots[s];
+    }
 
     return normalized;
+  }
+
+  /// <summary>
+  /// Hands the entries that flooring left unspent to the symbols with the largest fractional shares.
+  /// </summary>
+  private static void DistributeRoundingRemainder(int[] slots, int[] counts, int maxSymbol, long total, int budget, int remaining) {
+    if (remaining <= 0)
+      return;
+
+    // What flooring discarded, kept as the numerator over the common denominator so the comparison
+    // stays exact. Ties go to the more frequent symbol and then to the lower symbol value, which
+    // makes the outcome depend on the counts alone rather than on iteration order.
+    var candidates = new List<int>(maxSymbol + 1);
+    var fractions = new long[maxSymbol + 1];
+    for (var s = 0; s <= maxSymbol; ++s) {
+      if (counts[s] <= 0)
+        continue;
+
+      fractions[s] = (long)counts[s] * budget % total;
+      candidates.Add(s);
+    }
+
+    candidates.Sort((left, right) => {
+      var byFraction = fractions[right].CompareTo(fractions[left]);
+      if (byFraction != 0)
+        return byFraction;
+
+      var byCount = counts[right].CompareTo(counts[left]);
+      return byCount != 0 ? byCount : left.CompareTo(right);
+    });
+
+    for (var i = 0; i < remaining; ++i)
+      ++slots[candidates[i]];
   }
 
   /// <summary>
@@ -263,29 +293,4 @@ public sealed class FseEncoder {
     return outputBytes.ToArray();
   }
 
-  /// <summary>
-  /// Redistributes excess counts to ensure the sum equals the table size.
-  /// </summary>
-  private static void RedistributeExcess(short[] normalized, int maxSymbol, int tableSize) {
-    var sum = 0;
-    for (var s = 0; s <= maxSymbol; ++s)
-      switch (normalized[s]) {
-        case -1: sum += 1; break;
-        case > 0: sum += normalized[s]; break;
-      }
-
-    var diff = tableSize - sum;
-    if (diff == 0) return;
-
-    var largest = -1;
-    short largestVal = 0;
-    for (var s = 0; s <= maxSymbol; ++s)
-      if (normalized[s] > largestVal) {
-        largestVal = normalized[s];
-        largest = s;
-      }
-
-    if (largest >= 0)
-      normalized[largest] += (short)diff;
-  }
 }
