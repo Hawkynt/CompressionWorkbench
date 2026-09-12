@@ -14,7 +14,7 @@ namespace FileFormat.PngCrushAdapters;
 /// application-specific stream contents are intentionally left uninterpreted so callers can recurse into
 /// embedded payloads with CompressionWorkbench's normal format detection.
 /// </remarks>
-public sealed class CompoundFileBinaryDescriptor
+public sealed class CompoundFileBinaryFormatDescriptor
   : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFormatValidator {
 
   internal static readonly byte[] Signature = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
@@ -28,7 +28,13 @@ public sealed class CompoundFileBinaryDescriptor
   public string DefaultExtension => ".cfb";
   public IReadOnlyList<string> Extensions => [".cfb", ".ole"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [new(Signature, Confidence: 0.99)];
+  // The CFB signature is not this descriptor's to claim during content-only detection: every
+  // CFB-based format shares it, and the specific ones -- MSI at 0.90, and the legacy Office
+  // views selected by extension -- are the right answer for the containers they own. A 0.99
+  // claim here outranked MSI's and turned every .msi identified by content into a bare
+  // structured-storage listing. The generic view stays reachable through its own .cfb/.ole
+  // extensions and through an explicit --format CompoundFileBinary.
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
@@ -170,29 +176,36 @@ public sealed class CompoundFileBinaryDescriptor
   }
 }
 
-/// <summary>Legacy binary Microsoft Office documents exposed as their original CFB storages and streams.</summary>
-public sealed class LegacyOfficeCompoundFileDescriptor
+/// <summary>Legacy binary Microsoft Office templates exposed as their original CFB storages and streams.</summary>
+public sealed class LegacyOfficeCompoundFileFormatDescriptor
   : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFormatValidator {
 
-  private static readonly CompoundFileBinaryDescriptor _Cfb = new();
+  private static readonly CompoundFileBinaryFormatDescriptor _Cfb = new();
   private static readonly string[] _OfficeMainStreams = ["WordDocument", "Workbook", "Book", "PowerPoint Document"];
 
   public string Id => "LegacyOfficeCompoundFile";
   public string DisplayName => "Legacy Microsoft Office compound file";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities => _Cfb.Capabilities;
-  public string DefaultExtension => ".doc";
-  public IReadOnlyList<string> Extensions => [".doc", ".dot", ".xls", ".xlt", ".ppt", ".pps", ".pot"];
+  public string DefaultExtension => ".dot";
+  // .doc, .xls and .ppt are owned by the Doc/Xls/Ppt descriptors, which expose the same CFB
+  // storages and streams through the same reader AND can create, modify and lay out the
+  // container. Claiming those three here could only demote a file to the weaker view -- a
+  // .doc is a CFB either way, so no content test can separate the two, and there is nothing
+  // to gain from winning. Of the four template extensions kept below, .dot, .xlt and .pps
+  // were claimed by nobody; .pot is genuinely shared with the gettext PO template and is
+  // settled by the container signature in FormatDetector.
+  public IReadOnlyList<string> Extensions => [".dot", ".xlt", ".pps", ".pot"];
   public IReadOnlyList<string> CompoundExtensions => [];
 
-  // The CFB signature is shared by many non-Office formats. Content-only detection belongs to the
-  // generic CompoundFileBinary descriptor; legacy Office extensions select this more specific view.
+  // The CFB signature is shared by many non-Office formats, so no view of it claims the signature
+  // for content-only detection; the legacy Office template extensions select this one.
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => _Cfb.Methods;
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "Structural view of legacy .doc/.dot/.xls/.xlt/.ppt/.pps/.pot files preserving their original OLE Structured Storage hierarchy and stream bytes.";
+    "Structural view of legacy Office .dot/.xlt/.pps/.pot templates preserving their original OLE Structured Storage hierarchy and stream bytes.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var entries = _Cfb.List(stream, password);
@@ -456,7 +469,7 @@ internal sealed class CompoundFileBinary {
   internal static void ValidateHeader(ReadOnlySpan<byte> header, long fileSize) {
     if (header.Length < HeaderLength)
       throw new InvalidDataException("CFB header requires at least 512 bytes.");
-    if (!header[..8].SequenceEqual(CompoundFileBinaryDescriptor.Signature))
+    if (!header[..8].SequenceEqual(CompoundFileBinaryFormatDescriptor.Signature))
       throw new InvalidDataException("CFB signature is invalid.");
 
     var major = BinaryPrimitives.ReadUInt16LittleEndian(header[26..28]);

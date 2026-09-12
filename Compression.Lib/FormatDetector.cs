@@ -270,6 +270,16 @@ public static partial class FormatDetector {
         return Format.Ps1MemoryCard;
     }
 
+    // ".pot" is a legacy PowerPoint template, which is a Compound File Binary container, and
+    // in gettext a PO template, which is text. Both claims are real, so the container signature
+    // decides rather than whichever descriptor the registry happened to enumerate first -- that
+    // handed every gettext template to the Office view on one enumeration order and every
+    // PowerPoint template to the catalogue reader on the other. ResolveSharedExtension below
+    // cannot settle it: it only consults a claimant's own signatures, and no view of the CFB
+    // container claims that signature, because every CFB-based format shares it.
+    if (singleExt == ".pot")
+      return DetectPotByContent(path);
+
     // ".vib" is both a VMware installation bundle (an AR archive) and a Veeam
     // incremental backup. Only one of the two says what it is up front.
     if (singleExt == ".vib") {
@@ -384,6 +394,40 @@ public static partial class FormatDetector {
       /* ignore detection failure */
     }
     return Format.Unknown;
+  }
+
+  /// <summary>
+  ///   The eight-byte Compound File Binary / OLE Structured Storage signature. Declared here
+  ///   rather than read off a descriptor because the descriptors deliberately do not register it:
+  ///   every CFB-based format carries the same bytes, so a registered signature would decide
+  ///   content-only detection between them by confidence instead of by content.
+  /// </summary>
+  private static ReadOnlySpan<byte> CompoundFileSignature => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+
+  /// <summary>
+  ///   Tells a legacy PowerPoint template from a gettext PO template. The presentation is a
+  ///   Compound File Binary container and says so in its first eight bytes; the catalogue is
+  ///   plain text and carries no signature, so the absence of the container magic is itself the
+  ///   answer. Neither claimant can create, so a path that does not exist yet is still a read
+  ///   intent and resolves to the text template.
+  /// </summary>
+  private static Format DetectPotByContent(string path) {
+    try {
+      if (File.Exists(path)) {
+        using var fs = File.OpenRead(path);
+        Span<byte> magic = stackalloc byte[8];
+        if (fs.Length >= magic.Length) {
+          fs.ReadExactly(magic);
+          if (magic.SequenceEqual(CompoundFileSignature))
+            return Format.LegacyOfficeCompoundFile;
+        }
+      }
+    } catch (IOException) {
+      /* unreadable: a gettext template is the only other thing it can be */
+    } catch (UnauthorizedAccessException) {
+      /* same */
+    }
+    return Format.Po;
   }
 
   private static Format DetectVibByMagic(string path) {
