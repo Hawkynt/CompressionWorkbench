@@ -127,8 +127,15 @@ public sealed class CxfsFormatDescriptor :
     var writer = new CxfsV4Writer();
     writer.SetVolumeLabel(options.GetOption("VolumeLabel", ""));
     foreach (var input in inputs) {
+      // An input this profile cannot place is a wrong argument, not an unsupported operation. The
+      // difference is load-bearing: a caller offering a file tree to a format that only takes
+      // root-level regular files has handed over the wrong thing, whereas NotSupportedException
+      // means the writer itself cannot do the job -- which is how the conversion matrix reads the
+      // two, ignoring the first and failing on the second. BcacheFs, VobSub and Bik all say it this
+      // way for the same reason.
       if (!this.CanAccept(input, out var reason))
-        throw new NotSupportedException(reason);
+        throw new ArgumentException(reason, nameof(inputs));
+
       writer.AddFile(input.ArchiveName, input.ReadContent());
     }
     writer.WriteTo(output);
@@ -138,7 +145,7 @@ public sealed class CxfsFormatDescriptor :
     EnsureMutationProfile(archive);
     foreach (var input in inputs)
       if (!this.CanAccept(input, out var reason))
-        throw new NotSupportedException(reason);
+        throw new ArgumentException(reason, nameof(inputs));
 
     var creator = CreatorPreservingMetadata(archive);
     RebuildVerb.EditViaRebuild(archive, this, creator, tmpDir => {

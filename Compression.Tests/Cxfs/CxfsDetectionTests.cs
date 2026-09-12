@@ -213,9 +213,12 @@ public class CxfsDetectionTests {
     var d = new CxfsFormatDescriptor();
     using var image = new MemoryStream();
 
-    Assert.Throws<NotSupportedException>(() =>
+    // An input the profile cannot place is a wrong argument rather than an unsupported operation,
+    // which is the distinction the conversion matrix reads: it ignores the first and fails on the
+    // second. BcacheFs, VobSub and Bik refuse the same way.
+    Assert.Throws<ArgumentException>(() =>
       d.Create(image, [ArchiveInputInfo.InMemory("dir/file.txt", "x"u8.ToArray())], new FormatCreateOptions()));
-    Assert.Throws<NotSupportedException>(() =>
+    Assert.Throws<ArgumentException>(() =>
       d.Create(image, [new ArchiveInputInfo("", "dir/", true)], new FormatCreateOptions()));
   }
 
