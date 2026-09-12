@@ -22,9 +22,32 @@ public sealed class WebmMuxRemuxTests {
       Assert.That(descriptor, Is.InstanceOf<IAudioContainerFormat>());
       Assert.That(descriptor, Is.InstanceOf<IAudioMuxTarget>());
       Assert.That(descriptor, Is.InstanceOf<IAudioDemuxSource>());
-      Assert.That(descriptor.SupportedMuxCodecs, Is.EquivalentTo(new[] { "opus", "vorbis" }));
+
+      // The descriptor's own set is Matroska's, because that is what the container holds. WebM is
+      // the strict subset that permits Vorbis and Opus alone, and a caller asks for it by name.
+      Assert.That(
+        descriptor.SupportedMuxCodecs,
+        Is.SupersetOf(new[] { "opus", "vorbis" }),
+        "Matroska carries at least what WebM does");
+      Assert.That(
+        descriptor.SupportedMuxCodecsFor(_WebmOptions()),
+        Is.EquivalentTo(new[] { "opus", "vorbis" }),
+        "the WebM profile is exactly Vorbis and Opus");
     });
   }
+
+  /// <summary>
+  /// Options asking for a file that satisfies WebM rather than Matroska at large.
+  /// </summary>
+  /// <remarks>
+  /// Every mux in this fixture is named for WebM's rules, so each states the profile it means rather
+  /// than relying on the descriptor's default -- which is Matroska, and deliberately wider.
+  /// </remarks>
+  private static FormatCreateOptions _WebmOptions() => new() {
+    FormatSpecific = FormatCreateOptions.FormatSpecificFrom([
+      new KeyValuePair<string, string>("Profile", "WebM"),
+    ]),
+  };
 
   [Test]
   public void OpusMux_WritesWebmHeaderTrackAndRequiredTimingMetadata() {
@@ -39,7 +62,7 @@ public sealed class WebmMuxRemuxTests {
       MakeOpusHead(channels: 2, sampleRate: 48_000, preSkip: 312));
 
     using var output = new MemoryStream();
-    descriptor.Mux(output, encoded, new FormatCreateOptions());
+    descriptor.Mux(output, encoded, _WebmOptions());
     var webm = output.ToArray();
 
     Assert.That(IndexOf(webm, "webm"u8), Is.GreaterThanOrEqualTo(0));
@@ -71,7 +94,7 @@ public sealed class WebmMuxRemuxTests {
       MakeOpusHead(2, 48_000, 312));
 
     using var first = new MemoryStream();
-    descriptor.Mux(first, encoded, new FormatCreateOptions());
+    descriptor.Mux(first, encoded, _WebmOptions());
     first.Position = 0;
 
     Assert.That(descriptor.TryDemux(first, out var remuxInput), Is.True);
@@ -86,7 +109,7 @@ public sealed class WebmMuxRemuxTests {
     });
 
     using var second = new MemoryStream();
-    descriptor.Mux(second, remuxInput!, new FormatCreateOptions());
+    descriptor.Mux(second, remuxInput!, _WebmOptions());
     var secondDemux = new MkvDemuxer().Demux(second.ToArray());
     Assert.That(secondDemux.Tracks[0].Frames.Select(static frame => frame.Data),
       Is.EqualTo(originalPackets.Select(static packet => packet.Data)));
@@ -107,7 +130,7 @@ public sealed class WebmMuxRemuxTests {
       privateData);
 
     using var first = new MemoryStream();
-    descriptor.Mux(first, encoded, new FormatCreateOptions());
+    descriptor.Mux(first, encoded, _WebmOptions());
     first.Position = 0;
 
     Assert.That(descriptor.TryDemux(first, out var remuxInput), Is.True);
@@ -136,7 +159,7 @@ public sealed class WebmMuxRemuxTests {
       MakeOpusHead(1, 48_000, 0));
 
     using var output = new MemoryStream();
-    descriptor.Mux(output, encoded, new FormatCreateOptions());
+    descriptor.Mux(output, encoded, _WebmOptions());
     var webm = output.ToArray();
 
     Assert.That(CountSegmentChildren(webm, IdCluster), Is.GreaterThanOrEqualTo(2));
@@ -151,7 +174,7 @@ public sealed class WebmMuxRemuxTests {
 
     Assert.That(descriptor.CanMux(
       new AudioStreamFormat("aac", 48_000, 2),
-      new FormatCreateOptions(),
+      _WebmOptions(),
       out var reason), Is.False);
     Assert.That(reason, Does.Contain("Opus").And.Contain("Vorbis"));
   }

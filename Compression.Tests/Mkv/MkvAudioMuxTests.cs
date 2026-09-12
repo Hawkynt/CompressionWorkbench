@@ -1,3 +1,4 @@
+using System;
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using Compression.Registry;
@@ -7,6 +8,10 @@ namespace Compression.Tests.Mkv;
 
 [TestFixture]
 public sealed class MkvAudioMuxTests {
+
+  /// <summary>The EBML identifier of a Cluster element.</summary>
+  private static ReadOnlySpan<byte> _ClusterId => [0x1F, 0x43, 0xB6, 0x75];
+
 
   [Test, Category("HappyPath")]
   public void DescriptorAdvertisesPacketMuxAndCreation() {
@@ -96,7 +101,9 @@ public sealed class MkvAudioMuxTests {
         .Single(static element => element.Id == 0xF1);
       var relative = reader.ReadUnsigned(clusterPosition);
       var absolute = checked(segment.Value.BodyOffset + (long)relative);
-      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual([0x1F, 0x43, 0xB6, 0x75]), Is.True,
+      // A collection expression has no type of its own for SequenceEqual to infer from, and this sits
+      // inside a loop, so the comparand is a shared constant rather than a fresh stack allocation.
+      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual(_ClusterId), Is.True,
         $"CueClusterPosition {relative} does not point to a Cluster element");
     }
   }
@@ -165,7 +172,14 @@ public sealed class MkvAudioMuxTests {
         "Matroska A_OPUS SamplingFrequency must retain the OpusHead input-rate metadata");
       Assert.That(duration, Is.EqualTo(5_020d),
         "251 20-ms Opus packets are 5.02 seconds on the mandatory 48 kHz packet clock");
-      Assert.That(clusterTimestamps, Is.EqualTo(new ulong[] { 0, 5_000 }),
+      // The origin is the codec delay -- 312 samples of pre-skip on the 48 kHz packet clock, seven
+      // milliseconds rounded up -- because a block sitting at zero would present at minus the delay.
+      // What this pins is the STEP: clusters advance by five seconds on the packet clock, which is
+      // what stays true whatever the input sample rate says.
+      const ulong codecDelayMilliseconds = 7;
+      Assert.That(
+        clusterTimestamps,
+        Is.EqualTo(new[] { codecDelayMilliseconds, codecDelayMilliseconds + 5_000 }),
         "cluster timestamps must use the 48 kHz Opus packet clock, not the original input sample rate");
     });
   }

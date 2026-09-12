@@ -45,7 +45,18 @@ internal static class MkvAudioMuxer {
     return true;
   }
 
-  internal static void Mux(Stream output, AudioEncodedStream stream) {
+  /// <summary>The DocType a Matroska file declares.</summary>
+  internal const string MatroskaDocType = "matroska";
+
+  /// <summary>The DocType a WebM file declares.</summary>
+  /// <remarks>
+  /// WebM is Matroska with a shorter list of permitted codecs, and this is where the difference is
+  /// written down. A player that reads WebM alone checks this string, so a file restricted to Vorbis
+  /// and Opus still has to say so here or the restriction buys nothing.
+  /// </remarks>
+  internal const string WebmDocType = "webm";
+
+  internal static void Mux(Stream output, AudioEncodedStream stream, string docType = MatroskaDocType) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(stream);
     if (!CanMux(stream.Format, out var reason))
@@ -54,6 +65,15 @@ internal static class MkvAudioMuxer {
     var codec = NormalizeCodec(stream.Format.CodecId);
     ValidateCodecPrivate(codec, stream);
     var packetClockRate = codec == "opus" ? OpusPacketClockRate : stream.Format.SampleRate;
+
+    // A player subtracts CodecDelay from every block's timestamp to get the presentation time, so a
+    // stream whose first block sits at zero presents at minus the delay. Opus is the case that has
+    // one -- its pre-skip, the samples the decoder discards before the signal begins. Shifting every
+    // block up by the delay is what keeps the first presentation time at or after zero, and it is
+    // the same shift the WebM writer this replaced applied.
+    var codecDelayMilliseconds = codec == "opus"
+      ? _OpusCodecDelayMilliseconds(stream.CodecPrivateData)
+      : 0;
 
     var packets = stream.Packets.Where(static packet => !packet.IsHeader).ToArray();
     if (packets.Length == 0)
@@ -80,14 +100,14 @@ internal static class MkvAudioMuxer {
     long cumulativeSamples = 0;
     var packetIndex = 0;
     while (packetIndex < packets.Length) {
-      var clusterTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate);
+      var clusterTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate) + codecDelayMilliseconds;
       var clusterPosition = segment.Position;
       using var clusterBody = new MemoryStream();
       WriteUnsignedElement(clusterBody, 0xE7, (ulong)clusterTimestamp); // Timestamp
       cues.Add((clusterTimestamp, clusterPosition));
 
       while (packetIndex < packets.Length) {
-        var packetTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate);
+        var packetTimestamp = SamplesToMilliseconds(cumulativeSamples, packetClockRate) + codecDelayMilliseconds;
         var relative = packetTimestamp - clusterTimestamp;
         if (relative >= ClusterDurationMilliseconds || relative > short.MaxValue)
           break;
@@ -102,7 +122,7 @@ internal static class MkvAudioMuxer {
 
     segment.Write(BuildCues(cues));
 
-    WriteElement(output, 0x1A45DFA3, BuildEbmlHeader()); // EBML
+    WriteElement(output, 0x1A45DFA3, BuildEbmlHeader(docType)); // EBML
     WriteElement(output, 0x18538067, segment.ToArray());  // Segment
   }
 
@@ -119,13 +139,13 @@ internal static class MkvAudioMuxer {
     };
   }
 
-  private static byte[] BuildEbmlHeader() {
+  private static byte[] BuildEbmlHeader(string docType) {
     using var body = new MemoryStream();
     WriteUnsignedElement(body, 0x4286, 1); // EBMLVersion
     WriteUnsignedElement(body, 0x42F7, 1); // EBMLReadVersion
     WriteUnsignedElement(body, 0x42F2, 4); // EBMLMaxIDLength
     WriteUnsignedElement(body, 0x42F3, 8); // EBMLMaxSizeLength
-    WriteStringElement(body, 0x4282, "matroska");
+    WriteStringElement(body, 0x4282, docType);
     WriteUnsignedElement(body, 0x4287, 4); // DocTypeVersion
     WriteUnsignedElement(body, 0x4285, 4); // DocTypeReadVersion
     return body.ToArray();
@@ -195,6 +215,22 @@ internal static class MkvAudioMuxer {
     return ElementBytes(0x1C53BB6B, body.ToArray());
   }
 
+  /// <summary>
+  /// Opus's codec delay in whole milliseconds, rounded up, read from the pre-skip in OpusHead.
+  /// </summary>
+  /// <remarks>
+  /// Rounded up rather than to nearest: the point of the shift is that the presentation time is not
+  /// negative, and rounding down by a fraction of a tick would leave it so.
+  /// </remarks>
+  private static long _OpusCodecDelayMilliseconds(ReadOnlySpan<byte> codecPrivate) {
+    if (codecPrivate.Length < 12)
+      return 0;
+
+    var preSkip = BinaryPrimitives.ReadUInt16LittleEndian(codecPrivate.Slice(10, 2));
+    var nanoseconds = preSkip * 1_000_000_000L / OpusPacketClockRate;
+    return (nanoseconds + (long)TimestampScaleNanoseconds - 1) / (long)TimestampScaleNanoseconds;
+  }
+
   private static void WriteSimpleBlock(Stream output, short relativeTimestamp, ReadOnlySpan<byte> packet) {
     using var body = new MemoryStream(capacity: checked(packet.Length + 4));
     body.WriteByte(0x81); // track 1 as EBML vint
@@ -247,6 +283,9 @@ internal static class MkvAudioMuxer {
     "A_VORBIS" => "vorbis",
     _ => null,
   };
+
+  /// <summary>The canonical spelling of a codec id, for a caller deciding what a profile permits.</summary>
+  internal static string NormalizeCodecId(string codec) => NormalizeCodec(codec);
 
   private static string NormalizeCodec(string codec) => codec.ToLowerInvariant() switch {
     "aac-lc" => "aac",

@@ -12,7 +12,14 @@ namespace FileFormat.Matroska;
 /// </summary>
 public sealed class MkvDemuxer {
   /// <summary>A single block (frame) from a track.</summary>
-  public sealed record FrameEntry(byte[] Data);
+  /// <param name="Data">The frame's bytes, exactly as they were stored.</param>
+  /// <param name="TimestampTicks">
+  /// When the frame plays, in the segment's timestamp ticks, or <c>-1</c> where the block did not
+  /// say. It is kept because some codecs do not carry their own duration: Vorbis packets state
+  /// nothing a reader can measure without the setup headers, so the only thing that says how long
+  /// one lasts is when the next one starts.
+  /// </param>
+  public sealed record FrameEntry(byte[] Data, long TimestampTicks = -1);
 
   /// <summary>
   /// Represents a track.
@@ -36,6 +43,9 @@ public sealed class MkvDemuxer {
 
   // EBML IDs (incl. length-marker bit). See Matroska spec.
   private const ulong Id_Segment = 0x18538067;
+
+  /// <summary>A cluster's own timestamp, which every block inside it is stated relative to.</summary>
+  private const ulong Id_ClusterTimestamp = 0xE7;
   private const ulong Id_Tracks = 0x1654AE6B;
   private const ulong Id_TrackEntry = 0xAE;
   private const ulong Id_TrackNumber = 0xD7;
@@ -155,18 +165,37 @@ public sealed class MkvDemuxer {
   private static void ParseCluster(EbmlReader ebml, EbmlReader.Element cluster,
                                     Dictionary<int, MemoryStream> buffers,
                                     Dictionary<int, List<FrameEntry>> frameLists) {
+    // A block states its time relative to the cluster, so the cluster's own timestamp has to be read
+    // first -- and it is read from the children in order, because a Timestamp element precedes the
+    // blocks it applies to.
+    long clusterTimestamp = 0;
     foreach (var child in ebml.Children(cluster)) {
-      if (child.Id == Id_SimpleBlock) AppendBlockFrames(ebml, child, buffers, frameLists);
+      if (child.Id == Id_ClusterTimestamp) {
+        clusterTimestamp = (long)ReadUnsigned(ebml.Body(child));
+        continue;
+      }
+
+      if (child.Id == Id_SimpleBlock) AppendBlockFrames(ebml, child, buffers, frameLists, clusterTimestamp);
       else if (child.Id == Id_BlockGroup) {
         foreach (var inner in ebml.Children(child))
-          if (inner.Id == Id_Block) AppendBlockFrames(ebml, inner, buffers, frameLists);
+          if (inner.Id == Id_Block) AppendBlockFrames(ebml, inner, buffers, frameLists, clusterTimestamp);
       }
     }
   }
 
+  /// <summary>Reads an EBML unsigned integer of any width, most significant byte first.</summary>
+  private static ulong ReadUnsigned(ReadOnlySpan<byte> body) {
+    ulong value = 0;
+    foreach (var b in body)
+      value = (value << 8) | b;
+
+    return value;
+  }
+
   private static void AppendBlockFrames(EbmlReader ebml, EbmlReader.Element block,
                                          Dictionary<int, MemoryStream> buffers,
-                                         Dictionary<int, List<FrameEntry>> frameLists) {
+                                         Dictionary<int, List<FrameEntry>> frameLists,
+                                         long clusterTimestamp) {
     // Block/SimpleBlock body: track-number vint + 16-bit timecode + 8-bit flags + frame bytes.
     var body = ebml.Body(block);
     if (body.Length < 4) return;
@@ -176,6 +205,8 @@ public sealed class MkvDemuxer {
     ulong trackNum = body[0] & (0xFFu >> tnLen);
     for (var i = 1; i < tnLen; ++i) trackNum = (trackNum << 8) | body[i];
 
+    // The relative timecode is signed: a block may precede its cluster's timestamp.
+    var relative = (short)((body[tnLen] << 8) | body[tnLen + 1]);
     var flags = body[tnLen + 2];
     var lacing = (flags >> 1) & 0x03; // 0=none, 1=Xiph, 3=EBML, 2=fixed
     var payload = body[(tnLen + 3)..];
@@ -185,7 +216,7 @@ public sealed class MkvDemuxer {
     foreach (var frame in frames) {
       buf.Write(frame);
       if (frameLists.TryGetValue((int)trackNum, out var fl))
-        fl.Add(new FrameEntry(frame));
+        fl.Add(new FrameEntry(frame, clusterTimestamp + relative));
     }
   }
 

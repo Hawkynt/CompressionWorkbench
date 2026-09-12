@@ -98,20 +98,92 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
-  /// <summary>Gets the encoded audio codecs the Matroska writer can carry without re-encoding.</summary>
+  /// <summary>The option naming which of the two profiles a written file has to satisfy.</summary>
+  private const string _PROFILE_OPTION = "Profile";
+
+  /// <summary>The profile that restricts audio to what WebM permits.</summary>
+  private const string _WEBM_PROFILE = "WebM";
+
+  /// <summary>
+  /// Gets the encoded audio codecs this writer can carry without re-encoding.
+  /// </summary>
+  /// <remarks>
+  /// This is the Matroska set, because that is what the container can hold. WebM is a strict subset
+  /// of Matroska that permits only Vorbis and Opus audio, and a caller who needs a file to satisfy
+  /// it asks for that profile; the alternative -- one descriptor quietly enforcing the narrower rule
+  /// on every <c>.mkv</c> as well -- would refuse files Matroska is specified to carry.
+  /// </remarks>
   public IReadOnlyList<string> SupportedMuxCodecs => MkvAudioMuxer.SupportedCodecs;
 
+  /// <summary>
+  /// How long the frame at <paramref name="index"/> lasts, measured from when the next one starts.
+  /// </summary>
+  /// <remarks>
+  /// The timestamps are in the segment's milliseconds, so the answer is converted to samples at the
+  /// track's rate. A frame whose neighbours give nothing usable answers zero, and the caller refuses
+  /// the stream rather than inventing a length.
+  /// </remarks>
+  private static long _DurationFromTimestamps(
+    IReadOnlyList<MkvDemuxer.FrameEntry> frames, int index, int sampleRate) {
+    if (sampleRate <= 0)
+      return 0;
+
+    var here = frames[index].TimestampTicks;
+    var other = index + 1 < frames.Count ? frames[index + 1].TimestampTicks : -1;
+    if (other < 0 && index > 0)
+      other = here + (here - frames[index - 1].TimestampTicks);
+
+    if (here < 0 || other < 0 || other <= here)
+      return 0;
+
+    return (other - here) * sampleRate / 1000;
+  }
+
+  /// <summary>The codecs the stated profile permits.</summary>
+  public IReadOnlyList<string> SupportedMuxCodecsFor(FormatCreateOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    return _IsWebmProfile(options) ? WebmAudioAdapter.SupportedCodecs : MkvAudioMuxer.SupportedCodecs;
+  }
+
   /// <inheritdoc />
+  /// <remarks>
+  /// The profile narrows which codecs are accepted and nothing else. WebM is Matroska with a
+  /// shorter list of permitted codecs, not a different file layout, so a WebM file is written by
+  /// the same writer -- which is also what keeps <see cref="TryDemux"/> able to read back anything
+  /// this descriptor produces, under either profile.
+  /// </remarks>
   public bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string? reason) {
     ArgumentNullException.ThrowIfNull(options);
-    return MkvAudioMuxer.CanMux(stream, out reason);
+    if (!MkvAudioMuxer.CanMux(stream, out reason))
+      return false;
+
+    if (!_IsWebmProfile(options))
+      return true;
+
+    if (WebmAudioAdapter.SupportedCodecs.Contains(
+          MkvAudioMuxer.NormalizeCodecId(stream.CodecId), StringComparer.OrdinalIgnoreCase))
+      return true;
+
+    reason = $"WebM audio permits Opus and Vorbis, not '{stream.CodecId}'; Matroska carries it without the WebM profile.";
+    return false;
   }
 
   /// <inheritdoc />
   public void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(options);
-    MkvAudioMuxer.Mux(output, stream);
+    if (!this.CanMux(stream.Format, options, out var reason))
+      throw new NotSupportedException(reason);
+
+    MkvAudioMuxer.Mux(
+      output,
+      stream,
+      _IsWebmProfile(options) ? MkvAudioMuxer.WebmDocType : MkvAudioMuxer.MatroskaDocType);
   }
+
+  /// <summary>Whether the caller asked for a file that satisfies WebM rather than Matroska.</summary>
+  private static bool _IsWebmProfile(FormatCreateOptions options)
+    => string.Equals(
+      options.GetOption(_PROFILE_OPTION, string.Empty), _WEBM_PROFILE, StringComparison.OrdinalIgnoreCase);
 
   /// <summary>
   /// Exposes the single supported audio track as encoded packets. Multi-audio-track files remain
@@ -149,14 +221,24 @@ public sealed class MkvFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       if (!string.IsNullOrWhiteSpace(track.Language))
         properties["language"] = track.Language!;
 
-      var packets = track.Frames
-        .Select(frame => new AudioPacket(
-          frame.Data,
-          DurationSamples: MkvAudioMuxer.InferDurationSamples(codec!, frame.Data)))
-        .ToArray();
-      if (packets.Any(static packet => packet.DurationSamples <= 0)) {
-        stream = null;
-        return false;
+      // Some codecs state their own duration in the packet -- Opus does, from its TOC byte. Vorbis
+      // does not: nothing in a Vorbis packet says how long it lasts without the setup headers that
+      // define the two block sizes. For those, the only thing that says is when the next block
+      // starts, which is why the demuxer keeps each frame's timestamp. The last frame has no
+      // successor, so it takes the one before it.
+      var frames = track.Frames;
+      var packets = new AudioPacket[frames.Count];
+      for (var i = 0; i < frames.Count; ++i) {
+        var duration = MkvAudioMuxer.InferDurationSamples(codec!, frames[i].Data);
+        if (duration <= 0)
+          duration = _DurationFromTimestamps(frames, i, track.AudioSampleRate);
+
+        if (duration <= 0) {
+          stream = null;
+          return false;
+        }
+
+        packets[i] = new AudioPacket(frames[i].Data, DurationSamples: duration);
       }
 
       stream = new AudioEncodedStream(
