@@ -876,40 +876,65 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 ### Namespace `FileFormat.Lzfse`
 
-[`LzfseFormatDescriptor`](#lzfseformatdescriptor) · [`LzfseStream`](#lzfsestream)
+[`LzfseBlockMode`](#lzfseblockmode) · [`LzfseCompressionLevel`](#lzfsecompressionlevel) · [`LzfseFormatDescriptor`](#lzfseformatdescriptor) · [`LzfseStream`](#lzfsestream)
+
+#### `LzfseBlockMode`
+
+Selects which LZFSE block encoder is preferred for each input block.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Auto` | `0` | Try LZFSE and LZVN and emit the smallest representation per block. |
+| `Lzfse` | `1` | Prefer entropy-coded LZFSE `bvx2` blocks, falling back to stored blocks when needed. |
+| `Lzvn` | `2` | Prefer LZVN `bvxn` blocks, falling back to stored blocks when needed. |
+
+#### `LzfseCompressionLevel`
+
+Controls the depth of the managed LZFSE match search.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Fast` | `0` | Probe one hash-chain candidate per position. |
+| `Balanced` | `1` | Probe four hash-chain candidates per position. |
+| `Maximum` | `2` | Probe eight hash-chain candidates per position. |
 
 #### `LzfseFormatDescriptor`
 
-Describes lzfse format.
+Describes the Apple LZFSE compression stream format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `LzfseFormatDescriptor` | `LzfseFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
-| `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
 
 #### `LzfseStream`
 
-Provides static methods for compressing and decompressing data using Apple's LZFSE block format with LZVN as the encoder's sub-algorithm.
+Provides static methods for compressing and decompressing Apple's LZFSE block format.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data from `input` and writes an LZFSE-format stream to `output`. |
-| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an Apple LZFSE stream from `input` to `output`. |
+| `DefaultBlockSize` | `const int DefaultBlockSize` | The default raw block size used by the managed writer. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses data with the default adaptive encoder. |
+| `Compress` | `static void Compress(Stream input, Stream output, LzfseBlockMode mode, LzfseCompressionLevel level, int blockSize = 30000)` | Compresses data using the selected LZFSE block policy. |
+| `Decompress` | `static void Decompress(Stream input, Stream output)` | Decompresses an LZFSE block stream. |
 
 ### Namespace `FileFormat.Lzma`
 
