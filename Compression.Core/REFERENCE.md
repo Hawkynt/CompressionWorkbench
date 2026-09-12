@@ -4940,13 +4940,17 @@ A clean-room neural compressor: an online-trained multi-layer perceptron (`Neura
 
 #### `PpmdBuildingBlock`
 
-Exposes PPMd (Prediction by Partial Matching, variant H) as a benchmarkable building block. Wraps the existing `PpmdModelH` context-tree model with `PpmdRangeEncoder`/`PpmdRangeDecoder` range coding. Unlike the simpler order-2 fallback used by the plain `BB_PPM` block, this uses a full context trie with per-context escape estimation (PPM Method D) and periodic rescaling, matching the model family 7-Zip calls "PPMd". Header: 1-byte order, 4-byte LE original size, then the range-coded stream.
+Exposes PPMd (Prediction by Partial Matching, variant H) as a benchmarkable building block. Wraps the existing `PpmdModelH` context-tree model with `PpmdRangeEncoder`/`PpmdRangeDecoder` range coding. Unlike the simpler order-3 fallback used by the plain `BB_PPM` block, this uses a full context trie with per-context escape estimation (PPM Method D) and periodic rescaling, matching the model family 7-Zip calls "PPMd". Header: 1-byte order, 4-byte LE original size, then the range-coded stream.
 
 Implements `IBuildingBlock`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PpmdBuildingBlock` | `PpmdBuildingBlock()` |  |
+| `PpmdBuildingBlock` | `PpmdBuildingBlock()` | Creates a PPMd building block with the default model order. |
+| `PpmdBuildingBlock` | `PpmdBuildingBlock(int order)` | Creates a PPMd building block with the supplied model order. |
+| `DefaultOrder` | `const int DefaultOrder` | Default PPMd-H model order. |
+| `MaxOrder` | `const int MaxOrder` | Maximum model order supported by the managed PPMd-H model. |
+| `MinOrder` | `const int MinOrder` | Minimum PPMd-H model order exposed by the standalone optimizer. |
 | `Description` | `string Description { get; }` |  |
 | `DisplayName` | `string DisplayName { get; }` |  |
 | `Family` | `AlgorithmFamily Family { get; }` |  |
