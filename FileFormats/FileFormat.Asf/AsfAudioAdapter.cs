@@ -85,7 +85,7 @@ public sealed class AsfAudioAdapter : IAudioDemuxSource, IAudioMuxTarget {
       return false;
 
     var sampleRate = source.SampleRate.Value;
-    var totalBytes = sourceData.Objects.Sum(static data => (long)data.Length);
+    var totalBytes = sourceData.Objects.Sum(static mediaObject => (long)mediaObject.Data.Length);
     var totalSamples = EffectiveDurationSamples(parsed, sampleRate);
     var packets = BuildPackets(sourceData, sampleRate, parsed.Preroll ?? 0, source.ByteRate, totalBytes, totalSamples);
     if (packets.Count == 0)
@@ -127,17 +127,15 @@ public sealed class AsfAudioAdapter : IAudioDemuxSource, IAudioMuxTarget {
     long consumedBytes = 0;
 
     for (var index = 0; index < sourceData.Objects.Count; ++index) {
-      var data = sourceData.Objects[index];
-      var start = index < sourceData.PresentationTimesMs.Count
-        ? PresentationSamples(sourceData.PresentationTimesMs[index], prerollMs, sampleRate)
-        : cursor;
+      var data = sourceData.Objects[index].Data;
+      var start = PresentationSamples(sourceData.Objects[index].PresentationTimeMs, prerollMs, sampleRate);
       start = Math.Max(start, cursor);
 
       consumedBytes = checked(consumedBytes + data.LongLength);
       long end = start;
 
-      if (index + 1 < sourceData.PresentationTimesMs.Count) {
-        var next = PresentationSamples(sourceData.PresentationTimesMs[index + 1], prerollMs, sampleRate);
+      if (index + 1 < sourceData.Objects.Count) {
+        var next = PresentationSamples(sourceData.Objects[index + 1].PresentationTimeMs, prerollMs, sampleRate);
         if (next > start)
           end = next;
       }

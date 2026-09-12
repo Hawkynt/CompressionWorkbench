@@ -1,5 +1,6 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
+using System.Text;
 using Codec.Pcm;
 using Compression.Registry;
 using FileFormat.Asf;
@@ -42,15 +43,47 @@ public sealed class AsfWriteSafetyTests {
     Assert.That(Extract(descriptor, archive, "streams/stream_01.bin"), Is.EqualTo(replacementPcm));
   }
 
+  /// <summary>
+  /// Header Object children the audio route authors itself — the empty Header Extension and the
+  /// Content Description — must not divert an audio container to the byte-preserving container
+  /// route: that route cannot map a WAV input at all, so treating a mere title as unreproducible
+  /// would turn a working WAV replacement into a refusal.
+  /// </summary>
   [Test]
-  public void Edit_AsfContainingVideo_FailsClosedAndLeavesOriginalBytesUntouched() {
+  public void Add_RootWav_ToTaggedAudioContainer_StillTakesTheAudioRoute() {
+    var descriptor = new AsfFormatDescriptor();
+    var wav = PcmCodec.ToWavBlob(Pcm(160, seed: 3), 1, 8000, 16);
+    var archive = new MemoryStream();
+    descriptor.Create(archive, [
+      ArchiveInputInfo.InMemory("metadata.ini", Encoding.UTF8.GetBytes("[ContentDescription]\ntitle = routed\n")),
+      ArchiveInputInfo.InMemory("MONO.wav", wav),
+    ], new FormatCreateOptions());
+    archive.Position = 0;
+
+    var replacementPcm = Pcm(160, seed: 41);
+    descriptor.Add(archive, [ArchiveInputInfo.InMemory("MONO.wav", PcmCodec.ToWavBlob(replacementPcm, 1, 8000, 16))]);
+
+    Assert.Multiple(() => {
+      Assert.That(Extract(descriptor, archive, "streams/stream_01.bin"), Is.EqualTo(replacementPcm));
+      Assert.That(Encoding.UTF8.GetString(Extract(descriptor, archive, "metadata.ini")), Does.Contain("title = routed"));
+    });
+  }
+
+  /// <summary>
+  /// A video container is remuxable now that the codec-preserving container route exists, so the
+  /// refusal this pins is no longer "the stream is video". What still fails closed is a container
+  /// with no readable Data Object: there is no packet region to carry forward, and rebuilding it
+  /// would hand the caller a structurally complete file whose media had silently vanished.
+  /// </summary>
+  [Test]
+  public void Edit_AsfWithoutDataObject_FailsClosedAndLeavesOriginalBytesUntouched() {
     var descriptor = new AsfFormatDescriptor();
     var original = BuildVideoOnlyHeader();
     using var archive = new MemoryStream((byte[])original.Clone(), writable: true);
 
     Assert.That(
       () => descriptor.Add(archive, []),
-      Throws.TypeOf<NotSupportedException>().With.Message.Contains("audio-only"));
+      Throws.TypeOf<NotSupportedException>().With.Message.Contains("Data Object"));
     Assert.That(archive.ToArray(), Is.EqualTo(original));
   }
 

@@ -23,25 +23,30 @@ namespace FileFormat.Asf;
 ///     a <em>compressed</em> payload that itself contains several length-prefixed
 ///     sub-payloads.</item>
 /// </list>
-/// Fragments are stitched back together per media object (by stream and offset) and the
-/// completed media objects are concatenated per stream in occurrence order. Their ASF
-/// presentation times are retained in the same order so packet-preserving remux can keep
-/// timing as well as codec bytes. Parsing is defensive: any inconsistency stops the walk
-/// and whatever reassembled cleanly so far is returned.
+/// Fragments are stitched back together per media object (by stream and offset). The
+/// completed media-object boundaries, presentation timestamps and key-frame flags are
+/// retained for lossless remuxing, while <see cref="StreamData.ToBlob"/> still provides
+/// the historical concatenated elementary-stream view. Parsing is defensive: any
+/// inconsistency stops the walk and whatever reassembled cleanly so far is returned.
 /// </summary>
 internal static class AsfDepayloader {
 
-  /// <summary>One stream's reassembled elementary bitstream plus its completed-object boundaries and presentation times.</summary>
+  internal sealed record MediaObject(byte[] Data, uint PresentationTimeMs, bool KeyFrame);
+
+  /// <summary>One stream's reassembled elementary bitstream plus its completed-object boundaries.</summary>
   internal sealed class StreamData {
-    public readonly List<byte[]> Objects = [];
-    public readonly List<uint> PresentationTimesMs = [];
+    public readonly List<MediaObject> Objects = [];
 
     public byte[] ToBlob() {
       var total = 0;
-      foreach (var o in this.Objects) total += o.Length;
+      foreach (var o in this.Objects)
+        total = checked(total + o.Data.Length);
       var blob = new byte[total];
       var p = 0;
-      foreach (var o in this.Objects) { Array.Copy(o, 0, blob, p, o.Length); p += o.Length; }
+      foreach (var o in this.Objects) {
+        Array.Copy(o.Data, 0, blob, p, o.Data.Length);
+        p += o.Data.Length;
+      }
       return blob;
     }
   }
@@ -52,6 +57,7 @@ internal static class AsfDepayloader {
     public byte[] Buffer = [];
     public int FragOffset;
     public uint PresentationTimeMs;
+    public bool KeyFrame;
   }
 
   /// <summary>
@@ -68,7 +74,8 @@ internal static class AsfDepayloader {
       var pos = 0;
       while (pos < packets.Length) {
         var consumed = ParsePacket(packets, pos, packetSize, streams, pending);
-        if (consumed <= 0) break;
+        if (consumed <= 0)
+          break;
         pos += consumed;
       }
     } catch {
@@ -81,7 +88,8 @@ internal static class AsfDepayloader {
       Dictionary<int, StreamData> streams, Dictionary<int, Pending> pending) {
     var p = start;
     var end = b.Length;
-    if (p >= end) return 0;
+    if (p >= end)
+      return 0;
 
     // ── error-correction block ───────────────────────────────────────────────
     var first = b[p];
@@ -90,7 +98,8 @@ internal static class AsfDepayloader {
       var ecLen = first & 0x0F;
       p += 1 + ecLen;
     }
-    if (p >= end) return 0;
+    if (p >= end)
+      return 0;
 
     // ── payload parsing information ──────────────────────────────────────────
     var lengthTypeFlags = b[p++];
@@ -102,10 +111,11 @@ internal static class AsfDepayloader {
     var paddingType = (lengthTypeFlags >> 3) & 3;
 
     var packetLength = ReadLenTyped(b, ref p, packetLenType, (uint)(packetSize > 0 ? packetSize : 0));
-    ReadLenTyped(b, ref p, sequenceType, 0);            // sequence (ignored)
+    ReadLenTyped(b, ref p, sequenceType, 0); // sequence (ignored)
     var padding = ReadLenTyped(b, ref p, paddingType, 0);
 
-    if (p + 6 > end) return 0;
+    if (p + 6 > end)
+      return 0;
     p += 4; // send time
     p += 2; // duration
 
@@ -119,124 +129,144 @@ internal static class AsfDepayloader {
       payloadCount = 1;
     }
 
-    // Determine where this packet ends. With a fixed packet size we always advance one
-    // full packet; otherwise honour the declared packet length (single-payload packets
-    // without an explicit length run to the buffer end).
     int packetEnd;
-    if (packetSize > 0) packetEnd = Math.Min(start + packetSize, end);
-    else if (packetLength > 0) packetEnd = Math.Min(start + (int)packetLength, end);
-    else packetEnd = end;
+    if (packetSize > 0)
+      packetEnd = Math.Min(start + packetSize, end);
+    else if (packetLength > 0)
+      packetEnd = Math.Min(start + checked((int)packetLength), end);
+    else
+      packetEnd = end;
 
-    var dataEnd = packetEnd - (int)padding;
-    if (dataEnd > end) dataEnd = end;
+    var dataEnd = packetEnd - checked((int)padding);
+    if (dataEnd > end)
+      dataEnd = end;
+    if (dataEnd < p)
+      return packetEnd > start ? packetEnd - start : 0;
 
     for (var pi = 0; pi < payloadCount; ++pi) {
-      if (p >= dataEnd) break;
+      if (p >= dataEnd)
+        break;
       if (!ParsePayload(b, ref p, dataEnd, propertyFlags, multiplePayloads, payloadLenType, streams, pending))
         break;
     }
 
-    if (packetEnd <= start) return 0;
-    return packetEnd - start;
+    return packetEnd > start ? packetEnd - start : 0;
   }
 
   private static bool ParsePayload(byte[] b, ref int p, int dataEnd, int propertyFlags,
       bool multiplePayloads, int payloadLenType,
       Dictionary<int, StreamData> streams, Dictionary<int, Pending> pending) {
-    if (p >= dataEnd) return false;
+    if (p >= dataEnd)
+      return false;
 
     var streamByte = b[p++];
     var streamNumber = streamByte & 0x7F;
-    // bit 7 = key frame (unused for reassembly)
+    var keyFrame = (streamByte & 0x80) != 0;
 
     var mediaObjNumType = (propertyFlags >> 4) & 3;
     var offsetType = (propertyFlags >> 2) & 3;
     var replicatedType = propertyFlags & 3;
 
-    var mediaObjectNumber = (int)ReadLenTyped(b, ref p, mediaObjNumType, 0);
-    var offsetOrTime = (int)ReadLenTyped(b, ref p, offsetType, 0);
-    var replicatedLength = (int)ReadLenTyped(b, ref p, replicatedType, 0);
+    var mediaObjectNumberRaw = ReadLenTyped(b, ref p, mediaObjNumType, 0);
+    var offsetOrTimeRaw = ReadLenTyped(b, ref p, offsetType, 0);
+    var replicatedLength = checked((int)ReadLenTyped(b, ref p, replicatedType, 0));
+    if (mediaObjectNumberRaw > int.MaxValue || offsetOrTimeRaw > int.MaxValue)
+      return false;
+    var mediaObjectNumber = (int)mediaObjectNumberRaw;
+    var offsetOrTime = (int)offsetOrTimeRaw;
 
     if (replicatedLength >= 8) {
-      // Normal fragment: replicated data starts with {media object size, presentation time}.
-      if (p + replicatedLength > dataEnd) return false;
-      var mediaObjectSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
-      var presentationTime = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p + 4));
-      p += replicatedLength; // skip the whole replicated-data block
+      if (p + replicatedLength > dataEnd)
+        return false;
+      var objectSizeRaw = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
+      if (objectSizeRaw > int.MaxValue)
+        return false;
+      var mediaObjectSize = (int)objectSizeRaw;
+      var presentationTimeMs = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p + 4));
+      p += replicatedLength;
 
       int fragLen;
-      if (multiplePayloads) {
-        fragLen = (int)ReadLenTyped(b, ref p, payloadLenType, 0);
-      } else {
+      if (multiplePayloads)
+        fragLen = checked((int)ReadLenTyped(b, ref p, payloadLenType, 0));
+      else
         fragLen = dataEnd - p;
-      }
-      if (fragLen < 0 || p + fragLen > dataEnd) return false;
+      if (fragLen < 0 || p + fragLen > dataEnd)
+        return false;
 
-      AppendFragment(streams, pending, streamNumber, mediaObjectNumber, mediaObjectSize, offsetOrTime,
-        presentationTime, b, p, fragLen);
+      AppendFragment(streams, pending, streamNumber, mediaObjectNumber, mediaObjectSize,
+        offsetOrTime, presentationTimeMs, keyFrame, b, p, fragLen);
       p += fragLen;
       return true;
     }
 
     if (replicatedLength == 1) {
-      // Compressed payload: 'offsetOrTime' was the presentation time; one presentation-
-      // time-delta byte (the replicated byte), then a run of length-prefixed sub-payloads.
+      if (p >= dataEnd)
+        return false;
       var presentationTimeDelta = b[p++];
-      var presentationTime = offsetOrTime < 0 ? 0u : (uint)offsetOrTime;
 
       int blockLen;
-      if (multiplePayloads) {
-        blockLen = (int)ReadLenTyped(b, ref p, payloadLenType, 0);
-      } else {
+      if (multiplePayloads)
+        blockLen = checked((int)ReadLenTyped(b, ref p, payloadLenType, 0));
+      else
         blockLen = dataEnd - p;
-      }
       var blockEnd = p + blockLen;
-      if (blockLen < 0 || blockEnd > dataEnd) return false;
+      if (blockLen < 0 || blockEnd > dataEnd)
+        return false;
 
-      // Each sub-payload: 1-byte length prefix then that many bytes; each is a complete
-      // media object for the stream. Presentation times advance by the replicated delta.
+      var presentationTimeMs = unchecked((uint)offsetOrTime);
       while (p < blockEnd) {
         var subLen = b[p++];
-        if (p + subLen > blockEnd) return false;
-        AppendCompleteObject(streams, streamNumber, presentationTime, b, p, subLen);
+        if (p + subLen > blockEnd)
+          return false;
+        AppendCompleteObject(streams, streamNumber, b, p, subLen, presentationTimeMs, keyFrame);
         p += subLen;
-        presentationTime = presentationTime > uint.MaxValue - presentationTimeDelta
-          ? uint.MaxValue
-          : presentationTime + presentationTimeDelta;
+        presentationTimeMs = unchecked(presentationTimeMs + presentationTimeDelta);
       }
       p = blockEnd;
       return true;
     }
 
-    // replicatedLength == 0 (or other): treat the remaining payload as a single fragment.
-    if (p + replicatedLength > dataEnd) return false;
+    if (p + replicatedLength > dataEnd)
+      return false;
     p += replicatedLength;
-    int fl;
-    if (multiplePayloads) {
-      fl = (int)ReadLenTyped(b, ref p, payloadLenType, 0);
-    } else {
-      fl = dataEnd - p;
-    }
-    if (fl < 0 || p + fl > dataEnd) return false;
-    AppendCompleteObject(streams, streamNumber, 0, b, p, fl);
-    p += fl;
+    int len;
+    if (multiplePayloads)
+      len = checked((int)ReadLenTyped(b, ref p, payloadLenType, 0));
+    else
+      len = dataEnd - p;
+    if (len < 0 || p + len > dataEnd)
+      return false;
+    AppendCompleteObject(streams, streamNumber, b, p, len, 0, keyFrame);
+    p += len;
     return true;
   }
 
-  private static void AppendFragment(Dictionary<int, StreamData> streams, Dictionary<int, Pending> pending,
-      int streamNumber, int objectNumber, int objectSize, int fragOffset, uint presentationTimeMs,
-      byte[] src, int srcPos, int len) {
+  private static void AppendFragment(
+      Dictionary<int, StreamData> streams,
+      Dictionary<int, Pending> pending,
+      int streamNumber,
+      int objectNumber,
+      int objectSize,
+      int fragOffset,
+      uint presentationTimeMs,
+      bool keyFrame,
+      byte[] src,
+      int srcPos,
+      int len) {
+    if (fragOffset < 0 || objectSize < 0 || fragOffset > int.MaxValue - len)
+      return;
+
     if (!pending.TryGetValue(streamNumber, out var pend) || pend.ObjectNumber != objectNumber || fragOffset == 0 && pend.FragOffset != 0) {
-      // Finalise any complete previous object before starting a new one.
-      if (pend != null && pend.FragOffset > 0 && pend.FragOffset == pend.Buffer.Length)
-        AppendCompletedPending(streams, streamNumber, pend);
       pend = new Pending {
         ObjectNumber = objectNumber,
         Buffer = new byte[Math.Max(objectSize, fragOffset + len)],
         FragOffset = 0,
         PresentationTimeMs = presentationTimeMs,
+        KeyFrame = keyFrame,
       };
       pending[streamNumber] = pend;
+    } else {
+      pend.KeyFrame |= keyFrame;
     }
 
     if (fragOffset + len > pend.Buffer.Length) {
@@ -248,38 +278,49 @@ internal static class AsfDepayloader {
     pend.FragOffset = Math.Max(pend.FragOffset, fragOffset + len);
 
     if (pend.FragOffset >= pend.Buffer.Length) {
-      AppendCompletedPending(streams, streamNumber, pend);
+      Stream(streams, streamNumber).Objects.Add(new MediaObject(pend.Buffer, pend.PresentationTimeMs, pend.KeyFrame));
       pending.Remove(streamNumber);
     }
   }
 
-  private static void AppendCompletedPending(Dictionary<int, StreamData> streams, int streamNumber, Pending pending) {
-    var target = Stream(streams, streamNumber);
-    target.Objects.Add(pending.Buffer);
-    target.PresentationTimesMs.Add(pending.PresentationTimeMs);
-  }
-
-  private static void AppendCompleteObject(Dictionary<int, StreamData> streams, int streamNumber,
-      uint presentationTimeMs, byte[] src, int srcPos, int len) {
+  private static void AppendCompleteObject(
+      Dictionary<int, StreamData> streams,
+      int streamNumber,
+      byte[] src,
+      int srcPos,
+      int len,
+      uint presentationTimeMs,
+      bool keyFrame) {
     var obj = new byte[len];
     Array.Copy(src, srcPos, obj, 0, len);
-    var target = Stream(streams, streamNumber);
-    target.Objects.Add(obj);
-    target.PresentationTimesMs.Add(presentationTimeMs);
+    Stream(streams, streamNumber).Objects.Add(new MediaObject(obj, presentationTimeMs, keyFrame));
   }
 
-  private static StreamData Stream(Dictionary<int, StreamData> streams, int n) {
-    if (!streams.TryGetValue(n, out var s)) { s = new StreamData(); streams[n] = s; }
-    return s;
+  private static StreamData Stream(Dictionary<int, StreamData> streams, int streamNumber) {
+    if (!streams.TryGetValue(streamNumber, out var stream)) {
+      stream = new StreamData();
+      streams[streamNumber] = stream;
+    }
+    return stream;
   }
 
   // Length-typed field: 0 → default, 1 → u8, 2 → u16, 3 → u32 (little-endian).
-  private static uint ReadLenTyped(byte[] b, ref int p, int type, uint defVal) {
+  private static uint ReadLenTyped(byte[] b, ref int p, int type, uint defaultValue) {
     switch (type & 3) {
-      case 1: return b[p++];
-      case 2: { var v = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(p)); p += 2; return v; }
-      case 3: { var v = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p)); p += 4; return v; }
-      default: return defVal;
+      case 1:
+        return b[p++];
+      case 2: {
+        var value = BinaryPrimitives.ReadUInt16LittleEndian(b.AsSpan(p));
+        p += 2;
+        return value;
+      }
+      case 3: {
+        var value = BinaryPrimitives.ReadUInt32LittleEndian(b.AsSpan(p));
+        p += 4;
+        return value;
+      }
+      default:
+        return defaultValue;
     }
   }
 }
