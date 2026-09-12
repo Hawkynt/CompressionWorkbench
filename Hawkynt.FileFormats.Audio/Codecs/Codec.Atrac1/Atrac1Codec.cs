@@ -69,8 +69,8 @@ public sealed class Atrac1Codec {
       var su = this._units[ch];
       var gb = new BitReader(frame.Slice(ch * SuSize, SuSize));
 
-      ParseBsm(gb, su.Log2BlockCount);
-      UnpackDequant(gb, su, this._spec);
+      ParseBsm(ref gb, su.Log2BlockCount);
+      UnpackDequant(ref gb, su, this._spec);
       ImdctBlock(su);
       SubbandSynthesis(su, outCh[ch]);
     }
@@ -103,7 +103,7 @@ public sealed class Atrac1Codec {
 
   // ── block size mode ────────────────────────────────────────────────────────────
 
-  private static void ParseBsm(BitReader gb, int[] log2BlockCount) {
+  private static void ParseBsm(ref BitReader gb, int[] log2BlockCount) {
     for (var i = 0; i < 2; ++i) {
       var tmp = gb.GetBits(2);
       if ((tmp & 1) != 0)
@@ -121,7 +121,7 @@ public sealed class Atrac1Codec {
 
   // ── spectrum unpack / dequant ─────────────────────────────────────────────────
 
-  private static void UnpackDequant(BitReader gb, SoundUnit su, float[] spec) {
+  private static void UnpackDequant(ref BitReader gb, SoundUnit su, float[] spec) {
     var idwls = new int[MaxBfu];
     var idsfs = new int[MaxBfu];
 
@@ -200,8 +200,13 @@ public sealed class Atrac1Codec {
         pos += blockSize;
       }
 
+      // The reference copies a flat 240 floats here regardless of band. That is safe in C
+      // because low[256], mid[256] and high[512] are adjacent struct members, so the surplus
+      // spills into the next band's buffer and is overwritten before anything reads it.
+      // A C# array has a hard bound, so copy exactly the part that is read back:
+      // the band's own buffer minus the 32 samples the overlap-add already produced.
       if (numBlocks == 1)
-        Array.Copy(su.Spectrum[0], refPos + 16, this._bands[bandNum], 32, 240);
+        Array.Copy(su.Spectrum[0], refPos + 16, this._bands[bandNum], 32, bandSamples - 32);
 
       refPos += bandSamples;
     }
