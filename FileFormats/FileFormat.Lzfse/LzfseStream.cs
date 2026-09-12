@@ -3,123 +3,130 @@ using System.Buffers.Binary;
 namespace FileFormat.Lzfse;
 
 /// <summary>
-/// Selects which LZFSE block encoder is preferred for each input block.
-/// </summary>
-public enum LzfseBlockMode {
-  /// <summary>Try LZFSE and LZVN and emit the smallest representation per block.</summary>
-  Auto,
-  /// <summary>Prefer entropy-coded LZFSE <c>bvx2</c> blocks, falling back to stored blocks when needed.</summary>
-  Lzfse,
-  /// <summary>Prefer LZVN <c>bvxn</c> blocks, falling back to stored blocks when needed.</summary>
-  Lzvn,
-}
-
-/// <summary>
-/// Controls the depth of the managed LZFSE match search.
-/// </summary>
-public enum LzfseCompressionLevel {
-  /// <summary>Probe one hash-chain candidate per position.</summary>
-  Fast,
-  /// <summary>Probe four hash-chain candidates per position.</summary>
-  Balanced,
-  /// <summary>Probe eight hash-chain candidates per position.</summary>
-  Maximum,
-}
-
-/// <summary>
-/// Provides static methods for compressing and decompressing Apple's LZFSE block format.
+/// Provides static methods for compressing and decompressing data using Apple's LZFSE block format
+/// with LZVN as the encoder's sub-algorithm.
 /// </summary>
 /// <remarks>
-/// The decoder accepts stored (<c>bvx-</c>), LZVN (<c>bvxn</c>), LZFSE V1 (<c>bvx1</c>)
-/// and LZFSE V2 (<c>bvx2</c>) blocks. The writer emits V2 for entropy-coded blocks because
-/// V2 carries the same FSE model as V1 in a substantially smaller variable header.
+/// LZFSE is a block-based compression format developed by Apple. Each block starts with a 4-byte
+/// little-endian magic number identifying the block type. Decoding supports Apple's entropy-coded
+/// <c>bvx1</c>/<c>bvx2</c> blocks, LZVN <c>bvxn</c> blocks, uncompressed <c>bvx-</c> blocks and
+/// <c>bvx$</c> end markers. Compression authors the entropy-coded <c>bvx2</c> block, the LZVN
+/// <c>bvxn</c> block or the stored <c>bvx-</c> block, choosing per block whichever is smallest;
+/// <c>bvx1</c> is read but never written, as Apple's own compressor does not emit it either.
 /// </remarks>
 public static class LzfseStream {
   private const uint MagicEndOfStream = 0x24787662;
   private const uint MagicUncompressed = 0x2D787662;
+  private const uint MagicLzfseV1 = 0x31787662;
+  private const uint MagicLzfseV2 = 0x32787662;
   private const uint MagicLzvn = 0x6E787662;
-  private const int LzvnHeaderSize = 12;
-  private const int StoredHeaderSize = 8;
-  private const int MaximumV2HeaderSize = 4096;
+  private const int BlockSize = LzfseFseEncoder.MaxBlockRawBytes;
 
-  /// <summary>The default raw block size used by the managed writer.</summary>
-  public const int DefaultBlockSize = LzfseCompressedBlock.MaximumRawBlockSize;
-
-  /// <summary>
-  /// Compresses data with the default adaptive encoder.
-  /// </summary>
-  public static void Compress(Stream input, Stream output) =>
-    Compress(input, output, LzfseBlockMode.Auto, LzfseCompressionLevel.Balanced, DefaultBlockSize);
+  // Hash-chain candidates the bvx2 match search tries at each position. Four is
+  // Apple's own default trade-off between parse quality and encode time.
+  private const int MatchSearchDepth = 4;
 
   /// <summary>
-  /// Compresses data using the selected LZFSE block policy.
+  /// Compresses data from <paramref name="input"/> and writes an LZFSE-format stream to <paramref name="output"/>.
   /// </summary>
-  public static void Compress(
-      Stream input,
-      Stream output,
-      LzfseBlockMode mode,
-      LzfseCompressionLevel level,
-      int blockSize = DefaultBlockSize) {
+  public static void Compress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
-    if (blockSize is < 256 or > LzfseCompressedBlock.MaximumRawBlockSize)
-      throw new ArgumentOutOfRangeException(nameof(blockSize), blockSize,
-        $"LZFSE block size must be between 256 and {LzfseCompressedBlock.MaximumRawBlockSize} bytes.");
 
-    var rawBuffer = new byte[blockSize];
+    var rawBuffer = new byte[BlockSize];
+    Span<byte> header = stackalloc byte[12];
+
     while (true) {
-      var bytesRead = ReadFully(input, rawBuffer);
+      var bytesRead = ReadFully(input, rawBuffer, 0, rawBuffer.Length);
       if (bytesRead == 0)
         break;
 
-      var raw = rawBuffer.AsSpan(0, bytesRead);
-      var block = SelectBlock(raw, mode, level);
-      output.Write(block);
+      var rawSpan = rawBuffer.AsSpan(0, bytesRead);
+      var lzvn = Lzvn.Compress(rawSpan);
+      var lzvnWins = lzvn.Length < bytesRead;
+      var bestFallbackBytes = lzvnWins ? 12 + lzvn.Length : 8 + bytesRead;
+
+      // The entropy-coded block is taken only when it beats the block this writer
+      // would otherwise have emitted, so no input ever grows because of it.
+      var entropy = LzfseFseEncoder.EncodeBlock(rawSpan, MatchSearchDepth);
+      if (entropy is { Length: > 0 } && entropy.Length < bestFallbackBytes) {
+        output.Write(entropy);
+        continue;
+      }
+
+      if (lzvnWins) {
+        BinaryPrimitives.WriteUInt32LittleEndian(header, MagicLzvn);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)bytesRead);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[8..], (uint)lzvn.Length);
+        output.Write(header[..12]);
+        output.Write(lzvn);
+      } else {
+        BinaryPrimitives.WriteUInt32LittleEndian(header, MagicUncompressed);
+        BinaryPrimitives.WriteUInt32LittleEndian(header[4..], (uint)bytesRead);
+        output.Write(header[..8]);
+        output.Write(rawSpan);
+      }
     }
 
-    Span<byte> end = stackalloc byte[4];
-    BinaryPrimitives.WriteUInt32LittleEndian(end, MagicEndOfStream);
-    output.Write(end);
+    BinaryPrimitives.WriteUInt32LittleEndian(header, MagicEndOfStream);
+    output.Write(header[..4]);
   }
 
   /// <summary>
-  /// Decompresses an LZFSE block stream.
+  /// Decompresses an Apple LZFSE stream from <paramref name="input"/> to <paramref name="output"/>.
   /// </summary>
-  /// <exception cref="InvalidDataException">The input is truncated or contains malformed block data.</exception>
+  /// <exception cref="InvalidDataException">The stream is truncated, malformed, or uses an unknown block magic.</exception>
   public static void Decompress(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
 
-    Span<byte> magicBytes = stackalloc byte[4];
-    var history = new LzfseCompressedBlock.History();
+    Span<byte> magicBuf = stackalloc byte[4];
+    Span<byte> headerBuf = stackalloc byte[8];
+    byte[] history = [];
 
     while (true) {
-      var read = ReadFully(input, magicBytes);
-      if (read == 0)
-        return;
-      if (read != magicBytes.Length)
+      var bytesRead = ReadFully(input, magicBuf);
+      if (bytesRead == 0)
+        break;
+      if (bytesRead < 4)
         throw new InvalidDataException("Unexpected end of LZFSE stream: incomplete block magic.");
 
-      var magic = BinaryPrimitives.ReadUInt32LittleEndian(magicBytes);
+      var magic = BinaryPrimitives.ReadUInt32LittleEndian(magicBuf);
       switch (magic) {
         case MagicEndOfStream:
           return;
 
-        case MagicUncompressed:
-          DecodeStoredBlock(input, output, history);
+        case MagicUncompressed: {
+          input.ReadExactly(headerBuf[..4]);
+          var rawBytes = CheckedLength(BinaryPrimitives.ReadUInt32LittleEndian(headerBuf), "uncompressed block");
+          CopyExactly(input, output, rawBytes, ref history);
           break;
+        }
 
-        case MagicLzvn:
-          DecodeLzvnBlock(input, output, history);
-          break;
+        case MagicLzvn: {
+          input.ReadExactly(headerBuf[..8]);
+          var rawBytes = CheckedLength(BinaryPrimitives.ReadUInt32LittleEndian(headerBuf), "LZVN output");
+          var payloadBytes = CheckedLength(BinaryPrimitives.ReadUInt32LittleEndian(headerBuf[4..]), "LZVN payload");
+          var payload = new byte[payloadBytes];
+          input.ReadExactly(payload);
 
-        case LzfseCompressedBlock.MagicV1:
-          DecodeV1Block(input, output, history, magicBytes);
-          break;
+          var decoded = new byte[rawBytes];
+          var actualDecoded = Lzvn.Decompress(payload, decoded);
+          if (actualDecoded != rawBytes)
+            throw new InvalidDataException($"LZVN block decoded {actualDecoded} bytes but header specified {rawBytes}.");
 
-        case LzfseCompressedBlock.MagicV2:
-          DecodeV2Block(input, output, history, magicBytes);
+          output.Write(decoded, 0, actualDecoded);
+          AppendHistory(ref history, decoded.AsSpan(0, actualDecoded));
           break;
+        }
+
+        case MagicLzfseV1:
+        case MagicLzfseV2: {
+          var decoded = LzfseFseDecoder.DecodeBlock(input, magic, history);
+          output.Write(decoded);
+          AppendHistory(ref history, decoded);
+          break;
+        }
 
         default:
           throw new InvalidDataException($"Unknown LZFSE block magic: 0x{magic:X8}.");
@@ -127,134 +134,59 @@ public static class LzfseStream {
     }
   }
 
-  private static byte[] SelectBlock(ReadOnlySpan<byte> raw, LzfseBlockMode mode, LzfseCompressionLevel level) {
-    var storedLength = checked(StoredHeaderSize + raw.Length);
-    byte[]? best = null;
-    var bestLength = storedLength;
-
-    if (mode is LzfseBlockMode.Auto or LzfseBlockMode.Lzvn) {
-      var lzvnPayload = Lzvn.Compress(raw);
-      var length = checked(LzvnHeaderSize + lzvnPayload.Length);
-      if (length < bestLength) {
-        best = WrapLzvn(raw.Length, lzvnPayload);
-        bestLength = length;
-      }
-    }
-
-    if (mode is LzfseBlockMode.Auto or LzfseBlockMode.Lzfse) {
-      var parser = level switch {
-        LzfseCompressionLevel.Fast => LzfseCompressedBlock.ParserStrength.Fast,
-        LzfseCompressionLevel.Maximum => LzfseCompressedBlock.ParserStrength.Maximum,
-        _ => LzfseCompressedBlock.ParserStrength.Balanced,
-      };
-      var compressed = LzfseCompressedBlock.EncodeV2(raw, parser);
-      if (compressed is not null && compressed.Length < bestLength) {
-        best = compressed;
-        bestLength = compressed.Length;
-      }
-    }
-
-    return best ?? WrapStored(raw);
-  }
-
-  private static byte[] WrapStored(ReadOnlySpan<byte> raw) {
-    var result = new byte[checked(StoredHeaderSize + raw.Length)];
-    BinaryPrimitives.WriteUInt32LittleEndian(result, MagicUncompressed);
-    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), checked((uint)raw.Length));
-    raw.CopyTo(result.AsSpan(StoredHeaderSize));
-    return result;
-  }
-
-  private static byte[] WrapLzvn(int rawLength, ReadOnlySpan<byte> payload) {
-    var result = new byte[checked(LzvnHeaderSize + payload.Length)];
-    BinaryPrimitives.WriteUInt32LittleEndian(result, MagicLzvn);
-    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), checked((uint)rawLength));
-    BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), checked((uint)payload.Length));
-    payload.CopyTo(result.AsSpan(LzvnHeaderSize));
-    return result;
-  }
-
-  private static void DecodeStoredBlock(Stream input, Stream output, LzfseCompressedBlock.History history) {
-    Span<byte> lengthBytes = stackalloc byte[4];
-    input.ReadExactly(lengthBytes);
-    var rawLength = BinaryPrimitives.ReadUInt32LittleEndian(lengthBytes);
-    var remaining = checked((int)rawLength);
-    var buffer = new byte[Math.Min(Math.Max(remaining, 1), 8192)];
-
-    while (remaining > 0) {
-      var count = Math.Min(remaining, buffer.Length);
-      input.ReadExactly(buffer.AsSpan(0, count));
-      output.Write(buffer, 0, count);
-      for (var i = 0; i < count; ++i)
-        history.Append(buffer[i]);
-      remaining -= count;
-    }
-  }
-
-  private static void DecodeLzvnBlock(Stream input, Stream output, LzfseCompressedBlock.History history) {
-    Span<byte> header = stackalloc byte[8];
-    input.ReadExactly(header);
-    var rawLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(header));
-    var payloadLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(header[4..]));
-    var payload = new byte[payloadLength];
-    input.ReadExactly(payload);
-
-    var decoded = new byte[rawLength];
-    var actual = Lzvn.Decompress(payload, decoded);
-    if (actual != rawLength)
-      throw new InvalidDataException($"LZVN block decoded {actual} bytes but header specified {rawLength}.");
-
-    output.Write(decoded);
-    foreach (var value in decoded)
-      history.Append(value);
-  }
-
-  private static void DecodeV1Block(
-      Stream input,
-      Stream output,
-      LzfseCompressedBlock.History history,
-      ReadOnlySpan<byte> magicBytes) {
-    var headerBytes = new byte[LzfseCompressedBlock.V1HeaderSize];
-    magicBytes.CopyTo(headerBytes);
-    input.ReadExactly(headerBytes.AsSpan(4));
-    var header = LzfseCompressedBlock.ReadV1Header(headerBytes);
-    var payload = new byte[header.PayloadBytes];
-    input.ReadExactly(payload);
-    LzfseCompressedBlock.Decode(header, payload, output, history);
-  }
-
-  private static void DecodeV2Block(
-      Stream input,
-      Stream output,
-      LzfseCompressedBlock.History history,
-      ReadOnlySpan<byte> magicBytes) {
-    var fixedHeader = new byte[LzfseCompressedBlock.V2MinimumHeaderSize];
-    magicBytes.CopyTo(fixedHeader);
-    input.ReadExactly(fixedHeader.AsSpan(4));
-
-    var headerSize = LzfseCompressedBlock.ReadV2HeaderSize(fixedHeader);
-    if (headerSize is < LzfseCompressedBlock.V2MinimumHeaderSize or > MaximumV2HeaderSize)
-      throw new InvalidDataException($"LZFSE bvx2 header size {headerSize} is outside the supported format bounds.");
-
-    var headerBytes = new byte[headerSize];
-    fixedHeader.CopyTo(headerBytes, 0);
-    if (headerSize > fixedHeader.Length)
-      input.ReadExactly(headerBytes.AsSpan(fixedHeader.Length));
-
-    var header = LzfseCompressedBlock.ReadV2Header(headerBytes);
-    var payload = new byte[header.PayloadBytes];
-    input.ReadExactly(payload);
-    LzfseCompressedBlock.Decode(header, payload, output, history);
+  private static int CheckedLength(uint value, string field) {
+    if (value > int.MaxValue)
+      throw new InvalidDataException($"LZFSE {field} length {value} exceeds the managed buffer limit.");
+    return checked((int)value);
   }
 
   private static int ReadFully(Stream source, Span<byte> buffer) {
-    var total = 0;
-    while (total < buffer.Length) {
-      var read = source.Read(buffer[total..]);
-      if (read == 0)
+    var totalRead = 0;
+    while (totalRead < buffer.Length) {
+      var n = source.Read(buffer[totalRead..]);
+      if (n == 0)
         break;
-      total += read;
+      totalRead += n;
     }
-    return total;
+    return totalRead;
+  }
+
+  private static int ReadFully(Stream source, byte[] buffer, int offset, int count) {
+    var totalRead = 0;
+    while (totalRead < count) {
+      var n = source.Read(buffer, offset + totalRead, count - totalRead);
+      if (n == 0)
+        break;
+      totalRead += n;
+    }
+    return totalRead;
+  }
+
+  private static void CopyExactly(Stream source, Stream destination, int count, ref byte[] history) {
+    var buffer = new byte[Math.Min(count, 8192)];
+    var remaining = count;
+    while (remaining > 0) {
+      var toRead = Math.Min(remaining, buffer.Length);
+      source.ReadExactly(buffer.AsSpan(0, toRead));
+      destination.Write(buffer, 0, toRead);
+      AppendHistory(ref history, buffer.AsSpan(0, toRead));
+      remaining -= toRead;
+    }
+  }
+
+  private static void AppendHistory(ref byte[] history, ReadOnlySpan<byte> data) {
+    const int maximum = LzfseFseDecoder.MaxMatchDistance;
+    if (data.IsEmpty)
+      return;
+    if (data.Length >= maximum) {
+      history = data[^maximum..].ToArray();
+      return;
+    }
+
+    var keep = Math.Min(history.Length, maximum - data.Length);
+    var next = new byte[keep + data.Length];
+    history.AsSpan(history.Length - keep, keep).CopyTo(next);
+    data.CopyTo(next.AsSpan(keep));
+    history = next;
   }
 }

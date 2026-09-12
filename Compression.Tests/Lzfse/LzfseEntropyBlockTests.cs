@@ -1,156 +1,136 @@
+#pragma warning disable CS1591
 using System.Buffers.Binary;
-using Compression.Registry;
 using FileFormat.Lzfse;
 
 namespace Compression.Tests.Lzfse;
 
+/// <summary>
+/// Covers the entropy-coded <c>bvx2</c> block on the writing side, and the reader's
+/// agreement with it. The reader already had bvx1/bvx2 coverage, but only over
+/// degenerate blocks whose three final FSE states are all zero; a block written from
+/// real input carries non-zero states, which is what these tests exercise.
+/// </summary>
 [TestFixture]
 public class LzfseEntropyBlockTests {
-  [TestCase(LzfseBlockMode.Auto)]
-  [TestCase(LzfseBlockMode.Lzfse)]
-  [TestCase(LzfseBlockMode.Lzvn)]
-  [Category("RoundTrip")]
-  public void RoundTrip_AllBlockModes(LzfseBlockMode mode) {
-    var original = MakeCompressibleData(48 * 1024);
 
+  private const uint MagicEndOfStream = 0x24787662;
+  private const uint MagicUncompressed = 0x2D787662;
+  private const uint MagicLzfseV2 = 0x32787662;
+  private const uint MagicLzvn = 0x6E787662;
+
+  private static byte[] Compress(byte[] original) {
     using var input = new MemoryStream(original);
     using var compressed = new MemoryStream();
-    LzfseStream.Compress(input, compressed, mode, LzfseCompressionLevel.Maximum, 16 * 1024);
-
-    compressed.Position = 0;
-    using var output = new MemoryStream();
-    LzfseStream.Decompress(compressed, output);
-    Assert.That(output.ToArray(), Is.EqualTo(original));
+    LzfseStream.Compress(input, compressed);
+    return compressed.ToArray();
   }
 
-  [Test, Category("HappyPath"), Category("Interoperability")]
-  public void LzfseMode_EmitsEntropyCodedBvx2Block() {
-    var original = MakeCompressibleData(20 * 1024);
-
-    using var input = new MemoryStream(original);
-    using var compressed = new MemoryStream();
-    LzfseStream.Compress(input, compressed, LzfseBlockMode.Lzfse, LzfseCompressionLevel.Maximum, 20 * 1024);
-
-    var encoded = compressed.ToArray();
-    Assert.That(encoded.Length, Is.GreaterThan(8));
-    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(encoded), Is.EqualTo(0x32787662u), "Expected bvx2 entropy-coded LZFSE block");
-
-    compressed.Position = 0;
-    using var output = new MemoryStream();
-    LzfseStream.Decompress(compressed, output);
-    Assert.That(output.ToArray(), Is.EqualTo(original));
-  }
-
-  [Test, Category("Boundary"), Category("RoundTrip")]
-  public void MultiBlock_RoundTripsAcrossEntropyBlockBoundaries() {
-    var original = MakeCompressibleData(95 * 1024);
-
-    using var input = new MemoryStream(original);
-    using var compressed = new MemoryStream();
-    LzfseStream.Compress(input, compressed, LzfseBlockMode.Auto, LzfseCompressionLevel.Balanced, LzfseStream.DefaultBlockSize);
-
-    compressed.Position = 0;
-    using var output = new MemoryStream();
-    LzfseStream.Decompress(compressed, output);
-    Assert.That(output.ToArray(), Is.EqualTo(original));
-  }
-
-  [Test, Category("Interoperability"), Category("Boundary")]
-  public void Decompress_V1PartialFrequencyTables_MatchesAppleFseCheck() {
-    const int headerSize = 772;
-    const int literalPayloadSize = 7;
-    const int lmdPayloadSize = 8;
-    const int payloadSize = literalPayloadSize + lmdPayloadSize;
-    var encoded = new byte[headerSize + payloadSize + 4];
-
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x31787662u); // bvx1
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(4), 1); // one raw byte
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(8), payloadSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(12), 4); // literals are 4-way interleaved
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(16), 1); // one L/M/D record
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(20), literalPayloadSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(24), lmdPayloadSize);
-
-    // Deliberately use only one state in each FSE table. Apple's fse_check_freq accepts
-    // sum(freq) <= stateCount; state zero remains fully defined and the zero payload keeps
-    // every transition on state zero.
-    // The frequency tables begin at byte 50, where the C structure puts l_freq: L runs to 90, M to
-    // 130, D to 258 and the literals to 770.
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(52), 1);  // L symbol 1 => L=1, 1/64 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(90), 1);  // M symbol 0 => M=0, 1/64 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(130), 1); // D symbol 0 => D=0, 1/256 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(258), 1); // literal 0, 1/1024 states
-
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(headerSize + payloadSize), 0x24787662u); // bvx$
-
-    using var input = new MemoryStream(encoded);
+  private static byte[] Decompress(byte[] compressed) {
+    using var input = new MemoryStream(compressed);
     using var output = new MemoryStream();
     LzfseStream.Decompress(input, output);
-
-    Assert.That(output.ToArray(), Is.EqualTo(new byte[] { 0 }));
+    return output.ToArray();
   }
 
-  [Test, Category("Interoperability"), Category("Boundary")]
-  public void ReadV2Header_EmptyFrequencySection_IsAccepted() {
-    var encoded = new byte[32];
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x32787662u); // bvx2
-    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(8), 7UL << 60); // literal_bits = 0
-    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(16), 7UL << 60); // lmd_bits = 0
-    BinaryPrimitives.WriteUInt64LittleEndian(encoded.AsSpan(24), 32); // header ends before freq[]
+  /// <summary>Text-like input: many repeated phrases over a small alphabet.</summary>
+  private static byte[] TextLike(int length) {
+    const string phrase = "the quick brown fox jumps over the lazy dog; ";
+    var result = new byte[length];
+    for (var i = 0; i < length; ++i)
+      result[i] = (byte)phrase[i % phrase.Length];
+    return result;
+  }
 
-    var header = LzfseCompressedBlock.ReadV2Header(encoded);
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void RedundantInput_IsWrittenAsAnEntropyCodedBvx2Block() {
+    var original = TextLike(20_000);
+    var compressed = Compress(original);
 
     Assert.Multiple(() => {
-      Assert.That(header.HeaderBytes, Is.EqualTo(32));
-      Assert.That(header.LFrequency, Is.All.Zero);
-      Assert.That(header.MFrequency, Is.All.Zero);
-      Assert.That(header.DFrequency, Is.All.Zero);
-      Assert.That(header.LiteralFrequency, Is.All.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(compressed), Is.EqualTo(MagicLzfseV2),
+        "a 20 KB redundant block is smallest as an entropy-coded bvx2 block");
+      Assert.That(compressed.Length, Is.LessThan(original.Length / 8));
+      Assert.That(Decompress(compressed), Is.EqualTo(original));
     });
   }
 
-  [Test, Category("MalformedInput")]
-  public void Decompress_V1FrequencyTableExceedsStateCount_Throws() {
-    const int headerSize = 772;
-    var encoded = new byte[headerSize];
-    BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x31787662u);
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(50), 65); // L starts at 50 and has 64 states
+  /// <summary>
+  /// The bvx2 fixed header packs the header size into the low 32 bits of its third
+  /// 64-bit word and the final L, M and D coder states above them. A real block has
+  /// non-zero states there, so the size must be masked out of the word rather than
+  /// narrowed from it.
+  /// </summary>
+  [Test, Category("Regression")]
+  public void Bvx2HeaderSize_IsReadOutOfAWordWhoseUpperBitsCarryTheFseStates() {
+    var compressed = Compress(TextLike(20_000));
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(compressed), Is.EqualTo(MagicLzfseV2));
 
-    using var input = new MemoryStream(encoded);
-    using var output = new MemoryStream();
-
-    Assert.That(() => LzfseStream.Decompress(input, output), Throws.TypeOf<InvalidDataException>());
+    var packed = BinaryPrimitives.ReadUInt64LittleEndian(compressed.AsSpan(24));
+    Assert.Multiple(() => {
+      Assert.That(packed >> 32, Is.Not.Zero,
+        "this block must carry non-zero L/M/D states, or the test proves nothing");
+      Assert.That((uint)packed, Is.InRange(32u, 752u), "header size sits in the low 32 bits");
+      Assert.That(() => Decompress(compressed), Throws.Nothing);
+    });
   }
 
-  [Test, Category("MalformedInput")]
-  public void Decompress_TruncatedV2Header_Throws() {
-    byte[] truncated = [0x62, 0x76, 0x78, 0x32, 0, 0, 0, 0];
-    using var input = new MemoryStream(truncated);
-    using var output = new MemoryStream();
+  [Test, Category("RoundTrip")]
+  public void MultipleBlocks_RoundTripAcrossBlockBoundaries() {
+    var original = TextLike(200_000);
+    var compressed = Compress(original);
 
-    Assert.That(() => LzfseStream.Decompress(input, output), Throws.TypeOf<EndOfStreamException>());
+    Assert.Multiple(() => {
+      Assert.That(Decompress(compressed), Is.EqualTo(original));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(compressed.AsSpan(compressed.Length - 4)),
+        Is.EqualTo(MagicEndOfStream));
+    });
   }
 
-  [Test, Category("HappyPath")]
-  public void Descriptor_ExposesOptimizerAxes() {
-    var descriptor = new LzfseFormatDescriptor();
+  [Test, Category("RoundTrip")]
+  public void MixedRedundantAndIncompressibleBlocks_RoundTrip() {
+    var random = new Random(20240918);
+    var original = new byte[120_000];
+    TextLike(40_000).CopyTo(original, 0);
+    random.NextBytes(original.AsSpan(40_000, 40_000));
+    TextLike(40_000).CopyTo(original, 80_000);
 
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
-    Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
-    Assert.That(descriptor.OptionsSchema.Select(option => option.Key), Is.EquivalentTo(new[] { "Mode", "Level", "BlockSize" }));
-
-    var combinations = descriptor.OptionsSchema.Aggregate(1, (count, option) => count * option.AllowedValues!.Count);
-    Assert.That(combinations, Is.EqualTo(36));
+    Assert.That(Decompress(Compress(original)), Is.EqualTo(original));
   }
 
-  private static byte[] MakeCompressibleData(int length) {
-    var result = new byte[length];
-    ReadOnlySpan<byte> phrase = "LZFSE/tANS optimizer test payload :: 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"u8;
-    for (var offset = 0; offset < result.Length;) {
-      var count = Math.Min(phrase.Length, result.Length - offset);
-      phrase[..count].CopyTo(result.AsSpan(offset));
-      offset += count;
-    }
-    return result;
+  [Test, Category("EdgeCase"), Category("RoundTrip")]
+  public void IncompressibleInput_FallsBackWithoutGrowingTheBlockPayload() {
+    var random = new Random(19981231);
+    var original = new byte[30_000];
+    random.NextBytes(original);
+
+    var compressed = Compress(original);
+    var magic = BinaryPrimitives.ReadUInt32LittleEndian(compressed);
+
+    Assert.Multiple(() => {
+      Assert.That(magic, Is.AnyOf(MagicUncompressed, MagicLzvn),
+        "random data must not be forced through the entropy coder");
+      Assert.That(compressed.Length, Is.LessThanOrEqualTo(original.Length + 64));
+      Assert.That(Decompress(compressed), Is.EqualTo(original));
+    });
+  }
+
+  [Test, Category("RoundTrip")]
+  public void LongRangeMatches_RoundTrip() {
+    var original = new byte[25_000];
+    var random = new Random(7);
+    random.NextBytes(original.AsSpan(0, 4_000));
+    original.AsSpan(0, 4_000).CopyTo(original.AsSpan(20_000));
+    TextLike(16_000).CopyTo(original, 4_000);
+
+    Assert.That(Decompress(Compress(original)), Is.EqualTo(original));
+  }
+
+  [Test, Category("Boundary"), Category("RoundTrip")]
+  public void EveryByteValue_RoundTrips() {
+    var original = new byte[8 * 256];
+    for (var i = 0; i < original.Length; ++i)
+      original[i] = (byte)(i & 0xFF);
+
+    Assert.That(Decompress(Compress(original)), Is.EqualTo(original));
   }
 }

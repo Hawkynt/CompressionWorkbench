@@ -42,50 +42,50 @@ namespace FileFormat.Lzfse;
 /// </summary>
 internal static class LzfseFseDecoder {
   private const uint MagicV1 = 0x31787662;
-  private const uint MagicV2 = 0x32787662;
+  internal const uint MagicV2 = 0x32787662;
 
-  private const int LSymbols = 20;
-  private const int MSymbols = 20;
-  private const int DSymbols = 64;
-  private const int LiteralSymbols = 256;
-  private const int LStates = 64;
-  private const int MStates = 64;
-  private const int DStates = 256;
-  private const int LiteralStates = 1024;
-  private const int MatchesPerBlock = 10_000;
-  private const int LiteralsPerBlock = 40_000;
+  internal const int LSymbols = 20;
+  internal const int MSymbols = 20;
+  internal const int DSymbols = 64;
+  internal const int LiteralSymbols = 256;
+  internal const int LStates = 64;
+  internal const int MStates = 64;
+  internal const int DStates = 256;
+  internal const int LiteralStates = 1024;
+  internal const int MatchesPerBlock = 10_000;
+  internal const int LiteralsPerBlock = 40_000;
   private const int V1HeaderSize = 772;
-  private const int V2FixedHeaderSize = 32;
+  internal const int V2FixedHeaderSize = 32;
   private const int V2MaxHeaderSize = V2FixedHeaderSize + 2 * (LSymbols + MSymbols + DSymbols + LiteralSymbols);
   private const int MaxRawBytes = LiteralsPerBlock + MatchesPerBlock * 2359;
 
   /// <summary>Largest distance representable by Apple's 64-symbol D alphabet.</summary>
   internal const int MaxMatchDistance = 262_139;
 
-  private static ReadOnlySpan<byte> LExtraBits => [
+  internal static ReadOnlySpan<byte> LExtraBits => [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 5, 8,
   ];
 
-  private static ReadOnlySpan<int> LBaseValue => [
+  internal static ReadOnlySpan<int> LBaseValue => [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 28, 60,
   ];
 
-  private static ReadOnlySpan<byte> MExtraBits => [
+  internal static ReadOnlySpan<byte> MExtraBits => [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 5, 8, 11,
   ];
 
-  private static ReadOnlySpan<int> MBaseValue => [
+  internal static ReadOnlySpan<int> MBaseValue => [
     0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24, 56, 312,
   ];
 
-  private static ReadOnlySpan<byte> DExtraBits => [
+  internal static ReadOnlySpan<byte> DExtraBits => [
     0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3,
     4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7,
     8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11,
     12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15,
   ];
 
-  private static ReadOnlySpan<int> DBaseValue => [
+  internal static ReadOnlySpan<int> DBaseValue => [
     0, 1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24, 28, 36, 44, 52,
     60, 76, 92, 108, 124, 156, 188, 220, 252, 316, 380, 444, 508, 636, 764, 892,
     1020, 1276, 1532, 1788, 2044, 2556, 3068, 3580, 4092, 5116, 6140, 7164,
@@ -177,8 +177,11 @@ internal static class LzfseFseDecoder {
     var v1 = BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader.AsSpan(16));
     var v2 = BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader.AsSpan(24));
 
-    // Masked rather than cast: a checked `(uint)` of the whole word throws on the state bits above it.
-    var headerSize = checked((int)(v2 & 0xFFFFFFFF));
+    // v2 carries the header size in its low 32 bits and the three final FSE states
+    // above them, so the size has to be masked out rather than narrowed: casting the
+    // whole word to uint under `checked` throws for every block whose L/M/D states
+    // are not all zero, which is every non-degenerate bvx2 block.
+    var headerSize = checked((int)(uint)(v2 & 0xFFFFFFFFUL));
     if (headerSize is < V2FixedHeaderSize or > V2MaxHeaderSize)
       throw new InvalidDataException($"LZFSE V2 header size {headerSize} is outside the valid range.");
 
