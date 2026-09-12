@@ -253,6 +253,61 @@ public class FseTests {
       Assert.That(readCounts[i], Is.EqualTo(normalized[i]), $"Count mismatch at symbol {i}");
   }
 
+  [Category("Boundary")]
+  [TestCase(8)]
+  [TestCase(10)]
+  [TestCase(11)]
+  [TestCase(12)]
+  public void NormalizeCounts_OverAWideAlphabet_KeepsEverySymbolAndFillsTheTable(int tableLog) {
+    // A crowded alphabet over a skewed distribution: the two frequent symbols want far more entries
+    // than the table can spare once every one of the 256 present symbols has been given its own.
+    var counts = new int[256];
+    for (var symbol = 0; symbol < 256; ++symbol)
+      counts[symbol] = symbol switch { (byte)'A' => 4824, (byte)'B' => 1932, _ => 6 };
+
+    var normalized = FseEncoder.NormalizeCounts(counts, 255, tableLog);
+
+    var entries = 0;
+    for (var symbol = 0; symbol < 256; ++symbol)
+      entries += normalized[symbol] == -1 ? 1 : normalized[symbol];
+
+    Assert.Multiple(() => {
+      for (var symbol = 0; symbol < 256; ++symbol)
+        Assert.That(normalized[symbol], Is.Not.Zero.And.GreaterThanOrEqualTo(-1),
+          $"symbol {symbol} occurs, so it needs an entry it can be coded from");
+
+      Assert.That(entries, Is.EqualTo(1 << tableLog), "the table is filled exactly");
+    });
+  }
+
+  [Category("Boundary")]
+  [Test]
+  public void NormalizeCounts_WithAsManySymbolsAsEntries_GivesEachExactlyOne() {
+    var counts = new int[256];
+    for (var symbol = 0; symbol < 256; ++symbol)
+      counts[symbol] = symbol + 1;
+
+    // 256 symbols into 256 entries: there is exactly one way to do it, however skewed the counts.
+    var normalized = FseEncoder.NormalizeCounts(counts, 255, 8);
+
+    for (var symbol = 0; symbol < 256; ++symbol)
+      Assert.That(normalized[symbol] == -1 ? 1 : normalized[symbol], Is.EqualTo(1),
+        $"symbol {symbol} holds one entry");
+  }
+
+  [Category("ExceptionalCase")]
+  [Test]
+  public void NormalizeCounts_WithMoreSymbolsThanEntries_IsRefused() {
+    var counts = new int[256];
+    for (var symbol = 0; symbol < 256; ++symbol)
+      counts[symbol] = 1;
+
+    // 256 symbols cannot share 32 entries without one of them losing its entry, and a symbol with no
+    // entry cannot be coded at all -- so this is refused rather than silently dropped.
+    Assert.That(() => FseEncoder.NormalizeCounts(counts, 255, 5),
+      Throws.ArgumentException.With.Message.Contains("raise the table log"));
+  }
+
   [Category("HappyPath")]
   [Category("RoundTrip")]
   [Test]
