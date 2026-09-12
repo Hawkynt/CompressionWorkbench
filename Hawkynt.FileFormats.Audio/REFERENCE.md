@@ -767,7 +767,7 @@ AMR wideband (G.722.2 / 3GPP TS 26.190) coding modes. Nine active ACELP modes pl
 
 ### Namespace `Codec.Atrac1`
 
-[`Atrac1Codec`](#atrac1codec) · [`Atrac1Encoder`](#atrac1encoder) · [`Atrac1EncoderOptions`](#atrac1encoderoptions)
+[`Atrac1Codec`](#atrac1codec)
 
 #### `Atrac1Codec`
 
@@ -782,31 +782,6 @@ Sony ATRAC1 (Adaptive TRansform Acoustic Coding) decoder — a faithful, decode-
 | `FrameSize` | `int FrameSize { get; }` | Coded bytes per frame across all channels (`212 × channels`). |
 | `DecodeStream` | `short[] DecodeStream(ReadOnlySpan<byte> payload)` | Decodes a stream of back-to-back frames. A ragged tail shorter than one frame is ignored. Output is `(payload.Length / FrameSize) × 512 × channels` interleaved int16 samples. |
 | `Decode` | `short[] Decode(ReadOnlySpan<byte> frame)` | Decodes one frame (`FrameSize` bytes) to interleaved signed-16-bit PCM, `512 × channels` samples. State is carried for subsequent calls. |
-
-#### `Atrac1Encoder`
-
-Fixed-rate Sony ATRAC1 encoder. ATRAC1 sound units are always 212 bytes per channel and represent 512 samples at 44.1 kHz. The encoder supports the eight legal long/short-window combinations and every BFU-count selector representable by the three-bit ATRAC1 field.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Atrac1Encoder` | `Atrac1Encoder(int channels, Atrac1EncoderOptions options = null)` | Creates a mono or stereo ATRAC1 encoder. |
-| `Channels` | `int Channels { get; }` | Gets the number of channels encoded by this instance. |
-| `FrameSize` | `int FrameSize { get; }` | Gets the number of coded bytes per 512-sample frame across all channels. |
-| `RequiredSampleRate` | `static int RequiredSampleRate { get; }` | Gets the input sample rate required by ATRAC1. |
-| `EncodeFrame` | `byte[] EncodeFrame(ReadOnlySpan<short> interleavedPcm)` | Encodes exactly one interleaved 512-sample-per-channel frame. Encoder state is retained for the QMF and transform overlap used by subsequent calls. |
-| `EncodeStream` | `byte[] EncodeStream(ReadOnlySpan<short> interleavedPcm)` | Encodes an arbitrary number of complete interleaved PCM frames. A final partial 512-sample frame is zero-padded, matching the fixed ATRAC1 frame geometry. |
-
-#### `Atrac1EncoderOptions`
-
-Controls representable ATRAC1 sound-unit coding choices.
-
-Implements `IEquatable<Atrac1EncoderOptions>`.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Atrac1EncoderOptions` | `Atrac1EncoderOptions()` |  |
-| `BfuCount` | `int BfuCount { get; init; }` | Number of block floating units to carry. Legal values are 20, 28, 32, 36, 40, 44, 48 and 52. |
-| `WindowMask` | `int WindowMask { get; init; }` | Three-bit mask selecting short windows for the low, middle and high QMF bands respectively. Every value from 0 through 7 is representable by the ATRAC1 sound-unit header. |
 
 ### Namespace `Codec.Atrac3`
 
@@ -4446,41 +4421,29 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `AeaFormatDescriptor`
 
-Sony MD STUDIO / MiniDisc AEA container for ATRAC1. The read path accepts the one-to-eight channel layout handled by current ATRAC1 demuxers, while creation follows the interoperable AEA muxing profile: ATRAC1 only, 44100 Hz, mono or stereo, 212 bytes per channel per 512 samples.
+Exposes a Sony MD STUDIO / MiniDisc ATRAC1 file (`.aea`) as a pseudo-archive: the byte-exact original is `FULL.aea` (Kind `Container`), every decoded speaker is a mono 44100 Hz PCM `<CHANNEL>.wav` (Kind `Channel`) via `Codec.Atrac1`, and the 2048-byte header's title + channel count become `metadata.ini` (Kind `Tag`). The AEA header carries no strong magic — it begins with the little-endian marker `00 08 00 00` (matching FFmpeg's demuxer probe), a 256-byte title, a block count and the channel count at offset 264. Detection is therefore structural (LE 0x800 marker + channel count 1/2 + the payload being a whole number of 212-byte-per-channel sound units) and extension-based. Read-only; decode failures degrade to the `FULL.aea` view via try/catch.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AeaFormatDescriptor` | `AeaFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
-| `Category` | `FormatCategory Category { get; }` |  |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
-| `DefaultExtension` | `string DefaultExtension { get; }` |  |
-| `Description` | `string Description { get; }` |  |
-| `DisplayName` | `string DisplayName { get; }` |  |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
-| `Family` | `AlgorithmFamily Family { get; }` |  |
-| `Id` | `string Id { get; }` |  |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
-| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
-| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
-| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
-| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
-| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `LooksLikeAea` | `static bool LooksLikeAea(ReadOnlySpan<byte> data)` | Structural AEA validation: marker, interoperable mono/stereo channel count and a payload containing at least one complete 212-byte-per-channel ATRAC1 frame. The declared block count is advisory because older writers commonly leave it zero. |
-| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
-| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `LooksLikeAea` | `static bool LooksLikeAea(ReadOnlySpan<byte> b)` | Structural validation mirroring FFmpeg's `aea_read_probe`: the four-byte LE marker is 0x800, the channel count at offset 264 is 1 or 2, and the payload after the 2048-byte header is a whole number of `212 × channels`-byte sound units. Exposed so detection / tests can confirm a file is plausibly AEA without decoding it. |
 
 ### Namespace `FileFormat.Ahx`
 
@@ -7632,7 +7595,7 @@ Implements `IEquatable<Track>`.
 
 #### `MkvFormatDescriptor`
 
-Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. Single-audio-track files also participate in the packet-preserving audio remux graph.
+Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can additionally be packet-preserving demuxed and muxed through the audio pipeline.
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
@@ -7650,7 +7613,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the encoded audio codecs the Matroska writer can carry without re-encoding. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
@@ -7660,7 +7623,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
-| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` | Exposes the single supported audio track as encoded packets. Multi-audio-track files remain available through the archive/demux surface because `AudioEncodedStream` represents one logical encoded stream and silently choosing one track would lose information. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `MkvLayoutMap`
 

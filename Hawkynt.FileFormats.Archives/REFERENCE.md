@@ -11347,7 +11347,7 @@ Implements `IEquatable<Track>`.
 
 #### `MkvFormatDescriptor`
 
-Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. Single-audio-track files also participate in the packet-preserving audio remux graph.
+Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can additionally be packet-preserving demuxed and muxed through the audio pipeline.
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
@@ -11365,7 +11365,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the encoded audio codecs the Matroska writer can carry without re-encoding. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
@@ -11375,7 +11375,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
-| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` | Exposes the single supported audio track as encoded packets. Multi-audio-track files remain available through the archive/demux surface because `AudioEncodedStream` represents one logical encoded stream and silently choosing one track would lose information. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `MkvLayoutMap`
 
