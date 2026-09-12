@@ -11419,13 +11419,26 @@ Implements `IEquatable<ChunkEntry>`.
 
 ### Namespace `FileFormat.Mcm`
 
-[`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+[`McmCompressionMode`](#mcmcompressionmode) · [`McmFormatDescriptor`](#mcmformatdescriptor) · [`McmStream`](#mcmstream)
+
+#### `McmCompressionMode`
+
+Compression modes available to the managed MCM stream writer.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Legacy` | `0` |  |
+| `Turbo` | `1` |  |
+| `Fast` | `2` |  |
+| `Mid` | `3` |  |
+| `High` | `4` |  |
+| `Max` | `5` |  |
 
 #### `McmFormatDescriptor`
 
 Describes mcm format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11441,8 +11454,11 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Searchable MCM modes. Legacy preserves the writer's historical payload; the remaining modes progressively enable more of the reduced clean-room context-mixing graph and therefore trade CPU/memory for coding density. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Encodes with the highest-effort managed MCM profile. |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input with the selected profile. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 #### `McmStream`
@@ -11451,7 +11467,8 @@ Represents a mcm stream.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Encodes the supplied input using the historical managed payload. |
+| `Compress` | `static void Compress(Stream input, Stream output, McmCompressionMode mode)` | Encodes the supplied input using the selected managed MCM mode. |
 | `Decompress` | `static void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
 ### Namespace `FileFormat.Mdb`
