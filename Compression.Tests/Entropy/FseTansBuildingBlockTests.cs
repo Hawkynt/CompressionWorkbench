@@ -60,7 +60,9 @@ public class FseTansBuildingBlockTests {
   private static byte[] MakeSkewedData(int length) {
     var result = new byte[length];
     for (var i = 0; i < result.Length; ++i)
-      result[i] = i % 17 switch {
+      // The parentheses are load-bearing: a switch expression binds tighter than %, so `i % 17 switch`
+      // would mean `i % (17 switch ...)` -- which divides by the last arm's value.
+      result[i] = (i % 17) switch {
         < 10 => (byte)'A',
         < 14 => (byte)'B',
         14 => (byte)'C',
