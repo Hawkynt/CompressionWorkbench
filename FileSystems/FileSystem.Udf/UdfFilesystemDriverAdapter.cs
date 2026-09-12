@@ -8,7 +8,10 @@ namespace FileSystem.Udf;
 /// editor surface; mount backends receive a parsed stable namespace plus
 /// positional file handles over the decoded allocation-descriptor map.
 /// </summary>
-public sealed class UdfFilesystemDriverAdapter : IFilesystemDriverAdapter {
+public sealed class UdfFilesystemDriverAdapter :
+  IFilesystemDriverAdapter,
+  IBlockDeviceFilesystemDriverProvider {
+
   public string FormatId => "Udf";
 
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
@@ -43,7 +46,7 @@ public sealed class UdfFilesystemDriverAdapter : IFilesystemDriverAdapter {
         CanMountWritable: false,
         [
           "Regular-file handles read directly across decoded short_ad/long_ad extents and embedded data; unrecorded extents are exposed as zero-filled ranges.",
-          "Continuation allocation-descriptor chains and non-primary partition-map references fail closed until their address-space semantics are implemented.",
+          "Type 1 ECMA-167 partition maps and continuation allocation-descriptor chains are resolved natively; UDF Type 2 virtual/sparable/metadata maps remain fail-closed until their remapping semantics are implemented.",
           "Mounted writes remain disabled: existing UDF modification/defragmentation APIs do not provide complete open-handle, arbitrary-directory, truncate, and durability semantics.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
@@ -65,6 +68,24 @@ public sealed class UdfFilesystemDriverAdapter : IFilesystemDriverAdapter {
       throw new InvalidDataException("UDF image is not mountable: " + string.Join("; ", profile.Limitations));
 
     return new UdfReadOnlyFilesystemSession(image, profile, options.LeaveOpen);
+  }
+
+  public FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device) {
+    ArgumentNullException.ThrowIfNull(device);
+    using var stream = new BlockDeviceStream(device, leaveOpen: true);
+    return ProbeFilesystem(stream);
+  }
+
+  public IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options) {
+    ArgumentNullException.ThrowIfNull(device);
+    ArgumentNullException.ThrowIfNull(options);
+    var stream = new BlockDeviceStream(device, leaveOpen: false);
+    try {
+      return OpenFilesystem(stream, options with { LeaveOpen = false });
+    } catch {
+      stream.Dispose();
+      throw;
+    }
   }
 
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
