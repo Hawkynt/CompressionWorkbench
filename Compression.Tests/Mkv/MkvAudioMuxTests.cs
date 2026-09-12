@@ -1,3 +1,4 @@
+using System;
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using Compression.Registry;
@@ -7,6 +8,10 @@ namespace Compression.Tests.Mkv;
 
 [TestFixture]
 public sealed class MkvAudioMuxTests {
+
+  /// <summary>The EBML identifier of a Cluster element.</summary>
+  private static ReadOnlySpan<byte> _ClusterId => [0x1F, 0x43, 0xB6, 0x75];
+
 
   [Test, Category("HappyPath")]
   public void DescriptorAdvertisesPacketMuxAndCreation() {
@@ -96,9 +101,9 @@ public sealed class MkvAudioMuxTests {
         .Single(static element => element.Id == 0xF1);
       var relative = reader.ReadUnsigned(clusterPosition);
       var absolute = checked(segment.Value.BodyOffset + (long)relative);
-      // A collection expression has no type of its own, so the comparand is named: SequenceEqual on a
-      // Span needs a ReadOnlySpan to infer from.
-      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual(stackalloc byte[] { 0x1F, 0x43, 0xB6, 0x75 }), Is.True,
+      // A collection expression has no type of its own for SequenceEqual to infer from, and this sits
+      // inside a loop, so the comparand is a shared constant rather than a fresh stack allocation.
+      Assert.That(file.AsSpan((int)absolute, 4).SequenceEqual(_ClusterId), Is.True,
         $"CueClusterPosition {relative} does not point to a Cluster element");
     }
   }
