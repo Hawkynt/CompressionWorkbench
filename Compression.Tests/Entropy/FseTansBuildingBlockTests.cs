@@ -60,12 +60,14 @@ public class FseTansBuildingBlockTests {
   private static byte[] MakeSkewedData(int length) {
     var result = new byte[length];
     for (var i = 0; i < result.Length; ++i)
-      result[i] = i % 17 switch {
-        < 10 => (byte)'A',
-        < 14 => (byte)'B',
-        14 => (byte)'C',
-        _ => (byte)(i & 0xFF),
-      };
+      // The arms are widened to int by the relational patterns, so the result is narrowed once here
+      // rather than in each arm.
+      result[i] = (byte)(i % 17 switch {
+        < 10 => 'A',
+        < 14 => 'B',
+        14 => 'C',
+        _ => (char)(i & 0xFF),
+      });
     return result;
   }
 }

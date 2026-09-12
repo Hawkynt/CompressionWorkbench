@@ -230,6 +230,8 @@ public class SzddTests {
     using var destination = new MemoryStream();
     operations.CompressOptimal(source, destination);
     return destination.ToArray();
+  }
+
   [Category("Interop")]
   [Category("Regression")]
   [Test]
