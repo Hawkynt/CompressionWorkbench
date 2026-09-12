@@ -132,7 +132,10 @@ internal static class LzfseCompressedBlock {
     for (var i = 0; i < 4; ++i)
       header.LiteralStates[i] = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(32 + i * 2)..]);
 
-    var offset = 52;
+    // The frequencies follow d_state immediately: the three state words sit at 44, 46 and 48, so the
+    // tables start at 50 and run to 770. The two bytes that make the header 772 are the trailing
+    // alignment of the C structure and come after them, not before.
+    var offset = 50;
     ReadFrequencyArray(bytes, ref offset, header.LFrequency);
     ReadFrequencyArray(bytes, ref offset, header.MFrequency);
     ReadFrequencyArray(bytes, ref offset, header.DFrequency);
@@ -150,7 +153,7 @@ internal static class LzfseCompressedBlock {
     var packed0 = BinaryPrimitives.ReadUInt64LittleEndian(bytes[8..]);
     var packed1 = BinaryPrimitives.ReadUInt64LittleEndian(bytes[16..]);
     var packed2 = BinaryPrimitives.ReadUInt64LittleEndian(bytes[24..]);
-    var headerBytes = checked((int)(uint)packed2);
+    var headerBytes = checked((int)(packed2 & 0xFFFFFFFF));
     if (headerBytes < V2MinimumHeaderSize || headerBytes > bytes.Length)
       throw new InvalidDataException($"LZFSE bvx2 header size {headerBytes} is invalid.");
 
@@ -183,7 +186,10 @@ internal static class LzfseCompressedBlock {
   internal static int ReadV2HeaderSize(ReadOnlySpan<byte> fixedHeader) {
     if (fixedHeader.Length < V2MinimumHeaderSize)
       throw new InvalidDataException("LZFSE bvx2 fixed header is truncated.");
-    return checked((int)(uint)BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader[24..]));
+    // The header size is the low 32 bits of the word; the state values share the high ones. The mask
+    // has to be written out: inside a checked context `(uint)` of a wider value throws rather than
+    // truncating, so casting alone would reject every header that carries a state at all.
+    return checked((int)(BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader[24..]) & 0xFFFFFFFF));
   }
 
   internal static void Decode(Header header, ReadOnlySpan<byte> payload, Stream output, History history) {
@@ -616,15 +622,24 @@ internal static class LzfseCompressedBlock {
       }
     }
 
+    /// <summary>Looks at the next bits, reading zeroes past the end of the table.</summary>
+    /// <remarks>
+    /// A code's length is decided by looking at five bits, but the shortest codes are two bits long,
+    /// so the last entry in the table can leave fewer than five behind. The bits past the end are the
+    /// writer's padding to the byte boundary, which is zero -- and the length lookup only depends on
+    /// the low bits, so reading them costs nothing. Consuming bits that are not there is the error,
+    /// and <see cref="Read"/> is where that is caught.
+    /// </remarks>
     internal ulong Peek(int count) {
       this.Refill(count);
-      if (this._bits < count)
-        throw new InvalidDataException("LZFSE bvx2 frequency table is truncated.");
       return this._accumulator & ((1UL << count) - 1);
     }
 
     internal ulong Read(int count) {
       var value = this.Peek(count);
+      if (this._bits < count)
+        throw new InvalidDataException("LZFSE bvx2 frequency table is truncated.");
+
       this._accumulator >>= count;
       this._bits -= count;
       return value;

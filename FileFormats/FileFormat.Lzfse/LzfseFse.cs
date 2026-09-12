@@ -259,29 +259,27 @@ internal static class LzfseFse {
         throw new InvalidDataException($"LZFSE FSE initial bit count {initialBits} is outside [-7,0].");
 
       this._buffer = buffer;
+
+      // The stream is read backwards from its end, priming the accumulator with the last word.
+      // Apple's decoder always takes a whole eight bytes and is free to reach in front of the payload
+      // for them, because there it sits inside the block buffer. A managed slice has nothing in front
+      // of it, so a payload shorter than the word is primed with everything it has instead: the same
+      // bits, minus the reach. A block whose literals or matches are few enough produces exactly such
+      // a payload, and refusing it would make those blocks undecodable.
+      var wordBytes = initialBits != 0 ? 8 : 7;
+      var primeBytes = Math.Min(buffer.Length, wordBytes);
+
       this._accumulator = 0;
-      this._bitCount = 0;
-      this._pointer = 0;
+      for (var i = 0; i < primeBytes; ++i)
+        this._accumulator |= (ulong)buffer[buffer.Length - primeBytes + i] << (i * 8);
 
-      if (initialBits != 0) {
-        if (buffer.Length < 8)
-          throw new InvalidDataException("LZFSE FSE bitstream is too short for its initial state.");
-        this._accumulator = BinaryPrimitives.ReadUInt64LittleEndian(buffer[^8..]);
-        this._bitCount = initialBits + 64;
-        this._pointer = buffer.Length - 8;
-      } else if (buffer.Length == 0) {
-        this._bitCount = 56;
-      } else {
-        if (buffer.Length < 7)
-          throw new InvalidDataException("LZFSE FSE bitstream is too short for its initial state.");
-        var tail = buffer[^7..];
-        for (var i = 0; i < tail.Length; ++i)
-          this._accumulator |= (ulong)tail[i] << (i * 8);
-        this._bitCount = 56;
-        this._pointer = buffer.Length - 7;
-      }
+      this._pointer = buffer.Length - primeBytes;
+      this._bitCount = primeBytes * 8 + initialBits;
 
-      if (this._bitCount is < 56 or >= 64 || this._accumulator >> this._bitCount != 0)
+      if (this._bitCount < 0)
+        throw new InvalidDataException("LZFSE FSE bitstream is too short for its initial state.");
+
+      if (this._accumulator >> this._bitCount != 0)
         throw new InvalidDataException("LZFSE FSE bitstream has non-zero padding bits.");
     }
 

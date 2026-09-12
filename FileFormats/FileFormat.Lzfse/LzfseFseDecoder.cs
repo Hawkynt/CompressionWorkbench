@@ -177,7 +177,8 @@ internal static class LzfseFseDecoder {
     var v1 = BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader.AsSpan(16));
     var v2 = BinaryPrimitives.ReadUInt64LittleEndian(fixedHeader.AsSpan(24));
 
-    var headerSize = checked((int)(uint)v2);
+    // Masked rather than cast: a checked `(uint)` of the whole word throws on the state bits above it.
+    var headerSize = checked((int)(v2 & 0xFFFFFFFF));
     if (headerSize is < V2FixedHeaderSize or > V2MaxHeaderSize)
       throw new InvalidDataException($"LZFSE V2 header size {headerSize} is outside the valid range.");
 

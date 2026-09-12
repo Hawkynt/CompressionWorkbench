@@ -74,10 +74,12 @@ public class LzfseEntropyBlockTests {
     // Deliberately use only one state in each FSE table. Apple's fse_check_freq accepts
     // sum(freq) <= stateCount; state zero remains fully defined and the zero payload keeps
     // every transition on state zero.
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(54), 1);  // L symbol 1 => L=1, 1/64 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(92), 1);  // M symbol 0 => M=0, 1/64 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(132), 1); // D symbol 0 => D=0, 1/256 states
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(260), 1); // literal 0, 1/1024 states
+    // The frequency tables begin at byte 50, where the C structure puts l_freq: L runs to 90, M to
+    // 130, D to 258 and the literals to 770.
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(52), 1);  // L symbol 1 => L=1, 1/64 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(90), 1);  // M symbol 0 => M=0, 1/64 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(130), 1); // D symbol 0 => D=0, 1/256 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(258), 1); // literal 0, 1/1024 states
 
     BinaryPrimitives.WriteUInt32LittleEndian(encoded.AsSpan(headerSize + payloadSize), 0x24787662u); // bvx$
 
@@ -112,7 +114,7 @@ public class LzfseEntropyBlockTests {
     const int headerSize = 772;
     var encoded = new byte[headerSize];
     BinaryPrimitives.WriteUInt32LittleEndian(encoded, 0x31787662u);
-    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(52), 65); // L has only 64 states
+    BinaryPrimitives.WriteUInt16LittleEndian(encoded.AsSpan(50), 65); // L starts at 50 and has 64 states
 
     using var input = new MemoryStream(encoded);
     using var output = new MemoryStream();
