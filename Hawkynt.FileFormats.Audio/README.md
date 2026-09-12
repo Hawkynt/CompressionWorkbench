@@ -161,7 +161,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Ac3` | AC-3 / E-AC-3 | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] stream converts to its declared length | Raw AC-3/E-AC-3 independent substreams |
 | `Acm` | Interplay ACM (Fallout / Baldur's Gate audio) | WORM | ✅ | ✅ | ✅ | ✅ | — | Interplay ACM; PCM encode/decode and packet-preserving standalone remux |
 | `Adx` | CRI ADX | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] stream, byte-exact | CRI ADX/AHX paths |
-| `Aea` | Sony ATRAC1 / MiniDisc (.aea) | R | — | — | — | — | — | Sony MiniDisc AEA / ATRAC1 |
+| `Aea` | Sony ATRAC1 / MiniDisc (.aea) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] decodes our ATRAC1 and the tone survives | Sony MiniDisc AEA / ATRAC1; the encoder is ours, so the bitstream is legal rather than byte-identical to a MiniDisc recorder's |
 | `Ahx` | AHX / THX Synth-Tracker | WORM | — | — | ✅ | ✅ | — | AHX / THX Synth-Tracker; demuxes to metadata.ini plus the module parts and muxes them back into a module |
 | `Aica` | Yamaha AICA ADPCM (Dreamcast) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg], through the WAVE `0x0020` route | Yamaha AICA raw; headerless mono, 22050 Hz assumed on decode |
 | `Aiff` | AIFF / AIFC (Apple audio) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] probes ours and supplies the `ima4` fixture | AIFF/AIFC; multi-channel assembly from channel WAVs |
