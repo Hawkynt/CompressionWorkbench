@@ -34,7 +34,8 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 
 | State | Meaning |
 | --- | --- |
-| **R** | Open, list and extract only. For network, distributed and encrypted formats this is detection of the on-disk signature plus whatever metadata the object carries. |
+| **N/A** | The domain is registered, but it is not representable by the package's current single-stream image/container abstraction. |
+| **R** | Open, list and extract an existing image/container. |
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
@@ -215,7 +216,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
-| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | R | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | [official target-directory layout](https://doc.beegfs.io/latest/advanced_topics/manual_installation.html) | Directory-backed distributed targets on ext4/XFS; no standalone BeeGFS byte-stream/image | [BeeGFS manual installation](https://doc.beegfs.io/latest/advanced_topics/manual_installation.html) |
 | [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
@@ -335,6 +336,7 @@ cwb recover raw.img --mode files --format Jpeg,Png
 - **GFS2** R/W is the standalone `lock_nolock` profile with regular files in the root directory; small files are stuffed and larger files use the indirect tree. Existing-image edits rebuild the volume while preserving its size floor and lock-table value. ExHash/nested-directory writing, journal replay, cluster-lock-manager state and extended attributes remain out of scope.
 - **TUX2** R/W is intentionally limited to the structurally validated Ext2 compatibility path described by the historical design goals. Images outside that conservative profile remain opaque, and this project does not pretend to reconstruct an unpublished standalone phase-tree persistence format.
 - **NSS** is detection only: Novell never published the format, and the writer deliberately emits a container under its own magic that no NetWare or OES release would take for a pool. What was learned from real media is in [NSS-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md).
+- **BeeGFS** is N/A at the stream-image layer: its metadata and storage targets are directories on local filesystems, and one logical namespace can span multiple targets. Supporting it requires a directory-/multi-target snapshot contract rather than another byte-stream parser.
 - Network and distributed formats generally carry no self-contained image. eCryptfs is the encrypted exception handled here: a lower file is structurally self-contained, and the passphrase profile is supported for AES-128/192/256; private-key authentication and xattr-only metadata remain unsupported.
 - Disk-image container support and inner-filesystem support are separate capabilities; a container marked R/W edits the filesystem inside it through that filesystem's own descriptor.
 
