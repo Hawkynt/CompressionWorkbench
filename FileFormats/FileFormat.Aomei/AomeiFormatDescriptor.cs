@@ -67,6 +67,8 @@ namespace FileFormat.Aomei;
 ///   <item><description><c>https://www.aomeitech.com</c> — vendor — the .adi/.afi container is proprietary and unpublished</description></item>
 ///   <item><description><c>docs/AOMEI_FORMAT_SPEC.md</c> (this repository) — reverse-engineered BIFH/BIFT + BR_STANDARD_HEADER on-disk spec</description></item>
 /// </list>
+/// <para>AOMEI never published a specification. What is known of the on-disk layout was recovered
+/// by decompiling the shipped binaries, and is written down in <c>docs/AOMEI_FORMAT_SPEC.md</c>.</para>
 /// </summary>
 public sealed class AomeiFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable {
 
