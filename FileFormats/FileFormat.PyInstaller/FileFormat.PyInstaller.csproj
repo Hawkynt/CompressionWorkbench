@@ -1,8 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <RootNamespace>FileFormat.PyInstaller</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
-  </ItemGroup>
-</Project>
