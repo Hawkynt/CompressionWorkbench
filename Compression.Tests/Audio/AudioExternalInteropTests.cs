@@ -2,8 +2,10 @@
 
 using System.Buffers.Binary;
 using System.Globalization;
+using Codec.Atrac1;
 using Codec.Pcm;
 using Compression.Registry;
+using FileFormat.Aea;
 using FileFormat.Au;
 using FileFormat.Caf;
 using FileFormat.Flac;
@@ -518,5 +520,80 @@ public sealed class AudioExternalInteropTests {
     var entries = new OpusFormatDescriptor().List(input, password: null);
     Assert.That(entries.Any(e => e.Name.Equals("FULL.opus", StringComparison.OrdinalIgnoreCase)), Is.True,
       "our Opus reader did not surface FULL.opus");
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  AEA / ATRAC1 — our encoder against ffmpeg's decoder
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Given an AEA written by our ATRAC1 encoder from a 440 Hz tone,
+  /// When ffmpeg decodes it with its own ATRAC1 decoder,
+  /// Then the decoded signal is still that tone: 440 Hz carries far more energy than
+  ///  its neighbours, and the level lands within a few dB of the source.
+  /// </summary>
+  /// <remarks>
+  /// "ffmpeg exits zero" is not enough for a lossy codec -- an encoder that wrote the
+  /// right-sized frames full of the wrong bits would pass that and produce noise. This
+  /// asks what the samples actually contain.
+  /// </remarks>
+  [Test]
+  public void Aea_OurAtrac1Encoder_FfmpegDecodesTheToneBack() {
+    RequireTool("ffmpeg");
+    var pcm = GenerateMonoPcm();
+    var aea = CreateContainer(new AeaFormatDescriptor(), MonoWavBlob(pcm));
+    var aeaPath = this.WriteToTmp("ours.aea", aea);
+    var rawPath = Path.Combine(this._tmpDir, "decoded.raw");
+
+    var decode = FsInteropToolbox.RunWsl(
+      $"ffmpeg -hide_banner -v error -y -i {FsInteropToolbox.WinToWsl(aeaPath)} " +
+      $"-f s16le -acodec pcm_s16le -ac 1 {FsInteropToolbox.WinToWsl(rawPath)}");
+    Assert.That(decode.ExitCode, Is.Zero, $"ffmpeg could not decode our AEA\nstderr: {decode.StdErr}");
+
+    var decoded = ReadInt16Samples(rawPath);
+    Assert.That(decoded.Length, Is.GreaterThan(SampleRate / 2),
+      "ffmpeg decoded less than half a second from a one-second tone");
+
+    // ATRAC1 carries a whole frame of transform overlap, so the first frames are the
+    // encoder's start-up transient. The steady state is what the tone has to survive.
+    var steady = decoded[Atrac1Codec.SamplesPerFrame..];
+    var atTone = GoertzelMagnitude(steady, 440.0);
+    Assert.Multiple(() => {
+      foreach (var neighbour in new[] { 220.0, 880.0, 1760.0 })
+        Assert.That(atTone, Is.GreaterThan(4 * GoertzelMagnitude(steady, neighbour)),
+          $"440 Hz should dominate {neighbour} Hz");
+
+      var sourceLevel = GoertzelMagnitude(ToInt16Samples(pcm)[Atrac1Codec.SamplesPerFrame..], 440.0);
+      Assert.That(atTone, Is.InRange(sourceLevel / 4, sourceLevel * 4),
+        "the decoded tone is within a couple of doublings of the level that was encoded");
+    });
+  }
+
+  /// <summary>Reads a raw little-endian 16-bit mono PCM file as samples.</summary>
+  private static short[] ReadInt16Samples(string path) => ToInt16Samples(File.ReadAllBytes(path));
+
+  private static short[] ToInt16Samples(ReadOnlySpan<byte> bytes) {
+    var samples = new short[bytes.Length / 2];
+    for (var i = 0; i < samples.Length; ++i)
+      samples[i] = BinaryPrimitives.ReadInt16LittleEndian(bytes[(i * 2)..]);
+
+    return samples;
+  }
+
+  /// <summary>
+  /// Energy at one frequency, by Goertzel's recurrence -- a single DFT bin without the
+  /// rest of the transform.
+  /// </summary>
+  private static double GoertzelMagnitude(ReadOnlySpan<short> samples, double frequency) {
+    var coefficient = 2.0 * Math.Cos(2.0 * Math.PI * frequency / SampleRate);
+    double previous = 0, beforeThat = 0;
+    foreach (var sample in samples) {
+      var current = sample + coefficient * previous - beforeThat;
+      beforeThat = previous;
+      previous = current;
+    }
+
+    return Math.Sqrt(previous * previous + beforeThat * beforeThat - coefficient * previous * beforeThat)
+      / samples.Length;
   }
 }
