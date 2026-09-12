@@ -17701,7 +17701,7 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Szdd`
 
-[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
+[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzCompressOptimizer`](#szcompressoptimizer) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
 
 #### `SzCompressFormatDescriptor`
 
@@ -17729,6 +17729,15 @@ Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input using the fast legacy parser. |
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested parse strategy. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
+
+#### `SzCompressOptimizer`
+
+Size optimizer for the older Microsoft `"SZ "` COMPRESS stream used by the QBasic-era tooling. The emitted stream remains the original 12-byte header plus SZDD-compatible LZSS body; only the token parse is improved.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses `input` as an optimized legacy `"SZ "` stream and returns the complete encoded file. |
+| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as an optimized legacy `"SZ "` stream and writes it to `output`. |
 
 #### `SzOptimizer`
 
