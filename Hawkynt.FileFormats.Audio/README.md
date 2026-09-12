@@ -224,7 +224,7 @@ still readable as a pseudo-archive — see the carried-data model below.
 | `Maud` | IFF/MAUD (MacroSystem) | WORM | — | — | — | — | — | Amiga IFF MAUD |
 | `Med` | OctaMED (MMD0 / MMD1) | R | — | — | — | — | — | OctaMED sample archive |
 | `Midi` | MIDI (Standard MIDI File) | WORM | — | — | — | — | — | SMF 0/1/2 container |
-| `Mkv` | MKV / WebM | R | — | — | ✅ | ✅ | — | Matroska/WebM audio-track routing, attachments/lacing as implemented; packet-preserving WebM Opus/Vorbis demux and mux |
+| `Mkv` | MKV / WebM | WORM | — | — | ✅ | ✅ | — | Matroska/WebM audio-track routing, attachments/lacing as implemented; packet-preserving WebM Opus/Vorbis demux and mux |
 | `Mod` | MOD (ProTracker / SoundTracker) | R | — | — | — | — | — | ProTracker/SoundTracker MOD render + samples |
 | `Mp3` | MP3 (MPEG audio) | WORM | ✅ | ✅ | ✅ | ✅ | [ffmpeg][ffmpeg] on [LAME][lame] streams | MP3 — ID3v1/v2 tags + decoded channels; fresh MP3 stream construction surface |
 | `Mp4` | MP4 / MOV (demuxed) | WORM | — | ✅ | — | ✅ | [ffmpeg][ffmpeg] AAC-LC track, to the exact length | MP4/MOV audio tracks routed to AAC/ALAC/MP3/AC-3/FLAC/Opus/PCM; video stays a carried track |

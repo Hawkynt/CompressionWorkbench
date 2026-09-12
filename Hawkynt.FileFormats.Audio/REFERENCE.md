@@ -7607,8 +7607,9 @@ Implements `IEquatable<FrameEntry>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FrameEntry` | `FrameEntry(byte[] Data)` | A single block (frame) from a track. |
-| `Data` | `byte[] Data { get; init; }` |  |
+| `FrameEntry` | `FrameEntry(byte[] Data, long TimestampTicks = -1)` | A single block (frame) from a track. |
+| `Data` | `byte[] Data { get; init; }` | The frame's bytes, exactly as they were stored. |
+| `TimestampTicks` | `long TimestampTicks { get; init; }` | When the frame plays, in the segment's timestamp ticks, or `-1` where the block did not say. It is kept because some codecs do not carry their own duration: Vorbis packets state nothing a reader can measure without the setup headers, so the only thing that says how long one lasts is when the next one starts. |
 
 #### `MkvDemuxer.Track`
 
@@ -7632,7 +7633,7 @@ Implements `IEquatable<Track>`.
 
 #### `MkvFormatDescriptor`
 
-Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. WebM Opus/Vorbis audio can additionally be packet-preserving demuxed and muxed through the audio pipeline.
+Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. Single-audio-track files also participate in the packet-preserving audio remux graph.
 
 Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
@@ -7650,7 +7651,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` | Gets the encoded audio codecs this writer can carry without re-encoding. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` |  |
@@ -7660,7 +7661,8 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 | `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
 | `Optimize` | `void Optimize(Stream file)` |  |
 | `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` |  |
-| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+| `SupportedMuxCodecsFor` | `IReadOnlyList<string> SupportedMuxCodecsFor(FormatCreateOptions options)` | The codecs the stated profile permits. |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` | Exposes the single supported audio track as encoded packets. Multi-audio-track files remain available through the archive/demux surface because `AudioEncodedStream` represents one logical encoded stream and silently choosing one track would lose information. |
 
 #### `MkvLayoutMap`
 
