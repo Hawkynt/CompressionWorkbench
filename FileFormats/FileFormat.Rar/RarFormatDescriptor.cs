@@ -6,16 +6,16 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Rar;
 
 /// <summary>
-/// RAR archive (RAR4 and RAR5 container framing).
+/// RAR archive reader/writer with selectable RAR 1.5, RAR4 and RAR5 creation targets.
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://www.rarlab.com/technote.htm</c> — RAR 5.0 archive format technote (RARLAB, official)</description></item>
-///   <item><description>unrar source distribution (rarlab.com) — de-facto reference for RAR4 decoding</description></item>
+///   <item><description>RAR 1.5-4.x technical notes / unrar source distribution — legacy container and decoder compatibility</description></item>
 ///   <item><description><c>https://en.wikipedia.org/wiki/RAR_(file_format)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap {
+public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveLayoutMap, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => RarLayoutMap.Enumerate(archive);
@@ -54,19 +54,29 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     new([(byte)'R', (byte)'a', (byte)'r', (byte)'!', 0x1A, 0x07, 0x01, 0x00], Confidence: 0.95)
   ];
   /// <summary>
-  /// Gets the methods.
+  /// Gets the methods. The legacy rar4/rar5/rar15 names remain accepted as compatibility aliases.
   /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
-    new("rar5", "RAR 5"), new("rar4", "RAR 4"), new("store", "Store")
+    new("rar5", "RAR 5"), new("rar4", "RAR 4"), new("rar15", "RAR 1.5 (store)"), new("store", "Store")
   ];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "RAR archive with solid compression and recovery records. Pure RAR5 additions " +
-    "append FILE blocks before ENDARC without copying existing packed data; supported " +
-    "non-solid removals shift only the physical tail after removed blocks. Encrypted, " +
-    "recovery/quick-open, solid-dependent, RAR4, directory-add, and same-name update " +
-    "cases fall back to verified rebuild.";
+    "RAR archive with explicit writer compatibility targets. RAR 5 and RAR 4 use the managed " +
+    "compression paths; RAR 1.5 creation currently emits fully compatible stored members with UNP_VER=15. " +
+    "Pure RAR5 additions/removals use random-access block editors, while unsupported profiles rebuild.";
+
+  /// <summary>Writer-generation constraint shown independently of the compression method.</summary>
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
+    new FormatOptionDescriptor(
+      Key: FormatOptionKeys.TargetCompatibility,
+      DisplayName: "Target compatibility",
+      Kind: FormatOptionKind.Enum,
+      Default: nameof(RarCompatibility.Rar5),
+      AllowedValues: [nameof(RarCompatibility.Rar5), nameof(RarCompatibility.Rar4), nameof(RarCompatibility.Rar1_5)],
+      Description: "Select the oldest RAR generation that must read the archive. Rar1_5 currently writes stored, non-solid, unencrypted members; RAR 1.3 and older use a different RE~^ format and are not claimed here.",
+      IsOptimizationAxis: false),
+  ];
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -125,40 +135,87 @@ public sealed class RarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Builds a RAR archive from <paramref name="inputs"/>. Selects RAR4 or RAR5
-  /// based on <c>options.MethodName</c> and resolves dictionary / level from
-  /// <c>options.DictSize</c> / <c>options.Level</c>.
+  /// Builds a RAR archive from <paramref name="inputs"/>. <see cref="FormatOptionKeys.TargetCompatibility"/>
+  /// selects the container generation independently of compression level. Legacy MethodName values
+  /// <c>rar5</c>, <c>rar4</c> and <c>rar15</c> remain compatibility aliases when the explicit option is absent.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var useRar4 = options.MethodName == "rar4";
-    var useStore = options.MethodName is "store" or "copy";
+    var target = ResolveCompatibility(options);
+    var useStore = target == RarCompatibility.Rar1_5 || options.MethodName is "store" or "copy";
     var rarLevel = useStore ? 0 : options.Level switch {
       0 => 0, 1 => 1, 2 => 2, 3 or 4 => 3, 5 or 6 => 4, >= 7 => 5, _ => 3,
     };
 
-    if (useRar4) {
-      var windowBits = options.DictSize > 0
-        ? Math.Clamp((int)Math.Log2(options.DictSize), 15, 22) : 20;
-      var rar4Method = (byte)(0x30 + rarLevel);
-      var w4 = new Rar4Writer(output, method: rar4Method, windowBits: windowBits,
-        solid: options.SolidSize == 0, password: options.Password);
-      foreach (var i in inputs) {
-        if (i.IsDirectory) continue;
-        w4.AddFile(i.ArchiveName, i.ReadContent());
-      }
-      w4.Finish();
-    } else {
-      var dictLog = options.DictSize > 0
-        ? Math.Clamp((int)Math.Log2(options.DictSize), 17, 28) : 17;
-      var w = new RarWriter(output, method: rarLevel, dictionarySizeLog: dictLog,
-        solid: options.SolidSize == 0, password: options.Password,
-        encryptHeaders: options.EncryptFilenames);
-      foreach (var i in inputs) {
-        if (i.IsDirectory) continue;
-        w.AddFile(i.ArchiveName, i.ReadContent());
-      }
-      w.Finish();
+    switch (target) {
+      case RarCompatibility.Rar1_5:
+        if (!string.IsNullOrEmpty(options.Password) || options.EncryptFilenames || !string.IsNullOrEmpty(options.EncryptionMethod))
+          throw new NotSupportedException("RAR 1.5 compatibility currently supports unencrypted archives only.");
+
+        using (var w15 = new Rar4Writer(
+                 output,
+                 leaveOpen: true,
+                 method: RarConstants.Rar4MethodStore,
+                 windowBits: 16,
+                 solid: false,
+                 password: null,
+                 targetCompatibility: RarCompatibility.Rar1_5)) {
+          foreach (var i in inputs) {
+            if (i.IsDirectory) continue;
+            w15.AddFile(i.ArchiveName, i.ReadContent());
+          }
+          w15.Finish();
+        }
+        break;
+
+      case RarCompatibility.Rar4:
+        var windowBits = options.DictSize > 0
+          ? Math.Clamp((int)Math.Log2(options.DictSize), 15, 22) : 20;
+        var rar4Method = (byte)(0x30 + rarLevel);
+        using (var w4 = new Rar4Writer(
+                 output,
+                 leaveOpen: true,
+                 method: rar4Method,
+                 windowBits: windowBits,
+                 solid: options.SolidSize == 0,
+                 password: options.Password,
+                 targetCompatibility: RarCompatibility.Rar4)) {
+          foreach (var i in inputs) {
+            if (i.IsDirectory) continue;
+            w4.AddFile(i.ArchiveName, i.ReadContent());
+          }
+          w4.Finish();
+        }
+        break;
+
+      case RarCompatibility.Rar5:
+        var dictLog = options.DictSize > 0
+          ? Math.Clamp((int)Math.Log2(options.DictSize), 17, 28) : 17;
+        using (var w = new RarWriter(output, leaveOpen: true, method: rarLevel, dictionarySizeLog: dictLog,
+                 solid: options.SolidSize == 0, password: options.Password,
+                 encryptHeaders: options.EncryptFilenames)) {
+          foreach (var i in inputs) {
+            if (i.IsDirectory) continue;
+            w.AddFile(i.ArchiveName, i.ReadContent());
+          }
+          w.Finish();
+        }
+        break;
+
+      default:
+        throw new ArgumentOutOfRangeException(nameof(options), target, "Unknown RAR compatibility target.");
     }
+  }
+
+  private static RarCompatibility ResolveCompatibility(FormatCreateOptions options) {
+    if (options.GetString(FormatOptionKeys.TargetCompatibility) is { } raw
+        && Enum.TryParse<RarCompatibility>(raw, ignoreCase: true, out var parsed))
+      return parsed;
+
+    return options.MethodName?.ToLowerInvariant() switch {
+      "rar15" or "rar1.5" or "rar1_5" => RarCompatibility.Rar1_5,
+      "rar4" => RarCompatibility.Rar4,
+      _ => RarCompatibility.Rar5,
+    };
   }
 
   /// <summary>

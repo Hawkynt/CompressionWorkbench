@@ -76,6 +76,14 @@ public class UdfTests {
     // FSD location (long_ad): LBN at offset 252, partition ref at offset 256
     BinaryPrimitives.WriteUInt32LittleEndian(lvd[248..], (uint)sectorSize); // length
     BinaryPrimitives.WriteUInt32LittleEndian(lvd[252..], 0); // LBN 0 relative to partition
+    // A logical volume has to say how its logical blocks reach a partition
+    // (ECMA-167 §3/10.6.13): one Type 1 map naming Partition Descriptor 0.
+    BinaryPrimitives.WriteUInt32LittleEndian(lvd[264..], 6); // MapTableLength
+    BinaryPrimitives.WriteUInt32LittleEndian(lvd[268..], 1); // NumberOfPartitionMaps
+    lvd[440] = 1;                                            // partition map type 1
+    lvd[441] = 6;                                            // partition map length
+    BinaryPrimitives.WriteUInt16LittleEndian(lvd[442..], 1); // volume sequence number
+    BinaryPrimitives.WriteUInt16LittleEndian(lvd[444..], 0); // partition number
 
     // Terminator at sector 34
     BinaryPrimitives.WriteUInt16LittleEndian(img.AsSpan(34 * sectorSize), 8);

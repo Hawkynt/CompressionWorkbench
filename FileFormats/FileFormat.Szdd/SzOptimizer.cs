@@ -92,7 +92,7 @@ public static class SzOptimizer {
 
       if (bestLength >= SzddConstants.MinMatchLength) {
         lengths[position] = (byte)bestLength;
-        offsets[position] = (ushort)((SzddConstants.WindowInitPos + bestPosition) & (SzddConstants.WindowSize - 1));
+        offsets[position] = (ushort)((SzddConstants.QBasicWindowInitPos + bestPosition) & (SzddConstants.WindowSize - 1));
       }
 
       previous[position] = head[hash];

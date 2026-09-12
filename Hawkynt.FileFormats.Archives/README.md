@@ -60,7 +60,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | CP/M Crunch | `Crunch` | `.cru` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Crunch) |
 | CSC | `Csc` | `.csc` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/fusiyuan2010/CSC) |
 | Density | `Density` | `.density` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/k0dai/density) |
-| Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | — |  | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
+| Freeze | `Freeze` | `.f` `.freeze` | ✅ | ✅ | ✅ | Optimizer searches the parse strategy, the match-search depth and the position Huffman table | [Archive Team](http://fileformats.archiveteam.org/wiki/Freeze) |
 | [gzip](https://en.wikipedia.org/wiki/Gzip) | `Gzip` | `.gz` `.gzip` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1952) |
 | ICE Packer | `IcePacker` | `.ice` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/ICE) |
 | KWAJ | `Kwaj` |  | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/KWAJ) |
@@ -80,7 +80,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | PowerPacker | `PowerPacker` | `.pp` `.pp20` | ✅ | ✅ | ✅ |  | [Archive Team](http://fileformats.archiveteam.org/wiki/PowerPacker) |
 | [PPMd](https://en.wikipedia.org/wiki/Prediction_by_partial_matching) | `Ppmd` | `.pmd` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
 | QuickLZ | `QuickLz` | `.quicklz` | ✅ | ✅ | ✅ | Level 1 and level 3; the optimizer searches the level and the level-3 search depth | [quicklz.com](http://www.quicklz.com/) |
-| RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | The optimizer searches the match choice at every position rather than taking the longest | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
+| RefPack / QFS | `RefPack` | `.qfs` `.refpack` | ✅ | ✅ | ✅ | Optimizer searches the history window, the match-search depth and quick match indexing | [wiki.niotso.org](http://wiki.niotso.org/RefPack) |
 | RNC ProPack | `Rnc` | `.rnc` | ✅ | ✅ | ✅ |  | [segaretro.org](https://segaretro.org/Rob_Northen_compression) |
 | [rzip](https://en.wikipedia.org/wiki/Rzip) | `Rzip` | `.rz` `.rzip` | ✅ | ✅ | ✅ |  | [rzip.samba.org](https://rzip.samba.org/) |
 | [Snappy](https://en.wikipedia.org/wiki/Snappy) | `Snappy` | `.sz` `.snappy` | ✅ | ✅ | ✅ |  | [GitHub](https://github.com/google/snappy/blob/main/framing_format.txt) |
@@ -374,11 +374,11 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [Matroska / WebM](https://en.wikipedia.org/wiki/Matroska) | `Mkv` | `.mkv` `.webm` `.mka` `.mks` | ✅ | — | ✅ | Tracks, attachments and chapters; Cues can be moved to the front in place | [matroska.org](https://www.matroska.org/technical/elements.html) |
 | [MP4 / MOV / 3GP](https://en.wikipedia.org/wiki/MP4_file_format) | `Mp4` | `.mp4` `.m4v` `.m4a` `.mov` … | ✅ | ✅ | ✅ | Track demux; audio-only mux from AAC/PCM inputs; fast-start relayout in place | [ISO](https://www.iso.org/standard/83102.html) |
 | [MPEG program stream / VOB](https://en.wikipedia.org/wiki/MPEG_program_stream) | `MpegPs` | `.mpg` `.mpeg` `.vob` `.m2p` … | ✅ | ✅ | ✅ | PES headers stripped; DVD private-stream-1 substreams (AC-3, DTS, LPCM, sub-picture) split. Mux rebuilds an MPEG-2 program stream from MPEG-1/2, MPEG-4 Part 2, AVC, HEVC, MPEG-audio and AAC elementary streams; DVD private streams stay read-only | [ISO](https://www.iso.org/standard/75928.html) |
-| [MPEG transport stream](https://en.wikipedia.org/wiki/MPEG_transport_stream) | `MpegTs` | `.ts` `.m2ts` `.mts` | ✅ | — | — | Per-PID elementary streams as raw PES | [ISO](https://www.iso.org/standard/75928.html) |
-| [RealMedia](https://en.wikipedia.org/wiki/RealMedia) | `RealMedia` | `.rm` `.rmvb` `.ra` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/RealMedia) |
+| [MPEG transport stream](https://en.wikipedia.org/wiki/MPEG_transport_stream) | `MpegTs` | `.ts` `.m2ts` `.mts` | ✅ | ✅ | — | Per-PID elementary streams as raw PES; mux writes one PAT/PMT and packetises the supplied elementary streams | [ISO](https://www.iso.org/standard/75928.html) |
+| [RealMedia](https://en.wikipedia.org/wiki/RealMedia) | `RealMedia` | `.rm` `.rmvb` `.ra` | ✅ | ✅ | — | Reverse-engineered; demux plus encoded-audio mux and remux, no video writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/RealMedia) |
 | [Smacker](https://en.wikipedia.org/wiki/Smacker_video) | `Smk` | `.smk` | ✅ | — | — | Reverse-engineered; no writer | [MultimediaWiki](https://wiki.multimedia.cx/index.php/Smacker) |
 | [Blu-ray PGS (.sup)](https://en.wikipedia.org/wiki/Presentation_Graphic_Stream) | `Sup` | `.sup` | ✅ | ✅ | ✅ | Complete PCS-to-END display sets can be reassembled losslessly; bitmap/timing authoring is outside this pseudo-archive surface | [GitHub](https://github.com/mjuhasz/BDSup2Sub) |
-| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | — | — | Index plus one sub-picture stream, not a multi-track container | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |
+| [VobSub](https://en.wikipedia.org/wiki/VobSub) | `VobSub` | `.idx` | ✅ | ✅ | — | Index plus one sub-picture stream, not a multi-track container; raw `.spu` input muxes to 2 KiB MPEG-PS sectors and extracted `.bin` chunks are written back byte-exact | [sam.zoy.org](http://sam.zoy.org/writings/dvd/subtitles/) |
 
 ### 🛡️ Executable packers (descriptors)
 
@@ -532,7 +532,7 @@ Use it when a .NET process needs to enumerate, extract, test, create, edit or in
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 1152 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
+Every public and protected member of all 1170 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Archives/REFERENCE.md).
 
 <!-- API:END -->
 

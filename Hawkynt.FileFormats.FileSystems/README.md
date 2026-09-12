@@ -69,7 +69,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [Nintendo PartitionFS](https://en.wikipedia.org/wiki/Nintendo_Switch) | `Pfs0` | R/W | ✅ | ✅ rebuild | ✅ | — | — | ✅ | own reader + struct-parity tests | Nintendo Switch PartitionFS | [PFS0 (switchbrew)](https://switchbrew.org/wiki/NCA#PFS0) |
 | [NRG](https://en.wikipedia.org/wiki/Nero_Burning_ROM) | `Nrg` | R/W | ✅ | ✅ rebuild | — | ✅ | — | ✅ | own reader + struct-parity tests | NRG v1/v2 reader; v2 TAO writer; named edits rebuild the embedded ISO | [Nero Burning ROM](https://en.wikipedia.org/wiki/Nero_Burning_ROM) |
 | [PSP CSO/ZSO](https://en.wikipedia.org/wiki/CSO_(file_format)) | `Cso` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | Compressed ISO; edits re-pack the affected blocks | [CSO](https://en.wikipedia.org/wiki/CSO_(file_format)) |
-| [QCOW2](https://en.wikipedia.org/wiki/Qcow) | `Qcow2` | R/W | ✅ | ✅ rebuild | ✅ | — | — | ✅ | [`qemu-img check`](https://www.qemu.org/docs/master/tools/qemu-img.html) / `convert -O raw` / reverse `qemu-img create` | Edits go to the inner filesystem | [QCOW2 specification](https://www.qemu.org/docs/master/interop/qcow2.html) |
+| [QCOW2](https://en.wikipedia.org/wiki/Qcow) | `Qcow2` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | [`qemu-img check`](https://www.qemu.org/docs/master/tools/qemu-img.html) / `convert -O raw` / reverse `qemu-img create` | Edits go to the inner filesystem | [QCOW2 specification](https://www.qemu.org/docs/master/interop/qcow2.html) |
 | [T64](https://en.wikipedia.org/wiki/Commodore_64) | `T64` | R/W | ✅ | ✅ moving | ✅ | — | — | ✅ | own reader + struct-parity tests | C64 tape archive | [T64 (VICE)](https://vice-emu.sourceforge.io/vice_17.html) |
 | [TAP](https://en.wikipedia.org/wiki/ZX_Spectrum) | `Tap` | R/W | ✅ | ✅ moving | ✅ | — | — | ✅ | own reader + struct-parity tests | Sinclair / Commodore tape image | [TAP (World of Spectrum)](https://worldofspectrum.net/faq/reference/formats.htm) |
 | [TI-TXT (MSP430)](https://en.wikipedia.org/wiki/Texas_Instruments) | `TiTxt` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | TI-TXT sparse firmware dump; edits and canonical rebuild preserve omitted address holes | [TI-TXT](https://www.ti.com/lit/pdf/slau131) |
@@ -128,7 +128,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [QNX6 Neutrino FS](https://en.wikipedia.org/wiki/QNX6FS) | `Qnx6` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | — | [qnx6](https://www.kernel.org/doc/html/latest/filesystems/qnx6.html) |
 | [Reiser4](https://en.wikipedia.org/wiki/Reiser4) | `Reiser4` | WORM | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests; `reiser4progs` not installable here | Empty tree from `mkfs.reiser4` captures; files live in a payload area the reiser4 driver does not see, so the writer stays WORM | [Reiser4](https://reiser4.wiki.kernel.org/) |
 | [ReiserFS](https://en.wikipedia.org/wiki/ReiserFS) | `ReiserFs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | [`reiserfsck`](https://git.kernel.org/pub/scm/linux/kernel/git/jeffm/reiserfsprogs.git), also after mutation | ReiserFS 3.6; edits rebuild the tree | [ReiserFS documentation](https://www.kernel.org/doc/html/latest/filesystems/reiserfs.html) |
-| [TUX2](https://en.wikipedia.org/wiki/Tux2) | `Tux2` | R | — | — | — | — | — | — | own reader + struct-parity tests | Phase-tree filesystem | [Tux2](https://en.wikipedia.org/wiki/Tux2) |
+| [TUX2](https://en.wikipedia.org/wiki/Tux2) | `Tux2` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | own reader + struct-parity tests | Phase-tree filesystem | [Tux2](https://en.wikipedia.org/wiki/Tux2) |
 | [TUX3](https://en.wikipedia.org/wiki/Tux3) | `Tux3` | R | ✅ | — | ✅ | ✅ | — | — | own reader + struct-parity tests | — | [Tux3](https://github.com/OGAWAHirofumi/tux3) |
 | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) | `Ufs` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | FreeBSD kernel mount r/w + [`fsck_ffs`](https://man.freebsd.org/cgi/man.cgi?query=fsck_ffs) under QEMU | UFS1 / FFS | [UFS](https://en.wikipedia.org/wiki/Unix_File_System) |
 | [UNIX System V FS](https://en.wikipedia.org/wiki/Unix_File_System) | `SysV` | R/W | ✅ | ✅ moving | ✅ | ✅ | ✅ | ✅ | host-kernel `sysv` mount reads byte-exact | System V filesystem | [sysv](https://www.kernel.org/doc/html/latest/filesystems/sysv-fs.html) |
@@ -215,7 +215,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
-| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | R | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
 | [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | detection of the on-disk signature | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
@@ -280,7 +280,7 @@ ops.Remove(image, ["var/log/old.log"]);
 
 <!-- API:BEGIN generated by Hawkynt/RepositoryTemplate/package-readme — edit the XML docs in source, not here -->
 
-Every public and protected member of all 857 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
+Every public and protected member of all 868 types, generated from the built assembly and its XML documentation, is in [REFERENCE.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/REFERENCE.md).
 
 <!-- API:END -->
 

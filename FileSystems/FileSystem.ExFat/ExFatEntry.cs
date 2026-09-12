@@ -22,4 +22,7 @@ public sealed class ExFatEntry {
   /// </summary>
   public DateTime? LastModified { get; init; }
   internal uint FirstCluster { get; init; }
+  internal byte GeneralSecondaryFlags { get; init; }
+  internal long ValidDataLength { get; init; }
+  internal long DataLength { get; init; }
 }

@@ -231,4 +231,46 @@ public class SzddTests {
     operations.CompressOptimal(source, destination);
     return destination.ToArray();
   }
+
+  [Category("Interop")]
+  [Category("Regression")]
+  [Test]
+  public void StandardSzdd_ReferenceVector_UsesExpandWindowOrigin() {
+    byte[] standard = [
+      0x53, 0x5A, 0x44, 0x44, 0x88, 0xF0, 0x27, 0x33,
+      0x41, (byte)'_', 0x05, 0x00, 0x00, 0x00,
+      0x03, (byte)'A', (byte)'B', 0xF0, 0xF0,
+    ];
+    byte[] qbasic = [
+      0x53, 0x5A, 0x20, 0x88, 0xF0, 0x27, 0x33, 0xD1,
+      0x05, 0x00, 0x00, 0x00,
+      0x03, (byte)'A', (byte)'B', 0xF0, 0xF0,
+    ];
+
+    Assert.Multiple(() => {
+      Assert.That(SzddStream.Decompress(standard), Is.EqualTo("ABABA"u8.ToArray()));
+      Assert.That(SzddStream.Decompress(qbasic), Is.EqualTo("AB   "u8.ToArray()));
+    });
+  }
+
+  [Category("Interop")]
+  [Category("Regression")]
+  [Test]
+  public void Compress_UsesVariantSpecificInitialWindowOffsets() {
+    var input = "ABCABC"u8.ToArray();
+
+    var standard = SzddStream.Compress(input);
+    var qbasic = SzddStream.CompressQBasic(input);
+
+    Assert.Multiple(() => {
+      Assert.That(
+        standard.AsSpan(14).ToArray(),
+        Is.EqualTo(new byte[] { 0x07, (byte)'A', (byte)'B', (byte)'C', 0xF0, 0xF0 }));
+      Assert.That(
+        qbasic.AsSpan(12).ToArray(),
+        Is.EqualTo(new byte[] { 0x07, (byte)'A', (byte)'B', (byte)'C', 0xEE, 0xF0 }));
+      Assert.That(SzddStream.Decompress(standard), Is.EqualTo(input));
+      Assert.That(SzddStream.Decompress(qbasic), Is.EqualTo(input));
+    });
+  }
 }

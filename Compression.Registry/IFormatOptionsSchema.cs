@@ -12,12 +12,27 @@ namespace Compression.Registry;
 /// keyed by <see cref="FormatOptionDescriptor.Key"/>; the writer reads them
 /// back out in <c>Create()</c>.</para>
 ///
+/// <para>Not every user-selectable option is an optimizer axis. Compatibility
+/// targets are constraints: if a caller asks for an old, wire-incompatible
+/// version, optimization must remain inside that target rather than silently
+/// switching to a newer format. Such options set
+/// <see cref="FormatOptionDescriptor.IsOptimizationAxis"/> to <see langword="false"/>.</para>
+///
 /// <para>Descriptors that don't implement this surface get the default
 /// "no extra knobs" experience.</para>
 /// </summary>
 public interface IFormatOptionsSchema {
   /// <summary>The set of knobs this format exposes. Empty list = no extra options.</summary>
   IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }
+}
+
+/// <summary>Well-known format-option keys shared by independently versioned formats.</summary>
+public static class FormatOptionKeys {
+  /// <summary>
+  /// Requested writer compatibility target. Values are format-specific, but the key is common so
+  /// UI, CLI and orchestration code can recognize a compatibility constraint consistently.
+  /// </summary>
+  public const string TargetCompatibility = "TargetCompatibility";
 }
 
 /// <summary>How a <see cref="FormatOptionDescriptor"/> renders + parses.</summary>
@@ -50,6 +65,8 @@ public enum FormatOptionKind {
 /// <param name="DependsOn">Optional gate: only show this knob if another knob's current
 /// value matches one of these. Format: <c>"OtherKey=value1|value2"</c>. Used for cascading
 /// options (e.g. "Journal" only visible when "Version" is ext3/ext4).</param>
+/// <param name="IsOptimizationAxis">Whether the generic compression optimizer may vary this option.
+/// Set to <see langword="false"/> for caller constraints such as <see cref="FormatOptionKeys.TargetCompatibility"/>.</param>
 public sealed record FormatOptionDescriptor(
     string Key,
     string DisplayName,
@@ -57,4 +74,5 @@ public sealed record FormatOptionDescriptor(
     string Default,
     IReadOnlyList<string>? AllowedValues = null,
     string? Description = null,
-    string? DependsOn = null);
+    string? DependsOn = null,
+    bool IsOptimizationAxis = true);

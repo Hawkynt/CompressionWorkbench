@@ -558,17 +558,18 @@ Adobe Flash SWF ADPCM (ffmpeg `adpcm_swf`). The bitstream opens with a 2-bit fie
 
 #### `Thp`
 
-Nintendo GameCube THP ADPCM (ffmpeg `adpcm_thp` / `adpcm_thp_le`) and the closely related fixed-table AFC variant (ffmpeg `adpcm_afc`). Both reconstruct a sample as `out = clip16(((c1*hist1 + c2*hist2) >> 11) + (signNibble << exp))`: the second-order predictor contribution is the only term shifted right by 11, the scaled residual is added on top, and the two histories shift forward. This is the canonical Nintendo DSP family (the same predictor pairs as `Codec.DspAdpcm`) — the variants differ only in frame layout and where the coefficient pairs come from. THP — 8-byte frame (1 header + 7 data = 14 samples). Header high nibble (& 7) selects a predictor pair from the per-channel `short[16]` table supplied by the container, low nibble is the scale exponent. THP_LE only changes how the container's coefficients are byte-ordered, so once decoded to `short[]` the math is identical.AFC — 9-byte frame (1 header + 8 data = 16 samples). Header high nibble is the scale exponent, low nibble (0..15) indexes the fixed 16-pair `AfcCoefs` table; there is no per-stream table.
+Nintendo GameCube THP ADPCM and the closely related fixed-table AFC variant.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AfcBytesPerFrame` | `const int AfcBytesPerFrame` | Bytes per AFC frame (1 header + 8 data = 16 samples). |
-| `AfcCoefs` | `static readonly short[] AfcCoefs` | The fixed AFC predictor coefficient table (ffmpeg `afc_coeffs[2][16]`) flattened into the DSP `short[16*2]` layout: `AfcCoefs[2*i]` = factor1, `AfcCoefs[2*i+1]` = factor2 for index `i` (0..15). ffmpeg stores two parallel rows of sixteen; the rows are interleaved here so the AFC index selects an adjacent pair. |
+| `AfcCoefs` | `static readonly short[] AfcCoefs` | Fixed AFC predictor coefficient table, flattened as sixteen adjacent coefficient pairs. The values are format-defined and shared by all AFC streams. |
 | `AfcSamplesPerFrame` | `const int AfcSamplesPerFrame` | Samples per AFC frame. |
 | `ThpBytesPerFrame` | `const int ThpBytesPerFrame` | Bytes per THP frame (1 header + 7 data = 14 samples). |
 | `ThpSamplesPerFrame` | `const int ThpSamplesPerFrame` | Samples per THP frame. |
-| `DecodeAfc` | `static short[] DecodeAfc(ReadOnlySpan<byte> adpcm, int sampleCount)` | Decodes an AFC channel using the fixed `AfcCoefs` table. The header's low nibble (0..15) indexes the table; the high nibble is the scale exponent. |
-| `DecodeThp` | `static short[] DecodeThp(ReadOnlySpan<byte> adpcm, ReadOnlySpan<short> coefs, int sampleCount)` | Decodes a THP channel using the per-channel coefficient table supplied by the container (already byte-ordered into native `short[16]`, so this serves both THP and THP_LE). The header's high nibble (masked to 0..7) selects the predictor pair, the low nibble the exponent. |
+| `DecodeAfc` | `static short[] DecodeAfc(ReadOnlySpan<byte> adpcm, int sampleCount)` | Decodes an AFC channel using the fixed `AfcCoefs` table. The header's low nibble selects the predictor pair and its high nibble is the residual scale exponent. |
+| `DecodeThp` | `static short[] DecodeThp(ReadOnlySpan<byte> adpcm, ReadOnlySpan<short> coefs, int sampleCount)` | Decodes a THP channel using the per-channel coefficient table supplied by the container. |
+| `EncodeAfc` | `static byte[] EncodeAfc(ReadOnlySpan<short> pcm)` | Encodes PCM16 into Nintendo AFC frames. For every 16-sample frame the encoder exhaustively evaluates all sixteen format-defined predictors and all sixteen residual exponents, then keeps the candidate with the lowest squared reconstruction error while feeding reconstructed samples back into the predictor exactly as `DecodeAfc` does. |
 
 #### `XanDpcm`
 
@@ -4450,27 +4451,37 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 #### `AhxFormatDescriptor`
 
-Exposes an Amiga AHX / THX synth-tracker module as a read-only pseudo-archive of `FULL.ahx`, `metadata.ini` and the raw position/track/instrument blocks. The big-endian, offset-based AHX layout was recovered through binary inspection of the documented THX file format and the OpenMPT loader. No synth is emulated; every offset read is clamped, and a malformed module surfaces FULL + metadata(parse_status=partial) instead of throwing.
+Reads and writes the published four-channel AHX0/AHX1 tracker-module format. The pseudo-archive exposes both the byte-exact original and normalized structural blocks; packet demux/mux treats a complete AHX module as one opaque encoded unit. PCM rendering or PCM-to-tracker transcription is deliberately not claimed.
 
-Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AhxFormatDescriptor` | `AhxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Aica`
 
@@ -5069,85 +5080,139 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 ### Namespace `FileFormat.Ast`
 
-[`AstFormatDescriptor`](#astformatdescriptor) · [`AstReader`](#astreader) · [`AstReader.Header`](#astreaderheader) · [`AstReader.ParsedAst`](#astreaderparsedast) · [`AstWriter`](#astwriter)
+[`AstCodec`](#astcodec) · [`AstFormatDescriptor`](#astformatdescriptor) · [`AstReader`](#astreader) · [`AstReader.Block`](#astreaderblock) · [`AstReader.Header`](#astreaderheader) · [`AstReader.ParsedAst`](#astreaderparsedast) · [`AstWriter`](#astwriter) · [`AstWriterOptions`](#astwriteroptions)
+
+#### `AstCodec`
+
+Codec identifiers stored in the AST STRM header.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Afc` | `0` |  |
+| `Pcm16BigEndian` | `1` |  |
 
 #### `AstFormatDescriptor`
 
-Exposes a GameCube/Wii `.ast` (STRM stream) as an archive of `FULL.ast` plus, for both the PCM16BE (codec 1) and AFC-ADPCM (codec 0) codings, one decoded mono WAV per channel (named per `ChannelLayout`) plus a `metadata.ini`. Unparseable input falls back gracefully to `FULL.ast` only.
+GameCube/Wii AST audio container with PCM16BE and AFC encode/decode, pseudo-archive extraction, encoded BLCK demux/mux, and packet-preserving reblocking.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IAudioPcmSource`, `IAudioPcmTarget`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AstFormatDescriptor` | `AstFormatDescriptor()` |  |
-| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | Gets the accepted inputs description. |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Gets the max total archive size. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Performs the can accept operation. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 #### `AstReader`
 
-Parses a big-endian GameCube/Wii `.ast` (STRM) stream into its header and per-channel PCM. The 64-byte header is `"STRM"` | `u32 dataSize` | `u16 codec` (`0` = ADPCM-AFC, `1` = PCM16 big-endian) | `u16 bitDepth` | `u16 channels` | `u16 loopFlag` | `u32 sampleRate` | `u32 sampleCount` | `u32 loopStart` | `u32 loopEnd` | `u32 firstBlockSize` | reserved. The audio follows as a sequence of `"BLCK"` blocks: `"BLCK"` | `u32 blockSize` (per channel) | 24 reserved bytes | then each channel's `blockSize` bytes back-to-back (channel-interleaved at block granularity). Codec 1 (PCM16BE) is decoded fully to little-endian PCM. Codec 0 (AFC ADPCM) is decoded via `DecodeAfc`: each channel's BLCK bytes are concatenated and run through the fixed-table AFC decoder (9-byte frames → 16 samples each), capped at the header's sample count.
+Parses GameCube/Wii AST STRM streams, retaining the encoded BLCK structure for packet-preserving remux while also decoding both format-defined codecs to PCM16.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AstReader` | `AstReader()` |  |
-| `Read` | `ParsedAst Read(ReadOnlySpan<byte> data)` | Reads the value from the supplied input. |
+| `Read` | `ParsedAst Read(ReadOnlySpan<byte> data)` | Reads and validates a complete AST stream. |
+
+#### `AstReader.Block`
+
+One BLCK chunk, split into its per-channel encoded byte ranges.
+
+Implements `IEquatable<Block>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Block` | `Block(int SizePerChannel, byte[][] Channels, byte[] HeaderData)` | One BLCK chunk, split into its per-channel encoded byte ranges. |
+| `Channels` | `byte[][] Channels { get; init; }` |  |
+| `HeaderData` | `byte[] HeaderData { get; init; }` |  |
+| `SizePerChannel` | `int SizePerChannel { get; init; }` |  |
 
 #### `AstReader.Header`
 
-Represents a header.
+Parsed STRM header.
 
 Implements `IEquatable<Header>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Header` | `Header(int Codec, int BitDepth, int NumChannels, bool Loop, int SampleRate, int SampleCount, int LoopStart, int LoopEnd)` | Represents a header. |
+| `Header` | `Header(int Codec, int BitDepth, int NumChannels, bool Loop, int SampleRate, int SampleCount, int LoopStart, int LoopEnd)` | Parsed STRM header. |
 | `BitDepth` | `int BitDepth { get; init; }` |  |
 | `Codec` | `int Codec { get; init; }` |  |
+| `DataSize` | `uint DataSize { get; init; }` |  |
+| `FirstBlockSize` | `int FirstBlockSize { get; init; }` |  |
 | `LoopEnd` | `int LoopEnd { get; init; }` |  |
+| `LoopFlag` | `ushort LoopFlag { get; init; }` |  |
 | `LoopStart` | `int LoopStart { get; init; }` |  |
 | `Loop` | `bool Loop { get; init; }` |  |
 | `NumChannels` | `int NumChannels { get; init; }` |  |
+| `ReservedHeader` | `byte[] ReservedHeader { get; init; }` |  |
 | `SampleCount` | `int SampleCount { get; init; }` |  |
 | `SampleRate` | `int SampleRate { get; init; }` |  |
+| `Volume` | `byte Volume { get; init; }` |  |
 
 #### `AstReader.ParsedAst`
 
-Represents a parsed ast.
+Parsed container, decoded PCM and original encoded block structure.
 
 Implements `IEquatable<ParsedAst>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ParsedAst` | `ParsedAst(Header Info, short[][] Pcm)` | Represents a parsed ast. |
+| `ParsedAst` | `ParsedAst(Header Info, short[][] Pcm)` | Parsed container, decoded PCM and original encoded block structure. |
+| `Blocks` | `IReadOnlyList<Block> Blocks { get; init; }` |  |
 | `Info` | `Header Info { get; init; }` |  |
 | `Pcm` | `short[][] Pcm { get; init; }` |  |
 
 #### `AstWriter`
 
-Writes a big-endian GameCube/Wii `.ast` (STRM) carrying PCM16 big-endian audio (codec 1), laid out per the public AST specification so it round-trips through `AstReader`. Audio is split into `"BLCK"` blocks of `BlockSize` bytes per channel (the final block holds whatever remains, unpadded). PCM16 is bit-exact (lossless).
+Writes big-endian GameCube/Wii `.ast` (STRM) audio. Both format-defined codecs are supported: planar PCM16BE (codec 1) and Nintendo AFC ADPCM (codec 0). Audio is split into `BLCK` chunks whose size field is the byte count for one channel.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AstWriter` | `AstWriter()` |  |
-| `BlockSize` | `const int BlockSize` | Per-channel block size in bytes. |
-| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool loop = false, int loopStart = 0, int loopEnd = 0)` | Serialises per-channel mono PCM16 into a PCM16BE AST. All channels must share the same sample count. |
+| `BlockSize` | `const int BlockSize` | The conventional AST block size, in bytes per channel. |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, AstWriterOptions options)` | Serializes equal-length mono PCM16 channels using the requested AST codec and container geometry. PCM16 is lossless; AFC is encoded independently per channel using its fixed predictor table. |
+| `Write` | `byte[] Write(IReadOnlyList<short[]> channels, int sampleRate, bool loop = false, int loopStart = 0, int loopEnd = 0)` | Backward-compatible PCM16BE writer overload. |
+
+#### `AstWriterOptions`
+
+Container-level options supported by the AST writer.
+
+Implements `IEquatable<AstWriterOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AstWriterOptions` | `AstWriterOptions(AstCodec Codec = 1, int BlockSize = 10080, bool Loop = false, int LoopStart = 0, int? LoopEnd = null, byte Volume = 127)` | Container-level options supported by the AST writer. |
+| `BlockSize` | `int BlockSize { get; init; }` |  |
+| `Codec` | `AstCodec Codec { get; init; }` |  |
+| `LoopEnd` | `int? LoopEnd { get; init; }` |  |
+| `LoopStart` | `int LoopStart { get; init; }` |  |
+| `Loop` | `bool Loop { get; init; }` |  |
+| `Volume` | `byte Volume { get; init; }` |  |
 
 ### Namespace `FileFormat.Au`
 
@@ -8726,9 +8791,9 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 #### `RealMediaFormatDescriptor`
 
-Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. Read-only; every decode path falls back to blob-only on failure and parsing degrades gracefully.
+Surfaces a RealMedia container (`.rm`/`.rmvb`) or a raw RealAudio file (`.ra`) as an archive. The byte-exact original is `FULL.rm`/`FULL.ra` (Kind `Container`). For `.RMF` containers each stream's depayloaded packet bytes are concatenated into `streams/stream_NN.bin` (Kind `Stream`, Method = the detected codec FOURCC); the CONT chunk's title/author/copyright/comment become `metadata.ini` (Kind `Tag`) and per-stream MDPR properties become `streams/stream_NN.info.txt` (Kind `Tag`). Raw `.ra` surfaces its single audio payload as one stream blob plus metadata. RealAudio 14.4 (`lpcJ`/ `14_4`) streams are additionally decoded to a mono 8 kHz `*.MONO.wav` (Kind `Channel`) via `Codec.Ra144`; cook / RealAudio G2 streams are deinterleaved and decoded to per-channel WAVs (Kind `Channel`) via `Codec.Cook`; both fall back to blob-only on any decode failure via try/catch. RealAudio 2.0 28.8 (`28_8`) is Int4-deinterleaved and decoded to a mono 8 kHz WAV via `Codec.Ra288`; RealAudio Lossless (`ralf`) is decoded to per-channel 16-bit WAVs via `Codec.Ralf`; sipr and atrc are likewise decoded to per-channel WAVs. RMFF audio can also be packet-demuxed and remuxed without re-encoding; fresh muxing is supported for AC-3/dnet while native RealAudio codecs reuse preserved MDPR type-specific data from their source container. Decode paths degrade gracefully on failure.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescriptor`.
+Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -8744,10 +8809,14 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
 | `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Performs the extract entry operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
 
 ### Namespace `FileFormat.Rf64`
 

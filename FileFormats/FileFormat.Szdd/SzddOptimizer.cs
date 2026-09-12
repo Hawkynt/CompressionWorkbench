@@ -83,7 +83,7 @@ internal static class SzddOptimizer {
         if (matchLength < SzddConstants.MinMatchLength || matchLength <= best.Length)
           continue;
 
-        var ringOffset = (SzddConstants.WindowInitPos + candidate) & (SzddConstants.WindowSize - 1);
+        var ringOffset = (SzddConstants.StandardWindowInitPos + candidate) & (SzddConstants.WindowSize - 1);
         best = new Match((byte)matchLength, (ushort)ringOffset);
         if (matchLength == maxLength)
           break;

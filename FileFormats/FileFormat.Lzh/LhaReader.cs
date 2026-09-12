@@ -13,36 +13,26 @@ public sealed class LhaReader : IDisposable {
   private readonly List<LhaEntry> _entries;
   private bool _disposed;
 
-  /// <summary>
-  /// Gets the entries in the archive.
-  /// </summary>
+  /// <summary>Gets the entries in the archive.</summary>
   public IReadOnlyList<LhaEntry> Entries => this._entries;
 
-  /// <summary>
-  /// Initializes a new <see cref="LhaReader"/> from a stream.
-  /// </summary>
-  /// <param name="stream">A seekable stream containing the LHA archive.</param>
-  /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
+  /// <summary>Initializes a new <see cref="LhaReader"/> from a stream.</summary>
   public LhaReader(Stream stream, bool leaveOpen = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
     this._entries = [];
-
     this.ReadEntries();
   }
 
-  /// <summary>
-  /// Extracts the data for an entry.
-  /// </summary>
-  /// <param name="entry">The entry to extract.</param>
-  /// <returns>The decompressed data.</returns>
+  /// <summary>Extracts the data for an entry.</summary>
   public byte[] ExtractEntry(LhaEntry entry) {
     this._stream.Position = entry.DataOffset;
     var compressedData = new byte[entry.CompressedSize];
     var totalRead = 0;
     while (totalRead < compressedData.Length) {
       var read = this._stream.Read(compressedData, totalRead, compressedData.Length - totalRead);
-      if (read == 0) throw new EndOfStreamException("Unexpected end of LHA data.");
+      if (read == 0)
+        throw new EndOfStreamException("Unexpected end of LHA data.");
       totalRead += read;
     }
 
@@ -57,19 +47,19 @@ public sealed class LhaReader : IDisposable {
         break;
       case LhaConstants.MethodLh2:
       case LhaConstants.MethodLh3:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, Compression.Core.Dictionary.Lzh.LzhConstants.Lh5PositionBits);
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh5PositionBits);
         break;
       case LhaConstants.MethodLh4:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, Compression.Core.Dictionary.Lzh.LzhConstants.Lh4PositionBits);
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh4PositionBits);
         break;
       case LhaConstants.MethodLh5:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, Compression.Core.Dictionary.Lzh.LzhConstants.Lh5PositionBits);
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh5PositionBits);
         break;
       case LhaConstants.MethodLh6:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, Compression.Core.Dictionary.Lzh.LzhConstants.Lh6PositionBits);
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh6PositionBits);
         break;
       case LhaConstants.MethodLh7:
-        data = DecompressLzh(compressedData, (int)entry.OriginalSize, Compression.Core.Dictionary.Lzh.LzhConstants.Lh7PositionBits);
+        data = DecompressLzh(compressedData, (int)entry.OriginalSize, LzhConstants.Lh7PositionBits);
         break;
       case LhaConstants.MethodLzs:
         data = LzsDecoder.Decode(compressedData, (int)entry.OriginalSize);
@@ -90,7 +80,6 @@ public sealed class LhaReader : IDisposable {
         throw new NotSupportedException($"Unsupported LHA method: {entry.Method}");
     }
 
-    // Verify CRC-16
     var crc = Crc16.Compute(data);
     if (crc != entry.Crc16)
       throw new InvalidDataException($"CRC-16 mismatch for '{entry.FileName}': expected 0x{entry.Crc16:X4}, computed 0x{crc:X4}.");
@@ -119,42 +108,31 @@ public sealed class LhaReader : IDisposable {
       if (entry.Method != LhaConstants.MethodLhd)
         this._entries.Add(entry);
 
-      // Skip compressed data
       this._stream.Position = entry.DataOffset + entry.CompressedSize;
     }
   }
 
   private LhaEntry? ReadHeader() {
-    // Peek at first byte to determine if we have a valid header
     var firstByte = this._stream.ReadByte();
     if (firstByte <= 0)
       return null;
 
-    // Read second byte to check method string position
     var secondByte = this._stream.ReadByte();
     if (secondByte < 0)
       return null;
 
-    // Read method string (5 bytes starting at offset 2)
     var methodBytes = new byte[5];
     if (this._stream.Read(methodBytes, 0, 5) < 5)
       return null;
     var method = Encoding.ASCII.GetString(methodBytes);
-
-    // Validate method
     if (!method.StartsWith('-') || !method.EndsWith('-'))
       return null;
 
-    // Determine header level from later in the header
-    // For level 0/1: firstByte = header size, secondByte = checksum
-    // For level 2: firstByte + secondByte << 8 = total header size
-
-    // Read common fields after method
     var reader = new BinaryReader(this._stream, Encoding.ASCII, leaveOpen: true);
     var compressedSize = reader.ReadUInt32();
     var originalSize = reader.ReadUInt32();
     var timestamp = reader.ReadUInt32();
-    var reserved = reader.ReadByte(); // attribute (level 0) or reserved (level 1/2)
+    var reserved = reader.ReadByte();
     var level = reader.ReadByte();
 
     var entry = new LhaEntry {
@@ -162,17 +140,19 @@ public sealed class LhaReader : IDisposable {
       CompressedSize = compressedSize,
       OriginalSize = originalSize,
       HeaderLevel = level,
-      LastModified = DateTimeFromMsdos(timestamp)
+      LastModified = level == LhaConstants.HeaderLevel2
+        ? DateTimeFromUnix(timestamp)
+        : DateTimeFromMsdos(timestamp),
     };
 
     switch (level) {
-      case 0:
-        ReadLevel0Header(reader, entry, firstByte);
+      case LhaConstants.HeaderLevel0:
+        this.ReadLevel0Header(reader, entry, firstByte);
         break;
-      case 1:
+      case LhaConstants.HeaderLevel1:
         ReadLevel1Header(reader, entry);
         break;
-      case 2:
+      case LhaConstants.HeaderLevel2:
         ReadLevel2Header(reader, entry, firstByte | (secondByte << 8));
         break;
       default:
@@ -188,10 +168,6 @@ public sealed class LhaReader : IDisposable {
     entry.FileName = Encoding.ASCII.GetString(nameBytes);
     entry.Crc16 = reader.ReadUInt16();
 
-    // Skip any remaining header bytes
-    var expectedDataStart = this._stream.Position;
-    // Level 0: headerSize includes everything from offset 2 to end of header
-    // Total header = 2 + headerSize bytes, data follows
     var headerStart = this._stream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 1 - nameLength - 2;
     entry.DataOffset = headerStart + 2 + headerSize;
     this._stream.Position = entry.DataOffset;
@@ -204,14 +180,17 @@ public sealed class LhaReader : IDisposable {
     entry.Crc16 = reader.ReadUInt16();
     entry.OsId = reader.ReadByte();
 
-    // Read extended headers
     while (true) {
       var extSize = reader.ReadUInt16();
       if (extSize == 0)
         break;
+      if (extSize < 3)
+        throw new InvalidDataException("Invalid LHA level-1 extended-header size.");
 
       var extType = reader.ReadByte();
       var extData = reader.ReadBytes(extSize - 3);
+      if (extData.Length != extSize - 3)
+        throw new EndOfStreamException("Truncated LHA level-1 extended header.");
 
       if (extType == 0x01 && extData.Length > 0)
         entry.FileName = Encoding.ASCII.GetString(extData);
@@ -224,17 +203,22 @@ public sealed class LhaReader : IDisposable {
     entry.Crc16 = reader.ReadUInt16();
     entry.OsId = reader.ReadByte();
 
-    // Read extended headers
     var headerStart = reader.BaseStream.Position - 2 - 5 - 4 - 4 - 4 - 1 - 1 - 2 - 1;
     var headerEnd = headerStart + totalHeaderSize;
+    if (headerEnd > reader.BaseStream.Length)
+      throw new EndOfStreamException("Truncated LHA level-2 header.");
 
     while (reader.BaseStream.Position < headerEnd) {
       var extSize = reader.ReadUInt16();
       if (extSize == 0)
         break;
+      if (extSize < 3 || reader.BaseStream.Position + extSize - 2 > headerEnd)
+        throw new InvalidDataException("Invalid LHA level-2 extended-header size.");
 
       var extType = reader.ReadByte();
       var extData = reader.ReadBytes(extSize - 3);
+      if (extData.Length != extSize - 3)
+        throw new EndOfStreamException("Truncated LHA level-2 extended header.");
 
       if (extType == 0x01 && extData.Length > 0)
         entry.FileName = Encoding.ASCII.GetString(extData);
@@ -243,6 +227,9 @@ public sealed class LhaReader : IDisposable {
     reader.BaseStream.Position = headerEnd;
     entry.DataOffset = headerEnd;
   }
+
+  private static DateTime DateTimeFromUnix(uint timestamp)
+    => DateTimeOffset.FromUnixTimeSeconds(timestamp).UtcDateTime;
 
   private static DateTime DateTimeFromMsdos(uint timestamp) {
     var time = (int)(timestamp & 0xFFFF);

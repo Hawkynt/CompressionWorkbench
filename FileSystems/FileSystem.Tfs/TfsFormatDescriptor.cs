@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Globalization;
 using System.Text;
 using Compression.Registry;
 using static Compression.Registry.FormatHelpers;
@@ -7,133 +6,133 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Tfs;
 
 /// <summary>
-/// Read-only descriptor for BBN Trans-FS (TFS). TFS is a transactional
-/// filesystem developed at BBN; the on-disk format is poorly documented
-/// publicly so this descriptor is intentionally detection-only — it emits the
-/// raw image as a single opaque entry rather than guessing layout.
-///
-/// References:
-/// <list type="bullet">
-///   <item><description>BBN Laboratories technical reports on Trans-FS — the only substantive documentation; not stably archived online</description></item>
-/// </list>
+/// Conservative read-only descriptor for the format historically registered as
+/// BBN Trans-FS (TFS) in CompressionWorkbench.
 /// </summary>
 /// <remarks>
-/// <para><b>Magic</b>: <c>0x54465301</c> ("TFS\x01") at offset 0.
-/// Block size 1024 per the BBN papers. We do not attempt to walk the inode
-/// table or directory structure — the published material is insufficient to
-/// do that honestly.</para>
+/// <para>
+/// No normative public on-disk specification or independently verifiable
+/// implementation has been located. The existing <c>54 46 53 01</c> detector is
+/// therefore retained only as a legacy repository heuristic; it is not treated
+/// as proof of a documented superblock layout.
+/// </para>
+/// <para>
+/// Until allocation, namespace, transaction-publication and empty-volume
+/// semantics are known, the filesystem is exposed as one opaque image. No write
+/// or maintenance capability is advertised: claiming a wipe that can identify
+/// no free bytes, or a rebuild that merely replaces the complete opaque image,
+/// would be mechanically callable but semantically false.
+/// </para>
 /// </remarks>
 public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
-  /// <summary>
-  /// Gets the id.
-  /// </summary>
+  private const string FullImageName = "FULL.tfs";
+  private const string MetadataName = "metadata.ini";
+  private const int LegacyMagicLength = 4;
+
   public string Id => "Tfs";
-  /// <summary>
-  /// Gets the display name.
-  /// </summary>
   public string DisplayName => "TFS (BBN Trans-FS)";
-  /// <summary>
-  /// Gets the category.
-  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>
-  /// Gets the capabilities.
-  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  /// <summary>
-  /// Gets the default extension.
-  /// </summary>
   public string DefaultExtension => ".tfs";
-  /// <summary>
-  /// Gets the extensions.
-  /// </summary>
   public IReadOnlyList<string> Extensions => [".tfs"];
-  /// <summary>
-  /// Gets the compound extensions.
-  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>
-  /// Gets the magic signatures.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // "TFS\x01" — 0x54 0x46 0x53 0x01 at offset 0.
+    // Legacy CompressionWorkbench heuristic. No normative public format source
+    // has been found that establishes this as a TFS superblock signature.
     new([0x54, 0x46, 0x53, 0x01], Offset: 0, Confidence: 0.80),
   ];
-  /// <summary>
-  /// Gets the methods.
-  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>
-  /// Gets the tar compression format id.
-  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>
-  /// Gets the family.
-  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>
-  /// Gets the description.
-  /// </summary>
-  public string Description => "BBN Trans-FS transactional filesystem — opaque single-entry surface.";
+  public string Description =>
+    "BBN Trans-FS — conservative opaque read-only surface; allocation and transaction layout remain undocumented.";
 
-  /// <summary>
-  /// Lists the entries in the supplied container.
-  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    var entries = new List<ArchiveEntryInfo>();
-    byte[] image;
-    try {
-      image = ReadAll(stream);
-    } catch {
-      entries.Add(new ArchiveEntryInfo(0, "FULL.tfs", 0, 0, "stored", false, false, null));
-      entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null));
-      return entries;
-    }
+    ArgumentNullException.ThrowIfNull(stream);
+    if (!stream.CanRead)
+      throw new ArgumentException("TFS listing requires a readable stream.", nameof(stream));
 
-    var valid = image.Length >= 4 && image[0] == 0x54 && image[1] == 0x46 && image[2] == 0x53 && image[3] == 0x01;
-    entries.Add(new ArchiveEntryInfo(0, "FULL.tfs", image.LongLength, image.LongLength, "stored", false, false, null));
-    entries.Add(new ArchiveEntryInfo(1, "metadata.ini", 0, 0, "stored", false, false, null,
-      Kind: valid ? "ok" : "partial"));
-    return entries;
+    var (length, hasLegacyMagic) = Inspect(stream);
+    return [
+      new ArchiveEntryInfo(0, FullImageName, length, length, "stored", false, false, null),
+      new ArchiveEntryInfo(1, MetadataName, 0, 0, "stored", false, false, null,
+        Kind: hasLegacyMagic ? "ok" : "partial"),
+    ];
   }
 
-  /// <summary>
-  /// Decodes the supplied input.
-  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    byte[] image;
-    try {
-      image = ReadAll(stream);
-    } catch {
-      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes("parse_status=partial\n"));
-      return;
+    ArgumentNullException.ThrowIfNull(stream);
+    ArgumentException.ThrowIfNullOrWhiteSpace(outputDir);
+    if (!stream.CanRead)
+      throw new ArgumentException("TFS extraction requires a readable stream.", nameof(stream));
+
+    if (stream.CanSeek)
+      stream.Position = 0;
+
+    Span<byte> prefix = stackalloc byte[LegacyMagicLength];
+    var prefixLength = ReadPrefix(stream, prefix);
+    var hasLegacyMagic = HasLegacyMagic(prefix[..prefixLength]);
+
+    if (Wants(FullImageName, files)) {
+      Directory.CreateDirectory(outputDir);
+      using var target = File.Create(Path.Combine(outputDir, FullImageName));
+      target.Write(prefix[..prefixLength]);
+      stream.CopyTo(target);
     }
 
-    var valid = image.Length >= 4 && image[0] == 0x54 && image[1] == 0x46 && image[2] == 0x53 && image[3] == 0x01;
-    WriteIfMatch(outputDir, "FULL.tfs", image, files);
+    if (!Wants(MetadataName, files))
+      return;
 
-    var bldr = new StringBuilder();
-    bldr.Append(CultureInfo.InvariantCulture, $"parse_status={(valid ? "ok" : "partial")}\n");
-    bldr.Append("magic_hex=0x54465301\n");
-    bldr.Append("block_size=1024\n");
-    bldr.Append("note=TFS on-disk layout is not publicly documented; image surfaced as opaque blob.\n");
-    WriteIfMatch(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(bldr.ToString()), files);
+    var metadata = new StringBuilder()
+      .Append("parse_status=").Append(hasLegacyMagic ? "ok" : "partial").Append('\n')
+      .Append("magic_hex=0x54465301\n")
+      .Append("signature_status=legacy_heuristic\n")
+      .Append("layout_status=opaque\n")
+      .Append("note=No normative public on-disk layout is known; allocation and transaction metadata are not guessed.\n")
+      .ToString();
+    WriteFile(outputDir, MetadataName, Encoding.UTF8.GetBytes(metadata));
   }
 
-  private static void WriteIfMatch(string outputDir, string name, byte[] data, string[]? filter) {
-    if (filter != null && filter.Length > 0 && !MatchesFilter(name, filter)) return;
-    WriteFile(outputDir, name, data);
-  }
+  private static (long Length, bool HasLegacyMagic) Inspect(Stream stream) {
+    if (stream.CanSeek) {
+      stream.Position = 0;
+      Span<byte> prefix = stackalloc byte[LegacyMagicLength];
+      var prefixLength = ReadPrefix(stream, prefix);
+      var length = stream.Length;
+      stream.Position = 0;
+      return (length, HasLegacyMagic(prefix[..prefixLength]));
+    }
 
-  private const int HeaderReadCap = 64 * 1024;
-
-  private static byte[] ReadAll(Stream stream) {
-    using var ms = new MemoryStream();
-    var buf = new byte[8192];
+    Span<byte> nonSeekablePrefix = stackalloc byte[LegacyMagicLength];
+    var nonSeekablePrefixLength = ReadPrefix(stream, nonSeekablePrefix);
+    long total = nonSeekablePrefixLength;
+    var buffer = new byte[81920];
     int read;
-    while (ms.Length < HeaderReadCap && (read = stream.Read(buf, 0, buf.Length)) > 0)
-      ms.Write(buf, 0, read);
-    return ms.ToArray();
+    while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+      total += read;
+
+    return (total, HasLegacyMagic(nonSeekablePrefix[..nonSeekablePrefixLength]));
   }
+
+  private static int ReadPrefix(Stream stream, Span<byte> destination) {
+    var total = 0;
+    while (total < destination.Length) {
+      var read = stream.Read(destination[total..]);
+      if (read == 0)
+        break;
+      total += read;
+    }
+    return total;
+  }
+
+  private static bool HasLegacyMagic(ReadOnlySpan<byte> prefix)
+    => prefix.Length >= LegacyMagicLength
+      && prefix[0] == 0x54
+      && prefix[1] == 0x46
+      && prefix[2] == 0x53
+      && prefix[3] == 0x01;
+
+  private static bool Wants(string name, string[]? filter)
+    => filter is not { Length: > 0 } || MatchesFilter(name, filter);
 }
