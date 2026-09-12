@@ -103,7 +103,7 @@ public sealed class CompoundFileBinaryDescriptor
       return new() {
         IsValid = true,
         Confidence = 0.99,
-        Health = FormatHealth.Healthy,
+        Health = FormatHealth.Good,
         Level = ValidationLevel.Header,
         Issues = issues,
       };
@@ -136,7 +136,7 @@ public sealed class CompoundFileBinaryDescriptor
       return new() {
         IsValid = true,
         Confidence = 0.99,
-        Health = FormatHealth.Healthy,
+        Health = FormatHealth.Good,
         Level = level,
         Issues = issues,
         ValidEntries = compound.Entries.Count,
