@@ -265,6 +265,12 @@ public class EndToEndInteropTests {
     // generator drops files we'd reject for RAD-50/length, ODS-1: 512 B LBNs with
     // no sub-block end-of-file field in the Stage-1 reader).
     ".cpm", ".lif", ".rt11", ".rx01", ".os9", ".rbf", ".ods1",
+    // Structural pseudo-archives whose parts are named by the format, not by the caller. Their
+    // writers reject an input they cannot place, which is the right behaviour and the reason they
+    // cannot take the harness's generic repeat.txt / small.txt / random.dat.
+    // VobSub (.idx): index.idx plus metadata.ini plus subtitle_NNN.bin.
+    // MPEG-TS (.ts): metadata.ini plus stream_XXXX_<type>.bin.
+    ".idx", ".ts",
     // Disk images with specific sector/partition structure
     ".vhd", ".vmdk", ".vhdx", ".qcow2", ".vdi", ".cvf",
     // Backup-software disk images — semantics are "image of a whole partition",
