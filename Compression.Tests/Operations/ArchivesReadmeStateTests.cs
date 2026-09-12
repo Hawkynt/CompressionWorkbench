@@ -84,6 +84,8 @@ public sealed class ArchivesReadmeStateTests {
       + File.ReadAllText(Path.Combine(root, "Directory.Build.targets"));
     var bundled = Regex.Matches(projectFiles, @"FileFormats\\(FileFormat\.[A-Za-z0-9]+)\\")
       .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+    // Formats the package compiles in rather than references report the package's own assembly.
+    bundled.Add("Hawkynt.FileFormats.Archives");
     var readme = File.ReadAllText(Path.Combine(root, "README.md"));
     var section = Slice(readme, "## 🧩 Support matrix", "## 🚀 Quick start");
     var documented = Rows(section)

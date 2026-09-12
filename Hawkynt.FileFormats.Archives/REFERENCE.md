@@ -21735,3 +21735,104 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+
+### Namespace `FileSystem.SquashFs`
+
+[`SquashFsBlockMover`](#squashfsblockmover) · [`SquashFsEntry`](#squashfsentry) · [`SquashFsFormatDescriptor`](#squashfsformatdescriptor) · [`SquashFsReader`](#squashfsreader) · [`SquashFsWriter`](#squashfswriter)
+
+#### `SquashFsBlockMover`
+
+Moves a file's data blocks inside a SquashFS image and rewrites the inode field that said where they began.
+
+Implements `IFilesystemBlockMover`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquashFsBlockMover` | `SquashFsBlockMover()` |  |
+| `BlockSize` | `int BlockSize { get; }` | A byte. Data blocks are packed to the byte, compressed as they are. |
+| `FirstDataByte` | `long FirstDataByte { get; }` | First byte a file's data may occupy: past the superblock. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Each call notes where one file's data went; the table is written once the pass is over. |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | A run may be held outside the image while the rest of the layout moves, which is what lets a full image be rearranged at all. |
+| `Init` | `void Init(Stream image)` | Reads the inode table once and notes where each file's field is. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` |  |
+| `SettleInodeTable` | `void SettleInodeTable(Stream image)` | Writes the inode table again with every file's new starting block. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` |  |
+
+#### `SquashFsEntry`
+
+Represents a single entry (file, directory, or symlink) inside a SquashFS image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquashFsEntry` | `SquashFsEntry()` |  |
+| `FullPath` | `string FullPath { get; init; }` | The full path within the archive, using forward slashes. |
+| `Gid` | `uint Gid { get; init; }` | Group ID. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True if this entry is a directory. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | True if this entry is a symbolic link. |
+| `ModifiedTime` | `DateTime ModifiedTime { get; init; }` | Last modification time. |
+| `Name` | `string Name { get; init; }` | The base name of the entry (no path separators). |
+| `Permissions` | `int Permissions { get; init; }` | Unix permissions (low 12 bits of inode mode field). |
+| `Size` | `long Size { get; init; }` | Uncompressed size in bytes. 0 for directories. |
+| `SymlinkTarget` | `string SymlinkTarget { get; init; }` | The symlink target path, or null if not a symlink. |
+| `Uid` | `uint Uid { get; init; }` | User ID. |
+
+#### `SquashFsFormatDescriptor`
+
+Offline R/W descriptor for SquashFS images ("hsqs" magic). Linux mounts SquashFS read-only by design; the workbench nevertheless supports editing an existing image by verified rebuild, plus guarded physical re-layout where compressed metadata can be repointed safely. The writer emits gzip-compressed images. References: `https://dr-emann.github.io/squashfs/` — community-written binary-format specification`https://www.kernel.org/doc/html/latest/filesystems/squashfs.html` — kernel documentation`https://github.com/plougher/squashfs-tools` — canonical mksquashfs/unsquashfs tooling`https://en.wikipedia.org/wiki/SquashFS` — Wikipedia article
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `IFormatOptionsSchema`, `ILayoutOptimizable`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquashFsFormatDescriptor` | `SquashFsFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `string Description { get; }` | Gets the description. |
+| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The only writer-honoured knob is the data block size: it is split into the superblock's `block_size` / `block_log` fields and drives how each file's payload is chunked into compressed data blocks. SquashFS stores no volume label, and this writer always compresses with gzip (zlib), so no label or compression-method knob is published. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Lays the image out again by writing it anew. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Why this image is laid out again by rebuilding rather than by moving. |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single filesystem entry as a bounded read-only stream. The reader produces the decoded file bytes by walking the entry's extent or block chain; the matched bytes are wrapped in a `BoundedEntryStream` sized to the entry's logical length so cluster/extent slack past the entry's end is physically unreachable through this view. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the specified entry from the target container. |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | A canonical SquashFS image is fully packed. The real extent map marks all non-file bytes as metadata-reserved, so there is no proven dead space to scrub and this format-specific implementation is intentionally a no-op. Note: `EnumerateExtents` reports Used runs at synthetic, uncompressed-size offsets for the defrag preview — those offsets do not map to real on-disk positions, so this method deliberately does not drive the generic wiper from them (doing so would zero live compressed bytes). Cluster tips are not applicable; this returns 0. |
+
+#### `SquashFsReader`
+
+Reads a SquashFS version 4 filesystem image.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquashFsReader` | `SquashFsReader(Stream stream, bool leaveOpen = false)` | Opens a SquashFS image from the given stream. |
+| `Entries` | `IReadOnlyList<SquashFsEntry> Entries { get; }` | All entries found in the archive, in depth-first order. |
+| `Dispose` | `void Dispose()` |  |
+| `Extract` | `byte[] Extract(SquashFsEntry entry)` | Extracts the data of a regular file entry. |
+
+#### `SquashFsWriter`
+
+Writes a SquashFS version 4 filesystem image using gzip (zlib) compression for data blocks. Metadata blocks (inodes, directories, IDs) use zlib compression with automatic fallback to uncompressed when compression does not reduce size.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SquashFsWriter` | `SquashFsWriter(Stream stream, bool leaveOpen = false, uint blockSize = 131072)` | Initializes a new `SquashFsWriter` that writes to `stream`. The image is finalized when `Dispose` is called. |
+| `DefaultBlockSize` | `const uint DefaultBlockSize` | Default data block size (128 KiB) — the mksquashfs default. |
+| `AddDirectory` | `void AddDirectory(string path, DateTime? lastModified = null)` | Adds an explicit directory entry to the image. |
+| `AddFile` | `void AddFile(string path, byte[] data, DateTime? lastModified = null)` | Adds a file entry to the image. |
+| `Dispose` | `void Dispose()` |  |

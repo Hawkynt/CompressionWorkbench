@@ -1,5 +1,6 @@
 using Compression.Core.Dictionary.Sqx;
 using FileFormat.Sqx;
+using CoreSqxConstants = Compression.Core.Dictionary.Sqx.SqxConstants;
 
 namespace Compression.Tests.Sqx;
 
@@ -303,10 +304,10 @@ public class SqxTests {
     for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
-    var compressed = SqxEncoder.Encode(data, SqxConstants.DefaultDictSize);
+    var compressed = SqxEncoder.Encode(data, CoreSqxConstants.DefaultDictSize);
     Assert.That(compressed.Length, Is.GreaterThan(0), "Should produce output");
 
-    var decoded = SqxDecoder.Decode(compressed, data.Length, SqxConstants.DefaultDictSize);
+    var decoded = SqxDecoder.Decode(compressed, data.Length, CoreSqxConstants.DefaultDictSize);
     Assert.That(decoded, Is.EqualTo(data));
   }
 
@@ -318,8 +319,8 @@ public class SqxTests {
     for (var i = 0; i < data.Length; ++i)
       data[i] = (byte)(i % 10);
 
-    var compressed = SqxEncoder.Encode(data, SqxConstants.DefaultDictSize);
-    var decoded = SqxDecoder.Decode(compressed, data.Length, SqxConstants.DefaultDictSize);
+    var compressed = SqxEncoder.Encode(data, CoreSqxConstants.DefaultDictSize);
+    var decoded = SqxDecoder.Decode(compressed, data.Length, CoreSqxConstants.DefaultDictSize);
     Assert.That(decoded, Is.EqualTo(data));
   }
 
