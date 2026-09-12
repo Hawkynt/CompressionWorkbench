@@ -52,7 +52,7 @@ public class TfsStubBehaviorTests {
     using (var stream = new MemoryStream(image, writable: false)) {
       var full = descriptor.List(stream, null).Single(e => e.Name == "FULL.tfs");
       Assert.That(full.OriginalSize, Is.EqualTo(image.LongLength));
-      Assert.That(full.PackedSize, Is.EqualTo(image.LongLength));
+      Assert.That(full.CompressedSize, Is.EqualTo(image.LongLength));
     }
 
     var outputDir = Path.Combine(Path.GetTempPath(), "TfsOpaque_" + Guid.NewGuid().ToString("N"));

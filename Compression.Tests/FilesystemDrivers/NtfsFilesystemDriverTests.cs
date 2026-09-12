@@ -48,7 +48,7 @@ public sealed class NtfsFilesystemDriverTests {
         "the MFT sequence number is the stale-file-reference generation, not an optional decoration");
     });
 
-    using var handle = session.OpenFile(file.Value, FileAccess.Read);
+    using var handle = session.OpenFile(file!.Value, FileAccess.Read);
     var slice = new byte[2049];
     var read = handle.Read(73_333, slice);
     Assert.That(read, Is.EqualTo(slice.Length));

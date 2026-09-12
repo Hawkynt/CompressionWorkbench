@@ -47,9 +47,11 @@ internal sealed class ExFatFilesystemSession : IFilesystemSession {
     var node = RequireNode(nodeId);
     if (node.Entry is not { } entry)
       return new FilesystemNodeInfo(nodeId, FilesystemNodeKind.Directory, 0, 0, 1);
+    // The null arm has to name the nullable type: a conditional whose arms are a DateTimeOffset and
+    // a bare null has no common type to infer.
     var modified = entry.LastModified is { } timestamp
       ? new DateTimeOffset(DateTime.SpecifyKind(timestamp, DateTimeKind.Utc))
-      : null;
+      : (DateTimeOffset?)null;
     return new FilesystemNodeInfo(
       node.NodeId,
       node.Kind,

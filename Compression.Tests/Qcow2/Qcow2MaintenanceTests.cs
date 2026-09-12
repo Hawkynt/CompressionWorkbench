@@ -138,7 +138,12 @@ public sealed class Qcow2MaintenanceTests {
     var additionalSectors = lastSector - firstSector;
     var sizeBits = clusterBits - 8;
     var offsetBits = 62 - sizeBits;
-    var descriptor = (ulong)compressedOffset | ((ulong)additionalSectors << offsetBits) | CompressedFlag;
+    // Every operand becomes an unsigned local before the bits are combined. Widening a signed value
+    // inside the expression sign-extends it across the descriptor's top bits, which is what the
+    // compiler refuses to let an OR hide.
+    var offsetBitsValue = (ulong)compressedOffset;
+    var sectorBitsValue = (ulong)additionalSectors << offsetBits;
+    var descriptor = offsetBitsValue | sectorBitsValue | CompressedFlag;
 
     var imageLength = (lastSector + 1) * 512;
     var image = new byte[imageLength];
