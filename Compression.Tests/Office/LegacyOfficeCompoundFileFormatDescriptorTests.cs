@@ -7,35 +7,39 @@ using FileFormat.PngCrushAdapters;
 namespace Compression.Tests.Office;
 
 [TestFixture]
-public sealed class LegacyOfficeCompoundFileDescriptorTests {
+public sealed class LegacyOfficeCompoundFileFormatDescriptorTests {
 
   [SetUp]
   public void SetUp() => FormatRegistration.EnsureInitialized();
 
+  /// <summary>
+  /// The legacy Office view claims only the template extensions no more capable descriptor
+  /// already owns, and neither it nor the generic structured-storage view registers the CFB
+  /// signature: every CFB-based format carries those eight bytes, so registering them would
+  /// decide content-only detection between the views by confidence instead of by content.
+  /// </summary>
   [Test]
-  public void Registry_ClaimsLegacyOfficeFamilies_AndKeepsGenericCfbMagic() {
+  public void Registry_ClaimsOnlyTheLegacyOfficeTemplates_AndNeitherViewRegistersTheSharedCfbMagic() {
     var office = FormatRegistry.GetById("LegacyOfficeCompoundFile");
     var cfb = FormatRegistry.GetById("CompoundFileBinary");
 
     Assert.Multiple(() => {
       Assert.That(office, Is.Not.Null);
       Assert.That(cfb, Is.Not.Null);
-      Assert.That(office!.Extensions, Is.EquivalentTo(new[] { ".doc", ".dot", ".xls", ".xlt", ".ppt", ".pps", ".pot" }));
-      Assert.That(office.MagicSignatures, Is.Empty,
-        "The shared CFB signature belongs to the generic structured-storage descriptor.");
-      Assert.That(cfb!.MagicSignatures, Has.Count.EqualTo(1));
-      Assert.That(cfb.MagicSignatures[0].Bytes, Is.EqualTo(new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 }));
+      Assert.That(office!.Extensions, Is.EquivalentTo(new[] { ".dot", ".xlt", ".pps", ".pot" }));
+      Assert.That(office.Extensions, Does.Not.Contain(".doc"), "the Doc descriptor owns .doc and can also create and modify it");
+      Assert.That(office.Extensions, Does.Not.Contain(".xls"), "the Xls descriptor owns .xls and can also create and modify it");
+      Assert.That(office.Extensions, Does.Not.Contain(".ppt"), "the Ppt descriptor owns .ppt and can also create and modify it");
+      Assert.That(office.MagicSignatures, Is.Empty);
+      Assert.That(cfb!.MagicSignatures, Is.Empty);
+      Assert.That(cfb.Extensions, Is.EquivalentTo(new[] { ".cfb", ".ole" }));
     });
   }
 
-  [TestCase(".doc")]
   [TestCase(".dot")]
-  [TestCase(".xls")]
   [TestCase(".xlt")]
-  [TestCase(".ppt")]
   [TestCase(".pps")]
-  [TestCase(".pot")]
-  public void Detector_UsesLegacyOfficeViewForLegacyOfficeExtensions(string extension) {
+  public void Detector_UsesLegacyOfficeViewForTheTemplateExtensionsItOwns(string extension) {
     var path = Path.Combine(Path.GetTempPath(), $"cwb_cfb_{Guid.NewGuid():N}{extension}");
     try {
       File.WriteAllBytes(path, _BuildCompound("WordDocument"));
@@ -45,16 +49,110 @@ public sealed class LegacyOfficeCompoundFileDescriptorTests {
     }
   }
 
+  /// <summary>
+  /// The Doc/Xls/Ppt descriptors expose the same CFB storages and streams through the same
+  /// reader and additionally advertise Create and Modify. Nothing in the bytes separates the
+  /// two views -- a .doc is a CFB whichever one reads it -- so the extension has to stay with
+  /// the descriptor that can do more with it.
+  /// </summary>
+  [TestCase(".doc", "Doc")]
+  [TestCase(".xls", "Xls")]
+  [TestCase(".ppt", "Ppt")]
+  public void Detector_LeavesTheDocumentExtensionsWithTheirOwningDescriptors(string extension, string expected) {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_cfb_{Guid.NewGuid():N}{extension}");
+    try {
+      File.WriteAllBytes(path, _BuildCompound("WordDocument"));
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo(expected));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
+  }
+
+  /// <summary>
+  /// ".pot" is a legacy PowerPoint template, which is a CFB container, and a gettext PO
+  /// template, which is text. The container signature decides. Routing by extension alone
+  /// handed every file with that suffix to whichever of the two descriptors the registry
+  /// enumerated first, so one of the two formats was always misread.
+  /// </summary>
   [Test]
-  public void MagicOnlyDetection_UsesGenericCompoundFileView() {
+  public void PotFile_WithCompoundFileContent_DetectsAsLegacyOffice() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_pot_{Guid.NewGuid():N}.pot");
+    try {
+      File.WriteAllBytes(path, _BuildCompound("PowerPoint Document"));
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo("LegacyOfficeCompoundFile"));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
+  }
+
+  /// <summary>The other half of the same rule: a PO template is text and stays with gettext.</summary>
+  [Test]
+  public void PotFile_WithGettextTemplateContent_DetectsAsPo() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_pot_{Guid.NewGuid():N}.pot");
+    try {
+      File.WriteAllText(path, """
+        # SOME DESCRIPTIVE TITLE.
+        #, fuzzy
+        msgid ""
+        msgstr ""
+        "Project-Id-Version: PACKAGE VERSION\n"
+        "MIME-Version: 1.0\n"
+        "Content-Type: text/plain; charset=UTF-8\n"
+
+        #: src/main.c:42
+        msgid "Hello, world!"
+        msgstr ""
+        """);
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo("Po"));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
+  }
+
+  /// <summary>
+  /// A ".pot" that is neither -- empty, truncated, or simply not a container -- is text as far
+  /// as the rule is concerned, because the absence of the signature is what selects gettext.
+  /// </summary>
+  [Test]
+  public void PotFile_TooShortToCarryASignature_DetectsAsPo() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_pot_{Guid.NewGuid():N}.pot");
+    try {
+      File.WriteAllBytes(path, [0xD0, 0xCF, 0x11]);
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo("Po"));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
+  }
+
+  /// <summary>
+  /// Content-only detection of a CFB container stays with the specific format that owns it.
+  /// The generic structured-storage view is reachable through its own .cfb/.ole extensions and
+  /// through an explicit format selection, and deliberately does not compete for the signature:
+  /// claiming it at a higher confidence than MSI's turned every .msi identified by content into
+  /// a bare storage listing.
+  /// </summary>
+  [Test]
+  public void MagicOnlyDetection_DoesNotHandACompoundFileToTheGenericView() {
     var bytes = _BuildCompound("WordDocument");
-    Assert.That(FormatDetector.DetectByMagic(bytes.AsSpan(0, 512)).ToString(), Is.EqualTo("CompoundFileBinary"));
+    Assert.That(FormatDetector.DetectByMagic(bytes.AsSpan(0, 512)).ToString(), Is.Not.EqualTo("CompoundFileBinary"));
+  }
+
+  /// <summary>The generic view is still reachable: its own extensions select it.</summary>
+  [Test]
+  public void Detector_UsesGenericCompoundFileViewForItsOwnExtensions() {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_cfb_{Guid.NewGuid():N}.cfb");
+    try {
+      File.WriteAllBytes(path, _BuildCompound("CustomStream"));
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo("CompoundFileBinary"));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
   }
 
   [Test]
   public void List_PreservesStorageHierarchyAndLogicalStreams() {
     var bytes = _BuildCompound("PowerPoint Document");
-    var descriptor = new LegacyOfficeCompoundFileDescriptor();
+    var descriptor = new LegacyOfficeCompoundFileFormatDescriptor();
 
     using var input = new MemoryStream(bytes, writable: false);
     var entries = descriptor.List(input, password: null);
@@ -76,7 +174,7 @@ public sealed class LegacyOfficeCompoundFileDescriptorTests {
   public void OpenEntry_ReadsRegularFatStreamByteExact() {
     var expected = Enumerable.Range(0, 4096).Select(i => (byte)(i * 31 + 7)).ToArray();
     var bytes = _BuildCompound("Workbook", expected, "mini payload!"u8.ToArray());
-    var descriptor = new LegacyOfficeCompoundFileDescriptor();
+    var descriptor = new LegacyOfficeCompoundFileFormatDescriptor();
 
     using var input = new MemoryStream(bytes, writable: false);
     using var opened = descriptor.OpenEntry(input, "Workbook", password: null);
@@ -90,7 +188,7 @@ public sealed class LegacyOfficeCompoundFileDescriptorTests {
   public void OpenEntry_ReadsMiniFatStreamByteExact() {
     var expected = "mini payload!"u8.ToArray();
     var bytes = _BuildCompound("WordDocument", preview: expected);
-    var descriptor = new LegacyOfficeCompoundFileDescriptor();
+    var descriptor = new LegacyOfficeCompoundFileFormatDescriptor();
 
     using var input = new MemoryStream(bytes, writable: false);
     var actual = descriptor.ExtractEntryToMemory(input, "ObjectPool/Preview", password: null);
@@ -101,8 +199,8 @@ public sealed class LegacyOfficeCompoundFileDescriptorTests {
   [Test]
   public void GenericCfb_ViewDoesNotRequireOfficeMainStream() {
     var bytes = _BuildCompound("CustomStream");
-    var generic = new CompoundFileBinaryDescriptor();
-    var office = new LegacyOfficeCompoundFileDescriptor();
+    var generic = new CompoundFileBinaryFormatDescriptor();
+    var office = new LegacyOfficeCompoundFileFormatDescriptor();
 
     using var genericInput = new MemoryStream(bytes, writable: false);
     Assert.That(generic.List(genericInput, null).Select(entry => entry.Name), Does.Contain("CustomStream"));
@@ -115,7 +213,7 @@ public sealed class LegacyOfficeCompoundFileDescriptorTests {
   public void StructureValidation_RejectsOutOfBoundsDirectorySector() {
     var bytes = _BuildCompound("WordDocument");
     BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(48, 4), 0x0000FFFF);
-    var descriptor = new CompoundFileBinaryDescriptor();
+    var descriptor = new CompoundFileBinaryFormatDescriptor();
 
     using var input = new MemoryStream(bytes, writable: false);
     var result = descriptor.ValidateStructure(input);

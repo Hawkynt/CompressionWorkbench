@@ -53,10 +53,6 @@
     <Compile Remove="Dcx\DcxPseudoArchiveTests.cs" />
     <Compile Remove="Icns\IcnsPseudoArchiveTests.cs" />
     <Compile Remove="PngCrushAdapters\**\*.cs" />
-    <!-- The Office views live in FileFormat.PngCrushAdapters, so their tests belong behind the same
-         gate: without the sibling the descriptors are not in the registry and every detection
-         assertion answers Zip or CompoundFileBinary instead. -->
-    <Compile Remove="Office\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

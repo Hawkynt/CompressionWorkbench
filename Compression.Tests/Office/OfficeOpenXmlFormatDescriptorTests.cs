@@ -7,41 +7,58 @@ using FileFormat.PngCrushAdapters;
 namespace Compression.Tests.Office;
 
 [TestFixture]
-public sealed class OfficeOpenXmlPackageDescriptorTests {
+public sealed class OfficeOpenXmlFormatDescriptorTests {
 
   [SetUp]
   public void SetUp() => FormatRegistration.EnsureInitialized();
 
+  /// <summary>
+  /// The OPC view claims the eleven modern Office extensions nothing else owned. It does not
+  /// claim .docx/.xlsx/.pptx: the Docx/Xlsx/Pptx descriptors list the same package parts through
+  /// the same ZIP implementation and additionally advertise Create, Modify, Defragment and a
+  /// layout map, and both sides of that collision are a ZIP, so nothing in the bytes could
+  /// choose between them.
+  /// </summary>
   [Test]
-  public void Registry_ClaimsAllModernOfficePackageExtensions() {
+  public void Registry_ClaimsTheModernOfficeExtensionsNothingElseOwns() {
     var descriptor = FormatRegistry.GetById("OfficeOpenXml");
     Assert.That(descriptor, Is.Not.Null);
 
     Assert.Multiple(() => {
-      Assert.That(descriptor!.Extensions, Does.Contain(".docx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".docm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".dotx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".dotm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".xlsx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".xlsm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".xltx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".xltm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".pptx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".pptm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".ppsx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".ppsm"));
-      Assert.That(descriptor.Extensions, Does.Contain(".potx"));
-      Assert.That(descriptor.Extensions, Does.Contain(".potm"));
+      Assert.That(descriptor!.Extensions, Is.EquivalentTo(new[] {
+        ".docm", ".dotx", ".dotm",
+        ".xlsm", ".xltx", ".xltm",
+        ".pptm", ".ppsx", ".ppsm", ".potx", ".potm",
+      }));
+      Assert.That(descriptor.Extensions, Does.Not.Contain(".docx"));
+      Assert.That(descriptor.Extensions, Does.Not.Contain(".xlsx"));
+      Assert.That(descriptor.Extensions, Does.Not.Contain(".pptx"));
       Assert.That(descriptor.MagicSignatures, Is.Empty,
         "OPC must not steal arbitrary ZIP files during content-only detection.");
     });
+  }
+
+  /// <summary>
+  /// The three extensions the OPC view gives up stay with the descriptors that own them.
+  /// </summary>
+  [TestCase(".docx", "Docx")]
+  [TestCase(".xlsx", "Xlsx")]
+  [TestCase(".pptx", "Pptx")]
+  public void Detector_LeavesTheOwnedPackageExtensionsWithTheirOwningDescriptors(string extension, string expected) {
+    var path = Path.Combine(Path.GetTempPath(), $"cwb_opc_{Guid.NewGuid():N}{extension}");
+    try {
+      File.WriteAllBytes(path, _BuildPackage());
+      Assert.That(FormatDetector.Detect(path).ToString(), Is.EqualTo(expected));
+    } finally {
+      try { File.Delete(path); } catch { /* best effort */ }
+    }
   }
 
   [Test]
   public void List_PreservesOriginalPackageParts_WithoutFlatteningMultiImageAssets() {
     var animatedGif = new byte[] { (byte)'G', (byte)'I', (byte)'F', (byte)'8', (byte)'9', (byte)'a', 1, 2, 3, 4 };
     var package = _BuildPackage(("word/media/animated.gif", animatedGif));
-    var descriptor = new OfficeOpenXmlPackageDescriptor();
+    var descriptor = new OfficeOpenXmlFormatDescriptor();
 
     using var stream = new MemoryStream(package, writable: false);
     var entries = descriptor.List(stream, password: null);
@@ -63,7 +80,7 @@ public sealed class OfficeOpenXmlPackageDescriptorTests {
   public void OpenEntry_ReturnsExactOriginalPartBytes() {
     var original = Enumerable.Range(0, 257).Select(i => (byte)(i * 47)).ToArray();
     var package = _BuildPackage(("ppt/media/multipage.tiff", original));
-    var descriptor = new OfficeOpenXmlPackageDescriptor();
+    var descriptor = new OfficeOpenXmlFormatDescriptor();
 
     using var archive = new MemoryStream(package, writable: false);
     using var part = descriptor.OpenEntry(archive, "ppt/media/multipage.tiff", password: null);
@@ -80,7 +97,7 @@ public sealed class OfficeOpenXmlPackageDescriptorTests {
       ("customUI/images/icon.ico", [0, 0, 1, 0, 0, 0]),
       ("word/embeddings/oleObject1.bin", [0xD0, 0xCF, 0x11, 0xE0]),
       ("word/media/background.png", [137, 80, 78, 71]));
-    var descriptor = new OfficeOpenXmlPackageDescriptor();
+    var descriptor = new OfficeOpenXmlFormatDescriptor();
 
     using var stream = new MemoryStream(package, writable: false);
     var names = descriptor.List(stream, password: null).Select(entry => entry.Name).ToArray();
@@ -97,7 +114,7 @@ public sealed class OfficeOpenXmlPackageDescriptorTests {
   [Test]
   public void Detector_UsesOfficeExtension_ButKeepsOrdinaryZipAsZip() {
     var package = _BuildPackage();
-    var officePath = Path.Combine(Path.GetTempPath(), $"cwb_opc_{Guid.NewGuid():N}.docx");
+    var officePath = Path.Combine(Path.GetTempPath(), $"cwb_opc_{Guid.NewGuid():N}.docm");
     var zipPath = Path.Combine(Path.GetTempPath(), $"cwb_opc_{Guid.NewGuid():N}.zip");
 
     try {
@@ -123,14 +140,14 @@ public sealed class OfficeOpenXmlPackageDescriptorTests {
       zip = memory.ToArray();
     }
 
-    var descriptor = new OfficeOpenXmlPackageDescriptor();
+    var descriptor = new OfficeOpenXmlFormatDescriptor();
     using var stream = new MemoryStream(zip, writable: false);
     Assert.Throws<InvalidDataException>(() => descriptor.List(stream, password: null));
   }
 
   [Test]
   public void StructureValidation_RequiresOpcPlumbingParts() {
-    var descriptor = new OfficeOpenXmlPackageDescriptor();
+    var descriptor = new OfficeOpenXmlFormatDescriptor();
     var package = _BuildPackage();
     using var valid = new MemoryStream(package, writable: false);
     var validResult = descriptor.ValidateStructure(valid);

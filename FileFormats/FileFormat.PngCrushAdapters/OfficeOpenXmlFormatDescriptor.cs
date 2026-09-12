@@ -27,7 +27,7 @@ namespace FileFormat.PngCrushAdapters;
 /// Relationships documentation. No external implementation code is used.
 /// </para>
 /// </remarks>
-public sealed class OfficeOpenXmlPackageDescriptor
+public sealed class OfficeOpenXmlFormatDescriptor
   : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IFormatValidator {
 
   private static readonly ZipFormatDescriptor _Zip = new();
@@ -39,12 +39,17 @@ public sealed class OfficeOpenXmlPackageDescriptor
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
-  public string DefaultExtension => ".docx";
+  public string DefaultExtension => ".docm";
 
+  // .docx, .xlsx and .pptx are owned by the Docx/Xlsx/Pptx descriptors, which list the same OPC
+  // parts through the same ZIP implementation AND can create, modify, defragment and lay out the
+  // package. Both sides of that collision are a ZIP, so no content test separates them; claiming
+  // the three here could only demote a file to the weaker view. The eleven kept below were
+  // claimed by nobody.
   public IReadOnlyList<string> Extensions => [
-    ".docx", ".docm", ".dotx", ".dotm",
-    ".xlsx", ".xlsm", ".xltx", ".xltm",
-    ".pptx", ".pptm", ".ppsx", ".ppsm", ".potx", ".potm",
+    ".docm", ".dotx", ".dotm",
+    ".xlsm", ".xltx", ".xltm",
+    ".pptm", ".ppsx", ".ppsm", ".potx", ".potm",
   ];
 
   public IReadOnlyList<string> CompoundExtensions => [];
