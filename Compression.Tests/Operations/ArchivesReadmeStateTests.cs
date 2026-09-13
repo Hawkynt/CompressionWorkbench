@@ -86,6 +86,9 @@ public sealed class ArchivesReadmeStateTests {
       .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
     // Formats the package compiles in rather than references report the package's own assembly.
     bundled.Add("Hawkynt.FileFormats.Archives");
+    // Formats it delivers through its Compression.Core dependency report Core's assembly, so they
+    // are matched on the namespace the support-matrix region names them by instead.
+    var namespaces = Documentation.FilesystemSupportMatrix.DeclaredNamespaces(projectFiles, "Hawkynt.FileFormats.Archives.csproj");
     var readme = File.ReadAllText(Path.Combine(root, "README.md"));
     var section = Slice(readme, "## 🧩 Support matrix", "## 🚀 Quick start");
     var documented = Rows(section)
@@ -94,7 +97,8 @@ public sealed class ArchivesReadmeStateTests {
       .ToHashSet(StringComparer.Ordinal);
 
     var missing = FormatRegistry.All
-      .Where(d => bundled.Contains(d.GetType().Assembly.GetName().Name!.Replace("CompressionWorkbench.", "")))
+      .Where(d => bundled.Contains(d.GetType().Assembly.GetName().Name!.Replace("CompressionWorkbench.", ""))
+               || namespaces.Contains(d.GetType().Namespace ?? ""))
       .Select(d => d.Id)
       .Where(id => !documented.Contains(id))
       .OrderBy(x => x, StringComparer.Ordinal)

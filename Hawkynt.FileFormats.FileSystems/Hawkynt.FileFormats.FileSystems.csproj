@@ -2,10 +2,10 @@
 
   <PropertyGroup>
     <!-- Every filesystem reader / writer and every disk-image container compiles
-         straight into this assembly; only the projects another package also ships
-         stay separate, so their types keep a single identity. Folder + .csproj
-         filename equal $(MSBuildProjectName) so the .NET 10 SDK can default
-         $(PackageId) without -p:PackageId overrides (see
+         straight into this assembly; the formats another package also ships live in
+         Compression.Core, so their types keep a single identity and arrive with that
+         dependency. Folder + .csproj filename equal $(MSBuildProjectName) so the
+         .NET 10 SDK can default $(PackageId) without -p:PackageId overrides (see
          Compression.Core/Hawkynt.Compression.Core.csproj for the rationale). -->
     <RootNamespace>Hawkynt.FileFormats.FileSystems</RootNamespace>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
@@ -49,24 +49,22 @@
     <EmbeddedResource Include="FileSystems\FileSystem.Reiser4\Templates\block_24.bin" LogicalName="FileSystem.Reiser4.Templates.block_24.bin" />
   </ItemGroup>
 
-  <!-- Stream codecs the absorbed readers decompress with. Each is shipped by
-       another meta-package too, so it stays a project of its own: compiling it
-       into this assembly as well would give its types two identities. -->
-  <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzma\FileFormat.Lzma.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" PrivateAssets="all" />
-  </ItemGroup>
+  <!-- The stream codecs the absorbed readers decompress with (bzip2 / xz / zstd / zlib /
+       LZMA / LZFSE / ZIP) now compile into Compression.Core, which this package already
+       depends on, so they arrive with that dependency instead of as bundled DLLs. -->
 
-  <!-- BUNDLED-CONTAINERS:BEGIN — FileFormat.* projects whose descriptors belong in the support matrix; read by Compression.Tests/Documentation/FilesystemSupportMatrix.cs -->
+  <!-- SUPPORT-MATRIX-FORMATS:BEGIN — namespaces of container and filesystem formats that
+       compile into Compression.Core yet belong in this package's support matrix; read by
+       Compression.Tests/Documentation/FilesystemSupportMatrix.cs. Inert to MSBuild — the
+       formats reach consumers through the Compression.Core dependency; this only records
+       which of them this package documents. -->
   <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" PrivateAssets="all" />
+    <SupportMatrixNamespace Include="FileFormat.Pfs0" />
+    <SupportMatrixNamespace Include="FileFormat.T64" />
+    <SupportMatrixNamespace Include="FileFormat.Lynx" />
+    <SupportMatrixNamespace Include="FileSystem.SquashFs" />
   </ItemGroup>
-  <!-- BUNDLED-CONTAINERS:END -->
+  <!-- SUPPORT-MATRIX-FORMATS:END -->
 
   <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
@@ -78,12 +76,5 @@
       <TfmSpecificPackageFile Include="@(_BundledRefs)" PackagePath="lib/$(TargetFramework)" />
     </ItemGroup>
   </Target>
-
-  <!-- Keep the NuGet bundle exhaustive: a FileSystem.* project that stays out of
-       this assembly (because another package ships it too, or because it is new)
-       is still packaged. -->
-  <ItemGroup>
-    <ProjectReference Include="..\FileSystems\FileSystem.*\FileSystem.*.csproj" PrivateAssets="all" />
-  </ItemGroup>
 
 </Project>

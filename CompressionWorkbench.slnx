@@ -29,7 +29,6 @@
     <Project Path="FileFormats/FileFormat.Akb/FileFormat.Akb.csproj" />
     <Project Path="FileFormats/FileFormat.Avi/FileFormat.Avi.csproj" />
     <Project Path="FileFormats/FileFormat.Awb/FileFormat.Awb.csproj" />
-    <Project Path="FileFormats/FileFormat.Bzip2/FileFormat.Bzip2.csproj" />
     <Project Path="Codecs/Codec.Flac/Codec.Flac.csproj" />
     <Project Path="Codecs/Codec.Pcm/Codec.Pcm.csproj" />
     <Project Path="Codecs/Codec.OkiAdpcm/Codec.OkiAdpcm.csproj" />
@@ -52,19 +51,10 @@
     <Project Path="Codecs/Codec.Ralf/Codec.Ralf.csproj" />
     <Project Path="Codecs/Codec.WmaLossless/Codec.WmaLossless.csproj" />
     <Project Path="Codecs/Codec.Dfpwm/Codec.Dfpwm.csproj" />
-    <Project Path="FileFormats/FileFormat.Lzfse/FileFormat.Lzfse.csproj" />
-    <Project Path="FileFormats/FileFormat.Lzma/FileFormat.Lzma.csproj" />
     <Project Path="FileFormats/FileFormat.Matroska/FileFormat.Matroska.csproj" />
     <Project Path="FileFormats/FileFormat.Mp4/FileFormat.Mp4.csproj" />
-    <Project Path="FileFormats/FileFormat.Pfs0/FileFormat.Pfs0.csproj" />
     <Project Path="FileFormats/FileFormat.Psf/FileFormat.Psf.csproj" />
-    <Project Path="FileSystems/FileSystem.SquashFs/FileSystem.SquashFs.csproj" />
-    <Project Path="FileFormats/FileFormat.T64/FileFormat.T64.csproj" />
     <Project Path="FileFormats/FileFormat.Wav/FileFormat.Wav.csproj" />
-    <Project Path="FileFormats/FileFormat.Xz/FileFormat.Xz.csproj" />
-    <Project Path="FileFormats/FileFormat.Zip/FileFormat.Zip.csproj" />
-    <Project Path="FileFormats/FileFormat.Zlib/FileFormat.Zlib.csproj" />
-    <Project Path="FileFormats/FileFormat.Zstd/FileFormat.Zstd.csproj" />
     <Project Path="FileFormats/FileFormat.Asf/FileFormat.Asf.csproj" />
     <Project Path="FileFormats/FileFormat.RealMedia/FileFormat.RealMedia.csproj" />
     <Project Path="FileFormats/FileFormat.Bik/FileFormat.Bik.csproj" />

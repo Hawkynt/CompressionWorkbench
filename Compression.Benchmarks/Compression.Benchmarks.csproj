@@ -19,7 +19,6 @@
     <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
     <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
     <ProjectReference Include="..\Hawkynt.FileFormats.FileSystems\Hawkynt.FileFormats.FileSystems.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
   </ItemGroup>
 
 </Project>

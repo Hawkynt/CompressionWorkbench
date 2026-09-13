@@ -70,20 +70,10 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Akb\FileFormat.Akb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Awb\FileFormat.Awb.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzma\FileFormat.Lzma.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" />
-    <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Wav\FileFormat.Wav.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Xz\FileFormat.Xz.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Asf\FileFormat.Asf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" />
@@ -91,13 +81,11 @@
   </ItemGroup>
 
   <!-- Driver-coverage invariant: every filesystem and disk-image descriptor must
-       be visible to Compression.Registry.Generator. Almost all of them compile
-       into the meta-package assembly; the glob covers any FileSystem.* project
-       that still builds on its own. -->
+       be visible to Compression.Registry.Generator. They compile either into the
+       meta-package assembly or, where a second package ships them too, into
+       Compression.Core; both are referenced above. -->
   <ItemGroup>
     <ProjectReference Include="..\Hawkynt.FileFormats.FileSystems\Hawkynt.FileFormats.FileSystems.csproj" />
-    <ProjectReference Remove="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
-    <ProjectReference Include="..\FileSystems\FileSystem.*\FileSystem.*.csproj" />
   </ItemGroup>
 
 </Project>
