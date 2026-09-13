@@ -13,13 +13,21 @@
       the package's support assemblies share type names with the archive package.
     -->
     <!--
-      1.0.0.748 is not published yet. The build number is version.pl's commit count for
-      Hawkynt.FileFormats.Images/, which stands at 747 on PNGCrushCS main, so the squash merge of
-      Hawkynt/PNGCrushCS#424 makes it 748. A bare version is a FLOOR to NuGet, not an exact match,
-      so any release at or above that number satisfies this and no second bump is needed — but
-      until one is published this project cannot restore. See the pull request for the sequencing.
+      1.0.0.749 is the version PNGCrushCS's next release will publish, and is not on nuget.org
+      yet: release.yml is dispatch-only and has not been run since Hawkynt/PNGCrushCS#424 landed.
+      Until it is, this project cannot restore, and that is the intended state rather than a
+      defect.
+
+      The number is not a guess. version.pl stamps MAJOR.MINOR.PATCH from Directory.Build.props
+      with the commit count of the declaring folder appended, and version.pl in list mode, run against
+      PNGCrushCS main at b44c7de4 reports 1.0.0.749 for this package. That repository has no open
+      pull requests, so nothing can move the count before the release is cut.
+
+      It has to be the exact published version rather than a lower one. A bare version string is
+      a floor to NuGet, but this repository promotes NU1603 to an error, so a pin that resolves
+      upward fails the build just as surely as one that resolves to nothing.
     -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.748" PrivateAssets="compile" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.749" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>
