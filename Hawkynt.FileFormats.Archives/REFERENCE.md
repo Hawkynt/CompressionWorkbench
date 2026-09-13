@@ -1933,33 +1933,14 @@ Reads and writes the standard aPLib AP32 safe-wrapper format.
 
 Android application package (.apk) — a ZIP container holding the manifest, DEX bytecode, resources and native libraries. References: `https://developer.android.com/guide/components/fundamentals` — Android application fundamentals (APK packaging)`https://en.wikipedia.org/wiki/Apk_(file_format)` — format overview`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ApkFormatDescriptor` | `ApkFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing APK archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (APK is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (APK is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.ApkNativeLibs`
 
@@ -2351,33 +2332,14 @@ Synthetic sparseimage writer used for round-trip testing and the `SparseimageFor
 
 Windows app package (.appx/.msix) — ZIP-based container with AppxManifest.xml, block map and package signature. References: `https://learn.microsoft.com/en-us/windows/msix/` — MSIX/APPX packaging documentation`https://en.wikipedia.org/wiki/APPX` — format overview`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `AppxFormatDescriptor` | `AppxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing APPX archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (APPX is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (APPX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Ar`
 
@@ -4284,33 +4246,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Comic book archive — a ZIP container of sequentially named page images, conventionally suffixed .cbz. References: `https://en.wikipedia.org/wiki/Comic_book_archive` — the .cbr/.cbz naming convention`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CbzFormatDescriptor` | `CbzFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing CBZ archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (CBZ is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (CBZ is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Chm`
 
@@ -4762,33 +4705,19 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 #### `CrxFormatDescriptor`
 
-Chrome extension package (CRX3) — "Cr24" magic + version + protobuf SignedData header followed by the ZIP payload. References: `https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/` — Chromium crx_file component — `crx3.proto` defines the header`https://developer.chrome.com/docs/extensions` — Chrome extensions documentation portal
+Chrome extension package (CRX3) — "Cr24" magic + version + protobuf SignedData header followed by the ZIP payload. The envelope is the only thing that separates a CRX from the rest of the ZIP-container family, and it is expressed as the two hooks the base descriptor provides: `PrepareRead` validates and skips it on the way in, `WriteContainerPrefix` emits it on the way out. References: `https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/` — Chromium crx_file component — `crx3.proto` defines the header`https://developer.chrome.com/docs/extensions` — Chrome extensions documentation portal
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CrxFormatDescriptor` | `CrxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: strips the CRX envelope, defrags the inner ZIP, then re-emits. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: strips the CRX envelope, defrags the inner ZIP, then re-emits. |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+| `MagicSignatures` | `override IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. Empty by default: a plain ZIP container is recognised by the ZIP descriptor, so only a family member with an envelope of its own (CRX) claims a signature. |
+| `PrepareRead` | `protected override Stream PrepareRead(Stream stream)` | Validates the "Cr24" magic and positions the stream on the ZIP payload that follows the variable-length CrxFileHeader. |
+| `WriteContainerPrefix` | `protected override void WriteContainerPrefix(Stream output)` | Writes a minimal CRX3 envelope: "Cr24" magic, version 3, empty signed header. Roundtrips through our reader. NOTE: not browser-loadable because the CrxFileHeader protobuf is empty (no signing keys/signatures). Real signing requires a private key and is out of scope. |
 
 ### Namespace `FileFormat.Csc`
 
@@ -5266,33 +5195,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 Office Open XML word-processing document (.docx) — an OPC/ZIP package per ECMA-376 / ISO/IEC 29500. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 — Office Open XML file formats`https://en.wikipedia.org/wiki/Office_Open_XML` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DocxFormatDescriptor` | `DocxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing DOCX archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (DOCX is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (DOCX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Dxf`
 
@@ -5410,33 +5320,14 @@ Implements `IDisposable`.
 
 Java EE / Jakarta EE Enterprise Application aRchive (.ear) — ZIP container with META-INF/application.xml and bundled WAR/JAR modules. References: `https://jakarta.ee/specifications/platform/` — Jakarta EE Platform specification — defines EAR packaging`https://en.wikipedia.org/wiki/EAR_(file_format)` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EarFormatDescriptor` | `EarFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing EAR archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (EAR is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (EAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.EaseUs`
 
@@ -5840,33 +5731,14 @@ WORM writer for RFC 2822 / MIME email messages. When a single input is provided 
 
 EPUB e-book — ZIP-based OCF container with a mimetype entry, META-INF/container.xml and the OPF package document. References: `https://www.w3.org/TR/epub-33/` — EPUB 3.3 — W3C Recommendation (incl. the OCF container)`https://en.wikipedia.org/wiki/EPUB` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `EpubFormatDescriptor` | `EpubFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing EPUB archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (EPUB is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (EPUB is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Esd`
 
@@ -9308,33 +9180,14 @@ Writes a minimal Inno Setup header. No PE stub is emitted; the reader scans from
 
 Apple iOS application package (.ipa) — a ZIP archive laid out as Payload/AppName.app plus metadata. References: `https://en.wikipedia.org/wiki/.ipa` — Wikipedia on the .ipa bundle layout`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `IpaFormatDescriptor` | `IpaFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing IPA archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (IPA is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (IPA is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Jar`
 
@@ -9344,33 +9197,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Java Archive (JAR) — a ZIP container with a META-INF/MANIFEST.MF manifest. References: `https://docs.oracle.com/javase/8/docs/technotes/guides/jar/jar.html` — Oracle JAR File Specification`https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE ZIP APPNOTE — the underlying container format`https://en.wikipedia.org/wiki/JAR_(file_format)` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `JarFormatDescriptor` | `JarFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing JAR archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (JAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Kmz`
 
@@ -9380,33 +9214,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Google Earth KMZ — a ZIP archive bundling a root KML document plus referenced resources. References: `https://developers.google.com/kml/documentation` — Google KML documentation (KMZ packaging rules)OGC KML 2.3 (OGC 12-007r2) — the standardized KML specification`https://en.wikipedia.org/wiki/Keyhole_Markup_Language` — Wikipedia
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `KmzFormatDescriptor` | `KmzFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing KMZ archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (KMZ is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (KMZ is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Kwaj`
 
@@ -10832,33 +10647,14 @@ Writes a valid Macrium Reflect X (`.mrimgx`) container from a flat disk-image pa
 
 Mozilla Archive Format (MAFF) — a ZIP container of saved web pages plus RDF metadata. References: `https://en.wikipedia.org/wiki/Mozilla_Archive_Format` — WikipediaMAFF specification by the Mozilla Archive Format add-on project (formerly maf.mozdev.org; mozdev has shut down)
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MaffFormatDescriptor` | `MaffFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing MAFF archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (MAFF is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (MAFF is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Matlab`
 
@@ -12817,33 +12613,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 NuGet package (.nupkg) — a ZIP/OPC container with a .nuspec manifest. References: `https://learn.microsoft.com/en-us/nuget/` — Microsoft NuGet documentation portal (package structure, .nuspec)`https://github.com/NuGet/NuGet.Client` — canonical client implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NuPkgFormatDescriptor` | `NuPkgFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing NuPkg archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (NuPkg is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (NuPkg is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Numpy`
 
@@ -12976,33 +12753,14 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 OpenDocument presentation (.odp) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OdpFormatDescriptor` | `OdpFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ODP archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODP is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODP is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Ods`
 
@@ -13012,33 +12770,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 OpenDocument spreadsheet (.ods) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OdsFormatDescriptor` | `OdsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ODS archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODS is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODS is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Odt`
 
@@ -13048,33 +12787,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 OpenDocument text document (.odt) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OdtFormatDescriptor` | `OdtFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing ODT archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (ODT is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (ODT is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.OneNote`
 
@@ -14881,33 +14601,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 Office Open XML presentation (.pptx) — an OPC ZIP package. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Office Open XML File Formats (also ISO/IEC 29500)`https://en.wikipedia.org/wiki/Office_Open_XML` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `PptxFormatDescriptor` | `PptxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing PPTX archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (PPTX is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (PPTX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Psarc`
 
@@ -19208,34 +18909,15 @@ Implements `IDisposable`.
 
 Microsoft Visio VSDX drawing — an OPC ZIP package. References: [MS-VSDX]: Visio Graphics Service File Format (Microsoft Open Specifications, learn.microsoft.com)`https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Part 2 — Open Packaging Conventions, the container VSDX uses`https://en.wikipedia.org/wiki/Microsoft_Visio` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `WipeableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `VsdxFormatDescriptor` | `VsdxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) parts inside an existing VSDX package. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended part's local file header + compressed data are read or written; pre-existing entries stay byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (VSDX is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (VSDX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named parts; uses `ZipModifier`. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+| `Methods` | `override IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 
 ### Namespace `FileFormat.Wacz`
 
@@ -19440,33 +19122,14 @@ Implements `IDisposable`.
 
 Java Web Application Archive (WAR) — a ZIP/JAR with WEB-INF layout. References: `https://jakarta.ee/specifications/servlet/` — Jakarta Servlet specification — defines WAR packaging`https://en.wikipedia.org/wiki/WAR_(file_format)` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `WarFormatDescriptor` | `WarFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing WAR archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (WAR is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (WAR is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Warc`
 
@@ -20108,33 +19771,14 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`,
 
 Office Open XML spreadsheet (.xlsx) — an OPC ZIP package. References: `https://ecma-international.org/publications-and-standards/standards/ecma-376/` — ECMA-376 Office Open XML File Formats (also ISO/IEC 29500)`https://en.wikipedia.org/wiki/Office_Open_XML` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XlsxFormatDescriptor` | `XlsxFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing XLSX archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XLSX is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XLSX is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Xpi`
 
@@ -20144,33 +19788,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Mozilla XPI extension package (ZIP-based) for Firefox/Thunderbird. References: `https://extensionworkshop.com/` — Mozilla Extension Workshop — extension packaging documentation`https://en.wikipedia.org/wiki/XPInstall` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XpiFormatDescriptor` | `XpiFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing XPI archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XPI is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XPI is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
 
 ### Namespace `FileFormat.Xps`
 
@@ -20180,34 +19805,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 XPS / OpenXPS document — an OPC ZIP package (Microsoft / ECMA-388). References: `https://ecma-international.org/publications-and-standards/standards/ecma-388/` — ECMA-388 Open XML Paper Specification`https://en.wikipedia.org/wiki/Open_XML_Paper_Specification` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Inherits `WipeableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `XpsFormatDescriptor` | `XpsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | Gets the description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) parts inside an existing XPS package. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended part's local file header + compressed data are read or written; pre-existing entries stay byte-identical. |
-| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP (XPS is a ZIP variant). |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP (XPS is a ZIP variant). |
-| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
-| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named parts; uses `ZipModifier`. |
-| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
+| `Description` | `override string Description { get; }` | Gets the description. |
+| `DisplayName` | `override string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `override IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+| `Methods` | `override IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 
 ### Namespace `FileFormat.YEnc`
 
@@ -20550,6 +20156,66 @@ Reads Zarr v2 and v3 array metadata and exposes the chunks of the array as archi
 | `ParseStatus` | `string ParseStatus { get; }` | Gets the parse status. |
 | `Shape` | `IReadOnlyList<long> Shape { get; }` | Gets the shape. |
 | `ZarrFormat` | `int ZarrFormat { get; }` | Gets the zarr format. |
+
+### Namespace `FileFormat.ZipContainer`
+
+[`ModifiableZipContainerFormatDescriptor`](#modifiablezipcontainerformatdescriptor) · [`WipeableZipContainerFormatDescriptor`](#wipeablezipcontainerformatdescriptor) · [`ZipContainerFormatDescriptor`](#zipcontainerformatdescriptor)
+
+#### `ModifiableZipContainerFormatDescriptor`
+
+A `ZipContainerFormatDescriptor` whose container also accepts in-place entry edits, which is every member of the family except CRX — a CRX is signature-sealed, so mutating the trailing ZIP would invalidate the signatures the envelope carries.
+
+Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ModifiableZipContainerFormatDescriptor` | `protected ModifiableZipContainerFormatDescriptor()` |  |
+| `Capabilities` | `override FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files inside an existing archive. Routes to `ZipModifier` for true random-access I/O — only the central directory, EOCD, and the appended file's local file header + compressed data are read or written. Pre-existing entry LFH + payload bytes at original offsets remain byte-identical. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named entries; uses `ZipModifier`. |
+
+#### `WipeableZipContainerFormatDescriptor`
+
+A `ModifiableZipContainerFormatDescriptor` that answers `IWipeEmpty` with a native ZIP-layout wipe instead of the interface default.
+
+Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WipeableZipContainerFormatDescriptor` | `protected WipeableZipContainerFormatDescriptor()` |  |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros every dead byte in the package: gaps between entries not covered by a live extent in the ZIP layout map. Local headers, entry data, the central directory and EOCD are live and preserved. Cluster-tip wiping is N/A (ZIP packs entries back to back with no per-file slack). |
+
+#### `ZipContainerFormatDescriptor`
+
+Base descriptor for the format family whose container is a ZIP: APK, APPX, CBZ, CRX, DOCX, EAR, EPUB, IPA, JAR, KMZ, MAFF, NUPKG, ODP/ODS/ODT, PPTX, VSDX, WAR, XLSX, XPI and XPS all list, extract, create and defragment through `ZipReader` and `ZipWriter` and differ only in what they call themselves and which extensions they answer to. A concrete format supplies a display name, an extension list and a description. Everything else has a default here, and the two ways a member of this family can legitimately differ from a bare ZIP are the hooks `PrepareRead` and `WriteContainerPrefix`: a container that wraps the ZIP payload in a prefix (CRX's `Cr24` envelope) overrides those rather than restating the eight operations.This tier is write-once-read-many. Formats that also accept in-place entry edits derive from `ModifiableZipContainerFormatDescriptor`, and those that additionally expose a native free-space wipe from `WipeableZipContainerFormatDescriptor`. References: `https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT` — PKWARE APPNOTE — the underlying ZIP container spec
+
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ZipContainerFormatDescriptor` | `protected ZipContainerFormatDescriptor()` | Initializes the shared ZIP-container state. |
+| `Capabilities` | `virtual FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `Category` | `FormatCategory Category { get; }` | Gets the category. |
+| `CompoundExtensions` | `virtual IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
+| `DefaultExtension` | `virtual string DefaultExtension { get; }` | Gets the default extension. |
+| `Description` | `abstract string Description { get; }` | Gets the description. |
+| `DisplayName` | `abstract string DisplayName { get; }` | Gets the display name. |
+| `Extensions` | `abstract IReadOnlyList<string> Extensions { get; }` | Gets the extensions. The first entry doubles as `DefaultExtension`. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
+| `Id` | `string Id { get; }` | Gets the id, derived from the concrete class name minus its `FormatDescriptor` suffix. |
+| `MagicSignatures` | `virtual IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. Empty by default: a plain ZIP container is recognised by the ZIP descriptor, so only a family member with an envelope of its own (CRX) claims a signature. |
+| `Methods` | `virtual IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `TarCompressionFormatId` | `virtual string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag delegating to ZIP. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag delegating to ZIP. |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry`. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. Delegates to the underlying ZIP reader and wraps the decoded byte buffer in a `BoundedEntryStream` sized to the entry's uncompressed length, so block padding and adjacent entries are physically unreachable through the returned view. |
+| `PrepareRead` | `protected virtual Stream PrepareRead(Stream stream)` | Positions `stream` on the embedded ZIP and returns it. The default is the identity, because for most of the family the container is the ZIP. A format that prefixes the ZIP payload overrides this to validate and skip that prefix. |
+| `WriteContainerPrefix` | `protected virtual void WriteContainerPrefix(Stream output)` | Writes whatever precedes the ZIP payload in a container this descriptor builds. The default writes nothing; it is the counterpart of `PrepareRead`. |
 
 ### Namespace `FileFormat.Zling`
 
