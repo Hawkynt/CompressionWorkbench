@@ -471,12 +471,12 @@ strong precondition but not a behavioural verification.
 - Pipeline: `tools/ghidra-pipeline/decompile.sh` +
   `tools/ghidra-pipeline/dump-functions.py`
 - Existing R/W implementation cross-validated by this analysis:
-  - `FileFormats/FileFormat.Ghost/GhostFastLz.cs` (codec)
-  - `FileFormats/FileFormat.Ghost/GhostStructures.cs` (constants)
-  - `FileFormats/FileFormat.Ghost/GhostReader.cs` (parse)
-  - `FileFormats/FileFormat.Ghost/GhostWriter.cs` (emit)
-  - `FileFormats/FileFormat.Ghost/GhostCrc16Cipher.cs` (cipher)
-  - `FileFormats/FileFormat.Ghost/GhostFormatDescriptor.cs` (registry)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostFastLz.cs` (codec)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostStructures.cs` (constants)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostReader.cs` (parse)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostWriter.cs` (emit)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostCrc16Cipher.cs` (cipher)
+  - `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.Ghost/GhostFormatDescriptor.cs` (registry)
 
 Key cited function offsets in this doc (all in `Ghostexp.exe`):
 
