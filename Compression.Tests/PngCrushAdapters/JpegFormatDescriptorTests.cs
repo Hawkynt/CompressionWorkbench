@@ -1,8 +1,9 @@
+extern alias images;
 #pragma warning disable CS1591
 using Compression.Lib;
 using Compression.Registry;
-using FileFormat.Core;
-using FileFormat.Jpeg;
+using images::FileFormat.Core;
+using images::FileFormat.Jpeg;
 using FileFormat.PngCrushAdapters;
 
 namespace Compression.Tests.PngCrushAdapters;
@@ -29,8 +30,7 @@ public class JpegFormatDescriptorTests {
   [Test]
   public void Registry_HasJpegDescriptor() {
     var desc = FormatRegistry.GetById("Jpeg");
-    if (desc == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(desc, Is.Not.Null, "the Jpeg descriptor must be registered");
     Assert.That(desc!.Category, Is.EqualTo(FormatCategory.Image));
     Assert.That(desc.Extensions, Does.Contain(".jpg"));
     Assert.That(desc.Extensions, Does.Contain(".jpeg"));
@@ -38,8 +38,7 @@ public class JpegFormatDescriptorTests {
 
   [Test]
   public void JpegMagic_RoutesToJpegDescriptor_NotJpegArchive() {
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var bytes = BuildTinyJpeg();
     var tmp = Path.Combine(Path.GetTempPath(), $"cwb_jpeg_route_{Guid.NewGuid():N}.jpg");
@@ -65,8 +64,7 @@ public class JpegFormatDescriptorTests {
 
   [Test]
   public void List_ProducesHierarchicalImageFolder() {
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var bytes = BuildTinyJpeg();
     var desc = new JpegFormatDescriptor();
@@ -89,8 +87,7 @@ public class JpegFormatDescriptorTests {
 
   [Test]
   public void Extract_WithFilter_OnlyMaterializesMatchingEntries() {
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var bytes = BuildTinyJpeg();
     var desc = new JpegFormatDescriptor();

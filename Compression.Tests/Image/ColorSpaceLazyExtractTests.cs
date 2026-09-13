@@ -1,5 +1,6 @@
+extern alias images;
 #pragma warning disable CS1591
-using FileFormat.Core;
+using images::FileFormat.Core;
 using FileFormat.PngCrushAdapters;
 
 namespace Compression.Tests.Image;
