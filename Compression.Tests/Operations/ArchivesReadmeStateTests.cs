@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Text.RegularExpressions;
 using Compression.Registry;
 
 namespace Compression.Tests.Operations;
@@ -82,12 +81,10 @@ public sealed class ArchivesReadmeStateTests {
     var root = Path.GetDirectoryName(FindRepositoryFile("Hawkynt.FileFormats.Archives", "README.md"))!;
     var projectFiles = File.ReadAllText(Path.Combine(root, "Hawkynt.FileFormats.Archives.csproj"))
       + File.ReadAllText(Path.Combine(root, "Directory.Build.targets"));
-    var bundled = Regex.Matches(projectFiles, @"FileFormats\\(FileFormat\.[A-Za-z0-9]+)\\")
-      .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
-    // Formats the package compiles in rather than references report the package's own assembly.
-    bundled.Add("Hawkynt.FileFormats.Archives");
-    // Formats it delivers through its Compression.Core dependency report Core's assembly, so they
-    // are matched on the namespace the support-matrix region names them by instead.
+    // Formats the package compiles in report the package's own assembly. The rest it delivers
+    // without compiling — through its Compression.Core dependency, or inside the bundled copy of
+    // Hawkynt.FileFormats.Audio — and those report that other assembly's name, so they are matched
+    // on the namespace the support-matrix region names them by instead.
     var namespaces = Documentation.FilesystemSupportMatrix.DeclaredNamespaces(projectFiles, "Hawkynt.FileFormats.Archives.csproj");
     var readme = File.ReadAllText(Path.Combine(root, "README.md"));
     var section = Slice(readme, "## 🧩 Support matrix", "## 🚀 Quick start");
@@ -97,7 +94,7 @@ public sealed class ArchivesReadmeStateTests {
       .ToHashSet(StringComparer.Ordinal);
 
     var missing = FormatRegistry.All
-      .Where(d => bundled.Contains(d.GetType().Assembly.GetName().Name!.Replace("CompressionWorkbench.", ""))
+      .Where(d => d.GetType().Assembly.GetName().Name == "Hawkynt.FileFormats.Archives"
                || namespaces.Contains(d.GetType().Namespace ?? ""))
       .Select(d => d.Id)
       .Where(id => !documented.Contains(id))

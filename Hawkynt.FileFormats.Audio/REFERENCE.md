@@ -3814,6 +3814,2270 @@ The memory and I/O abstraction the `Cpu` core talks to. Every memory fetch, read
 | `WriteIo` | `void WriteIo(ushort port, byte value)` | Writes `value` to the I/O port at `port`. |
 | `WriteMem` | `void WriteMem(ushort addr, byte value)` | Writes `value` to memory at `addr`. |
 
+### Namespace `Compression.Registry`
+
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+
+#### `AlgorithmFamily`
+
+Classification of a compression algorithm's family for grouping and display.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Other` | `0` | Unclassified or other. |
+| `Dictionary` | `1` | LZ dictionary-based compression (LZ77, LZ78, LZW, LZSS, etc.). |
+| `Entropy` | `2` | Entropy coding (Huffman, Arithmetic, FSE, Golomb, Range coding, etc.). |
+| `Transform` | `3` | Data transforms (BWT, MTF, RLE, Delta, PackBits). |
+| `ContextMixing` | `4` | Context mixing and statistical modeling (PAQ8, cmix, MCM, PPM, CTW, BCM, BSC). |
+| `Classic` | `5` | Classic/legacy algorithms (Bzip2, SZDD, PowerPacker, RNC, etc.). |
+| `Encoding` | `6` | Binary-to-text and container encodings (UuEncoding, YEnc, BinHex, MacBinary). |
+| `Archive` | `7` | Archive and container formats (Zip, Tar, 7z, RAR, etc.). |
+
+#### `ApeTagReader`
+
+APEv1/APEv2 metadata tags, shared by every format that carries them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DescriptorSize` | `const int DescriptorSize` | Size of the header, and of the footer, each. |
+| `Id3v1Size` | `const int Id3v1Size` | Size of an ID3v1 tag, the other trailer these formats may carry. |
+| `IsTrailingMetadata` | `static bool IsTrailingMetadata(byte[] file, long offset)` | True when everything from `offset` to the end of `file` is accounted for by an APE tag, an ID3v1 tag, or both. |
+| `TryFind` | `static bool TryFind(byte[] file, long start, long end, out ApeTag tag)` | Searches `start`..`end` for a tag, scanning back from the end so the footer is met before anything earlier that happens to look like one. |
+| `TryReadEndingAt` | `static bool TryReadEndingAt(byte[] file, long end, long lowerBound, out ApeTag tag)` | Reads the tag whose footer ends at `end`, refusing to reach back before `lowerBound`. |
+| `TryReadHeaderAt` | `static bool TryReadHeaderAt(byte[] file, long offset, out ApeTag tag)` | Reads the tag whose header begins at `offset`. |
+| `TryRenderIni` | `static string TryRenderIni(byte[] file, in ApeTag tag)` | Renders the text items of `tag` as an ini, naming binary items without inlining them. Null when nothing could be decoded. |
+
+#### `ApeTagReader.ApeTag`
+
+Where a tag sits in a buffer, and which bytes hold its items.
+
+Implements `IEquatable<ApeTag>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ApeTag` | `ApeTag(long Start, long Length, long ItemsStart, long ItemsEnd, uint ItemCount)` | Where a tag sits in a buffer, and which bytes hold its items. |
+| `End` | `long End { get; }` | One past the last byte of the tag. |
+| `ItemCount` | `uint ItemCount { get; init; }` | Item count as declared by the descriptor. |
+| `ItemsEnd` | `long ItemsEnd { get; init; }` | One past the last item byte. |
+| `ItemsStart` | `long ItemsStart { get; init; }` | Offset of the first item. |
+| `Length` | `long Length { get; init; }` | Total bytes occupied, descriptors included. |
+| `Start` | `long Start { get; init; }` | Offset of the first byte of the tag — the header when there is one. |
+
+#### `ArchiveEntryInfo`
+
+Normalized archive entry metadata returned by format descriptors.
+
+Implements `IEquatable<ArchiveEntryInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchiveEntryInfo` | `ArchiveEntryInfo(int Index, string Name, long OriginalSize, long CompressedSize, string Method, bool IsDirectory, bool IsEncrypted, DateTime? LastModified, string Kind = null, bool IsSymlink = false, string LinkTarget = null, long? TargetSize = null)` | Normalized archive entry metadata returned by format descriptors. |
+| `CompressedSize` | `long CompressedSize { get; init; }` | The entry's stored/compressed size, or -1 when unknown. |
+| `Index` | `int Index { get; init; }` | Zero-based position of the entry in the listing. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | True when the entry is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` | True when the entry's data is encrypted. |
+| `IsSymlink` | `bool IsSymlink { get; init; }` | True when the entry is a symbolic link (or NTFS junction / reparse-point link). |
+| `Kind` | `string Kind { get; init; }` | Optional taxonomy label (container/stream/track/channel/tag). |
+| `LastModified` | `DateTime? LastModified { get; init; }` | The entry's last-modified timestamp, when known. |
+| `LinkTarget` | `string LinkTarget { get; init; }` | The raw stored link target path, or null when the entry is not a link. |
+| `Method` | `string Method { get; init; }` | The compression/storage method label. |
+| `Name` | `string Name { get; init; }` | Full slash-separated path of the entry within the archive. |
+| `OriginalSize` | `long OriginalSize { get; init; }` | The entry's own uncompressed on-disk size. For a symbolic link this is the byte length of the stored target path (the on-disk truth), NOT the size of whatever the link points at — see `TargetSize` for the resolved target size. |
+| `TargetSize` | `long? TargetSize { get; init; }` | The size of the file the link ultimately resolves to, when it points at a regular file within the same filesystem listing; null when unresolved (absolute target, target outside the listing, a directory target, or a dangling/cyclic link). Filled by `SymlinkResolver`. |
+
+#### `ArchiveInputInfo`
+
+Describes a single input file/directory for archive creation.
+
+Implements `IEquatable<ArchiveInputInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchiveInputInfo` | `ArchiveInputInfo(string FullPath, string ArchiveName, bool IsDirectory, byte[] InMemoryContent = null)` | Describes a single input file/directory for archive creation. |
+| `ArchiveName` | `string ArchiveName { get; init; }` |  |
+| `FullPath` | `string FullPath { get; init; }` |  |
+| `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
+| `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
+| `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
+| `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, byte[] content)` | Creates an in-memory input whose content comes from `content` rather than a file on disk. |
+| `ReadContent` | `byte[] ReadContent()` | Returns the input's bytes: the in-memory content when present, otherwise the file at `FullPath`. Descriptors should call this instead of `File.ReadAllBytes(FullPath)` so they transparently support in-memory (temp-free) creation and conversion. |
+
+#### `ArchiveMutationOptions`
+
+Per-operation options for mutating an existing archive or filesystem image.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchiveMutationOptions` | `ArchiveMutationOptions()` |  |
+| `Password` | `string Password { get; init; }` | Password or passphrase required to unlock the existing container. |
+
+#### `ArchiveShrinker`
+
+Generic shrink driver for any archive whose descriptor implements `IArchiveCreatable`. Lists the archive's entries, extracts them to memory, and re-creates a fresh archive into the output stream using the smallest canonical size that fits (from `CanonicalSizes`). Works as the default `Shrink` implementation for most R/W filesystems: the "rebuild via WORM" pattern implicitly defragments as a side effect. Format-specific shrinkers can override for efficiency.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ChooseTargetSize` | `static long ChooseTargetSize(IReadOnlyList<long> canonicalSizes, long payloadBytes)` | Smallest size in `canonicalSizes` that is >= `payloadBytes`. If no size is large enough, returns the largest available. |
+| `ShrinkViaRebuild` | `static void ShrinkViaRebuild(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyList<long> canonicalSizes)` | Rebuilds `input` into `output`, choosing the smallest size from `canonicalSizes` that still holds the payload. |
+
+#### `AudioEncodedStream`
+
+Container-neutral encoded audio stream.
+
+Implements `IEquatable<AudioEncodedStream>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioEncodedStream` | `AudioEncodedStream(AudioStreamFormat Format, IReadOnlyList<AudioPacket> Packets, byte[] CodecPrivateData = null)` | Container-neutral encoded audio stream. |
+| `CodecPrivateData` | `byte[] CodecPrivateData { get; init; }` |  |
+| `Format` | `AudioStreamFormat Format { get; init; }` |  |
+| `Packets` | `IReadOnlyList<AudioPacket> Packets { get; init; }` |  |
+
+#### `AudioPacket`
+
+One encoded access unit/packet suitable for packet-preserving remux.
+
+Implements `IEquatable<AudioPacket>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPacket` | `AudioPacket(byte[] Data, long DurationSamples = 0, long? GranulePosition = null, bool IsHeader = false)` | One encoded access unit/packet suitable for packet-preserving remux. |
+| `Data` | `byte[] Data { get; init; }` |  |
+| `DurationSamples` | `long DurationSamples { get; init; }` |  |
+| `GranulePosition` | `long? GranulePosition { get; init; }` |  |
+| `IsHeader` | `bool IsHeader { get; init; }` |  |
+
+#### `AudioPcmBuffer`
+
+Materialized interleaved PCM together with its format.
+
+Implements `IEquatable<AudioPcmBuffer>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPcmBuffer` | `AudioPcmBuffer(AudioPcmFormat Format, byte[] InterleavedData)` | Materialized interleaved PCM together with its format. |
+| `Format` | `AudioPcmFormat Format { get; init; }` |  |
+| `FrameCount` | `long FrameCount { get; }` |  |
+| `InterleavedData` | `byte[] InterleavedData { get; init; }` |  |
+
+#### `AudioPcmEncoding`
+
+Canonical PCM sample representation used by the cross-format audio pipeline.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `UnsignedInteger` | `0` |  |
+| `SignedInteger` | `1` |  |
+| `IeeeFloat` | `2` |  |
+
+#### `AudioPcmFormat`
+
+Describes interleaved PCM independently of any particular container.
+
+Implements `IEquatable<AudioPcmFormat>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioPcmFormat` | `AudioPcmFormat(int SampleRate, int Channels, int BitsPerSample, AudioPcmEncoding Encoding = 1, ulong? ChannelMask = null)` | Describes interleaved PCM independently of any particular container. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `BytesPerFrame` | `int BytesPerFrame { get; }` |  |
+| `BytesPerSample` | `int BytesPerSample { get; }` |  |
+| `ChannelMask` | `ulong? ChannelMask { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `Encoding` | `AudioPcmEncoding Encoding { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `AudioPseudoArchive`
+
+Shared plumbing for audio containers surfaced as pseudo-archives. The model separates the CONTAINER from the DATA it carries: the pseudo-archive is the container format itself, and every listed entry is a pseudo-file of carried data. Kinds encode that distinction — `Container` — the byte-exact original container (`FULL.<ext>`); round-trips the file unchanged.`Stream` — a carried elementary bitstream (e.g. an Ogg logical stream's packets) still in its coded form.`Track` — a carried audio/video track in multi-track containers, or one rendered subtune of a multi-song chiptune.`Channel` — one decoded speaker as a playable mono PCM WAV (named per `Codec.Pcm.ChannelLayout`, mono through 22.2 and beyond).`Tag` — carried metadata (comments, ID3, bext, …). A descriptor builds the `Entry` list (the format-specific part) and delegates listing, on-disk extraction and single-entry streaming here. Eager vs. lazy entries. An entry's payload may be supplied eagerly as a `Byte`[] (the common case for already-parsed blobs) or lazily through a producing factory plus a declared byte size (for expensive renders such as emulated chiptune subtunes). For a lazy entry the declared size is exact and deterministic — a render's WAV byte count is fully predictable — so listing reports it without ever invoking the factory; the factory runs only when that specific entry is extracted, and its result is cached so a repeat extraction does not re-render.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExtractEntry` | `static void ExtractEntry(IReadOnlyList<Entry> entries, string entryName, Stream output)` | Streams a single named entry to `output`, materialising only the requested entry. |
+| `Extract` | `static void Extract(IReadOnlyList<Entry> entries, string outputDir, string[] files)` | Writes the entries to `outputDir`, honouring an optional name filter. Only the entries actually written are materialised. |
+| `List` | `static List<ArchiveEntryInfo> List(IReadOnlyList<Entry> entries)` | Projects built entries into `ArchiveEntryInfo` rows for listing. Lazy entries report their `DeclaredSize` without being materialised, so listing stays fast regardless of how expensive a render would be. |
+
+#### `AudioPseudoArchive.Entry`
+
+One surfaced pseudo-archive entry with its display `Kind` and codec `Method`. The payload is either eager (`Data` set at construction) or lazy (produced on demand by `Factory` with the byte count declared up-front in `DeclaredSize`); see `Lazy`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, string Kind, byte[] Data, string Method = "stored")` | Builds an eager entry whose payload is already materialised. This is the long-standing entry shape relied on by the bulk of the audio descriptors and must keep compiling unchanged. |
+| `DeclaredSize` | `long DeclaredSize { get; }` | The declared byte size — the materialised payload length for an eager entry, or the producer's promised output length for a lazy one (no factory invocation). |
+| `IsLazy` | `bool IsLazy { get; }` | True for a lazy entry whose payload has not yet been produced (becomes false once the factory has run and the result is cached). |
+| `Kind` | `string Kind { get; }` | The display kind (Container/Stream/Track/Channel/Tag). |
+| `Method` | `string Method { get; }` | The codec/method label reported in listings. |
+| `Name` | `string Name { get; }` | The display name (path-like; may contain `/` separators). |
+| `Lazy` | `static Entry Lazy(string name, string kind, Func<byte[]> factory, long declaredSize, string method = "stored")` | Builds a lazy entry: `factory` produces the payload only when the entry is extracted, and `declaredSize` is the exact byte count the factory will yield (used for listing without invoking the factory). The produced bytes are cached on first materialisation so a second extraction reuses them. |
+| `Materialize` | `byte[] Materialize()` | Returns the payload, invoking and caching the factory on first access for a lazy entry. |
+
+#### `AudioStreamFormat`
+
+Codec-level description of an encoded audio stream.
+
+Implements `IEquatable<AudioStreamFormat>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AudioStreamFormat` | `AudioStreamFormat(string CodecId, int SampleRate, int Channels, int BitsPerSample = 0, IReadOnlyDictionary<string, string> Properties = null)` | Codec-level description of an encoded audio stream. |
+| `BitsPerSample` | `int BitsPerSample { get; init; }` |  |
+| `Channels` | `int Channels { get; init; }` |  |
+| `CodecId` | `string CodecId { get; init; }` |  |
+| `Properties` | `IReadOnlyDictionary<string, string> Properties { get; init; }` |  |
+| `SampleRate` | `int SampleRate { get; init; }` |  |
+
+#### `BlockDeviceGeometry`
+
+Geometry of a sector/block-addressable device exposed beneath a filesystem. Container formats such as VHD/QCOW2/EWF should eventually implement this layer; FAT/ext/ReFS drivers then consume block devices rather than knowing how their outer container stores bytes.
+
+Implements `IEquatable<BlockDeviceGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockDeviceGeometry` | `BlockDeviceGeometry(int LogicalBlockSize, long BlockCount, int PhysicalBlockSize = 0, bool SupportsTrim = false)` | Geometry of a sector/block-addressable device exposed beneath a filesystem. Container formats such as VHD/QCOW2/EWF should eventually implement this layer; FAT/ext/ReFS drivers then consume block devices rather than knowing how their outer container stores bytes. |
+| `BlockCount` | `long BlockCount { get; init; }` |  |
+| `Length` | `long Length { get; }` |  |
+| `LogicalBlockSize` | `int LogicalBlockSize { get; init; }` |  |
+| `PhysicalBlockSize` | `int PhysicalBlockSize { get; init; }` |  |
+| `SupportsTrim` | `bool SupportsTrim { get; init; }` |  |
+
+#### `BlockDeviceStream`
+
+Seekable byte-stream view over a block device. Legacy filesystem parsers can therefore run on VHD/QCOW2/GCR-backed logical disks before they are rewritten to issue block requests directly. Unaligned writes use read-modify-write of only the touched edge blocks; unrelated blocks are never rewritten.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BlockDeviceStream` | `BlockDeviceStream(IRandomAccessBlockDevice device, bool leaveOpen = true)` |  |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `ReadByte` | `override int ReadByte()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `WriteByte` | `override void WriteByte(byte value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `BuildingBlockRegistry`
+
+Central registry for compression building blocks (algorithm primitives). Populated at startup via source-generated code, similar to `FormatRegistry`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `All` | `static IReadOnlyList<IBuildingBlock> All { get; }` | All registered building blocks. |
+| `GetById` | `static IBuildingBlock GetById(string id)` | Look up a building block by its unique ID. |
+| `Register` | `static void Register(IBuildingBlock block)` | Register a building block. |
+
+#### `CompoundTarDescriptor`
+
+Auto-generated descriptor for compound tar formats (tar.gz, tar.bz2, etc.). Wraps tar archive operations with a stream compression layer via the registry.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompoundTarDescriptor` | `CompoundTarDescriptor(string id, string displayName, string streamFormatId, string defaultExtension, IReadOnlyList<string> compoundExtensions)` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | Inherits the inner TAR descriptor's schema and adds a `CompressionLevel` knob for the wrapping stream compressor (gzip / bzip2 / xz / zstd / etc.). |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction routed through the bounded `OpenEntry` so the per-entry isolation contract is enforced uniformly across every compound tar variant. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry by first decompressing the outer stream (gzip / bzip2 / xz / zstd / etc.) and delegating to the inner TAR descriptor's own bounded `OpenEntry`. The decompressed TAR isn't seekable in general, so we materialise it into a `MemoryStream` once and let TAR's positional decoder produce the per-entry bounded view over that buffer. The returned stream is bounded to the inner entry's logical size — any block padding past the entry is unreachable. |
+
+#### `DefragBlockClass`
+
+Heuristic classification used for the maintenance block-map colors. Filesystem defraggers commonly map this to hot/cold placement; archive rebuilds may map it to storage/compression classes so a staged target remains visually informative.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Hot` | `0` | Hot / heavy-processing class. |
+| `Normal` | `1` | Normal class. |
+| `Cold` | `2` | Cold / alternative-processing class. |
+| `Frozen` | `3` | Frozen / stored-verbatim class. |
+| `Directory` | `4` | Directory or structural metadata class. |
+
+#### `DefragBlockInfo`
+
+One contiguous region in the address-space currently visualized by the maintenance block map.
+
+Implements `IEquatable<DefragBlockInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefragBlockInfo` | `DefragBlockInfo(long Offset, long Length, DefragBlockKind Kind, string FileName = null, DefragBlockClass? Classification = null)` | One contiguous region in the address-space currently visualized by the maintenance block map. |
+| `Classification` | `DefragBlockClass? Classification { get; init; }` |  |
+| `FileName` | `string FileName { get; init; }` |  |
+| `Kind` | `DefragBlockKind Kind { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+
+#### `DefragBlockKind`
+
+What kind of bytes a contiguous region holds. Used by the live-progress block map to color-code regions as maintenance proceeds.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Free` | `0` | Free space — not allocated to any file. |
+| `Used` | `1` | Allocated to a file (see `FileName`). |
+| `Bad` | `2` | Marked bad / quarantined (FAT-style "BAD" cluster, or post-fsck flag). |
+| `MetadataReserved` | `3` | Reserved for filesystem/container metadata. |
+| `InProgress` | `4` | Currently being read, moved, compressed, grouped, or written. |
+
+#### `DefragContentGuard`
+
+Runs an in-place defragmentation and keeps its result only if every file still reads back byte for byte; otherwise the image is restored and rebuilt.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RunOrRebuild` | `static void RunOrRebuild(Stream archive, Func<Stream, IReadOnlyList<byte[]>> readContents, Action inPlace, Action rebuild)` | Snapshots `archive`, runs `inPlace`, and verifies the contents. On any mismatch — or any exception — the snapshot is restored and `rebuild` runs instead. |
+
+#### `DefragMode`
+
+Defragmentation strategies for `Defragment`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ConsolidateAtStart` | `0` | Pack every live extent contiguously starting at the image's data origin. Free space ends up after the last extent. The default mode and the closest match to traditional "defrag" tools. |
+| `ConsolidateAtEnd` | `1` | Pack every live extent contiguously at the end of the image, leaving free space at the start (after metadata). Useful when a bootloader / installer / preallocated header expects to land in low offsets. |
+| `FillHolesLazy` | `2` | Lazy compaction: each existing hole is filled with a single tail extent that fits, in best-fit order. Moves the minimum number of bytes but doesn't guarantee a contiguous final layout. Use when only a few small files were removed from a huge image. |
+| `CarveHole` | `3` | Carve a contiguous free region of `HoleSize` bytes at `HoleAt`. Live extents intersecting the target region are relocated to the first available post-region free slot (or appended to the end of the image if no existing free slot fits). |
+| `AscendingOrder` | `4` | Move the least that makes every owner read forwards: over an owner's own blocks in logical order, `block(n) > block(n-1)`, so a sequential read never seeks backwards. Nothing else is promised. |
+
+#### `DefragOptions`
+
+Inputs to `Defragment`. `Mode` selects the strategy; the rest are mode-specific knobs that default to "do the obvious thing" for the chosen mode.
+
+Implements `IEquatable<DefragOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefragOptions` | `DefragOptions()` |  |
+| `Alignment` | `long Alignment { get; init; }` | Round each target offset up to this byte alignment (1 for byte-tight, 2048 for ISO 9660 sectors, 512 for FAT12/16, …). Default: 1. |
+| `CancellationToken` | `CancellationToken CancellationToken { get; init; }` | Cooperative cancellation for long maintenance operations. Generic staged rebuilds honour it while reading and writing and never commit a cancelled target. Native in-place movers may honour it at their next safe move boundary. |
+| `HoleAt` | `long HoleAt { get; init; }` | Byte offset where the carved hole should start. -1 (default) = auto-pick (carve at the end, immediately after the last live extent). Ignored except in `CarveHole`. |
+| `HoleSize` | `long HoleSize { get; init; }` | Size in bytes of the hole to carve. Required for `CarveHole`; ignored otherwise. |
+| `ImageEnd` | `long ImageEnd { get; init; }` | Byte offset just past the last sector available for live data. -1 = auto-detect from the image's physical size. Required for `ConsolidateAtEnd` — must be set explicitly or auto-detected. |
+| `InterleaveStride` | `int InterleaveStride { get; init; }` | Block interleave factor. 1 = contiguous (default), 2 = every-other-block, N = place each file's Kth block at (start + K*stride). Free blocks between the scattered fragments are left available for other files' interleaved blocks, round-robin style. Useful for optimizing sequential read throughput on spinning media (interleave matches rotational latency) and for testing FS robustness with fragmented layouts. Range: 1-256. |
+| `LayoutTemplate` | `LayoutTemplate LayoutTemplate { get; init; }` | Optional layout template that overrides `Mode` / `MetadataZonePlacement` with a fine-grained per-zone plan. When set, the planner uses `LayoutTemplateResolver` to assign files to byte ranges; `Mode` is interpreted as the fallback strategy for files outside all zones (per the template's leftover strategy). When `null` (default), the planner uses the classic mode/profile/metadata-zone pipeline. |
+| `MetadataPlacement` | `MetadataPlacementProfile MetadataPlacement { get; init; }` | Optional metadata placement profile for file-internal optimizers. When non-null, optimizers that support `IFileInternalChunkMover` use these rules to decide where metadata chunks land relative to the primary data payload. When null, each optimizer uses its format-specific default placement. |
+| `MetadataZonePlacement` | `MetadataZone MetadataZonePlacement { get; init; }` | Controls where filesystem metadata and directory extents are placed during defragmentation. Default: `Unchanged` (metadata stays where it is). Only affects planner-driven defragmentation of filesystem images; ignored for archive optimization and file-internal layout. |
+| `Mode` | `DefragMode Mode { get; init; }` | Defragmentation strategy. Default: `ConsolidateAtStart`. |
+| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback. When non-null, the defragmenter emits snapshots and incremental read/write-head updates that can drive the maintenance block map. Staged archive rebuilds use the same contract as native block movers. |
+| `Origin` | `long Origin { get; init; }` | Byte offset of the first sector available for live data (e.g. 16 * 2048 for ISO 9660 to leave the volume descriptor space alone, 0 for raw FAT). Default: 0. |
+| `Profile` | `LayoutProfile Profile { get; init; }` | Layout profile for planner-driven defragmentation. Controls whether the defragmenter performs full zone-based rearrangement (`Performance`) or per-file consolidation only (`Quick`). Default: `Performance`. |
+| `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; set; }` | Bytes a defragmentation may hold in memory while rearranging a volume that has nowhere of its own to park a run. |
+
+#### `DefragProgressEvent`
+
+Snapshot emitted by defrag/re-layout/rebuild maintenance operations. Native in-place movers normally report one physical image address-space. Transactional WORM/archive rebuilds may report the source read head and staged target write head in their respective byte-spaces, projected onto the same chart. In that mode the two head offsets are progress visualization and do not assert that identical numerical offsets refer to the same physical bytes.
+
+Implements `IEquatable<DefragProgressEvent>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefragProgressEvent` | `DefragProgressEvent(string Phase, double Fraction, long CurrentReadOffset, long CurrentWriteOffset, long ImageSize, IReadOnlyList<DefragBlockInfo> BlockMap, string Status = null)` | Snapshot emitted by defrag/re-layout/rebuild maintenance operations. Native in-place movers normally report one physical image address-space. Transactional WORM/archive rebuilds may report the source read head and staged target write head in their respective byte-spaces, projected onto the same chart. In that mode the two head offsets are progress visualization and do not assert that identical numerical offsets refer to the same physical bytes. |
+| `BlockMap` | `IReadOnlyList<DefragBlockInfo> BlockMap { get; init; }` | Optional block-map snapshot. Null incremental events retain the previous map and only move heads/progress, keeping redraw cost low on large archives. |
+| `CurrentReadOffset` | `long CurrentReadOffset { get; init; }` | Current source/read offset; -1 when not reading. |
+| `CurrentWriteOffset` | `long CurrentWriteOffset { get; init; }` | Current destination/write offset; -1 when not writing. |
+| `Fraction` | `double Fraction { get; init; }` | 0..1 fraction of work done. -1 = indeterminate. |
+| `ImageSize` | `long ImageSize { get; init; }` | Address-space size used for visualization/binning. For staged rebuilds this is a display scale large enough to project the source and target progress. |
+| `Phase` | `string Phase { get; init; }` | Progress phase identifier. Common values are `scanning`, `reading`, `writing`, `verifying`, `staged`, `committing`, `complete`, and `error`. |
+| `Status` | `string Status { get; init; }` | Optional human-readable phase/status text. |
+
+#### `DefragRebuilder`
+
+Generic rebuild-based defragmentor for filesystems whose writer always emits a contiguous start-packed layout. Dispatches the four `DefragMode` values onto a read-extract-rebuild path with mode-specific file ordering or capacity validation. Per-filesystem code provides two delegates — the entry extractor (reads from the existing image) and the image builder (writes a fresh image) — and gets all four modes for free. The trade-off vs a planner-driven byte-level mutation: this rebuilds the entire image on every Defragment call, so cost is `O(image size)`. For filesystems whose writer is much faster than the planner-driven path would be (small images, simple layouts), or where on-disk pointer-rewriting is too complex to justify, this is the pragmatic option. FAT for instance uses this for now; a planner-based path can replace it later without breaking the public `IArchiveDefragmentable` contract.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RebuildStreaming` | `static void RebuildStreaming(Stream archive, DefragOptions options, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Action<Stream> beginWrite, Action<string, byte[]> writeEntry, Action finishWrite)` | Streaming variant of `Rebuild` for filesystems that can build their image incrementally — i.e. whose writer exposes a sink-style `Begin / WriteEntry / Finish` protocol rather than a batch `Build()`. Bytes flow per-entry from reader to writer without accumulating the full file list in memory, so multi-GB containers can start the write before the full directory tree has been walked. `ConsolidateAtStart` and `FillHolesLazy` pack in input order and stream straight through. `ConsolidateAtEnd` and `CarveHole` need every size before the first byte is written, so they spill each entry to scratch, sort, and then write — still without ever holding the volume in memory, which is what the buffered `Rebuild` path cannot do above two gigabytes. |
+| `Rebuild` | `static void Rebuild(Stream archive, DefragOptions options, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Func<IReadOnlyList<ValueTuple<string, byte[]>>, byte[]> buildImage)` | Rebuilds `archive` in place using the supplied reader+writer delegates and the layout strategy in `options`. |
+
+#### `EntropyDetector`
+
+Detects incompressible (already compressed, encrypted, or random) data using a chi-square goodness-of-fit test on byte frequency distribution.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsIncompressible` | `static bool IsIncompressible(byte[] data)` | Returns true if the data appears incompressible (compressed, encrypted, or random). Uses a chi-square test: uniform byte distribution → incompressible. |
+| `IsIncompressible` | `static bool IsIncompressible(string filePath)` | Returns true if the file at the given path appears incompressible. Reads only a sample from the file for efficiency. |
+
+#### `FatDirStamp`
+
+Small helpers for writing FAT directory metadata (creation/modification timestamp and volume label) into the genuine CVF writers' inner FAT volume. Shared so DoubleSpace/DriveSpace 3/Stacker emit identical, spec-correct dir-entry metadata.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Encode` | `static ValueTuple<ushort, ushort> Encode(DateTime t)` | Encodes a timestamp into the FAT 16-bit (time, date) dir-entry fields. Returns `(0, 0)` for timestamps outside the representable FAT range (before 1980 or after 2107), which DOS treats as "unset". |
+| `Parse` | `static DateTime Parse(string iso)` | Parses an ISO-8601 date/time string for a create-option; returns `default(DateTime)` (treated as "unset") when blank or unparsable. |
+| `WriteVolumeLabel` | `static void WriteVolumeLabel(byte[] img, int entryOffset, string label)` | Writes an 11-byte volume-label directory entry (attribute 0x08, no cluster, zero size) at `entryOffset`. The label is upper-cased and space-padded/truncated to 11 bytes, matching the FAT short-name field. |
+
+#### `FilesystemCompressionParameter`
+
+One compression/layout parameter that is safe and useful to probe while looking for a smaller filesystem representation. When `Values` is null or empty, finite values are taken from the descriptor's option schema.
+
+Implements `IEquatable<FilesystemCompressionParameter>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemCompressionParameter` | `FilesystemCompressionParameter(string Key, IReadOnlyList<string> Values = null)` | One compression/layout parameter that is safe and useful to probe while looking for a smaller filesystem representation. When `Values` is null or empty, finite values are taken from the descriptor's option schema. |
+| `Key` | `string Key { get; init; }` |  |
+| `Values` | `IReadOnlyList<string> Values { get; init; }` |  |
+
+#### `FilesystemCompressionProfile`
+
+Explicit writer-backed compression capabilities.
+
+Implements `IEquatable<FilesystemCompressionProfile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemCompressionProfile` | `FilesystemCompressionProfile(bool TransparentCompression, IReadOnlyList<FilesystemCompressionParameter> Parameters)` | Explicit writer-backed compression capabilities. |
+| `Parameters` | `IReadOnlyList<FilesystemCompressionParameter> Parameters { get; init; }` |  |
+| `TransparentCompression` | `bool TransparentCompression { get; init; }` |  |
+
+#### `FilesystemDirectoryEntry`
+
+Implements `IEquatable<FilesystemDirectoryEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDirectoryEntry` | `FilesystemDirectoryEntry(string Name, FilesystemNodeId NodeId, FilesystemNodeKind Kind)` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+
+#### `FilesystemDriverBindingKind`
+
+Structural binding used to reach the common filesystem-driver contract. This deliberately says nothing about the exact image profile: probing an image can still refuse a damaged/unsupported feature set.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `ArchiveProjection` | `1` |  |
+| `SidecarNative` | `2` |  |
+| `DescriptorNative` | `3` |  |
+
+#### `FilesystemDriverCapabilities`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `EnumerateDirectories` | `1` |  |
+| `ReadData` | `2` |  |
+| `RandomAccess` | `4` |  |
+| `StableNodeIds` | `8` |  |
+| `WriteData` | `16` |  |
+| `Truncate` | `32` |  |
+| `CreateFile` | `64` |  |
+| `DeleteFile` | `128` |  |
+| `CreateDirectory` | `256` |  |
+| `RemoveDirectory` | `512` |  |
+| `Rename` | `1024` |  |
+| `HardLinks` | `2048` |  |
+| `SymbolicLinks` | `4096` |  |
+| `SetMetadata` | `8192` |  |
+| `SparseFiles` | `16384` |  |
+| `Flush` | `32768` |  |
+| `Transactions` | `65536` |  |
+| `CaseSensitiveNames` | `131072` |  |
+| `CasePreservingNames` | `262144` |  |
+
+#### `FilesystemDriverCoverage`
+
+Machine-readable repository coverage for one FileSystem.* descriptor. It answers whether the implementation has a path to an IFilesystemSession and which lower-level primitives are already available for finishing a native read/write driver.
+
+Implements `IEquatable<FilesystemDriverCoverage>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverCoverage` | `FilesystemDriverCoverage(string FormatId, string DisplayName, FilesystemDriverBindingKind Binding, bool HasArchiveProjection, bool HasArchiveMutation, bool HasExtentMap, bool HasBlockMover, bool HasBlockDeviceProvider, bool HasNativeReadinessProvider)` | Machine-readable repository coverage for one FileSystem.* descriptor. It answers whether the implementation has a path to an IFilesystemSession and which lower-level primitives are already available for finishing a native read/write driver. |
+| `Binding` | `FilesystemDriverBindingKind Binding { get; init; }` |  |
+| `DisplayName` | `string DisplayName { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `HasArchiveMutation` | `bool HasArchiveMutation { get; init; }` |  |
+| `HasArchiveProjection` | `bool HasArchiveProjection { get; init; }` |  |
+| `HasBlockDeviceProvider` | `bool HasBlockDeviceProvider { get; init; }` |  |
+| `HasBlockMover` | `bool HasBlockMover { get; init; }` |  |
+| `HasDriverPath` | `bool HasDriverPath { get; }` |  |
+| `HasExtentMap` | `bool HasExtentMap { get; init; }` |  |
+| `HasNativeReadinessProvider` | `bool HasNativeReadinessProvider { get; init; }` |  |
+| `IsNative` | `bool IsNative { get; }` |  |
+
+#### `FilesystemDriverDerivation`
+
+Common entry point for filesystem frontends. Native filesystem providers are always preferred. A descriptor that only exposes the normalized archive listing/open-entry surface still gets a real read-only filesystem session: hierarchy is reconstructed, node ids remain stable for the lifetime of the mount, symlinks are represented, and file handles use positional reads. The fallback is deliberately read-only. It never turns archive-level rebuild/Add/Remove support into mounted write support. This makes every filesystem parser usable by FUSE/Dokany/WinFsp-style frontends immediately, while leaving a precise upgrade path to native allocation and mutation code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Assess` | `static FilesystemDriverReadinessReport Assess(IFormatDescriptor descriptor, Stream image, FilesystemDriverTarget target, string password = null)` |  |
+| `Open` | `static IFilesystemSession Open(IFormatDescriptor descriptor, Stream image, FilesystemOpenOptions options, string password = null)` |  |
+| `Probe` | `static FilesystemDriverProfile Probe(IFormatDescriptor descriptor, Stream image, string password = null)` |  |
+
+#### `FilesystemDriverProfile`
+
+Per-image probe result. Capabilities are not assumed from the format name: an EROFS flat profile, a compressed EROFS profile, a damaged FAT image, or a ReFS version with an unsupported metadata feature can have different safe operations even though they share one descriptor.
+
+Implements `IEquatable<FilesystemDriverProfile>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverProfile` | `FilesystemDriverProfile(string FormatId, string ProfileName, FilesystemDriverCapabilities Capabilities, FilesystemMutationModel MutationModel, bool CanMount, bool CanMountWritable, IReadOnlyList<string> Limitations)` | Per-image probe result. Capabilities are not assumed from the format name: an EROFS flat profile, a compressed EROFS profile, a damaged FAT image, or a ReFS version with an unsupported metadata feature can have different safe operations even though they share one descriptor. |
+| `CanMountWritable` | `bool CanMountWritable { get; init; }` |  |
+| `CanMount` | `bool CanMount { get; init; }` |  |
+| `Capabilities` | `FilesystemDriverCapabilities Capabilities { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `Limitations` | `IReadOnlyList<string> Limitations { get; init; }` |  |
+| `MutationModel` | `FilesystemMutationModel MutationModel { get; init; }` |  |
+| `ProfileName` | `string ProfileName { get; init; }` |  |
+
+#### `FilesystemDriverReadinessLayer`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `ImageValidation` | `1` |  |
+| `Namespace` | `2` |  |
+| `SessionStableNodeIds` | `4` |  |
+| `NativeStableNodeIds` | `8` |  |
+| `ReadData` | `16` |  |
+| `RandomAccessRead` | `32` |  |
+| `AllocationMap` | `64` |  |
+| `WriteData` | `128` |  |
+| `Truncate` | `256` |  |
+| `NamespaceMutation` | `512` |  |
+| `MetadataMutation` | `1024` |  |
+| `Links` | `2048` |  |
+| `Flush` | `4096` |  |
+| `DurabilityModel` | `8192` |  |
+| `Recovery` | `16384` |  |
+| `Concurrency` | `32768` |  |
+| `ValidationCorpus` | `65536` |  |
+
+#### `FilesystemDriverReadinessReport`
+
+Implements `IEquatable<FilesystemDriverReadinessReport>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemDriverReadinessReport` | `FilesystemDriverReadinessReport(string FormatId, FilesystemDriverTarget Target, FilesystemDriverReadinessLayer AvailableLayers, FilesystemDriverReadinessLayer RequiredLayers, bool Derivable, bool UsesNativeProvider, IReadOnlyList<string> Blockers)` |  |
+| `AvailableLayers` | `FilesystemDriverReadinessLayer AvailableLayers { get; init; }` |  |
+| `Blockers` | `IReadOnlyList<string> Blockers { get; init; }` |  |
+| `Derivable` | `bool Derivable { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `RequiredLayers` | `FilesystemDriverReadinessLayer RequiredLayers { get; init; }` |  |
+| `Target` | `FilesystemDriverTarget Target { get; init; }` |  |
+| `UsesNativeProvider` | `bool UsesNativeProvider { get; init; }` |  |
+
+#### `FilesystemDriverTarget`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `ReadOnly` | `0` |  |
+| `ReadWrite` | `1` |  |
+
+#### `FilesystemMetadataPatch`
+
+Optional metadata changes; null means leave the field unchanged.
+
+Implements `IEquatable<FilesystemMetadataPatch>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemMetadataPatch` | `FilesystemMetadataPatch(DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, ulong? NativeAttributes = null)` | Optional metadata changes; null means leave the field unchanged. |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `NativeAttributes` | `ulong? NativeAttributes { get; init; }` |  |
+
+#### `FilesystemMutationModel`
+
+Describes how namespace/data writes become durable on this exact on-disk profile. This is intentionally separate from `CanModify`: archive-level Add/Remove may legitimately rebuild a whole image, while a writable mounted filesystem driver needs bounded, handle-safe mutations.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `Direct` | `1` |  |
+| `Journaled` | `2` |  |
+| `CopyOnWrite` | `3` |  |
+| `LogStructured` | `4` |  |
+| `WholeImageRebuild` | `5` |  |
+
+#### `FilesystemNodeId`
+
+Stable, path-independent identity of a filesystem object. A real driver must not use a pathname as identity: rename/unlink can change names while open handles keep referring to the same inode/object. Providers map their native inode, file-reference, object-id or directory-slot identity into these two opaque 64-bit words.
+
+Implements `IEquatable<FilesystemNodeId>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemNodeId` | `FilesystemNodeId(ulong Value, ulong Generation = 0)` | Stable, path-independent identity of a filesystem object. A real driver must not use a pathname as identity: rename/unlink can change names while open handles keep referring to the same inode/object. Providers map their native inode, file-reference, object-id or directory-slot identity into these two opaque 64-bit words. |
+| `Generation` | `ulong Generation { get; init; }` |  |
+| `Value` | `ulong Value { get; init; }` |  |
+
+#### `FilesystemNodeInfo`
+
+Implements `IEquatable<FilesystemNodeInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemNodeInfo` | `FilesystemNodeInfo(FilesystemNodeId NodeId, FilesystemNodeKind Kind, long Size, long AllocatedSize, uint LinkCount = 1, ulong NativeAttributes = 0, DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, DateTimeOffset? Changed = null)` |  |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `AllocatedSize` | `long AllocatedSize { get; init; }` |  |
+| `Changed` | `DateTimeOffset? Changed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `NativeAttributes` | `ulong NativeAttributes { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+
+#### `FilesystemNodeKind`
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` |  |
+| `RegularFile` | `1` |  |
+| `Directory` | `2` |  |
+| `SymbolicLink` | `3` |  |
+| `BlockDevice` | `4` |  |
+| `CharacterDevice` | `5` |  |
+| `Fifo` | `6` |  |
+| `Socket` | `7` |  |
+
+#### `FilesystemOpenOptions`
+
+Implements `IEquatable<FilesystemOpenOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemOpenOptions` | `FilesystemOpenOptions(bool ReadOnly = true, bool LeaveOpen = true)` |  |
+| `LeaveOpen` | `bool LeaveOpen { get; init; }` |  |
+| `ReadOnly` | `bool ReadOnly { get; init; }` |  |
+
+#### `FilesystemOptimization`
+
+Shared implementation behind filesystem optimize and option-aware shrink. Candidates are always staged and only the smallest verified representation is emitted; when no candidate improves on the input, the input is copied through.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetHardLinkDeduplicationSemantics` | `static HardLinkDeduplicationSemantics GetHardLinkDeduplicationSemantics(object descriptor)` | Returns the exact hard-link-style semantics implemented by this writer. Native `HardLinks` wins when present; otherwise a registered read-only shared-data backend can expose the same user option without pretending that the underlying filesystem has native hard links. |
+| `GetSupportedFeatures` | `static FilesystemOptimizationFeatures GetSupportedFeatures(object descriptor)` | Returns only transforms the current repository writer can actually perform. |
+| `Optimize` | `static void Optimize(ILayoutOptimizable layout, Stream input, Stream output, FilesystemOptimizationOptions options = null)` | Rebuilds a layout with the requested transforms and parameter search, emitting the input unchanged when no verified candidate is smaller. |
+| `ValidateRequested` | `static void ValidateRequested(ILayoutOptimizable layout, FilesystemOptimizationOptions options)` | Throws before writing when a caller asks for a transform the writer does not advertise. |
+
+#### `FilesystemOptimizationAdapters`
+
+Registration point for format assemblies whose optimization transform needs writer-specific semantics that do not belong in the generic registry.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RegisterCompression` | `static void RegisterCompression<T>(bool transparentCompression, params FilesystemCompressionParameter[] parameters)` | Registers compression capabilities only when the concrete writer is known to honour them. This deliberately replaces name-based option-schema guessing. |
+| `RegisterHardLinkDeduplicator` | `static void RegisterHardLinkDeduplicator<T>(HardLinkDeduplicationSemantics semantics, HardLinkDeduplicator rebuild)` | Registers a writer-specific deduplication backend and explicitly states whether the result is a native hard link or a read-only shared-data alias. |
+| `RegisterSymbolicLinkDeduplicator` | `static void RegisterSymbolicLinkDeduplicator<T>(SymbolicLinkDeduplicator rebuild)` | Registers symbolic-link deduplication for one concrete descriptor type. Registration is idempotent; a later registration for the same type replaces the previous delegate, which keeps hot-reload/test assembly scenarios deterministic. |
+| `RegisterTransparentCompression` | `static void RegisterTransparentCompression<T>()` | Marks a writer whose normal rebuild already stores regular file payloads through the filesystem's transparent compression layer. For such formats the explicit compression option is idempotent rather than unsupported. |
+
+#### `FilesystemOptimizationAdapters.HardLinkDeduplicator`
+
+Writer-specific hard-link/shared-data deduplication rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HardLinkDeduplicator` | `void FilesystemOptimizationAdapters.HardLinkDeduplicator(ILayoutOptimizable layout, Stream source, Stream target, LayoutRebuildOptions options)` | Writer-specific hard-link/shared-data deduplication rebuild. |
+
+#### `FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`
+
+Writer-specific symbolic-link deduplication rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SymbolicLinkDeduplicator` | `void FilesystemOptimizationAdapters.SymbolicLinkDeduplicator(ILayoutOptimizable layout, Stream source, Stream target, LayoutRebuildOptions options)` | Writer-specific symbolic-link deduplication rebuild. |
+
+#### `FilesystemOptimizationExtensions`
+
+Convenience API for option-aware filesystem maintenance.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetOptimizationFeatures` | `static FilesystemOptimizationFeatures GetOptimizationFeatures(this ILayoutOptimizable layout)` | Returns the transforms the current writer can actually emit. |
+| `Optimize` | `static void Optimize(this ILayoutOptimizable layout, Stream input, Stream output, FilesystemOptimizationOptions options = null)` | Optimizes a filesystem layout with the requested sparse/link/compression transforms and emits the input unchanged when no candidate is smaller. |
+
+#### `FilesystemOptimizationFeatures`
+
+Optional space-saving transforms that a filesystem layout optimizer can expose. The flags describe writer capabilities, not merely features of the on-disk format. A filesystem may support symbolic links or compression in its specification while still omitting the corresponding flag until this repository's writer can emit it.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `SparseFiles` | `1` |  |
+| `HardLinkDeduplication` | `2` |  |
+| `SymbolicLinkDeduplication` | `4` |  |
+| `TransparentCompression` | `8` |  |
+| `CompressionParameterSearch` | `16` |  |
+
+#### `FilesystemOptimizationOptions`
+
+Options shared by filesystem optimize and shrink operations. All transforms are opt-in because hard/symbolic-link deduplication changes write semantics even though the bytes observed through the original names stay identical at the time of the rebuild.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemOptimizationOptions` | `FilesystemOptimizationOptions()` |  |
+| `DeduplicateWithHardLinks` | `bool DeduplicateWithHardLinks { get; init; }` | Store identical regular files once. Depending on the writer this is either a native hard link or an explicitly read-only shared-data alias; query `GetHardLinkDeduplicationSemantics` when the distinction matters to a UI or caller. |
+| `DeduplicateWithSymbolicLinks` | `bool DeduplicateWithSymbolicLinks { get; init; }` | Replace duplicate regular files with symbolic links to one canonical copy. |
+| `FormatSpecific` | `IReadOnlyDictionary<string, string> FormatSpecific { get; init; }` | Explicit format-specific options. These seed every probe and win over auto-selected values. |
+| `MakeSparse` | `bool MakeSparse { get; init; }` | Replace all-zero allocation units with filesystem holes. |
+| `MaxCompressionProbes` | `int MaxCompressionProbes { get; init; }` | Maximum number of parameter combinations attempted by one optimize/shrink pass. |
+| `OnProbeProgress` | `Action<int, int> OnProbeProgress { get; init; }` | Optional progress callback: completed probes, total planned probes. |
+| `TryCompressionParameters` | `bool TryCompressionParameters { get; init; }` | Probe explicitly registered writer compression parameters and keep the smallest verified rebuild. No option is inferred merely from its name. |
+| `UseTransparentCompression` | `bool UseTransparentCompression { get; init; }` | Enable the filesystem writer's transparent file compression, when available. |
+
+#### `FilesystemSchemaPresets`
+
+Reusable `FormatOptionDescriptor` building blocks shared by every filesystem that exposes tunable layout parameters through `IFormatOptionsSchema`. Cluster/block size and volume size are near-universal across cluster-based filesystems, so they live here rather than being re-declared in each descriptor. Filesystem-specific knobs (MFT record size, inode size, FAT type, …) are declared by the individual descriptor.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ClusterSize` | `static FormatOptionDescriptor ClusterSize(string key = "ClusterSize", string displayName = "Cluster size", int min = 512, int max = 65536, string description = null)` | Standard "Auto + power-of-two" cluster/block size dropdown. |
+| `FormatSize` | `static string FormatSize(long bytes)` | Formats a byte count as "512 B", "4 KB", "1 MB" (powers of two only). |
+| `ImageSize` | `static FormatOptionDescriptor ImageSize(IReadOnlyList<string> sizes, string description = null)` | Standard "Auto (fit to files) + fixed sizes" image-size dropdown. Pass the medium-specific size labels that the descriptor's parser understands. |
+| `ParseSize` | `static int ParseSize(string label)` | Parses a size label produced by `FormatSize` back into bytes; "Auto"/unknown → 0. |
+| `PowerOfTwoSize` | `static FormatOptionDescriptor PowerOfTwoSize(string key, string displayName, int min, int max, string defaultLabel, string description)` | Generic power-of-two size dropdown for any byte-valued knob (inode size, MFT record, …). |
+| `VolumeLabel` | `static FormatOptionDescriptor VolumeLabel(int maxChars = 11)` | Standard volume-label text field. |
+
+#### `FilesystemSnapshotDirectoryEntry`
+
+Implements `IEquatable<FilesystemSnapshotDirectoryEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemSnapshotDirectoryEntry` | `FilesystemSnapshotDirectoryEntry(FilesystemNodeId ParentNodeId, string Name, FilesystemNodeId NodeId)` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `ParentNodeId` | `FilesystemNodeId ParentNodeId { get; init; }` |  |
+
+#### `FilesystemSnapshotNode`
+
+Native filesystem object projected into the common driver contract. Name and parent are a convenient primary-link description for simple filesystems; use explicit `FilesystemSnapshotDirectoryEntry` values when one node has multiple directory entries (hard links).
+
+Implements `IEquatable<FilesystemSnapshotNode>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilesystemSnapshotNode` | `FilesystemSnapshotNode(FilesystemNodeId NodeId, FilesystemNodeId ParentNodeId, string Name, FilesystemNodeKind Kind, long Size, long AllocatedSize, uint LinkCount = 1, ulong NativeAttributes = 0, DateTimeOffset? Created = null, DateTimeOffset? Modified = null, DateTimeOffset? Accessed = null, DateTimeOffset? Changed = null, string SymbolicLinkTarget = null, Func<IFilesystemFileHandle> OpenReadHandle = null)` | Native filesystem object projected into the common driver contract. Name and parent are a convenient primary-link description for simple filesystems; use explicit `FilesystemSnapshotDirectoryEntry` values when one node has multiple directory entries (hard links). |
+| `Accessed` | `DateTimeOffset? Accessed { get; init; }` |  |
+| `AllocatedSize` | `long AllocatedSize { get; init; }` |  |
+| `Changed` | `DateTimeOffset? Changed { get; init; }` |  |
+| `Created` | `DateTimeOffset? Created { get; init; }` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `LinkCount` | `uint LinkCount { get; init; }` |  |
+| `Modified` | `DateTimeOffset? Modified { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `NativeAttributes` | `ulong NativeAttributes { get; init; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; init; }` |  |
+| `OpenReadHandle` | `Func<IFilesystemFileHandle> OpenReadHandle { get; init; }` |  |
+| `ParentNodeId` | `FilesystemNodeId ParentNodeId { get; init; }` |  |
+| `Size` | `long Size { get; init; }` |  |
+| `SymbolicLinkTarget` | `string SymbolicLinkTarget { get; init; }` |  |
+
+#### `FormatCapabilities`
+
+Flags describing what operations a format supports. Write capability is a four-level scale: Unsupported — no descriptor exists.Read-Only — `CanList` and/or `CanExtract` only.WORM (Write-Once-Read-Many) — adds `CanCreate`: a fresh archive/image can be produced, but the library has no supported edit of an existing instance.R/W (Modify) — adds `CanModify`: an existing instance supports add/replace/remove and remains valid after the edit.`CanRemux` is deliberately orthogonal to that scale. A remuxer requires an existing source container and rebuilds its framing/index/tables around already encoded payloads; it does not imply fresh creation from elementary inputs and does not imply arbitrary archive-style add/replace/remove semantics. R/W describes the public operation, not the physical write strategy. A format may update allocation metadata in place, append a new index, relayout members, or rebuild the complete image. Those are implementation choices. If callers can open an existing instance, apply add/replace/remove through `IArchiveModifiable`, and obtain a valid instance preserving the semantics the implementation claims to support, the format is R/W at this API surface. Conversely, merely having a writer for fresh images is WORM and must not set `CanModify`. This distinction is especially important for read-only-on-mount filesystem formats such as SquashFS, CramFS and EROFS: the native filesystem driver may intentionally forbid mounted writes while an offline image editor can still support complete, deterministic mutation by relayout/rebuild. `CanModify` reports the latter capability.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` |  |
+| `CanList` | `1` |  |
+| `CanExtract` | `2` |  |
+| `CanCreate` | `4` | WORM: can produce a fresh archive/image, but has no supported existing-instance edit. |
+| `CanTest` | `8` |  |
+| `SupportsPassword` | `16` |  |
+| `SupportsMultipleEntries` | `32` |  |
+| `SupportsDirectories` | `64` |  |
+| `CanRemux` | `128` | Can rebuild an existing container while preserving already encoded payloads. This is independent of `CanCreate` and `CanModify` and is backed by `IContainerRemuxable`. |
+| `SupportsOptimize` | `256` |  |
+| `CanCompoundWithTar` | `512` |  |
+| `CanModify` | `1024` | R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies `CanCreate` for normal writable formats. |
+
+#### `FormatCategory`
+
+Classifies a format by its primary behavior.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Archive` | `0` | Multi-file container (ZIP, TAR, 7z, etc.). |
+| `Stream` | `1` | Single-stream compressor (Gzip, Bzip2, Xz, etc.). |
+| `Wrapper` | `2` | Encoding wrapper (MacBinary, BinHex). |
+| `CompoundTar` | `3` | Auto-generated tar + stream combination (tar.gz, tar.bz2, etc.). |
+| `DetectionOnly` | `4` | Recognized by signature only, no operations (ISO, UDF). |
+| `Audio` | `5` | Audio container surfaced as an archive of tracks/channels/tags (FLAC, WAV, MP3, OGG). |
+| `Video` | `6` | Video container surfaced as an archive of demuxed tracks + attachments (MKV, MP4). |
+| `Image` | `7` | Image container surfaced as an archive of the full image + per-plane pixel data (PNG, JPEG). |
+
+#### `FormatCreateOptions`
+
+Options for archive/stream creation, passed from the orchestration layer to format descriptors.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatCreateOptions` | `FormatCreateOptions(string Method = null)` | Creates options with an optional compression/codec method. |
+| `DictSize` | `long DictSize { get; init; }` | Dictionary size in bytes, or 0 for format default. |
+| `EncryptFilenames` | `bool EncryptFilenames { get; init; }` | When true, encrypt file names/headers. |
+| `EncryptionMethod` | `string EncryptionMethod { get; init; }` | Encryption method override (e.g. "aes256", "zipcrypto"). |
+| `ForceCompress` | `bool ForceCompress { get; init; }` | Whether to compress all files regardless of entropy detection. |
+| `FormatSpecific` | `Dictionary<string, string> FormatSpecific { get; init; }` | Format-specific tunable knobs collected from an `IFormatOptionsSchema`. The collection is initialized so callers can use collection/index initializers without allocating a dictionary explicitly. |
+| `IncompressiblePaths` | `HashSet<string> IncompressiblePaths { get; init; }` | Set of file paths detected as incompressible (null = not computed). |
+| `Level` | `int? Level { get; init; }` | Compression level (0-9), or null for format default. |
+| `MethodName` | `string MethodName { get; init; }` | Compression method name (e.g. "deflate", "lzma", "aac", "opus"). |
+| `Method` | `string Method { get; init; }` | Alias for `MethodName` used by codec/container creation paths. Both properties share the same backing value. |
+| `OptimizeLevel` | `int OptimizeLevel { get; init; }` | How many "+" were requested: 0 for none, 1 for "+", 2 for "++", and so on. Defaults to what `Optimize` says when nobody set it, so a caller that only knows about the flag still reads back a consistent level. |
+| `Optimize` | `bool Optimize { get; init; }` | Whether "+" optimization was requested. |
+| `Password` | `string Password { get; init; }` | Encryption password. |
+| `SolidSize` | `long SolidSize { get; init; }` | Maximum solid block size in bytes. |
+| `Threads` | `int Threads { get; init; }` | Number of parallel threads. |
+| `WordSize` | `int? WordSize { get; init; }` | Word size / fast bytes, or null for format default. |
+| `Copy` | `FormatCreateOptions Copy()` | A field-for-field copy, with `FormatSpecific` re-materialised under the case-insensitive comparer the property initializer uses. |
+| `FormatSpecificFrom` | `static Dictionary<string, string> FormatSpecificFrom(IEnumerable<KeyValuePair<string, string>> source)` | Builds a `FormatSpecific` map from an optional source, keeping the case-insensitive comparer the property's own initializer uses. Callers hold read-only or nullable views of the bag, which cannot be assigned to the mutable property directly. |
+| `GetOptionBool` | `bool GetOptionBool(string key, bool fallback)` | Reads a format-specific boolean option. Accepts true/false/1/0 (case-insensitive). |
+| `GetOptionInt` | `int GetOptionInt(string key, int fallback)` | Reads a format-specific integer option. Returns `fallback` if absent or unparsable. |
+| `GetOption` | `string GetOption(string key, string fallback)` | Reads a format-specific string option, returning `fallback` if absent. |
+| `GetString` | `string GetString(string key)` | Reads a string option, returning `null` if absent. |
+| `HasOption` | `bool HasOption(string key)` | True when the caller explicitly supplied a non-empty value for `key`. |
+| `TryGetInt` | `bool TryGetInt(string key, out int value)` | Attempts to read a format-specific invariant-culture integer. |
+
+#### `FormatDetectionSignature`
+
+Signature metadata contributed by a format package that is not represented by one `IFormatDescriptor` per externally supported format.
+
+Implements `IEquatable<FormatDetectionSignature>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatDetectionSignature` | `FormatDetectionSignature(string FormatId, string DisplayName, FormatCategory Category, string DefaultExtension, MagicSignature Signature)` | Signature metadata contributed by a format package that is not represented by one `IFormatDescriptor` per externally supported format. |
+| `Category` | `FormatCategory Category { get; init; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; init; }` |  |
+| `DisplayName` | `string DisplayName { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+| `Signature` | `MagicSignature Signature { get; init; }` |  |
+
+#### `FormatHeaderMatch`
+
+Result of a package-native header detector. Header detectors complement fixed signatures for formats whose identity is structural (or shares a generic container magic with other formats).
+
+Implements `IEquatable<FormatHeaderMatch>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatHeaderMatch` | `FormatHeaderMatch(string FormatId, string DisplayName, FormatCategory Category, string DefaultExtension, double Confidence)` | Result of a package-native header detector. Header detectors complement fixed signatures for formats whose identity is structural (or shares a generic container magic with other formats). |
+| `Category` | `FormatCategory Category { get; init; }` |  |
+| `Confidence` | `double Confidence { get; init; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; init; }` |  |
+| `DisplayName` | `string DisplayName { get; init; }` |  |
+| `FormatId` | `string FormatId { get; init; }` |  |
+
+#### `FormatHealth`
+
+Describes the structural/integrity health of a detected format instance. Orthogonal to identification confidence — a file can be confidently identified as ZIP (high confidence) but have broken entries (Damaged health).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Perfect` | `0` | All validation checks pass, checksums verified, fully extractable. |
+| `Good` | `1` | Structure valid, minor non-critical issues (e.g. extra trailing data). |
+| `Degraded` | `2` | Mostly valid but some entries broken, unknown methods, or minor corruption. |
+| `Damaged` | `3` | Significant damage: premature EOF, corrupted sections, but partially readable. |
+| `Uncertain` | `4` | Identification uncertain — magic matches but structure doesn't validate. |
+| `Unknown` | `5` | Cannot determine health (validation not available or not attempted). |
+
+#### `FormatHelpers`
+
+Shared utility methods for format descriptors (path sanitization, filtering, etc.).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateEntryFile` | `static FileStream CreateEntryFile(string baseDir, string entryName)` | Opens the destination file for `entryName` under `baseDir`, applying the same traversal sanitising as `WriteFile`. Lets a caller stream an entry straight to disk instead of materialising it, which an entry larger than a byte[] requires. |
+| `FilesOnly` | `static IEnumerable<ValueTuple<string, byte[]>> FilesOnly(IReadOnlyList<ArchiveInputInfo> inputs)` | Returns only file entries (non-directories) with their data, preserving paths. |
+| `FlatFiles` | `static IEnumerable<ValueTuple<string, byte[]>> FlatFiles(IReadOnlyList<ArchiveInputInfo> inputs)` | Flattens all entries to root level (filename only) with their data. For formats without path support. |
+| `MatchesFilter` | `static bool MatchesFilter(string name, string[] filters)` | Returns true if `name` matches any of the `filters` by exact name, trailing path segment, or filename-only comparison. |
+| `MethodWithEffort` | `static string MethodWithEffort(FormatCreateOptions options, string method = null)` | The method name to hand a writer that reads its own effort tier out of the name, with the "+" run the caller asked for restored. |
+| `WriteFile` | `static void WriteFile(string baseDir, string entryName, byte[] data)` | Sanitizes an entry name and writes its data to disk under `baseDir`. Prevents path traversal attacks. |
+
+#### `FormatMethodInfo`
+
+Describes a compression method available within a format.
+
+Implements `IEquatable<FormatMethodInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatMethodInfo` | `FormatMethodInfo(string Name, string DisplayName, bool SupportsOptimize = false)` | Describes a compression method available within a format. |
+| `DisplayName` | `string DisplayName { get; init; }` | Human-readable name (e.g. "Deflate", "LZMA"). |
+| `Name` | `string Name { get; init; }` | Internal method name (e.g. "deflate", "lzma"). |
+| `SupportsOptimize` | `bool SupportsOptimize { get; init; }` | Whether "method+" optimization is available. |
+
+#### `FormatOptionDescriptor`
+
+Describes one tunable knob. The dialog / CLI uses `DisplayName` for the label, `Description` as hover-tip help, `Default` as the initial value, and `AllowedValues` to constrain the input where applicable.
+
+Implements `IEquatable<FormatOptionDescriptor>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatOptionDescriptor` | `FormatOptionDescriptor(string Key, string DisplayName, FormatOptionKind Kind, string Default, IReadOnlyList<string> AllowedValues = null, string Description = null, string DependsOn = null, bool IsOptimizationAxis = true)` | Describes one tunable knob. The dialog / CLI uses `DisplayName` for the label, `Description` as hover-tip help, `Default` as the initial value, and `AllowedValues` to constrain the input where applicable. |
+| `AllowedValues` | `IReadOnlyList<string> AllowedValues { get; init; }` | For `Enum`: mandatory list of allowed values. For `Integer`: optional preset list (renders as dropdown rather than text box). For other kinds: null. |
+| `Default` | `string Default { get; init; }` | Initial value, in canonical string form (e.g. "0" for "auto", "Auto" for an enum). |
+| `DependsOn` | `string DependsOn { get; init; }` | Optional gate: only show this knob if another knob's current value matches one of these. Format: `"OtherKey=value1\|value2"`. Used for cascading options (e.g. "Journal" only visible when "Version" is ext3/ext4). |
+| `Description` | `string Description { get; init; }` | Hover-tip help. |
+| `DisplayName` | `string DisplayName { get; init; }` | UI label. |
+| `IsOptimizationAxis` | `bool IsOptimizationAxis { get; init; }` | Whether the generic compression optimizer may vary this option. Set to `false` for caller constraints such as `TargetCompatibility`. |
+| `Key` | `string Key { get; init; }` | Stable machine-readable key; used as the `FormatSpecific` dictionary key. Convention: PascalCase. |
+| `Kind` | `FormatOptionKind Kind { get; init; }` | How to render + parse. |
+
+#### `FormatOptionKeys`
+
+Well-known format-option keys shared by independently versioned formats.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TargetCompatibility` | `const string TargetCompatibility` | Requested writer compatibility target. Values are format-specific, but the key is common so UI, CLI and orchestration code can recognize a compatibility constraint consistently. |
+
+#### `FormatOptionKind`
+
+How a `FormatOptionDescriptor` renders + parses.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `String` | `0` | Free-form text (e.g. volume label). |
+| `Integer` | `1` | Integer (e.g. cluster size in bytes). `AllowedValues` renders as a dropdown of preset sizes. |
+| `Boolean` | `2` | Boolean toggle (e.g. "enable journal"). |
+| `Enum` | `3` | One of a fixed enumerated set (e.g. FAT12 / FAT16 / FAT32). `AllowedValues` is mandatory. |
+
+#### `FormatRegistry`
+
+Central registry of all format descriptors and their optional driver sidecars. Populated at startup by generated registration code, then finalized with `Initialize`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `All` | `static IReadOnlyList<IFormatDescriptor> All { get; }` |  |
+| `DetectionSources` | `static IReadOnlyList<IFormatDetectionSource> DetectionSources { get; }` | Package-native sources that contribute content detection metadata. |
+| `FilesystemFormatIds` | `static IReadOnlyList<string> FilesystemFormatIds { get; }` | All descriptor IDs originating from FileSystem.* projects. |
+| `AssessFilesystemDriver` | `static FilesystemDriverReadinessReport AssessFilesystemDriver(string id, Stream image, FilesystemDriverTarget target, string password = null)` |  |
+| `GetArchiveOps` | `static IArchiveFormatOperations GetArchiveOps(string id)` |  |
+| `GetAsyncArchiveOps` | `static IAsyncArchiveOperations GetAsyncArchiveOps(string id)` |  |
+| `GetByCategory` | `static IEnumerable<IFormatDescriptor> GetByCategory(FormatCategory category)` |  |
+| `GetByExtension` | `static IFormatDescriptor GetByExtension(string path)` |  |
+| `GetById` | `static IFormatDescriptor GetById(string id)` |  |
+| `GetFilesystemDriverCoverage` | `static FilesystemDriverCoverage GetFilesystemDriverCoverage(string id)` |  |
+| `GetFilesystemDriverCoverage` | `static IReadOnlyList<FilesystemDriverCoverage> GetFilesystemDriverCoverage()` | Structural driver coverage for all FileSystem.* descriptors. This is safe to inspect without an image and is intended for CI/readiness dashboards. Use `AssessFilesystemDriver` for exact per-image semantics. |
+| `GetFilesystemDriver` | `static IFilesystemDriverAdapter GetFilesystemDriver(string id)` | Returns a generated native driver sidecar for the format, when one exists. |
+| `GetStreamOps` | `static IStreamFormatOperations GetStreamOps(string id)` |  |
+| `Initialize` | `static void Initialize()` |  |
+| `OpenFilesystem` | `static IFilesystemSession OpenFilesystem(string id, Stream image, FilesystemOpenOptions options, string password = null)` |  |
+| `ProbeFilesystem` | `static FilesystemDriverProfile ProbeFilesystem(string id, Stream image, string password = null)` |  |
+| `RegisterDetectionSource` | `static void RegisterDetectionSource(IFormatDetectionSource source)` | Registers one source-generated package-native detection source. Detection sources contribute signatures and optional structural header probing without becoming operational format descriptors. |
+| `RegisterFilesystemDriver` | `static void RegisterFilesystemDriver(IFilesystemDriverAdapter driver)` | Registers one source-generated native filesystem-driver sidecar. Duplicate adapters for the same format ID are a build/runtime contract error rather than whichever registration happened to win. |
+| `Register` | `static void Register(IFormatDescriptor descriptor, bool isFilesystem = false)` | Register a format descriptor. Source-generated calls set `isFilesystem` for descriptors declared under a `FileSystem.*` namespace so filesystem coverage is explicit rather than inferred from extensions or display names. |
+
+#### `HardLinkDeduplicationSemantics`
+
+Describes what a hard-link-style deduplication transform actually means for a writer. Native links have filesystem-managed link semantics; read-only shared data deliberately aliases storage in a format that has no native link count.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | No hard-link-style deduplication is implemented by this writer. |
+| `Native` | `1` | The filesystem natively represents several names for one file/inode. |
+| `ReadOnlySharedData` | `2` | Several read-only directory entries deliberately reference the same physical data. This is not a native hard link and writers/removers must preserve the shared allocation until the last directory entry stops referencing it. |
+
+#### `IArchiveCreatable`
+
+Opt-in capability: the descriptor can produce a fresh archive from a list of inputs (WORM). Descriptors that do not implement this interface cannot be created from scratch.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming variant of `Create`: `inputs` is an enumerable of (name, size, openStream) tuples. Writers that override this method can use the pre-known sizes to plan layout/geometry in a first pass, then write the target stream and copy each entry's bytes via 64 KB chunks in a second pass — never holding an entry's bytes in RAM beyond the chunk buffer. |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Produces a fresh archive at `output` containing `inputs`. Existing archive contents (if any) at `output` are overwritten. |
+
+#### `IArchiveDefragmentable`
+
+Opt-in capability for physical or logical re-layout. Native mutable filesystems may move extents in place; WORM/archive containers can satisfy the same verb by building a verified staged target and committing it after completion.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Defragment` | `void Defragment(Stream archive)` | Defragments using the format's default consolidate-at-start strategy. Generic list/extract/create descriptors use the verified staged rebuild. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rewrites according to `options`. Descriptors with their own native parameterless mover retain it. Descriptors relying on the interface default are routed through the progress-reporting, cancellable staged rebuild, so archive repacks and WORM re-layouts drive the same block-map UI as physical filesystem extent moves. |
+
+#### `IArchiveFormatOperations`
+
+The base capability every archive descriptor implements: list entries and extract them to a directory. All other archive capabilities (create, modify, in-memory extract, defragment, shrink, input constraints) are separate opt-in interfaces so callers can discover them at the type level.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Extracts a single entry to a byte array. This is the explicitly buffered convenience API; callers working with large entries should use `OpenEntry` instead. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extract entries from the archive to an output directory. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | List all entries in the archive. |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a read-only `Stream` bounded to that entry's logical bytes — physically incapable of reading slack space, adjacent entries, padding/alignment fillers, or header/metadata regions. This is the canonical per-entry isolation primitive used by streaming conversion and derived-filesystem pipelines. |
+
+#### `IArchiveInMemoryExtract`
+
+Opt-in capability: the descriptor can extract a single named entry straight to a `Stream` without materialising it to disk. Used by the recursive-descent driver to avoid per-layer temp-dir roundtrips.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ExtractEntry` | `void ExtractEntry(Stream input, string entryName, Stream output, string password)` | Writes the bytes of `entryName` (as named by `List`) into `output`. |
+
+#### `IArchiveLayoutMap`
+
+Opt-in capability: the descriptor can enumerate the real byte-level layout of an archive — every entry's header, compressed payload, and inter-entry gaps at their actual offsets. Parallel to `IFilesystemExtentMap` but for archive formats (ZIP, 7z, TAR, LZH, ARJ, etc.). Fail-closed contract: omitted bytes are interpreted as unused by maintenance consumers. Any live, structural, ambiguous or undecoded region must therefore be emitted as `MetadataReserved` (or `Used`), never silently omitted. If a layout cannot be proven safe, return no extents and the inherited generic wipe is a no-op.That exact preservation map also makes every implementation an `IWipeEmpty` capability. The generic implementation zeros proven dead gaps while format-specific overrides may additionally scrub tombstones, reserved growth records, stale indexes, or other recoverable metadata.Drives the Defragment/Optimize window block-map preview so the user sees the real archive layout before pressing "Optimize".
+
+Implements `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the actual byte layout of `archive`. Coverage may be sparse only where omitted bytes are proven unused; callers fill those gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `archive`. |
+
+#### `IArchiveModifiable`
+
+Opt-in capability for editing an existing archive/image through add/replace/remove. The physical strategy is format-specific: implementations may patch blocks in place, append replacement metadata, relayout members, or perform a verified extract → edit → re-create rebuild. All are valid implementations of the same public mutation contract when the resulting instance preserves the semantics the descriptor claims to support. A descriptor advertising `CanModify` must expose this interface and its supported-profile edit path must actually round-trip. Merely being able to create a fresh instance is not enough. A fully modifiable container is also purgeable: removing all live entries is a required subset of the remove contract.
+
+Implements `IArchivePurgeable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds files to an existing instance, replacing entries with the same logical path/name. Default implementation: descriptors that also implement `IArchiveFormatOperations` and `IArchiveCreatable` get a verified extract → edit → re-create implementation through `EditViaRebuild`. Formats with a cheaper native editor override it. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, ArchiveMutationOptions options)` | Adds or replaces files while supplying operation-scoped credentials. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes the named entries from an existing instance. Passing every entry name yields an empty container/image where the format permits one. Default implementation: a verified extract → drop-named-files → re-create edit through `EditViaRebuild`. Native implementations may instead unlink/free in place and optionally wipe released storage. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames, ArchiveMutationOptions options)` | Removes entries while supplying operation-scoped credentials. |
+
+#### `IArchivePurgeable`
+
+Opt-in capability: all user/live entries can be removed from an existing container while leaving a valid, listable empty instance. This is distinct from `IWipeEmpty`, which preserves live entries and overwrites only unused/dead bytes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | False when the format has no empty instance for a purge to leave behind: the container mandates at least one member, so removing every entry cannot end in a valid container. Individual entries still come and go through `IArchiveModifiable` — it is only the empty end state that does not exist — so a caller offering the verb should not offer it for these, and `Purge` says so rather than leaving a container its own reader rejects. |
+| `Purge` | `void Purge(Stream archive)` | Removes every live non-directory entry from `archive`. Default implementation: descriptors that also implement `IArchiveFormatOperations` and `IArchiveModifiable` get a transactional staged purge through `PurgeViaModifier`. Native implementations may override this when they can empty the container more efficiently. |
+
+#### `IArchiveShrinkable`
+
+Opt-in capability: the descriptor can rebuild an archive into a new output stream, stepping down to the smallest size in `CanonicalSizes` that still holds the current payload. For formats with continuous sizing (most filesystems), `CanonicalSizes` returns just the current image size and shrink tight-packs to exactly that. For fixed-size disk image families (C64 D64/D71/D81; PC 720K/1.44M/2.88M floppies; Amiga ADF), the list walks from largest to smallest standard size.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanonicalSizes` | `IReadOnlyList<long> CanonicalSizes { get; }` | Canonical image sizes in bytes, ascending. A 1.44 MB PC floppy descriptor returns `[737280, 1474560, 2949120]`; a filesystem without a disc-size concept returns an empty list (the default), meaning "rebuild tight / auto-fit to content". |
+| `ShrinkDefault` | `void ShrinkDefault(Stream input, Stream output)` | The default rebuild-or-copy-through shrink, exposed so a format-specific `Shrink` override (e.g. a genuine in-place shrinker) can fall back to it when the in-place path declines an image. Rebuilds into a buffer and emits the result only when it round-tripped AND is actually smaller; on any rebuild failure it copies the original through unchanged. Shrink is thus total — it never throws or damages the source. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Rebuilds `input` into `output`, picking the smallest `CanonicalSizes` entry that holds the current content. Default implementation: any descriptor that also implements `IArchiveFormatOperations` + `IArchiveCreatable` (i.e. it can round-trip its own files) gets shrink for free — a verified extract → re-create rebuild via `RebuildToStream` that tight-packs the payload (auto-fit) and refuses to emit a lossy result. Formats with a fixed canonical-size ladder (floppy/disk images) override this to step down standard sizes. |
+| `Shrink` | `void Shrink(Stream input, Stream output, FilesystemOptimizationOptions options)` | Shrinks while applying optional filesystem-level space-saving transforms. With no requested transform this dispatches to the descriptor's existing `Shrink` implementation, preserving genuine in-place shrinkers and canonical-size ladders. Advanced requests are routed through the descriptor's `ILayoutOptimizable` writer and are capability-checked before any output is written. |
+
+#### `IArchiveWriteConstraints`
+
+Opt-in capability: the descriptor can reject inputs that don't belong in this archive type. Applied by the UI (drag-drop prohibition cursor + tooltip) and the CLI (rejection with non-zero exit) before `Create` or `Add` is called. Descriptors that accept anything (ZIP, TAR, …) simply don't implement this interface.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AcceptedInputsDescription` | `string AcceptedInputsDescription { get; }` | One-line human summary shown in UI tooltips on rejection — e.g. `"accepts: metadata.ini, cover.jpg/png, lyrics.txt"` for an MP3 archive. |
+| `MaxTotalArchiveSize` | `long? MaxTotalArchiveSize { get; }` | Maximum cumulative size of all inputs the archive can hold, in bytes. Null means no inherent size ceiling (most formats). Fixed-size disk images (C64 D64 = 174848, Amiga ADF = 901120, PC 1.44 MB floppy = 1474560) expose their limit here so the UI can reject drops that would overflow. |
+| `MinTotalArchiveSize` | `long? MinTotalArchiveSize { get; }` | Minimum total image size the format requires, in bytes. Null (default) means no floor. Filesystem images (UDF ≈ 1 MB, XFS = 16 MB, ReiserFS = 128 MB) advertise their real-world minimum-viable size here so UI can warn before the writer produces a round-tripable but mount-rejected image. |
+| `CanAccept` | `bool CanAccept(ArchiveInputInfo input, out string reason)` | Evaluates `input` against the descriptor's rules. Returns `false` with a human-readable `reason` when the input is rejected. |
+
+#### `IAsyncArchiveOperations`
+
+Optional interface for archive formats that support lazy, asynchronous entry enumeration. Implementations yield entries one at a time, enabling processing of huge archives without materializing the full entry list in memory.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ListEntriesAsync` | `IAsyncEnumerable<ArchiveEntryInfo> ListEntriesAsync(Stream stream, string password, CancellationToken ct = null)` | Lazily enumerates archive entries as an async stream. Each entry is yielded as it is discovered, without requiring the full archive to be scanned first. |
+
+#### `IAudioContainerFormat`
+
+Marker for descriptors that are valid participants in audio conversion even when their primary registry category is not `Audio` (for example MP4/MOV).
+
+_No public or protected members._
+
+#### `IAudioDemuxSource`
+
+Capability for exposing encoded packets without decoding them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `TryDemux` | `bool TryDemux(Stream input, out AudioEncodedStream stream)` |  |
+
+#### `IAudioMuxTarget`
+
+Capability for muxing already-encoded packets without re-encoding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SupportedMuxCodecs` | `IReadOnlyList<string> SupportedMuxCodecs { get; }` |  |
+| `CanMux` | `bool CanMux(AudioStreamFormat stream, FormatCreateOptions options, out string reason)` |  |
+| `Mux` | `void Mux(Stream output, AudioEncodedStream stream, FormatCreateOptions options)` |  |
+
+#### `IAudioPcmSource`
+
+Capability for lossless/decoded conversion through canonical PCM.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DecodePcm` | `AudioPcmBuffer DecodePcm(Stream input)` |  |
+
+#### `IAudioPcmTarget`
+
+Capability for encoding canonical PCM into a target format/container.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SupportedEncodeCodecs` | `IReadOnlyList<string> SupportedEncodeCodecs { get; }` |  |
+| `CanEncode` | `bool CanEncode(AudioPcmFormat format, string codecId, FormatCreateOptions options, out string reason)` |  |
+| `EncodePcm` | `void EncodePcm(Stream output, AudioPcmBuffer pcm, string codecId, FormatCreateOptions options)` |  |
+
+#### `IBlockDeviceFilesystemDriverProvider`
+
+Optional filesystem-core capability for implementations whose native parser already works directly on a block device. This is the long-term driver core: the same filesystem implementation can mount raw disks, virtual disks, forensic images, or decoded track media without container-specific code.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(IRandomAccessBlockDevice device, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(IRandomAccessBlockDevice device)` |  |
+
+#### `IBlockDeviceProvider`
+
+Compatibility alias for the original block-device provider name. New code uses `IRandomAccessBlockDeviceProvider` so containers, decoded track media and raw images expose exactly one logical-block abstraction.
+
+Implements `IRandomAccessBlockDeviceProvider`.
+
+_No public or protected members._
+
+#### `IBuildingBlock`
+
+A raw compression/decompression building block (algorithm primitive) that can be benchmarked. Unlike `IFormatDescriptor`, building blocks have no file format container — they operate directly on raw byte data.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Description` | `string Description { get; }` | Short description of the algorithm. |
+| `DisplayName` | `string DisplayName { get; }` | Human-readable display name (e.g. "LZ77", "DEFLATE"). |
+| `Family` | `AlgorithmFamily Family { get; }` | Algorithmic family for grouping. |
+| `Id` | `string Id { get; }` | Unique identifier (e.g. "Lz77", "Deflate"). |
+| `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compress raw data and return the compressed bytes. |
+| `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompress previously compressed data and return the original bytes. |
+
+#### `IContainerRemuxable`
+
+Opt-in capability for rebuilding an existing container while preserving already encoded payloads.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Remux` | `void Remux(Stream source, Stream output, IReadOnlyList<ArchiveInputInfo> replacements, FormatCreateOptions options)` | Rebuilds `source` into `output`, applying the supplied addressable pseudo-entry replacements without decoding or re-encoding preserved payloads. Inputs omitted from `replacements` remain sourced from the existing container. |
+
+#### `IFileInternalChunkMover`
+
+Moves chunks within a single file and patches internal offset pointers so the file remains valid. Examples: moving MP4 moov atom before mdat, relocating JPEG EXIF to the front, compacting ID3v2 padding.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Optimize` | `void Optimize(Stream file)` | Performs the canonical optimization for the format (e.g., MP4 fast-start, JPEG EXIF-first). The stream must be readable, writable, and seekable. If the file is already in the optimal layout, this is a no-op. |
+| `Optimize` | `void Optimize(Stream file, MetadataPlacementProfile profile)` | Performs optimization with an optional metadata placement profile that controls where metadata chunks land relative to the data payload. The default implementation ignores the profile and delegates to `Optimize`. |
+
+#### `IFileInternalLayoutMap`
+
+Exposes the byte-level internal structure of a single file (not an archive or filesystem) so the block-chart can visualize and rearrange its chunks. Examples: JPEG APP markers, MP4 atoms, RIFF chunks, ID3 tags, PNG chunks.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnumerateChunks` | `IEnumerable<DefragBlockInfo> EnumerateChunks(Stream file)` | Enumerates the top-level structural chunks inside `file`. Each chunk becomes a `DefragBlockInfo` with its byte offset and length within the file. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `file`. |
+
+#### `IFilesystemBlockMover`
+
+Opt-in capability for filesystems that support true in-place defragmentation via cluster-level moves. Implementing this interface allows the planner-driven defrag path to move extents without rebuilding the entire image. `MoveExtent` performs the raw byte copy from source to destination within the image. `UpdateAllocationAfterMove` patches filesystem metadata (FAT chain entries, directory entry start-cluster, bitmap bits, etc.) so the file remains reachable at its new location.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AllocationBlockSize` | `int AllocationBlockSize { get; }` | Size of one allocation unit — a cluster, a block — in bytes, or zero when the mover does not say. |
+| `RepointsRunsIndependently` | `bool RepointsRunsIndependently { get; }` | Whether `UpdateAllocationAfterMove` repoints exactly the run it is told about and leaves the owner's other runs alone. |
+| `SupportsHeldRuns` | `bool SupportsHeldRuns { get; }` | Whether this mover copes with a run being held outside the volume while the rest of the layout moves. |
+| `SupportsScatteredRelink` | `bool SupportsScatteredRelink { get; }` | Whether this mover can relink an owner's whole allocation in one call. A fragmented file's runs have to become a single chain; `UpdateAllocationAfterMove`, called once per run, can only describe each run as a file of its own — which truncates the file to its last run. A mover that returns false is never asked to move a fragmented owner: the caller falls back to a rebuild instead. |
+| `MoveExtent` | `void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)` | Copies `length` bytes from `srcOffset` to `dstOffset` within `image`. Optionally zeros the source region after the copy (controlled by `zeroSource`). Caller is responsible for ensuring the destination region is free. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Patches filesystem metadata after a raw extent move. Walks the allocation structures (FAT chain, directory entries, bitmaps, etc.) to update every reference from the old cluster range to the new one. |
+| `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Repoints a run the way `UpdateAllocationAfterMove` does, but says whether the space it came from should be released. |
+| `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | Rewrites `fileName`'s allocation so that it occupies `newBlockOffsets` in that order, having previously occupied `oldBlockOffsets`. Both lists are one entry per allocation block, in the file's own order. |
+
+#### `IFilesystemDriverAdapter`
+
+Sidecar binding from an existing format descriptor ID to a native filesystem driver core. This lets large/legacy descriptors acquire driver semantics without mixing mount state, locking and block-device code into their archive surface. The source generator discovers public parameterless implementations and registers them by `FormatId`.
+
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FormatId` | `string FormatId { get; }` |  |
+
+#### `IFilesystemDriverProvider`
+
+Descriptor-side entry point for a mount-grade filesystem implementation. Probe must be non-destructive and fail closed. Open must reject writable mode unless the returned profile has `CanMountWritable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
+
+#### `IFilesystemDriverReadinessProvider`
+
+Optional filesystem-specific readiness description. The generic derivation layer supplies a conservative report when a descriptor does not implement this interface; native implementations can use it to explain exactly which on-disk semantics still block a complete mounted driver.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+
+#### `IFilesystemExtentMap`
+
+Opt-in capability: the descriptor (or a partner type) can enumerate the actual on-disk byte layout of a filesystem image — every used cluster chain per file (one `DefragBlockInfo` per contiguous run), every metadata-reserved region (boot sector, FAT, bitmap, superblock, MFT, root directory, inode table, BAM, group descriptor table, etc.), and optionally every free region. Fail-closed contract: gaps in the returned set are interpreted as free space by maintenance consumers. Therefore an implementation that encounters an allocated-but-undecoded, damaged, ambiguous, or otherwise unproven region MUST emit that region as `MetadataReserved` rather than silently omit it. If the image cannot be walked safely at all, yield no extents; the inherited generic `IWipeEmpty` implementation then wipes nothing.Because this contract identifies all bytes that must be preserved, every extent map is also an `IWipeEmpty` implementation: the default wiper zeros only proven gaps (and cluster tips when a trustworthy logical-size lookup exists). Formats that know about deleted directory records or other hidden remnants may override the wipe for deeper cleaning.Drives the Defragment-window block-map preview so the user sees the real fragmented layout before pressing "Defragment" rather than the post-defrag approximation.
+
+Implements `IWipeEmpty`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the actual on-disk layout of `image`. Coverage may be sparse only where the omitted bytes are proven free; callers fill those gaps with `Free`. Unknown allocated bytes must be returned as `MetadataReserved`. The stream's position may be modified during enumeration but the caller owns its lifetime — implementations must not dispose `image`. |
+
+#### `IFilesystemFileHandle`
+
+Positional file handle. It deliberately has no shared Stream.Position so two concurrent kernel requests cannot race a mutable cursor. Reads/writes operate at explicit logical offsets and therefore map naturally to filesystem extents.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Length` | `long Length { get; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; }` |  |
+| `Flush` | `void Flush()` |  |
+| `Read` | `int Read(long offset, Span<byte> destination)` |  |
+| `SetLength` | `void SetLength(long length)` |  |
+| `Write` | `void Write(long offset, ReadOnlySpan<byte> source)` |  |
+
+#### `IFilesystemMetadataMover`
+
+Opt-in capability for filesystems whose own structures — the MFT, an allocation bitmap, an inode table, a root directory — can be relocated rather than only worked around.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RelocatableMetadata` | `IReadOnlySet<string> RelocatableMetadata { get; }` | The metadata regions this filesystem can relocate, named as its extent map reports them. Everything not listed stays where it is. |
+| `PrepareMetadataMove` | `void PrepareMetadataMove(Stream image, string metadataName, long oldOffset, long newOffset, long length)` | Gives the filesystem a chance to make the destination safe before the raw bytes are copied there. |
+| `UpdateMetadataAfterMove` | `void UpdateMetadataAfterMove(Stream image, string metadataName, long oldOffset, long newOffset, long length, IReadOnlyList<ValueTuple<long, long>> liveRanges = null)` | Repoints whatever locates `metadataName` after its bytes have been copied from `oldOffset` to `newOffset`, and moves the allocation with it. |
+
+#### `IFilesystemPlaceable`
+
+Opt-in capability for putting one named owner at one chosen offset, moving whatever is in the way out of the way first.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlaceFileAt` | `void PlaceFileAt(Stream image, PlacementOptions options)` | Puts `FileName` at `TargetOffset`, relocating every live extent that is in the way. Content is preserved exactly; only where it lives changes. |
+
+#### `IFilesystemScrambleable`
+
+Opt-in capability for scattering a volume's allocation blocks across the whole data area — fragmentation on purpose, so a defragmenter has something real to work against.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Scramble` | `void Scramble(Stream image, ScrambleOptions options)` | Deals every allocation block of every live owner a fresh slot from the volume's data area, at random from `Seed`, and moves the blocks there. Content is preserved exactly; only where it lives changes. |
+
+#### `IFilesystemSession`
+
+Open filesystem namespace. Operations use stable node ids rather than paths, mirroring the semantics required by FUSE/Dokany/WinFsp-style adapters: a caller may keep a file handle open across rename or unlink.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` | Begins one durability transaction for this session. Until Commit/Rollback, namespace operations and writes through handles opened by the session belong to that transaction. Providers that do not advertise Transactions throw. |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` | Flushes all dirty data and metadata that are not inside an active transaction. |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
+
+#### `IFilesystemTransaction`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `IsCompleted` | `bool IsCompleted { get; }` |  |
+| `Commit` | `void Commit()` |  |
+| `Rollback` | `void Rollback()` |  |
+
+#### `IFormatDescriptor`
+
+Self-describing metadata for a file format. Each FileFormat.* project provides one implementation of this interface to register itself with the format registry.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Capabilities flags for this format. |
+| `Category` | `FormatCategory Category { get; }` | Primary category of this format. |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Compound (multi-dot) extensions this format owns (e.g. [".tar.gz", ".tgz"]). Checked before single extensions. |
+| `DefaultExtension` | `string DefaultExtension { get; }` | Default file extension including the dot (e.g. ".gz"). |
+| `Description` | `string Description { get; }` | Short human-readable description of the algorithm. Defaults to `DisplayName`. |
+| `DisplayName` | `string DisplayName { get; }` | Human-readable display name (e.g. "ZIP", "GZIP"). |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | All recognized single extensions (e.g. [".gz", ".gzip"]). |
+| `Family` | `AlgorithmFamily Family { get; }` | Algorithmic family for grouping and display. Defaults to `Other`. |
+| `Id` | `string Id { get; }` | Unique format identifier (e.g. "Zip", "Gzip"). Must match the Format enum name for backward compat. |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Magic byte signatures for detection. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Compression methods available for this format. |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | For compound tar formats: the ID of the outer stream compression format. Null for non-compound formats. |
+
+#### `IFormatDetectionSource`
+
+Lets referenced Hawkynt format packages contribute their own generated detection metadata to the workbench without copying signature tables into `Compression.Analysis`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `HeaderProbeLength` | `int HeaderProbeLength { get; }` | Maximum prefix length useful to `DetectHeader`. Zero means this source has no package-native structural detector. |
+| `Signatures` | `IEnumerable<FormatDetectionSignature> Signatures { get; }` | All fixed content signatures exposed by the source package. |
+| `DetectHeader` | `FormatHeaderMatch DetectHeader(ReadOnlySpan<byte> header)` | Identifies a format whose header begins at byte zero of `header`. Returns null when the source cannot identify it from content alone. |
+
+#### `IFormatOptionsSchema`
+
+Opt-in capability: the descriptor publishes a list of tunable knobs the user can adjust before the format is written. Drives the "Convert Archive" target-options dialog in the UI and the CLI's `--opt key=value` flag. Implementations should return a stable list of `FormatOptionDescriptor`s describing each knob. The dialog / CLI collects user values into `FormatSpecific` keyed by `Key`; the writer reads them back out in `Create()`.Not every user-selectable option is an optimizer axis. Compatibility targets are constraints: if a caller asks for an old, wire-incompatible version, optimization must remain inside that target rather than silently switching to a newer format. Such options set `IsOptimizationAxis` to `false`.Descriptors that don't implement this surface get the default "no extra knobs" experience.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | The set of knobs this format exposes. Empty list = no extra options. |
+
+#### `IFormatValidator`
+
+Optional interface for format descriptors that can perform deep validation beyond simple magic byte matching. Implementations progressively validate header fields, structural coherence, and data integrity.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validate header fields beyond magic bytes: version numbers, flags, field ranges, plausible sizes. Requires only the first few hundred bytes. |
+| `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Verify checksums and/or attempt partial decompression. Most expensive level. |
+| `ValidateStructure` | `ValidationResult ValidateStructure(Stream stream)` | Parse the directory/TOC and verify structural coherence: entry counts match, offsets are within bounds, no overlapping entries. Requires seekable stream. |
+
+#### `ILayoutOptimizable`
+
+A filesystem descriptor that can analyse and optimise its own layout parameters without loading the full image into memory, enabling seamless operation on images of any size (including multi-TB exFAT or ext4 volumes). In-place patches (volume label, serial number, geometry fields): implemented by seeking to the known superblock/BPB offset and overwriting a handful of bytes. Zero copy; no allocation; works at any scale.Structural changes (cluster size, inode size, FAT type, block size): require a streaming rebuild via `RebuildStreaming`. The source is read sequentially; the target is written sequentially. Peak memory use is bounded by `O(max(FAT-table, directory-tree))`, not by image size.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReclaimSupport` | `LayoutReclaim ReclaimSupport { get; }` | What this format can reclaim when asked, beyond moving its data about. |
+| `AnalyzeLayout` | `LayoutAnalysis AnalyzeLayout(Stream image)` | Reads only the superblock / BPB of `image` to determine the current layout parameters and compute the optimal alternatives. The stream must be readable and seekable but is never fully loaded. Default implementation: returns an honest, no-op analysis that reports the current image size and recommends no change. Formats that can discover their on-disk allocation-unit size cheaply (FAT, ext, …) override this to populate `CurrentUnitSize` and propose an optimal alternative. The generic default never claims a saving it cannot substantiate, so it is always safe to surface. |
+| `PatchInPlace` | `void PatchInPlace(Stream image, LayoutPatch patch)` | Applies metadata-only changes (volume label, serial number, geometry CHS fields, etc.) by seeking directly to the relevant superblock offsets. Throws `NotSupportedException` for changes that would require moving data clusters (e.g. cluster-size change) — call `RebuildStreaming` for those. Default implementation: throws `NotSupportedException`. In-place superblock patching is necessarily format-specific (each filesystem keeps its label/serial at a different offset), so the generic mechanism re-applies geometry through the verified rebuild path (`RebuildStreaming`) rather than guessing byte offsets. |
+| `RebuildStreaming` | `void RebuildStreaming(Stream source, Stream target, LayoutRebuildOptions options)` | Converts `source` to `target` with the layout parameters in `options`. Reads and writes sequentially — never loads the full source into memory. Suitable for images of any size; typical peak allocation is O(cluster-size + FAT-sector). Default implementation: any descriptor that also implements `IArchiveFormatOperations` + `IArchiveCreatable` gets a layout rebuild for free — the requested geometry is mapped to a format-specific options dictionary (`UnitSize` → `ClusterSize` in bytes, `ImageSize` → `ImageSize`, plus every entry of `Parameters` verbatim, with the explicit parameters winning), then handed to the verified extract → re-create engine `RebuildToStream`, which refuses any lossy round-trip. Descriptors that can stream a true in-place geometry conversion override this. |
+
+#### `IPartitionEditable`
+
+Capability marker for archive/disk-container formats whose payload is a raw block-device image (MBR/GPT partitioned) that the user can edit with a partition editor.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenGuestDiskStream` | `Stream OpenGuestDiskStream(Stream image)` | Opens the inner (guest) disk image as a `Stream` suitable for partition-table editing. The returned stream must support reading, writing, and seeking. The caller owns the returned stream and must dispose it; disposing it must not dispose the outer `image` stream. |
+
+#### `IRandomAccessBlockDevice`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `IRandomAccessBlockDeviceProvider`
+
+Optional descriptor capability for exposing the sector/block device that sits below a filesystem namespace. Container descriptors can implement this without pretending the container itself is a filesystem.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenBlockDevice` | `IRandomAccessBlockDevice OpenBlockDevice(Stream image, bool writable, bool leaveOpen = true)` | Opens a random-access block device over `image`. Implementations must fail closed when the exact on-disk profile cannot be projected losslessly/safely at block granularity. |
+
+#### `IRawTrackDevice`
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `TrackCount` | `int TrackCount { get; }` |  |
+| `ClearTrack` | `void ClearTrack(int index)` |  |
+| `EnumerateTracks` | `IReadOnlyList<RawTrackInfo> EnumerateTracks()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadTrack` | `int ReadTrack(int index, Span<byte> destination)` |  |
+| `WriteTrack` | `void WriteTrack(int index, ReadOnlySpan<byte> source, uint? encodingParameter = null)` |  |
+
+#### `IRawTrackDeviceProvider`
+
+Optional descriptor capability for opening the raw-track layer directly. This keeps track-container mutation separate from filesystem namespace CRUD.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OpenRawTrackDevice` | `IRawTrackDevice OpenRawTrackDevice(Stream image, bool writable, bool leaveOpen = true)` |  |
+
+#### `IStreamFormatOperations`
+
+Operations for single-stream compression formats.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CompressOptimal` | `void CompressOptimal(Stream input, Stream output)` | Compress with maximum/optimal settings. Defaults to `Compress`. |
+| `Compress` | `void Compress(Stream input, Stream output)` | Compress the input stream to the output stream. |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Compress honouring the format-specific tunables in `options` (the keys declared by this format's `IFormatOptionsSchema` — e.g. compression level, dictionary size, lc/lp/pb). Formats that expose a schema override this; the default ignores the options and falls back to `Compress`, so unparameterised formats keep working. |
+| `Decompress` | `void Decompress(Stream input, Stream output)` | Decompress the input stream to the output stream. |
+| `WrapCompress` | `Stream WrapCompress(Stream output)` | Returns a compression wrapper stream, or null if the format doesn't support wrapping. |
+| `WrapDecompress` | `Stream WrapDecompress(Stream input)` | Returns a decompression wrapper stream, or null if the format doesn't support wrapping. Used for compound tar formats where the tar reader needs to read through the decompressor. |
+
+#### `ISymbolicLinkDeduplicationLayout`
+
+Optional capability for writers that can deliberately replace duplicate regular files with symbolic links. It is separate from merely being able to read symlinks: optimize must not claim this transform until the writer can create and round-trip it. Writer-specific implementations may alternatively register through `FilesystemOptimizationAdapters` when the format assembly owns the necessary entry semantics.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RebuildWithSymbolicLinkDeduplication` | `void RebuildWithSymbolicLinkDeduplication(Stream source, Stream target, LayoutRebuildOptions options)` |  |
+
+#### `ISyntheticEntryNames`
+
+Opt-in: the descriptor names the entries its own `List` renders from the container itself — a whole-image view, a metadata rendering, a raw structure or log dump — rather than from anything stored in it. Those names are re-rendered for as long as the container exists, so asking the modifier to drop one is meaningless and finding one after a purge proves nothing. Declaring them lets `PurgeViaModifier` tell "nothing was removed" from "everything removable was" without paying for a reference empty container, and covers renderings an empty container does not produce because it has no log to render.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` | The listed names that are renderings of the container. Must never include a name under which user content is stored. |
+
+#### `IWipeEmpty`
+
+Opt-in capability: the descriptor can zero-fill all unused bytes in an image or archive — free clusters/sectors, cluster-tip slack, deleted directory entries, padding regions, and dead archive bytes. This is a forensic-cleanliness tool ensuring no deleted file remnants survive. The default implementation is deliberately conservative. It is available only when the same descriptor exposes a filesystem extent map or an archive layout map, and it zeroes only what that map states outright: regions marked `Free`, plus the cluster tips of Used extents whose logical size is known. A region the map never mentions is left alone, because a map is free to enumerate the entries it understands and stay silent about the header, entry table or index that make the container readable at all — reading that silence as free space zeroes the structure. A descriptor whose map does account for the whole image, or that knows its own dead regions, overrides this and calls `Wipe` directly.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WipeUnusedSpace` | `long WipeUnusedSpace(Stream image, bool wipeClusterTips = true, bool wipeDeletedEntries = true)` | Zeros all bytes in `image` that are not part of any live file or required metadata. Returns the total number of bytes wiped. |
+
+#### `InnerFsDetector`
+
+Detects the filesystem contained within a virtual disk stream by scanning the registered CompressionWorkbench filesystem descriptors against the stream header. Falls back to heuristic BPB checks for FAT (which has no magic signature).
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Detect` | `static IFormatDescriptor Detect(Stream virtualDisk)` | Tries to detect the inner filesystem descriptor from a virtual disk stream. Returns only descriptors registered as filesystem formats and exposing `IArchiveFormatOperations`; otherwise `null`. |
+
+#### `IssueSeverity`
+
+Severity of a validation issue.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Info` | `0` | Informational observation (e.g. "uses uncommon compression method"). |
+| `Warning` | `1` | Non-critical issue that may indicate partial damage. |
+| `Error` | `2` | Critical issue that prevents correct extraction. |
+
+#### `LayoutAnalysis`
+
+Result of `AnalyzeLayout`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LayoutAnalysis` | `LayoutAnalysis()` |  |
+| `CurrentSlackBytes` | `long CurrentSlackBytes { get; init; }` | Total internal slack at the current unit size in bytes. |
+| `CurrentUnitSize` | `int CurrentUnitSize { get; init; }` | Current allocation-unit size in bytes (cluster, block, …). |
+| `ImageSize` | `long ImageSize { get; init; }` | Total image size in bytes as read from the superblock. |
+| `InPlaceChanges` | `IReadOnlyList<string> InPlaceChanges { get; init; }` | Metadata changes that can be applied by `PatchInPlace`. |
+| `Notes` | `IReadOnlyList<string> Notes { get; init; }` | Free-form notes from the analyser (warnings, recommendations, etc.). |
+| `OptimalSlackBytes` | `long OptimalSlackBytes { get; init; }` | Total internal slack at the optimal unit size in bytes. |
+| `OptimalUnitSize` | `int OptimalUnitSize { get; init; }` | Optimal unit size chosen by `Compression.Core.Layout.FilesystemLayoutOptimizer`. |
+| `PotentialSavingsBytes` | `long PotentialSavingsBytes { get; }` | Bytes that could be saved by switching to `OptimalUnitSize`. |
+| `RequiresRebuild` | `IReadOnlyList<string> RequiresRebuild { get; init; }` | Structural changes that require `RebuildStreaming`. |
+
+#### `LayoutPatch`
+
+Metadata fields that `PatchInPlace` can overwrite without touching data clusters.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LayoutPatch` | `LayoutPatch()` |  |
+| `Extra` | `IReadOnlyDictionary<string, string> Extra { get; init; }` | Additional filesystem-specific fields keyed by name. |
+| `SerialNumber` | `uint? SerialNumber { get; init; }` | New volume serial number. Null = leave unchanged. |
+| `VolumeLabel` | `string VolumeLabel { get; init; }` | New volume label. Null = leave unchanged. |
+
+#### `LayoutProfile`
+
+High-level layout strategy for planner-driven defragmentation. Complements `DefragMode` (which controls *where* files land) with a *how* dimension (rebuild vs. in-place planning).
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Performance` | `0` | Full zone-based layout: classify files into Hot / Normal / Cold / Frozen zones based on modification time, place Hot at the front and Frozen at the end, largest-first within each zone. Minimises seek latency for frequently-accessed files on rotational media. |
+| `Quick` | `1` | Per-file consolidation only: each fragmented file's clusters are made contiguous, but no global rearrangement is performed. Fastest to execute; useful on SSDs or when only a handful of files are fragmented. |
+| `Custom` | `2` | Caller supplies sort/group rules via `DefragOptions`. Reserved for future extensibility; currently behaves like `Performance`. |
+
+#### `LayoutRebuildOptions`
+
+Target parameters for `RebuildStreaming`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LayoutRebuildOptions` | `LayoutRebuildOptions()` |  |
+| `DeduplicateWithLinks` | `bool DeduplicateWithLinks { get; init; }` | Store one copy of files that are byte-for-byte identical and point the rest at it, where the filesystem has hard links. |
+| `ImageSize` | `long ImageSize { get; init; }` | Target image total size in bytes. 0 = auto-size to fit files. |
+| `MakeSparse` | `bool MakeSparse { get; init; }` | Store runs of zeros as holes, where the filesystem can say so. |
+| `OnProgress` | `Action<long, long> OnProgress { get; init; }` | Optional progress callback: (bytesRead, totalBytes). Called after each cluster or metadata region is processed. |
+| `Parameters` | `IReadOnlyDictionary<string, string> Parameters { get; init; }` | Format-specific tunable parameters (same keys as `Key`). Merged with auto-selected values; explicit entries win. |
+| `UnitSize` | `int UnitSize { get; init; }` | Target allocation unit size in bytes. 0 = auto-select optimal. |
+
+#### `LayoutReclaim`
+
+What a format can be asked to reclaim beyond re-laying its data out.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `None` | `0` | Neither holes nor links; a rebuild only moves what is there. |
+| `Sparse` | `1` | Runs of zeros can be recorded as absent rather than allocated. |
+| `HardLinks` | `2` | Identical files can share one copy under several names. |
+
+#### `MagicSignature`
+
+A magic-byte signature for format identification.
+
+Implements `IEquatable<MagicSignature>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MagicSignature` | `MagicSignature(byte[] Bytes, int Offset = 0, double Confidence = 0.9, byte[] Mask = null)` | A magic-byte signature for format identification. |
+| `Bytes` | `byte[] Bytes { get; init; }` | The magic bytes to match. |
+| `Confidence` | `double Confidence { get; init; }` | Detection confidence (0.0 - 1.0). |
+| `Mask` | `byte[] Mask { get; init; }` | Optional bitmask applied before comparison (null = exact match). |
+| `Offset` | `int Offset { get; init; }` | Byte offset from the start of the file where the signature appears. |
+
+#### `MediaProfile`
+
+Predefined media profiles for disk image resizing. Each profile specifies the canonical byte size of the target medium.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Floppy35Hd` | `0` | 3.5" HD floppy: 1,474,560 bytes (1.44 MB, FAT12). |
+| `Floppy35Dd` | `1` | 3.5" DD floppy: 737,280 bytes (720 KB). |
+| `Floppy525Hd` | `2` | 5.25" HD floppy: 1,228,800 bytes (1.2 MB). |
+| `Floppy525Dd` | `3` | 5.25" DD floppy: 368,640 bytes (360 KB). |
+| `Cd` | `4` | CD-ROM: 681,984,000 bytes (650 MB, ISO 9660). |
+| `Dvd` | `5` | DVD: 4,700,000,000 bytes (4.7 GB). |
+| `BluRay` | `6` | Blu-ray Disc: 25,025,314,816 bytes (25 GB). |
+
+#### `MediaProfileLookup`
+
+Maps `MediaProfile` values to their canonical byte sizes and provides lookup from human-readable profile names.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AllProfiles` | `static IReadOnlyList<ValueTuple<string, MediaProfile, long>> AllProfiles { get; }` | All known profiles with their names and sizes for display. |
+| `GetSize` | `static long GetSize(MediaProfile profile)` | Returns the byte size for the given profile. |
+| `TryParse` | `static bool TryParse(string name, out MediaProfile profile)` | Tries to parse a profile name (case-insensitive). Recognized names: `3.5-hd`, `3.5-dd`, `5.25-hd`, `5.25-dd`, `cd`, `dvd`, `bd`. |
+
+#### `MetadataPlacementProfile`
+
+A named set of `MetadataPlacementRule`s that controls where metadata chunks are placed during file-internal optimization. Optimizers that accept this profile apply matching rules; chunks not covered by any rule keep their format-specific default placement.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MetadataPlacementProfile` | `MetadataPlacementProfile()` |  |
+| `DataFirst` | `static MetadataPlacementProfile DataFirst { get; }` | Data payload first, metadata after. Optimizes for streaming playback at the cost of slower metadata access. |
+| `Default` | `static MetadataPlacementProfile Default { get; }` | No rules — each optimizer uses its own format-specific default. |
+| `MetadataFirst` | `static MetadataPlacementProfile MetadataFirst { get; }` | All metadata chunks placed before the data payload. The optimizer should load metadata first for fastest access. |
+| `Name` | `string Name { get; init; }` | Human-readable label for UI display. |
+| `Rules` | `IReadOnlyList<MetadataPlacementRule> Rules { get; init; }` | Rules keyed by chunk type. Order is irrelevant; lookup is by type. |
+| `GetZone` | `PlacementZone? GetZone(string chunkType)` | Looks up the placement zone for a given chunk type. Returns `null` when no rule matches (caller should fall back to the format-specific default). |
+
+#### `MetadataPlacementRule`
+
+Maps a chunk type (e.g. "eXIf", "APP1", "moov", "idx1") to a `PlacementZone`. Used by file-internal optimizers to decide where metadata chunks land relative to the data payload.
+
+Implements `IEquatable<MetadataPlacementRule>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MetadataPlacementRule` | `MetadataPlacementRule(string ChunkType, PlacementZone Zone)` | Maps a chunk type (e.g. "eXIf", "APP1", "moov", "idx1") to a `PlacementZone`. Used by file-internal optimizers to decide where metadata chunks land relative to the data payload. |
+| `ChunkType` | `string ChunkType { get; init; }` |  |
+| `Zone` | `PlacementZone Zone { get; init; }` |  |
+
+#### `MetadataZone`
+
+Controls where filesystem metadata (superblock, FAT, MFT, bitmaps, inode tables) and directory extents land during defragmentation.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unchanged` | `0` | Don't move metadata — preserve current positions. This is the default. |
+| `Front` | `1` | Metadata + directories at lowest offsets (fast outer-track on HDDs, low-address flash advantage). |
+| `Back` | `2` | Metadata + directories at highest offsets (reserve front for file data). |
+| `Middle` | `3` | Metadata + directories centered in the image (minimize average seek time on platters). |
+| `BeforeContent` | `4` | Each directory block placed immediately before its children's data (read-ahead optimization). |
+
+#### `MethodNameParser`
+
+Parses a format method name into (base method, plus level). Convention (Zopfli-inspired): a trailing `+` (or repeated `++`, `+++`) on a method id means "spend extra CPU for a better compression ratio". The base method is the longest prefix that does not end with `+`; the plus level is the number of trailing `+` characters that were stripped. Examples: `"deflate"` → `("deflate", 0)``"deflate+"` → `("deflate", 1)` — ~10× effort (e.g. enable lazy matching, deeper search)`"deflate++"` → `("deflate", 2)` — ~100× effort (e.g. full Zopfli)`"stored"` → `("stored", 0)` Writers consult `Item2` (the plus level) to pick: 0 = default fast, 1 = "+", 2+ = "++" and slower variants. Surrounding whitespace is trimmed before parsing.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Parse` | `static ValueTuple<string, int> Parse(string method)` | Parses `method` into `(BaseMethod, PlusLevel)`. Whitespace is trimmed first; a null or whitespace-only input returns `("", 0)`. A string that is only `+` characters returns `("", n)`. |
+
+#### `ModifyRebuilder`
+
+Generic rebuild-based `IArchiveModifiable` dispatch for filesystems whose writer always emits a contiguous start-packed layout. Per-FS code provides two delegates — the entry extractor (reads the existing image) and the image builder (writes a fresh image with the supplied file list) — and gets `Add` and `Remove` for free with the documented `IArchiveModifiable` semantics, including secure-wipe (the rebuild starts from zeroed bytes so removed file data leaves no trace). The trade-off vs a planner-driven byte-level mutation: this rebuilds the entire image on every Add/Remove call, so cost is `O(image size)`. For filesystems whose on-disk pointer-rewriting is too complex to justify (most retro and read-only-by-design filesystems), this is the pragmatic option. Filesystems with a real planner-driven path (FAT once optimised, Btrfs, etc.) implement `Add`/`Remove` themselves and don't use this helper.Companion to `DefragRebuilder` — same shape, different outcome. The two share zero state.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AddLargeVolume` | `static void AddLargeVolume(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlySet<string> syntheticNames = null)` | Adds files to a volume too large to hold in memory. Every entry is extracted to scratch, the inputs are merged in by name, and the format's own `Create` lays a fresh volume out — the in-place modifiers read the whole image into an array to find their trees, which is impossible past two gigabytes. |
+| `AddStreaming` | `static void AddStreaming(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Action<Stream, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>>> rebuild, StringComparer nameComparer = null)` | Streaming counterpart to `Add` for volumes that no byte[] can hold. The merged entry list is produced lazily and handed to `rebuild`, which writes the new image straight to the stream; nothing bigger than one file is ever in memory. |
+| `Add` | `static void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Func<IReadOnlyList<ValueTuple<string, byte[]>>, byte[]> buildImage, StringComparer nameComparer = null, IArchiveCreatable largeVolumeCreator = null)` | Adds (or replaces) files inside `archive`. Existing entries whose name matches an input are replaced (the new bytes win); other existing entries are carried forward unchanged. The whole image is rebuilt from the merged file list. |
+| `NeedsLargeVolumePath` | `static bool NeedsLargeVolumePath(Stream archive)` | Whether a volume is past the size an in-memory edit can handle. |
+| `RemoveLargeVolume` | `static void RemoveLargeVolume(Stream archive, string[] entryNames, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlySet<string> syntheticNames = null)` | Removes entries from a volume too large to hold in memory, by the same route as `AddLargeVolume`. |
+| `RemoveStreaming` | `static void RemoveStreaming(Stream archive, string[] entryNames, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Action<Stream, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>>> rebuild, StringComparer nameComparer = null)` | Streaming counterpart to `Remove`, for the same reason as `AddStreaming`: the kept entries are streamed into a fresh image rather than assembled into one array. |
+| `Remove` | `static void Remove(Stream archive, string[] entryNames, Func<Stream, IEnumerable<ValueTuple<string, byte[]>>> readEntries, Func<IReadOnlyList<ValueTuple<string, byte[]>>, byte[]> buildImage, StringComparer nameComparer = null, IArchiveCreatable largeVolumeCreator = null)` | Removes the named entries from `archive`. The image is rebuilt from scratch with every entry whose name does NOT match one of `entryNames`. Old file bytes are wiped because the new layout starts fresh — no forensic recovery should be possible. |
+
+#### `MutableRebuildFilesystemSession`
+
+Reusable mount-grade mutable namespace for formats whose safe mutation model is to regenerate the complete filesystem image. File/node identity is stable for the lifetime of the session, including across rename and unlink, while flush serializes the linked namespace to a verified candidate image and then publishes it through `WholeImageRebuildCommitter`.
+
+Implements `IDisposable`, `IFilesystemSession`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MutableRebuildFilesystemSession` | `MutableRebuildFilesystemSession(FilesystemDriverProfile profile, Stream image, IEnumerable<RebuildFilesystemEntry> entries, RebuildImage rebuild, ValidateImage validate = null, bool leaveOpen = true)` |  |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` |  |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
+
+#### `MutableRebuildFilesystemSession.RebuildImage`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RebuildImage` | `void MutableRebuildFilesystemSession.RebuildImage(Stream output, IReadOnlyList<RebuildFilesystemEntry> entries)` |  |
+
+#### `MutableRebuildFilesystemSession.ValidateImage`
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidateImage` | `void MutableRebuildFilesystemSession.ValidateImage(Stream candidate, IReadOnlyList<RebuildFilesystemEntry> entries)` |  |
+
+#### `PartitionBlockDevice`
+
+Bounded view of a contiguous range of another random-access block device. The wrapper never changes the parent's geometry and never copies partition contents; block requests are translated by adding the constructor's `firstBlock`.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PartitionBlockDevice` | `PartitionBlockDevice(IRandomAccessBlockDevice inner, long firstBlock, long blockCount, bool leaveOpen = true)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `PlacementOptions`
+
+Inputs to `PlaceFileAt` — which owner goes where.
+
+Implements `IEquatable<PlacementOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `PlacementOptions` | `PlacementOptions()` |  |
+| `CancellationToken` | `CancellationToken CancellationToken { get; init; }` | Cooperative cancellation, honoured at the next safe move boundary. |
+| `FileName` | `string FileName { get; init; }` | The owner to place, as the extent map names it. Matched case-insensitively; an owner the volume does not hold is refused before anything moves. |
+| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback, emitting the same snapshots and read/write-head updates a defragmentation does, so the maintenance block map animates the placement as it happens. |
+| `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; init; }` | Bytes the pass may hold in memory while a block whose destination is still occupied waits for it to clear. |
+| `TargetOffset` | `long TargetOffset { get; init; }` | Byte offset its first block has to end up at. Has to name a real cluster boundary inside the data area; a target between boundaries, outside the volume, or inside a reserved region is refused rather than rounded, since rounding would report a placement that did not happen. |
+
+#### `PlacementZone`
+
+Which zone a metadata chunk should be placed in relative to the primary data payload during file-internal optimization.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `BeforeData` | `0` | Place the chunk before the primary data payload. |
+| `AfterData` | `1` | Place the chunk after the primary data payload. |
+| `Remove` | `2` | Remove the chunk entirely during optimization. |
+
+#### `RawDiskShrinkRebuilder`
+
+Verified shrink helper for virtual-disk containers whose safe maintenance boundary is the raw guest disk rather than the filesystem the descriptor may discover inside it.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Shrink` | `static void Shrink(Stream input, Stream output, Func<Stream, byte[]> readGuestDisk, Func<byte[], byte[]> buildContainer, Func<Stream, bool> canRebuild = null)` | Reads the logical guest disk, builds a canonical container, reads the guest disk back byte-for-byte, and emits the rebuilt image only when it is both identical and smaller. Any unsupported/malformed profile or rebuild failure copies the original through unchanged. |
+
+#### `RawTrackInfo`
+
+Raw variable-length track device for flux/GCR/MFM-style containers that are not yet sector-addressable. G64 belongs here; a decoder can later project it as `IRandomAccessBlockDevice` for a Commodore filesystem driver.
+
+Implements `IEquatable<RawTrackInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RawTrackInfo` | `RawTrackInfo(int Index, long Length, uint EncodingParameter = 0, bool IsPresent = true)` | Raw variable-length track device for flux/GCR/MFM-style containers that are not yet sector-addressable. G64 belongs here; a decoder can later project it as `IRandomAccessBlockDevice` for a Commodore filesystem driver. |
+| `EncodingParameter` | `uint EncodingParameter { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `IsPresent` | `bool IsPresent { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+
+#### `ReadOnlyFilesystemSnapshotSession`
+
+Implements `IDisposable`, `IFilesystemSession`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadOnlyFilesystemSnapshotSession` | `ReadOnlyFilesystemSnapshotSession(FilesystemDriverProfile profile, FilesystemNodeId rootNodeId, IEnumerable<FilesystemSnapshotNode> nodes)` |  |
+| `ReadOnlyFilesystemSnapshotSession` | `ReadOnlyFilesystemSnapshotSession(FilesystemDriverProfile profile, FilesystemNodeId rootNodeId, IEnumerable<FilesystemSnapshotNode> nodes, IEnumerable<FilesystemSnapshotDirectoryEntry> directoryEntries)` | Full constructor with independent object and directory-entry sets. Multiple entries may target the same node ID; that is how hard links are represented. |
+| `Profile` | `FilesystemDriverProfile Profile { get; }` |  |
+| `RootNodeId` | `FilesystemNodeId RootNodeId { get; }` |  |
+| `BeginTransaction` | `IFilesystemTransaction BeginTransaction()` |  |
+| `CreateDirectory` | `FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateFile` | `FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `CreateHardLink` | `void CreateHardLink(FilesystemNodeId existingNode, FilesystemNodeId newParent, string newName)` |  |
+| `CreateSymbolicLink` | `FilesystemNodeId CreateSymbolicLink(FilesystemNodeId parentDirectory, string name, string target)` |  |
+| `DeleteFile` | `void DeleteFile(FilesystemNodeId parentDirectory, string name)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Enumerate` | `IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory)` |  |
+| `Flush` | `void Flush()` |  |
+| `Lookup` | `FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name)` |  |
+| `OpenFile` | `IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access)` |  |
+| `ReadSymbolicLink` | `string ReadSymbolicLink(FilesystemNodeId nodeId)` |  |
+| `RemoveDirectory` | `void RemoveDirectory(FilesystemNodeId parentDirectory, string name)` |  |
+| `Rename` | `void Rename(FilesystemNodeId oldParent, string oldName, FilesystemNodeId newParent, string newName, bool replace)` |  |
+| `SetMetadata` | `void SetMetadata(FilesystemNodeId nodeId, FilesystemMetadataPatch patch)` |  |
+| `Stat` | `FilesystemNodeInfo Stat(FilesystemNodeId nodeId)` |  |
+
+#### `RebuildFilesystemEntry`
+
+One namespace object consumed or produced by a whole-image filesystem rebuilder. Paths always use '/' separators and are relative to the root. Directory entries carry empty data.
+
+Implements `IEquatable<RebuildFilesystemEntry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RebuildFilesystemEntry` | `RebuildFilesystemEntry(string Path, FilesystemNodeKind Kind, ReadOnlyMemory<byte> Data)` | One namespace object consumed or produced by a whole-image filesystem rebuilder. Paths always use '/' separators and are relative to the root. Directory entries carry empty data. |
+| `Data` | `ReadOnlyMemory<byte> Data { get; init; }` |  |
+| `Kind` | `FilesystemNodeKind Kind { get; init; }` |  |
+| `Path` | `string Path { get; init; }` |  |
+| `Directory` | `static RebuildFilesystemEntry Directory(string path)` |  |
+| `File` | `static RebuildFilesystemEntry File(string path, ReadOnlyMemory<byte> data)` |  |
+
+#### `RebuildVerb`
+
+Generic, round-trip-verified extract → re-create engine shared by maintenance verbs. Rebuilds are staged, verified, progress-reporting, and cancellable; the caller's original stream is not touched until the staged target has been built successfully and cancellation is no longer accepted.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CreateScratchStream` | `static FileStream CreateScratchStream()` | A writable scratch stream not bounded by byte[] / MemoryStream size. |
+| `EditViaRebuild` | `static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, Action<string> mutate)` | Rebuild-based edit used by the generic modifier. Mutation and validation happen off to the side; the original is overwritten only after a valid staged result exists. |
+| `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
+| `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
+| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+
+#### `ScrambleOptions`
+
+Inputs to `Scramble` — the deliberate opposite of a defragmentation.
+
+Implements `IEquatable<ScrambleOptions>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ScrambleOptions` | `ScrambleOptions()` |  |
+| `CancellationToken` | `CancellationToken CancellationToken { get; init; }` | Cooperative cancellation, honoured at the next safe block boundary. |
+| `OnProgress` | `Action<DefragProgressEvent> OnProgress { get; init; }` | Optional progress callback, emitting the same snapshots and read/write-head updates a defragmentation does, so the maintenance block map animates the scattering as it happens. |
+| `Seed` | `int Seed { get; init; }` | Seeds the shuffle. The same seed over the same volume deals the same layout, every run and every machine — which is what makes a scrambled volume usable as a test fixture and as a screenshot. |
+| `StagingMemoryBudgetBytes` | `long StagingMemoryBudgetBytes { get; init; }` | Bytes the pass may hold in memory while a block whose destination is still occupied waits for it to clear. |
+
+#### `SpoolingReadOnlyFileHandle`
+
+Transitional positional handle for native filesystem readers that can stream a file correctly but do not yet expose a seekable block/extent map. Small files stay in memory; large files are spooled to a delete-on-close temporary file. This preserves driver-style positional reads without imposing a whole- file RAM ceiling while the filesystem's direct block mapping is implemented.
+
+Implements `IDisposable`, `IFilesystemFileHandle`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefaultMemoryThreshold` | `const long DefaultMemoryThreshold` |  |
+| `Length` | `long Length { get; }` |  |
+| `NodeId` | `FilesystemNodeId NodeId { get; }` |  |
+| `Create` | `static SpoolingReadOnlyFileHandle Create(FilesystemNodeId nodeId, long expectedLength, Action<Stream> writeContent, long memoryThreshold = 8388608)` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `Read` | `int Read(long offset, Span<byte> destination)` |  |
+| `SetLength` | `void SetLength(long length)` |  |
+| `Write` | `void Write(long offset, ReadOnlySpan<byte> source)` |  |
+
+#### `StreamBlockDevice`
+
+Fixed-size random-access block device over an ordinary seekable stream. This is the bridge for raw filesystem images while parsers migrate away from direct Stream.Position access.
+
+Implements `IDisposable`, `IRandomAccessBlockDevice`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamBlockDevice` | `StreamBlockDevice(Stream stream, int logicalBlockSize, bool writable, bool leaveOpen = true, int? physicalBlockSize = null)` |  |
+| `CanWrite` | `bool CanWrite { get; }` |  |
+| `Geometry` | `BlockDeviceGeometry Geometry { get; }` |  |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` |  |
+| `ReadBlocks` | `int ReadBlocks(long firstBlock, Span<byte> destination)` |  |
+| `Trim` | `void Trim(long firstBlock, long blockCount)` |  |
+| `WriteBlocks` | `void WriteBlocks(long firstBlock, ReadOnlySpan<byte> source)` |  |
+
+#### `SymlinkResolver`
+
+Resolves the correct target size of symbolic links inside a single filesystem listing — the headline "show the pointed-to file's size, not the link's own size" behaviour. Given a complete `ArchiveEntryInfo` listing produced by one filesystem, each link's `LinkTarget` is resolved RELATIVE to the directory that holds the link, against the other entries in the same listing, following link chains up to `MaxHops` hops with a cycle guard. When the chain ends at a regular file that is present in the listing, that file's `OriginalSize` is written back as the link's `TargetSize`. Policy — `TargetSize` is deliberately left `null` (unknown) in every case where the answer cannot be proven from the listing alone: an absolute target (leading `/` or a drive-letter prefix), a target that escapes the volume root, a target that is not present in the listing (dangling, or pointing outside this filesystem), a target that resolves to a directory, and any cyclic or over-long (> `MaxHops`) chain. Only relative links to a regular file inside the same filesystem yield a size. The link's own `OriginalSize` is never altered — it stays the on-disk target-path byte length. Path matching is ordinal (case-sensitive), matching the dominant Unix filesystem behaviour of the readers this serves (ext/UFS/SquashFS/EROFS); a case-insensitive volume simply resolves fewer links, never wrong ones.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MaxHops` | `const int MaxHops` | Maximum number of symlink hops followed before a chain is abandoned as too long. |
+| `Resolve` | `static List<ArchiveEntryInfo> Resolve(List<ArchiveEntryInfo> entries)` | Returns a new listing in which every relative symlink that resolves to a regular file within the same listing has its `TargetSize` filled in. Non-link entries and unresolvable links are returned unchanged. |
+
+#### `UnusedSpaceWiper`
+
+Generic unused-space wiper that works with any format exposing an extent or layout map. Enumerates all live regions, sorts them, and zero-fills every gap. This covers free clusters/sectors, inter-entry padding in archives, dead bytes after file removal, and any other region not claimed by a live extent. For cluster-tip wiping (trailing slack within a Used extent), callers can supply a file-size lookup so the wiper knows the true file length vs. the cluster-aligned extent length.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ComputeUnusedBytes` | `static long ComputeUnusedBytes(IEnumerable<DefragBlockInfo> extents, long imageSize, bool includeClusterTips = false, Func<string, long> fileSizeLookup = null)` | Read-only companion to `Wipe`: returns the total number of bytes in `imageSize` that are NOT covered by a live extent. Useful for telling the user how much of their image is unused *before* the I/O-skipping optimisation in `Wipe` hides the fact that most unused bytes were already zero. |
+| `WipeDeclaredFree` | `static long WipeDeclaredFree(Stream image, IEnumerable<DefragBlockInfo> extents, long imageSize, bool wipeClusterTips = true, Func<string, long> fileSizeLookup = null)` | Zero-fills only the regions a map positively declares`Free`, plus the cluster tips of Used extents when a size lookup can prove one. Silence about a region means nothing here. |
+| `Wipe` | `static long Wipe(Stream image, IEnumerable<DefragBlockInfo> extents, long imageSize, bool wipeClusterTips = true, Func<string, long> fileSizeLookup = null)` | Zero-fills every byte in `image` that is not covered by a live (non-Free) extent in `extents`. Optionally wipes cluster tips when `fileSizeLookup` is provided. |
+
+#### `ValidationIssue`
+
+A single issue discovered during format validation.
+
+Implements `IEquatable<ValidationIssue>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidationIssue` | `ValidationIssue(ValidationLevel Level, IssueSeverity Severity, string Code, string Description, long? Offset = null)` | A single issue discovered during format validation. |
+| `Code` | `string Code { get; init; }` |  |
+| `Description` | `string Description { get; init; }` |  |
+| `Level` | `ValidationLevel Level { get; init; }` |  |
+| `Offset` | `long? Offset { get; init; }` |  |
+| `Severity` | `IssueSeverity Severity { get; init; }` |  |
+
+#### `ValidationLevel`
+
+Depth of validation performed.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Magic` | `0` | Magic byte pattern match only. |
+| `Header` | `1` | Header fields checked for valid ranges and consistency. |
+| `Structure` | `2` | Directory/TOC parsed, offsets and entry counts verified. |
+| `Integrity` | `3` | Checksums verified and/or partial decompression succeeded. |
+
+#### `ValidationResult`
+
+Result of validating a format at a specific depth.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ValidationResult` | `ValidationResult()` |  |
+| `Confidence` | `double Confidence { get; init; }` | Combined confidence after this validation level (0.0–1.0). |
+| `Health` | `FormatHealth Health { get; init; }` | Overall health assessment. |
+| `IsValid` | `bool IsValid { get; init; }` | Whether the validation at this level passed. |
+| `Issues` | `IReadOnlyList<ValidationIssue> Issues { get; init; }` | All issues found during validation. |
+| `Level` | `ValidationLevel Level { get; init; }` | Highest validation level that was attempted. |
+| `TotalEntries` | `int? TotalEntries { get; init; }` | Total number of entries (for archives). Null for stream formats. |
+| `ValidEntries` | `int? ValidEntries { get; init; }` | Number of valid/extractable entries (for archives). Null for stream formats. |
+
+#### `WholeImageRebuildCommitter`
+
+Performs a verified whole-image rebuild and publishes it to a mutable image stream only after the candidate image has been built successfully. The old image is retained in a temporary stream and restored if publication fails. This is an in-process transactional replacement for arbitrary seekable streams. It deliberately does not claim crash-atomic host-filesystem rename semantics: a process or machine crash during publication can still leave a path-backed stream partially written unless its owner provides a stronger outer transaction.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FlushDurably` | `static void FlushDurably(Stream image)` |  |
+| `Replace` | `static void Replace(Stream image, Action<Stream> buildCandidate, Action<Stream> validateCandidate = null)` |  |
+
+### Namespace `Compression.Registry.Cvf`
+
+[`CvfLzCodec`](#cvflzcodec) · [`CvfLzMethod`](#cvflzmethod) · [`Sd4Codec`](#sd4codec)
+
+#### `CvfLzCodec`
+
+Genuine DoubleSpace/DriveSpace per-cluster compression codec (DS-0-x and JM-0-x), verified byte-exact against the independent dmsdos decoder. The bitstream packs bits LSB-first into little-endian 16-bit words; a cluster payload is a 16-bit magic (`"DS"`=0x5344 / `"MJ"`=0x4D4A) + 16-bit version + an LZ77 token stream terminated by the 0x113f sync.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DS_0_0` | `const uint DS_0_0` |  |
+| `JM_0_0` | `const uint JM_0_0` |  |
+| `SQ_0_0` | `const uint SQ_0_0` |  |
+| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Compresses one cluster. Returns the payload (4-byte method header + token stream, padded to a 2-byte word), or `null` if it would not be smaller than the raw cluster (caller stores raw instead). |
+| `Decompress` | `static byte[] Decompress(byte[] payload, int inLen, int outLen)` | Decompresses a cluster payload to exactly `outLen` bytes. |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data, CvfLzMethod method, int level)` | Encodes a cluster with the given method, always returning the payload (4-byte header + token stream), or `null` for `Stored` / unsupported methods. The caller decides whether the result fits the cluster's sector budget. |
+
+#### `CvfLzMethod`
+
+Compression methods for the MS-DOS DoubleSpace/DriveSpace CVF cluster codec family, byte-compatible with the dmsdos driver's `ds_dec`/`jm_dec`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Stored` | `0` |  |
+| `Ds` | `1` |  |
+| `Jm` | `2` |  |
+| `Auto` | `3` |  |
+| `Sq` | `4` |  |
+| `Sd4` | `5` |  |
+
+#### `Sd4Codec`
+
+Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compatible with the dmsdos `sd4_decomp` decoder. SD-4 is a bespoke dynamic-Huffman format: a helper Huffman table (table1) encodes the 0x150 code-lengths of the main table (table2), which then Huffman-codes the data. We emit an all-literals SD-4 stream — table2 is a 256-symbol Huffman over the cluster's byte frequencies (genuine entropy compression), with no LZ reps/prog tokens; the decoder terminates on output-full. The bitstream is MSB-first packed into little-endian 16-bit words; Huffman codes are canonical (first-code-per-length, not bit-reversed) exactly as `sd4b_rdhufi` builds them.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static byte[] Decode(byte[] payload, int inLen, int outLen)` |  |
+| `Encode` | `static byte[] Encode(ReadOnlySpan<byte> data)` |  |
+
+### Namespace `Compression.Registry.Layout`
+
+[`DefragSortField`](#defragsortfield) · [`DefragSortKey`](#defragsortkey) · [`FilterExpression`](#filterexpression) · [`FilterFileContext`](#filterfilecontext) · [`IFileFilter`](#ifilefilter) · [`IFilterFileContext`](#ifilterfilecontext) · [`LayoutTemplate`](#layouttemplate) · [`LayoutTemplateResolver`](#layouttemplateresolver) · [`LayoutZone`](#layoutzone) · [`LeftoverStrategy`](#leftoverstrategy) · [`RangeSpec`](#rangespec) · [`ResolvedFilePlacement`](#resolvedfileplacement) · [`SortDirection`](#sortdirection)
+
+#### `DefragSortField`
+
+File-metadata fields the layout-template sorter can order files by. Mirrors the fields available on `IFilterFileContext`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Name` | `0` | File name (final path segment), ordinal compare. |
+| `Path` | `1` | Full path, ordinal compare. |
+| `Extension` | `2` | File extension including leading dot, ordinal-ignore-case compare. |
+| `Size` | `3` | File size in bytes. |
+| `LastModified` | `4` | Last-modified timestamp. Null sorts last. |
+| `LastAccessed` | `5` | Last-accessed timestamp. Null sorts last. |
+| `Created` | `6` | Created timestamp. Null sorts last. |
+| `Attributes` | `7` | Attribute bitmask. Files with attributes > 0 sort first ascending — useful for clustering system / hidden / read-only files apart from the bulk. |
+
+#### `DefragSortKey`
+
+One ordering rule applied within a `LayoutZone`. A zone may list several keys; they are applied in order with later keys breaking ties of earlier ones. Round-trippable via `Parse` and `ToString`.
+
+Implements `IEquatable<DefragSortKey>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DefragSortKey` | `DefragSortKey(DefragSortField Field, SortDirection Direction)` | One ordering rule applied within a `LayoutZone`. A zone may list several keys; they are applied in order with later keys breaking ties of earlier ones. Round-trippable via `Parse` and `ToString`. |
+| `Direction` | `SortDirection Direction { get; init; }` |  |
+| `Field` | `DefragSortField Field { get; init; }` |  |
+| `Parse` | `static DefragSortKey Parse(string s)` | Parses a textual sort key. Accepted forms (whitespace-insensitive, case-insensitive on identifiers): `name` — defaults to ascending.`name asc` / `name ascending``lastModified desc` / `last_modified descending``size desc` Identifier matching accepts `camelCase`, `snake_case`, `kebab-case`, and the enum's own ToString form. |
+| `ToString` | `override string ToString()` |  |
+
+#### `FilterExpression`
+
+Parses a tiny predicate language into an `IFileFilter`. Grammar (case-insensitive identifiers, whitespace skipped between tokens):Functions:`quartile(p)` — p-th percentile (0..1) of the file set, resolved dynamically per the field on the LHS.`now()` — current UTC time.`today()` — current UTC date at midnight.`days(n)` / `hours(n)` / `minutes(n)` — durations (subtract from now() / today()).`date("yyyy-MM-dd")` — explicit literal.Error reporting: parse errors include the source offset of the failing token, e.g. `"unknown field 'foobar' at position 7"`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Parse` | `static IFileFilter Parse(string expression)` | Parses `expression` into an `IFileFilter`. Compiled filters are cached by string identity — passing the same string twice returns the same filter instance. |
+
+#### `FilterFileContext`
+
+Plain DTO implementation of `IFilterFileContext` used by callers that build the filter context up front rather than wrapping a live source.
+
+Implements `IEquatable<FilterFileContext>`, `IFilterFileContext`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `FilterFileContext` | `FilterFileContext()` |  |
+| `AllCreatedTimes` | `IReadOnlyList<DateTime> AllCreatedTimes { get; init; }` | All creation times across the file set. Used by quartile() on the Created field. |
+| `AllLastAccessedTimes` | `IReadOnlyList<DateTime> AllLastAccessedTimes { get; init; }` | All last-accessed times across the file set. Used by quartile() on the LastAccessed field. |
+| `AllLastModifiedTimes` | `IReadOnlyList<DateTime> AllLastModifiedTimes { get; init; }` | All last-modified times across the file set. Used by quartile() on the LastModified field. |
+| `AllSizes` | `IReadOnlyList<long> AllSizes { get; init; }` | All sizes across the file set. Used by quartile() on the Size field. |
+| `Attributes` | `uint Attributes { get; init; }` | Attribute bitmask (filesystem-specific encoding); 0 when none. |
+| `Created` | `DateTime? Created { get; init; }` | Creation timestamp (UTC), or null when unavailable. |
+| `Extension` | `string Extension { get; init; }` | Extension including leading dot, lower-case. Empty when none. |
+| `LastAccessed` | `DateTime? LastAccessed { get; init; }` | Last-accessed timestamp (UTC), or null when unavailable. |
+| `LastModified` | `DateTime? LastModified { get; init; }` | Last-modified timestamp (UTC), or null when unavailable. |
+| `Name` | `string Name { get; init; }` | File name (final path segment). |
+| `Path` | `string Path { get; init; }` | Full path, '/'-separated. Empty string when not nested. |
+| `Size` | `long Size { get; init; }` | Logical file size in bytes (sum of extent lengths). |
+
+#### `IFileFilter`
+
+A compiled filter expression. Created via `Parse`. Returns `true` when a file matches the expression.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Matches` | `bool Matches(IFilterFileContext file)` | Evaluates the filter against `file`. |
+
+#### `IFilterFileContext`
+
+View of one file's metadata used by a `IFileFilter` and by the layout-template sorter. Implementations are read-only and may expose `null` for fields the underlying source can't supply (e.g. classic FAT lacks atime; classic ProDOS lacks access timestamps entirely). Filters comparing a missing field always evaluate to `false`. The `All*` properties give a filter access to the population statistics so functions like `quartile(0.75)` can resolve to the correct percentile for the field being compared. They MUST contain the same number of entries as the file set being filtered and MUST be the same instance across calls within a single resolve operation — the filter caches percentile computations by reference.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AllCreatedTimes` | `IReadOnlyList<DateTime> AllCreatedTimes { get; }` | All creation times across the file set. Used by quartile() on the Created field. |
+| `AllLastAccessedTimes` | `IReadOnlyList<DateTime> AllLastAccessedTimes { get; }` | All last-accessed times across the file set. Used by quartile() on the LastAccessed field. |
+| `AllLastModifiedTimes` | `IReadOnlyList<DateTime> AllLastModifiedTimes { get; }` | All last-modified times across the file set. Used by quartile() on the LastModified field. |
+| `AllSizes` | `IReadOnlyList<long> AllSizes { get; }` | All sizes across the file set. Used by quartile() on the Size field. |
+| `Attributes` | `uint Attributes { get; }` | Attribute bitmask (filesystem-specific encoding); 0 when none. |
+| `Created` | `DateTime? Created { get; }` | Creation timestamp (UTC), or null when unavailable. |
+| `Extension` | `string Extension { get; }` | Extension including leading dot, lower-case. Empty when none. |
+| `LastAccessed` | `DateTime? LastAccessed { get; }` | Last-accessed timestamp (UTC), or null when unavailable. |
+| `LastModified` | `DateTime? LastModified { get; }` | Last-modified timestamp (UTC), or null when unavailable. |
+| `Name` | `string Name { get; }` | File name (final path segment). |
+| `Path` | `string Path { get; }` | Full path, '/'-separated. Empty string when not nested. |
+| `Size` | `long Size { get; }` | Logical file size in bytes (sum of extent lengths). |
+
+#### `LayoutTemplate`
+
+A reusable layout description: a named collection of `LayoutZone`s plus a strategy for leftover files. Round-trippable to / from JSON via `ToJson` and `FromJson`. Example JSON:
+
+Implements `IEquatable<LayoutTemplate>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LayoutTemplate` | `LayoutTemplate()` |  |
+| `LeftoverStrategyText` | `string LeftoverStrategyText { get; init; }` | What to do with files matching no zone. Stored as text (`"fill_gaps"` or `"append_at_end"`) so the JSON format stays human-readable, but the canonical accessor is `LeftoverStrategy`. |
+| `LeftoverStrategy` | `LeftoverStrategy LeftoverStrategy { get; }` | Parsed form of `LeftoverStrategyText`. |
+| `MetadataZone` | `MetadataZone MetadataZone { get; init; }` | Metadata zone placement; defaults to `Unchanged`. |
+| `Name` | `string Name { get; init; }` | Human-readable template name (used in UI / logs). |
+| `Zones` | `IReadOnlyList<LayoutZone> Zones { get; init; }` | Ordered list of zones. Zones may overlap; first match wins. |
+| `FromJson` | `static LayoutTemplate FromJson(string json)` | Parses a layout template from JSON. Throws `FormatException` when required fields are missing or any embedded expression fails to parse. |
+| `Load` | `static LayoutTemplate Load(string path)` | Loads a template from a file on disk. |
+| `Save` | `void Save(string path)` | Saves the template to `path` as indented JSON. |
+| `ToJson` | `string ToJson()` | Serialises to indented JSON. |
+
+#### `LayoutTemplateResolver`
+
+Resolves a `LayoutTemplate` against a real file set into a concrete placement plan (one `ResolvedFilePlacement` per input file). The first zone whose `Filter` matches a file wins; unmatched files are placed per `LeftoverStrategy`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LeftoverZoneName` | `const string LeftoverZoneName` | Pseudo-zone name used for files matching no template zone. |
+| `Resolve` | `static IReadOnlyList<ResolvedFilePlacement> Resolve(LayoutTemplate template, IReadOnlyList<IFilterFileContext> files, long imageSize)` | Resolves `template` against `files` and an image of size `imageSize`. The output preserves the input `files` ordering (`FileIndex` matches the input position) — callers iterate the result, group by ZoneName / SortIndex, and emit moves accordingly. |
+
+#### `LayoutZone`
+
+One zone within a `LayoutTemplate`: a byte-range region that holds files matching `Filter`, in the order specified by `SortBy`.
+
+Implements `IEquatable<LayoutZone>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `LayoutZone` | `LayoutZone()` |  |
+| `Filter` | `string Filter { get; init; }` | Optional filter expression parsed by `Parse`. `null` = no filter (every file matches; in practice the first zone catches everything). |
+| `Name` | `string Name { get; init; }` | Human-readable zone name (used in UI / logs). |
+| `Range` | `string Range { get; init; }` | Range expression resolved by `Parse`: `"0%-5%"`, `"0-1MB"`, `"[16384, 32768)"`, etc. |
+| `SortBy` | `IReadOnlyList<DefragSortKey> SortBy { get; init; }` | Sort keys applied within this zone (later keys break ties of earlier ones). Empty list = no explicit ordering; files keep their input order. |
+
+#### `LeftoverStrategy`
+
+Strategy for files that match no `LayoutZone` in a `LayoutTemplate`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `FillGaps` | `0` | Place leftover files in the gaps between zones (default). |
+| `AppendAtEnd` | `1` | Place leftover files after the last zone. |
+
+#### `RangeSpec`
+
+A byte-range expression for a `LayoutZone`. Either both `StartFraction`/`EndFraction` are set (percent form: `0%-5%`) or both `StartBytes`/`EndBytes` are set (absolute form: `10MB-50MB`). Open-ended ranges (`5%-`, `-50%`, `1024-+`) resolve to the image bounds.
+
+Implements `IEquatable<RangeSpec>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `RangeSpec` | `RangeSpec(double? StartFraction, double? EndFraction, long? StartBytes, long? EndBytes)` | A byte-range expression for a `LayoutZone`. Either both `StartFraction`/`EndFraction` are set (percent form: `0%-5%`) or both `StartBytes`/`EndBytes` are set (absolute form: `10MB-50MB`). Open-ended ranges (`5%-`, `-50%`, `1024-+`) resolve to the image bounds. |
+| `EndBytes` | `long? EndBytes { get; init; }` | End (exclusive) in bytes, or null if percent. |
+| `EndFraction` | `double? EndFraction { get; init; }` | End (exclusive) as a 0..1 fraction of the image, or null if absolute. |
+| `StartBytes` | `long? StartBytes { get; init; }` | Start in bytes, or null if percent. |
+| `StartFraction` | `double? StartFraction { get; init; }` | Start as a 0..1 fraction of the image, or null if absolute. |
+| `Parse` | `static RangeSpec Parse(string s)` | Parses a textual range. Accepted forms (case-insensitive, whitespace-insensitive): `0%-5%` — percent form, end exclusive.`10MB-50MB` — absolute form with KB/MB/GB/TB suffix.`[1024, 2048)` — bracket form, supports half-open semantics.`[1024, 2048]` — closed form treated as half-open at end+1.`5%-` / `10MB-` — open-ended (to image end).`-50%` / `-1MB` — open-started (from image origin).`1024-+` — synonymous with `1024-`. |
+| `Resolve` | `ValueTuple<long, long> Resolve(long imageSize)` | Resolves the spec into concrete byte bounds against an image of size `imageSize`. End is clamped to `imageSize`. Returns a half-open interval [start, end). |
+| `ToString` | `override string ToString()` |  |
+
+#### `ResolvedFilePlacement`
+
+One file's resolved placement: which zone it belongs to, the zone's concrete byte bounds, and its rank within the zone after sorting.
+
+Implements `IEquatable<ResolvedFilePlacement>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ResolvedFilePlacement` | `ResolvedFilePlacement(int FileIndex, string ZoneName, long ZoneStart, long ZoneEnd, int SortIndex)` | One file's resolved placement: which zone it belongs to, the zone's concrete byte bounds, and its rank within the zone after sorting. |
+| `FileIndex` | `int FileIndex { get; init; }` | Index into the input file list passed to `Resolve`. |
+| `SortIndex` | `int SortIndex { get; init; }` | 0-based rank within the zone after sort keys have been applied. |
+| `ZoneEnd` | `long ZoneEnd { get; init; }` | Exclusive byte end of the zone. |
+| `ZoneName` | `string ZoneName { get; init; }` | Resolved zone name. Pseudo-zones for unmatched files use `"<leftover>"`. |
+| `ZoneStart` | `long ZoneStart { get; init; }` | Inclusive byte start of the zone. |
+
+#### `SortDirection`
+
+Sort order for a `DefragSortKey`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Ascending` | `0` | Ascending (smallest / earliest first). |
+| `Descending` | `1` | Descending (largest / most-recent first). |
+
+### Namespace `Compression.Registry.Streaming`
+
+[`BoundedEntryStream`](#boundedentrystream) · [`BoundedWriteStream`](#boundedwritestream) · [`DeferredLengthWriteStream`](#deferredlengthwritestream) · [`ReadOnlyStreamSlice`](#readonlystreamslice) · [`StreamingArchiveInput`](#streamingarchiveinput)
+
+#### `BoundedEntryStream`
+
+A read-only `Stream` whose `Read` never produces more than `LogicalSize` bytes regardless of the underlying stream's state. Reads past the bound return 0 (EOF). Seek targets are clamped to the range `[0, LogicalSize]`. Disposes the underlying stream when `leaveOpen=false`.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BoundedEntryStream` | `BoundedEntryStream(Stream inner, long logicalSize, bool leaveOpen = true)` | Creates a bounded view of `inner` capped at `logicalSize` bytes. The current position of `inner` is treated as the bounded view's position 0. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `IsBoundedToSize` | `bool IsBoundedToSize { get; }` | Sentinel property used by callers to assert that an `OpenEntry` override actually returned a bounded stream rather than a raw decoder. Always `true` by construction. |
+| `Length` | `override long Length { get; }` |  |
+| `LogicalSize` | `long LogicalSize { get; }` | The logical entry size — the absolute ceiling on bytes this stream will ever produce, regardless of the underlying stream. |
+| `Position` | `override long Position { get; set; }` | Position within the bounded view — always equal to the number of bytes consumed via `Read`. Setting the position clamps to `[0, LogicalSize]`. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `BoundedWriteStream`
+
+A write-only `Stream` bounded to exactly `LogicalSize` bytes. Writes past the bound throw `InvalidOperationException`; disposing while the underwrite count is less than `LogicalSize` (and the writer was not explicitly cancelled) also throws. Together these enforce that the caller of `CreateFileEntry(name, length)` produces exactly the declared number of bytes — overrun is caught at the moment of the offending `Write`; underrun is caught on close so the archive committer can refuse a torn entry.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `BoundedWriteStream` | `BoundedWriteStream(Stream inner, long logicalSize, bool leaveOpen = true)` | Creates a bounded write view over `inner` capped at `logicalSize` bytes. The wrapper enforces the bound regardless of what `inner` does. |
+| `BytesWritten` | `long BytesWritten { get; }` | Number of bytes already written through this wrapper. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `IsBoundedToSize` | `bool IsBoundedToSize { get; }` | Sentinel property used by callers to assert that the bounded write contract is in effect. Always `true` by construction. |
+| `Length` | `override long Length { get; }` |  |
+| `LogicalSize` | `long LogicalSize { get; }` | The declared entry size — exactly the number of bytes the caller must write. Overrun throws on `Write`; underrun throws on `Dispose` unless `Cancel` was called first. |
+| `Position` | `override long Position { get; set; }` | Position within the bounded view — always equal to the number of bytes written through this wrapper. Setting the position is not supported. |
+| `Cancel` | `void Cancel()` | Cancels the bound check on dispose. After calling this, disposing the stream with fewer than `LogicalSize` bytes written will NOT throw — useful when the writer is being torn down due to a caller-side failure and the underrun is expected. |
+| `CreateBuffered` | `static BoundedWriteStream CreateBuffered(long logicalSize, Action<byte[]> onCommit)` | Convenience ctor: buffers writes into an internal `MemoryStream` and invokes `onCommit` with the buffered bytes when the stream is disposed at exactly `logicalSize` bytes. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `WriteByte` | `override void WriteByte(byte value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `DeferredLengthWriteStream`
+
+A write-only `Stream` for sources whose length is NOT known up-front. Buffers writes into a `MemoryStream` until they cross `SpillThresholdBytes`, then spills to a temp file and switches further writes to it. On `Dispose`, fires a commit callback with the accumulated byte count plus a `Func` that re-opens the buffered content for reading; the temp file (if any) is best-effort deleted when the consumer disposes the re-opened stream.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `DeferredLengthWriteStream` | `DeferredLengthWriteStream(Action<long, Func<Stream>> onClose, long spillThresholdBytes = -1, string spillDirectory = null)` | Creates a new deferred-length write stream. |
+| `DefaultSpillThresholdBytes` | `const long DefaultSpillThresholdBytes` | Default spill threshold = 256 MiB (mirrors `InMemoryProcessing.ThresholdBytes / 8`: at 2 GiB ceiling that's 256 MiB per stream so several can coexist before exhausting RAM). Compression.Registry cannot reference Compression.Lib, so this constant is duplicated here — keep the values in sync if the lib-side ceiling changes. |
+| `BytesWritten` | `long BytesWritten { get; }` | Number of bytes written so far through this stream (in-memory + spilled). |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `HasSpilled` | `bool HasSpilled { get; }` | True if the stream has spilled to disk; false if still entirely in-memory. |
+| `Length` | `override long Length { get; }` |  |
+| `Position` | `override long Position { get; set; }` |  |
+| `SpillPath` | `string SpillPath { get; }` | The path of the spill file, or `null` if the stream has not yet spilled. Exposed for diagnostics / tests. |
+| `SpillThresholdBytes` | `long SpillThresholdBytes { get; }` | The configured spill threshold. Writes that would push the total count above this value trigger a switch to a temp file. |
+| `Cancel` | `void Cancel()` | Cancels the commit callback: the buffered content is discarded and the spill file (if any) is deleted on dispose. The callback registered via the constructor will NOT fire. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Finalize` | `protected override void Finalize()` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `WriteByte` | `override void WriteByte(byte value)` |  |
+| `Write` | `override void Write(ReadOnlySpan<byte> buffer)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `ReadOnlyStreamSlice`
+
+A seekable, read-only window into a base `Stream` exposing the half-open byte range `[, + )`. Reads past the bound return 0; seek targets are clamped to `[0, Length]`.
+
+Inherits `Stream`. Implements `IAsyncDisposable`, `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ReadOnlyStreamSlice` | `ReadOnlyStreamSlice(Stream inner, long origin, long length, bool leaveOpen = true)` | Creates a new read-only slice `[origin, origin+length)`. |
+| `CanRead` | `override bool CanRead { get; }` |  |
+| `CanSeek` | `override bool CanSeek { get; }` |  |
+| `CanWrite` | `override bool CanWrite { get; }` |  |
+| `Inner` | `Stream Inner { get; }` | The underlying stream the slice maps onto. |
+| `Length` | `override long Length { get; }` |  |
+| `Origin` | `long Origin { get; }` | The absolute byte offset of the slice within `Inner`. |
+| `Position` | `override long Position { get; set; }` | Position within the slice — clamped to `[0, Length]`. |
+| `Dispose` | `protected override void Dispose(bool disposing)` |  |
+| `Flush` | `override void Flush()` |  |
+| `Read` | `override int Read(Span<byte> buffer)` |  |
+| `Read` | `override int Read(byte[] buffer, int offset, int count)` |  |
+| `Seek` | `override long Seek(long offset, SeekOrigin origin)` |  |
+| `SetLength` | `override void SetLength(long value)` |  |
+| `Write` | `override void Write(byte[] buffer, int offset, int count)` |  |
+
+#### `StreamingArchiveInput`
+
+Describes a single streaming input for an archive write: a name, its size (so two-pass writers can plan layout/geometry up front), whether it is a directory placeholder, and a factory that opens its bytes as a `Stream` on demand.
+
+Implements `IEquatable<StreamingArchiveInput>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `StreamingArchiveInput` | `StreamingArchiveInput(string Name, long Size, bool IsDirectory, Func<Stream> OpenStream)` | Describes a single streaming input for an archive write: a name, its size (so two-pass writers can plan layout/geometry up front), whether it is a directory placeholder, and a factory that opens its bytes as a `Stream` on demand. |
+| `IsDirectory` | `bool IsDirectory { get; init; }` | When true, no `OpenStream` is required and the entry represents a directory placeholder in the target. |
+| `Name` | `string Name { get; init; }` | The entry's archive name (path-like, forward-slash). |
+| `OpenStream` | `Func<Stream> OpenStream { get; init; }` | Factory that returns the entry's bytes as a `Stream` — typically a `BoundedEntryStream`. Ignored when `IsDirectory` is `true`. |
+| `Size` | `long Size { get; init; }` | The entry's logical byte size, used by two-pass writers to compute geometry before any data is read. `0` for directory placeholders. |
+
 ### Namespace `Concentus`
 
 [`IOpusDecoder`](#iopusdecoder) · [`IOpusEncoder`](#iopusencoder) · [`IOpusMultiStreamDecoder`](#iopusmultistreamdecoder) · [`IOpusMultiStreamEncoder`](#iopusmultistreamencoder) · [`IResampler`](#iresampler) · [`OpusException`](#opusexception) · [`ResamplerFactory`](#resamplerfactory)

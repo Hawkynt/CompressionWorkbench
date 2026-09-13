@@ -164,32 +164,29 @@ dotnet publish Compression.UI -c Release --self-contained -r win-x64 -o publish/
 
 ## Adding a Format
 
-Each format lives under the folder for its family: `FileFormats/FileFormat.*` for
-archives, compression streams and containers, `Codecs/Codec.*` for audio codecs.
-The folder decides which meta-package ships it. Filesystems and disk-image
-containers have no project of their own — their sources sit under
-`Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.*` and
-`Hawkynt.FileFormats.FileSystems/FileFormats/FileFormat.*` and compile straight
-into the meta-package assembly.
+No format has a project of its own. Each one is a folder of sources inside the
+meta-package that ships it, compiled straight into that package's assembly:
 
-### Step 1: Create the Project
+| Family | Folder |
+| --- | --- |
+| Archives, compression streams, containers | `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.*` |
+| Audio containers | `Hawkynt.FileFormats.Audio/FileFormats/FileFormat.*` |
+| Audio codecs | `Hawkynt.FileFormats.Audio/Codecs/Codec.*` |
+| Filesystems and disk images | `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.*` and `.../FileFormats/FileFormat.*` |
 
-Create a new class library project:
+A format that more than one package delivers is the exception: it compiles into
+`Compression.Core`, which all of them depend on, so its types keep one identity.
+
+### Step 1: Create the Folder
 
 ```bash
-dotnet new classlib -n FileFormat.YourFormat -o FileFormats/FileFormat.YourFormat
+mkdir -p Hawkynt.FileFormats.Archives/FileFormats/FileFormat.YourFormat
 ```
 
-The project inherits all settings from `Directory.Build.props` (net10.0, C# 14, nullable, warnings-as-errors, XML docs). Add references to the core libraries in the `.csproj`:
-
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\..\Compression.Core\Hawkynt.Compression.Core.csproj" />
-    <ProjectReference Include="..\..\Compression.Registry\Compression.Registry.csproj" />
-  </ItemGroup>
-</Project>
-```
+The sources are picked up by the meta-package's default glob and inherit all
+settings from `Directory.Build.props` (net10.0, C# 14, nullable,
+warnings-as-errors, XML docs). Nothing needs adding to the `.csproj`: the
+package already references `Compression.Core` and `Compression.Registry`.
 
 ### Step 2: Implement the Descriptor
 
@@ -270,21 +267,12 @@ public sealed class YourFormatArchiveOps : IArchiveFormatOperations {
 
 ### Step 4: Wire It Up
 
-Add a `ProjectReference` in `Compression.Lib/Compression.Lib.csproj` and in the
-meta-package that ships the family — `Hawkynt.FileFormats.Archives`,
-`Hawkynt.FileFormats.Audio` or `Hawkynt.FileFormats.FileSystems`:
-
-```xml
-<ProjectReference Include="..\FileFormats\FileFormat.YourFormat\FileFormat.YourFormat.csproj" />
-```
-
-A filesystem needs neither edit: its sources compile into
-`Hawkynt.FileFormats.FileSystems`, which `Compression.Lib` references, and
-`Compression.Tests/Operations/FilesystemDriverCoverageTests.cs` then requires it
-to have a derivable driver path.
-
-Add the project to `CompressionWorkbench.slnx`. A filesystem has no project of
-its own, so there is nothing to add.
+Nothing to wire. The sources compile into the meta-package assembly, and
+`Compression.Lib` references all three meta-packages, so the format is reachable
+as soon as it builds — there is no `ProjectReference` and no
+`CompressionWorkbench.slnx` entry to add. A filesystem additionally has to have a
+derivable driver path, which
+`Compression.Tests/Operations/FilesystemDriverCoverageTests.cs` requires.
 
 The Roslyn source generator discovers the `IFormatDescriptor` implementation automatically at compile time. No manual registration is needed -- the CLI, UI, and format detection pipeline will all pick up the new format.
 

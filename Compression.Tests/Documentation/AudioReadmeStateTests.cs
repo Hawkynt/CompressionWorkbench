@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using System.Text.RegularExpressions;
 using Compression.Lib;
 using Compression.Registry;
 
@@ -9,13 +8,13 @@ namespace Compression.Tests.Documentation;
 /// Keeps the audio package's support matrix honest. The matrix is the only support table for the
 /// audio domain, so nothing else can be cross-checked against it — instead every capability cell
 /// it states is re-derived here from the built registry, and the row set is re-derived from the
-/// projects the package actually bundles.
+/// formats the package actually compiles in.
 /// <para>
 /// The container table is fully derivable: state, PCM decode/encode and demux/mux all come from
 /// <see cref="FormatRegistry"/> and <see cref="AudioConversionInventory"/>. The codec table is
 /// not — codecs are plain classes rather than registered descriptors — so for those rows this
-/// fixture checks that the row set matches the bundled `Codec.*` assemblies exactly, which is
-/// what actually rots when a codec is added or removed.
+/// fixture checks that the row set matches the `Codec.*` source folders exactly, which is what
+/// actually rots when a codec is added or removed.
 /// </para>
 /// </summary>
 [TestFixture]
@@ -78,36 +77,37 @@ public class AudioReadmeStateTests {
   };
 
   /// <summary>
-  /// Every format the package ships, from both places they live: the per-format source folders
-  /// under <c>Hawkynt.FileFormats.Audio/Codecs</c> and <c>.../FileFormats</c>, which compile
-  /// straight into the package assembly, and the <c>ProjectReference</c>s in the package csproj,
-  /// which are the formats shared with another package and so still ship as separate DLLs.
-  /// Reading only one of the two would silently shrink the expected row set.
+  /// Every format the package ships, read from the per-format source folders under
+  /// <c>Hawkynt.FileFormats.Audio/Codecs</c> and <c>.../FileFormats</c>. All of them compile into
+  /// the package assembly now — including the media containers Hawkynt.FileFormats.Archives also
+  /// delivers, which it gets by bundling this assembly rather than by compiling them again.
   /// </summary>
+  /// <remarks>
+  /// The folders are the source of truth rather than the csproj: a format is shipped because its
+  /// sources sit here and are compiled, so a row set derived from anything else could stay green
+  /// while the two drifted apart.
+  /// </remarks>
   private static HashSet<string> BundledProjects(string prefix) {
     var csproj = FindRepositoryFile(PackageDirectory, PackageDirectory + ".csproj");
-    var names = Regex
-      .Matches(File.ReadAllText(csproj), @"(?:Codecs|FileFormats)[\\/]((?:Codec|FileFormat)\.[A-Za-z0-9]+)[\\/]")
-      .Select(static m => m.Groups[1].Value)
-      .ToHashSet(StringComparer.Ordinal);
-
     var packageDirectory = Path.GetDirectoryName(csproj)!;
+    var names = new HashSet<string>(StringComparer.Ordinal);
     foreach (var group in new[] { "Codecs", "FileFormats" }) {
       var path = Path.Combine(packageDirectory, group);
-      if (Directory.Exists(path))
-        foreach (var folder in Directory.EnumerateDirectories(path))
-          names.Add(Path.GetFileName(folder));
+      Assert.That(Directory.Exists(path), Is.True, $"The package no longer has a {group} source folder.");
+      foreach (var folder in Directory.EnumerateDirectories(path))
+        names.Add(Path.GetFileName(folder));
     }
 
     return names.Where(name => name.StartsWith(prefix, StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
   }
 
   /// <summary>
-  /// Whether an assembly carries descriptors the package ships: the package assembly itself, into
-  /// which every audio-only format compiles, or one of the shared format assemblies it bundles.
+  /// Whether an assembly carries descriptors the package ships. Every format compiles into the
+  /// package assembly, so that is the only name that qualifies — keyed on the assembly rather
+  /// than the folder set so a format that escaped the merge is noticed instead of assumed.
   /// </summary>
-  private static bool IsBundledAssembly(string assemblyName, HashSet<string> bundledProjects)
-    => assemblyName == PackageDirectory || bundledProjects.Contains(assemblyName);
+  private static bool IsBundledAssembly(string assemblyName)
+    => assemblyName == PackageDirectory;
 
   private static string ReadMatrix() {
     var readme = File.ReadAllText(FindRepositoryFile(PackageDirectory, "README.md"));
@@ -172,9 +172,8 @@ public class AudioReadmeStateTests {
   [Test]
   public void EveryBundledFormatHasExactlyOneRow() {
     FormatRegistration.EnsureInitialized();
-    var bundled = BundledProjects("FileFormat.");
     var expected = FormatRegistry.All
-      .Where(d => IsBundledAssembly(d.GetType().Assembly.GetName().Name ?? string.Empty, bundled))
+      .Where(d => IsBundledAssembly(d.GetType().Assembly.GetName().Name ?? string.Empty))
       .Select(static d => d.Id)
       .ToHashSet(StringComparer.Ordinal);
 
