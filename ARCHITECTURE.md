@@ -162,9 +162,9 @@ The generator emits two files:
 
 3. Implement `IStreamFormatOperations` (for compression streams) or `IArchiveFormatOperations` (for multi-file archives).
 
-4. Add a `<ProjectReference>` to `Compression.Lib.csproj`, and to the matching `Hawkynt.FileFormats.*` meta-package. A filesystem needs neither edit — its sources already compile into the meta-package assembly, which `Compression.Lib` references.
+4. Nothing to wire up. The folder is sources only, picked up by the meta-package's default glob, so there is no `<ProjectReference>` to add and nothing to register in `CompressionWorkbench.slnx`. The package already references `Compression.Core` and `Compression.Registry`, and `Compression.Lib` already references the package.
 
-5. Add the project to `CompressionWorkbench.slnx`. A filesystem has no project, so nothing to add.
+   The one exception is a format that **more than one meta-package delivers**. Compiling it into two packages would give its types two identities and break anything referencing both, so it goes in `Compression.Core` instead — every package already depends on Core, so this costs no new package dependency and keeps a single copy.
 
 The source generator automatically discovers the new descriptor at the next build. No other changes are needed -- format detection, the CLI, and the UI will all pick up the new format.
 
