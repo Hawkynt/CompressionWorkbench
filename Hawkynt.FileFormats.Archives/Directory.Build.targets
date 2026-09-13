@@ -14,9 +14,5 @@
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" PrivateAssets="all" />
-
-    <!-- Console filesystem/tape images — also in Hawkynt.FileFormats.FileSystems. -->
-    <ProjectReference Include="..\FileFormats\FileFormat.Pfs0\FileFormat.Pfs0.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.T64\FileFormat.T64.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>

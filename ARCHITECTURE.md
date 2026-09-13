@@ -10,14 +10,15 @@ This document describes the high-level architecture of CompressionWorkbench: how
 CompressionWorkbench.slnx
 |
 +-- Core
-|   +-- Compression.Core                  Primitives and building blocks (Huffman, LZ77, BWT, etc.)
+|   +-- Compression.Core                  Primitives and building blocks (Huffman, LZ77, BWT, etc.),
+|   |                                     plus the streams, containers and filesystems that more
+|   |                                     than one meta-package delivers
 |   +-- Compression.Registry              Interfaces and registries (IFormatDescriptor, IBuildingBlock)
 |   +-- Compression.Registry.Generator    Roslyn source generator for zero-reflection discovery
 |   +-- Compression.Lib                   Umbrella library: format detection, archive ops, SFX builder
 |
 +-- Format projects (one project per format, all discovered by the generator)
-|   +-- FileFormats/FileFormat.*          Archives, compression streams, containers, installers
-|   +-- FileSystems/FileSystem.*          On-disk filesystems another package also ships
+|   +-- FileFormats/FileFormat.*          A/V envelopes and game bundles two packages both ship
 |   +-- Codecs/Codec.*                    Audio codecs
 |
 +-- Analysis
@@ -42,7 +43,7 @@ CompressionWorkbench.slnx
 |
 +-- NuGet meta-packages (bundle the format projects for downstream consumers)
 |   +-- Hawkynt.FileFormats.Archives
-|   +-- Hawkynt.FileFormats.FileSystems   Also compiles FileSystems/FileSystem.* and the
+|   +-- Hawkynt.FileFormats.FileSystems   Also compiles the FileSystems/FileSystem.* and
 |   |                                     disk-image FileFormats/FileFormat.* sources it owns
 |   +-- Hawkynt.FileFormats.Audio
 |   +-- Hawkynt.Algorithms.Hashing
@@ -73,7 +74,7 @@ Compression.NativeUI -> Compression.Mounting, Compression.Mounting.Dokan, Compre
 Compression.Tests ----> Compression.Lib, Compression.Analysis
 ```
 
-Each format project is a small, self-contained library that implements one format. It references only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces). It does not reference `Compression.Lib` or any other format project. `Compression.Lib` names every `FileFormat.*` and `Codec.*` project explicitly and picks up `FileSystems/FileSystem.*` through an exhaustive glob, so a new filesystem project joins the build without a csproj edit.
+Each format project is a small, self-contained library that implements one format. It references only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces). It does not reference `Compression.Lib` or any other format project. `Compression.Lib` names every remaining `FileFormat.*` and `Codec.*` project explicitly, and reaches the formats that compile into a meta-package assembly or into `Compression.Core` through those references.
 
 The mount-side layering — block devices, filesystem sessions, and the rule that CompressionWorkbench parses every source layer itself — is described separately in [`docs/FILESYSTEM-DRIVER-ARCHITECTURE.md`](docs/FILESYSTEM-DRIVER-ARCHITECTURE.md).
 

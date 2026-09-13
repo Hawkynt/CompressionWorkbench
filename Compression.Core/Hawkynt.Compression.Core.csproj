@@ -17,8 +17,8 @@
 
     <IsPackable>true</IsPackable>
     <Title>Hawkynt CompressionWorkbench Core</Title>
-    <Description>Pure-managed compression primitives — bit I/O, dictionary coders (DEFLATE / LZW / LZMA / LZ4 / Snappy / Brotli / ...), entropy coders (Huffman / arithmetic / range / FSE / rANS / PPMd / context-mixing), transforms (BWT / MTF / RLE / Delta / BCJ), SIMD match-finders, and disk-image partition parsers. Hash functions and checksums are supplied by the Hawkynt.Algorithms.Hashing and Hawkynt.Algorithms.Checksums dependencies. No native dependency on zlib / liblzma / libarchive.</Description>
-    <PackageTags>$(PackageTags);compression;deflate;lzw;lzma;lz4;snappy;brotli;huffman;arithmetic-coding;managed</PackageTags>
+    <Description>Pure-managed compression primitives — bit I/O, dictionary coders (DEFLATE / LZW / LZMA / LZ4 / Snappy / Brotli / ...), entropy coders (Huffman / arithmetic / range / FSE / rANS / PPMd / context-mixing), transforms (BWT / MTF / RLE / Delta / BCJ), SIMD match-finders, and disk-image partition parsers. Also the compression streams (bzip2 / xz / zstd / zlib / LZMA / LZFSE) and containers (ZIP / SquashFS / PFS0 / T64) that more than one Hawkynt.FileFormats.* package delivers, kept here so their types have a single identity. Hash functions and checksums are supplied by the Hawkynt.Algorithms.Hashing and Hawkynt.Algorithms.Checksums dependencies. No native dependency on zlib / liblzma / libarchive.</Description>
+    <PackageTags>$(PackageTags);compression;deflate;lzw;lzma;lz4;snappy;brotli;huffman;arithmetic-coding;bzip2;xz;zstd;zlib;zip;squashfs;managed</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Bundle Compression.Registry's DLL into lib/ instead of emitting it as

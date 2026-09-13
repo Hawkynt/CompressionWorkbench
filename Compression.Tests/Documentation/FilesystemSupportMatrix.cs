@@ -41,39 +41,56 @@ public static class FilesystemSupportMatrix {
   /// <summary>The assembly the meta-package compiles its formats into.</summary>
   private const string PackageAssembly = "Hawkynt.FileFormats.FileSystems";
 
-  private const string ContainersBegin = "<!-- BUNDLED-CONTAINERS:BEGIN";
-  private const string ContainersEnd = "<!-- BUNDLED-CONTAINERS:END";
+  private const string FormatsBegin = "<!-- SUPPORT-MATRIX-FORMATS:BEGIN";
+  private const string FormatsEnd = "<!-- SUPPORT-MATRIX-FORMATS:END";
 
   /// <summary>
-  /// Every descriptor the package bundles: everything compiled into the package
-  /// assembly, every <c>FileSystem.*</c> project that still builds on its own,
-  /// plus the <c>FileFormat.*</c> disk-image projects named in the meta-project's
-  /// bundled-containers region.
+  /// Every descriptor the package delivers: everything compiled into the package
+  /// assembly, plus the formats named by namespace in the meta-project's
+  /// support-matrix region.
   /// </summary>
   /// <remarks>
-  /// Only that region is read, not the whole project file: the package also
-  /// references stream codecs (ZIP, LZMA, zstd, …) that its readers decompress
-  /// with, and those are not filesystem formats and have no row here.
+  /// <para>Those named formats compile into <c>Hawkynt.Compression.Core</c>, because more
+  /// than one package delivers them and a second copy would give their types two
+  /// identities; the package dependency on Core carries them to consumers. The key is
+  /// the descriptor's namespace rather than its assembly precisely so that moving a
+  /// format between assemblies cannot silently empty this list — an assembly name is a
+  /// packaging decision, a namespace is the format's own identity.</para>
+  ///
+  /// <para>Only that region is read, not the whole project file: Core also carries stream
+  /// codecs (ZIP, LZMA, zstd, …) that these readers decompress with, and those are not
+  /// filesystem formats and have no row here.</para>
   /// </remarks>
   public static IReadOnlyList<IFormatDescriptor> Descriptors(string repositoryRoot) {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var project = File.ReadAllText(Path.Combine(repositoryRoot, "Hawkynt.FileFormats.FileSystems", "Hawkynt.FileFormats.FileSystems.csproj"));
-    var begin = project.IndexOf(ContainersBegin, StringComparison.Ordinal);
-    var end = project.IndexOf(ContainersEnd, StringComparison.Ordinal);
-    if (begin < 0 || end < begin)
-      throw new InvalidDataException($"{PackageAssembly}.csproj carries no '{ContainersBegin}' / '{ContainersEnd}' region.");
-    var containers = Regex.Matches(project[begin..end], @"FileFormats\\(FileFormat\.[A-Za-z0-9]+)\\")
-      .Select(m => m.Groups[1].Value)
-      .ToHashSet(StringComparer.Ordinal);
+    var namespaces = DeclaredNamespaces(project, $"{PackageAssembly}.csproj");
     return FormatRegistry.All
-      .Where(d => {
-        var assembly = d.GetType().Assembly.GetName().Name ?? "";
-        return assembly == PackageAssembly
-            || assembly.StartsWith("FileSystem.", StringComparison.Ordinal)
-            || containers.Contains(assembly);
-      })
+      .Where(d => d.GetType().Assembly.GetName().Name == PackageAssembly
+               || namespaces.Contains(d.GetType().Namespace ?? ""))
       .OrderBy(d => d.Id, StringComparer.Ordinal)
       .ToList();
+  }
+
+  /// <summary>
+  /// The <c>SupportMatrixNamespace</c> items of a meta-project's support-matrix region.
+  /// </summary>
+  /// <remarks>
+  /// The region is required rather than optional: an empty result would quietly shrink
+  /// the matrix instead of failing, which is how a documented format stops being checked
+  /// without anyone noticing.
+  /// </remarks>
+  internal static HashSet<string> DeclaredNamespaces(string project, string projectName) {
+    var begin = project.IndexOf(FormatsBegin, StringComparison.Ordinal);
+    var end = project.IndexOf(FormatsEnd, StringComparison.Ordinal);
+    if (begin < 0 || end < begin)
+      throw new InvalidDataException($"{projectName} carries no '{FormatsBegin}' / '{FormatsEnd}' region.");
+    var namespaces = Regex.Matches(project[begin..end], @"<SupportMatrixNamespace Include=""([^""]+)""")
+      .Select(m => m.Groups[1].Value)
+      .ToHashSet(StringComparer.Ordinal);
+    if (namespaces.Count == 0)
+      throw new InvalidDataException($"{projectName} declares no <SupportMatrixNamespace> in its support-matrix region.");
+    return namespaces;
   }
 
   /// <summary>The README split around the generated region.</summary>

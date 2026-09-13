@@ -42,19 +42,30 @@
        would duplicate their types across packages and break type identity for anything referencing
        two of them, so they stay separate assemblies and are bundled as DLLs. -->
   <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Lzma\FileFormat.Lzma.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Xz\FileFormat.Xz.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zip\FileFormat.Zip.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zlib\FileFormat.Zlib.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Zstd\FileFormat.Zstd.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" PrivateAssets="all" />
-    <!-- AppImage and Snap read a SquashFs payload; the filesystem package ships the same project. -->
-    <ProjectReference Include="..\FileSystems\FileSystem.SquashFs\FileSystem.SquashFs.csproj" PrivateAssets="all" />
   </ItemGroup>
+
+  <!-- SUPPORT-MATRIX-FORMATS:BEGIN — namespaces of archive-domain formats that compile into
+       Compression.Core (the stream codecs, ZIP, and the console container images) yet belong in
+       this package's support matrix; read by Compression.Tests/Operations/ArchivesReadmeStateTests.cs
+       and Compression.Tests/Operations/CreatableFormatsRoundTripTests.cs. Inert to MSBuild — the
+       formats reach consumers through the Compression.Core dependency, including the SquashFs
+       payload reader that AppImage and Snap need. -->
+  <ItemGroup>
+    <SupportMatrixNamespace Include="FileFormat.Bzip2" />
+    <SupportMatrixNamespace Include="FileFormat.Lzfse" />
+    <SupportMatrixNamespace Include="FileFormat.Lzma" />
+    <SupportMatrixNamespace Include="FileFormat.Xz" />
+    <SupportMatrixNamespace Include="FileFormat.Zip" />
+    <SupportMatrixNamespace Include="FileFormat.Zlib" />
+    <SupportMatrixNamespace Include="FileFormat.Zstd" />
+    <SupportMatrixNamespace Include="FileFormat.Pfs0" />
+    <SupportMatrixNamespace Include="FileFormat.T64" />
+    <SupportMatrixNamespace Include="FileFormat.Lynx" />
+  </ItemGroup>
+  <!-- SUPPORT-MATRIX-FORMATS:END -->
 
   <Target Name="_AddBundledAssembliesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>

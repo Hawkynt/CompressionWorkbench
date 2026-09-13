@@ -54,6 +54,14 @@ public sealed class ArchivePackageCompletenessTests {
       foreach (var dir in Directory.EnumerateDirectories(compiledIn))
         includes.Add(Path.GetFileName(dir));
 
+    // The third delivery path: a format another meta-package ships too compiles into
+    // Compression.Core, and this package's plain reference to Core is a real NuGet
+    // dependency, so the format still reaches a consumer of this package alone. The
+    // support-matrix region names those formats by namespace.
+    foreach (var declared in Documentation.FilesystemSupportMatrix.DeclaredNamespaces(
+               File.ReadAllText(projectFile), "Hawkynt.FileFormats.Archives.csproj"))
+      includes.Add(declared);
+
     Assert.Multiple(() => {
       foreach (var expected in ExpectedArchiveProjects)
         Assert.That(includes, Does.Contain(expected),

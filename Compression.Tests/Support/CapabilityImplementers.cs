@@ -24,11 +24,13 @@ public static class CapabilityImplementers {
     foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
       var name = asm.GetName().Name ?? "";
       // Format assemblies are variously named "FileFormat.X", "FileSystem.X",
-      // "CompressionWorkbench.FileFormat.X", "Compression.Registry", etc. Match on
-      // the substrings rather than a leading prefix so none are missed.
+      // "CompressionWorkbench.FileFormat.X", "Compression.Registry",
+      // "Hawkynt.Compression.Core", etc. Match on the substrings rather than a leading
+      // prefix so none are missed — "Compression" as a prefix used to skip
+      // Hawkynt.Compression.Core, which now carries the formats two packages share.
       if (!name.Contains("FileFormat", StringComparison.Ordinal)
           && !name.Contains("FileSystem", StringComparison.Ordinal)
-          && !name.StartsWith("Compression", StringComparison.Ordinal)) continue;
+          && !name.Contains("Compression", StringComparison.Ordinal)) continue;
       Type[] types;
       try { types = asm.GetTypes(); } catch (System.Reflection.ReflectionTypeLoadException ex) { types = ex.Types.Where(t => t != null).ToArray()!; }
       foreach (var t in types) {

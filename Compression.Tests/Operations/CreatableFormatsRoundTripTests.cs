@@ -48,11 +48,12 @@ public sealed class CreatableFormatsRoundTripTests {
 
   private static IEnumerable<TestCaseData> BundledCreatableFormats() {
     FormatRegistration.EnsureInitialized();
-    var bundled = BundledAssemblies();
+    var (bundled, namespaces) = BundledAssemblies();
     foreach (var d in FormatRegistry.All.OrderBy(x => x.Id, StringComparer.Ordinal)) {
       if (!d.Capabilities.HasFlag(FormatCapabilities.CanCreate)) continue;
       if (!d.Capabilities.HasFlag(FormatCapabilities.CanExtract)) continue;
-      if (!bundled.Contains(d.GetType().Assembly.GetName().Name!.Replace("CompressionWorkbench.", ""))) continue;
+      if (!bundled.Contains(d.GetType().Assembly.GetName().Name!.Replace("CompressionWorkbench.", ""))
+          && !namespaces.Contains(d.GetType().Namespace ?? "")) continue;
       if (FormatRegistry.GetArchiveOps(d.Id) is not IArchiveCreatable) continue;
       if (!Enum.TryParse<FormatDetector.Format>(d.Id, out _)) continue;
       yield return new TestCaseData(d.Id).SetName($"RoundTripsItsOwnOutput_{d.Id}");
@@ -136,7 +137,12 @@ public sealed class CreatableFormatsRoundTripTests {
   private static bool NameMatches(string entryName, string probe)
     => string.Equals(Path.GetFileName(entryName.Replace('\\', '/')), probe, StringComparison.OrdinalIgnoreCase);
 
-  private static HashSet<string> BundledAssemblies() {
+  /// <summary>
+  /// The assemblies the archives package ships, and the namespaces of the formats it
+  /// delivers through its Compression.Core dependency — those report Core's assembly, so
+  /// the support-matrix region names them by namespace instead.
+  /// </summary>
+  private static (HashSet<string> Assemblies, HashSet<string> Namespaces) BundledAssemblies() {
     var root = Path.GetDirectoryName(FindRepositoryFile("Hawkynt.FileFormats.Archives", "README.md"))!;
     var projectFiles = File.ReadAllText(Path.Combine(root, "Hawkynt.FileFormats.Archives.csproj"))
       + File.ReadAllText(Path.Combine(root, "Directory.Build.targets"));
@@ -144,7 +150,7 @@ public sealed class CreatableFormatsRoundTripTests {
       .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
     // Formats the package compiles in rather than references report the package's own assembly.
     bundled.Add("Hawkynt.FileFormats.Archives");
-    return bundled;
+    return (bundled, Documentation.FilesystemSupportMatrix.DeclaredNamespaces(projectFiles, "Hawkynt.FileFormats.Archives.csproj"));
   }
 
   private static string FindRepositoryFile(params string[] relativeParts) {
