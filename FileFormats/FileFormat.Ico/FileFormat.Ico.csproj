@@ -17,21 +17,21 @@
       an assembly boundary that does not also contain those. Runtime assets still flow onward.
     -->
     <!--
-      1.0.0.749 is the version PNGCrushCS's next release will publish, and is not on nuget.org
+      1.0.0.750 is the version PNGCrushCS's next release will publish, and is not on nuget.org
       yet: release.yml is dispatch-only and has not been run since Hawkynt/PNGCrushCS#424 landed.
       Until it is, this project cannot restore, and that is the intended state rather than a
       defect.
 
       The number is not a guess. version.pl stamps MAJOR.MINOR.PATCH from Directory.Build.props
       with the commit count of the declaring folder appended, and version.pl in list mode, run against
-      PNGCrushCS main at b44c7de4 reports 1.0.0.749 for this package. That repository has no open
+      PNGCrushCS main at b3995255 reports 1.0.0.750 for this package. That repository has no open
       pull requests, so nothing can move the count before the release is cut.
 
       It has to be the exact published version rather than a lower one. A bare version string is
       a floor to NuGet, but this repository promotes NU1603 to an error, so a pin that resolves
       upward fails the build just as surely as one that resolves to nothing.
     -->
-    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.749" PrivateAssets="compile" />
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.750" PrivateAssets="compile" />
   </ItemGroup>
 
 </Project>
