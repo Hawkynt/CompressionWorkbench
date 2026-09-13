@@ -26,16 +26,9 @@ public class PngCrushAdaptersTests {
   public void RegistryHasAllAdapterDescriptors() {
     var ids = FormatRegistry.All.Select(d => d.Id).ToHashSet();
 
-    // Apng/Tiff/BigTiff/Mng/Fli/Dcx/Icns/Mpo come from the cross-repo
-    // FileFormat.PngCrushAdapters project, which is conditional on the sibling
-    // PngCrushCS repo being present at ../../PNGCrushCS. On CI runners where
-    // only this repo is cloned, those descriptors are intentionally absent
-    // and the project compiles to an empty assembly. Skip cleanly there —
-    // Ico/Cur/Ani live in our own native projects and are always present.
-    if (!ids.Contains("Apng"))
-      Assert.Ignore("Cross-repo PngCrushAdapters not loaded — sibling PngCrushCS repo " +
-                    "absent at ../../PNGCrushCS. Ico/Cur/Ani still verified by " +
-                    "RegistryHasIcoDescriptor + adjacent tests.");
+    // Apng/Tiff/BigTiff/Mng/Fli/Dcx/Icns/Mpo come from the FileFormat.PngCrushAdapters
+    // sources in Compression.Lib; Ico/Cur/Ani from our own native projects. All are
+    // built unconditionally, so every id below must be present.
 
     foreach (var expected in new[] { "Ico", "Cur", "Ani", "Apng", "Tiff", "BigTiff", "Mng", "Fli", "Dcx", "Icns", "Mpo" })
       Assert.That(ids, Does.Contain(expected), $"Missing: {expected}");

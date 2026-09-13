@@ -1,9 +1,10 @@
+extern alias images;
 #pragma warning disable CS1591
 using System.Diagnostics;
 using Compression.Lib;
 using Compression.Registry;
-using FileFormat.Core;
-using FileFormat.Jpeg;
+using images::FileFormat.Core;
+using images::FileFormat.Jpeg;
 using FileFormat.PngCrushAdapters;
 
 namespace Compression.Tests.PngCrushAdapters;
@@ -37,8 +38,7 @@ public class JpegLazyMetadataTests {
 
   [Test]
   public void Scanner_ParsesSofFromTinyJpeg() {
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
     var jpeg = BuildTinyJpeg();
     var meta = JpegMetadataScanner.ScanBytes(jpeg);
     Assert.Multiple(() => {
@@ -67,8 +67,7 @@ public class JpegLazyMetadataTests {
     // that's structurally valid (SOI + SOF + EOI happen in the first ~1 KB)
     // BUT followed by 100 MB of padding tail. Listing must be bounded by the
     // SOF scan limit, not by the tail size.
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var jpeg = BuildTinyJpeg();
     const int padding = 100 * 1024 * 1024; // 100 MB
@@ -94,8 +93,7 @@ public class JpegLazyMetadataTests {
 
   [Test]
   public void Extract_StillDecodesPixelsAndProducesPng() {
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var bytes = BuildTinyJpeg();
     var desc = new JpegFormatDescriptor();
@@ -123,8 +121,7 @@ public class JpegLazyMetadataTests {
     // Different from the freeze fix but cheap to check: GetFrame on the same
     // JpegFrameSource instance must reuse the cached decode rather than
     // running libjpeg twice.
-    if (FormatRegistry.GetById("Jpeg") == null)
-      Assert.Ignore("FileFormat.PngCrushAdapters not loaded — sibling PngCrushCS absent.");
+    Assert.That(FormatRegistry.GetById("Jpeg"), Is.Not.Null, "the Jpeg descriptor must be registered");
 
     var bytes = BuildTinyJpeg();
     using var ms = new MemoryStream(bytes);

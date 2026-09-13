@@ -5,70 +5,21 @@
     <IsTestProject>true</IsTestProject>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-    <!-- Mirror FileFormat.PngCrushAdapters: tests that reference the sibling
-         PngCrushCS repo (FileFormat.Png/Jpeg/Apng/Core/etc.) only compile when
-         the sibling is checked out at ..\..\PNGCrushCS. CI without the sibling
-         drops these tests instead of failing the build. -->
-    <SiblingPresent>false</SiblingPresent>
-    <!-- Sibling reorganized leaf FileFormat.* projects into a FileFormats/
-         subdir but kept Compression.Core/FileFormat.Core at root. Probe both
-         layouts. -->
-    <PngCrushFormatsDir Condition="Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormats\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\PNGCrushCS\FileFormats\</PngCrushFormatsDir>
-    <PngCrushFormatsDir Condition="'$(PngCrushFormatsDir)' == '' and Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Bmp\FileFormat.Bmp.csproj')">..\..\PNGCrushCS\</PngCrushFormatsDir>
-    <!-- Require every adapter sub-project the tests import. Mirror the gate in
-         FileFormat.PngCrushAdapters.csproj so a half-checked-out sibling (Core
-         present, sub-projects missing) is treated as "no sibling" instead of
-         producing CS0234 errors. -->
-    <SiblingPresent Condition="
-      '$(PngCrushFormatsDir)' != '' and
-      Exists('$(MSBuildThisFileDirectory)..\..\PNGCrushCS\FileFormat.Core\FileFormat.Core.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Png\FileFormat.Png.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Bmp\FileFormat.Bmp.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Apng\FileFormat.Apng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Tiff\FileFormat.Tiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.BigTiff\FileFormat.BigTiff.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mng\FileFormat.Mng.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Fli\FileFormat.Fli.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Dcx\FileFormat.Dcx.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Icns\FileFormat.Icns.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Mpo\FileFormat.Mpo.csproj') and
-      Exists('$(MSBuildThisFileDirectory)$(PngCrushFormatsDir)FileFormat.Jpeg\FileFormat.Jpeg.csproj')
-      ">true</SiblingPresent>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(SiblingPresent)' != 'true'">
-    <!-- Tests that import sibling-only namespaces (FileFormat.Png, .Apng, .Jpeg,
-         .Core, and the PngCrushAdapters surface that depends on them). -->
-    <Compile Remove="Gif\GifColorSpaceTests.cs" />
-    <Compile Remove="Gif\GifTests.cs" />
-    <Compile Remove="Image\AllColorSpacesTests.cs" />
-    <Compile Remove="Image\ColorSpaceLazinessTests.cs" />
-    <Compile Remove="Image\ColorSpaceLazyExtractTests.cs" />
-    <Compile Remove="Image\ColorSpaceSplitterTests.cs" />
-    <Compile Remove="Png\PngLayoutMapTests.cs" />
-    <Compile Remove="Png\PngPseudoArchiveTests.cs" />
-    <Compile Remove="Tiff\TiffLayoutMapTests.cs" />
-    <Compile Remove="Tiff\TiffPseudoArchiveTests.cs" />
-    <Compile Remove="Mpo\MpoPseudoArchiveTests.cs" />
-    <Compile Remove="Dcx\DcxPseudoArchiveTests.cs" />
-    <Compile Remove="Icns\IcnsPseudoArchiveTests.cs" />
-    <Compile Remove="PngCrushAdapters\**\*.cs" />
-  </ItemGroup>
-
   <ItemGroup>
-    <!-- Sibling FileFormat.Jpeg's transitive FrameworkExtensions.Backports
-         exposes a duplicate Compression.Core.BitIO.BitOrder type. We pin
-         FileFormat.Jpeg as PrivateAssets="all" inside FileFormat.PngCrushAdapters
-         to keep the duplicate out of consumers' compile graphs (Compression.Lib /
-         Compression.Tests / Compression.UI). Side effect: tests that imported
-         `using FileFormat.Jpeg` directly can no longer compile, so we drop them
-         unconditionally. The descriptor's behaviour is still exercised via the
-         registry-iteration / SelfRoundTrip parameterized cases. -->
-    <Compile Remove="PngCrushAdapters\JpegFormatDescriptorTests.cs" />
-    <Compile Remove="PngCrushAdapters\JpegLazyMetadataTests.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
+    <!-- The image tests build FileFormat.Core.RawImage / FileFormat.Png values and
+         hand them to the FileFormat.PngCrushAdapters surface in Compression.Lib, which
+         keeps the package's compile assets private. Referenced under the `images` alias
+         because the package also carries a Compression.Core.BitIO.BitOrder and a
+         FileFormat.Wad.WadWriter whose names collide with Hawkynt.Compression.Core and
+         Hawkynt.FileFormats.Archives; only the files that need the image types opt in
+         with `extern alias images`. -->
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" Aliases="images" />
+    <!-- Pulled in transitively by the package above. Its extension polyfills (e.g.
+         Reverse on arrays) are ambiguous against .NET 10's own System.Linq, so it
+         stays out of the global alias too. -->
+    <PackageReference Include="FrameworkExtensions.Backports" Version="1.0.0.256" Aliases="images" />
     <PackageReference Include="coverlet.collector" Version="6.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="NUnit" Version="4.*" />
@@ -125,8 +76,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- PngCrushCS sibling transitively requires System.IO.Hashing 10.0.3+
-         (FileFormat.Jpeg → FrameworkExtensions.Backports). -->
+    <!-- Hawkynt.FileFormats.Images requires System.IO.Hashing 10.0.3+. -->
     <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
     <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Wav\FileFormat.Wav.csproj" />

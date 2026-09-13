@@ -1,7 +1,8 @@
+extern alias images;
 #pragma warning disable CS1591
 using Compression.Lib;
-using FileFormat.Apng;
-using FileFormat.Png;
+using images::FileFormat.Apng;
+using images::FileFormat.Png;
 using FileFormat.PngCrushAdapters;
 
 namespace Compression.Tests.PngCrushAdapters;
