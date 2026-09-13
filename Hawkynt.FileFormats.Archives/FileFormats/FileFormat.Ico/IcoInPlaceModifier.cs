@@ -59,7 +59,7 @@ public static class IcoInPlaceModifier {
     if (header.Count >= ushort.MaxValue)
       throw new NotSupportedException("ICO: bundle already at 65535-image cap.");
 
-    var encoded = EncodeForDir(image, header.IsCursor);
+    var encoded = EncodeForDir(image);
 
     // Step 1: shift all bytes after the directory by 16 to make room for the
     // new dir entry; step 2: patch every existing entry's offset by +16; step 3:
@@ -207,94 +207,29 @@ public static class IcoInPlaceModifier {
 
   private readonly record struct EncodedImage(byte[] Payload, int Width, int Height, int Bpp, bool IsPng);
 
-  private static EncodedImage EncodeForDir(byte[] image, bool isCursor) {
-    // Mirror IcoWriter's encoding decisions so a bundle round-trips through the
-    // existing reader without behavioural drift.
-    if (IsPng(image)) {
-      var (w, h, bpp) = ReadPngDimensions(image);
-      return new EncodedImage(image, w, h, bpp, true);
-    }
-    if (IsBmp(image)) {
-      var dib = ConvertBmpToIconDib(image, out var w, out var h, out var bpp);
-      return new EncodedImage(dib, w, h, bpp, false);
-    }
-    throw new ArgumentException("ICO: image is neither a PNG nor a BMP.");
+  /// <summary>
+  /// Encodes an incoming image file into the payload a directory entry will point at.
+  /// </summary>
+  /// <remarks>
+  /// Routed through <see cref="IcoWriter.EncodePayload"/> so an added image is encoded exactly as a
+  /// from-scratch bundle would encode it. This file used to carry its own copy of the PNG header
+  /// read and the BMP-to-DIB conversion, mirrored from the writer by hand — two copies of a
+  /// conversion that has to agree with itself or an added entry reads back differently from a
+  /// written one.
+  /// </remarks>
+  private static EncodedImage EncodeForDir(byte[] image) {
+    var (payload, width, height, bitsPerPixel, isPng) = IcoWriter.EncodePayload(image);
+    return new EncodedImage(payload, width, height, bitsPerPixel, isPng);
   }
 
   private static void WriteDirEntry(Span<byte> dest, EncodedImage e, uint payloadOff, bool isCursor) {
     dest[0] = (byte)(e.Width == 256 ? 0 : e.Width);
     dest[1] = (byte)(e.Height == 256 ? 0 : e.Height);
-    dest[2] = (byte)(e.Bpp <= 8 ? (1 << e.Bpp) & 0xFF : 0);
+    dest[2] = (byte)(e.Bpp is > 0 and <= 8 ? (1 << e.Bpp) & 0xFF : 0);
     dest[3] = 0;
     BinaryPrimitives.WriteUInt16LittleEndian(dest.Slice(4, 2), (ushort)(isCursor ? 0 : 1));
     BinaryPrimitives.WriteUInt16LittleEndian(dest.Slice(6, 2), (ushort)(isCursor ? 0 : e.Bpp));
     BinaryPrimitives.WriteUInt32LittleEndian(dest.Slice(8, 4), (uint)e.Payload.Length);
     BinaryPrimitives.WriteUInt32LittleEndian(dest.Slice(12, 4), payloadOff);
-  }
-
-  // ── PNG / BMP helpers mirrored from IcoWriter ─────────────────────────────
-
-  private static bool IsPng(ReadOnlySpan<byte> data) =>
-    data.Length >= 8
-    && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
-    && data[4] == 0x0D && data[5] == 0x0A && data[6] == 0x1A && data[7] == 0x0A;
-
-  private static bool IsBmp(ReadOnlySpan<byte> data) =>
-    data.Length >= 14 && data[0] == (byte)'B' && data[1] == (byte)'M';
-
-  private static (int W, int H, int Bpp) ReadPngDimensions(ReadOnlySpan<byte> png) {
-    if (png.Length < 8 + 8 + 13) throw new InvalidDataException("PNG: truncated");
-    if (png[12] != 'I' || png[13] != 'H' || png[14] != 'D' || png[15] != 'R')
-      throw new InvalidDataException("PNG: first chunk is not IHDR");
-    var w = (int)BinaryPrimitives.ReadUInt32BigEndian(png[16..]);
-    var h = (int)BinaryPrimitives.ReadUInt32BigEndian(png[20..]);
-    var depth = png[24];
-    var colorType = png[25];
-    var channels = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 4 };
-    return (w, h, depth * channels);
-  }
-
-  private static byte[] ConvertBmpToIconDib(ReadOnlySpan<byte> bmp, out int width, out int height, out int bpp) {
-    if (bmp.Length < 14 + 12) throw new InvalidDataException("BMP: truncated");
-    var pixelOffset = (int)BinaryPrimitives.ReadUInt32LittleEndian(bmp.Slice(10, 4));
-    var dibStart = 14;
-    var dibHeaderSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(bmp.Slice(dibStart, 4));
-    if (dibHeaderSize < 12) throw new InvalidDataException("BMP: invalid DIB header size");
-
-    int rawW, rawH, rawBpp;
-    if (dibHeaderSize == 12) {
-      rawW = BinaryPrimitives.ReadInt16LittleEndian(bmp.Slice(dibStart + 4, 2));
-      rawH = BinaryPrimitives.ReadInt16LittleEndian(bmp.Slice(dibStart + 6, 2));
-      rawBpp = BinaryPrimitives.ReadUInt16LittleEndian(bmp.Slice(dibStart + 10, 2));
-    } else {
-      rawW = BinaryPrimitives.ReadInt32LittleEndian(bmp.Slice(dibStart + 4, 4));
-      rawH = BinaryPrimitives.ReadInt32LittleEndian(bmp.Slice(dibStart + 8, 4));
-      rawBpp = BinaryPrimitives.ReadUInt16LittleEndian(bmp.Slice(dibStart + 14, 2));
-    }
-    if (rawH < 0) throw new NotSupportedException("BMP: top-down bitmaps not supported for ICO encoding");
-
-    width = rawW;
-    height = rawH;
-    bpp = rawBpp;
-
-    var pixelLen = bmp.Length - pixelOffset;
-    var dibTailLen = pixelOffset - 14;
-    var maskRowBytes = ((rawW + 31) / 32) * 4;
-    var maskLen = maskRowBytes * rawH;
-
-    var output = new byte[dibTailLen + pixelLen + maskLen];
-    bmp.Slice(14, dibTailLen).CopyTo(output);
-    bmp.Slice(pixelOffset, pixelLen).CopyTo(output.AsSpan(dibTailLen));
-
-    if (dibHeaderSize == 12) {
-      BinaryPrimitives.WriteInt16LittleEndian(output.AsSpan(6), (short)(rawH * 2));
-    } else {
-      BinaryPrimitives.WriteInt32LittleEndian(output.AsSpan(8), rawH * 2);
-    }
-    if (dibHeaderSize >= 24) {
-      BinaryPrimitives.WriteUInt32LittleEndian(output.AsSpan(20), (uint)(pixelLen + maskLen));
-    }
-
-    return output;
   }
 }

@@ -119,6 +119,8 @@
     <ProjectReference Include="..\Codecs\Codec.Dfpwm\Codec.Dfpwm.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Akb\FileFormat.Akb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ico\FileFormat.Ico.csproj" />
+    <ProjectReference Include="..\FileFormats\FileFormat.Ani\FileFormat.Ani.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Awb\FileFormat.Awb.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Bzip2\FileFormat.Bzip2.csproj" />
     <ProjectReference Include="..\FileFormats\FileFormat.Lzfse\FileFormat.Lzfse.csproj" />

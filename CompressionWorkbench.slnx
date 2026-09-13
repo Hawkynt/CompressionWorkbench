@@ -27,9 +27,11 @@
     <Project Path="Codecs/Codec.Opus/Codec.Opus.csproj" />
     <Project Path="Codecs/Codec.Aac/Codec.Aac.csproj" />
     <Project Path="FileFormats/FileFormat.Akb/FileFormat.Akb.csproj" />
+    <Project Path="FileFormats/FileFormat.Ani/FileFormat.Ani.csproj" />
     <Project Path="FileFormats/FileFormat.Avi/FileFormat.Avi.csproj" />
     <Project Path="FileFormats/FileFormat.Awb/FileFormat.Awb.csproj" />
     <Project Path="FileFormats/FileFormat.Bzip2/FileFormat.Bzip2.csproj" />
+    <Project Path="FileFormats/FileFormat.Ico/FileFormat.Ico.csproj" />
     <Project Path="Codecs/Codec.Flac/Codec.Flac.csproj" />
     <Project Path="Codecs/Codec.Pcm/Codec.Pcm.csproj" />
     <Project Path="Codecs/Codec.OkiAdpcm/Codec.OkiAdpcm.csproj" />
