@@ -32,27 +32,26 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Compression.Registry is deliberately not referenced here: Compression.Core already carries
-         it (bundled into Core's own package), and a direct reference would document it as part of
-         this package's surface. -->
     <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <!-- The descriptors compiled in here implement Compression.Registry's contracts. The registry
+         used to arrive transitively, through the format projects this package bundled; with those
+         gone the reference has to be named. It stays private so it is neither a nuspec dependency
+         nor a second copy of an assembly Compression.Core's package already ships. -->
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- Format projects that more than one meta-package pulls in. Compiling them into this assembly
-       would duplicate their types across packages and break type identity for anything referencing
-       two of them, so they stay separate assemblies and are bundled as DLLs. -->
-  <ItemGroup>
-    <ProjectReference Include="..\FileFormats\FileFormat.Mp4\FileFormat.Mp4.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Matroska\FileFormat.Matroska.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Avi\FileFormat.Avi.csproj" PrivateAssets="all" />
-  </ItemGroup>
+  <!-- The media containers are bundled through one reference to Hawkynt.FileFormats.Audio, declared
+       in this package's Directory.Build.targets. -->
 
-  <!-- SUPPORT-MATRIX-FORMATS:BEGIN — namespaces of archive-domain formats that compile into
-       Compression.Core (the stream codecs, ZIP, and the console container images) yet belong in
-       this package's support matrix; read by Compression.Tests/Operations/ArchivesReadmeStateTests.cs
-       and Compression.Tests/Operations/CreatableFormatsRoundTripTests.cs. Inert to MSBuild — the
-       formats reach consumers through the Compression.Core dependency, including the SquashFs
-       payload reader that AppImage and Snap need. -->
+  <!-- SUPPORT-MATRIX-FORMATS:BEGIN — namespaces of formats this package delivers without compiling
+       them: the archive-domain ones that compile into Compression.Core (the stream codecs, ZIP, and
+       the console container images), reached through the Core dependency — the SquashFs payload
+       reader AppImage and Snap need among them — and the media containers, which compile into
+       Hawkynt.FileFormats.Audio and arrive in the bundled copy of its assembly. Either way the
+       descriptor reports another assembly's name, so the row is claimed by namespace instead; read
+       by Compression.Tests/Operations/ArchivesReadmeStateTests.cs,
+       Compression.Tests/Operations/CreatableFormatsRoundTripTests.cs and
+       Compression.Tests/Packaging/ArchivePackageCompletenessTests.cs. Inert to MSBuild. -->
   <ItemGroup>
     <SupportMatrixNamespace Include="FileFormat.Bzip2" />
     <SupportMatrixNamespace Include="FileFormat.Lzfse" />
@@ -64,6 +63,16 @@
     <SupportMatrixNamespace Include="FileFormat.Pfs0" />
     <SupportMatrixNamespace Include="FileFormat.T64" />
     <SupportMatrixNamespace Include="FileFormat.Lynx" />
+    <SupportMatrixNamespace Include="FileFormat.Akb" />
+    <SupportMatrixNamespace Include="FileFormat.Asf" />
+    <SupportMatrixNamespace Include="FileFormat.Avi" />
+    <SupportMatrixNamespace Include="FileFormat.Awb" />
+    <SupportMatrixNamespace Include="FileFormat.Bik" />
+    <SupportMatrixNamespace Include="FileFormat.Matroska" />
+    <SupportMatrixNamespace Include="FileFormat.Mp4" />
+    <SupportMatrixNamespace Include="FileFormat.Psf" />
+    <SupportMatrixNamespace Include="FileFormat.RealMedia" />
+    <SupportMatrixNamespace Include="FileFormat.Smk" />
   </ItemGroup>
   <!-- SUPPORT-MATRIX-FORMATS:END -->
 

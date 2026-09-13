@@ -124,8 +124,9 @@ cannot, commit the captured expected output with a note saying what produced it.
     is not vendored, it is refused;
   - it lands under `Vendored/` inside the one project that uses it, at a
     **pinned upstream revision**, and is listed in the vendoring note for
-    that area (`Codecs/VENDORED_AUDIO_CODECS.md` is the pattern: source,
-    revision, licence, local path, and any local modification);
+    that area (`Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md` is
+    the pattern: source, revision, licence, local path, and any local
+    modification);
   - it stays byte-identical to that revision. Strict analysis is scoped off
     for `Vendored/**` in `.editorconfig` rather than by editing the copies,
     so a later revision can be dropped straight in. Our own integration code

@@ -17,10 +17,6 @@ CompressionWorkbench.slnx
 |   +-- Compression.Registry.Generator    Roslyn source generator for zero-reflection discovery
 |   +-- Compression.Lib                   Umbrella library: format detection, archive ops, SFX builder
 |
-+-- Format projects (one project per format, all discovered by the generator)
-|   +-- FileFormats/FileFormat.*          A/V envelopes and game bundles two packages both ship
-|   +-- Codecs/Codec.*                    Audio codecs
-|
 +-- Analysis
 |   +-- Compression.Analysis              Binary analysis engine (signatures, entropy, fingerprinting,
 |                                         reverse engineering, external tool integration, visualization)
@@ -41,11 +37,14 @@ CompressionWorkbench.slnx
 |   +-- Compression.Sfx.Cli               Console SFX stub
 |   +-- Compression.Sfx.Ui                GUI SFX stub
 |
-+-- NuGet meta-packages (bundle the format projects for downstream consumers)
-|   +-- Hawkynt.FileFormats.Archives
-|   +-- Hawkynt.FileFormats.FileSystems   Also compiles the FileSystems/FileSystem.* and
-|   |                                     disk-image FileFormats/FileFormat.* sources it owns
-|   +-- Hawkynt.FileFormats.Audio
++-- NuGet meta-packages (each compiles the formats it owns; every format lives in one of them)
+|   +-- Hawkynt.FileFormats.Archives      Compiles the FileFormats/FileFormat.* sources it owns,
+|   |                                     and bundles Hawkynt.FileFormats.Audio for the media
+|   |                                     containers it projects as pseudo-archives
+|   +-- Hawkynt.FileFormats.FileSystems   Compiles the FileSystems/FileSystem.* and disk-image
+|   |                                     FileFormats/FileFormat.* sources it owns
+|   +-- Hawkynt.FileFormats.Audio         Compiles the Codecs/Codec.* and FileFormats/FileFormat.*
+|   |                                     audio sources it owns
 |   +-- Hawkynt.Algorithms.Hashing
 |   +-- Hawkynt.Algorithms.Checksums
 |
@@ -57,11 +56,11 @@ CompressionWorkbench.slnx
 ### Dependency Graph
 
 ```
-FileFormat.* / FileSystem.* / Codec.* ---> Compression.Core     (algorithm primitives)
-FileFormat.* / FileSystem.* / Codec.* ---> Compression.Registry (IFormatDescriptor, IStreamFormatOperations,
-                                                                 IArchiveFormatOperations, IFilesystemDriverProvider)
+Hawkynt.FileFormats.* ---> Compression.Core     (algorithm primitives)
+Hawkynt.FileFormats.* ---> Compression.Registry (IFormatDescriptor, IStreamFormatOperations,
+                                                 IArchiveFormatOperations, IFilesystemDriverProvider)
 
-Compression.Lib -----> FileFormat.*, FileSystem.*, Codec.*   (ProjectReference per format)
+Compression.Lib -----> Hawkynt.FileFormats.Archives, .Audio, .FileSystems
 Compression.Lib -----> Compression.Core
 Compression.Lib -----> Compression.Registry
 Compression.Lib <----- Compression.Registry.Generator  (source generator, compile-time only)
@@ -74,7 +73,7 @@ Compression.NativeUI -> Compression.Mounting, Compression.Mounting.Dokan, Compre
 Compression.Tests ----> Compression.Lib, Compression.Analysis
 ```
 
-Each format project is a small, self-contained library that implements one format. It references only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces). It does not reference `Compression.Lib` or any other format project. `Compression.Lib` names every remaining `FileFormat.*` and `Codec.*` project explicitly, and reaches the formats that compile into a meta-package assembly or into `Compression.Core` through those references.
+Each format is a self-contained set of sources in its own folder, in its own namespace, compiled into the meta-package assembly that owns it or into `Compression.Core` when more than one package delivers it. A format's sources use only `Compression.Core` (for primitives) and `Compression.Registry` (for interfaces); they never reach for `Compression.Lib` or for another format. `Compression.Lib` references the three meta-packages and `Compression.Core`, which between them carry every format.
 
 The mount-side layering — block devices, filesystem sessions, and the rule that CompressionWorkbench parses every source layer itself — is described separately in [`docs/FILESYSTEM-DRIVER-ARCHITECTURE.md`](docs/FILESYSTEM-DRIVER-ARCHITECTURE.md).
 
@@ -137,7 +136,7 @@ The generator emits two files:
 
 ## How to Add a New Format
 
-1. Create a new project under `FileFormats/FileFormat.YourFormat` (or `Codecs/Codec.YourCodec` — the folder decides which family the format joins). A filesystem gets no project of its own: its sources go under `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.YourFs`, in namespace `FileSystem.YourFs`.
+1. Create a folder for the format inside the meta-package that will ship it — `Hawkynt.FileFormats.Archives/FileFormats/FileFormat.YourFormat`, `Hawkynt.FileFormats.Audio/FileFormats/FileFormat.YourFormat` or `Hawkynt.FileFormats.Audio/Codecs/Codec.YourCodec`, and `Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.YourFs` for a filesystem. No format gets a project of its own; the folder is sources only, and the namespace matches its name.
 
 2. Implement `IFormatDescriptor` with metadata (ID, display name, extensions, magic bytes, capabilities):
    ```csharp
