@@ -1,14 +1,14 @@
 # Third-party notices
 
 This distribution contains, in binary form, third-party code under two
-arrangements: sources vendored verbatim under `Codecs/Codec.*/Vendored/`, and
+arrangements: sources vendored verbatim under `Hawkynt.FileFormats.Audio/Codecs/Codec.*/Vendored/`, and
 ports written from third-party sources that carry their own notice. Both sets
 have licences requiring the notice to travel with the binaries, so every one is
 reproduced in full below.
 
 For the vendored set, the pinned upstream revisions and the one local
 modification made to keep the copies fully managed are recorded in
-[`Codecs/VENDORED_AUDIO_CODECS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Codecs/VENDORED_AUDIO_CODECS.md).
+[`Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.Audio/Codecs/VENDORED_AUDIO_CODECS.md).
 
 This file ships inside the `Hawkynt.FileFormats.Audio` package, so links out of
 it are absolute.
@@ -281,7 +281,7 @@ Portions of the code implemented in the Core, Channels, Dtls and Video directori
 
 ## Nellymoser "Asao" decoder
 
-`Codecs/Codec.Nellymoser/` is a port of FFmpeg's `libavcodec/nellymoserdec.c` and the
+`Hawkynt.FileFormats.Audio/Codecs/Codec.Nellymoser/` is a port of FFmpeg's `libavcodec/nellymoserdec.c` and the
 shared tables and bit allocator in `libavcodec/nellymoser.c`. Those files are MIT
 licensed, and the notice travels with the port:
 
@@ -314,7 +314,7 @@ DEALINGS IN THE SOFTWARE.
 
 ## Apple Lossless (ALAC)
 
-`Codecs/Codec.Alac/` is a port of Apple's open-sourced ALAC reference: the frame
+`Hawkynt.FileFormats.Audio/Codecs/Codec.Alac/` is a port of Apple's open-sourced ALAC reference: the frame
 parser in `ALACDecoder.cpp`/`ALACEncoder.cpp`, the dynamic predictor in
 `dp_dec.c`/`dp_enc.c`, the adaptive Golomb coder in `ag_dec.c`/`ag_enc.c` and the
 stereo decorrelation in `matrix_dec.c`/`matrix_enc.c`. The reference is C++ and so

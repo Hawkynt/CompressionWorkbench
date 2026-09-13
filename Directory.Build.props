@@ -29,5 +29,5 @@
 
   <!-- The AMR codecs and containers needed a hand-placed reference here so they took part in
        static graph restore. They now compile into Hawkynt.FileFormats.Audio along with every
-       other audio-only format, so a plain reference to that package carries them. -->
+       other audio format, so a plain reference to that package carries them. -->
 </Project>

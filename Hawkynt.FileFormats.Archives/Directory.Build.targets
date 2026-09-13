@@ -1,18 +1,14 @@
 <Project>
   <!--
-    Archive-domain formats that another meta-package also claims, so they cannot be compiled into
-    this assembly without duplicating their types. They stay separate projects and are bundled as
-    DLLs instead: _AddBundledAssembliesToPackage copies their output into this package, and the
-    references stay private so they do not become NuGet dependencies.
+    The media containers this package projects as pseudo-archives — the A/V envelopes (MP4 / MOV,
+    Matroska, AVI, ASF, RealMedia, Bink, Smacker) and the CRI / PSF game-audio bundles — belong to
+    Hawkynt.FileFormats.Audio as well, and now compile into its assembly rather than into ten of
+    their own. One reference to that assembly therefore replaces the ten: _AddBundledAssembliesToPackage
+    copies it into lib/, and PrivateAssets="all" keeps it out of the nuspec, exactly as the ten were
+    carried before. Nothing here is compiled against — this package's own sources use none of those
+    types; the reference exists so the package ships the formats its support matrix documents.
   -->
   <ItemGroup>
-    <!-- Game / runtime audio bundles and A/V envelopes — also in Hawkynt.FileFormats.Audio. -->
-    <ProjectReference Include="..\FileFormats\FileFormat.Akb\FileFormat.Akb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Asf\FileFormat.Asf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Awb\FileFormat.Awb.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Bik\FileFormat.Bik.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Psf\FileFormat.Psf.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.RealMedia\FileFormat.RealMedia.csproj" PrivateAssets="all" />
-    <ProjectReference Include="..\FileFormats\FileFormat.Smk\FileFormat.Smk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\Hawkynt.FileFormats.Audio\Hawkynt.FileFormats.Audio.csproj" PrivateAssets="all" />
   </ItemGroup>
 </Project>
