@@ -53,8 +53,8 @@ public sealed class NwfsFormatDescriptor
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "BlockSize", displayName: "Block size",
-      min: 1024, max: 256 * 1024, defaultLabel: "4 KB",
-      description: "NetWare allocation-block size (1 KB through 256 KB, power of two)."),
+      min: 4096, max: 64 * 1024, defaultLabel: "4 KB",
+      description: "Traditional NetWare allocation-cluster size (4 KB through 64 KB, power of two)."),
     FilesystemSchemaPresets.VolumeLabel(NwfsLayout.MaxVolumeNameLength),
   ];
 
