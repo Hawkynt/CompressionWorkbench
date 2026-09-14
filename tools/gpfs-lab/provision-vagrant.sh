@@ -29,8 +29,9 @@ cp -f "$INSTALLER" "$LAB/software/$base"
 sed -E -i "s/\$StorageScale_version = \"[^\"]+\"/\$StorageScale_version = \"$version\"/" "$LAB/shared/Vagrantfile.common"
 
 mkdir -p "$LAB/setup/gpfs-corpus"
-cp -f "$(dirname "$0")/capture.sh" "$LAB/setup/gpfs-corpus/capture.sh"
-cp -f "$(dirname "$0")/run-controlled-corpus.sh" "$LAB/setup/gpfs-corpus/run-controlled-corpus.sh"
+for helper in capture.sh run-controlled-corpus.sh verify-corpora.sh; do
+  cp -f "$(dirname "$0")/$helper" "$LAB/setup/gpfs-corpus/$helper"
+done
 chmod +x "$LAB/setup/gpfs-corpus/"*.sh
 
 # IBM's provider Vagrantfiles consume a locally prepared StorageScale_base box.
