@@ -16,8 +16,8 @@ one reverse-engineered implementation as a specification.
   the older v2/v3 descriptor walk and the v2/v3/v3.5 trailer contract.
 - **Aaru**, GPL-3.0, and **edccchk**, GPL-3.0, are behavioural oracles for CD
   sector interpretation/checking; neither is a source for implementation code.
-- **libMirage CDI parser**, GPL-family, is used only as an independent behavioural
-  oracle for the newer variable-index descriptor dialect.
+- **libMirage CDI parser**, GPL-2.0-or-later, is used only as an independent
+  behavioural oracle for the newer variable-index descriptor dialect.
 - **mkdcdisc** is MIT overall and is useful for Dreamcast-oriented CDI structure,
   but its CD EDC/ECC source carries a separate CDDL-1.0-only notice. That encoder
   is therefore not copied or translated into this repository.
