@@ -143,6 +143,8 @@ internal sealed record GpfsEvidenceCorpus(IReadOnlyList<GpfsEvidenceManifest> Ca
     "100-xattr-acl",
     "105-replicated",
     "110-delete",
+    "120-map-allocated",
+    "121-map-freed",
   ];
 
   internal GpfsPromotionDecision ValidateCompleteness() {
