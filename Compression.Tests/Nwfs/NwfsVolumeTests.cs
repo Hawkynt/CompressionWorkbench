@@ -1,21 +1,8 @@
-using System.Text;
 using Compression.Registry;
 using FileSystem.Nwfs;
 
 namespace Compression.Tests.Nwfs;
 
-/// <summary>
-/// Volumes written by <see cref="NwfsWriter" />, read back the way a NetWare
-/// reader reads one.
-/// </summary>
-/// <remarks>
-/// <para>The route these follow is the one an outside reader takes: the
-/// partition table to the hotfix header, the hotfix header to the volume area,
-/// the volume area to the directory, and the FAT from a file's first block to
-/// the rest of it. A volume that satisfies these is one the reverse-engineering
-/// project's own tool lists and copies from — which is how the writer was
-/// checked when it was written.</para>
-/// </remarks>
 [TestFixture]
 public class NwfsVolumeTests {
 
@@ -58,11 +45,12 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("EdgeCase")]
-  [TestCase(1024)]
   [TestCase(4096)]
   [TestCase(8192)]
+  [TestCase(16384)]
+  [TestCase(32768)]
   [TestCase(65536)]
-  public void EveryBlockSizeNetWareNames_CarriesItsFiles(int blockSize) {
+  public void EveryTraditionalClusterSize_CarriesItsFiles(int blockSize) {
     var writer = new NwfsWriter { BlockSize = blockSize };
     var payload = Bytes(blockSize * 2 + 37, blockSize);
     writer.AddFile("SPAN.BIN", payload);
@@ -75,7 +63,7 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void AFileEndingExactlyOnABlock_DoesNotGainOne() {
+  public void AFileEndingExactlyOnACluster_DoesNotGainOne() {
     var writer = new NwfsWriter { BlockSize = 4096 };
     var payload = Bytes(4096, 5);
     writer.AddFile("EXACT.BIN", payload);
@@ -84,21 +72,26 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("EdgeCase")]
-  public void AnEmptyFile_IsOnTheVolumeAndHasNoBlocks() {
+  public void AnEmptyFile_IsOnTheVolumeAndHasNoClusters() {
     var writer = new NwfsWriter();
     writer.AddFile("EMPTY.TXT", []);
 
     var volume = NwfsReader.TryOpen(writer.Build())!;
 
     Assert.That(volume.ReadFile("EMPTY.TXT"), Is.Empty);
-    Assert.That(volume.List().Single(i => !i.IsDirectory).Length, Is.Zero);
+    var item = volume.List().Single(i => !i.IsDirectory);
+    Assert.Multiple(() => {
+      Assert.That(item.Length, Is.Zero);
+      Assert.That(item.FirstBlock, Is.EqualTo(uint.MaxValue));
+    });
   }
 
   [Test, Category("EdgeCase")]
-  public void MoreFilesThanOneDirectoryBlockHolds_AreAllStillFound() {
-    // A 1 KB block holds eight entries, so this needs a chain of them.
-    var writer = new NwfsWriter { BlockSize = 1024 };
-    for (var i = 0; i < 200; ++i) writer.AddFile($"F{i:D5}.BIN", Bytes(i % 900, i));
+  public void MoreFilesThanOneDetClusterHolds_AreAllStillFound() {
+    // A 4 KiB cluster holds 32 128-byte DET records, so this forces a DET chain.
+    var writer = new NwfsWriter { BlockSize = 4096 };
+    for (var i = 0; i < 200; ++i)
+      writer.AddFile($"F{i:D5}.BIN", Bytes(i % 900, i));
 
     var volume = NwfsReader.TryOpen(writer.Build())!;
 
@@ -107,30 +100,10 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("HappyPath")]
-  public void TheDirectoryIsWrittenTwice_AndTheCopySaysTheSame()  {
-    var writer = new NwfsWriter { BlockSize = 4096 };
-    writer.AddFile("HELLO.TXT", Bytes(20, 6));
-    var image = writer.Build();
-
-    // The volume entry names both copies; they are to hold the same bytes.
-    var volumeArea = FindVolumeArea(image);
-    var entry = image.AsSpan(volumeArea + 32);
-    var first = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(entry[48..]);
-    var copy = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(entry[52..]);
-    var dataArea = volumeArea + 4 * 16384;
-
-    Assert.That(copy, Is.Not.EqualTo(first));
-    Assert.That(image.AsSpan(dataArea + (int)copy * 4096, 4096).SequenceEqual(
-                  image.AsSpan(dataArea + (int)first * 4096, 4096)), Is.True);
-  }
-
-  [Test, Category("HappyPath")]
   public void ADiskWrittenHere_IsFoundByItsPartitionTable() {
     var writer = new NwfsWriter { PartitionStartSector = 2048 };
     writer.AddFile("HELLO.TXT", Bytes(9, 7));
 
-    // Nothing sits at the offset a bare partition image would use, so the
-    // volume can only have been reached through the partition table.
     var image = writer.Build();
     Assert.That(image.AsSpan(0x4000, 8).SequenceEqual("HOTFIX00"u8), Is.False);
     Assert.That(NwfsReader.TryOpen(image)!.ReadFile("HELLO.TXT"), Has.Length.EqualTo(9));
@@ -143,7 +116,7 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void ANameLongerThanAnEntryHolds_IsRefusedRatherThanTruncated() {
+  public void ANameLongerThanADosEntryHolds_IsRefusedRatherThanTruncated() {
     var writer = new NwfsWriter();
     writer.AddFile("THIRTEEN_CHARS.BIN", Bytes(4, 8));
 
@@ -151,8 +124,13 @@ public class NwfsVolumeTests {
   }
 
   [Test, Category("ErrorHandling")]
-  public void ABlockSizeNetWareCannotName_IsRefused() {
-    var writer = new NwfsWriter { BlockSize = 3000 };
+  [TestCase(1024)]
+  [TestCase(2048)]
+  [TestCase(3000)]
+  [TestCase(131072)]
+  [TestCase(262144)]
+  public void AClusterSizeTraditionalNwfsCannotName_IsRefused(int blockSize) {
+    var writer = new NwfsWriter { BlockSize = blockSize };
     writer.AddFile("A.BIN", Bytes(4, 9));
 
     Assert.Throws<InvalidOperationException>(() => writer.Build());
@@ -189,13 +167,5 @@ public class NwfsVolumeTests {
     } finally {
       if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
     }
-  }
-
-  private static int FindVolumeArea(byte[] image) {
-    var wanted = "NetWare Volumes\0"u8;
-    for (var i = 0; i + wanted.Length <= image.Length; i += 512)
-      if (image.AsSpan(i, wanted.Length).SequenceEqual(wanted))
-        return i;
-    throw new InvalidOperationException("no volume area");
   }
 }

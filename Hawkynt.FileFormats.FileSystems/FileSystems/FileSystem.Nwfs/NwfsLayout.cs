@@ -2,77 +2,205 @@
 namespace FileSystem.Nwfs;
 
 /// <summary>
-/// Where the areas of an NWFS386 partition sit, and the few arithmetic rules
-/// that tie them together.
+/// Constants and geometry helpers for the Traditional NetWare file system.
+/// NetWare's virtual-partition layer uses fixed 4 KiB physical blocks and
+/// allocation clusters made from 1, 2, 4, 8 or 16 of those blocks.
 /// </summary>
-/// <remarks>
-/// <para>A NetWare partition opens with a hotfix header at its own sector 32,
-/// the mirror header in the sector after that, and the volume area a stated
-/// number of redirection sectors further on. The data area follows the volume
-/// area, and every block number a volume uses is counted from there.</para>
-///
-/// <para>The block size is not stored directly. The volume entry carries a
-/// divisor instead, and the size is <c>(256 / divisor) * 1024</c> bytes — so a
-/// divisor of 64 means blocks of 4 KB.</para>
-/// </remarks>
 internal static class NwfsLayout {
-
-  /// <summary>Sector size the whole layout is counted in.</summary>
   internal const int SectorSize = 512;
+  internal const int IoBlockSize = 4096;
+  internal const int SectorsPerIoBlock = IoBlockSize / SectorSize;
 
-  /// <summary>Where the hotfix header sits, counted from the partition's start.</summary>
-  internal const long HotfixOffsetInPartition = 0x4000;
+  internal const int HotfixBlocks = 64;
+  internal const int HotfixSectors = HotfixBlocks * SectorsPerIoBlock;
+  internal const int VolumeSegmentStartBlock = 20;
+  internal const uint VolumeRootSector = VolumeSegmentStartBlock * SectorsPerIoBlock;
 
-  /// <summary>The mirror header follows the hotfix header by one sector.</summary>
-  internal const long MirrorOffsetInPartition = HotfixOffsetInPartition + SectorSize;
+  internal static ReadOnlySpan<int> MasterCopySectors => [0x20, 0x40, 0x60, 0x80];
+  internal static ReadOnlySpan<int> VolumeTableLogicalBlocks => [4, 8, 12, 16];
 
-  /// <summary>The volume area is this long whatever the number of volumes in it.</summary>
-  internal const int VolumeAreaBytes = 4 * 16384;
-
-  /// <summary>Bytes one volume entry takes in the volume area.</summary>
+  internal const int VolumeTableBytes = 512;
   internal const int VolumeEntryBytes = 60;
-
-  /// <summary>Bytes every directory entry takes, whatever kind it is.</summary>
+  internal const int MaxVolumeEntries = 8;
   internal const int DirectoryEntryBytes = 128;
-
-  /// <summary>Bytes one FAT entry takes: the block's place in its chain, then the next block.</summary>
   internal const int FatEntryBytes = 8;
+  internal const int FatEntriesPerIoBlock = IoBlockSize / FatEntryBytes;
+  internal const int FatMirrorPhysicalBlockGap = 64;
 
-  /// <summary>What a chain's last block names as its successor, and what a free entry holds.</summary>
-  internal const uint NoBlock = 0xFFFFFFFF;
+  internal const uint EndOfChain = 0xFFFFFFFF;
+  internal const uint FreeFatIndex = 0;
+  internal const uint FreeFatCluster = 0;
 
-  /// <summary>The directory this volume's root is, which entries at the top name as their parent.</summary>
-  internal const uint RootDirectoryId = 0;
+  internal const uint FreeNode = 0xFFFFFFFF;
+  internal const uint TrusteeNode = 0xFFFFFFFE;
+  internal const uint RootNode = 0xFFFFFFFD;
+  internal const uint RestrictionNode = 0xFFFFFFFC;
+  internal const uint RootDirectoryRecord = 0;
 
-  /// <summary>Parent ids that mark an entry as something other than a file or a directory.</summary>
-  internal const uint DirIdAvailable = 0xFFFFFFFF;
-  internal const uint DirIdGrantList = 0xFFFFFFFE;
-  internal const uint DirIdVolumeInfo = 0xFFFFFFFD;
+  internal const byte DosNameSpace = 0;
+  internal const byte FlagDeleted3 = 0x01;
+  internal const byte FlagSubdirectory = 0x04;
+  internal const byte FlagPrimaryNamespace = 0x10;
+  internal const byte FlagDeleted4 = 0x20;
 
-  /// <summary>The bit in an entry's attributes that says it is a directory.</summary>
   internal const uint AttributeDirectory = 0x10;
-
-  /// <summary>The archive bit, which a freshly written file carries.</summary>
   internal const uint AttributeArchive = 0x20;
+  internal const uint SupervisorObjectId = 0x01000000;
 
-  /// <summary>The longest name an entry holds, the field being twelve bytes.</summary>
   internal const int MaxNameLength = 12;
+  internal const int MaxVolumeNameLength = 15;
 
-  /// <summary>The volume name field, and the longest name that fits it.</summary>
-  internal const int MaxVolumeNameLength = 19;
+  internal const uint HotfixFlags = 0x00010000;
+  internal const uint FormatStamp = 0x0703F808;
+  internal const uint MirrorInSyncFlags = 0x01860000;
+  internal const uint MirrorBaseStatus = 0x00010000;
 
-  /// <summary>What the first segment of a volume gives as its first sector.</summary>
-  internal const uint FirstSectorOfFirstSegment = 160;
+  internal static int BlocksPerCluster(int clusterSize) => clusterSize / IoBlockSize;
 
-  /// <summary>The object every file and directory written here belongs to.</summary>
-  internal const uint SupervisorObjectId = 1;
+  internal static int ClusterCode(int clusterSize) {
+    if (!IsValidBlockSize(clusterSize))
+      throw new ArgumentOutOfRangeException(nameof(clusterSize));
+    return 3 + System.Numerics.BitOperations.Log2((uint)BlocksPerCluster(clusterSize));
+  }
 
-  /// <summary>The divisor a volume entry carries for <paramref name="blockSize" />.</summary>
-  internal static uint BlockValue(int blockSize) => (uint)(256 * 1024 / blockSize);
+  internal static int ClusterSizeFromCode(int code)
+    => code is >= 3 and <= 7 ? IoBlockSize << (code - 3) : 0;
 
-  /// <summary>Whether <paramref name="blockSize" /> is one the format can name.</summary>
-  internal static bool IsValidBlockSize(int blockSize)
-    => blockSize >= 1024 && blockSize <= 256 * 1024
-       && (blockSize & blockSize - 1) == 0
-       && 256 * 1024 % blockSize == 0;
+  internal static int FatGapClusters(int clusterSize)
+    => FatMirrorPhysicalBlockGap / BlocksPerCluster(clusterSize);
+
+  internal static bool IsValidBlockSize(int clusterSize)
+    => clusterSize is >= IoBlockSize and <= 64 * 1024
+       && (clusterSize & (clusterSize - 1)) == 0;
+
+  internal static int FatPhysicalBlockCount(uint clusterCount, int clusterSize) {
+    var blocksPerCluster = BlocksPerCluster(clusterSize);
+    var blocks = Math.Max(1L, DivideRoundUp(clusterCount, FatEntriesPerIoBlock));
+    var aligned = AlignUp(blocks, blocksPerCluster);
+    if (aligned > int.MaxValue)
+      throw new InvalidDataException("NWFS FAT is too large for the managed implementation.");
+    return (int)aligned;
+  }
+
+  internal static int FatPrimaryPhysicalBlock(int streamBlockIndex)
+    => checked(streamBlockIndex + streamBlockIndex / FatMirrorPhysicalBlockGap * FatMirrorPhysicalBlockGap);
+
+  internal static int FatMirrorPhysicalBlock(int streamBlockIndex)
+    => checked(FatPrimaryPhysicalBlock(streamBlockIndex) + FatMirrorPhysicalBlockGap);
+
+  internal static long PartitionOffset(uint partitionStartSector)
+    => checked((long)partitionStartSector * SectorSize);
+
+  internal static long LogicalPartitionOffset(uint partitionStartSector)
+    => checked(PartitionOffset(partitionStartSector) + (long)HotfixBlocks * IoBlockSize);
+
+  internal static long VolumeOffset(uint partitionStartSector)
+    => checked(LogicalPartitionOffset(partitionStartSector) + (long)VolumeSegmentStartBlock * IoBlockSize);
+
+  internal static long TightImageLength(uint partitionStartSector, int clusterSize, uint clusterCount)
+    => checked(VolumeOffset(partitionStartSector) + (long)clusterSize * clusterCount);
+
+  internal static VolumePlan Plan(
+      int clusterSize,
+      int directoryClusters,
+      int fileClusters,
+      uint minimumClusters = 0) {
+    if (!IsValidBlockSize(clusterSize))
+      throw new ArgumentOutOfRangeException(nameof(clusterSize));
+    if (directoryClusters < 1)
+      throw new ArgumentOutOfRangeException(nameof(directoryClusters));
+    if (fileClusters < 0)
+      throw new ArgumentOutOfRangeException(nameof(fileClusters));
+
+    var gap = FatGapClusters(clusterSize);
+    var candidate = Math.Max((long)minimumClusters, gap + 3L + directoryClusters * 2L + fileClusters);
+
+    while (true) {
+      if (candidate > uint.MaxValue)
+        throw new InvalidDataException("NWFS volume has too many allocation clusters.");
+
+      var clusterCount = (uint)candidate;
+      var fatBlocks = FatPhysicalBlockCount(clusterCount, clusterSize);
+      var blocksPerCluster = BlocksPerCluster(clusterSize);
+      var fatClustersPerCopy = fatBlocks / blocksPerCluster;
+      var fat1 = new uint[fatClustersPerCopy];
+      var fat2 = new uint[fatClustersPerCopy];
+      var used = new HashSet<uint>();
+
+      for (var i = 0; i < fatClustersPerCopy; ++i) {
+        var streamBlock = checked(i * blocksPerCluster);
+        fat1[i] = checked((uint)(FatPrimaryPhysicalBlock(streamBlock) / blocksPerCluster));
+        fat2[i] = checked((uint)(FatMirrorPhysicalBlock(streamBlock) / blocksPerCluster));
+        used.Add(fat1[i]);
+        used.Add(fat2[i]);
+      }
+
+      var dir1 = new uint[directoryClusters];
+      var dir2 = new uint[directoryClusters];
+      uint search = 1;
+      for (var i = 0; i < directoryClusters; ++i) {
+        while (true) {
+          var mirror = checked(search + (uint)gap + 1);
+          if (!used.Contains(search) && !used.Contains(mirror)) {
+            dir1[i] = search;
+            dir2[i] = mirror;
+            used.Add(search);
+            used.Add(mirror);
+            ++search;
+            break;
+          }
+          ++search;
+        }
+      }
+
+      var data = new uint[fileClusters];
+      search = 1;
+      for (var i = 0; i < data.Length; ++i) {
+        while (used.Contains(search))
+          ++search;
+        data[i] = search;
+        used.Add(search);
+        ++search;
+      }
+
+      var highest = used.Count == 0 ? 0u : used.Max();
+      var required = Math.Max((long)minimumClusters, (long)highest + 1);
+      var requiredFatBlocks = FatPhysicalBlockCount((uint)required, clusterSize);
+      if (required == candidate && requiredFatBlocks == fatBlocks)
+        return new VolumePlan(
+          clusterSize,
+          (uint)candidate,
+          fatBlocks,
+          fat1,
+          fat2,
+          dir1,
+          dir2,
+          data);
+
+      candidate = required;
+    }
+  }
+
+  internal static long AlignUp(long value, int alignment)
+    => checked(DivideRoundUp(value, alignment) * alignment);
+
+  internal static long DivideRoundUp(long value, long divisor)
+    => checked((value + divisor - 1) / divisor);
+
+  internal sealed record VolumePlan(
+    int ClusterSize,
+    uint ClusterCount,
+    int FatPhysicalBlocks,
+    uint[] Fat1Clusters,
+    uint[] Fat2Clusters,
+    uint[] Directory1Clusters,
+    uint[] Directory2Clusters,
+    uint[] DataClusters) {
+
+    internal int BlocksPerCluster => NwfsLayout.BlocksPerCluster(this.ClusterSize);
+    internal uint Fat1 => this.Fat1Clusters[0];
+    internal uint Fat2 => this.Fat2Clusters[0];
+    internal uint Directory1 => this.Directory1Clusters[0];
+    internal uint Directory2 => this.Directory2Clusters[0];
+  }
 }
