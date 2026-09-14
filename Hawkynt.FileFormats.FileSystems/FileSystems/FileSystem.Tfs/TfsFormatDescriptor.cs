@@ -13,9 +13,10 @@ namespace FileSystem.Tfs;
 /// <para>
 /// No normative public on-disk specification, independently verifiable reference
 /// implementation or genuine sample image has been located. The repository used
-/// <c>54 46 53 01</c> as a detector from its initial TFS stub, but that value was
-/// introduced without a source and therefore no longer participates in automatic
-/// format detection. The <c>.tfs</c> extension is the only routing hint retained.
+/// <c>54 46 53 01</c> as a detector and <c>.tfs</c> as an extension from its
+/// initial TFS stub, but neither was introduced with a source. Consequently this
+/// descriptor no longer participates in automatic magic- or extension-based
+/// detection and is reachable only by explicit format selection.
 /// </para>
 /// <para>
 /// Until format identity, allocation, namespace, transaction-publication and
@@ -31,19 +32,19 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   private const int RepositoryHeuristicLength = 4;
 
   public string Id => "Tfs";
-  public string DisplayName => "TFS (BBN Trans-FS)";
+  public string DisplayName => "TFS (unverified historical BBN Trans-FS label)";
   public FormatCategory Category => FormatCategory.Archive;
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest;
-  public string DefaultExtension => ".tfs";
-  public IReadOnlyList<string> Extensions => [".tfs"];
+  public string DefaultExtension => string.Empty;
+  public IReadOnlyList<string> Extensions => [];
   public IReadOnlyList<string> CompoundExtensions => [];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "TFS (historically labelled BBN Trans-FS) — opaque extension-routed surface; format identity and on-disk layout remain unverified.";
+    "TFS (historically labelled BBN Trans-FS) — opaque explicit-selection surface; format identity and on-disk layout remain unverified.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -87,7 +88,7 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       .Append("legacy_magic_match=").Append(matchesRepositoryHeuristic ? "true" : "false").Append('\n')
       .Append("signature_status=unverified_repository_heuristic\n")
       .Append("layout_status=opaque\n")
-      .Append("note=The historical BBN Trans-FS label and legacy magic are not backed by a located normative source; allocation and transaction metadata are not guessed.\n")
+      .Append("note=The historical BBN Trans-FS label, legacy magic and .tfs extension are not backed by a located normative source; allocation and transaction metadata are not guessed.\n")
       .ToString();
     WriteFile(outputDir, MetadataName, Encoding.UTF8.GetBytes(metadata));
   }
