@@ -23,14 +23,19 @@ public class BeeGfsDetectionTests {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var prefix = rootPath.Replace('\\', '/').Trim('/');
     var idName = role == FilesystemSourceRole.Metadata ? "nodeNumID" : "targetNumID";
-    var requiredDirectory = role == FilesystemSourceRole.Metadata ? "dentries" : "chunks";
     var inputs = new List<ArchiveInputInfo> {
       ArchiveInputInfo.InMemory($"{prefix}/format.conf", Encoding.UTF8.GetBytes($"# BeeGFS target\nversion={formatVersion}\n")),
       ArchiveInputInfo.InMemory($"{prefix}/{idName}", Encoding.ASCII.GetBytes(numericId.ToString(System.Globalization.CultureInfo.InvariantCulture))),
-      ArchiveInputInfo.InMemory($"{prefix}/{requiredDirectory}/.keep", []),
     };
-    if (role == FilesystemSourceRole.Metadata)
+    if (role == FilesystemSourceRole.Metadata) {
       inputs.Add(ArchiveInputInfo.InMemory($"{prefix}/inodes/.keep", []));
+      // A real content directory for the logical root. The #fSiDs# child is
+      // deliberately ignored by logical enumeration but keeps the directory
+      // hierarchy materialized in archive-derived backing sessions.
+      inputs.Add(ArchiveInputInfo.InMemory($"{prefix}/dentries/00/00/root/#fSiDs#/.keep", []));
+    } else {
+      inputs.Add(ArchiveInputInfo.InMemory($"{prefix}/chunks/.keep", []));
+    }
 
     var creator = FormatRegistry.GetById("Zip") as IArchiveCreatable
       ?? throw new InvalidOperationException("ZIP creator is not registered for BeeGFS multi-stream tests.");
@@ -70,12 +75,13 @@ public class BeeGfsDetectionTests {
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveCreatable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
       Assert.That(descriptor, Is.InstanceOf<IMultiStreamFilesystemDriverProvider>());
-      Assert.That(FilesystemSupportMatrix.State(descriptor), Is.EqualTo("N/A"));
+      Assert.That(FilesystemSupportMatrix.State(descriptor), Is.EqualTo("N/A"),
+        "The package matrix describes standalone stream/image state; BeeGFS R capability is multi-source.");
     });
   }
 
   [Test, Category("Regression")]
-  public void Registry_UsesNativeFailClosedProfile_NotArchiveProjection() {
+  public void Registry_UsesNativeFailClosedSingleStreamProfile_NotArchiveProjection() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     using var image = LegacyTaggedStream();
 
@@ -168,43 +174,53 @@ public class BeeGfsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void MultiStream_ValidatesTargetTopologyThroughBackingNamespaces() {
+  public void MultiStream_EmptyRootTopologyIsMountableReadOnly() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var sources = ValidTargetSet(out var metadata, out var storage);
     using (metadata)
     using (storage) {
       var profile = FormatRegistry.ProbeFilesystem("BeeGfs", sources);
       var readiness = FormatRegistry.AssessFilesystemDriver("BeeGfs", sources, FilesystemDriverTarget.ReadOnly);
-      var limitations = string.Join('\n', profile.Limitations);
 
       Assert.Multiple(() => {
-        Assert.That(profile.ProfileName, Does.Contain("validated multi-target topology"));
-        Assert.That(profile.ProfileName, Does.Contain("1 metadata").And.Contain("1 storage"));
-        Assert.That(profile.CanMount, Is.False,
-          "Target validation is not yet the same thing as reconstructing the logical BeeGFS namespace.");
-        Assert.That(limitations, Does.Contain("Validated 1 metadata target(s) and 1 storage target(s)"));
+        Assert.That(profile.ProfileName, Does.Contain("BeeGFS offline V3/V6"));
+        Assert.That(profile.CanMount, Is.True);
+        Assert.That(profile.CanMountWritable, Is.False);
+        Assert.That(profile.Capabilities.HasFlag(FilesystemDriverCapabilities.EnumerateDirectories), Is.True);
         Assert.That(readiness.AvailableLayers.HasFlag(FilesystemDriverReadinessLayer.ImageValidation), Is.True);
-        Assert.That(readiness.AvailableLayers.HasFlag(FilesystemDriverReadinessLayer.Namespace), Is.False);
-        Assert.That(readiness.Derivable, Is.False);
+        Assert.That(readiness.AvailableLayers.HasFlag(FilesystemDriverReadinessLayer.Namespace), Is.True);
+        Assert.That(readiness.AvailableLayers.HasFlag(FilesystemDriverReadinessLayer.NativeStableNodeIds), Is.True);
+        Assert.That(readiness.Derivable, Is.True);
       });
     }
   }
 
   [Test, Category("HappyPath")]
-  public void MultiStream_OpenRecognizesValidTopologyBeforeFailingAtLogicalNamespaceLayer() {
+  public void MultiStream_OpenExposesEmptyLogicalRootAndHonorsLeaveOpen() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var sources = ValidTargetSet(out var metadata, out var storage);
+    using (metadata)
+    using (storage) {
+      using (var session = FormatRegistry.OpenFilesystem(
+               "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true))) {
+        Assert.That(session.Enumerate(session.RootNodeId), Is.Empty);
+      }
+      Assert.Multiple(() => {
+        Assert.That(metadata.CanRead, Is.True);
+        Assert.That(storage.CanRead, Is.True);
+      });
+    }
+  }
+
+  [Test, Category("Exception")]
+  public void MultiStream_WritableOpenFailsClosed() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var sources = ValidTargetSet(out var metadata, out var storage);
     using (metadata)
     using (storage) {
       var error = Assert.Throws<NotSupportedException>(() =>
-        FormatRegistry.OpenFilesystem("BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true)));
-
-      Assert.Multiple(() => {
-        Assert.That(error!.Message, Does.Contain("topology is valid"));
-        Assert.That(error.Message, Does.Contain("1 metadata"));
-        Assert.That(error.Message, Does.Contain("1 storage"));
-        Assert.That(error.Message, Does.Contain("dentry/inode decoding"));
-      });
+        FormatRegistry.OpenFilesystem("BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: false)));
+      Assert.That(error!.Message, Does.Contain("Writable BeeGFS"));
     }
   }
 
@@ -256,14 +272,15 @@ public class BeeGfsDetectionTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Description_StatesMultiStreamTopologyBoundary() {
+  public void Description_StatesMultiStreamReadSubset() {
     var description = new BeeGfsFormatDescriptor().Description;
 
     Assert.Multiple(() => {
       Assert.That(description, Does.Contain("distributed filesystem"));
       Assert.That(description, Does.Contain("no standalone byte-stream image"));
       Assert.That(description, Does.Contain("FilesystemStreamSet"));
-      Assert.That(description, Does.Contain("multi-target topology"));
+      Assert.That(description, Does.Contain("read-only"));
+      Assert.That(description, Does.Contain("RAID0"));
     });
   }
 }
