@@ -106,6 +106,15 @@ public sealed class CdiCdSectorIntegrityTests {
     });
   }
 
+  [Test, Category("ErrorPath")]
+  public void Mode2MismatchedSubheaders_AreRejectedAsMalformedXa() {
+    var raw = BuildMode2Form1Vector();
+    raw[20] ^= 0x01;
+    var track = Track(CdiTrackMode.Mode2, CdiReadMode.Raw2352, RawSectorSize);
+
+    Assert.That(CdiCdSectorIntegrity.IsRewritableSector(track, raw), Is.False);
+  }
+
   private static byte[] BuildMode1Vector() {
     var sector = new byte[RawSectorSize];
     WriteSync(sector);
