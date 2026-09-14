@@ -77,6 +77,31 @@ public sealed class NtfsFilesystemDriverTests {
   }
 
   [Test]
+  public void ProbeRejectsStaleDirectoryIndexChildReference() {
+    var writer = new NtfsWriter();
+    writer.AddFile("x.txt", "payload"u8.ToArray());
+    var image = writer.Build(8 * 1024 * 1024);
+
+    var childRecord = FindMftRecordByFileName(image, "x.txt");
+    var indexReferenceOffset = FindIndexReference(image, parentRecord: 5, childRecord);
+    var liveSequence = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(indexReferenceOffset + 6, 2));
+    Assert.That(liveSequence, Is.Not.Zero);
+    var staleSequence = liveSequence == ushort.MaxValue ? (ushort)1 : (ushort)(liveSequence + 1);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(indexReferenceOffset + 6, 2), staleSequence);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
+
+    Assert.Multiple(() => {
+      Assert.That(profile.CanMount, Is.False);
+      Assert.That(profile.Limitations.Any(static text => text.Contains("stale", StringComparison.OrdinalIgnoreCase)), Is.True,
+        string.Join("; ", profile.Limitations));
+      Assert.That(profile.Limitations.Any(static text => text.Contains("index", StringComparison.OrdinalIgnoreCase)), Is.True,
+        string.Join("; ", profile.Limitations));
+    });
+  }
+
+  [Test]
   public void ReadinessClaimsNativeStableIdentityOnlyAfterSequenceValidation() {
     var writer = new NtfsWriter();
     writer.AddFile("x.txt", "x"u8.ToArray());
@@ -153,6 +178,84 @@ public sealed class NtfsFilesystemDriverTests {
     }
 
     throw new InvalidDataException($"No resident $FILE_NAME named '{leafName}' was found in the writer MFT.");
+  }
+
+  private static uint FindMftRecordByFileName(byte[] image, string leafName) {
+    var (mftOffset, recordSize, bytesPerSector) = ReadWriterGeometry(image);
+    var maxRecords = Math.Min(128, checked((image.Length - (int)mftOffset) / recordSize));
+    for (var recordNumber = 16; recordNumber < maxRecords; ++recordNumber) {
+      var physical = checked((int)(mftOffset + (long)recordNumber * recordSize));
+      var record = image.AsSpan(physical, recordSize).ToArray();
+      if (!record.AsSpan(0, 4).SequenceEqual("FILE"u8)) continue;
+      RestoreUsa(record, bytesPerSector);
+      if (RecordHasFileName(record, leafName)) return (uint)recordNumber;
+    }
+    throw new InvalidDataException($"No MFT record with $FILE_NAME '{leafName}' was found.");
+  }
+
+  private static bool RecordHasFileName(byte[] record, string leafName) {
+    var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24)));
+    if (firstAttribute < 24 || used > record.Length) return false;
+    for (var position = (int)firstAttribute; position <= used - 8;) {
+      var type = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position));
+      if (type == 0xFFFFFFFF) break;
+      var length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 4)));
+      if (length < 24 || position > used - length) return false;
+      if (type == 0x30 && record[position + 8] == 0) {
+        var valueLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 16)));
+        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 20));
+        if (valueLength >= 66 && valueOffset >= 24 && valueOffset <= length - valueLength) {
+          var value = record.AsSpan(position + valueOffset, valueLength);
+          var nameLength = value[64];
+          if (66 + nameLength * 2 <= value.Length &&
+              string.Equals(Encoding.Unicode.GetString(value.Slice(66, nameLength * 2)), leafName, StringComparison.OrdinalIgnoreCase))
+            return true;
+        }
+      }
+      position += length;
+    }
+    return false;
+  }
+
+  private static int FindIndexReference(byte[] image, uint parentRecord, uint childRecord) {
+    var (mftOffset, recordSize, bytesPerSector) = ReadWriterGeometry(image);
+    var physical = checked((int)(mftOffset + parentRecord * (long)recordSize));
+    var record = image.AsSpan(physical, recordSize).ToArray();
+    RestoreUsa(record, bytesPerSector);
+
+    var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24)));
+    for (var position = (int)firstAttribute; position <= used - 8;) {
+      var type = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position));
+      if (type == 0xFFFFFFFF) break;
+      var length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 4)));
+      if (length < 24 || position > used - length) break;
+      if (type == 0x90 && record[position + 8] == 0) {
+        var valueLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 16)));
+        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 20));
+        if (valueLength >= 32 && valueOffset >= 24 && valueOffset <= length - valueLength) {
+          var valueStart = position + valueOffset;
+          var indexHeader = valueStart + 16;
+          var entriesOffset = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(indexHeader, 4));
+          var indexLength = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(indexHeader + 4, 4));
+          var entry = checked(indexHeader + (int)entriesOffset);
+          var end = checked(indexHeader + (int)indexLength);
+          while (entry <= end - 16) {
+            var rawReference = BinaryPrimitives.ReadUInt64LittleEndian(record.AsSpan(entry, 8));
+            var entryLength = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(entry + 8, 2));
+            var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(entry + 12, 2));
+            if (entryLength < 16 || entry > end - entryLength) break;
+            if ((rawReference & 0x0000FFFFFFFFFFFFUL) == childRecord)
+              return checked(physical + entry);
+            if ((flags & 0x0002) != 0) break;
+            entry += entryLength;
+          }
+        }
+      }
+      position += length;
+    }
+    throw new InvalidDataException($"No $I30 index reference from MFT {parentRecord} to {childRecord} was found.");
   }
 
   private static (long MftOffset, int RecordSize, int BytesPerSector) ReadWriterGeometry(byte[] image) {
