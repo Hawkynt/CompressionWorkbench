@@ -138,6 +138,8 @@ For Mode 1 it regenerates:
 For Mode-2 Form 1 it preserves the existing XA subheader, regenerates the EDC over
 subheader + 2,048 user bytes, and computes the same P/Q RSPC with the four address/
 mode bytes treated as zero during parity generation as required by the XA layout.
+The two four-byte XA subheader copies must agree; a mismatch is treated as malformed
+rather than guessed into a writable profile.
 
 The EDC table is generated from the reflected form of the ECMA-130 CRC polynomial.
 The ECC implementation derives GF(2^8) multiplication from the Annex-A primitive
@@ -189,9 +191,10 @@ committing any staged output.
 
 - **defrag**: rebuilds a supported Mode-1 or Mode-2 Form-1 embedded ISO inside the
   fixed optical track, regenerating raw-sector integrity where necessary;
-- **shrink**: single-track images can be recreated smaller while preserving their
-  v2/v3/v3.5 compatibility target; multi-track images copy through unchanged
-  because shortening a physical track would require rewriting the optical map;
+- **shrink**: only the existing single cooked Mode-1 creation profile is recreated
+  smaller; raw/Mode-2 and multi-track images copy through unchanged because
+  shrinking them would require changing optical/sector geometry the creator does
+  not yet author explicitly;
 - **purge**: rebuilds the selected supported ISO track empty while leaving all
   other tracks/sessions intact;
 - **compact**: benefits from the defrag/shrink paths above;
