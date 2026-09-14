@@ -107,7 +107,15 @@ public sealed class BtrfsFilesystemDriverTests {
     Assert.That(bytes.AsSpan(payloadAt + inline.Length).IndexOf(inline), Is.EqualTo(-1), "payload marker must be unique in the image");
 
     // Inline payload starts at file_extent_item + 21; compression is byte 16.
-    bytes[payloadAt - 5] = 1; // non-zero compression id: current native profile must reject it
+    // Repair this deliberately edited leaf's checksum so the probe reaches the
+    // compression policy instead of stopping earlier at metadata corruption.
+    bytes[payloadAt - 5] = 1;
+    var nodeSize = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(SuperblockOffset + 0x94, 4)));
+    var nodeStart = payloadAt / nodeSize * nodeSize;
+    var node = bytes.AsSpan(nodeStart, nodeSize);
+    node[..BtrfsMetadataChecksum.ChecksumFieldSize].Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(node, BtrfsMetadataChecksum.ComputeCrc32C(node));
+
     using var image = new MemoryStream(bytes, writable: false);
     var profile = new BtrfsFilesystemDriverAdapter().ProbeFilesystem(image);
 
