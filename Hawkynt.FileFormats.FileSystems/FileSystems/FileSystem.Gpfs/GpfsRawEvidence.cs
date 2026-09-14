@@ -123,32 +123,122 @@ internal sealed record GpfsEvidenceNsd(
 internal sealed record GpfsEvidenceArtifact(string Kind, string Sha256, string Path);
 
 /// <summary>
+/// A corpus is the complete controlled transition series from one independently
+/// formatted filesystem. One attractive capture is not enough to establish a
+/// representation rule.
+/// </summary>
+internal sealed record GpfsEvidenceCorpus(IReadOnlyList<GpfsEvidenceManifest> Captures) {
+  internal static readonly string[] RequiredCaptureIds = [
+    "000-anchor",
+    "010-empty",
+    "020-tiny",
+    "030-one-subblock",
+    "040-one-block",
+    "050-block-plus-one",
+    "055-rebalanced",
+    "060-indirect",
+    "070-sparse",
+    "080-directory",
+    "090-links",
+    "100-xattr-acl",
+    "105-replicated",
+    "110-delete",
+  ];
+
+  internal GpfsPromotionDecision ValidateCompleteness() {
+    if (Captures.Count == 0)
+      return GpfsPromotionDecision.Fail("GPFS evidence corpus is empty.");
+
+    foreach (var capture in Captures) {
+      var decision = capture.ValidateCaptureCompleteness();
+      if (!decision.IsSatisfied)
+        return decision;
+    }
+
+    var first = Captures[0];
+    var corpusId = first.Metadata["corpus-id"];
+    var filesystemUid = first.Metadata["filesystem-uid"];
+    var formatVersion = first.Metadata["format-version"];
+    var storageScaleVersion = first.Metadata["storage-scale-version"];
+    var nsdIdentity = NsdIdentity(first);
+    var seenCaptureIds = new HashSet<string>(StringComparer.Ordinal);
+
+    foreach (var capture in Captures) {
+      if (!string.Equals(capture.Metadata["corpus-id"], corpusId, StringComparison.Ordinal))
+        return GpfsPromotionDecision.Fail("A corpus contains captures from different corpus IDs.");
+      if (!string.Equals(capture.Metadata["filesystem-uid"], filesystemUid, StringComparison.Ordinal))
+        return GpfsPromotionDecision.Fail("A corpus crosses filesystem UIDs.");
+      if (!string.Equals(capture.Metadata["format-version"], formatVersion, StringComparison.Ordinal)
+          || !string.Equals(capture.Metadata["storage-scale-version"], storageScaleVersion, StringComparison.Ordinal))
+        return GpfsPromotionDecision.Fail("A corpus crosses Storage Scale or filesystem format versions.");
+      if (!string.Equals(NsdIdentity(capture), nsdIdentity, StringComparison.Ordinal))
+        return GpfsPromotionDecision.Fail("A corpus changes its NSD/disk-ID/geometry topology between captures.");
+      if (!seenCaptureIds.Add(capture.Metadata["capture-id"]))
+        return GpfsPromotionDecision.Fail($"Corpus '{corpusId}' contains duplicate capture IDs.");
+    }
+
+    foreach (var required in RequiredCaptureIds)
+      if (!seenCaptureIds.Contains(required))
+        return GpfsPromotionDecision.Fail($"Corpus '{corpusId}' is missing controlled capture '{required}'.");
+
+    return GpfsPromotionDecision.Pass($"Corpus '{corpusId}' contains the complete controlled multi-NSD transition series.");
+  }
+
+  internal string CorpusId => Captures.Count == 0 ? string.Empty : Captures[0].Metadata.GetValueOrDefault("corpus-id", string.Empty);
+  internal string FilesystemUid => Captures.Count == 0 ? string.Empty : Captures[0].Metadata.GetValueOrDefault("filesystem-uid", string.Empty);
+
+  private static string NsdIdentity(GpfsEvidenceManifest capture)
+    => string.Join('|', capture.Nsds
+      .OrderBy(static x => x.DiskId)
+      .Select(static x => $"{x.Name}:{x.DiskId}:{x.DeviceSize}:{x.SectorBytes}"));
+}
+
+/// <summary>
 /// Results of comparing an independent raw parser with the IBM tools for one
-/// corpus. These are the Stage-1 promotion requirements, kept explicit so no
-/// single successful inode lookup can accidentally promote the whole format.
+/// complete corpus. The individual flags mirror the Stage-1 promotion evidence
+/// so representation guesses cannot be hidden behind a single boolean.
 /// </summary>
 internal sealed record GpfsReadOnlyVerification(
   string CorpusId,
   bool DescriptorDiskMapping,
-  bool InodeLocation,
-  bool InodeChecksum,
+  bool InodeRecordLayout,
+  bool InodeChecksumCoverage,
+  bool DiskAddressPacking,
   bool DirectAddressing,
   bool IndirectAddressing,
   bool InodeAllocationMap,
+  bool BlockAllocationMap,
   bool DirectoryLookup,
   bool SparseAndInlineData,
   bool MalformedMetadataFailsClosed) {
 
   internal bool IsComplete
     => DescriptorDiskMapping
-       && InodeLocation
-       && InodeChecksum
+       && InodeRecordLayout
+       && InodeChecksumCoverage
+       && DiskAddressPacking
        && DirectAddressing
        && IndirectAddressing
        && InodeAllocationMap
+       && BlockAllocationMap
        && DirectoryLookup
        && SparseAndInlineData
        && MalformedMetadataFailsClosed;
+}
+
+internal sealed record GpfsMutationVerification(
+  string CorpusId,
+  bool RemountSucceeded,
+  bool MmfsckxClean,
+  bool NamespaceVerified,
+  bool FileDataVerified,
+  bool LinksAclXattrSparseAndReplicasVerified) {
+  internal bool IsComplete
+    => RemountSucceeded
+       && MmfsckxClean
+       && NamespaceVerified
+       && FileDataVerified
+       && LinksAclXattrSparseAndReplicasVerified;
 }
 
 internal readonly record struct GpfsPromotionDecision(bool IsSatisfied, string Reason) {
@@ -158,32 +248,42 @@ internal readonly record struct GpfsPromotionDecision(bool IsSatisfied, string R
 
 internal static class GpfsReadOnlyPromotionGate {
   internal static GpfsPromotionDecision Evaluate(
-    IReadOnlyList<GpfsEvidenceManifest> captures,
+    IReadOnlyList<GpfsEvidenceCorpus> corpora,
     IReadOnlyList<GpfsReadOnlyVerification> verifications) {
-    ArgumentNullException.ThrowIfNull(captures);
+    ArgumentNullException.ThrowIfNull(corpora);
     ArgumentNullException.ThrowIfNull(verifications);
 
-    if (captures.Count < 2)
-      return GpfsPromotionDecision.Fail("At least two independent multi-NSD corpora are required.");
+    if (corpora.Count < 2)
+      return GpfsPromotionDecision.Fail("At least two independent complete multi-NSD corpora are required.");
 
     var corpusIds = new HashSet<string>(StringComparer.Ordinal);
-    foreach (var capture in captures) {
-      var complete = capture.ValidateCaptureCompleteness();
+    var filesystemUids = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var corpus in corpora) {
+      var complete = corpus.ValidateCompleteness();
       if (!complete.IsSatisfied)
         return complete;
+      if (!corpusIds.Add(corpus.CorpusId))
+        return GpfsPromotionDecision.Fail("The promotion set contains a duplicate corpus ID.");
+      if (!filesystemUids.Add(corpus.FilesystemUid))
+        return GpfsPromotionDecision.Fail("Independent GPFS corpora must come from independently formatted filesystem UIDs.");
 
-      var corpusId = capture.Metadata["corpus-id"];
-      if (!corpusIds.Add(corpusId))
-        return GpfsPromotionDecision.Fail("The promotion set must contain independent corpus IDs.");
-
-      var verification = verifications.SingleOrDefault(x => string.Equals(x.CorpusId, corpusId, StringComparison.Ordinal));
-      if (verification is null)
-        return GpfsPromotionDecision.Fail($"Corpus '{corpusId}' has no raw-parser verification result.");
-      if (!verification.IsComplete)
-        return GpfsPromotionDecision.Fail($"Corpus '{corpusId}' has not satisfied every Stage-1 raw-reader check.");
+      var matches = verifications.Where(x => string.Equals(x.CorpusId, corpus.CorpusId, StringComparison.Ordinal)).ToArray();
+      if (matches.Length != 1)
+        return GpfsPromotionDecision.Fail($"Corpus '{corpus.CorpusId}' must have exactly one raw-parser verification result.");
+      if (!matches[0].IsComplete)
+        return GpfsPromotionDecision.Fail($"Corpus '{corpus.CorpusId}' has not satisfied every Stage-1 raw-reader check.");
     }
 
-    return GpfsPromotionDecision.Pass("Two independent multi-NSD corpora agree with the raw parser on every Stage-1 requirement.");
+    return GpfsPromotionDecision.Pass("Two independent complete multi-NSD corpora agree with the raw parser on every Stage-1 requirement.");
+  }
+}
+
+internal static class GpfsMutationPromotionGate {
+  internal static GpfsPromotionDecision Evaluate(GpfsMutationVerification verification) {
+    ArgumentNullException.ThrowIfNull(verification);
+    return verification.IsComplete
+      ? GpfsPromotionDecision.Pass("Mutated evidence remounted, passed mmfsckx, and preserved all verified semantics.")
+      : GpfsPromotionDecision.Fail("R/W and maintenance remain disabled until remount, mmfsckx, namespace, data, and metadata verification all pass.");
   }
 }
 
