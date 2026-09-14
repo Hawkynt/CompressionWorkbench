@@ -19,6 +19,8 @@ required=(
   100-xattr-acl
   105-replicated
   110-delete
+  120-map-allocated
+  121-map-freed
 )
 required_artifacts=(mmfsckx tsdbfs mmfileid mmgetlocation mmlsdisk mmlsnsd)
 
