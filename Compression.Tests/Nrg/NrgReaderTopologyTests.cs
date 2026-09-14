@@ -72,7 +72,11 @@ public class NrgReaderTopologyTests {
       Assert.That(reader.Tracks.All(static track => track.HasIso9660), Is.True);
       Assert.That(reader.Tracks[0].TrackNumber, Is.EqualTo(1));
       Assert.That(reader.Tracks[1].TrackNumber, Is.EqualTo(2));
-      Assert.That(reader.Tracks[1].Index1Lba, Is.GreaterThan(reader.Tracks[0].Index1Lba));
+      Assert.That(reader.Tracks[0].Index1Lba, Is.Not.Null);
+      Assert.That(reader.Tracks[1].Index1Lba, Is.Not.Null);
+      Assert.That(
+        reader.Tracks[1].Index1Lba.GetValueOrDefault(),
+        Is.GreaterThan(reader.Tracks[0].Index1Lba.GetValueOrDefault()));
     });
 
     var first = reader.Entries.Single(entry => entry.Name.Equals("FIRST.BIN", StringComparison.OrdinalIgnoreCase));
