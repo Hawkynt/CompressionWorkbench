@@ -10027,7 +10027,7 @@ Implements `IFilesystemBlockMover`.
 
 #### `NssEntry`
 
-One entry surfaced by the NSS read-only descriptor. We do not parse the object tree itself (the on-disk layout is proprietary and lacks a publicly verifiable spec). We only ever produce synthetic entries describing the pool / volume headers we located.
+One entry surfaced by the NSS read-only descriptor. Native entries are reconstructed only for the conservative quiescent profile documented in docs/NSS-ON-DISK.md; diagnostic anchor entries remain available separately.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10093,18 +10093,20 @@ Best-effort detector for NSS (Novell Storage Services) — the pool-based, objec
 
 #### `NssReader`
 
-Best-effort NSS image reader. Parses no object tree — only surfaces the anchors NssHeaders located. Because the on-disk layout is proprietary and lacks a verifiable public spec, we never claim to reconstruct files; we expose the located pool/volume/superblock offsets as synthetic entries the user can correlate with the raw image.
+Best-effort NSS image reader. It keeps the historical anchor diagnostics and, for seekable quiescent images, additionally scans the reverse-engineered DirH/LEAF profile documented in docs/NSS-ON-DISK.md to reconstruct native directories and ordinary contiguous file extents.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NssReader` | `NssReader(Stream stream)` | Initializes a new instance of `NssReader`. |
 | `AnyValid` | `bool AnyValid { get; }` | True iff at least one primary NSS anchor was located. |
-| `Entries` | `IReadOnlyList<NssEntry> Entries { get; }` | Gets the entries. |
+| `Entries` | `IReadOnlyList<NssEntry> Entries { get; }` | Diagnostic anchors plus native ordinary files. Native directories are available separately through `NativeEntries` so the legacy archive extraction path cannot mistake them for zero-byte files. |
 | `HeaderRaw` | `byte[] HeaderRaw { get; }` | Bytes captured at the most useful anchor (pool / superblock / volume), 4 KB. |
 | `Headers` | `NssHeaders Headers { get; }` | Gets the headers. |
 | `ImageLength` | `long ImageLength { get; }` | Gets the image length. |
+| `NativeEntries` | `IReadOnlyList<NssEntry> NativeEntries { get; }` | Native filesystem entries reconstructed from matching DirH/LEAF records. |
 | `VolumeName` | `string VolumeName { get; }` | Gets or sets the volume name. |
-| `ExtractAnchor` | `byte[] ExtractAnchor(NssEntry entry)` | Returns the 64-byte window at the synthetic entry's anchor offset. |
+| `ExtractAnchor` | `byte[] ExtractAnchor(NssEntry entry)` | Returns the synthetic anchor bytes or native file payload. |
+| `ExtractNative` | `byte[] ExtractNative(NssEntry entry)` | Extracts one native ordinary-file entry from its validated contiguous extent. |
 
 #### `NssVolume`
 
