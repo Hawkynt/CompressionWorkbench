@@ -144,13 +144,25 @@ public class Nwfs386BehaviorTests {
   public void Mutation_RejectsCompressionProfileBeforeChangingSource() {
     using var image = CreateImage();
     var bytes = image.ToArray();
+    var partitionStart = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(446 + 8, 4));
+    var partitionOffset = checked((long)partitionStart * 512);
+    var masterOffset = checked(partitionOffset + 0x20L * 512);
+    var hotfixSectors = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(checked((int)masterOffset + 24), 4));
+    var logicalPartitionOffset = checked(partitionOffset + (long)hotfixSectors * 512);
     var volumeArea = FindVolumeArea(bytes);
     var entry = bytes.AsSpan(volumeArea + 32, 60);
-    var blockValue = BinaryPrimitives.ReadUInt32LittleEndian(entry[44..]);
-    var blockSize = checked((int)(256u * 1024u / blockValue));
+    var clusterSize = (BinaryPrimitives.ReadUInt32LittleEndian(entry[20..]) & 0xFF) switch {
+      3 => 4096,
+      4 => 8192,
+      5 => 16384,
+      6 => 32768,
+      7 => 65536,
+      var code => throw new InvalidOperationException($"Unexpected NWFS cluster code {code}."),
+    };
+    var volumeRootSectors = BinaryPrimitives.ReadUInt32LittleEndian(entry[24..]);
     var firstDirectory = BinaryPrimitives.ReadUInt32LittleEndian(entry[48..]);
-    var dataArea = volumeArea + 4 * 16384;
-    var root = checked(dataArea + (int)firstDirectory * blockSize);
+    var volumeOffset = checked(logicalPartitionOffset + (long)volumeRootSectors * 512);
+    var root = checked((int)(volumeOffset + (long)firstDirectory * clusterSize));
     bytes[root + 23] |= 0x04; // FILE_COMPRESSION_ON in the ROOT volume flags.
 
     using var advanced = new MemoryStream(bytes, writable: true);
