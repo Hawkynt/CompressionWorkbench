@@ -21,8 +21,9 @@ internal sealed class NssNativeScanner {
 
   public NssNativeScanner(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
-    if (!image.CanRead || !image.CanSeek) return;
     this._image = image;
+    if (!image.CanRead || !image.CanSeek)
+      throw new ArgumentException("Native NSS scanning requires a readable, seekable image stream.", nameof(image));
     this.Scan();
   }
 
