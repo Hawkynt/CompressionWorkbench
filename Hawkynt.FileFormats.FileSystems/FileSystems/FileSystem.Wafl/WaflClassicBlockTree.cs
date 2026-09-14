@@ -12,8 +12,8 @@ namespace FileSystem.Wafl;
 /// bytes are either inline data (level 0) or sixteen 32-bit VBNs at one common
 /// indirection level. A 4 KiB indirect block contains 1024 32-bit VBNs. This
 /// type implements only those published mechanics; it deliberately does not
-/// guess where an inode lives inside fsinfo or where type/size/level fields are
-/// packed in the inode metadata half.
+/// guess where an inode lives inside fsinfo, where type/size/level fields are
+/// packed, or which pointer encoding represents an unallocated sparse region.
 /// </remarks>
 internal static class WaflClassicBlockTree {
   internal const int InodeSize = 128;
@@ -34,10 +34,12 @@ internal static class WaflClassicBlockTree {
   }
 
   /// <summary>
-  /// Enumerates logical file blocks for a classic WAFL inode pointer tree.
-  /// Zero pointers are represented as sparse holes. The caller supplies the
-  /// already-decoded inode level and logical block count because their metadata
-  /// byte offsets are not established by the public format material.
+  /// Enumerates logical file blocks for a classic WAFL inode pointer tree. The
+  /// caller supplies the already-decoded inode level and logical block count
+  /// because their metadata byte offsets are not established by the public
+  /// format material. Sparse-hole recognition is likewise caller supplied: WAFL
+  /// VBN numbering can include zero, so this decoder does not invent a universal
+  /// null-pointer value.
   /// </summary>
   internal static IEnumerable<WaflClassicDataBlock> EnumerateDataBlocks(
       ReadOnlySpan<byte> inode,
@@ -45,7 +47,8 @@ internal static class WaflClassicBlockTree {
       bool littleEndian,
       long logicalBlockCount,
       ulong volumeBlockCount,
-      Func<uint, byte[]> readBlock) {
+      Func<uint, byte[]> readBlock,
+      Predicate<uint>? isHolePointer = null) {
     ValidateInode(inode);
     ArgumentNullException.ThrowIfNull(readBlock);
 
@@ -71,7 +74,7 @@ internal static class WaflClassicBlockTree {
     for (var i = 0; i < rootPointers.Length; ++i)
       rootPointers[i] = ReadUInt32(pointerArea.Slice(i * PointerSize, PointerSize), littleEndian);
 
-    return EnumerateRoots(rootPointers, level, littleEndian, logicalBlockCount, volumeBlockCount, readBlock);
+    return EnumerateRoots(rootPointers, level, littleEndian, logicalBlockCount, volumeBlockCount, readBlock, isHolePointer);
   }
 
   private static IEnumerable<WaflClassicDataBlock> EnumerateRoots(
@@ -80,7 +83,8 @@ internal static class WaflClassicBlockTree {
       bool littleEndian,
       long logicalBlockCount,
       ulong volumeBlockCount,
-      Func<uint, byte[]> readBlock) {
+      Func<uint, byte[]> readBlock,
+      Predicate<uint>? isHolePointer) {
     var activeIndirectBlocks = new HashSet<uint>();
     var perRoot = SubtreeCapacity(level);
     var remaining = logicalBlockCount;
@@ -99,6 +103,7 @@ internal static class WaflClassicBlockTree {
                  littleEndian,
                  volumeBlockCount,
                  readBlock,
+                 isHolePointer,
                  activeIndirectBlocks))
         yield return block;
 
@@ -115,11 +120,12 @@ internal static class WaflClassicBlockTree {
       bool littleEndian,
       ulong volumeBlockCount,
       Func<uint, byte[]> readBlock,
+      Predicate<uint>? isHolePointer,
       HashSet<uint> activeIndirectBlocks) {
     if (logicalBlockCount == 0)
       yield break;
 
-    if (pointer == 0) {
+    if (isHolePointer?.Invoke(pointer) == true) {
       for (long i = 0; i < logicalBlockCount; ++i)
         yield return new WaflClassicDataBlock(firstFileBlock + i, null);
       yield break;
@@ -158,6 +164,7 @@ internal static class WaflClassicBlockTree {
                    littleEndian,
                    volumeBlockCount,
                    readBlock,
+                   isHolePointer,
                    activeIndirectBlocks))
           yield return child;
 
