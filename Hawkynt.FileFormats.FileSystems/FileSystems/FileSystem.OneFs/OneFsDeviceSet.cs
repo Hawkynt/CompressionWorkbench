@@ -26,22 +26,23 @@ public sealed record OneFsDeviceGeometry(
 }
 
 /// <summary>
-/// Non-destructive inventory of a candidate set of Dell PowerScale / Isilon
-/// OneFS data-device images.
+/// Non-destructive inventory and bounded block-access surface for a candidate set
+/// of Dell PowerScale / Isilon OneFS data-device images.
 /// </summary>
 /// <remarks>
 /// <para>
 /// OneFS is cluster-wide: LIN and protection metadata can address blocks on
 /// other nodes and drives. A one-stream abstraction therefore cannot represent
 /// enough media for future offline namespace reconstruction. This type is the
-/// multi-device bootstrap surface: it keeps the supplied streams together and
-/// records their documented physical geometry without interpreting proprietary
-/// bytes.
+/// multi-device bootstrap surface: it keeps the supplied streams separate,
+/// records their documented physical geometry, and permits explicit per-device
+/// 8 KiB block reads without interpreting proprietary bytes.
 /// </para>
 /// <para>
 /// The supplied streams remain owned by the caller. <see cref="Open(IEnumerable{Stream})"/>
-/// never reads them, changes their positions, or disposes them. Membership in a
-/// common OneFS cluster is intentionally <b>not</b> asserted: that requires the
+/// never reads them, changes their positions, or disposes them. <see cref="ReadBlock"/>
+/// restores the selected stream position after each explicit read. Membership in
+/// a common OneFS cluster is intentionally <b>not</b> asserted: that requires the
 /// still-unverified raw superblock/device identity serialization.
 /// </para>
 /// </remarks>
@@ -81,7 +82,7 @@ public sealed class OneFsDeviceSet {
   /// payload bytes.
   /// </summary>
   /// <param name="devices">Readable, seekable candidate raw-device streams.</param>
-  /// <returns>An immutable geometry snapshot retaining the supplied streams for future format-local parsers.</returns>
+  /// <returns>An immutable geometry snapshot retaining the supplied streams for bounded member reads and future format-local parsers.</returns>
   /// <exception cref="ArgumentNullException"><paramref name="devices"/> is null.</exception>
   /// <exception cref="ArgumentException">No devices were supplied, or a stream is null, unreadable, or unseekable.</exception>
   /// <exception cref="InvalidDataException">A supplied candidate device is empty.</exception>
@@ -132,11 +133,52 @@ public sealed class OneFsDeviceSet {
   }
 
   /// <summary>
+  /// Reads one complete documented 8 KiB block from one candidate device while
+  /// preserving that stream's caller-visible position.
+  /// </summary>
+  /// <param name="deviceIndex">Zero-based index in <see cref="Devices"/>.</param>
+  /// <param name="blockIndex">Zero-based 8 KiB block index within that device.</param>
+  /// <param name="destination">Destination with room for at least one complete OneFS block.</param>
+  /// <exception cref="ArgumentOutOfRangeException">The device or block index is outside the inventoried complete-block range.</exception>
+  /// <exception cref="ArgumentException"><paramref name="destination"/> is smaller than one OneFS block.</exception>
+  /// <remarks>
+  /// This is raw forensic access only. A successful read says nothing about the
+  /// block's semantic type, allocation state, checksum, cluster membership, or
+  /// whether it is a OneFS superblock. Calls through this object are serialized
+  /// per underlying stream so their own cursor save/restore pairs cannot race.
+  /// External code sharing the same stream must provide its own synchronization.
+  /// </remarks>
+  public void ReadBlock(int deviceIndex, long blockIndex, Span<byte> destination) {
+    if ((uint)deviceIndex >= (uint)this._streams.Length)
+      throw new ArgumentOutOfRangeException(nameof(deviceIndex));
+    if (destination.Length < OneFsReader.PhysicalBlockSize)
+      throw new ArgumentException(
+        $"OneFS block reads require at least {OneFsReader.PhysicalBlockSize} destination bytes.",
+        nameof(destination));
+
+    var device = this._devices[deviceIndex];
+    if (blockIndex < 0 || blockIndex >= device.CompleteBlockCount)
+      throw new ArgumentOutOfRangeException(nameof(blockIndex));
+
+    var stream = this._streams[deviceIndex];
+    var byteOffset = checked(blockIndex * (long)OneFsReader.PhysicalBlockSize);
+    lock (stream) {
+      var originalPosition = stream.Position;
+      try {
+        stream.Position = byteOffset;
+        stream.ReadExactly(destination[..OneFsReader.PhysicalBlockSize]);
+      } finally {
+        stream.Position = originalPosition;
+      }
+    }
+  }
+
+  /// <summary>
   /// Gets a candidate device stream for future OneFS format-local parsers.
   /// </summary>
   /// <remarks>
-  /// Internal on purpose: public consumers receive geometry only until a verified
-  /// raw OneFS structure parser exists. The stream remains caller-owned.
+  /// Internal on purpose: public consumers use the bounded block API until a
+  /// verified raw OneFS structure parser exists. The stream remains caller-owned.
   /// </remarks>
   internal Stream GetDeviceStream(int index) => this._streams[index];
 }
