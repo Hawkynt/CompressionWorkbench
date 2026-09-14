@@ -9,7 +9,7 @@ public class GpfsRawEvidenceTests {
 
   [Test]
   public void Manifest_RequiresAllSixIBMOracleFamilies() {
-    var manifest = GpfsEvidenceManifest.Parse(BuildManifest("a", includeMmfileid: false));
+    var manifest = GpfsEvidenceManifest.Parse(BuildManifest("a", "uid-a", "000-anchor", includeMmfileid: false));
 
     var decision = manifest.ValidateCaptureCompleteness();
 
@@ -21,7 +21,7 @@ public class GpfsRawEvidenceTests {
 
   [Test]
   public void Manifest_AcceptsHashAddressedUnmountedMultiNsdCapture() {
-    var manifest = GpfsEvidenceManifest.Parse(BuildManifest("a"));
+    var manifest = GpfsEvidenceManifest.Parse(BuildManifest("a", "uid-a", "000-anchor"));
 
     var decision = manifest.ValidateCaptureCompleteness();
 
@@ -34,28 +34,48 @@ public class GpfsRawEvidenceTests {
   }
 
   [Test]
+  public void Corpus_RejectsMissingSemanticTransition() {
+    var captures = BuildCorpus("a", "uid-a").Captures
+      .Where(static x => x.Metadata["capture-id"] != "030-one-subblock")
+      .ToArray();
+
+    var decision = new GpfsEvidenceCorpus(captures).ValidateCompleteness();
+
+    Assert.That(decision.IsSatisfied, Is.False);
+    Assert.That(decision.Reason, Does.Contain("030-one-subblock"));
+  }
+
+  [Test]
   public void PromotionGate_RejectsOneCorpusEvenWhenEveryCheckPasses() {
-    var captures = new[] { GpfsEvidenceManifest.Parse(BuildManifest("a")) };
+    var corpora = new[] { BuildCorpus("a", "uid-a") };
     var verifications = new[] { CompleteVerification("a") };
 
-    var decision = GpfsReadOnlyPromotionGate.Evaluate(captures, verifications);
+    var decision = GpfsReadOnlyPromotionGate.Evaluate(corpora, verifications);
 
     Assert.That(decision.IsSatisfied, Is.False);
     Assert.That(decision.Reason, Does.Contain("two independent").IgnoreCase);
   }
 
   [Test]
+  public void PromotionGate_RejectsTwoCorpusIdsFromSameFilesystemUid() {
+    var corpora = new[] { BuildCorpus("a", "same-uid"), BuildCorpus("b", "same-uid") };
+    var verifications = new[] { CompleteVerification("a"), CompleteVerification("b") };
+
+    var decision = GpfsReadOnlyPromotionGate.Evaluate(corpora, verifications);
+
+    Assert.That(decision.IsSatisfied, Is.False);
+    Assert.That(decision.Reason, Does.Contain("independently formatted"));
+  }
+
+  [Test]
   public void PromotionGate_RejectsIncompleteRawParserAgreement() {
-    var captures = new[] {
-      GpfsEvidenceManifest.Parse(BuildManifest("a")),
-      GpfsEvidenceManifest.Parse(BuildManifest("b")),
-    };
+    var corpora = new[] { BuildCorpus("a", "uid-a"), BuildCorpus("b", "uid-b") };
     var verifications = new[] {
       CompleteVerification("a"),
-      CompleteVerification("b") with { DirectoryLookup = false },
+      CompleteVerification("b") with { BlockAllocationMap = false },
     };
 
-    var decision = GpfsReadOnlyPromotionGate.Evaluate(captures, verifications);
+    var decision = GpfsReadOnlyPromotionGate.Evaluate(corpora, verifications);
 
     Assert.That(decision.IsSatisfied, Is.False);
     Assert.That(decision.Reason, Does.Contain("Stage-1"));
@@ -63,15 +83,23 @@ public class GpfsRawEvidenceTests {
 
   [Test]
   public void PromotionGate_AcceptsTwoIndependentCompleteCorpora() {
-    var captures = new[] {
-      GpfsEvidenceManifest.Parse(BuildManifest("a")),
-      GpfsEvidenceManifest.Parse(BuildManifest("b")),
-    };
+    var corpora = new[] { BuildCorpus("a", "uid-a"), BuildCorpus("b", "uid-b") };
     var verifications = new[] { CompleteVerification("a"), CompleteVerification("b") };
 
-    var decision = GpfsReadOnlyPromotionGate.Evaluate(captures, verifications);
+    var decision = GpfsReadOnlyPromotionGate.Evaluate(corpora, verifications);
 
     Assert.That(decision.IsSatisfied, Is.True, decision.Reason);
+  }
+
+  [Test]
+  public void MutationGate_RequiresRemountAndCleanMmfsckxTogether() {
+    var incomplete = new GpfsMutationVerification("a", true, false, true, true, true);
+    var complete = incomplete with { MmfsckxClean = true };
+
+    Assert.Multiple(() => {
+      Assert.That(GpfsMutationPromotionGate.Evaluate(incomplete).IsSatisfied, Is.False);
+      Assert.That(GpfsMutationPromotionGate.Evaluate(complete).IsSatisfied, Is.True);
+    });
   }
 
   [Test]
@@ -114,16 +142,21 @@ public class GpfsRawEvidenceTests {
   }
 
   private static GpfsReadOnlyVerification CompleteVerification(string corpusId)
-    => new(corpusId, true, true, true, true, true, true, true, true, true);
+    => new(corpusId, true, true, true, true, true, true, true, true, true, true, true);
 
-  private static string BuildManifest(string corpusId, bool includeMmfileid = true) {
+  private static GpfsEvidenceCorpus BuildCorpus(string corpusId, string filesystemUid)
+    => new(GpfsEvidenceCorpus.RequiredCaptureIds
+      .Select(captureId => GpfsEvidenceManifest.Parse(BuildManifest(corpusId, filesystemUid, captureId)))
+      .ToArray());
+
+  private static string BuildManifest(string corpusId, string filesystemUid, string captureId, bool includeMmfileid = true) {
     var lines = new List<string> {
       $"meta\tcorpus-id\t{corpusId}",
-      "meta\tcapture-id\t000-baseline",
-      "meta\toperation\tbaseline",
+      $"meta\tcapture-id\t{captureId}",
+      $"meta\toperation\t{captureId}",
       "meta\tstorage-scale-version\t6.0.1.0",
       "meta\tformat-version\t39.00",
-      $"meta\tfilesystem-uid\tuid-{corpusId}",
+      $"meta\tfilesystem-uid\t{filesystemUid}",
       "meta\tcapture-state\tunmounted-clean",
       $"nsd\tnsd1\t1\t10485760\t512\t{ShaA}\traw/nsd1.img",
       $"nsd\tnsd2\t2\t10485760\t512\t{ShaB}\traw/nsd2.img",
@@ -135,6 +168,6 @@ public class GpfsRawEvidenceTests {
     };
     if (includeMmfileid)
       lines.Add($"artifact\tmmfileid\t{ShaA}\toracle/mmfileid.txt");
-    return string.Join('\n', lines);
+    return string.Join("\n", lines);
   }
 }
