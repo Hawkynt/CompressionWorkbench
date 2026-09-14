@@ -375,7 +375,7 @@ public static class ArchiveOperations {
       var registryInputs = inputs.Select(i =>
         new Compression.Registry.ArchiveInputInfo(i.FullPath, i.EntryName, i.IsDirectory)).ToList();
       using var fs = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite);
-      modifier.Add(fs, registryInputs);
+      modifier.Add(fs, registryInputs, new Compression.Registry.ArchiveMutationOptions { Password = opts?.Password });
       return;
     }
 
@@ -396,7 +396,7 @@ public static class ArchiveOperations {
 
     if (ops is Compression.Registry.IArchiveModifiable modifier) {
       using var fs = File.Open(archivePath, FileMode.Open, FileAccess.ReadWrite);
-      modifier.Remove(fs, entryNames);
+      modifier.Remove(fs, entryNames, new Compression.Registry.ArchiveMutationOptions { Password = opts?.Password });
       return;
     }
 
@@ -430,7 +430,7 @@ public static class ArchiveOperations {
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_add_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Directory.CreateDirectory(tempDir);
-      Extract(archivePath, tempDir, password: null, files: null);
+      Extract(archivePath, tempDir, password: opts.Password, files: null);
 
       // Splat new inputs into the temp tree, preserving their entry names.
       foreach (var i in inputs) {
@@ -456,7 +456,7 @@ public static class ArchiveOperations {
     var tempDir = Path.Combine(Path.GetTempPath(), "cwb_rm_" + Guid.NewGuid().ToString("N")[..8]);
     try {
       Directory.CreateDirectory(tempDir);
-      Extract(archivePath, tempDir, password: null, files: null);
+      Extract(archivePath, tempDir, password: opts.Password, files: null);
 
       foreach (var path in Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tempDir, path).Replace('\\', '/');
