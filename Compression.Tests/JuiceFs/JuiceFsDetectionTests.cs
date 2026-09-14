@@ -84,7 +84,7 @@ public class JuiceFsDetectionTests {
     }
     """);
 
-  private static byte[] BuildBinaryBackup() {
+  private static byte[] BuildBinaryBackup(byte[]? footerOverride = null) {
     byte[] formatPayload = [0x0A, 0x02, (byte)'{', (byte)'}'];
     using var stream = new MemoryStream();
     WriteUInt32BigEndian(stream, 1);
@@ -92,12 +92,18 @@ public class JuiceFsDetectionTests {
     stream.Write(formatPayload);
     WriteUInt32BigEndian(stream, JuiceFsReader.BakMagic);
 
-    using var footer = new MemoryStream();
-    footer.WriteByte(0x08);
-    WriteVarint(footer, JuiceFsReader.BakMagic);
-    footer.WriteByte(0x10);
-    WriteVarint(footer, JuiceFsReader.BakVersion);
-    var footerBytes = footer.ToArray();
+    byte[] footerBytes;
+    if (footerOverride is null) {
+      using var footer = new MemoryStream();
+      footer.WriteByte(0x08);
+      WriteVarint(footer, JuiceFsReader.BakMagic);
+      footer.WriteByte(0x10);
+      WriteVarint(footer, JuiceFsReader.BakVersion);
+      footerBytes = footer.ToArray();
+    } else {
+      footerBytes = footerOverride;
+    }
+
     stream.Write(footerBytes);
     WriteUInt64BigEndian(stream, (ulong)footerBytes.Length);
     return stream.ToArray();
@@ -190,6 +196,34 @@ public class JuiceFsDetectionTests {
     Assert.That(output.ToArray(), Is.EqualTo(source));
   }
 
+  [Test, Category("HappyPath")]
+  public void Shrink_BinaryDump_SameStreamIsByteIdentical() {
+    var source = BuildBinaryBackup();
+    using var stream = new MemoryStream();
+    stream.Write(source);
+    stream.Position = 0;
+
+    ((IArchiveShrinkable)new JuiceFsFormatDescriptor()).Shrink(stream, stream);
+
+    Assert.That(stream.ToArray(), Is.EqualTo(source));
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Shrink_JsonDump_SameStreamRestoresOriginalWhenCommitFails() {
+    var source = BuildJsonDump();
+    using var stream = new FailOnceOnWriteStream(source);
+    stream.Position = 17;
+    stream.ArmFailure();
+
+    Assert.That(
+      () => ((IArchiveShrinkable)new JuiceFsFormatDescriptor()).Shrink(stream, stream),
+      Throws.TypeOf<IOException>());
+    Assert.Multiple(() => {
+      Assert.That(stream.ToArray(), Is.EqualTo(source));
+      Assert.That(stream.Position, Is.EqualTo(17));
+    });
+  }
+
   [Test, Category("ExceptionalCase")]
   public void Reader_RejectsOldSyntheticWrapper() {
     var synthetic = new byte[64];
@@ -202,6 +236,26 @@ public class JuiceFsDetectionTests {
   public void Reader_RejectsBinaryBackupWithWrongFooterMagic() {
     var image = BuildBinaryBackup();
     image[^11] ^= 0x01;
+    using var stream = new MemoryStream(image);
+    Assert.That(() => _ = new JuiceFsReader(stream), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Reader_RejectsBinaryBackupWithFooterLengthOutsideImage() {
+    var image = BuildBinaryBackup();
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(image.Length - sizeof(ulong)), ulong.MaxValue);
+    using var stream = new MemoryStream(image);
+    Assert.That(() => _ = new JuiceFsReader(stream), Throws.InstanceOf<InvalidDataException>());
+  }
+
+  [Test, Category("ExceptionalCase")]
+  public void Reader_RejectsBinaryBackupWithOverflowingFooterVarint() {
+    byte[] footer = [
+      0x08,
+      0x83, 0xE1, 0xD1, 0x83, 0x80, 0x80, 0x80, 0x80, 0x80, 0x02,
+      0x10, 0x01,
+    ];
+    var image = BuildBinaryBackup(footer);
     using var stream = new MemoryStream(image);
     Assert.That(() => _ = new JuiceFsReader(stream), Throws.InstanceOf<InvalidDataException>());
   }
@@ -224,5 +278,42 @@ public class JuiceFsDetectionTests {
       value >>= 7;
     }
     stream.WriteByte((byte)value);
+  }
+
+  private sealed class FailOnceOnWriteStream : MemoryStream {
+    private bool _failNextWrite;
+
+    public FailOnceOnWriteStream(byte[] data) {
+      base.Write(data, 0, data.Length);
+      this.Position = 0;
+    }
+
+    public void ArmFailure() => _failNextWrite = true;
+
+    public override void Write(byte[] buffer, int offset, int count) {
+      if (!_failNextWrite) {
+        base.Write(buffer, offset, count);
+        return;
+      }
+
+      _failNextWrite = false;
+      var partial = Math.Min(count, 7);
+      if (partial > 0)
+        base.Write(buffer, offset, partial);
+      throw new IOException("Injected JuiceFS in-place commit failure.");
+    }
+
+    public override void Write(ReadOnlySpan<byte> buffer) {
+      if (!_failNextWrite) {
+        base.Write(buffer);
+        return;
+      }
+
+      _failNextWrite = false;
+      var partial = Math.Min(buffer.Length, 7);
+      if (partial > 0)
+        base.Write(buffer[..partial]);
+      throw new IOException("Injected JuiceFS in-place commit failure.");
+    }
   }
 }
