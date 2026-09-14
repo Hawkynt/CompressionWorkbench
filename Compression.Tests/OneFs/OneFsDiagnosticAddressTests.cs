@@ -27,6 +27,23 @@ public sealed class OneFsDiagnosticAddressTests {
     });
   }
 
+  [Test, Category("Interop")]
+  public void TryParse_PreservesDellPublished512ByteInodeAddressWithoutPromotingItToADataBlock() {
+    Assert.That(
+      OneFsDiagnosticBlockAddress.TryParse("92,14,524557565440:512", out var address),
+      Is.True);
+
+    Assert.Multiple(() => {
+      Assert.That(address.Device, Is.EqualTo(new OneFsDeviceIdentity(92, 14)));
+      Assert.That(address.ByteOffset, Is.EqualTo(524557565440L));
+      Assert.That(address.Length, Is.EqualTo(512));
+      Assert.That(address.IsFilesystemBlockAligned, Is.False);
+      Assert.That(address.BlockIndex, Is.Null,
+        "A 512-byte inode address need not start on an 8 KiB filesystem-block boundary.");
+      Assert.That(address.BlockCount, Is.Null);
+    });
+  }
+
   [TestCase("")]
   [TestCase("6")]
   [TestCase("6,3")]
