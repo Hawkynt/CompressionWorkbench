@@ -73,7 +73,7 @@ public static class ExtExtentMap {
     var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(24));
     if (logBlockSize > 6) return false;
     var blockSize = 1024 << checked((int)logBlockSize);
-    if (blockSize is < 1024 or > 65536 || (blockSize & blockSize - 1) != 0) return false;
+    if (blockSize is < 1024 or > 65536 || (blockSize & (blockSize - 1)) != 0) return false;
 
     var featureIncompat = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(96));
     var featureRoCompat = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(100));
@@ -172,7 +172,7 @@ public static class ExtExtentMap {
 
       ulong freeCount = 0;
       for (ulong unit = 0; unit < validUnits; ++unit)
-        if ((bitmap[unit >> 3] & (1 << (int)(unit & 7))) == 0)
+        if ((bitmap[checked((int)(unit >> 3))] & (1 << (int)(unit & 7))) == 0)
           ++freeCount;
 
       // The descriptor count cross-check turns a stale/corrupt bitmap into an
@@ -196,7 +196,7 @@ public static class ExtExtentMap {
       }
 
       for (ulong unit = 0; unit < validUnits; ++unit) {
-        var isFree = (bitmap[unit >> 3] & (1 << (int)(unit & 7))) == 0;
+        var isFree = (bitmap[checked((int)(unit >> 3))] & (1 << (int)(unit & 7))) == 0;
         if (isFree) {
           if (runLength == 0) runStart = unit;
           ++runLength;
@@ -264,8 +264,8 @@ public static class ExtExtentMap {
     if (inodeNumber == 0 || geometry.InodesPerGroup == 0) return false;
     var group = (inodeNumber - 1) / geometry.InodesPerGroup;
     var index = (inodeNumber - 1) % geometry.InodesPerGroup;
-    if (group >= geometry.Groups.Length) return false;
-    var tableBlock = geometry.Groups[group].InodeTable;
+    if (group >= (uint)geometry.Groups.Length) return false;
+    var tableBlock = geometry.Groups[checked((int)group)].InodeTable;
     if (tableBlock == 0 || tableBlock >= geometry.BlocksCount) return false;
 
     var offset = checked((long)tableBlock * geometry.BlockSize + (long)index * geometry.InodeSize);
