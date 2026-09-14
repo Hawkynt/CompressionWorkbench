@@ -7,14 +7,16 @@ using Compression.Core.DiskImage;
 namespace FileSystem.Tux3;
 
 /// <summary>
-/// Native-superblock reader for the linux-tux3 research filesystem.
+/// Native metadata reader for the linux-tux3 research filesystem.
 /// </summary>
 /// <remarks>
-/// <para>The on-disk structure is taken from the canonical linux-tux3 <c>struct disksuper</c>:
-/// it starts at byte 4096, is packed, and all integer fields are big-endian.</para>
-/// <para>This reader intentionally stops at the superblock. It does not interpret the inode,
-/// orphan, allocation, atom or directory trees and therefore exposes no invented file table.
-/// The old private <c>TUX3SUPR</c>/<c>TUX3WORM</c> dialect is not accepted.</para>
+/// <para>The packed big-endian <c>struct disksuper</c> starts at byte 4096. When the declared
+/// volume is complete, the reader also follows the native inode btree far enough to locate the
+/// allocation-bitmap inode, decodes its data tree, and parses the reverse-linked log chain.</para>
+/// <para>Tree/log parsing is deliberately fail-closed. Active structural journal records require
+/// upstream-style replay before an allocation tree can be trusted, so those images keep the
+/// allocation map unavailable rather than exposing guessed free space. Directory traversal and
+/// native mutation are still outside this reader.</para>
 /// </remarks>
 public sealed class Tux3Reader : IDisposable {
   /// <summary>Current linux-tux3 disk-format magic (2014-05-06 revision).</summary>
@@ -33,7 +35,7 @@ public sealed class Tux3Reader : IDisposable {
   private readonly long _length;
   private readonly List<Tux3Entry> _entries = [];
 
-  /// <summary>Gets the entries exposed by this metadata-only reader.</summary>
+  /// <summary>Gets the entries exposed by this metadata reader.</summary>
   public IReadOnlyList<Tux3Entry> Entries => this._entries;
 
   /// <summary>Gets the total image size.</summary>
@@ -41,6 +43,21 @@ public sealed class Tux3Reader : IDisposable {
 
   /// <summary>Gets whether a supported native superblock was parsed.</summary>
   public bool ValidSuperblock { get; private set; }
+
+  /// <summary>Gets whether the complete declared journal chain was structurally valid.</summary>
+  public bool JournalValid { get; private set; }
+
+  /// <summary>Gets whether the allocation bitmap plus applicable journal deltas were proven trustworthy.</summary>
+  public bool AllocationMapValid { get; private set; }
+
+  /// <summary>Gets decoded journal records in chronological order.</summary>
+  public IReadOnlyList<Tux3JournalRecord> JournalRecords { get; private set; } = [];
+
+  /// <summary>Gets coalesced effective allocation runs covering the complete declared volume.</summary>
+  public IReadOnlyList<Tux3BlockRun> AllocationRuns { get; private set; } = [];
+
+  /// <summary>Gets the native-metadata parser status.</summary>
+  public string NativeMetadataStatus { get; private set; } = "not-parsed";
 
   /// <summary>Gets the disk-format revision identified by the eight-byte magic.</summary>
   public string Revision { get; private set; } = "";
@@ -98,6 +115,19 @@ public sealed class Tux3Reader : IDisposable {
     this.LogCount = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(0x60, 4));
     this.ValidSuperblock = true;
 
+    var native = Tux3NativeMetadataParser.Parse(
+      this._image,
+      this.BlockBits,
+      this.VolBlocks,
+      this.IRoot,
+      this.LogChain,
+      this.LogCount);
+    this.JournalValid = native.JournalValid;
+    this.AllocationMapValid = native.AllocationMapValid;
+    this.JournalRecords = native.JournalRecords;
+    this.AllocationRuns = native.AllocationRuns;
+    this.NativeMetadataStatus = native.Status;
+
     this._entries.Add(new Tux3Entry { Name = "FULL.tux3", Size = this._length, Offset = 0 });
 
     var metadata = this.BuildMetadata();
@@ -106,8 +136,14 @@ public sealed class Tux3Reader : IDisposable {
   }
 
   private byte[] BuildMetadata() {
+    var parseStatus = this.AllocationMapValid
+      ? "allocation-map+journal"
+      : this.JournalValid && this.JournalRecords.Count > 0
+        ? "superblock+journal"
+        : "superblock-only";
+
     var builder = new StringBuilder();
-    builder.Append("parse_status=superblock-only\n");
+    builder.Append(CultureInfo.InvariantCulture, $"parse_status={parseStatus}\n");
     builder.Append("format=TUX3 (linux-tux3 prototype)\n");
     builder.Append(CultureInfo.InvariantCulture, $"revision={this.Revision}\n");
     builder.Append(CultureInfo.InvariantCulture, $"superblock_offset={SuperblockOffset}\n");
@@ -126,7 +162,12 @@ public sealed class Tux3Reader : IDisposable {
     builder.Append(CultureInfo.InvariantCulture, $"atomgen={this.AtomGeneration}\n");
     builder.Append(CultureInfo.InvariantCulture, $"logchain=0x{this.LogChain:X16}\n");
     builder.Append(CultureInfo.InvariantCulture, $"logcount={this.LogCount}\n");
-    builder.Append("note=Native itable/otable/allocation/directory traversal is not implemented; no private file table is assumed.\n");
+    builder.Append(CultureInfo.InvariantCulture, $"journal_valid={this.JournalValid.ToString().ToLowerInvariant()}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"journal_records={this.JournalRecords.Count}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"allocation_map_valid={this.AllocationMapValid.ToString().ToLowerInvariant()}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"allocation_runs={this.AllocationRuns.Count}\n");
+    builder.Append(CultureInfo.InvariantCulture, $"native_metadata_status={this.NativeMetadataStatus}\n");
+    builder.Append("note=Native allocation metadata is parsed fail-closed; directory traversal and transactional mutation are not implemented.\n");
     return Encoding.UTF8.GetBytes(builder.ToString());
   }
 
