@@ -54,9 +54,11 @@ Examples from IBM output include:
     disk address 7:332464
     Inode address: 7:520143360 10:780184064
 
-`mmgetlocation -Y -L` independently exposes the same disk IDs alongside the NSD
-name and file logical offset. `mmlsdisk -L` maps those numeric disk IDs to the
-NSDs in the filesystem. This makes the following semantic type **verified**:
+`tsdbfs inode` additionally exposes physical file pointers in its
+`Disk pointers [...]` section. `mmgetlocation -Y -L` independently exposes the
+NSD name and GPFS disk ID for each logical file chunk, but does **not** expose a
+physical sector. `mmlsdisk -L` maps those numeric disk IDs to the NSDs and their
+logical sector sizes. This makes the following semantic type **verified**:
 
     DiskAddress = (diskId, sectorNumber)
 
@@ -68,6 +70,7 @@ Sources:
 - <https://www.ibm.com/docs/en/storage-scale/5.2.3?topic=locality-mmgetlocation>
 - <https://www.ibm.com/docs/en/storage-scale/6.0.0?topic=reference-mmfsckx-command>
 - <https://www.ibm.com/support/pages/node/7246086>
+- <https://www.ibm.com/support/pages/node/7229010>
 
 ## Reserved metadata files
 
@@ -134,7 +137,12 @@ support example prints, among other fields:
     currentDataReplicas=2 maxDataReplicas=2
     dataPoolIndex=7
 
-The semantic model checked into `GpfsOracleModel.cs` therefore records:
+A separate IBM support example for a direct inode prints a `Disk pointers [330]`
+section with slot 0 at physical address `4:18497536`. This is sufficient to model
+the pointer slot and its semantic disk address, but not its raw packed bytes.
+
+The semantic models checked into `GpfsOracleModel.cs` and
+`GpfsTsdbfsPointerParser.cs` therefore record:
 
 - inode number, snapshot id and index within an inode block;
 - every physical replica address of the inode record;
@@ -145,14 +153,27 @@ The semantic model checked into `GpfsOracleModel.cs` therefore records:
 - checksum value plus whether the IBM tool considers it valid;
 - logical file size and full-block count;
 - current/maximum metadata and data replica counts;
-- data-pool index.
+- data-pool index;
+- explicitly printed disk-pointer slot numbers and every physical replica address
+  shown for those slots.
 
 These fields are **not** assigned binary offsets yet. The tool output proves the
 semantics, not their representation.
 
-Source:
+Sources:
 
 - <https://www.ibm.com/support/pages/node/7246086>
+- <https://www.ibm.com/support/pages/node/7229010>
+
+IBM also publishes `gpfs_iattr_t`/`gpfs_iattr64_t`, whose API structures contain
+an `ia_checksum` member described as a validity check on the returned attribute
+structure. That is useful API context but is **not** evidence that the in-memory
+API structure is the raw on-disk inode or that its checksum has the same
+algorithm/coverage. Do not use that declaration as an on-disk layout shortcut.
+
+Source:
+
+- <https://www.ibm.com/docs/en/storage-scale/6.0.1?topic=interfaces-gpfs-iattr-t-structure>
 
 ## Allocation-map semantic model
 
@@ -200,13 +221,14 @@ them. IBM's documented example identifies sectors as:
     Log File (inode 7)
     inode 14336 /gpfsB/tesDir/testFile.out
 
-That lets a raw-image experiment ask both directions:
+That gives a raw-image experiment a three-way independent cross-check:
 
-- `mmgetlocation`: file logical offset -> NSD/disk id;
-- `mmfileid`: NSD sector -> reserved object or user inode/path.
+- `mmgetlocation`: file logical chunk -> NSD name / GPFS disk id;
+- `tsdbfs inode`: inode replica and file pointer -> physical `disk:sector`;
+- `mmfileid`: physical `disk:sector` -> reserved object or user inode/path.
 
-A raw parser does not get promoted until those two directions agree with its own
-answer on the same image.
+A raw parser does not get promoted until all three directions agree with its own
+answer on the same captured filesystem.
 
 Source:
 
@@ -226,6 +248,11 @@ having **five NSDs** and 4 MiB blocks. IBM's README shows the filesystem and NSD
 configuration, so the lab topology is independently reproducible without
 inventing our own GPFS setup.
 
+The demo also installs a placement policy in which `*.hot` files use the system
+pool while other files use the capacity pool. The lab uses the same documented
+pool topology to force a known file from capacity to system for the disk-address
+packing experiment instead of hoping a generic rebalance happens to move it.
+
 The IBM Vagrant helper code is Apache-2.0, compatible with this repository. We do
 not need to copy it: use it to provision the oracle. Storage Scale itself remains
 IBM software and is never vendored here.
@@ -240,38 +267,55 @@ or report-only views before taking raw NSD images:
 
     mmlsfs <fs> -Y
     mmlsdisk <fs> -L -Y
-    mmlsnsd -L -Y
+    mmlsnsd -f <fs> -m -Y
     mmfsckx <fs> --check-reserved-files-only
-    mmfsadm dump stripe
-    mmfsadm dump ialloc
-    tsdbfs <fs> desc
+    tsdbfs <fs> inode 0
+    tsdbfs <fs> inode 1
+    tsdbfs <fs> inode 2
+    tsdbfs <fs> inode 4
+    tsdbfs <fs> inode 5
+    tsdbfs <fs> inode 38
 
-For every selected inode also collect:
+`mmfsckx` is an online checker, so collect it while the filesystem is mounted.
+Only after every IBM oracle read is complete should the filesystem be synced and
+cleanly unmounted for the raw image readout.
+
+For every selected user inode also collect:
 
     tsdbfs <fs> inode <inode-number>
     mmgetlocation -f <path> -Y -L
 
-For selected sector ranges use `mmfileid` exactly as IBM documents it. For each
-backing NSD, `mmfsadm test readdescraw <device>` is useful for descriptor
-cross-checks; it is a diagnostic command rather than a public format contract,
-so any result derived from it must be corroborated by raw bytes.
+For every physical address printed by the captured `tsdbfs` reports, run
+`mmfileid` while the filesystem is still mounted. Preserve the GPFS disk id next
+to each query because ordinary `mmfileid` output may only repeat the physical
+sector. A failed lookup makes that capture incomplete; do not silently omit it.
 
 ### Controlled corpus
 
 Build one object at a time and capture after each step:
 
-1. empty regular file;
-2. tiny file expected to remain data-in-inode;
-3. exactly one subblock of non-zero deterministic data;
-4. exactly one full block;
-5. one full block plus one byte;
-6. file large enough to force one indirect level;
-7. sparse file with holes at known logical offsets;
-8. small directory, then enough entries to grow its directory representation;
-9. symlink and hard link;
-10. file with ACL and xattr data;
-11. replicated file spanning at least two NSDs;
-12. delete one known file and capture again.
+1. deterministic anchor file;
+2. empty regular file;
+3. tiny file expected to remain data-in-inode;
+4. exactly one subblock of non-zero deterministic data;
+5. exactly one full block;
+6. one full block plus one byte in the capacity pool;
+7. force that same file to the system pool with `mmchattr -P system -I defer`
+   and `mmrestripefile -p`, then capture its second physical placement;
+8. file large enough to force one indirect level;
+9. sparse file with holes at known logical offsets;
+10. enough directory entries to grow its directory representation;
+11. symlink and hard link;
+12. file with ACL and xattr data;
+13. replicated file spanning at least two NSDs;
+14. delete the earlier one-subblock file;
+15. create exactly one fresh inode containing exactly one subblock and capture;
+16. delete exactly that fresh object and capture again.
+
+The last two transitions are intentionally adjacent. They are the allocation-map
+experiment: use the preceding capture as baseline and restrict raw diffs to the
+IBM-located reserved inode-1 and inode-2 data. That prevents unrelated directory
+or file metadata changes elsewhere from being mistaken for bitmap bits.
 
 Do not use all-zero payloads as the only data corpus: sparse/zero optimizations can
 make a physically empty block look like an addressing rule. Use deterministic
@@ -280,10 +324,10 @@ non-zero bytes and record SHA-256 for every file.
 ### Raw NSD images
 
 The useful experiment is **paired** images: before and after exactly one semantic
-change. The filesystem should be cleanly unmounted before each raw capture so an
+change. The filesystem must be cleanly unmounted before each raw capture so an
 image is internally consistent. Dump every NSD in the filesystem, not merely the
-NSD where `mmgetlocation` says the data landed; metadata replicas and allocation
-maps can change elsewhere.
+NSD named by `mmgetlocation`; metadata replicas and allocation maps can change
+elsewhere.
 
 Keep a manifest containing, for every image:
 
@@ -303,62 +347,87 @@ recorded.
 
 The next implementation stage should answer these in order.
 
-### 1. Inode-number -> inode-record address
+### 1. Inode-number -> inode-record address and checksum
 
 For several inodes in different inode blocks/filesets:
 
 1. obtain physical inode replicas with `tsdbfs inode`;
-2. read the 4 KiB bytes at each reported `disk:sector` from the raw NSD image;
-3. identify fields that change under one controlled metadata edit;
-4. repeat on another inode block and another format version.
+2. multiply each reported sector by that NSD's `mmlsdisk -L` logical sector size
+   and read exactly the reported inode-size bytes from the matching raw image;
+3. find byte offsets whose values track independently known inode fields across
+   controlled edits and replicas;
+4. locate the literal checksum reported by `tsdbfs` under explicit endian
+   hypotheses, then test candidate checksum algorithms/coverage only after the
+   field offset remains stable on independent inodes;
+5. reject the checksum hypothesis unless it validates a second inode and a
+   second independently formatted filesystem.
 
-Only after the same formula predicts addresses that `tsdbfs` independently
-reports should it become reader code.
+IBM's public `gpfs_iattr_t` checksum is not an on-disk checksum specification and
+must not be used to skip these experiments.
 
 ### 2. Disk-address byte representation
 
-Choose a one-block file whose location is known from `mmgetlocation`. Search only
-the independently identified inode/indirect-block bytes for that exact
-`disk:sector` pair under candidate endian/packing rules. Move/recreate the file so
-both disk and sector change, then reject every encoding that does not predict the
-second capture.
+Use the same file at captures `050-block-plus-one` and `055-rebalanced`. The IBM
+Vagrant placement policy starts it in capacity; the controlled transition forces
+it into system. Require `mmgetlocation` to show the expected NSD/pool change and
+`tsdbfs` disk pointers to show a changed physical `disk:sector`.
+
+Search only the independently identified inode/indirect-block bytes for those two
+physical addresses under explicit packing/endian hypotheses. Intersect candidates
+from the paired records and reject every encoding that does not predict both
+placements. `mmfileid` must map each reported physical pointer back to the
+expected inode/path.
 
 ### 3. Inode allocation-map bit order
 
-Create one file, record its inode number, capture; delete it, capture again.
-`mmfsckx` supplies the expected allocation state. Diff inode 2's raw data and
-require exactly the predicted bit transition. Repeat across word, record, region
-and segment boundaries.
+Use `110-delete` as baseline, create the one-object allocation at
+`120-map-allocated`, then delete exactly it at `121-map-freed`. Record the new
+inode number. Diff only the raw data belonging to reserved inode 2. Require the
+allocation and deallocation transitions to reverse the same bit, then repeat
+across byte, word, record, region and segment boundaries.
+
+One bit transition cannot establish LSB-first versus MSB-first numbering; at
+least two known logical indices are required before fitting the bit direction.
 
 ### 4. Block allocation-map bit order
 
-Allocate/deallocate known subblocks and use `mmgetlocation` plus `mmfileid` to
-pin ownership. Diff inode 1. Cross-check candidate words against the vectors that
-`mmfsckx` itself prints as `map status` and `expected`.
+Use the same `110 -> 120 -> 121` pair for the one-subblock data allocation. Use
+`tsdbfs` physical disk pointers plus `mmfileid` to pin the allocated block to the
+expected file, then diff only the raw data belonging to reserved inode 1. Require
+the allocation/deallocation pair to reverse the predicted bit. Cross-check the
+candidate word orientation against vectors that `mmfsckx` itself prints as
+`map status` and `expected`.
 
 ### 5. Indirect blocks and directories
 
-After direct inode addressing is understood, force the transition to an indirect
-block and use `tsdbfs`/`mmgetlocation` to locate both levels. Directory parsing is
-a separate promotion gate: a file-data parser without a verified directory
-record model is not filesystem R/O.
+After direct inode addressing is understood, use the controlled large-file
+capture to force the transition to an indirect block and correlate its IBM
+`tsdbfs` pointers before assigning raw offsets or checksum rules. Directory
+parsing is a separate promotion gate: a file-data parser without a verified
+directory record model is not filesystem R/O.
 
 ## Promotion gates
 
 ### Stage 1: real R/O
 
 GPFS may move from structural inspection to filesystem R/O only when all of these
-are true on at least two independently generated multi-NSD images:
+are true on at least two independently generated complete multi-NSD corpora with
+different filesystem UIDs:
 
 - descriptor -> disk-id mapping is verified;
 - inode 0 and arbitrary user inode records can be located from raw bytes;
-- inode checksums are independently validated;
+- inode checksum algorithm and coverage are independently validated;
+- packed disk-address representation predicts controlled placement changes;
 - direct and at least one indirect addressing level agree with
-  `mmgetlocation`/`tsdbfs`;
+  `mmgetlocation`/`tsdbfs`/`mmfileid`;
 - inode allocation state agrees with `mmfsckx`;
+- block allocation state agrees with `mmfsckx`;
 - directory lookup resolves paths that IBM resolves;
 - sparse/data-in-inode cases are distinguished correctly;
 - malformed/truncated metadata fails closed.
+
+The repository's `GpfsReadOnlyPromotionGate` represents those requirements
+explicitly. Synthetic fixtures test the gate itself; they cannot satisfy it.
 
 ### Stage 2: R/W and maintenance
 
@@ -390,11 +459,19 @@ Those are experiments, not TODO-shaped excuses to guess.
 
 ## Repository oracle model
 
-`Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Gpfs/GpfsOracleModel.cs` parses only diagnostic text and
-represents the verified semantic facts above. Tests use published IBM examples,
-including the 14-disk `mmfsckx` case, an allocation-map mismatch, a replicated
-`tsdbfs` inode, `mmfileid` ownership and a three-replica `mmgetlocation` record.
+`Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Gpfs/GpfsOracleModel.cs`
+parses only diagnostic text and represents verified semantic facts from IBM
+output. `GpfsTsdbfsPointerParser` models only explicitly printed disk-pointer
+slots; `GpfsMmfileidAggregateParser` preserves disk identity around each reverse
+ownership query; and `GpfsRawCorrelation` generates representation candidates
+against raw bytes without promoting them into format rules.
 
-That model is intentionally internal. It exists to validate future binary
-parsers; it is not a user-facing promise that the raw on-disk fields are already
-known.
+Tests use published IBM examples, including the 14-disk `mmfsckx` case, an
+allocation-map mismatch, a replicated `tsdbfs` inode, a direct `Disk pointers`
+example, `mmfileid` ownership and a three-replica `mmgetlocation` record. Optional
+`ExternalFsInterop` tests consume two out-of-tree, independently formatted real
+corpora through `CWB_GPFS_CORPUS_A` and `CWB_GPFS_CORPUS_B`.
+
+These models are intentionally internal. They exist to validate a future binary
+parser; they are not a user-facing promise that the raw on-disk fields are
+already known.
