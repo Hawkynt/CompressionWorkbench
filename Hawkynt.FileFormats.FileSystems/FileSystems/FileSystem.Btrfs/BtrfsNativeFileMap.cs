@@ -46,6 +46,12 @@ internal static class BtrfsNativeFileMap {
     if (!sb.AsSpan(0x40, 8).SequenceEqual("_BHRfS_M"u8))
       throw new InvalidDataException("Btrfs superblock magic is invalid.");
 
+    var checksumType = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(0xC4, 2));
+    if (checksumType != BtrfsMetadataChecksum.Crc32CType)
+      throw new NotSupportedException(
+        $"Btrfs native mounting currently validates CRC32C metadata only; superblock checksum type is {checksumType}.");
+    BtrfsMetadataChecksum.ValidateCrc32C(sb, "primary superblock");
+
     var rootTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(sb.AsSpan(0x50));
     var chunkTreeLogical = BinaryPrimitives.ReadInt64LittleEndian(sb.AsSpan(0x58));
     var sectorSize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(0x90));
@@ -338,7 +344,9 @@ internal static class BtrfsNativeFileMap {
   private static byte[] ReadNode(Stream image, long physical, uint nodeSize) {
     if (physical < 0 || physical > image.Length - nodeSize)
       throw new InvalidDataException($"Btrfs tree node at {physical:N0} lies outside the image.");
-    return ReadBytes(image, physical, checked((int)nodeSize));
+    var node = ReadBytes(image, physical, checked((int)nodeSize));
+    BtrfsMetadataChecksum.ValidateCrc32C(node, $"tree block at physical offset {physical:N0}");
+    return node;
   }
 
   private static byte[] ReadBytes(Stream image, long offset, int length) {
