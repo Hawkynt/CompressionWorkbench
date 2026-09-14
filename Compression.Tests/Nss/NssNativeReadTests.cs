@@ -62,6 +62,30 @@ public sealed class NssNativeReadTests {
     Assert.That(reader.NativeEntries.Select(entry => entry.Name), Does.Not.Contain("docs/note.bin"));
   }
 
+  [Test, Category("ErrorHandling")]
+  public void Reader_RejectsCyclicParentRelationships() {
+    var image = BuildNativeImage([1, 2, 3, 4]);
+    var docsEntry = 4 * BlockSize + 48;
+    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(docsEntry + 24, 8), 0x101);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var reader = new NssReader(stream);
+
+    Assert.That(reader.NativeEntries, Is.Empty);
+  }
+
+  [Test, Category("ErrorHandling")]
+  public void Reader_RejectsExtentOutsideImage() {
+    var image = BuildNativeImage([1, 2, 3, 4]);
+    var record = 5 * BlockSize + 0x28;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(record + 92, 4), uint.MaxValue);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var reader = new NssReader(stream);
+
+    Assert.That(reader.NativeEntries.Select(entry => entry.Name), Does.Not.Contain("docs/note.bin"));
+  }
+
   private static byte[] BuildNativeImage(byte[] payload) {
     const int blocks = 32;
     const int dirBlock = 4;
