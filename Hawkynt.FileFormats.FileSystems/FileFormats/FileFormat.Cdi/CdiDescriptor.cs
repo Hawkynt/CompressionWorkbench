@@ -77,9 +77,10 @@ internal static class CdiDescriptor {
   }
 
   /// <summary>
-  /// Parses either the modern variable-index descriptor or the older v2/v3
-  /// descriptor dialect understood by CDIrip. Physical file offsets are derived
-  /// from each track's own stored-sector stride and total stored sector count.
+  /// Parses either the older v2/v3 descriptor dialect understood by CDIrip or
+  /// the modern variable-index descriptor. v2/v3 gets legacy priority because
+  /// its overlapping marker bytes can look like a valid modern session header;
+  /// accepting that false positive would lose the stored pregap semantics.
   /// </summary>
   internal static bool TryReadTrackTable(Stream stream, Footer footer, out IReadOnlyList<CdiTrackInfo> tracks) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -93,14 +94,14 @@ internal static class CdiDescriptor {
       stream.Position = footer.DescriptorOffset;
       stream.ReadExactly(bytes);
 
-      if (TryParseModernTrackTable(bytes, footer.DescriptorOffset, out var modern)) {
-        tracks = modern;
-        return true;
-      }
-
       if (footer.Version is Version2 or Version3 &&
           TryParseLegacyTrackTable(bytes, footer, out var legacy)) {
         tracks = legacy;
+        return true;
+      }
+
+      if (TryParseModernTrackTable(bytes, footer.DescriptorOffset, out var modern)) {
+        tracks = modern;
         return true;
       }
 
@@ -272,12 +273,6 @@ internal static class CdiDescriptor {
     return true;
   }
 
-  /// <summary>
-  /// Older DiscJuggler v2/v3 images use a different descriptor walk: 16-bit
-  /// session/track counts, two physical track markers, fixed pregap/data/total
-  /// lengths and a sector-size selector. This routine independently implements
-  /// that observable contract and deliberately ignores undeciphered payload.
-  /// </summary>
   private static bool TryParseLegacyTrackTable(
     ReadOnlySpan<byte> descriptor,
     Footer footer,
@@ -390,7 +385,7 @@ internal static class CdiDescriptor {
     var pregap = checked((int)pregapValue);
     var dataSectors = checked((int)dataLengthValue);
     var totalSectors = checked((int)totalLengthValue);
-    if (totalSectors <= 0 || dataSectors < 0 || pregap < 0 || totalSectors < pregap + dataSectors)
+    if (totalSectors <= 0 || totalSectors < (long)pregap + dataSectors)
       return false;
 
     occupiedBytes = checked((long)totalSectors * storedSectorSize);
@@ -467,10 +462,6 @@ internal static class CdiDescriptor {
     return descriptor.ToArray();
   }
 
-  /// <summary>
-  /// Builds the older v2/v3 single-track descriptor dialect. Its trailer stores
-  /// an absolute descriptor offset instead of the backwards length used by v3.5.
-  /// </summary>
   internal static byte[] BuildSingleTrackLegacy(uint version, uint dataSectorCount, uint descriptorOffset) {
     if (version is not (Version2 or Version3))
       throw new ArgumentOutOfRangeException(nameof(version));
@@ -479,31 +470,31 @@ internal static class CdiDescriptor {
 
     var totalTrackSectors = checked(dataSectorCount + StandardPregapSectors);
     using var descriptor = new MemoryStream(capacity: 256);
-    WriteUInt16(descriptor, 1); // sessions
-    WriteUInt16(descriptor, 1); // tracks in session
+    WriteUInt16(descriptor, 1);
+    WriteUInt16(descriptor, 1);
 
-    WriteUInt32(descriptor, 0); // no extended preamble
+    WriteUInt32(descriptor, 0);
     descriptor.Write(PhysicalTrackMarker);
     descriptor.Write(PhysicalTrackMarker);
     WriteZeros(descriptor, 4);
-    descriptor.WriteByte(0); // embedded filename length
+    descriptor.WriteByte(0);
     WriteZeros(descriptor, 11 + 4 + 4);
-    WriteUInt32(descriptor, 0); // no DJ4 extension
+    WriteUInt32(descriptor, 0);
     WriteZeros(descriptor, 2);
     WriteUInt32(descriptor, StandardPregapSectors);
     WriteUInt32(descriptor, dataSectorCount);
     WriteZeros(descriptor, 6);
     WriteUInt32(descriptor, (uint)CdiTrackMode.Mode1);
     WriteZeros(descriptor, 12);
-    WriteUInt32(descriptor, 0); // start LBA
+    WriteUInt32(descriptor, 0);
     WriteUInt32(descriptor, totalTrackSectors);
     WriteZeros(descriptor, 16);
-    WriteUInt32(descriptor, 0); // 2048-byte sectors
+    WriteUInt32(descriptor, 0);
     WriteZeros(descriptor, 29);
 
     if (version == Version3) {
       WriteZeros(descriptor, 5);
-      WriteUInt32(descriptor, 0); // no optional 78-byte extension
+      WriteUInt32(descriptor, 0);
     }
 
     WriteZeros(descriptor, version == Version2 ? 12 : 13);
