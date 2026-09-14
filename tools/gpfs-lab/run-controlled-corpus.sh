@@ -9,8 +9,7 @@ CAPTURE=$(readlink -f "$(dirname "$0")/capture.sh")
 
 [[ ${EUID} -eq 0 ]] || { echo "run-controlled-corpus.sh must run as root" >&2; exit 2; }
 for cmd in python3 fallocate setfattr setfacl mmlsfs mmrestripefile mmchattr mmlsattr mmgetlocation; do
-  command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }
-done
+  command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }; done
 [[ -x $CAPTURE ]] || { echo "capture harness not found: $CAPTURE" >&2; exit 2; }
 
 rm -rf "$WORK"
@@ -133,7 +132,17 @@ mmlsattr -L "$replicated" >"$ROOT/mmlsattr-replicated.txt"
 capture 105-replicated "create a two-replica data file" "$anchor" "$replicated"
 
 rm "$WORK/one-subblock.bin"
-capture 110-delete "delete the isolated one-subblock file" "$anchor"
+capture 110-delete "delete the earlier one-subblock file" "$anchor"
+
+# The next two captures are the allocation-map experiment. 110 is the baseline;
+# no other semantic change occurs before this create/delete pair. Restrict raw
+# diffs to the reserved inode-1/inode-2 contents so directory timestamp updates
+# cannot be mistaken for allocation-map bits.
+map_probe="$WORK/map-bit-probe.bin"
+write_pattern "$map_probe" "$subblock"
+capture 120-map-allocated "allocate one fresh inode and exactly one subblock" "$anchor" "$map_probe"
+rm "$map_probe"
+capture 121-map-freed "free exactly the preceding inode and subblock" "$anchor"
 
 printf 'corpus %s complete under %s\n' "$CORPUS_ID" "$ROOT"
 printf 'Do not promote GPFS from these captures alone: reformat/reprovision for a distinct filesystem UID, run a second corpus, then verify raw-parser agreement.\n'
