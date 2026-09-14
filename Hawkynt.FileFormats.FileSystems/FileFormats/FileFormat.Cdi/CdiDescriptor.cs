@@ -4,9 +4,9 @@ namespace FileFormat.Cdi;
 
 /// <summary>
 /// DiscJuggler CDI trailer and session/track-table helpers. Padus never
-/// published the format; the layout here follows the independently documented
-/// on-disk contract used by No$cash/psx-spx and is cross-checked against CDIrip,
-/// Aaru and the MIT-licensed mkdcdisc writer.
+/// published the format; the layouts here are clean-room descriptions of the
+/// observable on-disk contracts cross-checked against CDIrip, Aaru, libMirage
+/// and the MIT-licensed mkdcdisc writer.
 /// </summary>
 internal static class CdiDescriptor {
   internal const uint Version2 = 0x80000004;
@@ -14,16 +14,13 @@ internal static class CdiDescriptor {
   internal const uint Version35 = 0x80000006;
   internal const int StandardPregapSectors = 150;
 
-  private const int SessionBlockSize = 15;
-  private const int LogicalTrackHeaderSize = 0x30;
-  private const int FixedTrackTailSize = 0xAE;
+  private const int ModernSessionBlockSize = 15;
+  private const int ModernLogicalTrackHeaderSize = 0x30;
+  private const int ModernFixedTrackTailSize = 0xAE;
   private const int MaximumTrackCount = 99;
   private const int MaximumIndexCount = 1024;
   private const uint MaximumCdTextBlocks = 4096;
 
-  // Physical writers use two 10-byte markers. The first eight bytes of the
-  // first marker complete the preceding session block; its last two bytes plus
-  // the second marker are the logical 12-byte Track/Disc Header signature.
   private static ReadOnlySpan<byte> PhysicalTrackMarker => [
     0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
   ];
@@ -57,18 +54,12 @@ internal static class CdiDescriptor {
         return false;
 
       var locator = BinaryPrimitives.ReadUInt32LittleEndian(bytes[4..]);
-
-      // CompressionWorkbench used a version+zero trailer before it emitted a
-      // session descriptor. Keep those images readable/editable, but never
-      // confuse them with a genuine DiscJuggler descriptor.
       if (locator == 0) {
         footer = new(version, stream.Length - 8, 8, IsLegacyFooterOnly: true);
         return true;
       }
 
-      var descriptorOffset = version == Version35
-        ? stream.Length - locator
-        : locator;
+      var descriptorOffset = version == Version35 ? stream.Length - locator : locator;
       if (descriptorOffset < 0 || descriptorOffset > stream.Length - 8)
         return false;
 
@@ -86,9 +77,9 @@ internal static class CdiDescriptor {
   }
 
   /// <summary>
-  /// Parses the real trailing session/track table. The returned file offsets
-  /// describe the sector body before <see cref="Footer.DescriptorOffset"/> and
-  /// already account for pregaps and per-track stored sector sizes.
+  /// Parses either the modern variable-index descriptor or the older v2/v3
+  /// descriptor dialect understood by CDIrip. Physical file offsets are derived
+  /// from each track's own stored-sector stride and total stored sector count.
   /// </summary>
   internal static bool TryReadTrackTable(Stream stream, Footer footer, out IReadOnlyList<CdiTrackInfo> tracks) {
     ArgumentNullException.ThrowIfNull(stream);
@@ -101,10 +92,19 @@ internal static class CdiDescriptor {
       var bytes = new byte[checked((int)footer.DescriptorLength)];
       stream.Position = footer.DescriptorOffset;
       stream.ReadExactly(bytes);
-      if (!TryParseTrackTable(bytes, footer.DescriptorOffset, out var parsed))
-        return false;
-      tracks = parsed;
-      return true;
+
+      if (TryParseModernTrackTable(bytes, footer.DescriptorOffset, out var modern)) {
+        tracks = modern;
+        return true;
+      }
+
+      if (footer.Version is Version2 or Version3 &&
+          TryParseLegacyTrackTable(bytes, footer, out var legacy)) {
+        tracks = legacy;
+        return true;
+      }
+
+      return false;
     } catch (EndOfStreamException) {
       return false;
     } catch (OverflowException) {
@@ -114,9 +114,9 @@ internal static class CdiDescriptor {
     }
   }
 
-  private static bool TryParseTrackTable(ReadOnlySpan<byte> descriptor, long dataAreaLength, out List<CdiTrackInfo> tracks) {
+  private static bool TryParseModernTrackTable(ReadOnlySpan<byte> descriptor, long dataAreaLength, out List<CdiTrackInfo> tracks) {
     tracks = [];
-    if (descriptor.Length < 1 + SessionBlockSize + 8)
+    if (descriptor.Length < 1 + ModernSessionBlockSize + 8)
       return false;
 
     var sessionCount = descriptor[0];
@@ -128,12 +128,12 @@ internal static class CdiDescriptor {
     long bodyOffset = 0;
 
     for (var sessionNumber = 1; sessionNumber <= sessionCount; ++sessionNumber) {
-      if (!TryReadSessionBlock(descriptor, position, out var trackCount) || trackCount is 0 or > MaximumTrackCount)
+      if (!TryReadModernSessionBlock(descriptor, position, out var trackCount) || trackCount is 0 or > MaximumTrackCount)
         return false;
-      position += SessionBlockSize;
+      position += ModernSessionBlockSize;
 
       for (var trackInSession = 0; trackInSession < trackCount; ++trackInSession) {
-        if (!TryReadTrack(
+        if (!TryReadModernTrack(
               descriptor,
               ref position,
               sessionNumber,
@@ -150,21 +150,18 @@ internal static class CdiDescriptor {
       }
     }
 
-    // A normal descriptor has a final zero-track session block before the disc
-    // info block. Do not make it mandatory: several old generators omit or
-    // partially overwrite trailing metadata, while the track table is intact.
-    if (TryReadSessionBlock(descriptor, position, out var terminalTrackCount) && terminalTrackCount == 0)
-      position += SessionBlockSize;
+    if (TryReadModernSessionBlock(descriptor, position, out var terminalTrackCount) && terminalTrackCount == 0)
+      position += ModernSessionBlockSize;
 
     return tracks.Count > 0 && bodyOffset <= dataAreaLength;
   }
 
-  private static bool TryReadSessionBlock(ReadOnlySpan<byte> descriptor, int position, out int trackCount) {
+  private static bool TryReadModernSessionBlock(ReadOnlySpan<byte> descriptor, int position, out int trackCount) {
     trackCount = 0;
-    if (position < 0 || position > descriptor.Length - SessionBlockSize)
+    if (position < 0 || position > descriptor.Length - ModernSessionBlockSize)
       return false;
 
-    var block = descriptor.Slice(position, SessionBlockSize);
+    var block = descriptor.Slice(position, ModernSessionBlockSize);
     if (block[0] != 0 || block[2] != 0 ||
         block[3] != 0 || block[4] != 0 || block[5] != 0 || block[6] != 0 ||
         block[7] != 0 || block[8] != 0 || block[9] != 1 ||
@@ -176,7 +173,7 @@ internal static class CdiDescriptor {
     return true;
   }
 
-  private static bool TryReadTrack(
+  private static bool TryReadModernTrack(
     ReadOnlySpan<byte> descriptor,
     ref int position,
     int sessionNumber,
@@ -190,14 +187,14 @@ internal static class CdiDescriptor {
     occupiedBytes = 0;
 
     var trackStart = position;
-    if (trackStart < 0 || trackStart > descriptor.Length - LogicalTrackHeaderSize)
+    if (trackStart < 0 || trackStart > descriptor.Length - ModernLogicalTrackHeaderSize)
       return false;
     if (!descriptor.Slice(trackStart, LogicalTrackMarker.Length).SequenceEqual(LogicalTrackMarker))
       return false;
 
     var filenameLength = descriptor[trackStart + 0x10];
-    var trackHeaderLength = LogicalTrackHeaderSize + filenameLength;
-    if (trackHeaderLength < LogicalTrackHeaderSize || trackStart > descriptor.Length - trackHeaderLength)
+    var trackHeaderLength = ModernLogicalTrackHeaderSize + filenameLength;
+    if (trackHeaderLength < ModernLogicalTrackHeaderSize || trackStart > descriptor.Length - trackHeaderLength)
       return false;
 
     position = trackStart + trackHeaderLength;
@@ -219,7 +216,7 @@ internal static class CdiDescriptor {
       return false;
 
     var tail = position;
-    if (tail < 0 || tail > descriptor.Length - FixedTrackTailSize)
+    if (tail < 0 || tail > descriptor.Length - ModernFixedTrackTailSize)
       return false;
 
     var modeValue = descriptor[tail + 0x02];
@@ -234,14 +231,7 @@ internal static class CdiDescriptor {
         startLbaValue > int.MaxValue || trackLengthValue > int.MaxValue || controlValue > int.MaxValue)
       return false;
 
-    var storedSectorSize = (CdiReadMode)readModeValue switch {
-      CdiReadMode.Mode1_2048 => 2048,
-      CdiReadMode.Mode2_2336 => 2336,
-      CdiReadMode.Raw2352 => 2352,
-      CdiReadMode.Raw2352_Q16 => 2352 + 16,
-      CdiReadMode.Raw2352_Pw96 => 2352 + 96,
-      _ => 0,
-    };
+    var storedSectorSize = StoredSectorSize((CdiReadMode)readModeValue);
     if (storedSectorSize == 0)
       return false;
 
@@ -278,7 +268,168 @@ internal static class CdiDescriptor {
       dataOffset
     );
 
-    position = tail + FixedTrackTailSize;
+    position = tail + ModernFixedTrackTailSize;
+    return true;
+  }
+
+  /// <summary>
+  /// Older DiscJuggler v2/v3 images use a different descriptor walk: 16-bit
+  /// session/track counts, two physical track markers, fixed pregap/data/total
+  /// lengths and a sector-size selector. This routine independently implements
+  /// that observable contract and deliberately ignores undeciphered payload.
+  /// </summary>
+  private static bool TryParseLegacyTrackTable(
+    ReadOnlySpan<byte> descriptor,
+    Footer footer,
+    out List<CdiTrackInfo> tracks
+  ) {
+    tracks = [];
+    var position = 0;
+    if (!TryReadUInt16(descriptor, ref position, out var sessionCount) || sessionCount is 0 or > 99)
+      return false;
+
+    var globalTrackNumber = 1;
+    long bodyOffset = 0;
+    for (var sessionNumber = 1; sessionNumber <= sessionCount; ++sessionNumber) {
+      if (!TryReadUInt16(descriptor, ref position, out var trackCount) || trackCount is 0 or > MaximumTrackCount)
+        return false;
+
+      for (var trackInSession = 0; trackInSession < trackCount; ++trackInSession) {
+        if (!TryReadLegacyTrack(
+              descriptor,
+              footer.Version,
+              ref position,
+              sessionNumber,
+              globalTrackNumber,
+              bodyOffset,
+              footer.DescriptorOffset,
+              out var track,
+              out var occupiedBytes))
+          return false;
+
+        tracks.Add(track);
+        bodyOffset = checked(bodyOffset + occupiedBytes);
+        ++globalTrackNumber;
+      }
+
+      var sessionTrailer = footer.Version == Version2 ? 12 : 13;
+      if (!TrySkip(descriptor, ref position, sessionTrailer))
+        return false;
+    }
+
+    return tracks.Count > 0 && bodyOffset <= footer.DescriptorOffset;
+  }
+
+  private static bool TryReadLegacyTrack(
+    ReadOnlySpan<byte> descriptor,
+    uint version,
+    ref int position,
+    int sessionNumber,
+    int trackNumber,
+    long bodyOffset,
+    long dataAreaLength,
+    out CdiTrackInfo track,
+    out long occupiedBytes
+  ) {
+    track = null!;
+    occupiedBytes = 0;
+
+    if (!TryReadUInt32(descriptor, ref position, out var extendedPreamble))
+      return false;
+    if (extendedPreamble != 0 && !TrySkip(descriptor, ref position, 8))
+      return false;
+
+    if (!TryReadMarker(descriptor, ref position) || !TryReadMarker(descriptor, ref position))
+      return false;
+    if (!TrySkip(descriptor, ref position, 4) || (uint)position >= (uint)descriptor.Length)
+      return false;
+
+    var filenameLength = descriptor[position++];
+    if (!TrySkip(descriptor, ref position, filenameLength) ||
+        !TrySkip(descriptor, ref position, 11 + 4 + 4) ||
+        !TryReadUInt32(descriptor, ref position, out var dj4Selector))
+      return false;
+    if (dj4Selector == 0x80000000 && !TrySkip(descriptor, ref position, 8))
+      return false;
+    if (!TrySkip(descriptor, ref position, 2) ||
+        !TryReadUInt32(descriptor, ref position, out var pregapValue) ||
+        !TryReadUInt32(descriptor, ref position, out var dataLengthValue) ||
+        !TrySkip(descriptor, ref position, 6) ||
+        !TryReadUInt32(descriptor, ref position, out var modeValue) ||
+        !TrySkip(descriptor, ref position, 12) ||
+        !TryReadUInt32(descriptor, ref position, out var startLbaValue) ||
+        !TryReadUInt32(descriptor, ref position, out var totalLengthValue) ||
+        !TrySkip(descriptor, ref position, 16) ||
+        !TryReadUInt32(descriptor, ref position, out var sectorSizeSelector) ||
+        !TrySkip(descriptor, ref position, 29))
+      return false;
+
+    if (version != Version2) {
+      if (!TrySkip(descriptor, ref position, 5) ||
+          !TryReadUInt32(descriptor, ref position, out var extensionSelector))
+        return false;
+      if (extensionSelector == uint.MaxValue && !TrySkip(descriptor, ref position, 78))
+        return false;
+    }
+
+    if (modeValue > (uint)CdiTrackMode.Mode2 ||
+        pregapValue > int.MaxValue || dataLengthValue > int.MaxValue ||
+        totalLengthValue > int.MaxValue || startLbaValue > int.MaxValue)
+      return false;
+
+    var readMode = sectorSizeSelector switch {
+      0 => CdiReadMode.Mode1_2048,
+      1 => CdiReadMode.Mode2_2336,
+      2 => CdiReadMode.Raw2352,
+      _ => (CdiReadMode)uint.MaxValue,
+    };
+    var storedSectorSize = StoredSectorSize(readMode);
+    if (storedSectorSize == 0)
+      return false;
+
+    var pregap = checked((int)pregapValue);
+    var dataSectors = checked((int)dataLengthValue);
+    var totalSectors = checked((int)totalLengthValue);
+    if (totalSectors <= 0 || dataSectors < 0 || pregap < 0 || totalSectors < pregap + dataSectors)
+      return false;
+
+    occupiedBytes = checked((long)totalSectors * storedSectorSize);
+    if (bodyOffset < 0 || bodyOffset > dataAreaLength || occupiedBytes > dataAreaLength - bodyOffset)
+      return false;
+
+    var mode = (CdiTrackMode)modeValue;
+    track = new CdiTrackInfo(
+      sessionNumber,
+      trackNumber,
+      mode,
+      readMode,
+      pregap,
+      totalSectors,
+      dataSectors,
+      checked((int)startLbaValue),
+      storedSectorSize,
+      mode == CdiTrackMode.Audio ? 0 : 4,
+      bodyOffset,
+      checked(bodyOffset + (long)pregap * storedSectorSize)
+    );
+    return true;
+  }
+
+  private static int StoredSectorSize(CdiReadMode readMode) => readMode switch {
+    CdiReadMode.Mode1_2048 => 2048,
+    CdiReadMode.Mode2_2336 => 2336,
+    CdiReadMode.Raw2352 => 2352,
+    CdiReadMode.Raw2352_Q16 => 2368,
+    CdiReadMode.Raw2352_Pw96 => 2448,
+    _ => 0,
+  };
+
+  private static bool TryReadMarker(ReadOnlySpan<byte> descriptor, ref int position) {
+    if (position < 0 || position > descriptor.Length - PhysicalTrackMarker.Length)
+      return false;
+    if (!descriptor.Slice(position, PhysicalTrackMarker.Length).SequenceEqual(PhysicalTrackMarker))
+      return false;
+    position += PhysicalTrackMarker.Length;
     return true;
   }
 
@@ -288,19 +439,13 @@ internal static class CdiDescriptor {
         if ((uint)position >= (uint)descriptor.Length)
           return false;
         var length = descriptor[position++];
-        if (position > descriptor.Length - length)
+        if (!TrySkip(descriptor, ref position, length))
           return false;
-        position += length;
       }
     }
     return true;
   }
 
-  /// <summary>
-  /// Builds a normal DiscJuggler v3.5 single-session/single-track descriptor.
-  /// The caller writes 150 pregap sectors followed by <paramref name="dataSectorCount"/>
-  /// cooked Mode-1 sectors before appending these bytes.
-  /// </summary>
   internal static byte[] BuildSingleTrackV35(uint dataSectorCount) {
     if (dataSectorCount == 0)
       throw new ArgumentOutOfRangeException(nameof(dataSectorCount));
@@ -308,67 +453,105 @@ internal static class CdiDescriptor {
     var totalTrackSectors = checked(dataSectorCount + StandardPregapSectors);
     using var descriptor = new MemoryStream(capacity: 512);
 
-    descriptor.WriteByte(1); // number of sessions
-    WriteSessionPreamble(descriptor, trackCount: 1);
-    WritePhysicalTrackHeader(descriptor, totalTracks: 1);
-    WriteSingleTrackBody(descriptor, dataSectorCount, totalTrackSectors);
+    descriptor.WriteByte(1);
+    WriteModernSessionPreamble(descriptor, trackCount: 1);
+    WriteModernPhysicalTrackHeader(descriptor, totalTracks: 1);
+    WriteModernSingleTrackBody(descriptor, dataSectorCount, totalTrackSectors);
 
-    // Zero-track terminal session. Its final eight bytes are supplied by the
-    // prefix of the Disc Info Track/Disc Header, exactly like a normal session.
-    WriteSessionPreamble(descriptor, trackCount: 0);
-    WritePhysicalTrackHeader(descriptor, totalTracks: 1);
-    WriteDiscInfo(descriptor, totalTrackSectors);
+    WriteModernSessionPreamble(descriptor, trackCount: 0);
+    WriteModernPhysicalTrackHeader(descriptor, totalTracks: 1);
+    WriteModernDiscInfo(descriptor, totalTrackSectors);
 
     var descriptorLength = checked((uint)(descriptor.Length + sizeof(uint)));
     WriteUInt32(descriptor, descriptorLength);
     return descriptor.ToArray();
   }
 
-  private static void WriteSessionPreamble(Stream stream, ushort trackCount) {
+  /// <summary>
+  /// Builds the older v2/v3 single-track descriptor dialect. Its trailer stores
+  /// an absolute descriptor offset instead of the backwards length used by v3.5.
+  /// </summary>
+  internal static byte[] BuildSingleTrackLegacy(uint version, uint dataSectorCount, uint descriptorOffset) {
+    if (version is not (Version2 or Version3))
+      throw new ArgumentOutOfRangeException(nameof(version));
+    if (dataSectorCount == 0)
+      throw new ArgumentOutOfRangeException(nameof(dataSectorCount));
+
+    var totalTrackSectors = checked(dataSectorCount + StandardPregapSectors);
+    using var descriptor = new MemoryStream(capacity: 256);
+    WriteUInt16(descriptor, 1); // sessions
+    WriteUInt16(descriptor, 1); // tracks in session
+
+    WriteUInt32(descriptor, 0); // no extended preamble
+    descriptor.Write(PhysicalTrackMarker);
+    descriptor.Write(PhysicalTrackMarker);
+    WriteZeros(descriptor, 4);
+    descriptor.WriteByte(0); // embedded filename length
+    WriteZeros(descriptor, 11 + 4 + 4);
+    WriteUInt32(descriptor, 0); // no DJ4 extension
+    WriteZeros(descriptor, 2);
+    WriteUInt32(descriptor, StandardPregapSectors);
+    WriteUInt32(descriptor, dataSectorCount);
+    WriteZeros(descriptor, 6);
+    WriteUInt32(descriptor, (uint)CdiTrackMode.Mode1);
+    WriteZeros(descriptor, 12);
+    WriteUInt32(descriptor, 0); // start LBA
+    WriteUInt32(descriptor, totalTrackSectors);
+    WriteZeros(descriptor, 16);
+    WriteUInt32(descriptor, 0); // 2048-byte sectors
+    WriteZeros(descriptor, 29);
+
+    if (version == Version3) {
+      WriteZeros(descriptor, 5);
+      WriteUInt32(descriptor, 0); // no optional 78-byte extension
+    }
+
+    WriteZeros(descriptor, version == Version2 ? 12 : 13);
+    WriteUInt32(descriptor, version);
+    WriteUInt32(descriptor, descriptorOffset);
+    return descriptor.ToArray();
+  }
+
+  private static void WriteModernSessionPreamble(Stream stream, ushort trackCount) {
     stream.WriteByte(0);
     WriteUInt16(stream, trackCount);
     WriteUInt32(stream, 0);
   }
 
-  /// <summary>
-  /// Writes the physical Track/Disc Header representation. The first eight
-  /// bytes complete the preceding 15-byte session block, so the logical header
-  /// begins eight bytes into this sequence.
-  /// </summary>
-  private static void WritePhysicalTrackHeader(Stream stream, byte totalTracks) {
+  private static void WriteModernPhysicalTrackHeader(Stream stream, byte totalTracks) {
     stream.Write(PhysicalTrackMarker);
     stream.Write(PhysicalTrackMarker);
     WriteZeros(stream, 3);
     stream.WriteByte(totalTracks);
-    stream.WriteByte(0); // source filename length
+    stream.WriteByte(0);
     WriteZeros(stream, 11);
     WriteUInt32(stream, 2);
     WriteUInt32(stream, 0);
     WriteUInt32(stream, 0x80000000);
     WriteUInt32(stream, 360000);
-    WriteUInt32(stream, 0x00980000); // 00 00 + medium type 0098h (CD-ROM)
+    WriteUInt32(stream, 0x00980000);
   }
 
-  private static void WriteSingleTrackBody(Stream stream, uint dataSectorCount, uint totalTrackSectors) {
-    WriteUInt16(stream, 2); // index 0 + index 1
+  private static void WriteModernSingleTrackBody(Stream stream, uint dataSectorCount, uint totalTrackSectors) {
+    WriteUInt16(stream, 2);
     WriteUInt32(stream, StandardPregapSectors);
     WriteUInt32(stream, dataSectorCount);
-    WriteUInt32(stream, 0); // CD-Text blocks
+    WriteUInt32(stream, 0);
     WriteUInt16(stream, 0);
 
-    WriteUInt32(stream, (uint)CdiTrackMode.Mode1); // low byte is the mode; remaining bytes are zero
+    WriteUInt32(stream, (uint)CdiTrackMode.Mode1);
     WriteUInt32(stream, 0);
-    WriteUInt32(stream, 0); // session number, zero based
-    WriteUInt32(stream, 0); // track number in session, zero based
-    WriteUInt32(stream, 0); // start LBA
+    WriteUInt32(stream, 0);
+    WriteUInt32(stream, 0);
+    WriteUInt32(stream, 0);
     WriteUInt32(stream, totalTrackSectors);
     WriteZeros(stream, 16);
     WriteUInt32(stream, (uint)CdiReadMode.Mode1_2048);
-    WriteUInt32(stream, 4); // data-track control nibble
+    WriteUInt32(stream, 4);
     stream.WriteByte(0);
     WriteUInt32(stream, totalTrackSectors);
     WriteUInt32(stream, 0);
-    WriteZeros(stream, 12); // ISRC
+    WriteZeros(stream, 12);
     WriteUInt32(stream, 0);
     stream.WriteByte(0);
     WriteFill(stream, 8, 0xFF);
@@ -380,24 +563,31 @@ internal static class CdiDescriptor {
     WriteZeros(stream, 42);
     WriteUInt32(stream, uint.MaxValue);
     WriteZeros(stream, 12);
-    stream.WriteByte((byte)CdiTrackMode.Mode1); // session type on last track
+    stream.WriteByte((byte)CdiTrackMode.Mode1);
     WriteZeros(stream, 5);
-    stream.WriteByte(0); // no following track
+    stream.WriteByte(0);
     stream.WriteByte(0);
     WriteUInt32(stream, 0);
   }
 
-  private static void WriteDiscInfo(Stream stream, uint totalTrackSectors) {
+  private static void WriteModernDiscInfo(Stream stream, uint totalTrackSectors) {
     WriteUInt32(stream, totalTrackSectors);
-    stream.WriteByte(0); // volume-id length
+    stream.WriteByte(0);
     stream.WriteByte(0);
     WriteUInt32(stream, 1);
     WriteUInt32(stream, 1);
-    WriteZeros(stream, 13); // EAN-13
+    WriteZeros(stream, 13);
     WriteUInt32(stream, 0);
-    WriteUInt32(stream, 0); // lead-in CD-Text length
+    WriteUInt32(stream, 0);
     WriteZeros(stream, 8);
     WriteUInt32(stream, Version35);
+  }
+
+  private static bool TrySkip(ReadOnlySpan<byte> data, ref int position, int count) {
+    if (count < 0 || position < 0 || position > data.Length - count)
+      return false;
+    position += count;
+    return true;
   }
 
   private static bool TryReadUInt16(ReadOnlySpan<byte> data, ref int position, out ushort value) {
