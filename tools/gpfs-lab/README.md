@@ -65,13 +65,23 @@ The controlled sequence is deliberately fixed and promotion-gated:
 100-xattr-acl
 105-replicated
 110-delete
+120-map-allocated
+121-map-freed
 ```
 
-`050`/`055` bracket an IBM `mmrestripefile -b` operation so the verifier can
-require a real placement change before accepting a disk-address encoding.
+The `055-rebalanced` name is retained as a stable corpus ID, but the transition
+is now deterministic rather than an ordinary balance pass. IBM's demo placement
+policy sends ordinary files such as `block-plus-one.bin` to the `capacity` pool.
+The runner verifies that placement at `050`, assigns the file to `system` with
+`mmchattr -P system -I defer`, runs `mmrestripefile -p`, verifies the resulting
+`system` placement, and captures `055`. This forces a storage-pool/NSD-set change
+before any disk-address representation hypothesis is considered.
+
 `105` uses IBM's immediate two-replica file attributes and restriping, then lets
 `tsdbfs`/`mmgetlocation` prove whether the requested replicas actually exist.
-Neither operation is accepted merely because its command returned success.
+`110` is the stable baseline for a deliberately isolated allocation experiment:
+`120` creates one fresh inode with exactly one subblock of data, and `121` deletes
+exactly that object. No other semantic mutation occurs between those captures.
 
 Each capture performs this order:
 
@@ -164,14 +174,16 @@ Use that triangle as follows:
 - intersect checksum-value candidates at a stable byte offset/endian across
   replicas and captures before testing any checksum algorithm or coverage;
 - parse `tsdbfs`'s `Disk pointers [...]` with `GpfsTsdbfsPointerParser`; compare
-  `050-block-plus-one` with `055-rebalanced`, and retain packed-address candidates
-  only when the independently reported `disk:sector` changes and the same raw
-  field hypothesis predicts both values;
+  `050-block-plus-one` with the forced capacity-to-system `055-rebalanced`
+  transition, and retain packed-address candidates only when the independently
+  reported `disk:sector` changes and the same raw-field hypothesis predicts both
+  values;
 - use `GpfsMmfileidAggregateParser` to keep each `mmfileid` result bound to the
   query disk ID; require pointer sectors to map back to the expected inode/path;
-- compare `030-one-subblock` and `110-delete` around the isolated allocation and
-  use the reserved inode-1/inode-2 data to derive block-map and inode-map byte/bit
-  transitions;
+- use `110-delete` as the allocation-map baseline, compare it with
+  `120-map-allocated`, then compare `120-map-allocated` with `121-map-freed`;
+  restrict those raw diffs to the IBM-located reserved inode-1 and inode-2 data
+  so directory/inode timestamp changes cannot masquerade as bitmap transitions;
 - feed multiple known allocation transitions to
   `GpfsRawCorrelation.InferBitmapOrder`; one transition deliberately proves
   neither LSB-first nor MSB-first numbering;
@@ -186,6 +198,13 @@ Use that triangle as follows:
 requires the entire controlled series. `GpfsRawCorrelation` produces candidate
 field layouts, not accepted format rules. None of those classes contains a
 claimed GPFS byte layout.
+
+When two real corpora are available, set `CWB_GPFS_CORPUS_A` and
+`CWB_GPFS_CORPUS_B` before running the `ExternalFsInterop` tests. The optional
+`GpfsCorpusExternalTests` then opens only IBM-identified raw regions, requires
+`mmfileid` coverage for every `tsdbfs` physical address, and exercises the paired
+`050`/`055` address-candidate intersection. Without those environment variables,
+normal CI skips the proprietary-corpus tests.
 
 ## 5. Promotion rules
 
