@@ -11,23 +11,24 @@ namespace FileSystem.Tfs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// No normative public on-disk specification or independently verifiable
-/// implementation has been located. The existing <c>54 46 53 01</c> detector is
-/// therefore retained only as a legacy repository heuristic; it is not treated
-/// as proof of a documented superblock layout.
+/// No normative public on-disk specification, independently verifiable reference
+/// implementation or genuine sample image has been located. The repository used
+/// <c>54 46 53 01</c> as a detector from its initial TFS stub, but that value was
+/// introduced without a source and therefore no longer participates in automatic
+/// format detection. The <c>.tfs</c> extension is the only routing hint retained.
 /// </para>
 /// <para>
-/// Until allocation, namespace, transaction-publication and empty-volume
-/// semantics are known, the filesystem is exposed as one opaque image. No write
-/// or maintenance capability is advertised: claiming a wipe that can identify
-/// no free bytes, or a rebuild that merely replaces the complete opaque image,
-/// would be mechanically callable but semantically false.
+/// Until format identity, allocation, namespace, transaction-publication and
+/// empty-volume semantics are independently established, the input is exposed as
+/// one opaque image. No write or maintenance capability is advertised: claiming
+/// a wipe that can identify no free bytes, or a rebuild that merely replaces the
+/// complete opaque image, would be mechanically callable but semantically false.
 /// </para>
 /// </remarks>
 public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
   private const string FullImageName = "FULL.tfs";
   private const string MetadataName = "metadata.ini";
-  private const int LegacyMagicLength = 4;
+  private const int RepositoryHeuristicLength = 4;
 
   public string Id => "Tfs";
   public string DisplayName => "TFS (BBN Trans-FS)";
@@ -37,27 +38,22 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public string DefaultExtension => ".tfs";
   public IReadOnlyList<string> Extensions => [".tfs"];
   public IReadOnlyList<string> CompoundExtensions => [];
-  public IReadOnlyList<MagicSignature> MagicSignatures => [
-    // Legacy CompressionWorkbench heuristic. No normative public format source
-    // has been found that establishes this as a TFS superblock signature.
-    new([0x54, 0x46, 0x53, 0x01], Offset: 0, Confidence: 0.80),
-  ];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "BBN Trans-FS — conservative opaque read-only surface; allocation and transaction layout remain undocumented.";
+    "TFS (historically labelled BBN Trans-FS) — opaque extension-routed surface; format identity and on-disk layout remain unverified.";
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     ArgumentNullException.ThrowIfNull(stream);
     if (!stream.CanRead)
       throw new ArgumentException("TFS listing requires a readable stream.", nameof(stream));
 
-    var (length, hasLegacyMagic) = Inspect(stream);
+    var length = MeasureLength(stream);
     return [
       new ArchiveEntryInfo(0, FullImageName, length, length, "stored", false, false, null),
-      new ArchiveEntryInfo(1, MetadataName, 0, 0, "stored", false, false, null,
-        Kind: hasLegacyMagic ? "ok" : "partial"),
+      new ArchiveEntryInfo(1, MetadataName, 0, 0, "stored", false, false, null, Kind: "opaque"),
     ];
   }
 
@@ -70,9 +66,9 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     if (stream.CanSeek)
       stream.Position = 0;
 
-    Span<byte> prefix = stackalloc byte[LegacyMagicLength];
+    Span<byte> prefix = stackalloc byte[RepositoryHeuristicLength];
     var prefixLength = ReadPrefix(stream, prefix);
-    var hasLegacyMagic = HasLegacyMagic(prefix[..prefixLength]);
+    var matchesRepositoryHeuristic = MatchesRepositoryHeuristic(prefix[..prefixLength]);
 
     if (Wants(FullImageName, files)) {
       Directory.CreateDirectory(outputDir);
@@ -85,34 +81,32 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       return;
 
     var metadata = new StringBuilder()
-      .Append("parse_status=").Append(hasLegacyMagic ? "ok" : "partial").Append('\n')
-      .Append("magic_hex=0x54465301\n")
-      .Append("signature_status=legacy_heuristic\n")
+      .Append("parse_status=opaque\n")
+      .Append("format_identity=unverified\n")
+      .Append("legacy_magic_hex=0x54465301\n")
+      .Append("legacy_magic_match=").Append(matchesRepositoryHeuristic ? "true" : "false").Append('\n')
+      .Append("signature_status=unverified_repository_heuristic\n")
       .Append("layout_status=opaque\n")
-      .Append("note=No normative public on-disk layout is known; allocation and transaction metadata are not guessed.\n")
+      .Append("note=The historical BBN Trans-FS label and legacy magic are not backed by a located normative source; allocation and transaction metadata are not guessed.\n")
       .ToString();
     WriteFile(outputDir, MetadataName, Encoding.UTF8.GetBytes(metadata));
   }
 
-  private static (long Length, bool HasLegacyMagic) Inspect(Stream stream) {
+  private static long MeasureLength(Stream stream) {
     if (stream.CanSeek) {
       stream.Position = 0;
-      Span<byte> prefix = stackalloc byte[LegacyMagicLength];
-      var prefixLength = ReadPrefix(stream, prefix);
       var length = stream.Length;
       stream.Position = 0;
-      return (length, HasLegacyMagic(prefix[..prefixLength]));
+      return length;
     }
 
-    Span<byte> nonSeekablePrefix = stackalloc byte[LegacyMagicLength];
-    var nonSeekablePrefixLength = ReadPrefix(stream, nonSeekablePrefix);
-    long total = nonSeekablePrefixLength;
+    long total = 0;
     var buffer = new byte[81920];
     int read;
     while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
       total += read;
 
-    return (total, HasLegacyMagic(nonSeekablePrefix[..nonSeekablePrefixLength]));
+    return total;
   }
 
   private static int ReadPrefix(Stream stream, Span<byte> destination) {
@@ -126,8 +120,8 @@ public sealed class TfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return total;
   }
 
-  private static bool HasLegacyMagic(ReadOnlySpan<byte> prefix)
-    => prefix.Length >= LegacyMagicLength
+  private static bool MatchesRepositoryHeuristic(ReadOnlySpan<byte> prefix)
+    => prefix.Length >= RepositoryHeuristicLength
       && prefix[0] == 0x54
       && prefix[1] == 0x46
       && prefix[2] == 0x53
