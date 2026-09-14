@@ -80,20 +80,22 @@ Each capture performs this order:
    mounted, as required by IBM's online checker;
 3. archive `tsdbfs inode` for reserved inodes 0, 1, 2, 4, 5 and 38 plus every
    selected user inode;
-4. archive `mmgetlocation -Y -L` for selected live paths and `mmfileid` for the
-   physical `disk:sector` addresses printed by `tsdbfs`;
-5. `sync` and cleanly unmount the filesystem;
-6. refuse capture if a GPFS mount still exists;
-7. read **every** backing NSD into a full logical raw image;
-8. verify captured byte length, name images by SHA-256, and write `manifest.tsv`
+4. archive `mmgetlocation -Y -L` for selected live paths and `mmfileid` for every
+   physical `disk:sector` printed anywhere in those `tsdbfs` inode reports;
+5. reject the capture if any requested `mmfileid` lookup fails;
+6. `sync` and cleanly unmount the filesystem;
+7. refuse capture if a GPFS mount still exists;
+8. read **every** backing NSD into a full logical raw image;
+9. verify captured byte length, name images by SHA-256, and write `manifest.tsv`
    plus `SHA256SUMS`;
-9. remount `fs1` for the next controlled mutation.
+10. remount `fs1` for the next controlled mutation.
 
-A failed checker, unmount, ambiguous NSD-to-device mapping, missing oracle
-command, missing probe path, short image, or fewer than two discovered NSDs aborts
-the capture before it is eligible for the repository promotion gate.
+A failed checker, `mmfileid` lookup, unmount, ambiguous NSD-to-device mapping,
+missing oracle command, missing probe path, short image, or fewer than two
+discovered NSDs aborts the capture before it is eligible for the repository
+promotion gate.
 
-## 3. Corpus layout
+## 3. Corpus layout and integrity
 
 A capture directory contains:
 
@@ -129,31 +131,61 @@ artifact<TAB>kind<TAB>sha256<TAB>path
 The six required oracle kinds are `mmfsckx`, `tsdbfs`, `mmfileid`,
 `mmgetlocation`, `mmlsdisk`, and `mmlsnsd`.
 
+Before deriving anything from a corpus, verify every digest, the fixed transition
+sequence, topology invariants and filesystem identity. For two promotion corpora:
+
+```bash
+./tools/gpfs-lab/verify-corpora.sh /path/to/corpus-a /path/to/corpus-b
+```
+
+The verifier rejects duplicate corpus IDs and duplicate filesystem UIDs, so two
+runs against the same formatted filesystem do not masquerade as independent
+evidence.
+
 ## 4. Derivation workflow
 
 Do not search entire NSDs for attractive byte patterns and call the first match a
-structure. Use the IBM oracle to constrain the search:
+structure. Use the IBM oracles to constrain the search.
+
+For placement, keep the oracle roles distinct. `mmgetlocation -Y -L` reports the
+logical chunk offset plus NSD name and GPFS disk ID; it does **not** report a
+physical sector. `tsdbfs inode` reports the physical inode replicas and, in its
+`Disk pointers [...]` section, the file's physical data-pointer `disk:sector`
+values. `mmfileid` then supplies the independent reverse check from those sectors
+to their owning reserved object or user inode/path. A disk-address encoding does
+not survive unless all three views remain consistent.
+
+Use that triangle as follows:
 
 - correlate each `tsdbfs` inode replica `disk:sector` with the corresponding raw
-  NSD, then identify inode field offsets only from paired single-change captures;
-- infer candidate inode checksum field, algorithm and coverage from bytes that
-  move with IBM's reported checksum, then reject every candidate that fails on a
-  second inode and a second independently formatted filesystem;
-- compare `050-block-plus-one` with `055-rebalanced`; accept disk-address packing
-  only when IBM reports a real placement change and the candidate encoding
-  predicts both placements;
+  NSD using the logical sector size recorded by `mmlsdisk -L`;
+- use `GpfsRawCorrelation.ReadInodeReplicas` to read only those IBM-identified
+  inode bytes instead of scanning whole NSDs;
+- intersect checksum-value candidates at a stable byte offset/endian across
+  replicas and captures before testing any checksum algorithm or coverage;
+- parse `tsdbfs`'s `Disk pointers [...]` with `GpfsTsdbfsPointerParser`; compare
+  `050-block-plus-one` with `055-rebalanced`, and retain packed-address candidates
+  only when the independently reported `disk:sector` changes and the same raw
+  field hypothesis predicts both values;
+- use `GpfsMmfileidAggregateParser` to keep each `mmfileid` result bound to the
+  query disk ID; require pointer sectors to map back to the expected inode/path;
 - compare `030-one-subblock` and `110-delete` around the isolated allocation and
   use the reserved inode-1/inode-2 data to derive block-map and inode-map byte/bit
   transitions;
+- feed multiple known allocation transitions to
+  `GpfsRawCorrelation.InferBitmapOrder`; one transition deliberately proves
+  neither LSB-first nor MSB-first numbering;
 - repeat bitmap transitions across byte, word, record, region and segment
   boundaries before generalising the offset function;
-- cross-check block-map word orientation against independent `mmfsckx`
-  actual/expected vectors, never against a self-generated expected value only.
+- constrain raw 64-bit allocation-map word order against independent `mmfsckx`
+  actual/expected vectors with `FindWordVectorCandidates`, never against a
+  self-generated expected value only.
 
-`GpfsRawDiff` provides only representation-neutral byte/bit differencing.
+`GpfsRawDiff` provides representation-neutral byte/bit differencing.
 `GpfsEvidenceManifest` verifies an individual capture and `GpfsEvidenceCorpus`
-requires the entire controlled series. None of those classes contains a claimed
-GPFS byte layout.
+requires the entire controlled series. `GpfsRawCorrelation` produces candidate
+field layouts, not accepted format rules. None of those classes contains a
+claimed GPFS byte layout.
 
 ## 5. Promotion rules
 
