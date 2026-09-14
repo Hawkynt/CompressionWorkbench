@@ -65,12 +65,15 @@ The controlled sequence is deliberately fixed and promotion-gated:
 100-xattr-acl
 105-replicated
 110-delete
-120-map-allocated
-121-map-freed
+120-inode-allocated
+121-inode-freed
+130-block-baseline
+131-block-allocated
+132-block-freed
 ```
 
 The `055-rebalanced` name is retained as a stable corpus ID, but the transition
-is now deterministic rather than an ordinary balance pass. IBM's demo placement
+is deterministic rather than an ordinary balance pass. IBM's demo placement
 policy sends ordinary files such as `block-plus-one.bin` to the `capacity` pool.
 The runner verifies that placement at `050`, assigns the file to `system` with
 `mmchattr -P system -I defer`, runs `mmrestripefile -p`, verifies the resulting
@@ -79,9 +82,11 @@ before any disk-address representation hypothesis is considered.
 
 `105` uses IBM's immediate two-replica file attributes and restriping, then lets
 `tsdbfs`/`mmgetlocation` prove whether the requested replicas actually exist.
-`110` is the stable baseline for a deliberately isolated allocation experiment:
-`120` creates one fresh inode with exactly one subblock of data, and `121` deletes
-exactly that object. No other semantic mutation occurs between those captures.
+The final transitions deliberately decouple the two allocation maps. `120`/`121`
+create and delete an **empty** file, changing inode allocation without user-data
+allocation. `130` establishes an already-allocated empty inode as a baseline;
+`131` writes exactly one subblock into it and `132` truncates it back to zero,
+changing block allocation without allocating or freeing that inode.
 
 Each capture performs this order:
 
@@ -180,10 +185,15 @@ Use that triangle as follows:
   values;
 - use `GpfsMmfileidAggregateParser` to keep each `mmfileid` result bound to the
   query disk ID; require pointer sectors to map back to the expected inode/path;
-- use `110-delete` as the allocation-map baseline, compare it with
-  `120-map-allocated`, then compare `120-map-allocated` with `121-map-freed`;
-  restrict those raw diffs to the IBM-located reserved inode-1 and inode-2 data
-  so directory/inode timestamp changes cannot masquerade as bitmap transitions;
+- infer inode-map changes only from reserved inode 2 across
+  `110-delete -> 120-inode-allocated -> 121-inode-freed`; the probe file is empty,
+  so user-data allocation is not coupled to the inode transition;
+- infer block-map changes only from reserved inode 1 across
+  `130-block-baseline -> 131-block-allocated -> 132-block-freed`; the file's inode
+  exists throughout, so the one-subblock allocation is not coupled to inode
+  allocation;
+- require each allocation/free pair to reverse the same candidate bit before it
+  contributes to the model;
 - feed multiple known allocation transitions to
   `GpfsRawCorrelation.InferBitmapOrder`; one transition deliberately proves
   neither LSB-first nor MSB-first numbering;
