@@ -161,7 +161,7 @@ public class NrgLegacyDescriptorTests {
     result[21] = checked((byte)trackNumber);
 
     var track = result.AsSpan(22, 30);
-    BinaryPrimitives.WriteUInt16BigEndian(track[12..], SectorSize);
+    BinaryPrimitives.WriteUInt16BigEndian(track[12..], checked((ushort)SectorSize));
     track[14] = (byte)NrgTrackMode.Mode1;
     BinaryPrimitives.WriteUInt16BigEndian(track[16..], 1);
     BinaryPrimitives.WriteInt32BigEndian(track[18..], startOffset);
