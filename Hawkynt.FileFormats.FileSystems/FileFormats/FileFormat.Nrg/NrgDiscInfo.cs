@@ -35,6 +35,9 @@ public sealed record NrgTrackInfo {
   /// <summary>Gets the stored bytes per sector.</summary>
   public required int SectorSize { get; init; }
 
+  /// <summary>Gets the offset of the 2,048-byte user-data area within each stored sector when one is known.</summary>
+  public required int UserDataOffset { get; init; }
+
   /// <summary>Gets the first byte of the stored pregap/index-0 area.</summary>
   public required long PregapOffset { get; init; }
 
