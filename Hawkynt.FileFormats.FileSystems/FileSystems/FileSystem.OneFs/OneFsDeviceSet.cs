@@ -40,7 +40,7 @@ public sealed record OneFsDeviceGeometry(
 /// </para>
 /// <para>
 /// The supplied streams remain owned by the caller. <see cref="Open(IEnumerable{Stream})"/>
-/// never reads them, changes their positions, or disposes them. <see cref="ReadBlock"/>
+/// never reads them, changes their positions, or disposes them. <see cref="ReadBlock(int,long,Span{byte})"/>
 /// restores the selected stream position after each explicit read. Membership in
 /// a common OneFS cluster is intentionally <b>not</b> asserted: that requires the
 /// still-unverified raw superblock/device identity serialization.
@@ -49,11 +49,18 @@ public sealed record OneFsDeviceGeometry(
 public sealed class OneFsDeviceSet {
   private readonly Stream[] _streams;
   private readonly IReadOnlyList<OneFsDeviceGeometry> _devices;
+  private readonly IReadOnlyDictionary<OneFsDeviceIdentity, int> _identifiedDevices;
 
-  private OneFsDeviceSet(Stream[] streams, OneFsDeviceGeometry[] devices,
-      long totalImageSize, long totalBlockCount, long totalCylinderGroupCount) {
+  private OneFsDeviceSet(
+      Stream[] streams,
+      OneFsDeviceGeometry[] devices,
+      IReadOnlyDictionary<OneFsDeviceIdentity, int> identifiedDevices,
+      long totalImageSize,
+      long totalBlockCount,
+      long totalCylinderGroupCount) {
     this._streams = streams;
     this._devices = Array.AsReadOnly(devices);
+    this._identifiedDevices = identifiedDevices;
     this.TotalImageSize = totalImageSize;
     this.TotalCompleteBlockCount = totalBlockCount;
     this.TotalCompleteCylinderGroupCount = totalCylinderGroupCount;
@@ -61,6 +68,17 @@ public sealed class OneFsDeviceSet {
 
   /// <summary>Gets the candidate devices in caller-supplied order.</summary>
   public IReadOnlyList<OneFsDeviceGeometry> Devices => this._devices;
+
+  /// <summary>
+  /// Gets caller-supplied diagnostic <c>(devid,Lnum)</c> identities mapped to
+  /// candidate-device indices.
+  /// </summary>
+  /// <remarks>
+  /// The map is empty after <see cref="Open(IEnumerable{Stream})"/>. Identities
+  /// appear only after an explicit <see cref="WithDeviceIdentities"/> call; they
+  /// are never inferred from undocumented raw bytes.
+  /// </remarks>
+  public IReadOnlyDictionary<OneFsDeviceIdentity, int> IdentifiedDevices => this._identifiedDevices;
 
   /// <summary>Gets the total byte length of all supplied candidate devices.</summary>
   public long TotalImageSize { get; }
@@ -129,8 +147,57 @@ public sealed class OneFsDeviceSet {
       totalCylinderGroups = checked(totalCylinderGroups + cylinderGroups);
     }
 
-    return new OneFsDeviceSet(streams, geometry, totalBytes, totalBlocks, totalCylinderGroups);
+    return new OneFsDeviceSet(
+      streams,
+      geometry,
+      new Dictionary<OneFsDeviceIdentity, int>(),
+      totalBytes,
+      totalBlocks,
+      totalCylinderGroups);
   }
+
+  /// <summary>
+  /// Returns a new device-set view with explicit Dell diagnostic identities for
+  /// some or all candidate streams.
+  /// </summary>
+  /// <param name="identities">
+  /// One entry per <see cref="Devices"/> item. Null keeps that candidate
+  /// unidentified; non-null values are the <c>(devid,Lnum)</c> pair reported by
+  /// OneFS diagnostics such as IDI/DSR output or correlated <c>isi devices</c> data.
+  /// </param>
+  /// <remarks>
+  /// This method is deliberately explicit: the current raw-media reader cannot
+  /// verify cluster/device identity from disk bytes yet. Duplicate identities are
+  /// rejected rather than silently aliasing two supplied images.
+  /// </remarks>
+  public OneFsDeviceSet WithDeviceIdentities(IReadOnlyList<OneFsDeviceIdentity?> identities) {
+    ArgumentNullException.ThrowIfNull(identities);
+    if (identities.Count != this._devices.Count)
+      throw new ArgumentException(
+        $"OneFS identity count {identities.Count} does not match device count {this._devices.Count}.",
+        nameof(identities));
+
+    var mapped = new Dictionary<OneFsDeviceIdentity, int>();
+    for (var index = 0; index < identities.Count; ++index) {
+      var identity = identities[index];
+      if (identity is null)
+        continue;
+      if (!mapped.TryAdd(identity.Value, index))
+        throw new ArgumentException($"Duplicate OneFS diagnostic device identity {identity.Value}.", nameof(identities));
+    }
+
+    return new OneFsDeviceSet(
+      this._streams,
+      this._devices.ToArray(),
+      mapped,
+      this.TotalImageSize,
+      this.TotalCompleteBlockCount,
+      this.TotalCompleteCylinderGroupCount);
+  }
+
+  /// <summary>Tries to resolve an explicit OneFS diagnostic device identity to a supplied candidate index.</summary>
+  public bool TryResolveDevice(OneFsDeviceIdentity identity, out int deviceIndex)
+    => this._identifiedDevices.TryGetValue(identity, out deviceIndex);
 
   /// <summary>
   /// Reads one complete documented 8 KiB block from one candidate device while
@@ -171,6 +238,27 @@ public sealed class OneFsDeviceSet {
         stream.Position = originalPosition;
       }
     }
+  }
+
+  /// <summary>
+  /// Resolves and reads one 8 KiB Dell diagnostic block address from its explicitly
+  /// identified candidate device.
+  /// </summary>
+  /// <exception cref="ArgumentException">
+  /// The diagnostic address is not exactly one aligned OneFS filesystem block.
+  /// </exception>
+  /// <exception cref="KeyNotFoundException">
+  /// No candidate was explicitly assigned the address's <c>(devid,Lnum)</c> identity.
+  /// </exception>
+  public void ReadDiagnosticBlock(OneFsDiagnosticBlockAddress address, Span<byte> destination) {
+    if (!address.IsFilesystemBlockAligned || address.Length != OneFsReader.PhysicalBlockSize)
+      throw new ArgumentException(
+        $"Diagnostic block reads require one aligned {OneFsReader.PhysicalBlockSize}-byte address extent.",
+        nameof(address));
+    if (!this._identifiedDevices.TryGetValue(address.Device, out var deviceIndex))
+      throw new KeyNotFoundException($"No supplied OneFS candidate is mapped to diagnostic device {address.Device}.");
+
+    this.ReadBlock(deviceIndex, address.BlockIndex!.Value, destination);
   }
 
   /// <summary>
