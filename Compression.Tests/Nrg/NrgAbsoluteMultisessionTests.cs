@@ -69,13 +69,8 @@ public class NrgAbsoluteMultisessionTests {
           throw new AssertionException("Generated ISO contains an invalid root-directory record.");
 
         var record = sector.Slice(withinSector, recordLength);
-        var idLength = record[32];
-        var isDotEntry = idLength == 1 && (record[33] == 0x00 || record[33] == 0x01);
-        if (!isDotEntry) {
-          var relativeExtent = BinaryPrimitives.ReadUInt32LittleEndian(record.Slice(2, 4));
-          WriteBothEndianExtent(record.Slice(2, 8), checked(relativeExtent + (uint)baseLba));
-        }
-
+        var relativeExtent = BinaryPrimitives.ReadUInt32LittleEndian(record.Slice(2, 4));
+        WriteBothEndianExtent(record.Slice(2, 8), checked(relativeExtent + (uint)baseLba));
         withinSector += recordLength;
       }
 
