@@ -76,8 +76,8 @@ public sealed class NssNativeReadTests {
     BinaryPrimitives.WriteUInt16LittleEndian(dir.Slice(6, 2), 2);
     BinaryPrimitives.WriteUInt16LittleEndian(dir.Slice(8, 2), 1);
     BinaryPrimitives.WriteUInt16LittleEndian(dir.Slice(10, 2), 0xC000);
-    WriteDirEntry(dir, relative: 0, zid: 0x100, parent: 0x7f, "docs");
-    WriteDirEntry(dir, relative: 64, zid: 0x101, parent: 0x100, "note.bin");
+    WriteDirEntry(dir, relative: 0, zid: 0x100, parent: 0x7f, name: "docs");
+    WriteDirEntry(dir, relative: 64, zid: 0x101, parent: 0x100, name: "note.bin");
     BinaryPrimitives.WriteUInt32LittleEndian(dir.Slice(BlockSize - 4, 4), 0);
     BinaryPrimitives.WriteUInt32LittleEndian(dir.Slice(BlockSize - 8, 4), 64);
 
