@@ -22,7 +22,11 @@ public sealed class NssReader {
   /// </summary>
   public string VolumeName { get; private set; } = "";
 
-  /// <summary>Diagnostic anchor entries.</summary>
+  /// <summary>
+  /// Diagnostic anchors plus native ordinary files. Native directories are
+  /// available separately through <see cref="NativeEntries"/> so the legacy
+  /// archive extraction path cannot mistake them for zero-byte files.
+  /// </summary>
   public IReadOnlyList<NssEntry> Entries => this._entries;
 
   /// <summary>Native filesystem entries reconstructed from matching DirH/LEAF records.</summary>
@@ -84,11 +88,18 @@ public sealed class NssReader {
       });
     }
 
+    if (this._native != null)
+      this._entries.AddRange(this._native.Entries.Where(entry => !entry.IsDirectory));
+
     if (stream.CanSeek) stream.Position = original;
   }
 
-  /// <summary>Returns the 64-byte window at the synthetic entry's anchor offset.</summary>
+  /// <summary>Returns the synthetic anchor bytes or native file payload.</summary>
   public byte[] ExtractAnchor(NssEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
+    if (entry.IsNativeNssEntry)
+      return this.ExtractNative(entry);
+
     long anchor = -1;
     if (entry.Name.StartsWith("pool_anchor_", StringComparison.Ordinal)) anchor = this.Headers.PoolFoundOffset;
     else if (entry.Name.StartsWith("superblock_anchor_", StringComparison.Ordinal)) anchor = this.Headers.SuperblockFoundOffset;
@@ -96,9 +107,9 @@ public sealed class NssReader {
 
     if (anchor < 0 || anchor >= this._image.LongLength) return [];
     var n = (int)Math.Min(64L, this._image.LongLength - anchor);
-    var buf = new byte[64];
-    Array.Copy(this._image, anchor, buf, 0, n);
-    return buf;
+    var result = new byte[64];
+    Array.Copy(this._image, anchor, result, 0, n);
+    return result;
   }
 
   /// <summary>Extracts one native ordinary-file entry from its validated contiguous extent.</summary>
