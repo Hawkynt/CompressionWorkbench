@@ -47,12 +47,12 @@ public sealed record OneFsDeviceGeometry(
 /// </remarks>
 public sealed class OneFsDeviceSet {
   private readonly Stream[] _streams;
-  private readonly OneFsDeviceGeometry[] _devices;
+  private readonly IReadOnlyList<OneFsDeviceGeometry> _devices;
 
   private OneFsDeviceSet(Stream[] streams, OneFsDeviceGeometry[] devices,
       long totalImageSize, long totalBlockCount, long totalCylinderGroupCount) {
     this._streams = streams;
-    this._devices = devices;
+    this._devices = Array.AsReadOnly(devices);
     this.TotalImageSize = totalImageSize;
     this.TotalCompleteBlockCount = totalBlockCount;
     this.TotalCompleteCylinderGroupCount = totalCylinderGroupCount;
