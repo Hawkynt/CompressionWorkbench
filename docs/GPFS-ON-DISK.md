@@ -308,14 +308,19 @@ Build one object at a time and capture after each step:
 11. symlink and hard link;
 12. file with ACL and xattr data;
 13. replicated file spanning at least two NSDs;
-14. delete the earlier one-subblock file;
-15. create exactly one fresh inode containing exactly one subblock and capture;
-16. delete exactly that fresh object and capture again.
+14. delete the earlier one-subblock file and capture a stable baseline;
+15. create one **empty** regular file and capture the inode allocation;
+16. delete exactly that empty file and capture the inode deallocation;
+17. create a second empty file and capture it as the block-map baseline;
+18. write exactly one non-zero subblock to that existing inode and capture;
+19. truncate that same file back to zero and capture the block deallocation.
 
-The last two transitions are intentionally adjacent. They are the allocation-map
-experiment: use the preceding capture as baseline and restrict raw diffs to the
-IBM-located reserved inode-1 and inode-2 data. That prevents unrelated directory
-or file metadata changes elsewhere from being mistaken for bitmap bits.
+The final transitions deliberately separate the maps. `120-inode-allocated` and
+`121-inode-freed` change inode allocation without a user-data subblock.
+`130-block-baseline`, `131-block-allocated` and `132-block-freed` keep the inode
+allocated throughout the data allocation/free pair. Raw map diffs are restricted
+to the IBM-located reserved inode-1 or inode-2 contents, so unrelated directory
+or inode timestamps elsewhere cannot be mistaken for bitmap bits.
 
 Do not use all-zero payloads as the only data corpus: sparse/zero optimizations can
 make a physically empty block look like an addressing rule. Use deterministic
@@ -380,23 +385,25 @@ expected inode/path.
 
 ### 3. Inode allocation-map bit order
 
-Use `110-delete` as baseline, create the one-object allocation at
-`120-map-allocated`, then delete exactly it at `121-map-freed`. Record the new
-inode number. Diff only the raw data belonging to reserved inode 2. Require the
-allocation and deallocation transitions to reverse the same bit, then repeat
-across byte, word, record, region and segment boundaries.
+Use `110-delete` as baseline, create the empty inode at `120-inode-allocated`,
+then delete exactly it at `121-inode-freed`. Record the new inode number. Diff
+only the raw data belonging to reserved inode 2. Require the allocation and
+deallocation transitions to reverse the same bit, then repeat across byte, word,
+record, region and segment boundaries.
 
 One bit transition cannot establish LSB-first versus MSB-first numbering; at
 least two known logical indices are required before fitting the bit direction.
 
 ### 4. Block allocation-map bit order
 
-Use the same `110 -> 120 -> 121` pair for the one-subblock data allocation. Use
-`tsdbfs` physical disk pointers plus `mmfileid` to pin the allocated block to the
-expected file, then diff only the raw data belonging to reserved inode 1. Require
-the allocation/deallocation pair to reverse the predicted bit. Cross-check the
-candidate word orientation against vectors that `mmfsckx` itself prints as
-`map status` and `expected`.
+Use `130-block-baseline` as the state where the probe inode exists but has no data
+allocation. Write exactly one subblock and capture `131-block-allocated`, then
+truncate the same inode to zero and capture `132-block-freed`. Use `tsdbfs`
+physical disk pointers plus `mmfileid` to pin the allocated block to the expected
+file, then diff only the raw data belonging to reserved inode 1. Require the
+allocation/deallocation pair to reverse the predicted bit. Cross-check candidate
+word orientation against vectors that `mmfsckx` itself prints as `map status`
+and `expected`.
 
 ### 5. Indirect blocks and directories
 
