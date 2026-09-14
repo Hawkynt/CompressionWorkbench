@@ -25,8 +25,8 @@ one reverse-engineered implementation as a specification.
 No GPL/CDDL implementation code, comments, naming, structure or control flow is
 copied. Numeric markers, version IDs, field sizes, standard polynomials and
 sector-mode constants are interoperability facts. The EDC and ECC lookup data used
-by the writer is generated locally from the ECMA-defined polynomials rather than
-copied as tables.
+by the mutation path is generated locally from the ECMA-defined polynomials rather
+than copied as tables.
 
 ## Trailer
 
@@ -105,8 +105,9 @@ constraint:
 
 Fresh images use a standard 150-sector pregap and a cooked 2048-byte Mode-1 ISO
 track. Selecting an old target changes the CDI descriptor/trailer contract, not
-the ISO payload semantics. Raw-sector authoring is currently used by preservation
-mutation, not as a separate new-image creation profile.
+the ISO payload semantics. Raw-sector generation is currently used only to preserve
+an existing track during mutation; it is not exposed as a separate fresh-image
+creation profile.
 
 ## Multisession and Dreamcast addressing
 
