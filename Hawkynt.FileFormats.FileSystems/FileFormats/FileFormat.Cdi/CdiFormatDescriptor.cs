@@ -7,8 +7,8 @@ namespace FileFormat.Cdi;
 /// <summary>
 /// DiscJuggler CDI disc image (Padus) — CD track data followed by a trailing
 /// session/track descriptor. Reading covers modern and old v2/v3 descriptor
-/// dialects; cooked Mode-1 filesystems can be rebuilt inside an existing
-/// multi-track layout without rewriting the optical descriptor.
+/// dialects; supported Mode-1 and Mode-2 Form-1 filesystems can be rebuilt
+/// inside an existing multi-track layout without rewriting the optical descriptor.
 /// </summary>
 public sealed class CdiFormatDescriptor :
   IFormatDescriptor,
@@ -34,7 +34,7 @@ public sealed class CdiFormatDescriptor :
   public string? TarCompressionFormatId => null;
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
   public string Description =>
-    "DiscJuggler CDI (v2/v3/v3.5; multisession/multitrack/audio/Mode-2 read; layout-preserving R/W for cooked Mode-1 data tracks)";
+    "DiscJuggler CDI (v2/v3/v3.5; multisession/multitrack/audio read; layout-preserving R/W for Mode-1 and Mode-2 Form-1 data tracks)";
 
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new(
@@ -109,8 +109,8 @@ public sealed class CdiFormatDescriptor :
   /// <summary>
   /// Adds/replaces ordinary ISO files. Descriptor-bearing images use a
   /// transactional embedded-ISO rebuild that leaves all optical tracks and the
-  /// descriptor byte layout in place. Raw/Mode-2 data tracks remain read-only
-  /// until their CD EDC/ECC can be regenerated safely.
+  /// descriptor byte layout in place. Raw Mode-1 and Mode-2 Form-1 sectors have
+  /// their standard CD EDC/ECC regenerated; Form-2/formless sectors fail closed.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -230,8 +230,10 @@ public sealed class CdiFormatDescriptor :
 
   /// <summary>
   /// A multi-track CDI has a fixed optical track map, so shrink cannot remove
-  /// bytes without rewriting that map; it therefore copies through unchanged.
-  /// Single-track images may be rebuilt smaller while preserving their v2/v3/v3.5
+  /// bytes without rewriting that map. Raw/Mode-2 tracks likewise cannot be
+  /// recreated smaller by the current cooked-only creator without changing their
+  /// sector geometry. Those profiles therefore copy through unchanged. A single
+  /// cooked Mode-1 track may be rebuilt smaller while preserving its descriptor
   /// compatibility target.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
@@ -244,15 +246,19 @@ public sealed class CdiFormatDescriptor :
     try {
       input.Position = 0;
       using var reader = new CdiReader(input, leaveOpen: true);
-      if (reader.Tracks.Count > 1) {
-        if (!CdiEmbeddedIsoRebuilder.CanRewrite(reader))
-          throw CdiEmbeddedIsoRebuilder.UnsupportedLayout();
+      var active = reader.ActiveDataTrack;
+      if (reader.Tracks.Count > 0 && !CdiEmbeddedIsoRebuilder.CanRewrite(reader))
+        throw CdiEmbeddedIsoRebuilder.UnsupportedLayout();
+
+      var recreatableCookedProfile = reader.Tracks.Count == 1 && active is {
+        Mode: CdiTrackMode.Mode1,
+        ReadMode: CdiReadMode.Mode1_2048,
+        StoredSectorSize: 2048,
+      };
+      if (reader.Tracks.Count > 1 || reader.Tracks.Count == 1 && !recreatableCookedProfile) {
         CopyThrough(input, output);
         return;
       }
-
-      if (reader.Tracks.Count == 1 && !CdiEmbeddedIsoRebuilder.CanRewrite(reader))
-        throw CdiEmbeddedIsoRebuilder.UnsupportedLayout();
 
       var formatSpecific = reader.CdiVersion is CdiDescriptor.Version2 or CdiDescriptor.Version3 or CdiDescriptor.Version35
         ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
