@@ -8,7 +8,9 @@ WORK="$MOUNT/.cw-gpfs-corpus"
 CAPTURE=$(readlink -f "$(dirname "$0")/capture.sh")
 
 [[ ${EUID} -eq 0 ]] || { echo "run-controlled-corpus.sh must run as root" >&2; exit 2; }
-for cmd in python3 fallocate setfattr setfacl mmlsfs; do command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }; done
+for cmd in python3 fallocate setfattr setfacl mmlsfs mmrestripefile mmchattr mmlsattr mmgetlocation; do
+  command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }
+done
 [[ -x $CAPTURE ]] || { echo "capture harness not found: $CAPTURE" >&2; exit 2; }
 
 rm -rf "$WORK"
@@ -64,6 +66,14 @@ target="$WORK/block-plus-one.bin"
 write_pattern "$target" "$((block + 1))"
 capture 050-block-plus-one "cross full-block boundary by one byte" "$anchor" "$target"
 
+# Rebalance this exact file. The raw verifier must compare the 050 and 055 IBM
+# location oracles and refuse DiskAddressPacking=true unless at least one GPFS
+# disk/sector address actually changed; a no-op rebalance is evidence of nothing.
+mmgetlocation -f "$target" -Y -L >"$ROOT/location-before-rebalance.txt"
+mmrestripefile -b "$target"
+mmgetlocation -f "$target" -Y -L >"$ROOT/location-after-rebalance.txt"
+capture 055-rebalanced "rebalance block-plus-one file for a second placement" "$anchor" "$target"
+
 target="$WORK/indirect.bin"
 fallocate -l "$((block * 331 + 1))" "$target"
 # Defeat all-zero/sparse ambiguity while retaining one allocation per block.
@@ -92,8 +102,18 @@ setfattr -n user.cw_gpfs_probe -v 'xattr-0123456789abcdef' "$link_target"
 setfacl -m u:nobody:r-- "$link_target"
 capture 100-xattr-acl "add deterministic xattr and ACL" "$anchor" "$link_target"
 
+replicated="$WORK/replicated.bin"
+write_pattern "$replicated" "$((block * 2 + 97))"
+# IBM documents -R/-r as maximum/current data replicas and -I yes as immediate
+# replication. The capture records tsdbfs/mmgetlocation after the operation; the
+# raw verifier still has to prove that multiple replicas were actually created.
+mmchattr -R 2 -r 2 -I yes "$replicated"
+mmrestripefile -r "$replicated"
+mmlsattr -L "$replicated" >"$ROOT/mmlsattr-replicated.txt"
+capture 105-replicated "create a two-replica data file" "$anchor" "$replicated"
+
 rm "$WORK/one-subblock.bin"
 capture 110-delete "delete the isolated one-subblock file" "$anchor"
 
 printf 'corpus %s complete under %s\n' "$CORPUS_ID" "$ROOT"
-printf 'Do not promote GPFS from these captures alone: run a second independent corpus and verify raw-parser agreement.\n'
+printf 'Do not promote GPFS from these captures alone: reformat/reprovision for a distinct filesystem UID, run a second corpus, then verify raw-parser agreement.\n'
