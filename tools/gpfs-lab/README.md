@@ -21,10 +21,15 @@ On a Linux host with Vagrant plus libvirt or VirtualBox:
 
 The script pins IBM/StorageScaleVagrant to commit
 `64706486022d29cd9d5d89f2fa18ec509d2099e8`, updates only the documented
-`$StorageScale_version` setting to match the supplied installer, provisions the
-VM, and requires the documented five-NSD `fs1` topology (`nsd1`, `nsd2`, `nsd3`,
-`nsd6`, `nsd7`). Override `STORAGE_SCALE_VAGRANT_REF` intentionally when testing
-a newer IBM lab revision.
+`$StorageScale_version` setting to match the supplied installer, builds and
+registers IBM's provider-specific `StorageScale_base` box if it is not already
+installed, provisions the VM, and requires the documented final five-NSD `fs1`
+topology (`nsd1`, `nsd2`, `nsd3`, `nsd6`, `nsd7`). Override
+`STORAGE_SCALE_VAGRANT_REF` intentionally when testing a newer IBM lab revision.
+
+The base-box step follows IBM's own `prep-box` Vagrantfile and therefore needs
+normal Internet access for its upstream Linux box/RPM downloads. The separately
+licensed Storage Scale installer is never fetched by this script.
 
 ## 2. Run the controlled corpus inside m1
 
@@ -37,9 +42,9 @@ sudo GPFS_CORPUS_ROOT=/var/tmp/cw-gpfs-corpus \
 ```
 
 `GPFS_CORPUS_ROOT` must have enough capacity for every NSD image at every step.
-The IBM demo uses five 10 GiB NSDs, so each capture is 50 GiB of logical raw
-address space. The harness writes zero ranges as sparse host-file holes without
-changing the logical bytes or SHA-256 digest, but capacity planning should still
+Each capture's logical size is the sum of the backing devices reported by the
+provisioned lab. The harness writes zero ranges as sparse host-file holes without
+changing logical bytes or SHA-256 digests, but capacity planning should still
 assume the non-zero metadata/data footprint of all captures. Keep the corpus
 outside Git.
 
