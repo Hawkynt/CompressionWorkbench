@@ -137,9 +137,9 @@ internal static partial class RegCodec {
     => string.Join('\n', DecodeUtf16String(data).Split('\0', StringSplitOptions.RemoveEmptyEntries));
 
   private static string Decode(byte[] data) {
-    if (data.AsSpan().StartsWith([0xff, 0xfe])) return Encoding.Unicode.GetString(data, 2, data.Length - 2);
-    if (data.AsSpan().StartsWith([0xfe, 0xff])) return Encoding.BigEndianUnicode.GetString(data, 2, data.Length - 2);
-    if (data.AsSpan().StartsWith([0xef, 0xbb, 0xbf])) return Encoding.UTF8.GetString(data, 3, data.Length - 3);
+    if (data is [0xff, 0xfe, ..]) return Encoding.Unicode.GetString(data, 2, data.Length - 2);
+    if (data is [0xfe, 0xff, ..]) return Encoding.BigEndianUnicode.GetString(data, 2, data.Length - 2);
+    if (data is [0xef, 0xbb, 0xbf, ..]) return Encoding.UTF8.GetString(data, 3, data.Length - 3);
     return Encoding.Latin1.GetString(data);
   }
 }
