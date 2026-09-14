@@ -32,10 +32,13 @@ public class GpfsTsdbfsPointerParserTests {
   }
 
   [Test]
-  public void ParsesMultipleReplicasForOneLogicalPointer() {
+  public void ParsesAdjacentPointerSlotsWithoutMergingAddresses() {
+    // Public tsdbfs transcripts are often rendered with collapsed whitespace.
+    // This fixture preserves the intended column boundaries explicitly: these
+    // are slot 0 and slot 1, not two replicas belonging to slot 0.
     const string text = """
       Disk pointers [32]:
-        0:  31:2176293761:  30:2176329602: (null)   1: (null)
+        0:  31:217629376   1:  30:217632960   2: (null)
         31: (null)
       trailer: is NULL
       """;
@@ -44,13 +47,28 @@ public class GpfsTsdbfsPointerParserTests {
 
     Assert.Multiple(() => {
       Assert.That(pointers.DeclaredSlotCount, Is.EqualTo(32));
-      Assert.That(pointers.Pointers, Has.Count.EqualTo(3));
-      Assert.That(pointers.Pointers[0].SlotIndex, Is.Zero);
-      Assert.That(pointers.Pointers[0].Replicas, Is.EqualTo(new[] {
-        new GpfsDiskAddress(31, 2176293761),
-        new GpfsDiskAddress(30, 2176329602),
-      }));
+      Assert.That(pointers.Pointers, Has.Count.EqualTo(4));
+      Assert.That(pointers.Pointers[0], Is.EqualTo(new GpfsDiskPointerOracle(0, new[] { new GpfsDiskAddress(31, 217629376) })));
+      Assert.That(pointers.Pointers[1], Is.EqualTo(new GpfsDiskPointerOracle(1, new[] { new GpfsDiskAddress(30, 217632960) })));
+      Assert.That(pointers.Pointers[2].Replicas, Is.Empty);
+      Assert.That(pointers.Pointers[3].SlotIndex, Is.EqualTo(31));
     });
+  }
+
+  [Test]
+  public void ParsesMultipleAddressesWhenOneExplicitSlotContainsThem() {
+    const string text = """
+      Disk pointers [4]:
+        0:  7:100 9:200   1: (null)
+      trailer: is NULL
+      """;
+
+    var pointers = GpfsTsdbfsPointerParser.Parse(text);
+
+    Assert.That(pointers.Pointers[0].Replicas, Is.EqualTo(new[] {
+      new GpfsDiskAddress(7, 100),
+      new GpfsDiskAddress(9, 200),
+    }));
   }
 
   [Test]
