@@ -1,0 +1,43 @@
+name: NSS support ledger refresh
+
+on:
+  push:
+    branches: [nss-native-read-extract-2]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nss-native-read-extract-2
+
+      - name: Refresh NSS support ledger
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('Hawkynt.FileFormats.FileSystems/README.md')
+          text = path.read_text(encoding='utf-8')
+          old_row = '| [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ | ✅ moving | ✅ | — | — | — | anchor detection derived from real OES media; see the on-disk notes | Beast / B-tree layout undocumented; the writer emits a container under its own magic, not a pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |'
+          new_row = '| [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ | ✅ moving | ✅ | — | — | — | native quiescent DirH/LEAF scan plus anchor diagnostics; OES-derived clean-room vectors | Native read covers validated nested names and ordinary contiguous extents; the writer still emits a private container, not a mountable NSS pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |'
+          old_limit = '- **NSS** is detection only: Novell never published the format, and the writer deliberately emits a container under its own magic that no NetWare or OES release would take for a pool. What was learned from real media is in [NSS-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md).'
+          new_limit = '- **NSS** native read support is intentionally narrow and quiescent: the reader reconstructs validated DirH/LEAF namespace relationships and ordinary contiguous file extents using the OES-derived clean-room profile in [NSS-ON-DISK.md](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md), while retaining anchor diagnostics for unsupported images. Native allocation trees, journals, trustee metadata, ZLBH history, compressed/sparse/fragmented data profiles and writable NSS pools remain out of scope; the existing writer still emits a private Workbench container rather than a pool NetWare/OES would mount.'
+          if text.count(old_row) != 1 or text.count(old_limit) != 1:
+            raise SystemExit('Expected NSS ledger text was not found exactly once.')
+          path.write_text(text.replace(old_row, new_row).replace(old_limit, new_limit), encoding='utf-8')
+
+      - name: Commit ledger update
+        shell: bash
+        run: |
+          set -euo pipefail
+          path=Hawkynt.FileFormats.FileSystems/README.md
+          if git diff --quiet -- "$path"; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -- "$path"
+          git commit -m '* document native NSS read scope'
+          git push origin HEAD:nss-native-read-extract-2
