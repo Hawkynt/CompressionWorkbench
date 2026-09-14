@@ -5,12 +5,18 @@ using System.Text;
 namespace FileSystem.Ntfs;
 
 /// <summary>
-/// Reads the parts of FILE records that define an NTFS file reference without
-/// duplicating the general namespace/data decoder. A file reference is the
-/// 48-bit MFT segment number plus the 16-bit sequence number; the latter is the
-/// stale-reference guard and therefore belongs in <c>FilesystemNodeId.Generation</c>.
+/// Reads the native file-reference identity needed by the mounted NTFS view.
+/// A reference is the 48-bit MFT segment number plus the 16-bit sequence number;
+/// both $FILE_NAME parent references and directory-index child references are
+/// validated before a namespace is published.
 /// </summary>
 internal sealed class NtfsMountIdentityScanner {
+  private const uint AttributeTypeData = 0x80;
+  private const uint AttributeTypeFileName = 0x30;
+  private const uint AttributeTypeIndexRoot = 0x90;
+  private const uint AttributeTypeIndexAllocation = 0xA0;
+  private const uint AttributeEnd = 0xFFFFFFFF;
+
   private readonly Stream _image;
   private readonly NtfsDriverGeometry _geometry;
   private readonly int _clusterSize;
@@ -24,7 +30,7 @@ internal sealed class NtfsMountIdentityScanner {
     _clusterSize = geometry.ClusterSize;
 
     var record0 = ReadPhysicalRecord(checked(geometry.MftCluster * (long)_clusterSize));
-    ApplyFixups(record0);
+    ApplyFixups(record0, "MFT record 0");
     ValidateFileRecord(record0, 0);
     (_mftRuns, _mftDataSize) = ParseMftDataMap(record0);
   }
@@ -50,6 +56,7 @@ internal sealed class NtfsMountIdentityScanner {
     var pathToRecord = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase) {
       [string.Empty] = 5,
     };
+    var directoryRecords = new HashSet<uint> { 5 };
     var identities = new List<NtfsMountedEntryIdentity>(decodedEntries.Count);
 
     foreach (var entry in decodedEntries
@@ -71,15 +78,24 @@ internal sealed class NtfsMountIdentityScanner {
       var identity = ReadIdentity(entry.MftRecord);
       var fileName = FindMatchingFileName(identity, expectedParentRecord, leafName);
       var parentIdentity = ReadIdentity(fileName.ParentRecord);
-      if (fileName.ParentSequence != 0 && fileName.ParentSequence != parentIdentity.Sequence)
-        throw new InvalidDataException(
-          $"NTFS $FILE_NAME for '{path}' references parent MFT {fileName.ParentRecord} sequence {fileName.ParentSequence}, " +
-          $"but the live parent record has sequence {parentIdentity.Sequence}; the file reference is stale.");
+      ValidateReferenceSequence(
+        fileName.ParentRecord,
+        fileName.ParentSequence,
+        parentIdentity.Sequence,
+        $"$FILE_NAME parent reference for '{path}'");
 
       identities.Add(new NtfsMountedEntryIdentity(entry, identity.Sequence, identity.HardLinkCount));
-      if (entry.IsDirectory)
+      if (entry.IsDirectory) {
         pathToRecord[path] = entry.MftRecord;
+        directoryRecords.Add(entry.MftRecord);
+      }
     }
+
+    // A directory index stores complete NTFS file references, not merely record
+    // numbers. Validate the sequence component as well; otherwise an index entry
+    // left behind after MFT-slot reuse could silently resolve to an unrelated file.
+    foreach (var directoryRecord in directoryRecords)
+      ValidateDirectoryIndexReferences(directoryRecord);
 
     return new NtfsMountIdentityMap(root.Sequence, root.HardLinkCount, identities.ToArray());
   }
@@ -96,8 +112,6 @@ internal sealed class NtfsMountIdentityScanner {
       throw new InvalidDataException(
         $"NTFS MFT record {identity.RecordNumber} has no $FILE_NAME matching decoded alias '{leafName}' in parent {expectedParentRecord}.");
 
-    // Namespace 2 is the DOS-only 8.3 alias. Prefer the Win32/POSIX-visible
-    // namespace when both forms happen to compare equal after case folding.
     return matches.FirstOrDefault(static fileName => fileName.Namespace != 2, matches[0]);
   }
 
@@ -106,7 +120,7 @@ internal sealed class NtfsMountIdentityScanner {
       return cached;
 
     var record = ReadMappedRecord(recordNumber);
-    ApplyFixups(record);
+    ApplyFixups(record, $"MFT record {recordNumber}");
     ValidateFileRecord(record, recordNumber);
 
     var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(22));
@@ -119,6 +133,149 @@ internal sealed class NtfsMountIdentityScanner {
     var result = new RecordIdentity(recordNumber, sequence, hardLinks, fileNames);
     _records.Add(recordNumber, result);
     return result;
+  }
+
+  private void ValidateDirectoryIndexReferences(uint directoryRecordNumber) {
+    var record = ReadMappedRecord(directoryRecordNumber);
+    ApplyFixups(record, $"directory MFT record {directoryRecordNumber}");
+    ValidateFileRecord(record, directoryRecordNumber);
+
+    var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24)));
+    ValidateAttributeBounds(record, directoryRecordNumber, firstAttribute, used);
+
+    List<MftRun>? indexAllocationRuns = null;
+    var indexBlockSize = 0;
+    var position = (int)firstAttribute;
+    while (position <= used - 8) {
+      var type = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position));
+      if (type == AttributeEnd) break;
+      var length = ReadAttributeLength(record, directoryRecordNumber, position, used);
+      var nonResident = record[position + 8] != 0;
+      var nameLength = record[position + 9];
+      var name = ReadAttributeName(record, position, length, nameLength);
+
+      if (type == AttributeTypeIndexRoot && !nonResident && IsI30(name)) {
+        var (valueOffset, valueLength) = ReadResidentValueBounds(record, directoryRecordNumber, position, length);
+        var value = record.AsSpan(position + valueOffset, valueLength);
+        if (value.Length < 32)
+          throw new InvalidDataException($"NTFS directory {directoryRecordNumber} has a truncated $I30 $INDEX_ROOT.");
+        indexBlockSize = BinaryPrimitives.ReadInt32LittleEndian(value.Slice(8, 4));
+        ValidateIndexEntries(
+          value,
+          indexHeaderOffset: 16,
+          $"directory {directoryRecordNumber} resident $I30 index");
+      } else if (type == AttributeTypeIndexAllocation && nonResident && IsI30(name)) {
+        if (length < 64)
+          throw new InvalidDataException($"NTFS directory {directoryRecordNumber} has a truncated $I30 $INDEX_ALLOCATION attribute.");
+        var mappingOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 32));
+        if (mappingOffset < 64 || mappingOffset >= length)
+          throw new InvalidDataException($"NTFS directory {directoryRecordNumber} has invalid $I30 mapping-pairs offset.");
+        indexAllocationRuns = ParseRuns(record.AsSpan(position + mappingOffset, length - mappingOffset));
+      }
+
+      position += length;
+    }
+
+    if (indexAllocationRuns is null || indexAllocationRuns.Count == 0)
+      return;
+    if (indexBlockSize <= 0 || (indexBlockSize & (indexBlockSize - 1)) != 0 || indexBlockSize > 1 << 20)
+      throw new InvalidDataException(
+        $"NTFS directory {directoryRecordNumber} has invalid $I30 index block size {indexBlockSize}.");
+
+    foreach (var run in indexAllocationRuns) {
+      if (run.Sparse)
+        throw new InvalidDataException($"NTFS directory {directoryRecordNumber} has a sparse $I30 $INDEX_ALLOCATION run.");
+      var runBytes = checked(run.ClusterCount * (long)_clusterSize);
+      if (runBytes % indexBlockSize != 0)
+        throw new InvalidDataException(
+          $"NTFS directory {directoryRecordNumber} $I30 run is not an integral number of index blocks.");
+
+      var blockCount = checked((int)(runBytes / indexBlockSize));
+      for (var blockIndex = 0; blockIndex < blockCount; ++blockIndex) {
+        var physical = checked(run.Lcn * (long)_clusterSize + (long)blockIndex * indexBlockSize);
+        var block = new byte[indexBlockSize];
+        ReadExactlyAt(physical, block);
+        if (!block.AsSpan(0, 4).SequenceEqual("INDX"u8))
+          throw new InvalidDataException(
+            $"NTFS directory {directoryRecordNumber} $I30 block {blockIndex} has invalid INDX signature.");
+        ApplyFixups(block, $"directory {directoryRecordNumber} INDX block {blockIndex}");
+        ValidateIndexEntries(
+          block,
+          indexHeaderOffset: 24,
+          $"directory {directoryRecordNumber} INDX block {blockIndex}");
+      }
+    }
+  }
+
+  private void ValidateIndexEntries(ReadOnlySpan<byte> buffer, int indexHeaderOffset, string context) {
+    if (indexHeaderOffset < 0 || indexHeaderOffset > buffer.Length - 16)
+      throw new InvalidDataException($"NTFS {context} has a truncated INDEX_HEADER.");
+    var entriesOffset = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(indexHeaderOffset, 4));
+    var indexLength = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(indexHeaderOffset + 4, 4));
+    var allocatedLength = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(indexHeaderOffset + 8, 4));
+    if (indexLength < entriesOffset || allocatedLength < indexLength)
+      throw new InvalidDataException($"NTFS {context} has inconsistent INDEX_HEADER lengths.");
+
+    var start64 = (long)indexHeaderOffset + entriesOffset;
+    var end64 = (long)indexHeaderOffset + indexLength;
+    if (start64 < 0 || end64 < start64 || end64 > buffer.Length)
+      throw new InvalidDataException($"NTFS {context} index entries lie outside the containing attribute/block.");
+
+    var position = checked((int)start64);
+    var end = checked((int)end64);
+    var sawLast = false;
+    while (position < end) {
+      if (position > end - 16)
+        throw new InvalidDataException($"NTFS {context} ends with a truncated index entry.");
+      var rawReference = BinaryPrimitives.ReadUInt64LittleEndian(buffer.Slice(position, 8));
+      var entryLength = BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(position + 8, 2));
+      var keyLength = BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(position + 10, 2));
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(position + 12, 2));
+      if (entryLength < 16 || (entryLength & 7) != 0 || position > end - entryLength)
+        throw new InvalidDataException($"NTFS {context} contains an invalid index-entry length {entryLength}.");
+      if (keyLength > entryLength - 16)
+        throw new InvalidDataException($"NTFS {context} contains an index key longer than its entry.");
+
+      var isLast = (flags & 0x0002) != 0;
+      if (rawReference != 0 && !isLast) {
+        var record64 = rawReference & 0x0000FFFFFFFFFFFFUL;
+        if (record64 > uint.MaxValue)
+          throw new NotSupportedException(
+            $"NTFS {context} references MFT segment {record64}, beyond the mounted reader's 32-bit record range.");
+        var sequence = checked((ushort)(rawReference >> 48));
+        var live = ReadIdentity((uint)record64);
+        ValidateReferenceSequence(
+          (uint)record64,
+          sequence,
+          live.Sequence,
+          $"{context} child reference");
+      }
+
+      position += entryLength;
+      if (isLast) {
+        sawLast = true;
+        if (position != end && buffer[position..end].IndexOfAnyExcept((byte)0) >= 0)
+          throw new InvalidDataException($"NTFS {context} has non-zero data after its terminal index entry.");
+        break;
+      }
+    }
+
+    if (!sawLast)
+      throw new InvalidDataException($"NTFS {context} has no terminal index entry.");
+  }
+
+  private static void ValidateReferenceSequence(
+      uint recordNumber,
+      ushort referencedSequence,
+      ushort liveSequence,
+      string context) {
+    // Sequence zero appears in some old/synthetic structures and means that no
+    // generation check is available. A non-zero value is an actual stale-ref guard.
+    if (referencedSequence != 0 && referencedSequence != liveSequence)
+      throw new InvalidDataException(
+        $"NTFS {context} references MFT {recordNumber} sequence {referencedSequence}, " +
+        $"but the live FILE record has sequence {liveSequence}; the file reference is stale.");
   }
 
   private byte[] ReadMappedRecord(uint recordNumber) {
@@ -136,10 +293,8 @@ internal sealed class NtfsMountIdentityScanner {
       var runStart = checked(run.Vcn * (long)_clusterSize);
       var runLength = checked(run.ClusterCount * (long)_clusterSize);
       var runEnd = checked(runStart + runLength);
-      if (logical >= runEnd)
-        continue;
-      if (logical < runStart)
-        break;
+      if (logical >= runEnd) continue;
+      if (logical < runStart) break;
       if (run.Sparse)
         throw new InvalidDataException("NTFS $MFT contains a sparse data run, which cannot hold live FILE records.");
 
@@ -149,8 +304,7 @@ internal sealed class NtfsMountIdentityScanner {
       ReadExactlyAt(physical, destination.Slice(copied, take));
       logical += take;
       copied += take;
-      if (copied == destination.Length)
-        return result;
+      if (copied == destination.Length) return result;
     }
 
     throw new InvalidDataException($"NTFS $MFT data runs do not map all bytes of record {recordNumber}.");
@@ -169,18 +323,17 @@ internal sealed class NtfsMountIdentityScanner {
     _image.ReadExactly(destination);
   }
 
-  private void ApplyFixups(byte[] record) {
+  private void ApplyFixups(byte[] record, string context) {
     if (record.Length < 48)
-      throw new InvalidDataException("NTFS FILE record is shorter than its fixed header.");
-
+      throw new InvalidDataException($"NTFS {context} is shorter than its fixed multi-sector header.");
     var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
     var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
     var expectedSectors = checked(record.Length / _geometry.BytesPerSector);
     if (record.Length % _geometry.BytesPerSector != 0 || usaCount != expectedSectors + 1)
       throw new InvalidDataException(
-        $"NTFS FILE record has USA count {usaCount}, expected {expectedSectors + 1} for {_geometry.BytesPerSector}-byte sectors.");
+        $"NTFS {context} has USA count {usaCount}, expected {expectedSectors + 1} for {_geometry.BytesPerSector}-byte sectors.");
     if (usaOffset < 8 || usaOffset > record.Length - checked(usaCount * 2))
-      throw new InvalidDataException("NTFS FILE record update-sequence array lies outside the record.");
+      throw new InvalidDataException($"NTFS {context} update-sequence array lies outside the record.");
 
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
     for (var sector = 0; sector < expectedSectors; ++sector) {
@@ -188,7 +341,7 @@ internal sealed class NtfsMountIdentityScanner {
       var actual = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(trailer));
       if (actual != usn)
         throw new InvalidDataException(
-          $"NTFS FILE record update-sequence mismatch in sector {sector}: found 0x{actual:X4}, expected 0x{usn:X4}.");
+          $"NTFS {context} update-sequence mismatch in sector {sector}: found 0x{actual:X4}, expected 0x{usn:X4}.");
       record.AsSpan(usaOffset + (sector + 1) * 2, 2).CopyTo(record.AsSpan(trailer, 2));
     }
   }
@@ -196,9 +349,6 @@ internal sealed class NtfsMountIdentityScanner {
   private static void ValidateFileRecord(byte[] record, uint expectedRecordNumber) {
     if (!record.AsSpan(0, 4).SequenceEqual("FILE"u8))
       throw new InvalidDataException($"NTFS MFT record {expectedRecordNumber} has no FILE signature.");
-
-    // NTFS 3.1 stores the low 32 bits of the record number at offset 44. NTFS
-    // 3.0 may leave the field zero, so only a non-zero value is authoritative.
     var recordedNumber = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(44));
     if (recordedNumber != 0 && recordedNumber != expectedRecordNumber)
       throw new InvalidDataException(
@@ -208,21 +358,16 @@ internal sealed class NtfsMountIdentityScanner {
   private static (List<MftRun> Runs, long DataSize) ParseMftDataMap(byte[] record0) {
     var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record0.AsSpan(20));
     var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record0.AsSpan(24)));
-    if (firstAttribute < 24 || used < firstAttribute || used > record0.Length)
-      throw new InvalidDataException("NTFS $MFT FILE record has invalid attribute bounds.");
+    ValidateAttributeBounds(record0, 0, firstAttribute, used);
 
     var position = (int)firstAttribute;
     while (position <= used - 8) {
       var type = BinaryPrimitives.ReadUInt32LittleEndian(record0.AsSpan(position));
-      if (type == 0xFFFFFFFF)
-        break;
-      var length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record0.AsSpan(position + 4)));
-      if (length < 24 || position > used - length)
-        throw new InvalidDataException("NTFS $MFT contains a malformed attribute record.");
-
+      if (type == AttributeEnd) break;
+      var length = ReadAttributeLength(record0, 0, position, used);
       var nonResident = record0[position + 8] != 0;
       var nameLength = record0[position + 9];
-      if (type == 0x80 && nameLength == 0) {
+      if (type == AttributeTypeData && nameLength == 0) {
         if (!nonResident || length < 64)
           throw new NotSupportedException("NTFS mounted identity requires a non-resident unnamed $MFT::$DATA attribute.");
         var mappingOffset = BinaryPrimitives.ReadUInt16LittleEndian(record0.AsSpan(position + 32));
@@ -236,7 +381,6 @@ internal sealed class NtfsMountIdentityScanner {
           throw new InvalidDataException("NTFS $MFT::$DATA has no mapping pairs.");
         return (runs, dataSize);
       }
-
       position += length;
     }
 
@@ -251,17 +395,16 @@ internal sealed class NtfsMountIdentityScanner {
 
     while (position < mappingPairs.Length) {
       var header = mappingPairs[position++];
-      if (header == 0)
-        break;
+      if (header == 0) break;
       var lengthBytes = header & 0x0F;
       var offsetBytes = header >> 4;
       if (lengthBytes is < 1 or > 8 || offsetBytes > 8 || position > mappingPairs.Length - lengthBytes - offsetBytes)
-        throw new InvalidDataException("NTFS $MFT::$DATA contains malformed mapping pairs.");
+        throw new InvalidDataException("NTFS mapping pairs are malformed.");
 
       var count = ReadUnsigned(mappingPairs.Slice(position, lengthBytes));
       position += lengthBytes;
       if (count == 0 || count > long.MaxValue)
-        throw new InvalidDataException("NTFS $MFT::$DATA contains an invalid zero/oversized run length.");
+        throw new InvalidDataException("NTFS mapping pairs contain an invalid zero/oversized run length.");
       var clusterCount = checked((long)count);
 
       if (offsetBytes == 0) {
@@ -271,7 +414,7 @@ internal sealed class NtfsMountIdentityScanner {
         position += offsetBytes;
         previousLcn = checked(previousLcn + delta);
         if (previousLcn < 0)
-          throw new InvalidDataException("NTFS $MFT::$DATA mapping pairs resolve to a negative LCN.");
+          throw new InvalidDataException("NTFS mapping pairs resolve to a negative LCN.");
         runs.Add(new MftRun(vcn, previousLcn, clusterCount, Sparse: false));
       }
       vcn = checked(vcn + clusterCount);
@@ -283,27 +426,21 @@ internal sealed class NtfsMountIdentityScanner {
   private static FileNameReference[] ParseFileNames(byte[] record, uint recordNumber) {
     var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
     var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24)));
-    if (firstAttribute < 24 || used < firstAttribute || used > record.Length)
-      throw new InvalidDataException($"NTFS MFT record {recordNumber} has invalid attribute bounds.");
+    ValidateAttributeBounds(record, recordNumber, firstAttribute, used);
 
     var result = new List<FileNameReference>();
     var position = (int)firstAttribute;
     while (position <= used - 8) {
       var type = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position));
-      if (type == 0xFFFFFFFF)
-        break;
-      var length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 4)));
-      if (length < 24 || position > used - length)
-        throw new InvalidDataException($"NTFS MFT record {recordNumber} contains a malformed attribute record.");
+      if (type == AttributeEnd) break;
+      var length = ReadAttributeLength(record, recordNumber, position, used);
 
-      if (type == 0x30) {
+      if (type == AttributeTypeFileName) {
         if (record[position + 8] != 0)
           throw new InvalidDataException($"NTFS MFT record {recordNumber} has a non-resident $FILE_NAME attribute.");
-        var valueLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 16)));
-        var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 20));
-        if (valueLength < 66 || valueOffset < 24 || valueOffset > length - valueLength)
-          throw new InvalidDataException($"NTFS MFT record {recordNumber} has malformed $FILE_NAME bounds.");
-
+        var (valueOffset, valueLength) = ReadResidentValueBounds(record, recordNumber, position, length);
+        if (valueLength < 66)
+          throw new InvalidDataException($"NTFS MFT record {recordNumber} has a truncated $FILE_NAME value.");
         var value = record.AsSpan(position + valueOffset, valueLength);
         var rawParent = BinaryPrimitives.ReadUInt64LittleEndian(value);
         var parentRecord64 = rawParent & 0x0000FFFFFFFFFFFFUL;
@@ -324,6 +461,41 @@ internal sealed class NtfsMountIdentityScanner {
 
     return result.ToArray();
   }
+
+  private static void ValidateAttributeBounds(byte[] record, uint recordNumber, ushort firstAttribute, int used) {
+    if (firstAttribute < 24 || used < firstAttribute || used > record.Length)
+      throw new InvalidDataException($"NTFS MFT record {recordNumber} has invalid attribute bounds.");
+  }
+
+  private static int ReadAttributeLength(byte[] record, uint recordNumber, int position, int used) {
+    var length = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 4)));
+    if (length < 24 || position > used - length)
+      throw new InvalidDataException($"NTFS MFT record {recordNumber} contains a malformed attribute record.");
+    return length;
+  }
+
+  private static (int ValueOffset, int ValueLength) ReadResidentValueBounds(
+      byte[] record,
+      uint recordNumber,
+      int position,
+      int attributeLength) {
+    var valueLength = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position + 16)));
+    var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 20));
+    if (valueOffset < 24 || valueLength < 0 || valueOffset > attributeLength - valueLength)
+      throw new InvalidDataException($"NTFS MFT record {recordNumber} has malformed resident attribute bounds.");
+    return (valueOffset, valueLength);
+  }
+
+  private static string? ReadAttributeName(byte[] record, int position, int attributeLength, byte nameLength) {
+    if (nameLength == 0) return null;
+    var nameOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 10));
+    var byteLength = checked(nameLength * 2);
+    if (nameOffset < 16 || nameOffset > attributeLength - byteLength)
+      throw new InvalidDataException("NTFS attribute name lies outside its record.");
+    return Encoding.Unicode.GetString(record, position + nameOffset, byteLength);
+  }
+
+  private static bool IsI30(string? name) => string.Equals(name, "$I30", StringComparison.Ordinal);
 
   private static ulong ReadUnsigned(ReadOnlySpan<byte> bytes) {
     ulong value = 0;
