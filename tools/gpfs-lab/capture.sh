@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FS=${GPFS_FS:-fs1}
+MOUNT=${GPFS_MOUNT:-/ibm/fs1}
+OUT=${1:?usage: capture.sh OUT_DIR [PATH ...]}
+shift
+PROBES=("$@")
+OPERATION=${GPFS_OPERATION:-manual}
+CORPUS_ID=${GPFS_CORPUS_ID:-storage-scale-vagrant}
+CAPTURE_ID=${GPFS_CAPTURE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}
+
+[[ ${EUID} -eq 0 ]] || { echo "capture.sh must run as root" >&2; exit 2; }
+for cmd in mmlsfs mmlsdisk mmlsnsd mmfsckx tsdbfs mmgetlocation mmfileid mmumount mmmount sha256sum blockdev dd stat findmnt awk; do
+  command -v "$cmd" >/dev/null || { echo "missing required command: $cmd" >&2; exit 2; }
+done
+
+mkdir -p "$OUT/oracle" "$OUT/raw"
+OUT=$(readlink -f "$OUT")
+manifest="$OUT/manifest.tsv"
+: >"$manifest"
+
+mounted=0
+if findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1; then
+  mounted=1
+fi
+[[ $mounted -eq 1 ]] || { echo "$FS must be mounted at $MOUNT before oracle collection" >&2; exit 3; }
+
+remount=0
+cleanup() {
+  if [[ $remount -eq 1 ]]; then
+    mmmount "$FS" -a >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT
+
+mmlsfs "$FS" -Y >"$OUT/oracle/mmlsfs.txt"
+mmlsfs "$FS" --uid >"$OUT/oracle/mmlsfs-uid.txt"
+mmlsfs "$FS" -V >"$OUT/oracle/mmlsfs-version.txt"
+mmlsdisk "$FS" -L -Y >"$OUT/oracle/mmlsdisk.txt"
+mmlsdisk "$FS" -L >"$OUT/oracle/mmlsdisk-human.txt"
+mmlsnsd -f "$FS" -m -Y >"$OUT/oracle/mmlsnsd.txt"
+mmlsnsd -f "$FS" -m >"$OUT/oracle/mmlsnsd-human.txt"
+
+probe_count=0
+for path in "${PROBES[@]}"; do
+  [[ -e "$path" ]] || { echo "probe path does not exist: $path" >&2; exit 3; }
+  inode=$(stat -c '%i' "$path")
+  safe=$(printf '%s' "$path" | sed 's#[^A-Za-z0-9_.-]#_#g')
+  tsdbfs "$FS" inode "$inode" >"$OUT/oracle/tsdbfs-${inode}-${safe}.txt"
+  mmgetlocation -f "$path" -Y -L >"$OUT/oracle/mmgetlocation-${inode}-${safe}.txt"
+  printf '%s\t%s\n' "$inode" "$path" >>"$OUT/oracle/probes.tsv"
+  probe_count=$((probe_count + 1))
+done
+[[ $probe_count -gt 0 ]] || { echo "at least one probe path is required" >&2; exit 3; }
+
+sync
+mmumount "$FS" -a
+remount=1
+if findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1; then
+  echo "refusing raw capture: $FS is still mounted" >&2
+  exit 4
+fi
+
+mmfsckx "$FS" --check-reserved-files-only >"$OUT/oracle/mmfsckx.txt" 2>&1
+
+# Cross-check every physical inode replica printed by tsdbfs. mmfileid accepts
+# numeric GPFS disk IDs and physical sectors as :DiskNum:PhysAddr.
+: >"$OUT/oracle/mmfileid.txt"
+while IFS=: read -r disk sector; do
+  [[ $disk =~ ^[0-9]+$ && $sector =~ ^[0-9]+$ ]] || continue
+  printf '===== %s:%s =====\n' "$disk" "$sector" >>"$OUT/oracle/mmfileid.txt"
+  mmfileid "$FS" -d ":${disk}:${sector}" >>"$OUT/oracle/mmfileid.txt" 2>&1 || true
+done < <(grep -h -oE '[0-9]+:[0-9]+' "$OUT"/oracle/tsdbfs-*.txt | sort -u)
+
+uid=$(awk '$1 == "--uid" { print $2; exit }' "$OUT/oracle/mmlsfs-uid.txt")
+format_version=$(awk '$1 == "-V" { print $2; exit }' "$OUT/oracle/mmlsfs-version.txt")
+storage_version=$(awk '/GPFS version is/ { print $4; exit }' "$OUT/oracle/mmfsckx.txt")
+[[ -n $uid && -n $format_version && -n $storage_version ]] || {
+  echo "could not derive filesystem/version identity from IBM tool output" >&2
+  exit 5
+}
+
+printf 'meta\tcorpus-id\t%s\n' "$CORPUS_ID" >>"$manifest"
+printf 'meta\tcapture-id\t%s\n' "$CAPTURE_ID" >>"$manifest"
+printf 'meta\toperation\t%s\n' "$OPERATION" >>"$manifest"
+printf 'meta\tstorage-scale-version\t%s\n' "$storage_version" >>"$manifest"
+printf 'meta\tformat-version\t%s\n' "$format_version" >>"$manifest"
+printf 'meta\tfilesystem-uid\t%s\n' "$uid" >>"$manifest"
+printf 'meta\tcapture-state\tunmounted-clean\n' >>"$manifest"
+
+# Human -L/-m output is used only to join names to disk IDs and local devices;
+# the complete parseable -Y output is archived above as the authoritative oracle.
+declare -A disk_id sector_size device
+while read -r name id sector; do
+  disk_id["$name"]=$id
+  sector_size["$name"]=$sector
+done < <(awk '$2 == "nsd" && $9 ~ /^[0-9]+$/ { print $1, $9, $3 }' "$OUT/oracle/mmlsdisk-human.txt")
+while read -r name dev; do
+  [[ -n ${device[$name]:-} ]] || device["$name"]=$dev
+done < <(awk '$3 ~ /^\/dev\// { print $1, $3 }' "$OUT/oracle/mmlsnsd-human.txt")
+
+[[ ${#disk_id[@]} -ge 2 ]] || { echo "refusing capture: fewer than two NSDs were discovered" >&2; exit 6; }
+for name in "${!disk_id[@]}"; do
+  dev=${device[$name]:-}
+  [[ -n $dev && -b $dev ]] || { echo "no local block device mapping for NSD $name" >&2; exit 6; }
+  size=$(blockdev --getsize64 "$dev")
+  tmp="$OUT/raw/${name}.partial.img"
+  dd if="$dev" of="$tmp" bs=4M iflag=fullblock status=none
+  hash=$(sha256sum "$tmp" | awk '{print $1}')
+  image="$OUT/raw/${name}.${hash}.img"
+  mv "$tmp" "$image"
+  printf 'nsd\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$name" "${disk_id[$name]}" "$size" "${sector_size[$name]}" "$hash" "raw/$(basename "$image")" >>"$manifest"
+done
+
+add_artifacts() {
+  local kind=$1 pattern=$2 file hash
+  shopt -s nullglob
+  for file in $pattern; do
+    hash=$(sha256sum "$file" | awk '{print $1}')
+    printf 'artifact\t%s\t%s\t%s\n' "$kind" "$hash" "${file#"$OUT/"}" >>"$manifest"
+  done
+  shopt -u nullglob
+}
+add_artifacts mmfsckx "$OUT/oracle/mmfsckx.txt"
+add_artifacts tsdbfs "$OUT/oracle/tsdbfs-*.txt"
+add_artifacts mmfileid "$OUT/oracle/mmfileid.txt"
+add_artifacts mmgetlocation "$OUT/oracle/mmgetlocation-*.txt"
+add_artifacts mmlsdisk "$OUT/oracle/mmlsdisk.txt"
+add_artifacts mmlsnsd "$OUT/oracle/mmlsnsd.txt"
+
+(
+  cd "$OUT"
+  find oracle raw -type f -print0 | sort -z | xargs -0 sha256sum >SHA256SUMS
+  sha256sum manifest.tsv >>SHA256SUMS
+)
+
+mmmount "$FS" -a
+remount=0
+trap - EXIT
+printf 'captured %s (%s) to %s\n' "$CAPTURE_ID" "$OPERATION" "$OUT"
