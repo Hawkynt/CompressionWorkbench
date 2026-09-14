@@ -1,6 +1,7 @@
 #pragma warning disable CS1591
 using System.Buffers.Binary;
 using Compression.Core.DiskImage;
+using Compression.Core.Layout;
 using Compression.Registry;
 
 namespace FileSystem.Ext;
@@ -304,7 +305,9 @@ public static class ExtExtentMap {
       for (var i = 0; i < entries; ++i) {
         var at = 12 + i * 12;
         var encodedLength = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 4));
-        var blockCount = encodedLength <= 0x8000 ? encodedLength : encodedLength - 0x8000;
+        var blockCount = encodedLength <= 0x8000
+          ? (ulong)encodedLength
+          : (ulong)(encodedLength - 0x8000);
         if (blockCount == 0) return false;
         var startHi = BinaryPrimitives.ReadUInt16LittleEndian(node.AsSpan(at + 6));
         var startLo = BinaryPrimitives.ReadUInt32LittleEndian(node.AsSpan(at + 8));
