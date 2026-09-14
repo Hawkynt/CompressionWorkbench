@@ -1,4 +1,6 @@
 #pragma warning disable CS1591
+using System.Collections.ObjectModel;
+
 namespace FileSystem.OneFs;
 
 /// <summary>
@@ -48,17 +50,20 @@ public sealed record OneFsDeviceGeometry(
 /// </remarks>
 public sealed class OneFsDeviceSet {
   private readonly Stream[] _streams;
+  private readonly object[] _streamLocks;
   private readonly IReadOnlyList<OneFsDeviceGeometry> _devices;
   private readonly IReadOnlyDictionary<OneFsDeviceIdentity, int> _identifiedDevices;
 
   private OneFsDeviceSet(
       Stream[] streams,
+      object[] streamLocks,
       OneFsDeviceGeometry[] devices,
       IReadOnlyDictionary<OneFsDeviceIdentity, int> identifiedDevices,
       long totalImageSize,
       long totalBlockCount,
       long totalCylinderGroupCount) {
     this._streams = streams;
+    this._streamLocks = streamLocks;
     this._devices = Array.AsReadOnly(devices);
     this._identifiedDevices = identifiedDevices;
     this.TotalImageSize = totalImageSize;
@@ -147,10 +152,13 @@ public sealed class OneFsDeviceSet {
       totalCylinderGroups = checked(totalCylinderGroups + cylinderGroups);
     }
 
+    var emptyIdentityMap = new ReadOnlyDictionary<OneFsDeviceIdentity, int>(
+      new Dictionary<OneFsDeviceIdentity, int>());
     return new OneFsDeviceSet(
       streams,
+      Enumerable.Range(0, streams.Length).Select(static _ => new object()).ToArray(),
       geometry,
-      new Dictionary<OneFsDeviceIdentity, int>(),
+      emptyIdentityMap,
       totalBytes,
       totalBlocks,
       totalCylinderGroups);
@@ -188,8 +196,9 @@ public sealed class OneFsDeviceSet {
 
     return new OneFsDeviceSet(
       this._streams,
+      this._streamLocks,
       this._devices.ToArray(),
-      mapped,
+      new ReadOnlyDictionary<OneFsDeviceIdentity, int>(mapped),
       this.TotalImageSize,
       this.TotalCompleteBlockCount,
       this.TotalCompleteCylinderGroupCount);
@@ -212,8 +221,8 @@ public sealed class OneFsDeviceSet {
   /// This is raw forensic access only. A successful read says nothing about the
   /// block's semantic type, allocation state, checksum, cluster membership, or
   /// whether it is a OneFS superblock. Calls through this object are serialized
-  /// per underlying stream so their own cursor save/restore pairs cannot race.
-  /// External code sharing the same stream must provide its own synchronization.
+  /// per member so their own cursor save/restore pairs cannot race. External code
+  /// sharing the same caller-owned stream must provide its own synchronization.
   /// </remarks>
   public void ReadBlock(int deviceIndex, long blockIndex, Span<byte> destination) {
     if ((uint)deviceIndex >= (uint)this._streams.Length)
@@ -229,7 +238,7 @@ public sealed class OneFsDeviceSet {
 
     var stream = this._streams[deviceIndex];
     var byteOffset = checked(blockIndex * (long)OneFsReader.PhysicalBlockSize);
-    lock (stream) {
+    lock (this._streamLocks[deviceIndex]) {
       var originalPosition = stream.Position;
       try {
         stream.Position = byteOffset;
