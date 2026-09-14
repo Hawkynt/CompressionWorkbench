@@ -65,7 +65,7 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public string Description =>
-    "TUX3 version-tree research filesystem — native superblock, allocation-tree and journal parsing; " +
+    "TUX3 version-tree research filesystem — native big-endian superblock, allocation-tree and journal parsing; " +
     "fail-closed in-volume free-space layout/wipe plus external-tail shrink; native mutation not yet implemented.";
 
   /// <inheritdoc />
