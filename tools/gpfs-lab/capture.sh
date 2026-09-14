@@ -20,11 +20,10 @@ OUT=$(readlink -f "$OUT")
 manifest="$OUT/manifest.tsv"
 : >"$manifest"
 
-mounted=0
-if findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1; then
-  mounted=1
-fi
-[[ $mounted -eq 1 ]] || { echo "$FS must be mounted at $MOUNT before oracle collection" >&2; exit 3; }
+findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1 || {
+  echo "$FS must be mounted at $MOUNT before oracle collection" >&2
+  exit 3
+}
 
 remount=0
 cleanup() {
@@ -42,6 +41,14 @@ mmlsdisk "$FS" -L >"$OUT/oracle/mmlsdisk-human.txt"
 mmlsnsd -f "$FS" -m -Y >"$OUT/oracle/mmlsnsd.txt"
 mmlsnsd -f "$FS" -m >"$OUT/oracle/mmlsnsd-human.txt"
 
+# mmfsckx is an online checker. Run report-only while mounted, then take the raw
+# images only after all oracle reads are complete and the filesystem is unmounted.
+mmfsckx "$FS" --check-reserved-files-only >"$OUT/oracle/mmfsckx.txt" 2>&1
+
+for inode in 0 1 2 4 5 38; do
+  tsdbfs "$FS" inode "$inode" >"$OUT/oracle/tsdbfs-reserved-${inode}.txt"
+done
+
 probe_count=0
 for path in "${PROBES[@]}"; do
   [[ -e "$path" ]] || { echo "probe path does not exist: $path" >&2; exit 3; }
@@ -54,23 +61,16 @@ for path in "${PROBES[@]}"; do
 done
 [[ $probe_count -gt 0 ]] || { echo "at least one probe path is required" >&2; exit 3; }
 
-sync
-mmumount "$FS" -a
-remount=1
-if findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1; then
-  echo "refusing raw capture: $FS is still mounted" >&2
-  exit 4
-fi
-
-mmfsckx "$FS" --check-reserved-files-only >"$OUT/oracle/mmfsckx.txt" 2>&1
-
-# Cross-check every physical inode replica printed by tsdbfs. mmfileid accepts
-# numeric GPFS disk IDs and physical sectors as :DiskNum:PhysAddr.
+# Cross-check every physical sector address printed by tsdbfs while the cluster
+# is still mounted. Errors are preserved in the artifact; no address is silently
+# substituted by our own parser.
 : >"$OUT/oracle/mmfileid.txt"
 while IFS=: read -r disk sector; do
   [[ $disk =~ ^[0-9]+$ && $sector =~ ^[0-9]+$ ]] || continue
   printf '===== %s:%s =====\n' "$disk" "$sector" >>"$OUT/oracle/mmfileid.txt"
-  mmfileid "$FS" -d ":${disk}:${sector}" >>"$OUT/oracle/mmfileid.txt" 2>&1 || true
+  if ! mmfileid "$FS" -d ":${disk}:${sector}" >>"$OUT/oracle/mmfileid.txt" 2>&1; then
+    printf 'mmfileid_status=failed\n' >>"$OUT/oracle/mmfileid.txt"
+  fi
 done < <(grep -h -oE '[0-9]+:[0-9]+' "$OUT"/oracle/tsdbfs-*.txt | sort -u)
 
 uid=$(awk '$1 == "--uid" { print $2; exit }' "$OUT/oracle/mmlsfs-uid.txt")
@@ -101,6 +101,15 @@ while read -r name dev; do
 done < <(awk '$3 ~ /^\/dev\// { print $1, $3 }' "$OUT/oracle/mmlsnsd-human.txt")
 
 [[ ${#disk_id[@]} -ge 2 ]] || { echo "refusing capture: fewer than two NSDs were discovered" >&2; exit 6; }
+
+sync
+mmumount "$FS" -a
+remount=1
+if findmnt -rn -T "$MOUNT" -t gpfs >/dev/null 2>&1; then
+  echo "refusing raw capture: $FS is still mounted" >&2
+  exit 4
+fi
+
 for name in "${!disk_id[@]}"; do
   dev=${device[$name]:-}
   [[ -n $dev && -b $dev ]] || { echo "no local block device mapping for NSD $name" >&2; exit 6; }
