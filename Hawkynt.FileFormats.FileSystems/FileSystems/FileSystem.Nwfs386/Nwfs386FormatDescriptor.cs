@@ -39,10 +39,7 @@ public sealed class Nwfs386FormatDescriptor :
     ILayoutOptimizable {
 
   private const long MaxManagedImageBytes = 512L * 1024 * 1024;
-  private const int SectorSize = 512;
   private const int DirectoryEntryBytes = 128;
-  private const int FatEntryBytes = 8;
-  private const int VolumeAreaBytes = 4 * 16384;
   private const uint NoBlock = 0xFFFFFFFF;
   private const uint DirIdAvailable = 0xFFFFFFFF;
   private const uint DirIdGrantOrDeleted = 0xFFFFFFFE;
@@ -50,9 +47,13 @@ public sealed class Nwfs386FormatDescriptor :
   private const uint HighestSpecialDirectoryId = 0xFFFFFF00;
   private const uint AttributeDirectory = 0x10;
   private const uint AttributeArchive = 0x20;
+  private const byte FlagDeleted3 = 0x01;
+  private const byte FlagSubdirectory = 0x04;
+  private const byte FlagPrimaryNamespace = 0x10;
+  private const byte FlagDeleted4 = 0x20;
 
   private static readonly int[] SupportedBlockSizes =
-    [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144];
+    [4096, 8192, 16384, 32768, 65536];
 
   public string Id => "Nwfs386";
   public string DisplayName => "NWFS386 (Novell Traditional NetWare filesystem)";
@@ -92,13 +93,13 @@ public sealed class Nwfs386FormatDescriptor :
       FormatOptionKind.Integer,
       "4096",
       SupportedBlockSizes.Select(static value => value.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray(),
-      "Allocation block size in bytes. Changing it rebuilds the volume; existing data is preserved byte-for-byte."),
+      "Traditional NetWare allocation-cluster size in bytes. Changing it rebuilds the volume; existing data is preserved byte-for-byte."),
     new(
       "VolumeName",
       "Volume name",
       FormatOptionKind.String,
       "SYS",
-      Description: "NetWare volume name (1-19 ASCII characters).")
+      Description: "NetWare volume name (1-15 ASCII characters).")
   ];
 
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -348,9 +349,11 @@ public sealed class Nwfs386FormatDescriptor :
       IReadOnlyDictionary<string, byte[]> files,
       int blockSize,
       string volumeName) {
-    if (string.IsNullOrWhiteSpace(volumeName) || volumeName.Length > 19 ||
+    if (string.IsNullOrWhiteSpace(volumeName) || volumeName.Length > 15 ||
         volumeName.Any(static ch => ch is < ' ' or > '~'))
-      throw new InvalidDataException("NWFS386 volume name must be 1-19 printable ASCII characters.");
+      throw new InvalidDataException("NWFS386 volume name must be 1-15 printable ASCII characters.");
+    if (!SupportedBlockSizes.Contains(blockSize))
+      throw new InvalidDataException("NWFS386 allocation-cluster size must be 4096, 8192, 16384, 32768 or 65536 bytes.");
 
     var writer = new NwfsWriter {
       BlockSize = blockSize,
@@ -406,18 +409,13 @@ public sealed class Nwfs386FormatDescriptor :
   }
 
   private static void ValidatePlainWritableProfile(byte[] image, NwfsReader volume) {
-    if (!TryLocateVolume(image, out var layout))
-      throw new NotSupportedException("NWFS386 mutation requires a single Traditional NetWare volume.");
-
-    var root = layout.RootDirectoryBlock;
-    var guard = 0;
     var sawVolumeInfo = false;
-    while (root != NoBlock && guard++ < 1 << 20) {
-      var blockOffset = layout.DataAreaOffset + (long)(root - layout.FirstSegmentBlock) * layout.BlockSize;
-      if (blockOffset < 0 || blockOffset + layout.BlockSize > image.LongLength)
+    foreach (var cluster in volume.WalkChain(volume.RootDirectoryBlock)) {
+      var blockOffset = volume.BlockOffset(cluster);
+      if (blockOffset < 0 || blockOffset + volume.BlockSize > image.LongLength)
         throw new NotSupportedException("NWFS386 mutation refused a directory chain outside the supported volume bounds.");
 
-      var entriesPerBlock = layout.BlockSize / DirectoryEntryBytes;
+      var entriesPerBlock = volume.BlockSize / DirectoryEntryBytes;
       for (var i = 0; i < entriesPerBlock; ++i) {
         var offset = checked((int)(blockOffset + (long)i * DirectoryEntryBytes));
         var entry = image.AsSpan(offset, DirectoryEntryBytes);
@@ -428,69 +426,64 @@ public sealed class Nwfs386FormatDescriptor :
 
         if (parent == DirIdVolumeInfo) {
           sawVolumeInfo = true;
-          // ROOT/ROOT3X: byte 23 is VolumeFlags. Writer-created plain volumes keep
-          // auditing, suballocation, compression, migration, NDS/trustee flags off.
+          // ROOT/ROOT3X byte 23 is VolumeFlags. Rebuilds do not preserve
+          // compression, suballocation, migration, auditing or NDS flags.
           if (entry[23] != 0)
             throw new NotSupportedException(
               "NWFS386 mutation is limited to volumes without compression, suballocation, migration, auditing or NDS flags.");
           continue;
         }
 
-        // -2 is used by historical implementations for grant/deleted records;
-        // other high unsigned ids are special directory records. The shared
-        // writer does not reproduce those structures, so refuse rather than drop them.
         if (parent == DirIdGrantOrDeleted || parent >= HighestSpecialDirectoryId)
           throw new NotSupportedException(
             "NWFS386 mutation refused special/deleted/trustee directory records that the plain writer cannot preserve.");
 
-        // DOS namespace is zero; any other namespace may carry a parallel name
-        // or metadata record the plain writer cannot round-trip.
-        if (entry[10] != 0 || entry[9] != 0)
+        var flags = entry[9];
+        if ((flags & (FlagDeleted3 | FlagDeleted4)) != 0
+            || entry[10] != 0
+            || (flags & FlagPrimaryNamespace) == 0
+            || (flags & ~(FlagSubdirectory | FlagPrimaryNamespace)) != 0)
           throw new NotSupportedException(
-            "NWFS386 mutation is limited to the primary DOS namespace without special directory-entry flags.");
+            "NWFS386 mutation is limited to live primary-DOS-namespace directory entries.");
 
         var attributes = BinaryPrimitives.ReadUInt32LittleEndian(entry[4..]);
         if ((attributes & ~(AttributeDirectory | AttributeArchive)) != 0)
           throw new NotSupportedException(
             "NWFS386 mutation refused file attributes outside the plain writer's preserved subset.");
 
-        if ((attributes & AttributeDirectory) == 0 &&
-            BinaryPrimitives.ReadUInt32LittleEndian(entry[104..]) != 0)
+        var isDirectory = (attributes & AttributeDirectory) != 0;
+        if (isDirectory != ((flags & FlagSubdirectory) != 0))
+          throw new NotSupportedException(
+            "NWFS386 mutation refused inconsistent directory attributes/flags.");
+
+        if (!isDirectory && BinaryPrimitives.ReadUInt32LittleEndian(entry[104..]) != 0)
           throw new NotSupportedException(
             "NWFS386 mutation refused a volume containing salvage/deleted-file records.");
       }
-
-      var fatOffset = layout.DataAreaOffset
-                      + (long)(root - layout.FirstSegmentBlock) * FatEntryBytes
-                      + 4;
-      if (fatOffset < 0 || fatOffset + 4 > image.LongLength)
-        throw new NotSupportedException("NWFS386 mutation refused a truncated directory FAT chain.");
-      root = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)fatOffset, 4));
     }
 
     if (!sawVolumeInfo)
       throw new NotSupportedException("NWFS386 mutation requires the root volume-information record.");
 
     var items = volume.List();
-    ValidateFileChains(image, layout, items);
+    ValidateFileChains(volume, items);
 
-    // Empty directories cannot be represented by the shared writer yet. Refuse
-    // such a source for rewrite operations so an edit never makes one disappear.
+    // The compatibility descriptor rebuilds from files only, so unlike the
+    // shared Nwfs descriptor it still cannot preserve an otherwise-empty DET directory.
     var files = items.Where(static item => !item.IsDirectory).Select(static item => item.Path).ToArray();
     foreach (var directory in items.Where(static item => item.IsDirectory))
       if (!files.Any(file => file.StartsWith(directory.Path + "/", StringComparison.OrdinalIgnoreCase)))
         throw new NotSupportedException(
-          $"NWFS386 mutation refused empty directory '{directory.Path}' because the current writer cannot preserve it.");
+          $"NWFS386 mutation refused empty directory '{directory.Path}' because the compatibility rebuild cannot preserve it.");
   }
 
   private static void ValidateFileChains(
-      byte[] image,
-      PlainLayout layout,
+      NwfsReader volume,
       IReadOnlyList<NwfsReader.Item> items) {
     foreach (var item in items.Where(static item => !item.IsDirectory)) {
       var expectedBlocks = item.Length == 0
         ? 0L
-        : (item.Length + layout.BlockSize - 1) / layout.BlockSize;
+        : (item.Length + volume.BlockSize - 1) / volume.BlockSize;
 
       if (expectedBlocks == 0) {
         if (item.FirstBlock != NoBlock)
@@ -499,105 +492,20 @@ public sealed class Nwfs386FormatDescriptor :
         continue;
       }
 
-      var block = item.FirstBlock;
-      for (long expectedIndex = 0; expectedIndex < expectedBlocks; ++expectedIndex) {
-        if (block == NoBlock)
-          throw new NotSupportedException(
-            $"NWFS386 mutation refused truncated/sparse FAT chain for '{item.Path}'.");
+      var chain = volume.WalkIndexedChain(item.FirstBlock).ToArray();
+      if (chain.LongLength != expectedBlocks)
+        throw new NotSupportedException(
+          $"NWFS386 mutation refused truncated/overlong FAT chain for '{item.Path}'.");
 
-        var relativeBlock = (long)block - layout.FirstSegmentBlock;
-        var fatOffset = layout.DataAreaOffset + relativeBlock * FatEntryBytes;
-        if (relativeBlock < 0 || fatOffset < 0 || fatOffset + FatEntryBytes > image.LongLength)
-          throw new NotSupportedException(
-            $"NWFS386 mutation refused out-of-range FAT chain for '{item.Path}'.");
-
-        var fatIndex = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)fatOffset, 4));
-        if (fatIndex != expectedIndex)
+      for (var i = 0; i < chain.Length; ++i)
+        if (chain[i].Index != (uint)i)
           throw new NotSupportedException(
             $"NWFS386 mutation refused sparse/non-linear FAT indexing for '{item.Path}'.");
-
-        block = BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan((int)fatOffset + 4, 4));
-      }
-
-      if (block != NoBlock)
-        throw new NotSupportedException(
-          $"NWFS386 mutation refused an overlong FAT chain for '{item.Path}'.");
     }
-  }
-
-  private static bool TryLocateVolume(ReadOnlySpan<byte> image, out PlainLayout layout) {
-    layout = default;
-    var hotfix = FindHotfix(image);
-    if (hotfix < 0 || hotfix + 28 > image.Length)
-      return false;
-
-    var redirectionSectors =
-      BinaryPrimitives.ReadUInt32LittleEndian(image.Slice(checked((int)hotfix + 24), 4));
-    var volumeArea = hotfix + (long)redirectionSectors * SectorSize;
-    if (volumeArea < 0 || volumeArea + 32 + 60 > image.Length)
-      return false;
-    if (!image.Slice((int)volumeArea, 16).SequenceEqual("NetWare Volumes\0"u8))
-      return false;
-
-    var count = BinaryPrimitives.ReadUInt32LittleEndian(image.Slice((int)volumeArea + 16, 4));
-    if (count != 1)
-      return false;
-
-    var entry = image.Slice((int)volumeArea + 32, 60);
-
-    // VOLUME_TABLE_ENTRY.LastVolumeSegment == 0 is the single-segment profile.
-    if (BinaryPrimitives.ReadUInt32LittleEndian(entry[16..]) != 0)
-      return false;
-
-    var firstSegmentBlock = BinaryPrimitives.ReadUInt32LittleEndian(entry[36..]);
-    var blockValue = BinaryPrimitives.ReadUInt32LittleEndian(entry[44..]);
-    if (blockValue == 0 || (256u * 1024u) % blockValue != 0)
-      return false;
-    var blockSize = checked((int)(256u * 1024u / blockValue));
-    if (!SupportedBlockSizes.Contains(blockSize))
-      return false;
-
-    var rootDirectoryBlock = BinaryPrimitives.ReadUInt32LittleEndian(entry[48..]);
-    var dataAreaOffset = volumeArea + VolumeAreaBytes;
-    if (dataAreaOffset < 0 || dataAreaOffset >= image.Length)
-      return false;
-
-    layout = new PlainLayout(dataAreaOffset, blockSize, firstSegmentBlock, rootDirectoryBlock);
-    return true;
-  }
-
-  private static long FindHotfix(ReadOnlySpan<byte> image) {
-    const int partitionTableOffset = 446;
-    const byte netWare386PartitionType = 0x65;
-    const long hotfixOffsetInPartition = 0x4000;
-
-    if (image.Length >= 512 && image[510] == 0x55 && image[511] == 0xAA) {
-      for (var i = 0; i < 4; ++i) {
-        var entry = image.Slice(partitionTableOffset + i * 16, 16);
-        if (entry[4] != netWare386PartitionType) continue;
-
-        var partitionStart =
-          (long)BinaryPrimitives.ReadUInt32LittleEndian(entry[8..]) * SectorSize;
-        var at = partitionStart + hotfixOffsetInPartition;
-        if (at >= 0 && at + 8 <= image.Length &&
-            image.Slice((int)at, 8).SequenceEqual("HOTFIX00"u8))
-          return at;
-      }
-    }
-
-    return hotfixOffsetInPartition + 8 <= image.Length &&
-           image.Slice((int)hotfixOffsetInPartition, 8).SequenceEqual("HOTFIX00"u8)
-      ? hotfixOffsetInPartition
-      : -1;
   }
 
   private static string NormalizePath(string path)
     => (path ?? string.Empty).Replace('\\', '/').Trim('/');
 
   private readonly record struct OpenedVolume(byte[] Image, NwfsReader Volume);
-  private readonly record struct PlainLayout(
-    long DataAreaOffset,
-    int BlockSize,
-    uint FirstSegmentBlock,
-    uint RootDirectoryBlock);
 }
