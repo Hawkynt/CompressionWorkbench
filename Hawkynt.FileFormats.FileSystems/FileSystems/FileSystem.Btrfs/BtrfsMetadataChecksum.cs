@@ -28,11 +28,6 @@ internal static class BtrfsMetadataChecksum {
       throw new InvalidDataException($"Btrfs {description} is shorter than its checksum field.");
 
     var expected = BinaryPrimitives.ReadUInt32LittleEndian(block[..Crc32CSize]);
-    for (var i = Crc32CSize; i < ChecksumFieldSize; ++i)
-      if (block[i] != 0)
-        throw new InvalidDataException(
-          $"Btrfs {description} has non-zero bytes beyond the 4-byte CRC32C checksum.");
-
     var actual = ComputeCrc32C(block);
     if (actual != expected)
       throw new InvalidDataException(
