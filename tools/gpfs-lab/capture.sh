@@ -61,10 +61,23 @@ for path in "${PROBES[@]}"; do
 done
 [[ $probe_count -gt 0 ]] || { echo "at least one probe path is required" >&2; exit 3; }
 
-# Cross-check every physical sector address printed by tsdbfs while the cluster
-# is still mounted. The heading is part of the lab transcript because ordinary
-# mmfileid output does not repeat the GPFS disk id. A failed lookup makes the
-# capture ineligible rather than silently producing a partial oracle.
+# Cross-check only physical addresses from the inode-address line and the Disk
+# pointers section. A blind [0-9]+:[0-9]+ scan also matches timestamps such as
+# 17:56 and would turn clock text into bogus mmfileid requests.
+extract_tsdbfs_addresses() {
+  awk '
+    FNR == 1 { inPointers=0 }
+    /Inode address:/ { print; next }
+    /Disk pointers \[/ { inPointers=1; next }
+    inPointers && /trailer:/ { inPointers=0; next }
+    inPointers { print }
+  ' "$OUT"/oracle/tsdbfs-*.txt | grep -oE '[0-9]+:[0-9]+' | sort -u
+}
+
+# Cross-check every physical inode/data-pointer sector while the cluster is still
+# mounted. The heading is part of the lab transcript because ordinary mmfileid
+# output does not repeat the GPFS disk id. A failed lookup makes the capture
+# ineligible rather than silently producing a partial oracle.
 : >"$OUT/oracle/mmfileid.txt"
 mmfileid_queries=0
 mmfileid_failed=0
@@ -76,7 +89,7 @@ while IFS=: read -r disk sector; do
     printf 'mmfileid_status=failed\n' >>"$OUT/oracle/mmfileid.txt"
     mmfileid_failed=1
   fi
-done < <(grep -h -oE '[0-9]+:[0-9]+' "$OUT"/oracle/tsdbfs-*.txt | sort -u)
+done < <(extract_tsdbfs_addresses)
 (( mmfileid_queries > 0 )) || { echo "tsdbfs produced no physical addresses for mmfileid cross-checking" >&2; exit 5; }
 (( mmfileid_failed == 0 )) || { echo "one or more mmfileid oracle lookups failed; see $OUT/oracle/mmfileid.txt" >&2; exit 5; }
 
