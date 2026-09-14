@@ -5,8 +5,9 @@ namespace Compression.Tests.Wafl;
 
 /// <summary>
 /// Clean-room tests for the classic 128-byte WAFL inode block-tree mechanics
-/// published by NetApp. These fixtures deliberately supply level and logical
-/// size out-of-band; their on-disk metadata offsets are not guessed.
+/// published by NetApp. These fixtures deliberately supply level, logical size
+/// and sparse-pointer semantics out-of-band; their on-disk metadata offsets are
+/// not guessed.
 /// </summary>
 [TestFixture]
 public class WaflClassicBlockTreeTests {
@@ -47,7 +48,7 @@ public class WaflClassicBlockTreeTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Level1_PreservesDirectPointerOrderAndSparseHoles() {
+  public void Level1_PreservesDirectPointerOrderAndCallerDefinedHoles() {
     var inode = BuildInode(false, 7, 0, 9);
 
     var actual = Project(WaflClassicBlockTree.EnumerateDataBlocks(
@@ -56,9 +57,25 @@ public class WaflClassicBlockTreeTests {
       littleEndian: false,
       logicalBlockCount: 3,
       volumeBlockCount: 64,
-      _ => throw new AssertionException("Level 1 must not read an indirect block.")));
+      _ => throw new AssertionException("Level 1 must not read an indirect block."),
+      isHolePointer: static pointer => pointer == 0));
 
     Assert.That(actual, Is.EqualTo(new (long, uint?)[] { (0, 7), (1, null), (2, 9) }));
+  }
+
+  [Test, Category("HappyPath")]
+  public void ZeroVbn_IsNotImplicitlyTreatedAsSparseHole() {
+    var inode = BuildInode(false, 0);
+
+    var actual = Project(WaflClassicBlockTree.EnumerateDataBlocks(
+      inode,
+      level: 1,
+      littleEndian: false,
+      logicalBlockCount: 1,
+      volumeBlockCount: 64,
+      _ => throw new AssertionException("Level 1 must not read an indirect block.")));
+
+    Assert.That(actual, Is.EqualTo(new (long, uint?)[] { (0, 0) }));
   }
 
   [Test, Category("HappyPath")]
@@ -75,7 +92,8 @@ public class WaflClassicBlockTreeTests {
       littleEndian: false,
       logicalBlockCount: 3,
       volumeBlockCount: 64,
-      vbn => indirect[vbn]));
+      vbn => indirect[vbn],
+      isHolePointer: static pointer => pointer == 0));
 
     Assert.That(actual, Is.EqualTo(new (long, uint?)[] { (0, 30), (1, null), (2, 31) }));
   }
@@ -112,13 +130,14 @@ public class WaflClassicBlockTreeTests {
       littleEndian: false,
       logicalBlockCount: 3,
       volumeBlockCount: 64,
-      vbn => indirect[vbn]));
+      vbn => indirect[vbn],
+      isHolePointer: static pointer => pointer == 0));
 
     Assert.That(actual, Is.EqualTo(new (long, uint?)[] { (0, 30), (1, null), (2, 31) }));
   }
 
   [Test, Category("HappyPath")]
-  public void ZeroIndirectPointer_ExpandsToSparseLogicalRangeWithoutReads() {
+  public void CallerDefinedIndirectHole_ExpandsToSparseLogicalRangeWithoutReads() {
     var inode = BuildInode(false, 0);
 
     var actual = Project(WaflClassicBlockTree.EnumerateDataBlocks(
@@ -127,7 +146,8 @@ public class WaflClassicBlockTreeTests {
       littleEndian: false,
       logicalBlockCount: 4,
       volumeBlockCount: 64,
-      _ => throw new AssertionException("Sparse subtrees must not be read.")));
+      _ => throw new AssertionException("Sparse subtrees must not be read."),
+      isHolePointer: static pointer => pointer == 0));
 
     Assert.That(actual, Is.EqualTo(new (long, uint?)[] { (0, null), (1, null), (2, null), (3, null) }));
   }
