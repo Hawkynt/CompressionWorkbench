@@ -50,8 +50,8 @@ public static class FilesystemAllocationMapCompleter {
       var endAligned = AlignUp(endRaw, allocationUnit);
       if (!TryClip(extent.Offset, endAligned - extent.Offset, imageLength, out var start, out var end)) continue;
 
-      events.Add(BoundaryEvent.Owner(start, extent.FileName!, extent.Classification, +1));
-      events.Add(BoundaryEvent.Owner(end, extent.FileName!, extent.Classification, -1));
+      events.Add(BoundaryEvent.ForOwner(start, extent.FileName!, extent.Classification, +1));
+      events.Add(BoundaryEvent.ForOwner(end, extent.FileName!, extent.Classification, -1));
     }
 
     events.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
@@ -164,7 +164,7 @@ public static class FilesystemAllocationMapCompleter {
     public static BoundaryEvent Free(long offset, int delta)
       => new(offset, delta, null, null, 0);
 
-    public static BoundaryEvent Owner(long offset, string owner, DefragBlockClass? classification, int delta)
+    public static BoundaryEvent ForOwner(long offset, string owner, DefragBlockClass? classification, int delta)
       => new(offset, 0, owner, classification, delta);
   }
 
