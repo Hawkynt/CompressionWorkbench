@@ -8,7 +8,7 @@ namespace Compression.Tests.Tfs;
 /// Pins the deliberately conservative surface for <see cref="TfsFormatDescriptor"/>.
 /// No normative public Trans-FS on-disk specification or genuine sample image is
 /// known, so tests require byte-preserving opaque reads and reject speculative
-/// detection, write and maintenance capability claims.
+/// automatic detection, write and maintenance capability claims.
 /// </summary>
 [TestFixture]
 public class TfsStubBehaviorTests {
@@ -36,6 +36,10 @@ public class TfsStubBehaviorTests {
         "TFS has no verified creation semantics and must not advertise CanCreate.");
       Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.False,
         "TFS has no verified mutation semantics and must not advertise CanModify.");
+      Assert.That(descriptor.DefaultExtension, Is.Empty,
+        "No located source establishes .tfs as an extension for the historical BBN label.");
+      Assert.That(descriptor.Extensions, Is.Empty,
+        "The unverified descriptor must not participate in extension fallback detection.");
       Assert.That(descriptor.MagicSignatures, Is.Empty,
         "The repository's historical TFS\\x01 value has no verified source and must not participate in automatic detection.");
     });
@@ -101,7 +105,7 @@ public class TfsStubBehaviorTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Metadata_ReportsRepositoryHeuristicMiss_WithoutRejectingOpaqueImage() {
+  public void Metadata_ReportsRepositoryHeuristicMiss_WithoutRejectingExplicitlySelectedImage() {
     var descriptor = new TfsFormatDescriptor();
     var image = BuildImage(includeRepositoryHeuristic: false);
     var outputDir = Path.Combine(Path.GetTempPath(), "TfsNoHeuristic_" + Guid.NewGuid().ToString("N"));
