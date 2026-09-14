@@ -2,10 +2,9 @@
 namespace FileSystem.Nss;
 
 /// <summary>
-/// One entry surfaced by the NSS read-only descriptor. We do not parse the
-/// object tree itself (the on-disk layout is proprietary and lacks a
-/// publicly verifiable spec). We only ever produce synthetic entries
-/// describing the pool / volume headers we located.
+/// One entry surfaced by the NSS read-only descriptor. Native entries are
+/// reconstructed only for the conservative quiescent profile documented in
+/// docs/NSS-ON-DISK.md; diagnostic anchor entries remain available separately.
 /// </summary>
 public sealed class NssEntry {
   /// <summary>
@@ -24,4 +23,10 @@ public sealed class NssEntry {
   /// Gets or sets the last modified.
   /// </summary>
   public DateTime? LastModified { get; init; }
+
+  internal bool IsNativeNssEntry { get; init; }
+  internal ulong NativeZid { get; init; }
+  internal ulong NativeParentZid { get; init; }
+  internal ulong NativeAbsoluteStartBlock { get; init; }
+  internal uint NativeBlockCount { get; init; }
 }
