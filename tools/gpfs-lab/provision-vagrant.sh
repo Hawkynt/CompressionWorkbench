@@ -36,8 +36,9 @@ chmod +x "$LAB/setup/gpfs-corpus/"*.sh
 (
   cd "$LAB/$PROVIDER"
   vagrant up
+  disk_table=$(vagrant ssh -c "sudo mmlsdisk fs1 -L" | tr -d '\r')
   for nsd in nsd1 nsd2 nsd3 nsd6 nsd7; do
-    vagrant ssh -c "sudo mmlsdisk fs1 -L" | grep -q "^$nsd[[:space:]]" || {
+    grep -Eq "^[[:space:]]*$nsd[[:space:]]" <<<"$disk_table" || {
       echo "provisioned fs1 does not contain expected IBM demo NSD $nsd" >&2
       exit 4
     }
