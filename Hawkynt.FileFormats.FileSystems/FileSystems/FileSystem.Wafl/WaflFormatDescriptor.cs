@@ -18,18 +18,19 @@ namespace FileSystem.Wafl;
 /// when their target blocks carry that fsinfo magic, and ambiguity fails closed.
 /// </para>
 /// <para>
-/// The classic 128-byte inode's published level-0 through level-3 block-tree
-/// mechanics are implemented by <see cref="WaflClassicBlockTree"/> as the next
-/// namespace-reader prerequisite. It is intentionally not auto-bound to fsinfo:
-/// the public material does not establish byte-precise offsets for the root inode
-/// or its type/size/level metadata, and modern ONTAP uses different inode sizes.
+/// The published classic 128-byte inode Levels 0–3 tree plus classic blkmap and
+/// inomap entry encodings are implemented as the next namespace/maintenance
+/// prerequisites. They are intentionally not auto-bound to fsinfo: the public
+/// material does not establish byte-precise offsets for the root inode or its
+/// type/size metadata, and modern ONTAP uses different inode/address formats.
 /// </para>
 /// <para>
 /// This does not yet decode the inode file or namespace, and it does not turn a
 /// physical ONTAP RAID member into a logical VBN image. Version-specific inode
-/// layouts, FlexVol VVBN/PVBN mapping, allocation maps, snapshots and consistency
-/// point commit/checksum rules remain prerequisites for safe mutation. Compact,
-/// defrag, wipe, shrink, re-layout and purge therefore remain unavailable.
+/// layouts, FlexVol VVBN/PVBN mapping, metadata-file discovery, snapshots and
+/// consistency-point commit/checksum rules remain prerequisites for safe
+/// mutation. Compact, defrag, wipe, shrink, re-layout and purge therefore remain
+/// unavailable.
 /// </para>
 /// </remarks>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -76,9 +77,9 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>Gets the description.</summary>
   public string Description =>
     "NetApp WAFL — Stage 0 documented volinfo detection plus Stage 1 structural volinfo→fsinfo traversal for the disclosed classic 32-bit direct-fsinfo profile. " +
-    "The classic 128-byte inode Levels 0–3 block-tree decoder is implemented, but it is not auto-bound until root-inode and type/size/level metadata offsets are independently established. " +
+    "Classic 128-byte inode Levels 0–3 block-tree, blkmap and inomap decoders are implemented but not auto-bound until root/metadata-inode offsets and type/size fields are independently established. " +
     "Verified fsinfo blocks remain listable/extractable while namespace decoding is intentionally unavailable. " +
-    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, allocation maps and snapshot/free-space reachability are still required for safe offline R/W, " +
+    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, snapshot reachability and consistency-point mutation rules are still required for safe offline R/W, " +
     "so compact/defrag/wipe/shrink/layout/purge remain disabled.";
 
   /// <summary>Lists the entries in the supplied container.</summary>
