@@ -62,8 +62,11 @@ public sealed class NrgReader : IDisposable {
 
     var sessions = parsed.Sessions.ToArray();
     var tracks = sessions.SelectMany(static session => session.Tracks).ToArray();
-    foreach (var track in tracks)
+    foreach (var track in tracks) {
       track.HasIso9660 = CanContainIsoUserData(track) && TryProbe(stream, track);
+      if (track.HasIso9660)
+        track.IsoExtentLbaBase = DetectIsoExtentLbaBase(stream, track);
+    }
 
     this.Sessions = sessions;
     this.Tracks = tracks;
@@ -181,7 +184,7 @@ public sealed class NrgReader : IDisposable {
         break;
       var payloadEnd = payloadStart + payloadLength;
 
-      if (header[..4].SequenceEqual("CUEX"u8)) {
+      if (header[..4].SequenceEqual("CUEX"u8) || header[..4].SequenceEqual("CUES"u8)) {
         pendingCue = ReadCue(stream, payloadStart, payloadLength);
       } else if (header[..4].SequenceEqual("DAOX"u8) || header[..4].SequenceEqual("DAOI"u8)) {
         var session = ReadDaoSession(
@@ -522,8 +525,42 @@ public sealed class NrgReader : IDisposable {
            signature[0] == 1 && signature[1..].SequenceEqual("CD001"u8);
   }
 
+  private static int DetectIsoExtentLbaBase(Stream stream, NrgTrackInfo track) {
+    if (track.Index1Lba is not { } baseLba || baseLba <= 0)
+      return 0;
+
+    var pvd = ReadSectorRelative(stream, track, PvdLba);
+    if (pvd is null || pvd[0] != 1 || !pvd.AsSpan(1, 5).SequenceEqual("CD001"u8))
+      return 0;
+
+    var rootExtent = BinaryPrimitives.ReadUInt32LittleEndian(pvd.AsSpan(158, 4));
+    if (rootExtent > int.MaxValue || rootExtent < baseLba)
+      return 0;
+
+    var absoluteRelative = (long)rootExtent - baseLba;
+    return LooksLikeRootDirectory(stream, track, absoluteRelative, rootExtent) ? baseLba : 0;
+  }
+
+  private static bool LooksLikeRootDirectory(Stream stream, NrgTrackInfo track, long relativeLba, uint expectedExtent) {
+    var sector = ReadSectorRelative(stream, track, relativeLba);
+    if (sector is null || sector[0] < 34)
+      return false;
+
+    var recordLength = sector[0];
+    if (recordLength > sector.Length)
+      return false;
+    var record = sector.AsSpan(0, recordLength);
+    if (record[32] != 1 || record[33] != 0)
+      return false;
+
+    return BinaryPrimitives.ReadUInt32LittleEndian(record.Slice(2, 4)) == expectedExtent &&
+           BinaryPrimitives.ReadUInt32BigEndian(record.Slice(6, 4)) == expectedExtent;
+  }
+
   private void TryParseIso9660(NrgTrackInfo track, string prefix, List<NrgEntry> entries) {
-    var pvd = ReadSector(track, PvdLba);
+    // Volume descriptors are positioned relative to the start of each session/track even when
+    // directory and file extent fields inside that descriptor use absolute disc LBAs.
+    var pvd = ReadSectorRelative(this._stream, track, PvdLba);
     if (pvd is null || pvd[0] != 1 || !pvd.AsSpan(1, 5).SequenceEqual("CD001"u8))
       return;
 
@@ -663,35 +700,26 @@ public sealed class NrgReader : IDisposable {
   private byte[]? ReadSector(NrgTrackInfo track, int isoLba) {
     if (!TryNormalizeIsoLba(track, isoLba, out var relativeLba))
       return null;
+    return ReadSectorRelative(this._stream, track, relativeLba);
+  }
 
-    var sectorStart = track.DataOffset + (long)relativeLba * track.SectorSize;
+  private static byte[]? ReadSectorRelative(Stream stream, NrgTrackInfo track, long relativeLba) {
+    if (relativeLba < 0 || relativeLba >= track.SectorCount)
+      return null;
+
+    var sectorStart = track.DataOffset + relativeLba * track.SectorSize;
     var dataStart = sectorStart + track.UserDataOffset;
     if (sectorStart < track.DataOffset || dataStart < sectorStart || dataStart > track.EndOffset - Iso9660SectorSize)
       return null;
 
-    this._stream.Position = dataStart;
+    stream.Position = dataStart;
     var buffer = new byte[Iso9660SectorSize];
-    return ReadExactly(this._stream, buffer) ? buffer : null;
+    return ReadExactly(stream, buffer) ? buffer : null;
   }
 
-  private static bool TryNormalizeIsoLba(NrgTrackInfo track, int isoLba, out int relativeLba) {
-    relativeLba = 0;
-    if (isoLba < 0 || track.SectorSize <= 0)
-      return false;
-
-    var sectorCount = track.StoredLength / track.SectorSize;
-    if (track.Index1Lba is { } baseLba && baseLba > 0 && isoLba >= baseLba) {
-      var absoluteRelative = (long)isoLba - baseLba;
-      if (absoluteRelative >= 0 && absoluteRelative < sectorCount && absoluteRelative <= int.MaxValue) {
-        relativeLba = (int)absoluteRelative;
-        return true;
-      }
-    }
-
-    if (isoLba >= sectorCount)
-      return false;
-    relativeLba = isoLba;
-    return true;
+  private static bool TryNormalizeIsoLba(NrgTrackInfo track, int isoLba, out long relativeLba) {
+    relativeLba = (long)isoLba - track.IsoExtentLbaBase;
+    return relativeLba >= 0 && relativeLba < track.SectorCount;
   }
 
   private static void CopyRange(Stream input, Stream output, long offset, long length) {
