@@ -106,7 +106,10 @@ for name in "${!disk_id[@]}"; do
   [[ -n $dev && -b $dev ]] || { echo "no local block device mapping for NSD $name" >&2; exit 6; }
   size=$(blockdev --getsize64 "$dev")
   tmp="$OUT/raw/${name}.partial.img"
-  dd if="$dev" of="$tmp" bs=4M iflag=fullblock status=none
+  # conv=sparse changes only host-file allocation: reading the image still yields
+  # every byte from the NSD, so the digest is over the complete logical raw disk.
+  dd if="$dev" of="$tmp" bs=4M iflag=fullblock conv=sparse status=none
+  [[ $(stat -c '%s' "$tmp") -eq $size ]] || { echo "short raw capture for NSD $name" >&2; exit 7; }
   hash=$(sha256sum "$tmp" | awk '{print $1}')
   image="$OUT/raw/${name}.${hash}.img"
   mv "$tmp" "$image"
