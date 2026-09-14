@@ -148,17 +148,19 @@ internal static class CdiCdSectorIntegrity {
         (storedSector.Length < RawSectorSize || storedSector[15] != 2))
       return false;
 
-    // XA stores two copies of the four-byte subheader. Treat the sector as
-    // Form 1 only when neither copy has the Form-2 bit set; disagreement is not
-    // normalized here because mutation must preserve the original subheader.
-    return (storedSector[subheaderOffset + 2] & Mode2Form2Flag) == 0 &&
-           (storedSector[subheaderOffset + 6] & Mode2Form2Flag) == 0;
+    var firstSubheader = storedSector.Slice(subheaderOffset, 4);
+    var secondSubheader = storedSector.Slice(subheaderOffset + 4, 4);
+    return firstSubheader.SequenceEqual(secondSubheader) &&
+           (firstSubheader[2] & Mode2Form2Flag) == 0;
   }
 
-  private static bool IsRawMode2Form1(ReadOnlySpan<byte> rawSector)
-    => rawSector.Length >= RawSectorSize &&
-       (rawSector[Mode2SubheaderOffset + 2] & Mode2Form2Flag) == 0 &&
-       (rawSector[Mode2SubheaderOffset + 6] & Mode2Form2Flag) == 0;
+  private static bool IsRawMode2Form1(ReadOnlySpan<byte> rawSector) {
+    if (rawSector.Length < RawSectorSize)
+      return false;
+    var firstSubheader = rawSector.Slice(Mode2SubheaderOffset, 4);
+    return firstSubheader.SequenceEqual(rawSector.Slice(Mode2SubheaderOffset + 4, 4)) &&
+           (firstSubheader[2] & Mode2Form2Flag) == 0;
+  }
 
   private static void RequireRawSector(ReadOnlySpan<byte> rawSector) {
     if (rawSector.Length < RawSectorSize)
