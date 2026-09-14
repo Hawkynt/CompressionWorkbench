@@ -648,6 +648,6 @@ public sealed class NwfsReader {
     }
 
     var bareSectors = image.Length / NwfsLayout.SectorSize;
-    return bareSectors > uint.MaxValue ? default : new Partition(0, (uint)bareSectors);
+    return new Partition(0, checked((uint)bareSectors));
   }
 }
