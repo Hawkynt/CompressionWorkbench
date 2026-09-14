@@ -5,19 +5,17 @@ using static Compression.Registry.FormatHelpers;
 namespace FileSystem.Tux3;
 
 /// <summary>
-/// Native-superblock descriptor for the linux-tux3 research filesystem.
+/// Native metadata descriptor for the linux-tux3 research filesystem.
 /// </summary>
 /// <remarks>
-/// The descriptor recognises real linux-tux3 disk-format revisions and parses the packed,
-/// big-endian <c>struct disksuper</c> at byte 4096. Native tree traversal and mutation are not
-/// implemented, so Create/Modify/Defragment capabilities are intentionally withheld rather than
-/// routing files through a private side-table that no TUX3 implementation understands.
+/// The descriptor recognises native linux-tux3 disk-format revisions, parses the packed big-endian
+/// superblock, and uses the native inode tree, allocation-bitmap data tree, and replayable allocation
+/// log records to prove free/allocated block runs. Active structural tree-log records deliberately
+/// disable the in-volume allocation map until structural replay is implemented.
 ///
-/// <para>The on-disk <c>volblocks</c> field does, however, define the native volume boundary.
-/// Bytes after that boundary are outside the TUX3 volume and can therefore be reported as free,
-/// wiped, and removed by shrink without interpreting or modifying any native tree. Everything
-/// inside the declared volume remains fail-closed as metadata-reserved until allocation-tree
-/// traversal exists.</para>
+/// <para>Create/Modify/Defragment capabilities remain withheld. Allocation-tree parsing is enough
+/// to make layout and Wipe useful inside the declared volume, but moving or deleting native objects
+/// additionally requires directory/inode traversal and transactional metadata/log writing.</para>
 /// </remarks>
 public sealed class Tux3FormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, ISyntheticEntryNames, IFilesystemExtentMap, IArchiveShrinkable {
@@ -67,8 +65,8 @@ public sealed class Tux3FormatDescriptor :
 
   /// <inheritdoc />
   public string Description =>
-    "TUX3 version-tree research filesystem — native big-endian superblock detection/metadata, " +
-    "fail-closed layout mapping, external-padding wipe/shrink; native tree traversal and writing not yet implemented.";
+    "TUX3 version-tree research filesystem — native superblock, allocation-tree and journal parsing; " +
+    "fail-closed in-volume free-space layout/wipe plus external-tail shrink; native mutation not yet implemented.";
 
   /// <inheritdoc />
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
@@ -92,9 +90,11 @@ public sealed class Tux3FormatDescriptor :
   }
 
   /// <summary>
-  /// Enumerates the provable byte layout without guessing at undecoded TUX3 allocation state.
-  /// The declared native volume is reserved wholesale; only trailing bytes outside it are free.
-  /// Invalid or arithmetically unrepresentable volume metadata reserves the complete physical image.
+  /// Enumerates only byte ranges proven by native metadata. When the allocation bitmap and active
+  /// allocation-only journal records are trustworthy, allocated runs stay metadata-reserved and
+  /// unallocated runs are exposed as Free. Otherwise the declared volume remains reserved wholesale.
+  /// Bytes physically appended beyond the declared TUX3 volume are always outside the filesystem.
+  /// Invalid, unrepresentable, or truncated volume metadata reserves the complete physical image.
   /// </summary>
   public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
@@ -107,13 +107,49 @@ public sealed class Tux3FormatDescriptor :
       if (!TryGetDeclaredVolumeLength(reader, out var volumeLength))
         return ReserveWholeImage(imageLength);
 
-      if (volumeLength >= imageLength)
+      // A volume declaring more blocks than the image physically holds is truncated. Its allocation
+      // map describes blocks that are not there, so nothing inside it is provable and the complete
+      // physical image stays reserved. An exactly-sized volume is healthy and keeps the map path.
+      if (volumeLength > imageLength)
         return ReserveWholeImage(imageLength);
 
-      return [
-        new DefragBlockInfo(0, volumeLength, DefragBlockKind.MetadataReserved, "TUX3 volume (allocation map unresolved)"),
-        new DefragBlockInfo(volumeLength, imageLength - volumeLength, DefragBlockKind.Free, "Trailing bytes outside TUX3 volume"),
-      ];
+      var extents = new List<DefragBlockInfo>();
+      if (reader.AllocationMapValid && reader.AllocationRuns.Count > 0) {
+        var blockSize = 1UL << reader.BlockBits;
+        foreach (var run in reader.AllocationRuns) {
+          if (run.BlockCount == 0 || run.StartBlock > (ulong)long.MaxValue / blockSize ||
+              run.BlockCount > (ulong)long.MaxValue / blockSize)
+            return ReserveWholeImage(imageLength);
+
+          var offset = run.StartBlock * blockSize;
+          var length = run.BlockCount * blockSize;
+          if (offset > (ulong)volumeLength || length > (ulong)volumeLength - offset)
+            return ReserveWholeImage(imageLength);
+
+          extents.Add(new DefragBlockInfo(
+            (long)offset,
+            (long)length,
+            run.IsAllocated ? DefragBlockKind.MetadataReserved : DefragBlockKind.Free,
+            run.IsAllocated
+              ? "TUX3 allocated blocks (ownership unresolved)"
+              : "TUX3 free blocks (bitmap + journal)"));
+        }
+      } else if (volumeLength > 0) {
+        extents.Add(new DefragBlockInfo(
+          0,
+          volumeLength,
+          DefragBlockKind.MetadataReserved,
+          "TUX3 volume (allocation map unresolved)"));
+      }
+
+      if (volumeLength < imageLength)
+        extents.Add(new DefragBlockInfo(
+          volumeLength,
+          imageLength - volumeLength,
+          DefragBlockKind.Free,
+          "Trailing bytes outside TUX3 volume"));
+
+      return extents;
     } catch (InvalidDataException) {
       return ReserveWholeImage(imageLength);
     } catch (IOException) {
