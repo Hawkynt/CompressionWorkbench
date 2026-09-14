@@ -42,6 +42,16 @@ capture() {
   GPFS_CAPTURE_ID="$id" GPFS_OPERATION="$operation" "$CAPTURE" "$ROOT/$id" "$@"
 }
 
+storage_pool() {
+  mmlsattr -L "$1" | awk -F ':' '
+    tolower($1) ~ /storage pool name/ {
+      value=$2
+      gsub(/^[ \t]+|[ \t]+$/, "", value)
+      print value
+      exit
+    }'
+}
+
 anchor="$WORK/anchor.bin"
 write_pattern "$anchor" 257
 capture 000-anchor "create deterministic anchor" "$anchor"
@@ -64,15 +74,25 @@ capture 040-one-block "allocate exactly one full block" "$anchor" "$target"
 
 target="$WORK/block-plus-one.bin"
 write_pattern "$target" "$((block + 1))"
-capture 050-block-plus-one "cross full-block boundary by one byte" "$anchor" "$target"
+[[ $(storage_pool "$target") == capacity ]] || {
+  echo "IBM demo placement policy did not place $target in capacity pool" >&2
+  exit 4
+}
+capture 050-block-plus-one "cross full-block boundary by one byte in capacity pool" "$anchor" "$target"
 
-# Rebalance this exact file. The raw verifier must compare the 050 and 055 IBM
-# location oracles and refuse DiskAddressPacking=true unless at least one GPFS
-# disk/sector address actually changed; a no-op rebalance is evidence of nothing.
+# Force a different physical disk set instead of hoping an ordinary balance run
+# moves this tiny file. IBM's demo policy places ordinary files in capacity;
+# assigning system with deferred migration and then -p must move its blocks from
+# nsd6/nsd7 to the system-pool NSDs if the operation succeeds.
 mmgetlocation -f "$target" -Y -L >"$ROOT/location-before-rebalance.txt"
-mmrestripefile -b "$target"
+mmchattr -P system -I defer "$target"
+mmrestripefile -p "$target"
+[[ $(storage_pool "$target") == system ]] || {
+  echo "GPFS did not migrate $target to the system pool" >&2
+  exit 4
+}
 mmgetlocation -f "$target" -Y -L >"$ROOT/location-after-rebalance.txt"
-capture 055-rebalanced "rebalance block-plus-one file for a second placement" "$anchor" "$target"
+capture 055-rebalanced "force capacity-to-system relocation for disk-address derivation" "$anchor" "$target"
 
 target="$WORK/indirect.bin"
 fallocate -l "$((block * 331 + 1))" "$target"
