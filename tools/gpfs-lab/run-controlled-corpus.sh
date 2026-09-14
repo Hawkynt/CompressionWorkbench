@@ -95,7 +95,8 @@ capture 055-rebalanced "force capacity-to-system relocation for disk-address der
 
 target="$WORK/indirect.bin"
 fallocate -l "$((block * 331 + 1))" "$target"
-# Defeat all-zero/sparse ambiguity while retaining one allocation per block.
+# Defeat all-zero/sparse ambiguity while retaining more allocated positions than
+# the direct address-slot count exposed by the IBM inode oracle.
 for ((i=0; i<=331; ++i)); do printf '\xA5' | dd of="$target" bs=1 seek="$((i * block))" conv=notrunc status=none; done
 capture 060-indirect "force more than 330 allocated block positions" "$anchor" "$target"
 
@@ -134,15 +135,25 @@ capture 105-replicated "create a two-replica data file" "$anchor" "$replicated"
 rm "$WORK/one-subblock.bin"
 capture 110-delete "delete the earlier one-subblock file" "$anchor"
 
-# The next two captures are the allocation-map experiment. 110 is the baseline;
-# no other semantic change occurs before this create/delete pair. Restrict raw
-# diffs to the reserved inode-1/inode-2 contents so directory timestamp updates
-# cannot be mistaken for allocation-map bits.
-map_probe="$WORK/map-bit-probe.bin"
-write_pattern "$map_probe" "$subblock"
-capture 120-map-allocated "allocate one fresh inode and exactly one subblock" "$anchor" "$map_probe"
-rm "$map_probe"
-capture 121-map-freed "free exactly the preceding inode and subblock" "$anchor"
+# Inode allocation map: 110 is the baseline. Creating an empty file allocates an
+# inode but no user-data subblock. Diff only the IBM-located reserved inode-2
+# contents; directory metadata changes are deliberately outside that byte range.
+inode_probe="$WORK/inode-map-probe"
+: >"$inode_probe"
+capture 120-inode-allocated "allocate exactly one fresh empty-file inode" "$anchor" "$inode_probe"
+rm "$inode_probe"
+capture 121-inode-freed "free exactly the preceding empty-file inode" "$anchor"
+
+# Block allocation map: establish a baseline with an already allocated inode,
+# then change only that file's data allocation. This decouples the block-map bit
+# from inode allocation and lets 130->131 and 131->132 act as inverse transitions.
+block_probe="$WORK/block-map-probe.bin"
+: >"$block_probe"
+capture 130-block-baseline "keep block-map probe inode allocated with no file data" "$anchor" "$block_probe"
+write_pattern "$block_probe" "$subblock"
+capture 131-block-allocated "allocate exactly one data subblock to existing inode" "$anchor" "$block_probe"
+truncate -s 0 "$block_probe"
+capture 132-block-freed "free exactly the preceding data subblock without freeing inode" "$anchor" "$block_probe"
 
 printf 'corpus %s complete under %s\n' "$CORPUS_ID" "$ROOT"
 printf 'Do not promote GPFS from these captures alone: reformat/reprovision for a distinct filesystem UID, run a second corpus, then verify raw-parser agreement.\n'
