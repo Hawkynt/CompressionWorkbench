@@ -188,7 +188,7 @@ internal sealed record GpfsEvidenceCorpus(IReadOnlyList<GpfsEvidenceManifest> Ca
   internal string FilesystemUid => Captures.Count == 0 ? string.Empty : Captures[0].Metadata.GetValueOrDefault("filesystem-uid", string.Empty);
 
   private static string NsdIdentity(GpfsEvidenceManifest capture)
-    => string.Join('|', capture.Nsds
+    => string.Join("|", capture.Nsds
       .OrderBy(static x => x.DiskId)
       .Select(static x => $"{x.Name}:{x.DiskId}:{x.DeviceSize}:{x.SectorBytes}"));
 }
