@@ -35,12 +35,12 @@ For the disclosed **classic 32-bit direct-fsinfo profile**, `WaflReader` now:
 
 1. derives the fsinfo compatibility magic from the start of each valid volinfo copy;
 2. scans only aligned 32-bit words after the recognized volinfo header;
-3. rejects zero, reserved root VBNs and out-of-image values;
+3. rejects zero, reserved root VBNs and out-of-image values for fsinfo-table candidates;
 4. dereferences each candidate and accepts it only when the target block begins with the same fsinfo magic;
 5. recognizes a lookup-table start only when it is unique and the following slot is either zero or another verified fsinfo reference;
 6. performs that work independently for both redundant volinfo roots;
 7. exposes every verified fsinfo block as `fsinfo/vbn-N.bin`;
-8. reports one `ActiveFsInfoVbn` only when the usable redundant roots agree, or when only one usable volinfo root remains.
+8. reports one `ActiveFsInfoVbn` only when the usable redundant volinfo roots agree, or when only one usable volinfo root remains.
 
 If multiple plausible tables are present, the parser fails closed at Stage 0. If the two valid volinfo copies identify different active fsinfo roots, it reports both verified roots but does not arbitrarily choose one. That matters because the redundant roots can represent different consistency-point states.
 
@@ -71,11 +71,13 @@ US5819292 and US6289356 also describe the legacy metadata files:
 
 - level-0 inline data is copied from the published final 64-byte inode area;
 - levels 1, 2 and 3 traverse direct, single-indirect and double-indirect 32-bit VBN trees respectively;
-- zero pointers are preserved as logical sparse holes rather than collapsing file offsets;
 - the caller supplies the already-decoded inode level and logical block count, so this helper does not guess where those fields live;
+- sparse-hole recognition is also caller supplied rather than assigning special meaning to pointer value zero;
 - traversal is lazy and bounded by the caller's logical size;
 - both byte orders are supported because the enclosing Stage-1 profile already establishes byte order;
 - malformed trees are rejected for out-of-range VBNs, non-4-KiB indirect blocks, impossible level capacity and indirect-block cycles.
+
+The explicit sparse-pointer policy matters: public NetApp patent material describes WAFL volume block numbering as beginning at VBN 0 in at least one disclosed profile. Current NetApp documentation confirms sparse files exist, but the sources reviewed here do not publish one universal on-disk hole sentinel. The decoder therefore treats zero as an ordinary in-range VBN unless a proven profile supplies a predicate identifying that value as a hole.
 
 That removes the classic block-tree algorithm itself from the Stage-2 blocker list. It does **not** make arbitrary 128-byte windows inside fsinfo into trustworthy inode records. The root-inode placement and its metadata fields still need an independently verified byte layout before `WaflReader` can bind the helper to an image automatically.
 
@@ -114,9 +116,10 @@ A defensible file walker still needs at least one versioned profile with indepen
 2. inode type, logical size and indirection-level fields;
 3. a reliable profile/version discriminator before choosing classic 128-byte, pre-ONTAP-9 192-byte or ONTAP-9 288-byte inode decoding;
 4. modern/FlexVol block-pointer encoding where the image is not the classic flat-VBN profile;
-5. reserved metadata/root-directory inode identities or another proved way to locate the namespace root;
-6. directory fixed-record width and field offsets;
-7. validation/checksum fields used to reject stale or malformed blocks.
+5. sparse/hole pointer semantics for any profile where sparse reconstruction is required;
+6. reserved metadata/root-directory inode identities or another proved way to locate the namespace root;
+7. directory fixed-record width and field offsets;
+8. validation/checksum fields used to reject stale or malformed blocks.
 
 The commercial UFS Explorer implementation is useful only as a behavioural oracle: its public release notes advertise experimental WAFL metadata versions 2–4, including 32/64-bit and traditional/Flex profiles. No proprietary implementation code is used or translated here.
 
@@ -170,6 +173,7 @@ Public factual/specification sources:
 - US5963962 / US6289356, classic inode, block-map, inode-map and directory architecture.
 - US7313720 / US8122286, volinfo/fsinfo hierarchy and VBN lookup table.
 - US7321962 / US7194595, hybrid FlexVol VBN translation and special-block handling.
+- EP1875393 / related sparse-volume material, VBN numbering behaviour only.
 - NetApp, *FlexVol: Flexible, Efficient File Volume Virtualization in WAFL*.
 - NetApp, *Scalable Write Allocation in the WAFL File System*.
 - Aaru issue #61, feasibility/oracle information only.
