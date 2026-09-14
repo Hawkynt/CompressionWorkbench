@@ -79,4 +79,10 @@ public sealed record NrgTrackInfo {
 
   /// <summary>Gets whether the reader found an ISO 9660 primary volume descriptor on this track.</summary>
   public bool HasIso9660 { get; internal set; }
+
+  /// <summary>
+  /// Gets the disc-LBA bias used by ISO extent fields. Zero denotes a standalone/track-relative ISO;
+  /// a positive value denotes a multisession ISO whose directory/file extents use absolute disc LBAs.
+  /// </summary>
+  internal int IsoExtentLbaBase { get; set; }
 }
