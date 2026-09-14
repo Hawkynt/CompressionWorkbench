@@ -3,12 +3,13 @@
 > **Verification status (2026-09-14): unverified format identity.**
 >
 > CompressionWorkbench historically registered this format as **BBN Trans-FS
-> (TFS)** and used the four bytes `54 46 53 01` (`"TFS\x01"`) at offset zero as
-> a detector. This audit did not locate a normative BBN on-disk specification, a
-> reference implementation, a genuine sample image, or an independent source
-> establishing that signature. The value therefore no longer participates in
-> automatic format detection. `.tfs` remains as an explicit extension-routing
-> hint and the input is exposed byte-for-byte as an opaque image.
+> (TFS)**, used the four bytes `54 46 53 01` (`"TFS\x01"`) at offset zero as a
+> detector, and registered `.tfs` as an extension. This audit did not locate a
+> normative BBN on-disk specification, a reference implementation, a genuine
+> sample image, or an independent source establishing either detector. The
+> descriptor therefore no longer participates in automatic magic- or
+> extension-based detection. It remains addressable explicitly by the registry
+> id `Tfs`, where the supplied input is exposed byte-for-byte as an opaque image.
 
 ## Repository provenance
 
@@ -19,18 +20,21 @@ The TFS stub first entered this repository in commit
 That initial descriptor stated:
 
 - `0x54465301` (`"TFS\x01"`) at offset zero was the magic;
+- `.tfs` was the file extension;
 - the block size was 1024 bytes “per the BBN papers”; and
 - the on-disk layout was too poorly documented to walk.
 
 The introducing commit contained no citation identifying those papers or a
-sample/reference implementation from which either the magic or the block size
+sample/reference implementation from which the magic, extension or block size
 could be independently checked. The unsupported 1024-byte geometry claim was
-removed earlier; this audit additionally removes the unverified magic from the
-registry detector.
+removed earlier; this audit additionally removes the unverified magic and
+extension from registry detection.
 
 The four historical bytes are still reported in `metadata.ini` as
 `legacy_magic_hex` / `legacy_magic_match`. That is provenance information only:
 a match does not establish format identity or increase parse confidence.
+`FULL.tfs` is likewise only the descriptor's synthetic extraction filename; it
+is not evidence that genuine media used the `.tfs` suffix.
 
 ## Historical-source audit
 
@@ -46,27 +50,35 @@ and for an on-disk definition matching the repository assumptions:
   1972), archived at Bitsavers:
   <https://bitsavers.org/pdf/bbn/tenex/Murphy_TEXEX_storage_1972.pdf>.
   This documents TENEX storage/file-system organization but did not establish
-  the Trans-FS label, `TFS\x01` signature or the repository's former 1024-byte
-  claim.
+  the Trans-FS label, `TFS\x01` signature, `.tfs` extension or the repository's
+  former 1024-byte claim.
 - BBN Advanced Computers, **Chrysalis 4.0 Technical Notes** (1988), archived at
   Bitsavers:
   <https://bitsavers.org/pdf/bbn/bbnaci/butterfly_plus/Chrysalis_4.0_Technical_Notes_198801.pdf>.
   The notes describe the Butterfly/Chrysalis software environment, including a
   STREAMS remote-file-system library, but did not provide an on-disk Trans-FS
   format matching the repository assumptions.
+- Oracle's Solaris transition documentation records **TFS** as SunOS's
+  **Translucent File System**:
+  <https://docs.oracle.com/cd/E19455-01/805-6331/fsadm-4/index.html>.
+  Contemporary filesystem literature likewise describes Sun's TFS as a
+  view/overlay filesystem released with SunOS 4.1, not as a BBN standalone disk
+  format. This establishes that the acronym itself is ambiguous; it does not
+  support the repository's historical BBN attribution.
 
 Additional searches covered BBN, Bolt Beranek and Newman, Butterfly, Chrysalis,
-TENEX, `Trans-FS`, `TransFS`, `TFS`, `0x54465301`, `54 46 53 01` and
-`"TFS\x01"`. No source found in this audit established the claimed format.
-This is deliberately a statement about the evidence located, not proof that no
-such historical system ever existed.
+TENEX, `Trans-FS`, `TransFS`, `TFS`, `.tfs`, `0x54465301`, `54 46 53 01` and
+`"TFS\x01"`. No source found in this audit established the claimed BBN format,
+magic, extension or disk geometry. This is deliberately a statement about the
+evidence located, not proof that no such historical system ever existed.
 
 ## Current contract
 
 `TfsFormatDescriptor` therefore follows these conservative rules:
 
-1. **No magic-based auto-detection.** `MagicSignatures` is empty. Explicit
-   `.tfs` routing remains available.
+1. **No automatic detection.** `MagicSignatures`, `Extensions` and
+   `CompoundExtensions` are empty and `DefaultExtension` is empty. The descriptor
+   is reachable only through explicit selection of the `Tfs` registry id.
 2. **Opaque read only.** `FULL.tfs` is a byte-exact copy of the supplied stream;
    no inode, directory, allocation or transaction structure is guessed.
 3. **Unverified metadata.** `metadata.ini` reports the historical repository
