@@ -4,6 +4,12 @@ using Compression.Registry;
 
 namespace FileSystem.BeeGfs;
 
+internal sealed record BeeGfsTargetChunkBinding(
+  IFilesystemSession Session,
+  FilesystemNodeId NodeId,
+  long RequiredLength
+);
+
 /// <summary>
 /// Read-only logical BeeGFS namespace reconstructed from a quiescent set of metadata
 /// and storage targets. The initial supported profile is intentionally narrow:
@@ -18,20 +24,13 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
 
   private sealed record OpenTarget(
     BeeGfsTargetMember Member,
-    FilesystemStreamSource Source,
     IFilesystemSession Session,
     FilesystemNodeId RootNodeId);
 
   private sealed record DiscoveredDentry(
-    uint PhysicalMetadataNodeId,
     string ParentEntryId,
     string Name,
     BeeGfsDecodedDentry Metadata);
-
-  private sealed record TargetChunk(
-    IFilesystemSession Session,
-    FilesystemNodeId NodeId,
-    long RequiredLength);
 
   private readonly ReadOnlyFilesystemSnapshotSession _namespace;
   private readonly OpenTarget[] _targets;
@@ -51,19 +50,20 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     var opened = new List<OpenTarget>();
     try {
       foreach (var member in topology.MetadataTargets.Concat(topology.StorageTargets)) {
-        var source = _sources.Single(source => string.Equals(source.Name, member.SourceName, StringComparison.OrdinalIgnoreCase));
+        var source = _sources.Single(source =>
+          string.Equals(source.Name, member.SourceName, StringComparison.OrdinalIgnoreCase));
         source.Stream.Position = 0;
         var session = FormatRegistry.OpenFilesystem(
           member.BackingFormatId,
           source.Stream,
           new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
         var root = ResolveDirectory(session, session.RootNodeId, member.RootPath, member.SourceName);
-        opened.Add(new OpenTarget(member, source, session, root));
+        opened.Add(new OpenTarget(member, session, root));
       }
 
       _targets = opened.ToArray();
       var profile = BuildProfile(topology);
-      var (nodes, entries, rootNodeId) = BuildLogicalSnapshot(topology);
+      var (nodes, entries, rootNodeId) = BuildLogicalSnapshot();
       _namespace = new ReadOnlyFilesystemSnapshotSession(profile, rootNodeId, nodes, entries);
     } catch {
       foreach (var target in opened)
@@ -105,7 +105,7 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
   }
 
   private (FilesystemSnapshotNode[] Nodes, FilesystemSnapshotDirectoryEntry[] Entries, FilesystemNodeId RootNodeId)
-      BuildLogicalSnapshot(BeeGfsTargetTopology topology) {
+      BuildLogicalSnapshot() {
     var metadataTargets = _targets
       .Where(target => target.Member.Role == FilesystemSourceRole.Metadata)
       .ToDictionary(target => target.Member.NumericId);
@@ -119,15 +119,18 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       ScanMetadataTarget(target, contentOwners, dentries);
 
     if (!contentOwners.ContainsKey(RootEntryId))
-      throw new InvalidDataException("BeeGFS metadata target set contains no dentries hash directory for the logical root EntryID 'root'.");
+      throw new InvalidDataException(
+        "BeeGFS metadata target set contains no dentries hash directory for the logical root EntryID 'root'.");
 
     var nodeIds = new Dictionary<string, FilesystemNodeId>(StringComparer.Ordinal);
     var entryIdByNode = new Dictionary<FilesystemNodeId, string>();
     FilesystemNodeId NodeIdFor(string entryId) {
       if (nodeIds.TryGetValue(entryId, out var existing)) return existing;
       var id = StableNodeId(entryId);
-      if (entryIdByNode.TryGetValue(id, out var collision) && !string.Equals(collision, entryId, StringComparison.Ordinal))
-        throw new InvalidDataException($"BeeGFS EntryIDs '{collision}' and '{entryId}' collide in the mounted node-id projection.");
+      if (entryIdByNode.TryGetValue(id, out var collision) &&
+          !string.Equals(collision, entryId, StringComparison.Ordinal))
+        throw new InvalidDataException(
+          $"BeeGFS EntryIDs '{collision}' and '{entryId}' collide in the mounted node-id projection.");
       nodeIds[entryId] = id;
       entryIdByNode[id] = entryId;
       return id;
@@ -162,10 +165,12 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
             $"BeeGFS directory EntryID '{metadata.EntryId}' has no content directory in the supplied metadata targets.");
         if (physicalOwner != metadata.OwnerNodeId)
           throw new InvalidDataException(
-            $"BeeGFS directory EntryID '{metadata.EntryId}' says owner node {metadata.OwnerNodeId}, but its content directory is on metadata node {physicalOwner}.");
+            $"BeeGFS directory EntryID '{metadata.EntryId}' says owner node {metadata.OwnerNodeId}, " +
+            $"but its content directory is on metadata node {physicalOwner}.");
       } else if (metadata.Kind != FilesystemNodeKind.RegularFile) {
         throw new NotSupportedException(
-          $"BeeGFS namespace entry '{dentry.Name}' has kind {metadata.Kind}; the initial multi-target reader supports directories and regular files only.");
+          $"BeeGFS namespace entry '{dentry.Name}' has kind {metadata.Kind}; " +
+          "the initial multi-target reader supports directories and regular files only.");
       } else {
         if (metadata.StorageFormatVersion != 6 || !metadata.HasInlineInode || metadata.Raid0Pattern == null)
           throw new NotSupportedException(
@@ -173,7 +178,8 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
         foreach (var targetId in metadata.Raid0Pattern.TargetIds)
           if (!storageTargets.ContainsKey(targetId))
             throw new InvalidDataException(
-              $"BeeGFS file EntryID '{metadata.EntryId}' references storage target {targetId}, which is absent from the source set.");
+              $"BeeGFS file EntryID '{metadata.EntryId}' references storage target {targetId}, " +
+              "which is absent from the source set.");
       }
 
       var nodeId = NodeIdFor(metadata.EntryId);
@@ -194,7 +200,7 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
             dentry.Name,
             metadata,
             storageTargets),
-          _ => throw new UnreachableException(),
+          _ => throw new InvalidOperationException("Unsupported BeeGFS logical node kind reached node construction."),
         };
         nodesByEntryId.Add(metadata.EntryId, node);
       } else if (node.Kind != metadata.Kind || node.Size != Math.Max(0, metadata.Size)) {
@@ -205,11 +211,11 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       links.Add(new FilesystemSnapshotDirectoryEntry(NodeIdFor(dentry.ParentEntryId), dentry.Name, nodeId));
     }
 
-    foreach (var dentry in dentries) {
+    foreach (var dentry in dentries)
       if (!nodesByEntryId.ContainsKey(dentry.ParentEntryId))
         throw new InvalidDataException(
           $"BeeGFS namespace entry '{dentry.Name}' references missing parent EntryID '{dentry.ParentEntryId}'.");
-    }
+
     foreach (var (contentEntryId, _) in contentOwners)
       if (contentEntryId != RootEntryId && !nodesByEntryId.TryGetValue(contentEntryId, out var node))
         throw new InvalidDataException(
@@ -232,7 +238,7 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       metadata.OriginalUserId,
       metadata.OriginalParentEntryId,
       metadata.EntryId);
-    var chunks = new TargetChunk?[pattern.TargetIds.Count];
+    var chunks = new BeeGfsTargetChunkBinding?[pattern.TargetIds.Count];
 
     for (var index = 0; index < pattern.TargetIds.Count; ++index) {
       var required = RequiredTargetLength(metadata.Size, pattern.ChunkSize, pattern.TargetIds.Count, index);
@@ -241,15 +247,17 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       var chunksRoot = ResolveDirectory(target.Session, target.RootNodeId, "chunks", target.Member.SourceName);
       var chunkNode = ResolvePath(target.Session, chunksRoot, chunkPath, target.Member.SourceName)
         ?? throw new FileNotFoundException(
-          $"BeeGFS file EntryID '{metadata.EntryId}' is missing chunk '{chunkPath}' on storage target {pattern.TargetIds[index]}.");
+          $"BeeGFS file EntryID '{metadata.EntryId}' is missing chunk '{chunkPath}' " +
+          $"on storage target {pattern.TargetIds[index]}.");
       var stat = target.Session.Stat(chunkNode);
       if (stat.Kind != FilesystemNodeKind.RegularFile)
         throw new InvalidDataException(
           $"BeeGFS chunk '{chunkPath}' on storage target {pattern.TargetIds[index]} is not a regular file.");
       if (stat.Size < required)
         throw new EndOfStreamException(
-          $"BeeGFS chunk '{chunkPath}' on storage target {pattern.TargetIds[index]} has {stat.Size} bytes; {required} are required by logical file size {metadata.Size}.");
-      chunks[index] = new TargetChunk(target.Session, chunkNode, required);
+          $"BeeGFS chunk '{chunkPath}' on storage target {pattern.TargetIds[index]} has {stat.Size} bytes; " +
+          $"{required} are required by logical file size {metadata.Size}.");
+      chunks[index] = new BeeGfsTargetChunkBinding(target.Session, chunkNode, required);
     }
 
     var capturedChunks = chunks;
@@ -263,7 +271,8 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       metadata.Size,
       LinkCount: Math.Max(1u, metadata.LinkCount),
       NativeAttributes: metadata.Mode,
-      OpenReadHandle: () => new BeeGfsRaid0FileHandle(nodeId, metadata.Size, capturedPattern, capturedChunks));
+      OpenReadHandle: () => new BeeGfsRaid0FileHandle(
+        nodeId, metadata.Size, capturedPattern, capturedChunks));
   }
 
   private static void ScanMetadataTarget(
@@ -271,30 +280,34 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       IDictionary<string, uint> contentOwners,
       ICollection<DiscoveredDentry> dentries) {
     var dentriesRoot = ResolveDirectory(target.Session, target.RootNodeId, "dentries", target.Member.SourceName);
-    foreach (var level1 in target.Session.Enumerate(dentriesRoot).Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
-      foreach (var level2 in target.Session.Enumerate(level1.NodeId).Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
-        foreach (var content in target.Session.Enumerate(level2.NodeId).Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
+    foreach (var level1 in target.Session.Enumerate(dentriesRoot)
+               .Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
+      foreach (var level2 in target.Session.Enumerate(level1.NodeId)
+                 .Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
+        foreach (var content in target.Session.Enumerate(level2.NodeId)
+                   .Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
           var parentEntryId = content.Name;
           if (parentEntryId == EntryIdDirectoryName)
             throw new InvalidDataException(
-              $"BeeGFS metadata source '{target.Member.SourceName}' has '#fSiDs#' at the hash-directory level instead of inside a content directory.");
-          if (contentOwners.TryGetValue(parentEntryId, out var existingOwner) && existingOwner != target.Member.NumericId)
+              $"BeeGFS metadata source '{target.Member.SourceName}' has '#fSiDs#' at the hash-directory level " +
+              "instead of inside a content directory.");
+          if (contentOwners.TryGetValue(parentEntryId, out var existingOwner) &&
+              existingOwner != target.Member.NumericId)
             throw new InvalidDataException(
-              $"BeeGFS content directory EntryID '{parentEntryId}' appears on metadata nodes {existingOwner} and {target.Member.NumericId}; buddy mirroring is not enabled in the current reader.");
+              $"BeeGFS content directory EntryID '{parentEntryId}' appears on metadata nodes " +
+              $"{existingOwner} and {target.Member.NumericId}; buddy mirroring is not enabled in the current reader.");
           contentOwners[parentEntryId] = target.Member.NumericId;
 
           foreach (var physicalEntry in target.Session.Enumerate(content.NodeId)) {
             if (physicalEntry.Name == EntryIdDirectoryName) continue;
             if (physicalEntry.Kind != FilesystemNodeKind.RegularFile)
               throw new InvalidDataException(
-                $"BeeGFS physical dentry '{physicalEntry.Name}' below parent EntryID '{parentEntryId}' is not a regular metadata file.");
-            var metadataBytes = ReadDentryMetadata(target.Session, physicalEntry.NodeId, target.Member.SourceName, physicalEntry.Name);
+                $"BeeGFS physical dentry '{physicalEntry.Name}' below parent EntryID '{parentEntryId}' " +
+                "is not a regular metadata file.");
+            var metadataBytes = ReadDentryMetadata(
+              target.Session, physicalEntry.NodeId, target.Member.SourceName, physicalEntry.Name);
             var decoded = BeeGfsMetadataCodec.ParseDentry(metadataBytes, parentEntryId);
-            dentries.Add(new DiscoveredDentry(
-              target.Member.NumericId,
-              parentEntryId,
-              physicalEntry.Name,
-              decoded));
+            dentries.Add(new DiscoveredDentry(parentEntryId, physicalEntry.Name, decoded));
           }
         }
       }
@@ -312,19 +325,21 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
         if (all.TryGetValue(MetadataXattrName, out var metadata)) {
           if (metadata.Length is < 8 or > MaxMetadataBytes)
             throw new InvalidDataException(
-              $"BeeGFS dentry '{entryName}' in source '{sourceName}' has implausible {MetadataXattrName} length {metadata.Length}.");
+              $"BeeGFS dentry '{entryName}' in source '{sourceName}' has implausible " +
+              $"{MetadataXattrName} length {metadata.Length}.");
           return metadata;
         }
       } catch (NotSupportedException) {
-        // Some backing readers can enumerate the file but not this xattr storage form.
-        // BeeGFS can also store the same metadata in the file body, so try that next.
+        // BeeGFS can store the same metadata in the file body. Fall back only
+        // when the backing driver cannot read this xattr storage form.
       }
     }
 
     var stat = session.Stat(nodeId);
     if (stat.Size is < 8 or > MaxMetadataBytes)
       throw new InvalidDataException(
-        $"BeeGFS dentry '{entryName}' in source '{sourceName}' has no readable {MetadataXattrName} and body size {stat.Size} is outside 8..{MaxMetadataBytes} bytes.");
+        $"BeeGFS dentry '{entryName}' in source '{sourceName}' has no readable {MetadataXattrName} " +
+        $"and body size {stat.Size} is outside 8..{MaxMetadataBytes} bytes.");
     using var handle = session.OpenFile(nodeId, FileAccess.Read);
     var data = new byte[checked((int)stat.Size)];
     ReadExactly(handle, data, sourceName, entryName);
@@ -374,8 +389,6 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
   }
 
   private static FilesystemNodeId StableNodeId(string entryId) {
-    // Deterministic FNV-1a projection of BeeGFS's native globally-unique EntryID.
-    // Collisions are checked against the full EntryID before the session is exposed.
     const ulong offset = 14695981039346656037UL;
     const ulong prime = 1099511628211UL;
     var hash = offset;
@@ -386,20 +399,26 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     return new FilesystemNodeId(hash == 0 ? 1UL : hash, Generation: 1);
   }
 
-  private static void ReadExactly(IFilesystemFileHandle handle, Span<byte> destination, string sourceName, string entryName) {
+  private static void ReadExactly(
+      IFilesystemFileHandle handle,
+      Span<byte> destination,
+      string sourceName,
+      string entryName) {
     var done = 0;
     while (done < destination.Length) {
       var read = handle.Read(done, destination[done..]);
       if (read <= 0)
         throw new EndOfStreamException(
-          $"BeeGFS source '{sourceName}' metadata file '{entryName}' ended after {done} of {destination.Length} bytes.");
+          $"BeeGFS source '{sourceName}' metadata file '{entryName}' ended after " +
+          $"{done} of {destination.Length} bytes.");
       done += read;
     }
   }
 
   private static FilesystemDriverProfile BuildProfile(BeeGfsTargetTopology topology) => new(
     "BeeGfs",
-    $"BeeGFS offline V3/V6 non-mirrored RAID0 ({topology.MetadataTargets.Count} metadata, {topology.StorageTargets.Count} storage)",
+    $"BeeGFS offline V3/V6 non-mirrored RAID0 ({topology.MetadataTargets.Count} metadata, " +
+    $"{topology.StorageTargets.Count} storage)",
     FilesystemDriverCapabilities.EnumerateDirectories |
     FilesystemDriverCapabilities.ReadData |
     FilesystemDriverCapabilities.RandomAccess |
@@ -425,15 +444,14 @@ internal sealed class BeeGfsRaid0FileHandle : IFilesystemFileHandle {
       FilesystemNodeId nodeId,
       long length,
       BeeGfsRaid0Pattern pattern,
-      IReadOnlyList<object?> chunkBindings) {
-    throw new NotSupportedException("Internal constructor binding mismatch.");
-  }
+      IReadOnlyList<BeeGfsTargetChunkBinding?> chunkBindings) {
+    ArgumentNullException.ThrowIfNull(pattern);
+    ArgumentNullException.ThrowIfNull(chunkBindings);
+    if (length < 0) throw new ArgumentOutOfRangeException(nameof(length));
+    if (chunkBindings.Count != pattern.TargetIds.Count)
+      throw new ArgumentException(
+        "BeeGFS chunk binding count must match the RAID0 target vector.", nameof(chunkBindings));
 
-  internal BeeGfsRaid0FileHandle(
-      FilesystemNodeId nodeId,
-      long length,
-      BeeGfsRaid0Pattern pattern,
-      IReadOnlyList<BeeGfsReadOnlyFilesystemSession.TargetChunk?> chunkBindings) {
     NodeId = nodeId;
     Length = length;
     _pattern = pattern;
@@ -444,9 +462,10 @@ internal sealed class BeeGfsRaid0FileHandle : IFilesystemFileHandle {
         if (binding == null) continue;
         var handle = binding.Session.OpenFile(binding.NodeId, FileAccess.Read);
         if (handle.Length < binding.RequiredLength) {
+          var actual = handle.Length;
           handle.Dispose();
           throw new EndOfStreamException(
-            $"BeeGFS storage chunk {i} has {handle.Length} bytes; {binding.RequiredLength} are required.");
+            $"BeeGFS storage chunk {i} has {actual} bytes; {binding.RequiredLength} are required.");
         }
         _chunks[i] = handle;
       }
@@ -467,18 +486,25 @@ internal sealed class BeeGfsRaid0FileHandle : IFilesystemFileHandle {
     var total = 0;
     while (total < wanted) {
       var logicalOffset = offset + total;
-      var targetIndex = BeeGfsChunkLayout.TargetIndex(logicalOffset, _pattern.ChunkSize, _pattern.TargetIds.Count);
+      var targetIndex = BeeGfsChunkLayout.TargetIndex(
+        logicalOffset, _pattern.ChunkSize, _pattern.TargetIds.Count);
       var handle = _chunks[targetIndex]
         ?? throw new EndOfStreamException(
-          $"BeeGFS logical offset {logicalOffset} maps to absent storage target {_pattern.TargetIds[targetIndex]}.");
-      var localOffset = BeeGfsChunkLayout.TargetLocalOffset(logicalOffset, _pattern.ChunkSize, _pattern.TargetIds.Count);
-      var segment = BeeGfsChunkLayout.BytesUntilNextChunk(logicalOffset, _pattern.ChunkSize, wanted - total);
+          $"BeeGFS logical offset {logicalOffset} maps to absent storage target " +
+          $"{_pattern.TargetIds[targetIndex]}.");
+      var localOffset = BeeGfsChunkLayout.TargetLocalOffset(
+        logicalOffset, _pattern.ChunkSize, _pattern.TargetIds.Count);
+      var segment = BeeGfsChunkLayout.BytesUntilNextChunk(
+        logicalOffset, _pattern.ChunkSize, wanted - total);
       var copied = 0;
       while (copied < segment) {
-        var read = handle.Read(localOffset + copied, destination.Slice(total + copied, segment - copied));
+        var read = handle.Read(
+          localOffset + copied,
+          destination.Slice(total + copied, segment - copied));
         if (read <= 0)
           throw new EndOfStreamException(
-            $"BeeGFS storage target {_pattern.TargetIds[targetIndex]} ended while reading logical offset {logicalOffset + copied}.");
+            $"BeeGFS storage target {_pattern.TargetIds[targetIndex]} ended while reading " +
+            $"logical offset {logicalOffset + copied}.");
         copied += read;
       }
       total += copied;
