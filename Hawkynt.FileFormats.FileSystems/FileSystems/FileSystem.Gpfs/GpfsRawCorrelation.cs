@@ -94,6 +94,8 @@ internal static class GpfsRawCorrelation {
 
     ReadOnlySpan<int> diskWidths = [1, 2, 4, 8];
     ReadOnlySpan<int> sectorWidths = [4, 8];
+    ReadOnlySpan<bool> sectorOrders = [false, true];
+    Span<byte> encoded = stackalloc byte[16];
     var result = new List<GpfsAddressFieldCandidate>();
     foreach (var diskWidth in diskWidths) {
       if (!FitsUnsigned((ulong)address.DiskId, diskWidth))
@@ -102,9 +104,8 @@ internal static class GpfsRawCorrelation {
         if (!FitsUnsigned((ulong)address.Sector, sectorWidth))
           continue;
         foreach (var byteOrder in Enum.GetValues<GpfsByteOrder>()) {
-          foreach (var sectorFirst in [false, true]) {
+          foreach (var sectorFirst in sectorOrders) {
             var width = diskWidth + sectorWidth;
-            Span<byte> encoded = stackalloc byte[16];
             var destination = encoded[..width];
             if (sectorFirst) {
               WriteUnsigned(destination[..sectorWidth], (ulong)address.Sector, byteOrder);
