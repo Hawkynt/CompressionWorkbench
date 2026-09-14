@@ -48,7 +48,7 @@ public sealed class XfsFilesystemDriverAdapter :
         [
           "Native inode+di_gen identities are preserved; multiple decoded directory entries can reference the same session object as hard links.",
           "Regular-file handles read local and inline-extent forks directly at the requested offset; no whole-file spool is required.",
-          "Sparse logical holes and XFS_EXT_UNWRITTEN extents read as zeroes; btree-format data forks remain fail-closed until BMBT traversal is implemented.",
+          "Sparse logical holes and XFS_EXT_UNWRITTEN regular-file extents read as zeroes; btree-format data forks remain fail-closed until BMBT traversal is implemented.",
           "Mounted writes remain disabled until allocation-group btrees, log transactions/replay and complete directory/data-fork mutation share one transactional core.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
@@ -450,6 +450,7 @@ internal readonly record struct XfsDriverGeometry(
     for (var i = 0; i < nextents; ++i) {
       var hi = BinaryPrimitives.ReadUInt64BigEndian(extentBytes.AsSpan(i * 16, 8));
       var lo = BinaryPrimitives.ReadUInt64BigEndian(extentBytes.AsSpan(i * 16 + 8, 8));
+      var unwritten = (hi & (1UL << 63)) != 0;
       var startOff = (hi >> 9) & 0x003F_FFFF_FFFF_FFFFUL;
       var startBlock = ((hi & 0x1FF) << 43) | (lo >> 21);
       var blockCount = lo & 0x1F_FFFFUL;
@@ -457,6 +458,10 @@ internal readonly record struct XfsDriverGeometry(
         throw new InvalidDataException($"XFS inode {inode.Number} contains a zero-length extent.");
       if (i != 0 && startOff < previousEnd)
         throw new InvalidDataException($"XFS inode {inode.Number} contains overlapping or out-of-order extents.");
+      if (inode.Kind == FilesystemNodeKind.SymbolicLink && startOff != previousEnd)
+        throw new NotSupportedException($"XFS symlink inode {inode.Number} contains a sparse logical gap; the symlink decoder requires a contiguous fork.");
+      if (inode.Kind is FilesystemNodeKind.Directory or FilesystemNodeKind.SymbolicLink && unwritten)
+        throw new NotSupportedException($"XFS {inode.Kind} inode {inode.Number} contains an unwritten extent that cannot hold live namespace data.");
       if (startBlock >= DataBlocks || blockCount > DataBlocks - startBlock)
         throw new InvalidDataException($"XFS inode {inode.Number} extent points outside the data device.");
       previousEnd = checked(startOff + blockCount);
