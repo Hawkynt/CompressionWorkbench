@@ -9,6 +9,12 @@ internal static class JuiceFsShrinker {
       throw new ArgumentException("JuiceFS shrink input must be readable.", nameof(input));
     if (!output.CanWrite)
       throw new ArgumentException("JuiceFS shrink output must be writable.", nameof(output));
+
+    if (ReferenceEquals(input, output)) {
+      ShrinkInPlace(input);
+      return;
+    }
+
     if (!input.CanSeek) {
       using var bufferedInput = CreateScratchStream();
       input.CopyTo(bufferedInput);
@@ -55,6 +61,51 @@ internal static class JuiceFsShrinker {
       CopyOriginal(input, output, truncate: false);
     }
     output.Flush();
+  }
+
+  private static void ShrinkInPlace(Stream stream) {
+    if (!stream.CanSeek)
+      throw new ArgumentException("JuiceFS in-place shrink requires a seekable stream.", nameof(stream));
+
+    var originalPosition = stream.Position;
+    using var original = CreateScratchStream();
+    try {
+      stream.Position = 0;
+      stream.CopyTo(original);
+      original.Flush();
+    } finally {
+      stream.Position = originalPosition;
+    }
+
+    using var replacement = CreateScratchStream();
+    original.Position = 0;
+    Shrink(original, replacement);
+    replacement.Position = 0;
+
+    try {
+      ReplaceContents(stream, replacement);
+    } catch (Exception commitException) {
+      try {
+        original.Position = 0;
+        ReplaceContents(stream, original);
+        stream.Position = originalPosition;
+      } catch (Exception rollbackException) {
+        throw new IOException(
+          "JuiceFS in-place shrink failed and restoring the original stream also failed.",
+          new AggregateException(commitException, rollbackException));
+      }
+      throw;
+    }
+  }
+
+  private static void ReplaceContents(Stream target, Stream source) {
+    target.Position = 0;
+    target.SetLength(0);
+    source.Position = 0;
+    source.CopyTo(target);
+    target.SetLength(target.Position);
+    target.Flush();
+    target.Position = 0;
   }
 
   private static void MinifyJson(Stream input, Stream output) {

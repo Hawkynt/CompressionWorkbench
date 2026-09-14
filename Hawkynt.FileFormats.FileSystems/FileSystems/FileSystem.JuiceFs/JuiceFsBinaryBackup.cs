@@ -6,6 +6,10 @@ using System.Text;
 namespace FileSystem.JuiceFs;
 
 internal static class JuiceFsBinaryBackup {
+  private const int FooterLengthSize = sizeof(ulong);
+  private const int EndOfSegmentsSize = sizeof(uint);
+  private const int SegmentHeaderSize = sizeof(uint) + sizeof(ulong);
+
   private static readonly string[] SegmentNames = [
     "unknown", "format", "counter", "node", "edge", "chunk", "slice-ref", "symlink",
     "sustained", "deleted-file", "xattr", "acl", "stat", "quota", "parent", "change-log",
@@ -14,18 +18,21 @@ internal static class JuiceFsBinaryBackup {
   public static bool TryParse(byte[] data, List<JuiceFsEntry> entries, out uint version, out int segmentCount) {
     version = 0;
     segmentCount = 0;
-    if (data.Length < 16)
+    if (data.Length < EndOfSegmentsSize + FooterLengthSize)
       return false;
 
-    var footerLength = BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(data.Length - sizeof(ulong), sizeof(ulong)));
-    if (footerLength > int.MaxValue || footerLength + sizeof(uint) + sizeof(ulong) > (ulong)data.Length)
-      return false;
-    var footerStart = data.Length - sizeof(ulong) - (int)footerLength;
-    var eosOffset = footerStart - sizeof(uint);
-    if (eosOffset < 0 || BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(eosOffset, sizeof(uint))) != JuiceFsReader.BakMagic)
+    var footerLength = BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(data.Length - FooterLengthSize, FooterLengthSize));
+    var maxFooterLength = data.Length - FooterLengthSize - EndOfSegmentsSize;
+    if (footerLength > (ulong)maxFooterLength)
       return false;
 
-    var footer = data.AsSpan(footerStart, (int)footerLength);
+    var footerLengthInt = checked((int)footerLength);
+    var footerStart = data.Length - FooterLengthSize - footerLengthInt;
+    var eosOffset = footerStart - EndOfSegmentsSize;
+    if (BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(eosOffset, EndOfSegmentsSize)) != JuiceFsReader.BakMagic)
+      return false;
+
+    var footer = data.AsSpan(footerStart, footerLengthInt);
     if (!TryReadFooterIdentity(footer, out var magic, out version)
         || magic != JuiceFsReader.BakMagic || version != JuiceFsReader.BakVersion)
       return false;
@@ -33,7 +40,7 @@ internal static class JuiceFsBinaryBackup {
     var segments = new List<Segment>();
     var position = 0;
     while (position < eosOffset) {
-      if (eosOffset - position < sizeof(uint) + sizeof(ulong))
+      if (eosOffset - position < SegmentHeaderSize)
         return false;
       var type = BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(position, sizeof(uint)));
       position += sizeof(uint);
@@ -41,10 +48,12 @@ internal static class JuiceFsBinaryBackup {
         return false;
       var length = BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(position, sizeof(ulong)));
       position += sizeof(ulong);
-      if (length > int.MaxValue || (ulong)(eosOffset - position) < length)
+      var available = eosOffset - position;
+      if (length > (ulong)available)
         return false;
-      segments.Add(new Segment(segments.Count, type, position, (int)length));
-      position += (int)length;
+      var segmentLength = checked((int)length);
+      segments.Add(new Segment(segments.Count, type, position, segmentLength));
+      position += segmentLength;
     }
     if (position != eosOffset || !segments.Any(segment => segment.Type == 1))
       return false;
@@ -53,7 +62,7 @@ internal static class JuiceFsBinaryBackup {
     JuiceFsJsonBackup.AddGenerated(entries, "metadata.ini", BuildMetadata(version, segments));
     foreach (var segment in segments)
       JuiceFsJsonBackup.AddSource(entries, $"segments/{segment.Index:D4}-{SegmentNames[(int)segment.Type]}.pb", segment.Offset, segment.Length);
-    JuiceFsJsonBackup.AddSource(entries, "footer.pb", footerStart, (int)footerLength);
+    JuiceFsJsonBackup.AddSource(entries, "footer.pb", footerStart, footerLengthInt);
     JuiceFsJsonBackup.AddSource(entries, "juicefs-backup.bin", 0, data.LongLength);
     return true;
   }
@@ -109,10 +118,21 @@ internal static class JuiceFsBinaryBackup {
 
   private static bool TryReadVarint(ReadOnlySpan<byte> data, ref int offset, out ulong value) {
     value = 0;
-    for (var shift = 0; shift < 64 && offset < data.Length; shift += 7) {
+    for (var byteIndex = 0; byteIndex < 10; ++byteIndex) {
+      if ((uint)offset >= (uint)data.Length)
+        return false;
+
       var b = data[offset++];
-      value |= (ulong)(b & 0x7F) << shift;
-      if ((b & 0x80) == 0) return true;
+      if (byteIndex == 9) {
+        if (b > 1)
+          return false;
+        value |= (ulong)b << 63;
+        return true;
+      }
+
+      value |= (ulong)(b & 0x7F) << (byteIndex * 7);
+      if ((b & 0x80) == 0)
+        return true;
     }
     return false;
   }
