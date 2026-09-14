@@ -136,7 +136,7 @@ public class Nwfs386BehaviorTests {
     var analysis = descriptor.AnalyzeLayout(image);
 
     Assert.That(analysis.CurrentUnitSize, Is.EqualTo(16384));
-    Assert.That(analysis.OptimalUnitSize, Is.AnyOf(1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144));
+    Assert.That(analysis.OptimalUnitSize, Is.AnyOf(4096, 8192, 16384, 32768, 65536));
     Assert.That(analysis.OptimalSlackBytes, Is.LessThanOrEqualTo(analysis.CurrentSlackBytes));
   }
 
