@@ -51,7 +51,8 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// <summary>Gets the methods.</summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [
     new("iso9660", "ISO 9660"),
-    new("cdda", "CD-DA / mixed-mode tracks"),
+    new("cdda", "CD-DA raw sectors"),
+    new("raw-track", "Raw NRG data track"),
   ];
 
   /// <summary>Gets the tar compression format id.</summary>
@@ -62,16 +63,20 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "Nero Burning ROM disc image (NRG v1/v2 reader; v2 DAO multi-session/multi-track/audio writer; named ISO edits use verified rebuild)";
+    "Nero Burning ROM disc image (NRG v1/v2 multi-session/multi-track reader; raw CD-DA extraction; v2 DAO writer; named ISO edits use verified rebuild)";
 
-  /// <summary>Lists the ISO 9660 entries from the first readable data track in the supplied container.</summary>
+  /// <summary>
+  /// Lists ISO files from every readable data track plus exact raw entries for CD-DA and non-ISO tracks.
+  /// The first ISO filesystem remains rooted at the archive root for backwards compatibility.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new NrgReader(stream, leaveOpen: true);
-    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(index, entry.FullPath, entry.Size,
-      entry.Size, "iso9660", entry.IsDirectory, false, null)).ToList();
+    return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.FullPath, entry.Size, entry.Size, GetEntryMethod(reader, entry),
+      entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>Extracts ISO 9660 entries from the first readable data track.</summary>
+  /// <summary>Extracts ISO files and exact stored raw-track entries without transcoding CD-DA.</summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var reader = new NrgReader(stream, leaveOpen: true);
     foreach (var entry in reader.Entries) {
@@ -104,7 +109,7 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Adds/replaces named ISO entries through a verified rebuild. Multi-track or audio NRGs are
+  /// Adds/replaces named ISO entries through a verified rebuild. Multi-track, audio and non-ISO NRGs are
   /// deliberately refused here because flattening them to the generic single-ISO create profile
   /// would destroy disc structure.
   /// </summary>
@@ -138,19 +143,19 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     });
   }
 
-  /// <summary>Purges the single-data-track R/W profile to a valid empty NRG.</summary>
+  /// <summary>Purges the single-ISO-track R/W profile to a valid empty NRG.</summary>
   public void Purge(Stream archive) {
     EnsureNamedFileMutationProfile(archive);
     RebuildVerb.PurgeViaModifier(archive, this, this);
   }
 
-  /// <summary>Rebuild-defragments the single-data-track R/W profile.</summary>
+  /// <summary>Rebuild-defragments the single-ISO-track R/W profile.</summary>
   public void Defragment(Stream archive) {
     EnsureNamedFileMutationProfile(archive);
     RebuildVerb.RebuildInPlace(archive, this, this);
   }
 
-  /// <summary>Progress-reporting rebuild defrag for the single-data-track R/W profile.</summary>
+  /// <summary>Progress-reporting rebuild defrag for the single-ISO-track R/W profile.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(options);
     if (options.Mode != DefragMode.ConsolidateAtStart)
@@ -162,14 +167,13 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   /// <summary>
-  /// Tight-packs the single-data-track profile. Multi-track/audio images are copied through
+  /// Tight-packs the single-ISO-track profile. Multi-track, audio and non-ISO images are copied through
   /// unchanged rather than being flattened into one ISO track.
   /// </summary>
   public void Shrink(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
-    var profile = NrgStructureInspector.Inspect(input);
-    if (!profile.IsSingleDataTrack) {
+    if (!IsNamedFileMutationProfile(input)) {
       CopyThrough(input, output);
       return;
     }
@@ -194,6 +198,14 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  private static string GetEntryMethod(NrgReader reader, NrgEntry entry) {
+    if (entry.Kind != NrgEntryKind.RawTrack)
+      return "iso9660";
+    var track = reader.Tracks.FirstOrDefault(track =>
+      track.SessionNumber == entry.SessionNumber && track.TrackNumber == entry.TrackNumber);
+    return track?.IsAudio == true ? "cdda" : "raw-track";
+  }
+
   private static void CopyThrough(Stream input, Stream output) {
     input.Position = 0;
     output.Position = 0;
@@ -201,12 +213,31 @@ public sealed class NrgFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     input.CopyTo(output);
   }
 
+  private static bool IsNamedFileMutationProfile(Stream archive) {
+    if (!archive.CanRead || !archive.CanSeek)
+      return false;
+
+    var saved = archive.Position;
+    try {
+      var profile = NrgStructureInspector.Inspect(archive);
+      if (!profile.IsSingleDataTrack)
+        return false;
+
+      archive.Position = 0;
+      using var reader = new NrgReader(archive, leaveOpen: true);
+      return reader.Tracks.Count == 1 && reader.Tracks[0].HasIso9660;
+    } catch {
+      return false;
+    } finally {
+      archive.Position = saved;
+    }
+  }
+
   private static void EnsureNamedFileMutationProfile(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
-    var profile = NrgStructureInspector.Inspect(archive);
-    if (!profile.IsSingleDataTrack)
+    if (!IsNamedFileMutationProfile(archive))
       throw new NotSupportedException(
-        "Named-file mutation/defrag/purge is supported only for a single data-track NRG. " +
-        "Multi-session, mixed-mode and audio images are authorable but are not flattened during file-level maintenance.");
+        "Named-file mutation/defrag/purge is supported only for a single ISO 9660 data-track NRG. " +
+        "Multi-session, mixed-mode, audio and non-ISO images are not flattened during file-level maintenance.");
   }
 }
