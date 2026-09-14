@@ -5,21 +5,19 @@ using FileSystem.Iso;
 namespace FileFormat.Cdi;
 
 /// <summary>
-/// Transactionally rebuilds the ISO filesystem inside a cooked Mode-1 CDI data
+/// Transactionally rebuilds the ISO filesystem inside a supported CDI data
 /// track without changing the surrounding optical layout. Every byte outside
 /// index 1 of the selected track — audio, pregaps, other sessions, subchannels,
 /// descriptor dialect and undeciphered descriptor fields — is copied verbatim.
+/// Raw Mode-1 and Mode-2 Form-1 sectors have their EDC/ECC regenerated after
+/// the 2,048-byte filesystem payload is replaced.
 /// </summary>
 internal static class CdiEmbeddedIsoRebuilder {
-  private const int SectorSize = 2048;
+  private const int SectorSize = CdiCdSectorIntegrity.UserDataSize;
   private const int IsoWriterTrailingPadSectors = 150;
 
   internal static bool CanRewrite(CdiReader reader)
-    => reader.ActiveDataTrack is {
-      Mode: CdiTrackMode.Mode1,
-      ReadMode: CdiReadMode.Mode1_2048,
-      StoredSectorSize: SectorSize,
-    };
+    => reader.ActiveDataTrack is { } active && CdiCdSectorIntegrity.Supports(active);
 
   internal static void Rewrite(
     Stream archive,
@@ -39,12 +37,14 @@ internal static class CdiEmbeddedIsoRebuilder {
       archive.Position = 0;
       using var sourceReader = new CdiReader(archive, leaveOpen: true);
       var active = sourceReader.ActiveDataTrack;
-      if (active == null || !CanRewrite(sourceReader))
+      if (active == null || !CdiCdSectorIntegrity.Supports(active))
         throw UnsupportedLayout();
+
+      EnsureTrackSectorsRewritable(archive, active);
 
       var sourceVersion = sourceReader.CdiVersion;
       var sourceTracks = sourceReader.Tracks.ToArray();
-      var sourcePvd = sourceReader.ReadTrackSector(active, 16);
+      var sourcePvd = CdiCdSectorIntegrity.GetUserData(active, sourceReader.ReadTrackSector(active, 16));
       var absoluteExtents = UsesAbsoluteIsoExtents(sourcePvd, active);
 
       progress?.CancellationToken.ThrowIfCancellationRequested();
@@ -72,16 +72,15 @@ internal static class CdiEmbeddedIsoRebuilder {
       progress?.CancellationToken.ThrowIfCancellationRequested();
       progress?.OnProgress?.Invoke(new DefragProgressEvent(
         "writing", 0.55, active.DataOffset, active.DataOffset, archive.Length, null,
-        $"Rebuilding ISO inside CDI track {active.TrackNumber}; outer sessions/tracks remain byte-identical"));
+        $"Rebuilding ISO inside CDI track {active.TrackNumber}; raw-sector integrity is regenerated where required"));
 
-      staged.Position = active.DataOffset;
-      staged.Write(embeddedIso);
-      ZeroRange(staged, trackCapacity - embeddedIso.LongLength);
+      RewriteTrackPayload(staged, active, embeddedIso);
       staged.Flush();
 
       progress?.CancellationToken.ThrowIfCancellationRequested();
       progress?.OnProgress?.Invoke(new DefragProgressEvent(
-        "verifying", 0.9, -1, active.DataOffset + trackCapacity, archive.Length, null,
+        "verifying", 0.9, -1, active.DataOffset + (long)active.DataSectorCount * active.StoredSectorSize,
+        archive.Length, null,
         "Verifying CDI track map and rebuilt ISO before commit"));
 
       Verify(staged, tempDirectory, sourceVersion, sourceTracks);
@@ -96,22 +95,70 @@ internal static class CdiEmbeddedIsoRebuilder {
       staged.Position = 0;
       staged.CopyTo(archive);
       archive.Flush();
-      archive.Position = 0;
 
       progress?.OnProgress?.Invoke(new DefragProgressEvent(
         "complete", 1, -1, -1, archive.Length, null,
         "CDI filesystem rebuilt without changing the optical track layout"));
     } finally {
       try { Directory.Delete(tempDirectory, recursive: true); } catch { /* best effort */ }
-      if (archive.CanSeek && archive.Position > archive.Length)
-        archive.Position = Math.Min(originalPosition, archive.Length);
+      if (archive.CanSeek)
+        archive.Position = originalPosition;
     }
   }
 
   internal static NotSupportedException UnsupportedLayout() => new(
-    "CDI mutation can preserve multi-track/session images only when the selected ISO filesystem is stored " +
-    "as cooked 2048-byte Mode-1 sectors. Raw Mode-1 and Mode-2 sectors require regenerating CD EDC/ECC, " +
-    "so those layouts remain read-only rather than emitting sectors with stale integrity codes.");
+    "CDI mutation can preserve Mode-1 and Mode-2 Form-1 data tracks in cooked or raw storage. " +
+    "Audio, Mode-2 Form-2/formless sectors, unsupported sector geometries, and mixed-form data tracks remain read-only.");
+
+  private static void EnsureTrackSectorsRewritable(Stream archive, CdiTrackInfo active) {
+    if (active.ReadMode == CdiReadMode.Mode1_2048)
+      return;
+
+    var originalPosition = archive.Position;
+    var stored = new byte[active.StoredSectorSize];
+    try {
+      for (var sector = 0; sector < active.DataSectorCount; ++sector) {
+        archive.Position = checked(active.DataOffset + (long)sector * active.StoredSectorSize);
+        archive.ReadExactly(stored);
+        if (!CdiCdSectorIntegrity.IsRewritableSector(active, stored))
+          throw UnsupportedLayout();
+      }
+    } finally {
+      archive.Position = originalPosition;
+    }
+  }
+
+  private static void RewriteTrackPayload(Stream staged, CdiTrackInfo active, ReadOnlySpan<byte> embeddedIso) {
+    if (embeddedIso.Length % SectorSize != 0)
+      throw new InvalidDataException("CDI: rebuilt ISO payload is not sector aligned.");
+
+    var logicalSectorCount = embeddedIso.Length / SectorSize;
+    if (logicalSectorCount > active.DataSectorCount)
+      throw new IOException("CDI: rebuilt ISO exceeds the fixed data-track capacity.");
+
+    if (active.ReadMode == CdiReadMode.Mode1_2048) {
+      staged.Position = active.DataOffset;
+      staged.Write(embeddedIso);
+      ZeroRange(staged, ((long)active.DataSectorCount - logicalSectorCount) * SectorSize);
+      return;
+    }
+
+    var stored = new byte[active.StoredSectorSize];
+    var emptyUserData = new byte[SectorSize];
+    for (var sector = 0; sector < active.DataSectorCount; ++sector) {
+      var physicalOffset = checked(active.DataOffset + (long)sector * active.StoredSectorSize);
+      staged.Position = physicalOffset;
+      staged.ReadExactly(stored);
+
+      var userData = sector < logicalSectorCount
+        ? embeddedIso.Slice(sector * SectorSize, SectorSize)
+        : emptyUserData;
+      CdiCdSectorIntegrity.RewriteUserData(active, stored, userData);
+
+      staged.Position = physicalOffset;
+      staged.Write(stored);
+    }
+  }
 
   private static byte[] BuildIso(
     string root,
@@ -159,7 +206,8 @@ internal static class CdiEmbeddedIsoRebuilder {
   private static bool HasJoliet(CdiReader reader, CdiTrackInfo active) {
     var max = Math.Min(active.DataSectorCount, 64);
     for (var lba = 17; lba < max; ++lba) {
-      var sector = reader.ReadTrackSector(active, lba);
+      var stored = reader.ReadTrackSector(active, lba);
+      var sector = CdiCdSectorIntegrity.GetUserData(active, stored);
       if (!HasCd001(sector))
         continue;
       if (sector[0] == 0xFF)
