@@ -8,7 +8,7 @@ REF=${STORAGE_SCALE_VAGRANT_REF:-64706486022d29cd9d5d89f2fa18ec509d2099e8}
 
 [[ -f $INSTALLER ]] || { echo "installer not found: $INSTALLER" >&2; exit 2; }
 [[ $PROVIDER == libvirt || $PROVIDER == virtualbox ]] || { echo "provider must be libvirt or virtualbox" >&2; exit 2; }
-for cmd in git vagrant sed grep cp; do command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }; done
+for cmd in git vagrant sed grep cp awk tr; do command -v "$cmd" >/dev/null || { echo "missing: $cmd" >&2; exit 2; }; done
 
 if [[ ! -d $LAB/.git ]]; then
   mkdir -p "$(dirname "$LAB")"
@@ -32,6 +32,20 @@ mkdir -p "$LAB/setup/gpfs-corpus"
 cp -f "$(dirname "$0")/capture.sh" "$LAB/setup/gpfs-corpus/capture.sh"
 cp -f "$(dirname "$0")/run-controlled-corpus.sh" "$LAB/setup/gpfs-corpus/run-controlled-corpus.sh"
 chmod +x "$LAB/setup/gpfs-corpus/"*.sh
+
+# IBM's provider Vagrantfiles consume a locally prepared StorageScale_base box.
+# Build it exactly once using the provider's pinned prep-box definition.
+if ! vagrant box list | awk '$1 == "StorageScale_base" { found=1 } END { exit !found }'; then
+  (
+    cd "$LAB/$PROVIDER/prep-box"
+    rm -f StorageScale_base.box
+    vagrant up
+    vagrant package StorageScale_base --output StorageScale_base.box
+    vagrant box add StorageScale_base.box --name StorageScale_base --force
+    vagrant destroy -f
+    rm -f StorageScale_base.box
+  )
+fi
 
 (
   cd "$LAB/$PROVIDER"
