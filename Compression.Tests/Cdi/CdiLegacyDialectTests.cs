@@ -56,14 +56,7 @@ public sealed class CdiLegacyDialectTests {
     archive.Write(BuildLegacyMultiTrack(version, "before"u8.ToArray()));
     archive.Position = 0;
 
-    long dataStart;
-    long dataEnd;
-    using (var reader = new CdiReader(archive, leaveOpen: true)) {
-      var active = reader.ActiveDataTrack!;
-      dataStart = active.DataOffset;
-      dataEnd = active.DataOffset + (long)active.DataSectorCount * 2048;
-    }
-
+    var (dataStart, dataEnd) = ActiveDataBounds(archive);
     var before = archive.ToArray();
     ((IArchiveModifiable)new CdiFormatDescriptor()).Add(archive, [
       ArchiveInputInfo.InMemory("README.TXT", "replacement"u8),
@@ -82,6 +75,56 @@ public sealed class CdiLegacyDialectTests {
       Assert.That(ReadFile(archive, "README.TXT"), Is.EqualTo("replacement"u8.ToArray()));
       Assert.That(ReadFile(archive, "NEWFILE.BIN"), Is.EqualTo("new-file"u8.ToArray()));
       Assert.That(ReadFooterVersion(after), Is.EqualTo(version));
+    });
+  }
+
+  [TestCase(CdiTrackMode.Mode1)]
+  [TestCase(CdiTrackMode.Mode2)]
+  [Category("HappyPath"), Category("RoundTrip"), Category("KnownAnswer")]
+  public void Add_OldRawDataTrack_RegeneratesIntegrityWithoutChangingOpticalLayout(CdiTrackMode mode) {
+    var image = mode == CdiTrackMode.Mode1
+      ? BuildLegacyRawMode1(V3, "raw-before"u8.ToArray())
+      : BuildLegacyRawMode2Form1(V3, "raw-before"u8.ToArray());
+    using var archive = new MemoryStream(image);
+    var (dataStart, dataEnd) = ActiveDataBounds(archive);
+    var before = archive.ToArray();
+
+    archive.Position = 37;
+    ((IArchiveModifiable)new CdiFormatDescriptor()).Add(archive, [
+      ArchiveInputInfo.InMemory("README.TXT", "raw-after"u8),
+      ArchiveInputInfo.InMemory("RAWNEW.BIN", "new"u8),
+    ]);
+    var callerPosition = archive.Position;
+    var after = archive.ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(callerPosition, Is.EqualTo(37), "successful mutation did not restore caller stream position");
+      Assert.That(after.Length, Is.EqualTo(before.Length));
+      Assert.That(after.AsSpan(0, checked((int)dataStart)).ToArray(),
+        Is.EqualTo(before.AsSpan(0, checked((int)dataStart)).ToArray()));
+      Assert.That(after.AsSpan(checked((int)dataEnd)).ToArray(),
+        Is.EqualTo(before.AsSpan(checked((int)dataEnd)).ToArray()));
+      Assert.That(ReadFile(archive, "README.TXT"), Is.EqualTo("raw-after"u8.ToArray()));
+      Assert.That(ReadFile(archive, "RAWNEW.BIN"), Is.EqualTo("new"u8.ToArray()));
+      Assert.That(ReadFooterVersion(after), Is.EqualTo(V3));
+    });
+  }
+
+  [Test, Category("ErrorPath")]
+  public void FailedEmbeddedRebuild_RestoresCallerStreamPosition() {
+    using var archive = new MemoryStream(BuildLegacyMultiTrack(V3, "small"u8.ToArray()));
+    archive.Position = 41;
+    var before = archive.ToArray();
+    var huge = new byte[2 * 1024 * 1024];
+
+    Assert.Throws<IOException>(() =>
+      ((IArchiveModifiable)new CdiFormatDescriptor()).Add(
+        archive,
+        [ArchiveInputInfo.InMemory("TOO-BIG.BIN", huge)]));
+
+    Assert.Multiple(() => {
+      Assert.That(archive.Position, Is.EqualTo(41), "failed mutation did not restore caller stream position");
+      Assert.That(archive.ToArray(), Is.EqualTo(before), "failed staged rebuild changed the source image");
     });
   }
 
@@ -133,7 +176,7 @@ public sealed class CdiLegacyDialectTests {
     using var image = new MemoryStream();
     ((IArchiveCreatable)descriptor).Create(
       image,
-      [ArchiveInputInfo.InMemory("VERSION.TXT", targetu8(target))],
+      [ArchiveInputInfo.InMemory("VERSION.TXT", TargetUtf8(target))],
       options);
 
     var bytes = image.ToArray();
@@ -147,7 +190,7 @@ public sealed class CdiLegacyDialectTests {
       Assert.That(version, Is.EqualTo(expectedVersion));
       Assert.That(descriptorStart, Is.GreaterThan(0));
       Assert.That(descriptorStart, Is.LessThan(bytes.Length - 8));
-      Assert.That(ReadFile(image, "VERSION.TXT"), Is.EqualTo(targetu8(target)));
+      Assert.That(ReadFile(image, "VERSION.TXT"), Is.EqualTo(TargetUtf8(target)));
     });
   }
 
@@ -164,18 +207,20 @@ public sealed class CdiLegacyDialectTests {
   }
 
   [Test, Category("ErrorPath")]
-  public void OldMode2MultiTrackMutation_FailsBeforeChangingImage() {
-    var image = BuildLegacyMode2(V3);
-    using var archive = new MemoryStream();
-    archive.Write(image);
-    archive.Position = 0;
+  public void OldMode2Form2MultiTrackMutation_FailsBeforeChangingImage() {
+    var image = BuildLegacyMode2Form2(V3);
+    using var archive = new MemoryStream(image);
+    archive.Position = 29;
     var before = archive.ToArray();
 
     Assert.Throws<NotSupportedException>(() =>
       ((IArchiveModifiable)new CdiFormatDescriptor()).Add(
         archive,
         [ArchiveInputInfo.InMemory("NEW.BIN", "new"u8)]));
-    Assert.That(archive.ToArray(), Is.EqualTo(before));
+    Assert.Multiple(() => {
+      Assert.That(archive.ToArray(), Is.EqualTo(before));
+      Assert.That(archive.Position, Is.EqualTo(29));
+    });
   }
 
   private static byte[] BuildLegacyMultiTrack(uint version, byte[] payload) {
@@ -188,9 +233,24 @@ public sealed class CdiLegacyDialectTests {
     return BuildLegacy(version, [[audio, data]]);
   }
 
-  private static byte[] BuildLegacyMode2(uint version) {
+  private static byte[] BuildLegacyRawMode1(uint version, byte[] payload) {
+    var isoWriter = new FileSystem.Iso.IsoWriter();
+    isoWriter.AddFile("README.TXT", payload);
+    return BuildLegacy(version, [[AudioTrack(3, 0x31, 0), RawDataTrack(isoWriter.Build(), CdiTrackMode.Mode1, 303)]]);
+  }
+
+  private static byte[] BuildLegacyRawMode2Form1(uint version, byte[] payload) {
+    var isoWriter = new FileSystem.Iso.IsoWriter();
+    isoWriter.AddFile("README.TXT", payload);
+    return BuildLegacy(version, [[AudioTrack(3, 0x32, 0), RawDataTrack(isoWriter.Build(), CdiTrackMode.Mode2, 303)]]);
+  }
+
+  private static byte[] BuildLegacyMode2Form2(uint version) {
     const int dataSectors = 32;
     var body = new byte[(Pregap + dataSectors) * 2336];
+    var firstData = Pregap * 2336;
+    body[firstData + 2] = 0x20;
+    body[firstData + 6] = 0x20;
     var pvdAt = (Pregap + 16) * 2336 + 8;
     body[pvdAt] = 1;
     "CD001"u8.CopyTo(body.AsSpan(pvdAt + 1));
@@ -210,6 +270,48 @@ public sealed class CdiLegacyDialectTests {
     var body = new byte[(Pregap + dataSectors) * 2048];
     iso.CopyTo(body.AsSpan(Pregap * 2048));
     return new(CdiTrackMode.Mode1, 0, Pregap, dataSectors, startLba, body);
+  }
+
+  private static LegacyTrack RawDataTrack(byte[] iso, CdiTrackMode mode, int startLba) {
+    const int stride = 2352;
+    var dataSectors = checked((iso.Length + 2047) / 2048);
+    var body = new byte[(Pregap + dataSectors) * stride];
+    for (var sector = 0; sector < dataSectors; ++sector) {
+      var raw = body.AsSpan((Pregap + sector) * stride, stride);
+      WriteSync(raw);
+      raw[12] = 0;
+      raw[13] = unchecked((byte)((sector / 75) % 60));
+      raw[14] = unchecked((byte)(sector % 75));
+      raw[15] = (byte)mode;
+      if (mode == CdiTrackMode.Mode1) {
+        iso.AsSpan(sector * 2048, 2048).CopyTo(raw[16..]);
+        CdiCdSectorIntegrity.RegenerateMode1(raw);
+      } else {
+        byte[] subheader = [0, 0, 0x08, 0, 0, 0, 0x08, 0];
+        subheader.CopyTo(raw[16..]);
+        iso.AsSpan(sector * 2048, 2048).CopyTo(raw[24..]);
+        CdiCdSectorIntegrity.RegenerateMode2Form1(raw);
+      }
+    }
+    return new(mode, 2, Pregap, dataSectors, startLba, body);
+  }
+
+  private static void WriteSync(Span<byte> sector) {
+    sector[0] = 0;
+    sector.Slice(1, 10).Fill(0xFF);
+    sector[11] = 0;
+  }
+
+  private static (long Start, long End) ActiveDataBounds(Stream archive) {
+    var position = archive.Position;
+    try {
+      archive.Position = 0;
+      using var reader = new CdiReader(archive, leaveOpen: true);
+      var active = reader.ActiveDataTrack!;
+      return (active.DataOffset, active.DataOffset + (long)active.DataSectorCount * active.StoredSectorSize);
+    } finally {
+      archive.Position = position;
+    }
   }
 
   private static byte[] BuildLegacy(uint version, IReadOnlyList<IReadOnlyList<LegacyTrack>> sessions) {
@@ -271,7 +373,7 @@ public sealed class CdiLegacyDialectTests {
   private static uint ReadFooterVersion(byte[] image)
     => BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(image.Length - 8));
 
-  private static byte[] targetu8(string text) => System.Text.Encoding.ASCII.GetBytes(text);
+  private static byte[] TargetUtf8(string text) => System.Text.Encoding.ASCII.GetBytes(text);
 
   private static void WriteUInt16(Stream output, ushort value) {
     Span<byte> bytes = stackalloc byte[2];
