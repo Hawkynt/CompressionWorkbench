@@ -12,8 +12,16 @@ namespace FileSystem.Btrfs;
 /// </summary>
 internal static class BtrfsMetadataChecksum {
   internal const ushort Crc32CType = 0;
-  private const int ChecksumFieldSize = 32;
+  internal const int ChecksumFieldSize = 32;
   private const int Crc32CSize = 4;
+
+  internal static uint ComputeCrc32C(ReadOnlySpan<byte> block) {
+    if (block.Length < ChecksumFieldSize)
+      throw new ArgumentException("Btrfs metadata block is shorter than its checksum field.", nameof(block));
+    var crc = new Crc32(Crc32.Castagnoli);
+    crc.Update(block[ChecksumFieldSize..]);
+    return crc.Value;
+  }
 
   internal static void ValidateCrc32C(ReadOnlySpan<byte> block, string description) {
     if (block.Length < ChecksumFieldSize)
@@ -25,9 +33,7 @@ internal static class BtrfsMetadataChecksum {
         throw new InvalidDataException(
           $"Btrfs {description} has non-zero bytes beyond the 4-byte CRC32C checksum.");
 
-    var crc = new Crc32(Crc32.Castagnoli);
-    crc.Update(block[ChecksumFieldSize..]);
-    var actual = crc.Value;
+    var actual = ComputeCrc32C(block);
     if (actual != expected)
       throw new InvalidDataException(
         $"Btrfs {description} CRC32C mismatch: stored 0x{expected:X8}, computed 0x{actual:X8}.");
