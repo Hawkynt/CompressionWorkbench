@@ -8,11 +8,14 @@ one reverse-engineered implementation as a specification.
 ## Sources and licensing
 
 - **ECMA-119** defines the ISO 9660 filesystem carried by data tracks.
-- **ECMA-130** defines CD-ROM sector framing and integrity fields.
+- **ECMA-130** defines CD-ROM Mode-1 framing, EDC, and the Annex-A P/Q RSPC
+  error-correction matrices.
+- **ECMA-168** defines the CD-ROM XA Mode-2 Form-1 field layout used for the
+  2,048-byte filesystem payload.
 - **CDIrip** (`jozip/cdirip`), GPL-2.0, is used only as a behavioural oracle for
   the older v2/v3 descriptor walk and the v2/v3/v3.5 trailer contract.
-- **Aaru DiscJuggler reader**, LGPL-2.1-or-later, independently cross-checks the
-  session/track, sector-mode and multisession interpretation.
+- **Aaru**, GPL-3.0, and **edccchk**, GPL-3.0, are behavioural oracles for CD
+  sector interpretation/checking; neither is a source for implementation code.
 - **libMirage CDI parser**, GPL-family, is used only as an independent behavioural
   oracle for the newer variable-index descriptor dialect.
 - **mkdcdisc** is MIT overall and is useful for Dreamcast-oriented CDI structure,
@@ -20,8 +23,10 @@ one reverse-engineered implementation as a specification.
   is therefore not copied or translated into this repository.
 
 No GPL/CDDL implementation code, comments, naming, structure or control flow is
-copied. Numeric markers, version IDs, field sizes and sector-mode constants are
-interoperability facts.
+copied. Numeric markers, version IDs, field sizes, standard polynomials and
+sector-mode constants are interoperability facts. The EDC and ECC lookup data used
+by the writer is generated locally from the ECMA-defined polynomials rather than
+copied as tables.
 
 ## Trailer
 
@@ -100,7 +105,8 @@ constraint:
 
 Fresh images use a standard 150-sector pregap and a cooked 2048-byte Mode-1 ISO
 track. Selecting an old target changes the CDI descriptor/trailer contract, not
-the ISO payload semantics.
+the ISO payload semantics. Raw-sector authoring is currently used by preservation
+mutation, not as a separate new-image creation profile.
 
 ## Multisession and Dreamcast addressing
 
@@ -118,22 +124,53 @@ When CompressionWorkbench rebuilds such an embedded ISO, it emits the new direct
 and path-table tree with the original track's absolute LBA bias. This includes both
 primary and Joliet directory/path-table records and the recorded volume bounds.
 
+## Clean-room CD sector integrity encoder
+
+`CdiCdSectorIntegrity` is a separate managed implementation used only when an
+existing raw data track must be rewritten.
+
+For Mode 1 it regenerates:
+
+- the 32-bit EDC over sync + address/mode + 2,048 user bytes;
+- the eight reserved zero bytes;
+- 172 P-parity bytes and 104 Q-parity bytes.
+
+For Mode-2 Form 1 it preserves the existing XA subheader, regenerates the EDC over
+subheader + 2,048 user bytes, and computes the same P/Q RSPC with the four address/
+mode bytes treated as zero during parity generation as required by the XA layout.
+
+The EDC table is generated from the reflected form of the ECMA-130 CRC polynomial.
+The ECC implementation derives GF(2^8) multiplication from the Annex-A primitive
+polynomial `x^8 + x^4 + x^3 + x^2 + 1` and walks the published 43-column P and
+26-diagonal Q matrices directly. No external encoder tables are embedded.
+
+Tests include deterministic full-sector known-answer hashes for Mode 1 and Mode-2
+Form 1. The independently derived vectors were also checked against GPL-licensed
+sector-checking implementations as behavioural oracles; no oracle source is copied
+into the tests or production implementation.
+
 ## Mutation strategy
 
-Descriptor-bearing cooked Mode-1 images are edited transactionally without
+Supported descriptor-bearing ISO data tracks are edited transactionally without
 regenerating the optical descriptor:
 
 1. parse and save the complete session/track map;
-2. extract the active ISO filesystem;
-3. apply add/replace/remove/purge or a defrag rebuild in a temporary tree;
-4. build a fresh ISO using the source label/identifier/Joliet settings;
-5. rebase ISO LBAs when the source track uses multisession absolute addressing;
-6. require the rebuilt ISO to fit inside the existing data-track capacity;
-7. stage a complete copy of the CDI and overwrite **only** the active track's
-   index-1 cooked 2048-byte data region, zeroing the unused tail;
-8. read the staged CDI back, require the exact same track map and verify every
-   rebuilt file byte-for-byte;
-9. only then replace the caller's stream.
+2. verify that the selected data track is Mode 1 or Mode-2 Form 1 in a supported
+   cooked/raw storage mode;
+3. extract the active ISO filesystem;
+4. apply add/replace/remove/purge or a defrag rebuild in a temporary tree;
+5. build a fresh ISO using the source label/identifier/Joliet settings;
+6. rebase ISO LBAs when the source track uses multisession absolute addressing;
+7. require the rebuilt ISO to fit inside the existing data-track capacity;
+8. stage a complete copy of the CDI and replace only each index-1 sector's
+   2,048-byte user-data field; cooked Mode-1 sectors are written directly, while
+   raw Mode-1 / Mode-2 Form-1 sectors have EDC/ECC regenerated;
+9. preserve raw sync/address bytes, XA subheaders and appended Q16/P-W subchannel
+   bytes exactly;
+10. read the staged CDI back, require the exact same track map and verify every
+    rebuilt file byte-for-byte;
+11. only then replace the caller's stream, restoring the caller's original stream
+    position on both successful and exceptional exits.
 
 Consequently, audio tracks, all pregaps, other sessions, subchannel bytes,
 undeciphered descriptor fields and the original v2/v3/v3.5 trailer dialect remain
@@ -142,24 +179,21 @@ not pretend that every unknown historical descriptor field can be reconstructed.
 
 ### What remains read-only
 
-Raw Mode-1 and Mode-2 filesystem tracks are still refused for mutation. Their
-2048-byte logical user payload is surrounded by CD-ROM EDC/ECC (and sometimes
-subchannel) data. Replacing user bytes without regenerating those integrity fields
-would create a structurally plausible CDI with stale sector checksums/parity.
-
-A future implementation may add a managed clean-room ECMA-130 encoder plus
-known-answer/interoperability vectors. The separately CDDL-licensed encoder found
-in a third-party Dreamcast tool is not a source for that implementation.
+Mode-2 Form-2, formless Mode-2 and mixed-form data tracks remain read-only. Their
+payload geometry is not a 2,048-byte ISO sector stream, so flattening them through
+the ISO rebuild path would destroy information even if their checksums could be
+regenerated. Unsupported or malformed sector geometries are likewise refused before
+committing any staged output.
 
 ## Maintenance verbs
 
-- **defrag**: for cooked Mode-1 data tracks, rebuilds the embedded ISO inside the
-  fixed optical track while preserving the outer CDI layout;
+- **defrag**: rebuilds a supported Mode-1 or Mode-2 Form-1 embedded ISO inside the
+  fixed optical track, regenerating raw-sector integrity where necessary;
 - **shrink**: single-track images can be recreated smaller while preserving their
   v2/v3/v3.5 compatibility target; multi-track images copy through unchanged
   because shortening a physical track would require rewriting the optical map;
-- **purge**: rebuilds the selected cooked Mode-1 ISO empty while leaving all other
-  tracks/sessions intact;
+- **purge**: rebuilds the selected supported ISO track empty while leaving all
+  other tracks/sessions intact;
 - **compact**: benefits from the defrag/shrink paths above;
 - **wipe**: intentionally unsupported until a complete optical + filesystem free
   space map exists;
