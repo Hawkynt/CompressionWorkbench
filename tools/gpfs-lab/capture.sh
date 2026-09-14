@@ -62,16 +62,23 @@ done
 [[ $probe_count -gt 0 ]] || { echo "at least one probe path is required" >&2; exit 3; }
 
 # Cross-check every physical sector address printed by tsdbfs while the cluster
-# is still mounted. Errors are preserved in the artifact; no address is silently
-# substituted by our own parser.
+# is still mounted. The heading is part of the lab transcript because ordinary
+# mmfileid output does not repeat the GPFS disk id. A failed lookup makes the
+# capture ineligible rather than silently producing a partial oracle.
 : >"$OUT/oracle/mmfileid.txt"
+mmfileid_queries=0
+mmfileid_failed=0
 while IFS=: read -r disk sector; do
   [[ $disk =~ ^[0-9]+$ && $sector =~ ^[0-9]+$ ]] || continue
+  mmfileid_queries=$((mmfileid_queries + 1))
   printf '===== %s:%s =====\n' "$disk" "$sector" >>"$OUT/oracle/mmfileid.txt"
   if ! mmfileid "$FS" -d ":${disk}:${sector}" >>"$OUT/oracle/mmfileid.txt" 2>&1; then
     printf 'mmfileid_status=failed\n' >>"$OUT/oracle/mmfileid.txt"
+    mmfileid_failed=1
   fi
 done < <(grep -h -oE '[0-9]+:[0-9]+' "$OUT"/oracle/tsdbfs-*.txt | sort -u)
+(( mmfileid_queries > 0 )) || { echo "tsdbfs produced no physical addresses for mmfileid cross-checking" >&2; exit 5; }
+(( mmfileid_failed == 0 )) || { echo "one or more mmfileid oracle lookups failed; see $OUT/oracle/mmfileid.txt" >&2; exit 5; }
 
 uid=$(awk '$1 == "--uid" { print $2; exit }' "$OUT/oracle/mmlsfs-uid.txt")
 format_version=$(awk '$1 == "-V" { print $2; exit }' "$OUT/oracle/mmlsfs-version.txt")
