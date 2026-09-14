@@ -24,6 +24,7 @@ public sealed class NrgReader : IDisposable {
   private bool _disposed;
 
   private readonly record struct FooterInfo(int Version, long TrailerOffset, long FooterOffset);
+  private readonly record struct ChunkRef(long PayloadStart, uint PayloadLength);
   private readonly record struct CueEntry(byte AdrCtl, int TrackNumber, byte Index, int Lba);
   private sealed record ParsedDescriptor(List<NrgSessionInfo> Sessions, byte[] CdText);
 
@@ -168,8 +169,10 @@ public sealed class NrgReader : IDisposable {
     if (footer.Version == 0 || footer.TrailerOffset >= footer.FooterOffset)
       return new(sessions, cdText);
 
-    List<CueEntry>? pendingCue = null;
-    var nextTrackNumber = 1;
+    var cueChunks = new List<ChunkRef>();
+    var daoChunks = new List<ChunkRef>();
+    var etnChunks = new List<ChunkRef>();
+    var oldFormat = footer.Version == 1;
     var position = footer.TrailerOffset;
     Span<byte> header = stackalloc byte[8];
 
@@ -180,36 +183,20 @@ public sealed class NrgReader : IDisposable {
 
       var payloadLength = BinaryPrimitives.ReadUInt32BigEndian(header[4..]);
       var payloadStart = position + header.Length;
-      if (payloadStart > footer.FooterOffset || payloadLength > (ulong)(footer.FooterOffset - payloadStart))
+      if (payloadStart > footer.FooterOffset || (long)payloadLength > footer.FooterOffset - payloadStart)
         break;
       var payloadEnd = payloadStart + payloadLength;
+      var chunk = new ChunkRef(payloadStart, payloadLength);
 
-      if (header[..4].SequenceEqual("CUEX"u8) || header[..4].SequenceEqual("CUES"u8)) {
-        pendingCue = ReadCue(stream, payloadStart, payloadLength);
-      } else if (header[..4].SequenceEqual("DAOX"u8) || header[..4].SequenceEqual("DAOI"u8)) {
-        var session = ReadDaoSession(
-          stream, payloadStart, payloadLength,
-          isV2: header[..4].SequenceEqual("DAOX"u8),
-          hardEnd: footer.TrailerOffset,
-          sessionNumber: sessions.Count + 1,
-          fallbackFirstTrack: nextTrackNumber,
-          cue: pendingCue);
-        if (session is not null) {
-          sessions.Add(session);
-          nextTrackNumber = session.Tracks.Count == 0 ? nextTrackNumber : session.Tracks[^1].TrackNumber + 1;
-        }
-        pendingCue = null;
-      } else if (header[..4].SequenceEqual("ETN2"u8) || header[..4].SequenceEqual("ETNF"u8)) {
-        var session = ReadEtnSession(
-          stream, payloadStart, payloadLength,
-          isV2: header[..4].SequenceEqual("ETN2"u8),
-          hardEnd: footer.TrailerOffset,
-          sessionNumber: sessions.Count + 1,
-          firstTrackNumber: nextTrackNumber);
-        if (session is not null) {
-          sessions.Add(session);
-          nextTrackNumber = session.Tracks[^1].TrackNumber + 1;
-        }
+      if ((oldFormat && header[..4].SequenceEqual("CUES"u8)) ||
+          (!oldFormat && header[..4].SequenceEqual("CUEX"u8))) {
+        cueChunks.Add(chunk);
+      } else if ((oldFormat && header[..4].SequenceEqual("DAOI"u8)) ||
+                 (!oldFormat && header[..4].SequenceEqual("DAOX"u8))) {
+        daoChunks.Add(chunk);
+      } else if ((oldFormat && header[..4].SequenceEqual("ETNF"u8)) ||
+                 (!oldFormat && header[..4].SequenceEqual("ETN2"u8))) {
+        etnChunks.Add(chunk);
       } else if (header[..4].SequenceEqual("CDTX"u8) && payloadLength <= MaxCdTextBytes) {
         cdText = new byte[checked((int)payloadLength)];
         stream.Position = payloadStart;
@@ -222,16 +209,53 @@ public sealed class NrgReader : IDisposable {
         break;
     }
 
+    var nextTrackNumber = 1;
+    for (var ordinal = 0; ; ++ordinal) {
+      NrgSessionInfo? session;
+      if (ordinal < cueChunks.Count) {
+        if (ordinal >= daoChunks.Count)
+          break;
+
+        var cueChunk = cueChunks[ordinal];
+        var daoChunk = daoChunks[ordinal];
+        var cue = ReadCue(stream, cueChunk.PayloadStart, cueChunk.PayloadLength, oldFormat);
+        session = ReadDaoSession(
+          stream, daoChunk.PayloadStart, daoChunk.PayloadLength,
+          isV2: !oldFormat,
+          hardEnd: footer.TrailerOffset,
+          sessionNumber: ordinal + 1,
+          fallbackFirstTrack: nextTrackNumber,
+          cue: cue);
+      } else if (ordinal < etnChunks.Count) {
+        var etnChunk = etnChunks[ordinal];
+        session = ReadEtnSession(
+          stream, etnChunk.PayloadStart, etnChunk.PayloadLength,
+          isV2: !oldFormat,
+          hardEnd: footer.TrailerOffset,
+          sessionNumber: ordinal + 1,
+          firstTrackNumber: nextTrackNumber);
+      } else {
+        break;
+      }
+
+      if (session is null)
+        break;
+
+      sessions.Add(session);
+      if (session.Tracks.Count != 0)
+        nextTrackNumber = session.Tracks[^1].TrackNumber + 1;
+    }
+
     return new(sessions, cdText);
   }
 
-  private static List<CueEntry> ReadCue(Stream stream, long payloadStart, uint payloadLength) {
+  private static List<CueEntry> ReadCue(Stream stream, long payloadStart, uint payloadLength, bool oldFormat) {
     const int recordSize = 8;
     var count = Math.Min(checked((int)(payloadLength / recordSize)), MaxCueEntries);
     var result = new List<CueEntry>(count);
     Span<byte> record = stackalloc byte[recordSize];
-    for (var index = 0; index < count; ++index) {
-      stream.Position = payloadStart + (long)index * recordSize;
+    for (var entryIndex = 0; entryIndex < count; ++entryIndex) {
+      stream.Position = payloadStart + (long)entryIndex * recordSize;
       if (!ReadExactly(stream, record))
         break;
 
@@ -240,12 +264,23 @@ public sealed class NrgReader : IDisposable {
         0xAA => -1,
         _ => FromBcd(rawTrack),
       };
-      if (trackNumber < -1)
+      var index = FromBcd(record[2]);
+      if (trackNumber < -1 || index < 0)
         continue;
 
-      result.Add(new(
-        record[0], trackNumber, record[2],
-        unchecked((int)BinaryPrimitives.ReadUInt32BigEndian(record[4..]))));
+      int lba;
+      if (oldFormat) {
+        var minute = record[5];
+        var second = record[6];
+        var frame = record[7];
+        if (second >= 60 || frame >= 75)
+          continue;
+        lba = ((minute * 60 + second) * 75 + frame) - 150;
+      } else {
+        lba = BinaryPrimitives.ReadInt32BigEndian(record[4..]);
+      }
+
+      result.Add(new(record[0], trackNumber, checked((byte)index), lba));
     }
     return result;
   }
@@ -258,7 +293,7 @@ public sealed class NrgReader : IDisposable {
       long hardEnd,
       int sessionNumber,
       int fallbackFirstTrack,
-      List<CueEntry>? cue) {
+      IReadOnlyList<CueEntry>? cue) {
     const int headerSize = 22;
     var recordSize = isV2 ? 42 : 30;
     if (payloadLength < headerSize)
@@ -271,7 +306,7 @@ public sealed class NrgReader : IDisposable {
 
     var firstTrack = header[20] is >= 1 and <= 99 ? header[20] : fallbackFirstTrack;
     var declaredLastTrack = header[21];
-    var recordCount = checked((int)((payloadLength - headerSize) / recordSize));
+    var recordCount = checked((int)(((long)payloadLength - headerSize) / recordSize));
     if (declaredLastTrack is >= 1 and <= 99 && declaredLastTrack >= firstTrack)
       recordCount = Math.Min(recordCount, declaredLastTrack - firstTrack + 1);
     recordCount = Math.Min(recordCount, 99 - firstTrack + 1);
@@ -280,8 +315,8 @@ public sealed class NrgReader : IDisposable {
 
     var tracks = new List<NrgTrackInfo>(recordCount);
     var record = new byte[recordSize];
-    for (var index = 0; index < recordCount; ++index) {
-      stream.Position = payloadStart + headerSize + (long)index * recordSize;
+    for (var recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
+      stream.Position = payloadStart + headerSize + (long)recordIndex * recordSize;
       if (!ReadExactly(stream, record))
         break;
 
@@ -291,28 +326,23 @@ public sealed class NrgReader : IDisposable {
       if (!TryGetSectorGeometry(mode, declaredSectorSize, out var sectorSize, out var userDataOffset))
         continue;
 
-      ulong pregap;
-      ulong start;
-      ulong end;
+      long pregapOffset;
+      long dataOffset;
+      long endOffset;
       if (isV2) {
-        pregap = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(18, 8));
-        start = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(26, 8));
-        end = BinaryPrimitives.ReadUInt64BigEndian(span.Slice(34, 8));
+        pregapOffset = BinaryPrimitives.ReadInt64BigEndian(span.Slice(18, 8));
+        dataOffset = BinaryPrimitives.ReadInt64BigEndian(span.Slice(26, 8));
+        endOffset = BinaryPrimitives.ReadInt64BigEndian(span.Slice(34, 8));
       } else {
-        pregap = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(18, 4));
-        start = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(22, 4));
-        end = BinaryPrimitives.ReadUInt32BigEndian(span.Slice(26, 4));
+        pregapOffset = BinaryPrimitives.ReadInt32BigEndian(span.Slice(18, 4));
+        dataOffset = BinaryPrimitives.ReadInt32BigEndian(span.Slice(22, 4));
+        endOffset = BinaryPrimitives.ReadInt32BigEndian(span.Slice(26, 4));
       }
 
-      if (pregap > long.MaxValue || start > long.MaxValue || end > long.MaxValue)
-        continue;
-      var pregapOffset = checked((long)pregap);
-      var dataOffset = checked((long)start);
-      var endOffset = checked((long)end);
       if (pregapOffset < 0 || pregapOffset > dataOffset || dataOffset > endOffset || endOffset > hardEnd)
         continue;
 
-      var trackNumber = firstTrack + index;
+      var trackNumber = firstTrack + recordIndex;
       var index0 = FindCue(cue, trackNumber, 0);
       var index1 = FindCue(cue, trackNumber, 1);
       tracks.Add(new NrgTrackInfo {
@@ -360,49 +390,44 @@ public sealed class NrgReader : IDisposable {
 
     var tracks = new List<NrgTrackInfo>(recordCount);
     var record = new byte[recordSize];
-    for (var index = 0; index < recordCount; ++index) {
-      stream.Position = payloadStart + (long)index * recordSize;
+    for (var recordIndex = 0; recordIndex < recordCount; ++recordIndex) {
+      stream.Position = payloadStart + (long)recordIndex * recordSize;
       if (!ReadExactly(stream, record))
         break;
 
       var span = record.AsSpan();
-      ulong rawOffset;
-      ulong rawLength;
+      long offset;
+      long length;
       byte mode;
-      uint lba;
+      int lba;
       if (isV2) {
-        rawOffset = BinaryPrimitives.ReadUInt64BigEndian(span);
-        rawLength = BinaryPrimitives.ReadUInt64BigEndian(span[8..]);
+        offset = BinaryPrimitives.ReadInt64BigEndian(span);
+        length = BinaryPrimitives.ReadInt64BigEndian(span[8..]);
         mode = span[19];
-        lba = BinaryPrimitives.ReadUInt32BigEndian(span[20..]);
+        lba = BinaryPrimitives.ReadInt32BigEndian(span[20..]);
       } else {
-        rawOffset = BinaryPrimitives.ReadUInt32BigEndian(span);
-        rawLength = BinaryPrimitives.ReadUInt32BigEndian(span[4..]);
+        offset = BinaryPrimitives.ReadInt32BigEndian(span);
+        length = BinaryPrimitives.ReadInt32BigEndian(span[4..]);
         mode = span[11];
-        lba = BinaryPrimitives.ReadUInt32BigEndian(span[12..]);
+        lba = BinaryPrimitives.ReadInt32BigEndian(span[12..]);
       }
 
-      if (rawOffset > long.MaxValue || rawLength > long.MaxValue)
-        continue;
-      var offset = checked((long)rawOffset);
-      var length = checked((long)rawLength);
       if (length < 0 || offset < 0 || offset > hardEnd || length > hardEnd - offset)
         continue;
       if (!TryGetSectorGeometry(mode, declaredSectorSize: 0, out var sectorSize, out var userDataOffset))
         continue;
 
-      var signedLba = unchecked((int)lba);
       tracks.Add(new NrgTrackInfo {
         SessionNumber = sessionNumber,
-        TrackNumber = firstTrackNumber + index,
+        TrackNumber = firstTrackNumber + recordIndex,
         ModeCode = mode,
         SectorSize = sectorSize,
         UserDataOffset = userDataOffset,
         PregapOffset = offset,
         DataOffset = offset,
         EndOffset = offset + length,
-        Index0Lba = signedLba,
-        Index1Lba = signedLba,
+        Index0Lba = lba,
+        Index1Lba = lba,
       });
     }
 
@@ -416,7 +441,7 @@ public sealed class NrgReader : IDisposable {
     };
   }
 
-  private static CueEntry? FindCue(List<CueEntry>? cue, int trackNumber, byte index) {
+  private static CueEntry? FindCue(IReadOnlyList<CueEntry>? cue, int trackNumber, byte index) {
     if (cue is null)
       return null;
     for (var i = cue.Count - 1; i >= 0; --i)
@@ -484,7 +509,9 @@ public sealed class NrgReader : IDisposable {
       return true;
     }
 
-    (sectorSize, userDataOffset, modeCode) = default;
+    sectorSize = 0;
+    userDataOffset = 0;
+    modeCode = 0;
     return false;
   }
 
@@ -515,8 +542,10 @@ public sealed class NrgReader : IDisposable {
   private static bool TryProbe(Stream stream, long trackOffset, int sectorSize, int userDataOffset, long dataEnd) {
     if (trackOffset < 0 || sectorSize <= 0 || userDataOffset < 0 || userDataOffset > sectorSize - Iso9660SectorSize)
       return false;
+    if (PvdLba > (long.MaxValue - trackOffset - userDataOffset) / sectorSize)
+      return false;
     var pvdPosition = trackOffset + (long)PvdLba * sectorSize + userDataOffset;
-    if (pvdPosition < trackOffset || pvdPosition > dataEnd - 6)
+    if (pvdPosition < trackOffset || dataEnd < 6 || pvdPosition > dataEnd - 6)
       return false;
 
     Span<byte> signature = stackalloc byte[6];
@@ -558,8 +587,6 @@ public sealed class NrgReader : IDisposable {
   }
 
   private void TryParseIso9660(NrgTrackInfo track, string prefix, List<NrgEntry> entries) {
-    // Volume descriptors are positioned relative to the start of each session/track even when
-    // directory and file extent fields inside that descriptor use absolute disc LBAs.
     var pvd = ReadSectorRelative(this._stream, track, PvdLba);
     if (pvd is null || pvd[0] != 1 || !pvd.AsSpan(1, 5).SequenceEqual("CD001"u8))
       return;
@@ -591,6 +618,8 @@ public sealed class NrgReader : IDisposable {
       if (sector is null || bufferOffset >= Iso9660SectorSize) {
         sector = ReadSector(track, currentLba);
         if (sector is null)
+          return;
+        if (currentLba == int.MaxValue)
           return;
         ++currentLba;
         bufferOffset = 0;
@@ -685,7 +714,8 @@ public sealed class NrgReader : IDisposable {
   private byte[] ReadFileData(NrgTrackInfo track, int startLba, int size) {
     var result = new byte[size];
     var written = 0;
-    for (var lba = startLba; written < size; ++lba) {
+    var lba = startLba;
+    while (written < size) {
       var sector = ReadSector(track, lba);
       if (sector is null)
         throw new InvalidDataException("NRG file extent runs past its data track.");
@@ -693,6 +723,11 @@ public sealed class NrgReader : IDisposable {
       var toCopy = Math.Min(Iso9660SectorSize, size - written);
       sector.AsSpan(0, toCopy).CopyTo(result.AsSpan(written));
       written += toCopy;
+      if (written < size) {
+        if (lba == int.MaxValue)
+          throw new InvalidDataException("NRG file extent LBA overflowed.");
+        ++lba;
+      }
     }
     return result;
   }
@@ -704,10 +739,14 @@ public sealed class NrgReader : IDisposable {
   }
 
   private static byte[]? ReadSectorRelative(Stream stream, NrgTrackInfo track, long relativeLba) {
-    if (relativeLba < 0 || relativeLba >= track.SectorCount)
+    if (relativeLba < 0 || relativeLba >= track.SectorCount || track.SectorSize <= 0)
+      return null;
+    if (relativeLba > (long.MaxValue - track.DataOffset) / track.SectorSize)
       return null;
 
     var sectorStart = track.DataOffset + relativeLba * track.SectorSize;
+    if (track.UserDataOffset > long.MaxValue - sectorStart)
+      return null;
     var dataStart = sectorStart + track.UserDataOffset;
     if (sectorStart < track.DataOffset || dataStart < sectorStart || dataStart > track.EndOffset - Iso9660SectorSize)
       return null;
