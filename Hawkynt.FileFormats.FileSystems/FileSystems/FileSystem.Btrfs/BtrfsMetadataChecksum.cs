@@ -1,0 +1,35 @@
+#pragma warning disable CS1591
+using System.Buffers.Binary;
+using Compression.Core.Checksums;
+
+namespace FileSystem.Btrfs;
+
+/// <summary>
+/// Verifies the checksum field shared by the Btrfs superblock and tree-block
+/// headers. The mounted profile currently accepts CRC32C volumes only; other
+/// checksum algorithms remain fail-closed until their existing project
+/// implementations are wired into the filesystem validator.
+/// </summary>
+internal static class BtrfsMetadataChecksum {
+  internal const ushort Crc32CType = 0;
+  private const int ChecksumFieldSize = 32;
+  private const int Crc32CSize = 4;
+
+  internal static void ValidateCrc32C(ReadOnlySpan<byte> block, string description) {
+    if (block.Length < ChecksumFieldSize)
+      throw new InvalidDataException($"Btrfs {description} is shorter than its checksum field.");
+
+    var expected = BinaryPrimitives.ReadUInt32LittleEndian(block[..Crc32CSize]);
+    for (var i = Crc32CSize; i < ChecksumFieldSize; ++i)
+      if (block[i] != 0)
+        throw new InvalidDataException(
+          $"Btrfs {description} has non-zero bytes beyond the 4-byte CRC32C checksum.");
+
+    var crc = new Crc32(Crc32.Castagnoli);
+    crc.Update(block[ChecksumFieldSize..]);
+    var actual = crc.Value;
+    if (actual != expected)
+      throw new InvalidDataException(
+        $"Btrfs {description} CRC32C mismatch: stored 0x{expected:X8}, computed 0x{actual:X8}.");
+  }
+}
