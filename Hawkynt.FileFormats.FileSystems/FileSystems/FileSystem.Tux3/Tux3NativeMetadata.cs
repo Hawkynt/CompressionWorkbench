@@ -67,7 +67,6 @@ internal sealed class Tux3NativeMetadataParser {
   private const int SuperblockReserveLength = 1 << 12;
 
   private readonly ImageAccessor _image;
-  private readonly ushort _blockBits;
   private readonly int _blockSize;
   private readonly ulong _volumeBlocks;
   private readonly ulong _inodeRootPacked;
@@ -84,7 +83,6 @@ internal sealed class Tux3NativeMetadataParser {
     ulong logChain,
     uint logCount) {
     this._image = image;
-    this._blockBits = blockBits;
     this._blockSize = 1 << blockBits;
     this._volumeBlocks = volumeBlocks;
     this._inodeRootPacked = inodeRootPacked;
@@ -318,7 +316,6 @@ internal sealed class Tux3NativeMetadataParser {
       }
 
       var fixedSize = kind switch {
-      {
         0 => 8,
         1 => 12,
         3 => 16,
@@ -396,7 +393,8 @@ internal sealed class Tux3NativeMetadataParser {
 
   private ulong? MapDataBlock(PackedRoot root, ulong logicalBlock) {
     if (root.Direct) {
-      if (logicalBlock >= root.Count || root.Block > this._volumeBlocks - 1 - logicalBlock)
+      if (logicalBlock >= root.Count || logicalBlock >= this._volumeBlocks ||
+          root.Block > this._volumeBlocks - 1 - logicalBlock)
         return null;
       return root.Block + logicalBlock;
     }
@@ -443,7 +441,7 @@ internal sealed class Tux3NativeMetadataParser {
       if (current.Physical == 0)
         return null;
       var delta = logicalBlock - current.Logical;
-      if (current.Physical > this._volumeBlocks - 1 - delta)
+      if (delta >= this._volumeBlocks || current.Physical > this._volumeBlocks - 1 - delta)
         return null;
       return current.Physical + delta;
     }
@@ -516,7 +514,17 @@ internal sealed class Tux3NativeMetadataParser {
   }
 
   private static bool IsStructuralRecord(Tux3JournalRecordType type)
-    => type is >= Tux3JournalRecordType.LeafRedirect and <= Tux3JournalRecordType.BNodeFree;
+    => type is Tux3JournalRecordType.LeafRedirect or
+      Tux3JournalRecordType.LeafFree or
+      Tux3JournalRecordType.BNodeRedirect or
+      Tux3JournalRecordType.BNodeRoot or
+      Tux3JournalRecordType.BNodeSplit or
+      Tux3JournalRecordType.BNodeAdd or
+      Tux3JournalRecordType.BNodeUpdate or
+      Tux3JournalRecordType.BNodeMerge or
+      Tux3JournalRecordType.BNodeDelete or
+      Tux3JournalRecordType.BNodeAdjust or
+      Tux3JournalRecordType.BNodeFree;
 
   private static int GetJournalRecordSize(Tux3JournalRecordType type)
     => type switch {
