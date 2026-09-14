@@ -190,7 +190,7 @@ public sealed class NrgReader : IDisposable {
           hardEnd: footer.TrailerOffset,
           sessionNumber: sessions.Count + 1,
           fallbackFirstTrack: nextTrackNumber,
-          pendingCue);
+          cue: pendingCue);
         if (session is not null) {
           sessions.Add(session);
           nextTrackNumber = session.Tracks.Count == 0 ? nextTrackNumber : session.Tracks[^1].TrackNumber + 1;
@@ -488,7 +488,7 @@ public sealed class NrgReader : IDisposable {
   private static bool TryGetSectorGeometry(byte mode, int declaredSectorSize, out int sectorSize, out int userDataOffset) {
     (sectorSize, userDataOffset) = mode switch {
       0x00 or 0x02 => (Iso9660SectorSize, 0),
-      0x03 => (SectorSize2336, 0),
+      0x03 => (SectorSize2336, 8),
       0x05 => (RawSectorSize, Mode1DataOffset),
       0x06 => (RawSectorSize, Mode2Form1DataOffset),
       0x07 => (RawSectorSize, 0),
@@ -680,17 +680,17 @@ public sealed class NrgReader : IDisposable {
       return false;
 
     var sectorCount = track.StoredLength / track.SectorSize;
-    if (isoLba < sectorCount) {
-      relativeLba = isoLba;
-      return true;
+    if (track.Index1Lba is { } baseLba && baseLba > 0 && isoLba >= baseLba) {
+      var absoluteRelative = (long)isoLba - baseLba;
+      if (absoluteRelative >= 0 && absoluteRelative < sectorCount && absoluteRelative <= int.MaxValue) {
+        relativeLba = (int)absoluteRelative;
+        return true;
+      }
     }
 
-    if (track.Index1Lba is not { } baseLba || isoLba < baseLba)
+    if (isoLba >= sectorCount)
       return false;
-    var relative = (long)isoLba - baseLba;
-    if (relative < 0 || relative >= sectorCount || relative > int.MaxValue)
-      return false;
-    relativeLba = (int)relative;
+    relativeLba = isoLba;
     return true;
   }
 
