@@ -174,6 +174,7 @@ internal static class CdiCdSectorIntegrity {
 
   private static void WriteEcc(Span<byte> rawSector, bool zeroAddressForParity) {
     Span<byte> savedAddress = stackalloc byte[4];
+    Span<byte> data = stackalloc byte[43];
     if (zeroAddressForParity) {
       rawSector.Slice(12, 4).CopyTo(savedAddress);
       rawSector.Slice(12, 4).Clear();
@@ -185,11 +186,11 @@ internal static class CdiCdSectorIntegrity {
       // P parity: 43 columns, each a (26,24) shortened Reed-Solomon code.
       for (var column = 0; column < 43; ++column)
         for (var lane = 0; lane < 2; ++lane) {
-          Span<byte> data = stackalloc byte[24];
-          for (var row = 0; row < data.Length; ++row)
-            data[row] = rspc[2 * (43 * row + column) + lane];
+          var symbols = data[..24];
+          for (var row = 0; row < symbols.Length; ++row)
+            symbols[row] = rspc[2 * (43 * row + column) + lane];
 
-          ComputeTwoParitySymbols(data, out var first, out var second);
+          ComputeTwoParitySymbols(symbols, out var first, out var second);
           rawSector[PParityOffset + 2 * column + lane] = first;
           rawSector[PParityOffset + PParitySize / 2 + 2 * column + lane] = second;
         }
@@ -198,7 +199,6 @@ internal static class CdiCdSectorIntegrity {
       // The modulo-1118 word walk is the ECMA-130 Annex A Q matrix.
       for (var diagonal = 0; diagonal < 26; ++diagonal)
         for (var lane = 0; lane < 2; ++lane) {
-          Span<byte> data = stackalloc byte[43];
           for (var row = 0; row < data.Length; ++row) {
             var word = (44 * row + 43 * diagonal) % 1118;
             data[row] = rspc[2 * word + lane];
