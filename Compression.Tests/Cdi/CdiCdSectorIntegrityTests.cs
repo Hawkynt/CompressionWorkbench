@@ -85,8 +85,8 @@ public sealed class CdiCdSectorIntegrityTests {
     Assert.Multiple(() => {
       Assert.That(CdiCdSectorIntegrity.GetUserData(track, stored), Is.EqualTo(replacement));
       Assert.That(stored.AsSpan(0, 8).ToArray(), Is.EqualTo(subheader));
-      Assert.That(stored.AsSpan(2056, 4).ToArray(), Is.Not.All.Zero);
-      Assert.That(stored.AsSpan(2060, 276).ToArray(), Is.Not.All.Zero);
+      Assert.That(stored.AsSpan(2056, 4).ToArray().Any(static value => value != 0), Is.True);
+      Assert.That(stored.AsSpan(2060, 276).ToArray().Any(static value => value != 0), Is.True);
     });
   }
 
