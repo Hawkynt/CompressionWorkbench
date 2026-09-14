@@ -55,13 +55,14 @@ internal sealed class XfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
     if (nextents > capacity)
       throw new NotSupportedException($"XFS inode {inode.Number} has {nextents} inline extents; extent-btree decoding is required.");
 
-    var bytes = new byte[checked((int)nextents * 16)];
+    var extentCount = checked((int)nextents);
+    var bytes = new byte[checked(extentCount * 16)];
     if (bytes.Length != 0)
       ReadExactlyAt(checked(inodeOffset + forkOffset), bytes);
 
-    _extents = new XfsExtent[nextents];
+    _extents = new XfsExtent[extentCount];
     ulong previousEnd = 0;
-    for (var i = 0; i < nextents; ++i) {
+    for (var i = 0; i < extentCount; ++i) {
       var hi = BinaryPrimitives.ReadUInt64BigEndian(bytes.AsSpan(i * 16, 8));
       var lo = BinaryPrimitives.ReadUInt64BigEndian(bytes.AsSpan(i * 16 + 8, 8));
       var startOffset = (hi >> 9) & StartOffsetMask;
