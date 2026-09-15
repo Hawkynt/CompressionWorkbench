@@ -99,7 +99,7 @@ public class UuEncodingTests {
     Assert.Multiple(() => {
       Assert.That(uu.MagicSignatures, Has.Count.EqualTo(1));
       Assert.That(b64.MagicSignatures, Has.Count.EqualTo(1));
-      Assert.That(b64.Methods.Single().Id, Is.EqualTo("b64encode"));
+      Assert.That(b64.Methods.Single().Name, Is.EqualTo("b64encode"));
       Assert.That(b64, Is.AssignableTo<IFormatOptionsSchema>());
     });
   }
