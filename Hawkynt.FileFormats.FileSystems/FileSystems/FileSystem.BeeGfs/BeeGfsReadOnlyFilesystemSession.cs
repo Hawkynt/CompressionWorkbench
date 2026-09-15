@@ -13,8 +13,8 @@ internal sealed record BeeGfsTargetChunkBinding(
 /// <summary>
 /// Read-only logical BeeGFS namespace reconstructed from a quiescent set of metadata
 /// and storage targets. The initial supported profile is intentionally narrow:
-/// non-mirrored V3 directory dentries plus V6 inline regular-file inodes using RAID0,
-/// with non-sparse local chunks. Unsupported metadata fails closed.
+/// non-mirrored V3 directory/file dentries plus V6 regular-file inodes (inline or
+/// separately stored for hard links) using RAID0, with non-sparse local chunks. Unsupported metadata fails closed.
 /// </summary>
 internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
   private const int MaxMetadataBytes = 4096;
@@ -31,6 +31,13 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     string ParentEntryId,
     string Name,
     BeeGfsDecodedDentry Metadata);
+
+  private sealed record DiscoveredInode(
+    uint OwnerNodeId,
+    string EntryId,
+    IFilesystemSession Session,
+    FilesystemNodeId NodeId,
+    string SourceName);
 
   private readonly ReadOnlyFilesystemSnapshotSession _namespace;
   private readonly OpenTarget[] _targets;
@@ -118,12 +125,65 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
 
     var contentOwners = new Dictionary<string, uint>(StringComparer.Ordinal);
     var dentries = new List<DiscoveredDentry>();
-    foreach (var target in metadataTargets.Values)
+    var inodeObjects = new Dictionary<(uint OwnerNodeId, string EntryId), DiscoveredInode>();
+    foreach (var target in metadataTargets.Values) {
+      ScanInodeTarget(target, inodeObjects);
       ScanMetadataTarget(target, contentOwners, dentries);
+    }
 
     if (!contentOwners.ContainsKey(RootEntryId))
       throw new InvalidDataException(
         "BeeGFS metadata target set contains no dentries hash directory for the logical root EntryID 'root'.");
+
+    var decodedSeparateInodes = new Dictionary<(uint OwnerNodeId, string EntryId), BeeGfsDecodedDentry>();
+    BeeGfsDecodedDentry ResolveRegularFileMetadata(DiscoveredDentry dentry) {
+      var metadata = dentry.Metadata;
+      if (metadata.StorageFormatVersion == 6 && metadata.HasInlineInode) {
+        if (metadata.MetadataType != BeeGfsDiskMetadataType.FileDentry || metadata.Raid0Pattern == null)
+          throw new NotSupportedException(
+            $"BeeGFS file '{dentry.Name}' is not a supported V6 inline RAID0 file inode.");
+        return metadata;
+      }
+
+      if (metadata.StorageFormatVersion != 3 ||
+          metadata.MetadataType != BeeGfsDiskMetadataType.FileDentry ||
+          metadata.HasInlineInode)
+        throw new NotSupportedException(
+          $"BeeGFS file '{dentry.Name}' is neither a supported V6 inline inode nor a V3 dentry referencing a separate inode.");
+
+      if (!metadataTargets.ContainsKey(metadata.OwnerNodeId))
+        throw new InvalidDataException(
+          $"BeeGFS file EntryID '{metadata.EntryId}' names missing metadata owner node {metadata.OwnerNodeId}.");
+
+      var key = (metadata.OwnerNodeId, metadata.EntryId);
+      if (decodedSeparateInodes.TryGetValue(key, out var cached))
+        return cached;
+
+      if (!inodeObjects.TryGetValue(key, out var inodeObject))
+        throw new FileNotFoundException(
+          $"BeeGFS file EntryID '{metadata.EntryId}' has no separate inode object on declared metadata owner node {metadata.OwnerNodeId}.");
+
+      var inodeBytes = ReadMetadataObject(
+        inodeObject.Session,
+        inodeObject.NodeId,
+        inodeObject.SourceName,
+        inodeObject.EntryId,
+        "file inode");
+      var decoded = BeeGfsMetadataCodec.ParseDentry(inodeBytes, dentry.ParentEntryId);
+      if (decoded.MetadataType != BeeGfsDiskMetadataType.FileInode ||
+          decoded.StorageFormatVersion != 6 ||
+          decoded.Kind != FilesystemNodeKind.RegularFile ||
+          decoded.HasInlineInode ||
+          decoded.Raid0Pattern == null)
+        throw new NotSupportedException(
+          $"BeeGFS separate inode '{metadata.EntryId}' is not a supported non-inline V6 regular-file RAID0 inode.");
+      if (!string.Equals(decoded.EntryId, metadata.EntryId, StringComparison.Ordinal))
+        throw new InvalidDataException(
+          $"BeeGFS V3 dentry EntryID '{metadata.EntryId}' resolves to separate inode EntryID '{decoded.EntryId}'.");
+
+      decodedSeparateInodes.Add(key, decoded);
+      return decoded;
+    }
 
     var nodeIds = new Dictionary<string, FilesystemNodeId>(StringComparer.Ordinal);
     var entryIdByNode = new Dictionary<FilesystemNodeId, string>();
@@ -173,12 +233,10 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
       } else if (metadata.Kind != FilesystemNodeKind.RegularFile) {
         throw new NotSupportedException(
           $"BeeGFS namespace entry '{dentry.Name}' has kind {metadata.Kind}; " +
-          "the initial multi-target reader supports directories and regular files only.");
+          "the current multi-target reader supports directories and regular files only.");
       } else {
-        if (metadata.StorageFormatVersion != 6 || !metadata.HasInlineInode || metadata.Raid0Pattern == null)
-          throw new NotSupportedException(
-            $"BeeGFS file '{dentry.Name}' is not a supported V6 inline RAID0 file inode.");
-        foreach (var targetId in metadata.Raid0Pattern.TargetIds)
+        metadata = ResolveRegularFileMetadata(dentry);
+        foreach (var targetId in metadata.Raid0Pattern!.TargetIds)
           if (!storageTargets.ContainsKey(targetId))
             throw new InvalidDataException(
               $"BeeGFS file EntryID '{metadata.EntryId}' references storage target {targetId}, " +
@@ -280,6 +338,32 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
         nodeId, metadata.Size, capturedPattern, capturedChunks));
   }
 
+  private static void ScanInodeTarget(
+      OpenTarget target,
+      IDictionary<(uint OwnerNodeId, string EntryId), DiscoveredInode> inodeObjects) {
+    var inodesRoot = ResolveDirectory(target.Session, target.RootNodeId, "inodes", target.Member.SourceName);
+    foreach (var level1 in target.Session.Enumerate(inodesRoot)
+               .Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
+      foreach (var level2 in target.Session.Enumerate(level1.NodeId)
+                 .Where(entry => entry.Kind == FilesystemNodeKind.Directory)) {
+        foreach (var inodeEntry in target.Session.Enumerate(level2.NodeId)) {
+          if (inodeEntry.Kind != FilesystemNodeKind.RegularFile)
+            throw new InvalidDataException(
+              $"BeeGFS inode object '{inodeEntry.Name}' in metadata source '{target.Member.SourceName}' is not a regular metadata file.");
+          var key = (target.Member.NumericId, inodeEntry.Name);
+          if (!inodeObjects.TryAdd(key, new DiscoveredInode(
+                target.Member.NumericId,
+                inodeEntry.Name,
+                target.Session,
+                inodeEntry.NodeId,
+                target.Member.SourceName)))
+            throw new InvalidDataException(
+              $"BeeGFS metadata source '{target.Member.SourceName}' contains duplicate inode object EntryID '{inodeEntry.Name}'.");
+        }
+      }
+    }
+  }
+
   private static void ScanMetadataTarget(
       OpenTarget target,
       IDictionary<string, uint> contentOwners,
@@ -309,8 +393,12 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
               throw new InvalidDataException(
                 $"BeeGFS physical dentry '{physicalEntry.Name}' below parent EntryID '{parentEntryId}' " +
                 "is not a regular metadata file.");
-            var metadataBytes = ReadDentryMetadata(
-              target.Session, physicalEntry.NodeId, target.Member.SourceName, physicalEntry.Name);
+            var metadataBytes = ReadMetadataObject(
+              target.Session,
+              physicalEntry.NodeId,
+              target.Member.SourceName,
+              physicalEntry.Name,
+              "dentry");
             var decoded = BeeGfsMetadataCodec.ParseDentry(metadataBytes, parentEntryId);
             dentries.Add(new DiscoveredDentry(parentEntryId, physicalEntry.Name, decoded));
           }
@@ -319,18 +407,19 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     }
   }
 
-  private static byte[] ReadDentryMetadata(
+  private static byte[] ReadMetadataObject(
       IFilesystemSession session,
       FilesystemNodeId nodeId,
       string sourceName,
-      string entryName) {
+      string entryName,
+      string objectKind) {
     if (session is IFilesystemExtendedAttributeReader attributes) {
       try {
         var all = attributes.ReadExtendedAttributes(nodeId);
         if (all.TryGetValue(MetadataXattrName, out var metadata)) {
           if (metadata.Length is < 8 or > MaxMetadataBytes)
             throw new InvalidDataException(
-              $"BeeGFS dentry '{entryName}' in source '{sourceName}' has implausible " +
+              $"BeeGFS {objectKind} '{entryName}' in source '{sourceName}' has implausible " +
               $"{MetadataXattrName} length {metadata.Length}.");
           return metadata;
         }
@@ -343,7 +432,7 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     var stat = session.Stat(nodeId);
     if (stat.Size is < 8 or > MaxMetadataBytes)
       throw new InvalidDataException(
-        $"BeeGFS dentry '{entryName}' in source '{sourceName}' has no readable {MetadataXattrName} " +
+        $"BeeGFS {objectKind} '{entryName}' in source '{sourceName}' has no readable {MetadataXattrName} " +
         $"and body size {stat.Size} is outside 8..{MaxMetadataBytes} bytes.");
     using var handle = session.OpenFile(nodeId, FileAccess.Read);
     var data = new byte[checked((int)stat.Size)];
@@ -434,8 +523,8 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     CanMount: true,
     CanMountWritable: false,
     [
-      "Read-only support is limited to quiescent non-mirrored BeeGFS snapshots with V3 directory dentries, V6 inline regular-file inodes, RAID0 stripe patterns and non-sparse local chunks.",
-      "Hard-linked non-inline file inodes, symbolic/special files, buddy/legacy mirroring, sparse chunk-block vectors, remote-storage targets and unsupported metadata versions fail closed.",
+      "Read-only support is limited to quiescent non-mirrored BeeGFS snapshots with V3 directory/file dentries, V6 regular-file inodes (inline or separate), RAID0 stripe patterns and non-sparse local chunks.",
+      "Symbolic/special files, buddy/legacy mirroring, sparse chunk-block vectors, remote-storage targets and unsupported metadata versions fail closed.",
       "Writable mounting remains disabled until metadata/chunk allocation, target mappings, buddy consistency, durability/recovery and concurrency are transactional across the complete target set.",
     ]);
 }
