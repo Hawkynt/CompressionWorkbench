@@ -28,6 +28,7 @@ public class CpioLibarchiveInteropTests {
   [TestCase(CpioArchiveFormat.PortableAscii, "odc")]
   [TestCase(CpioArchiveFormat.BinaryLittleEndian, "bin-le")]
   [TestCase(CpioArchiveFormat.BinaryBigEndian, "bin-be")]
+  [TestCase(CpioArchiveFormat.PwbBinary, "pwb")]
   public void CwbWriter_OutputExtractsWithLibarchive(CpioArchiveFormat format, string suffix) {
     RequireTool("bsdtar");
 
@@ -50,8 +51,32 @@ public class CpioLibarchiveInteropTests {
     Assert.That(File.ReadAllBytes(extracted!), Is.EqualTo(Payload));
   }
 
+  [Test]
+  public void CwbPwbWriter_ExtractsWithBsdcpioPwbOverride() {
+    RequireTool("bsdcpio");
+
+    var archivePath = Path.Combine(this._tmpDir, "cwb-pwb-explicit.cpio");
+    using (var target = File.Create(archivePath))
+    using (var writer = new CpioWriter(target, CpioArchiveFormat.PwbBinary)) {
+      writer.AddFile("payload.txt", Payload);
+      writer.Finish();
+    }
+
+    var outputDir = Path.Combine(this._tmpDir, "extract-pwb-explicit");
+    Directory.CreateDirectory(outputDir);
+    var result = FsInteropToolbox.RunWsl(
+      $"cd {FsInteropToolbox.WinToWsl(outputDir)} && bsdcpio -i -6 < {FsInteropToolbox.WinToWsl(archivePath)}");
+
+    Assert.That(result.ExitCode, Is.EqualTo(0),
+      $"bsdcpio -6 rejected CWB PWB output:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
+    var extracted = FsInteropToolbox.FindFile(outputDir, "payload.txt");
+    Assert.That(extracted, Is.Not.Null);
+    Assert.That(File.ReadAllBytes(extracted!), Is.EqualTo(Payload));
+  }
+
   [TestCase("odc", CpioArchiveFormat.PortableAscii)]
   [TestCase("bin", CpioArchiveFormat.BinaryLittleEndian)]
+  [TestCase("pwb", CpioArchiveFormat.PwbBinary)]
   public void LibarchiveWriter_OutputReadsWithCwb(string libarchiveFormat, CpioArchiveFormat expectedFormat) {
     RequireTool("bsdcpio");
 
@@ -67,7 +92,9 @@ public class CpioLibarchiveInteropTests {
       $"bsdcpio failed to create {libarchiveFormat}:\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
 
     using var source = File.OpenRead(archivePath);
-    using var reader = new CpioReader(source);
+    using var reader = new CpioReader(
+      source,
+      assumePwbBinary: expectedFormat == CpioArchiveFormat.PwbBinary);
     var entries = reader.ReadAll();
 
     Assert.That(entries, Has.Count.EqualTo(1));
