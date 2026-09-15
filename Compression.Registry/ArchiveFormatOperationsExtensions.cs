@@ -38,21 +38,21 @@ public static class ArchiveFormatOperationsExtensions {
     string[]? files)
     => operations.ExtractSeekable(archive, outputDir, password, files);
 
-  /// <summary>Lists entries from an in-memory archive image.</summary>
-  public static List<ArchiveEntryInfo> List(
+  /// <inheritdoc cref="IArchiveFormatOperations.ListSpan"/>
+  public static List<ArchiveEntryInfo> ListSpan(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
     string? password)
-    => operations.List(archive, password);
+    => operations.ListSpan(archive, password);
 
-  /// <summary>Extracts entries from an in-memory archive image.</summary>
-  public static void Extract(
+  /// <inheritdoc cref="IArchiveFormatOperations.ExtractSpan"/>
+  public static void ExtractSpan(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
     string outputDir,
     string? password,
     string[]? files)
-    => operations.Extract(archive, outputDir, password, files);
+    => operations.ExtractSpan(archive, outputDir, password, files);
 
   /// <inheritdoc cref="IArchiveFormatOperations.OpenEntryStreaming"/>
   public static Stream OpenEntryStreaming(
@@ -70,13 +70,13 @@ public static class ArchiveFormatOperationsExtensions {
     string? password)
     => operations.OpenEntrySeekable(archive, entryName, password);
 
-  /// <summary>Opens one entry from an in-memory archive image.</summary>
-  public static Stream OpenEntry(
+  /// <inheritdoc cref="IArchiveFormatOperations.OpenEntrySpan"/>
+  public static Stream OpenEntrySpan(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
     string entryName,
     string? password)
-    => operations.OpenEntry(archive, entryName, password);
+    => operations.OpenEntrySpan(archive, entryName, password);
 
   /// <inheritdoc cref="IArchiveFormatOperations.ExtractEntryToMemoryStreaming"/>
   public static byte[] ExtractEntryToMemoryStreaming(
@@ -86,11 +86,11 @@ public static class ArchiveFormatOperationsExtensions {
     string? password)
     => operations.ExtractEntryToMemoryStreaming(archive, entryName, password);
 
-  /// <summary>Extracts one entry from an in-memory archive image into a new byte array.</summary>
-  public static byte[] ExtractEntryToMemory(
+  /// <inheritdoc cref="IArchiveFormatOperations.ExtractEntryToMemorySpan"/>
+  public static byte[] ExtractEntryToMemorySpan(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
     string entryName,
     string? password)
-    => operations.ExtractEntryToMemory(archive, entryName, password);
+    => operations.ExtractEntryToMemorySpan(archive, entryName, password);
 }
