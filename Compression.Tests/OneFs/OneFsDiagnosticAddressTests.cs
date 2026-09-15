@@ -44,6 +44,32 @@ public sealed class OneFsDiagnosticAddressTests {
     });
   }
 
+  [Test, Category("Interop")]
+  public void IdentifiedDeviceSet_ReadsDellPublished512ByteInodeExtentExactly() {
+    const long inodeOffset = 524557565440L;
+    var source = new SparsePatternStream(inodeOffset + 4096, position: 37);
+    var identity = new OneFsDeviceIdentity(92, 14);
+    var set = OneFsDeviceSet.Open([source]).WithDeviceIdentities([identity]);
+    Assert.That(
+      OneFsDiagnosticBlockAddress.TryParse("92,14,524557565440:512", out var address),
+      Is.True);
+
+    var destination = new byte[512];
+    set.ReadDiagnosticExtent(address, destination);
+
+    var expected = Enumerable.Range(0, destination.Length)
+      .Select(index => SparsePatternStream.Pattern(inodeOffset + index))
+      .ToArray();
+    Assert.Multiple(() => {
+      Assert.That(destination, Is.EqualTo(expected));
+      Assert.That(source.Position, Is.EqualTo(37), "Diagnostic reads must restore the caller-visible stream position.");
+      Assert.That(
+        () => set.ReadDiagnosticBlock(address, new byte[OneFsReader.PhysicalBlockSize]),
+        Throws.TypeOf<ArgumentException>(),
+        "A published 512-byte inode extent must not be silently rounded to an 8 KiB block.");
+    });
+  }
+
   [TestCase("")]
   [TestCase("6")]
   [TestCase("6,3")]
@@ -102,7 +128,7 @@ public sealed class OneFsDiagnosticAddressTests {
   }
 
   [Test, Category("Malformed")]
-  public void IdentifiedDeviceSet_FailsClosedForAmbiguousOrUnmappedAddresses() {
+  public void IdentifiedDeviceSet_FailsClosedForAmbiguousUnmappedOrOutOfRangeAddresses() {
     using var first = new MemoryStream(BuildBlocks(2, seed: 1), writable: false);
     using var second = new MemoryStream(BuildBlocks(2, seed: 2), writable: false);
     var set = OneFsDeviceSet.Open([first, second]);
@@ -126,6 +152,16 @@ public sealed class OneFsDiagnosticAddressTests {
       Assert.That(
         () => mapped.ReadDiagnosticBlock(multiBlock, new byte[OneFsReader.PhysicalBlockSize]),
         Throws.TypeOf<ArgumentException>());
+
+      var beyondEnd = new OneFsDiagnosticBlockAddress(identity, first.Length - 256, 512);
+      Assert.That(
+        () => mapped.ReadDiagnosticExtent(beyondEnd, new byte[512]),
+        Throws.TypeOf<ArgumentOutOfRangeException>());
+
+      var tooLargeForSpan = new OneFsDiagnosticBlockAddress(identity, 0, (long)int.MaxValue + 1);
+      Assert.That(
+        () => mapped.ReadDiagnosticExtent(tooLargeForSpan, []),
+        Throws.TypeOf<ArgumentException>());
     });
   }
 
@@ -134,5 +170,58 @@ public sealed class OneFsDiagnosticAddressTests {
     for (var i = 0; i < result.Length; ++i)
       result[i] = unchecked((byte)(seed + i * 13 + i / OneFsReader.PhysicalBlockSize * 31));
     return result;
+  }
+
+  private sealed class SparsePatternStream(long length, long position = 0) : Stream {
+    private long _position = position;
+
+    internal static byte Pattern(long absoluteOffset)
+      => unchecked((byte)(absoluteOffset * 13 + 7));
+
+    public override bool CanRead => true;
+    public override bool CanSeek => true;
+    public override bool CanWrite => false;
+    public override long Length => length;
+
+    public override long Position {
+      get => this._position;
+      set {
+        if (value < 0)
+          throw new ArgumentOutOfRangeException(nameof(value));
+        this._position = value;
+      }
+    }
+
+    public override void Flush() { }
+
+    public override int Read(byte[] buffer, int offset, int count)
+      => this.Read(buffer.AsSpan(offset, count));
+
+    public override int Read(Span<byte> buffer) {
+      if (this._position >= length)
+        return 0;
+
+      var count = (int)Math.Min(buffer.Length, length - this._position);
+      for (var index = 0; index < count; ++index)
+        buffer[index] = Pattern(this._position + index);
+      this._position += count;
+      return count;
+    }
+
+    public override long Seek(long offset, SeekOrigin origin) {
+      var next = origin switch {
+        SeekOrigin.Begin => offset,
+        SeekOrigin.Current => checked(this._position + offset),
+        SeekOrigin.End => checked(length + offset),
+        _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+      };
+      if (next < 0)
+        throw new IOException("Attempted to seek before the beginning of the sparse test stream.");
+      this._position = next;
+      return next;
+    }
+
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
   }
 }
