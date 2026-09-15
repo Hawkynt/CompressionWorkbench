@@ -3,7 +3,7 @@ using Compression.Registry;
 namespace FileFormat.UuEncoding;
 
 /// <summary>
-/// Describes uu encoding format.
+/// Describes classic uu encoding format.
 /// </summary>
 public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
   /// <summary>
@@ -38,7 +38,9 @@ public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamForma
   /// <summary>
   /// Gets the magic signatures.
   /// </summary>
-  public IReadOnlyList<MagicSignature> MagicSignatures => [];
+  public IReadOnlyList<MagicSignature> MagicSignatures => [
+    new("begin "u8.ToArray(), Confidence: 0.96),
+  ];
   /// <summary>
   /// Gets the methods.
   /// </summary>
@@ -67,10 +69,6 @@ public sealed class UuEncodingFormatDescriptor : IFormatDescriptor, IStreamForma
   /// <summary>
   /// Encodes the supplied input.
   /// </summary>
-  public void Compress(Stream input, Stream output) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    ms.Position = 0;
-    UuEncoder.Encode(ms, output, "data");
-  }
+  public void Compress(Stream input, Stream output)
+    => UuEncoder.Encode(input, output, "data");
 }
