@@ -92,7 +92,7 @@ public sealed class MtreeFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
     using var writer = new MtreeWriter(output, leaveOpen: true);
     foreach (var input in inputs) {
-      var size = input.IsDirectory
+      long? size = input.IsDirectory
         ? null
         : input.InMemoryContent?.LongLength ?? new FileInfo(input.FullPath).Length;
       writer.WriteEntry(new MtreeEntry {
