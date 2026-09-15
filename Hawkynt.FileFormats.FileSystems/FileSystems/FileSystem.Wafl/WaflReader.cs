@@ -52,6 +52,7 @@ public sealed class WaflReader : IDisposable {
   private readonly long _imageSize;
   private readonly List<WaflEntry> _entries = [];
   private readonly List<uint> _fsInfoVbns = [];
+  private readonly List<WaflPcpiRoot> _retainedFsInfoRoots = [];
   private bool _disposed;
   private VolInfoProbe? _firstVolInfo;
   private VolInfoProbe? _secondVolInfo;
@@ -84,6 +85,13 @@ public sealed class WaflReader : IDisposable {
 
   /// <summary>Gets every structurally verified fsinfo VBN reached from a recognized lookup table.</summary>
   public IReadOnlyList<uint> FsInfoVbns => this._fsInfoVbns;
+
+  /// <summary>
+  /// Gets retained PCPI fsinfo roots from every usable redundant volinfo copy.
+  /// The list is a conservative union: if two copies map the same PCPI ID to
+  /// different VBNs, both roots are retained for future reachability analysis.
+  /// </summary>
+  public IReadOnlyList<WaflPcpiRoot> RetainedFsInfoRoots => this._retainedFsInfoRoots;
 
   /// <summary>Initializes a new instance of <see cref="WaflReader"/>.</summary>
   public WaflReader(Stream stream) {
@@ -287,9 +295,11 @@ public sealed class WaflReader : IDisposable {
     this.Stage = 1;
 
     var vbns = new HashSet<uint>();
-    AddReferences(this._firstFsInfoTable, vbns);
-    AddReferences(this._secondFsInfoTable, vbns);
+    var retainedRoots = new HashSet<WaflPcpiRoot>();
+    AddReferences(this._firstFsInfoTable, vbns, retainedRoots);
+    AddReferences(this._secondFsInfoTable, vbns, retainedRoots);
     this._fsInfoVbns.AddRange(vbns.Order());
+    this._retainedFsInfoRoots.AddRange(retainedRoots.OrderBy(root => root.PcpiId).ThenBy(root => root.Vbn));
 
     this.ActiveFsInfoVbn = (firstActive, secondActive) switch {
       ({ } first, { } second) when first == second => first,
@@ -299,10 +309,25 @@ public sealed class WaflReader : IDisposable {
     };
   }
 
-  private static void AddReferences(FsInfoTableProbe? table, HashSet<uint> target) {
-    if (table is not { ActiveVbn: not null }) return;
-    foreach (var reference in table.References)
-      target.Add(reference.Vbn);
+  private static void AddReferences(
+      FsInfoTableProbe? table,
+      HashSet<uint> vbns,
+      HashSet<WaflPcpiRoot> retainedRoots) {
+    if (table is not { ActiveVbn: not null, TableOffset: >= 0 }) return;
+
+    foreach (var reference in table.References) {
+      vbns.Add(reference.Vbn);
+
+      var relativeOffset = reference.Offset - table.TableOffset;
+      if (relativeOffset <= 0 || relativeOffset % ClassicVbnSize != 0)
+        continue;
+
+      var pcpiId = relativeOffset / ClassicVbnSize;
+      if ((uint)pcpiId >= MaxClassicFsInfoPointers)
+        continue;
+
+      retainedRoots.Add(new WaflPcpiRoot(pcpiId, reference.Vbn));
+    }
   }
 
   private byte[] BuildMetadata() {
@@ -321,10 +346,15 @@ public sealed class WaflReader : IDisposable {
     bldr.Append("structural_profile=classic-32bit-direct-fsinfo\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsinfo_reference_count={this._fsInfoVbns.Count}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"active_fsinfo_vbn={(this.ActiveFsInfoVbn is { } active ? active.ToString(CultureInfo.InvariantCulture) : "unknown")}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"retained_fsinfo_root_count={this._retainedFsInfoRoots.Count}\n");
+    bldr.Append("retained_fsinfo_roots=");
+    bldr.AppendJoin(',', this._retainedFsInfoRoots.Select(root => $"{root.PcpiId}:{root.Vbn}"));
+    bldr.Append('\n');
     bldr.Append("maintenance_support=none\n");
 
     if (this.Stage > 0) {
       bldr.Append("note=Stage 1 — volinfo-to-fsinfo structural traversal succeeded for the disclosed classic 32-bit direct-fsinfo lookup-table profile. ");
+      bldr.Append("Entry 0 is the active root; verified later table slots are retained PCPI roots and are conservatively unioned across redundant volinfo copies. ");
       bldr.Append("Verified fsinfo blocks are surfaced under fsinfo/. This does not imply inode or namespace decoding. ");
       if (this.ActiveFsInfoVbn is null)
         bldr.Append("The redundant volinfo roots disagree, so no single active fsinfo root is asserted. ");
@@ -375,6 +405,7 @@ public sealed class WaflReader : IDisposable {
     bldr.Append(CultureInfo.InvariantCulture, $"volinfo_vbn{vbn}_fsinfo_table_offset={table.TableOffset}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"volinfo_vbn{vbn}_active_fsinfo_vbn={active}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"volinfo_vbn{vbn}_verified_fsinfo_references={table.References.Count}\n");
+    bldr.Append(CultureInfo.InvariantCulture, $"volinfo_vbn{vbn}_verified_pcpi_references={table.References.Count(reference => reference.Offset > table.TableOffset)}\n");
   }
 
   internal Stream OpenEntry(WaflEntry entry) {
@@ -449,3 +480,6 @@ public sealed class WaflReader : IDisposable {
     IReadOnlyList<FsInfoReference> References,
     bool Ambiguous);
 }
+
+/// <summary>A retained persistent consistency-point fsinfo root from the classic direct lookup-table profile.</summary>
+public readonly record struct WaflPcpiRoot(int PcpiId, uint Vbn);
