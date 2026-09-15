@@ -9,7 +9,7 @@ internal static class WaflClassicAllocationMaps {
   internal const int InodesPerInodeFileBlock = WaflReader.BlockSize / WaflClassicBlockTree.InodeSize;
 
   private const uint ActiveFileSystemMask = 1u << 0;
-  private const uint SnapshotMask = 0x000F_FFFEu; // bits 1..20
+  private const uint SnapshotMask = 0x001F_FFFEu; // bits 1..20
   private const uint ReservedMask = 0x7FE0_0000u; // bits 21..30
   private const uint ConsistencyPointMask = 1u << 31;
 
