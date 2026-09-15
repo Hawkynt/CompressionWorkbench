@@ -29,49 +29,101 @@ public sealed class GpfsCorpusExternalTests {
   }
 
   [Test, CancelAfter(300_000), NUnit.Framework.CategoryAttribute("HappyPath")]
-  public void ConfiguredCorpora_RebalancePairConstrainsDiskAddressPacking() {
+  public void ConfiguredCorpora_RebalancePairConstrainsDiskAddressPackingAcrossIndependentFilesystems() {
     var roots = GetConfiguredCorpusRoots();
+    var candidatesByCorpus = roots.Select(ConstrainDiskAddressPacking).ToArray();
+    var commonSlots = candidatesByCorpus[0].Keys
+      .Intersect(candidatesByCorpus[1].Keys)
+      .Order()
+      .ToArray();
 
-    foreach (var root in roots) {
-      var before = LoadCapture(root, "050-block-plus-one");
-      var after = LoadCapture(root, "055-rebalanced");
-      var beforeEvidence = LoadProbeEvidence(root, "050-block-plus-one", before, "block-plus-one.bin");
-      var afterEvidence = LoadProbeEvidence(root, "055-rebalanced", after, "block-plus-one.bin");
+    Assert.That(commonSlots, Is.Not.Empty,
+      "The independent corpora did not move any common direct-pointer slot across 050/055.");
 
-      var commonSlots = beforeEvidence.Pointers.Pointers
-        .Where(static x => x.Replicas.Count > 0)
-        .Join(
-          afterEvidence.Pointers.Pointers.Where(static x => x.Replicas.Count > 0),
-          static x => x.SlotIndex,
-          static x => x.SlotIndex,
-          static (beforePointer, afterPointer) => (beforePointer, afterPointer))
-        .Where(static pair => !pair.beforePointer.Replicas.SequenceEqual(pair.afterPointer.Replicas))
-        .ToArray();
+    var survivors = new List<(int SlotIndex, GpfsAddressFieldCandidate[] Candidates)>();
+    foreach (var slot in commonSlots) {
+      var candidates = candidatesByCorpus[0][slot].Intersect(candidatesByCorpus[1][slot]).ToArray();
+      if (candidates.Length == 0)
+        continue;
+      survivors.Add((slot, candidates));
+      TestContext.WriteLine($"shared slot {slot}: cross-corpus aligned integer candidates={candidates.Length}");
+      foreach (var candidate in candidates)
+        TestContext.WriteLine($"  {candidate}");
+    }
 
-      Assert.That(commonSlots, Is.Not.Empty,
-        $"Corpus '{root}' did not produce an IBM-reported physical pointer change across 050/055.");
+    Assert.That(survivors, Is.Not.Empty,
+      "No disk-address encoding survived the same moved pointer slot in both independently formatted corpora.");
+  }
 
-      var moved = commonSlots[0];
+  [Test, CancelAfter(300_000), NUnit.Framework.CategoryAttribute("HappyPath")]
+  public void ConfiguredCorpora_ConstrainRawInodeChecksumFieldAcrossIndependentFilesystems() {
+    var roots = GetConfiguredCorpusRoots();
+    var candidates = ConstrainChecksumField(roots[0]);
+    candidates.IntersectWith(ConstrainChecksumField(roots[1]));
+
+    TestContext.WriteLine($"cross-corpus checksum literal field candidates={candidates.Count}");
+    foreach (var candidate in candidates.OrderBy(static x => x.Offset).ThenBy(static x => x.ByteOrder))
+      TestContext.WriteLine($"  {candidate}");
+
+    Assert.That(candidates, Is.Not.Empty,
+      "No raw inode byte offset/endian contains IBM's reported checksum across both independent corpora and the paired 050/055 captures.");
+  }
+
+  private static Dictionary<int, GpfsAddressFieldCandidate[]> ConstrainDiskAddressPacking(string root) {
+    var before = LoadCapture(root, "050-block-plus-one");
+    var after = LoadCapture(root, "055-rebalanced");
+    var beforeEvidence = LoadProbeEvidence(root, "050-block-plus-one", before, "block-plus-one.bin");
+    var afterEvidence = LoadProbeEvidence(root, "055-rebalanced", after, "block-plus-one.bin");
+
+    var movedSlots = beforeEvidence.Pointers.Pointers
+      .Where(static x => x.Replicas.Count > 0)
+      .Join(
+        afterEvidence.Pointers.Pointers.Where(static x => x.Replicas.Count > 0),
+        static x => x.SlotIndex,
+        static x => x.SlotIndex,
+        static (beforePointer, afterPointer) => (beforePointer, afterPointer))
+      .Where(static pair => !pair.beforePointer.Replicas.SequenceEqual(pair.afterPointer.Replicas))
+      .ToArray();
+
+    Assert.That(movedSlots, Is.Not.Empty,
+      $"Corpus '{root}' did not produce an IBM-reported physical pointer change across 050/055.");
+
+    var beforeRecord = ReadFirstReplica(root, "050-block-plus-one", before, beforeEvidence.Inode);
+    var afterRecord = ReadFirstReplica(root, "055-rebalanced", after, afterEvidence.Inode);
+    var result = new Dictionary<int, GpfsAddressFieldCandidate[]>();
+    foreach (var moved in movedSlots) {
       var beforeAddress = moved.beforePointer.Replicas[0];
       var afterAddress = moved.afterPointer.Replicas[0];
-      var beforeRecord = ReadFirstReplica(root, "050-block-plus-one", before, beforeEvidence.Inode);
-      var afterRecord = ReadFirstReplica(root, "055-rebalanced", after, afterEvidence.Inode);
-
       var candidates = GpfsRawCorrelation.IntersectAddressCandidates(
         beforeRecord.Bytes,
         beforeAddress,
         afterRecord.Bytes,
-        afterAddress);
+        afterAddress).ToArray();
 
       TestContext.WriteLine(
         $"{Path.GetFileName(root)} slot {moved.beforePointer.SlotIndex}: " +
-        $"{beforeAddress} -> {afterAddress}; aligned integer candidates={candidates.Count}");
-      foreach (var candidate in candidates)
-        TestContext.WriteLine($"  {candidate}");
-
-      Assert.That(candidates, Is.Not.Empty,
-        "No aligned integer disk-address encoding survived the paired capture. Extend the clean-room candidate search before claiming a packing rule.");
+        $"{beforeAddress} -> {afterAddress}; paired candidates={candidates.Length}");
+      result[moved.beforePointer.SlotIndex] = candidates;
     }
+
+    return result;
+  }
+
+  private static HashSet<GpfsUInt32FieldCandidate> ConstrainChecksumField(string root) {
+    HashSet<GpfsUInt32FieldCandidate>? common = null;
+    foreach (var captureId in new[] { "050-block-plus-one", "055-rebalanced" }) {
+      var manifest = LoadCapture(root, captureId);
+      var evidence = LoadProbeEvidence(root, captureId, manifest, "block-plus-one.bin");
+      foreach (var replica in ReadReplicas(root, captureId, manifest, evidence.Inode)) {
+        var candidates = GpfsRawCorrelation.FindUInt32Candidates(replica.Bytes, evidence.Inode.Checksum).ToHashSet();
+        common ??= candidates;
+        common.IntersectWith(candidates);
+      }
+    }
+
+    Assert.That(common, Is.Not.Null.And.Not.Empty,
+      $"Corpus '{root}' has no stable raw inode field containing IBM's reported checksum across 050/055 and metadata replicas.");
+    return common!;
   }
 
   private static string[] GetConfiguredCorpusRoots() {
@@ -166,7 +218,7 @@ public sealed class GpfsCorpusExternalTests {
       GpfsTsdbfsPointerParser.Parse(text));
   }
 
-  private static GpfsInodeReplicaBytes ReadFirstReplica(
+  private static IReadOnlyList<GpfsInodeReplicaBytes> ReadReplicas(
     string root,
     string captureId,
     GpfsEvidenceManifest manifest,
@@ -176,12 +228,19 @@ public sealed class GpfsCorpusExternalTests {
     try {
       foreach (var nsd in manifest.Nsds)
         images.Add(nsd.DiskId, File.Open(Path.Combine(captureRoot, nsd.ImagePath), FileMode.Open, FileAccess.Read, FileShare.Read));
-      return GpfsRawCorrelation.ReadInodeReplicas(manifest, inode, images).First();
+      return GpfsRawCorrelation.ReadInodeReplicas(manifest, inode, images);
     } finally {
       foreach (var image in images.Values)
         image.Dispose();
     }
   }
+
+  private static GpfsInodeReplicaBytes ReadFirstReplica(
+    string root,
+    string captureId,
+    GpfsEvidenceManifest manifest,
+    GpfsInodeOracle inode)
+    => ReadReplicas(root, captureId, manifest, inode).First();
 
   private sealed record GpfsProbeEvidence(GpfsInodeOracle Inode, GpfsDiskPointerSet Pointers);
 }
