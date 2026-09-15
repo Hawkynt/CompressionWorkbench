@@ -5,10 +5,12 @@ using System.Text;
 namespace FileFormat.Cpio;
 
 /// <summary>
-/// Creates SVR4 newc/crc, POSIX portable-ASCII (odc), and 7th Edition binary CPIO archives.
+/// Creates SVR4 newc/crc, POSIX portable-ASCII (odc), 7th Edition binary,
+/// and PWB/UNIX binary CPIO archives.
 /// </summary>
 public sealed class CpioWriter : IDisposable {
   private const long PortableAsciiMaxFileSize = 0x1FFFFFFFFL;
+  private const long PwbMaxFileSize = 0xFFFFFFL;
 
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
@@ -121,6 +123,7 @@ public sealed class CpioWriter : IDisposable {
         break;
       case CpioArchiveFormat.BinaryLittleEndian:
       case CpioArchiveFormat.BinaryBigEndian:
+      case CpioArchiveFormat.PwbBinary:
         this.WriteBinaryHeader(nameBytes, inode, mode, fileSize);
         break;
       default:
@@ -181,8 +184,11 @@ public sealed class CpioWriter : IDisposable {
     if (inode > ushort.MaxValue || mode > ushort.MaxValue || nameBytes.Length > ushort.MaxValue)
       throw new ArgumentOutOfRangeException(nameof(inode), "Binary CPIO 16-bit field overflow.");
 
+    if (this._format == CpioArchiveFormat.PwbBinary)
+      mode = NormalizePwbWriterMode(mode);
+
     Span<byte> header = stackalloc byte[CpioConstants.BinaryHeaderSize];
-    var littleEndian = this._format == CpioArchiveFormat.BinaryLittleEndian;
+    var littleEndian = this._format is CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.PwbBinary;
 
     WriteBinaryWord(header, 0, CpioConstants.BinaryMagic, littleEndian);
     WriteBinaryWord(header, 2, 0, littleEndian);
@@ -207,12 +213,28 @@ public sealed class CpioWriter : IDisposable {
 
     var maximum = this._format switch {
       CpioArchiveFormat.PortableAscii => PortableAsciiMaxFileSize,
+      CpioArchiveFormat.PwbBinary => PwbMaxFileSize,
       CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => int.MaxValue,
       _ => uint.MaxValue,
     };
     if (fileSize > maximum)
       throw new ArgumentOutOfRangeException(nameof(fileSize),
         $"{this._format} cannot represent a {fileSize}-byte CPIO entry (maximum {maximum}).");
+  }
+
+  private static uint NormalizePwbWriterMode(uint mode) {
+    if (mode == 0)
+      return 0; // TRAILER!!!
+
+    var type = mode & 0xF000;
+    if (type == 0)
+      return mode | 0x8000; // modernize an old-style regular file for V7-compatible readers
+
+    if (type is 0x2000 or 0x4000 or 0x6000 or 0x8000)
+      return mode;
+
+    throw new NotSupportedException(
+      "PWB CPIO can represent regular files, directories, character devices, and block devices only; symlinks, FIFOs, and sockets require a newer CPIO variant.");
   }
 
   private void CopyPayload(Stream data, long size, string name) {
@@ -268,7 +290,8 @@ public sealed class CpioWriter : IDisposable {
 
   private static int GetDataPadding(CpioArchiveFormat format, long fileSize) => format switch {
     CpioArchiveFormat.NewAscii or CpioArchiveFormat.NewCrc => Padding(fileSize, 4),
-    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => Padding(fileSize, 2),
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary
+      => Padding(fileSize, 2),
     _ => 0,
   };
 
