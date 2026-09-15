@@ -12,20 +12,22 @@ internal sealed class NtfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
   private readonly Stream _image;
   private readonly object _ioGate;
   private readonly NtfsMountedDataLayout _layout;
+  private readonly int _clusterSize;
   private bool _disposed;
 
   public NtfsDirectReadOnlyFileHandle(
       Stream image,
       object ioGate,
       FilesystemNodeId nodeId,
-      NtfsMountedDataLayout layout) {
+      NtfsMountedDataLayout layout,
+      int clusterSize) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(ioGate);
     ArgumentNullException.ThrowIfNull(layout);
     if (!image.CanRead || !image.CanSeek)
       throw new ArgumentException("NTFS positional reads require a readable, seekable image.", nameof(image));
-    if (layout.ClusterSize <= 0)
-      throw new ArgumentOutOfRangeException(nameof(layout), "NTFS mounted data layout has an invalid cluster size.");
+    if (clusterSize <= 0)
+      throw new ArgumentOutOfRangeException(nameof(clusterSize));
     if (layout.Compressed)
       throw new ArgumentException("Compressed NTFS data must use the LZNT1 fallback handle.", nameof(layout));
 
@@ -33,6 +35,7 @@ internal sealed class NtfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
     _ioGate = ioGate;
     NodeId = nodeId;
     _layout = layout;
+    _clusterSize = clusterSize;
   }
 
   public FilesystemNodeId NodeId { get; }
@@ -67,8 +70,8 @@ internal sealed class NtfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
     var requestStart = offset;
     var requestEnd = checked(offset + initializedCount);
     foreach (var run in _layout.Runs) {
-      var runStart = checked(run.Vcn * (long)_layout.ClusterSize);
-      var runLength = checked(run.ClusterCount * (long)_layout.ClusterSize);
+      var runStart = checked(run.Vcn * (long)_clusterSize);
+      var runLength = checked(run.ClusterCount * (long)_clusterSize);
       var runEnd = checked(runStart + runLength);
       if (runEnd <= requestStart) continue;
       if (runStart >= requestEnd) break;
@@ -80,7 +83,7 @@ internal sealed class NtfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
 
       var destinationOffset = checked((int)(overlapStart - requestStart));
       var withinRun = overlapStart - runStart;
-      var physical = checked(run.Lcn * (long)_layout.ClusterSize + withinRun);
+      var physical = checked(run.Lcn * (long)_clusterSize + withinRun);
       ReadExactlyAt(physical, result.Slice(destinationOffset, overlapLength));
     }
 
@@ -112,7 +115,6 @@ internal sealed class NtfsDirectReadOnlyFileHandle : IFilesystemFileHandle {
 }
 
 internal sealed record NtfsMountedDataLayout(
-  int ClusterSize,
   long DataLength,
   long InitializedLength,
   byte[]? ResidentData,
