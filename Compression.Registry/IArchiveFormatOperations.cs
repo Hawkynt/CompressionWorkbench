@@ -10,7 +10,7 @@ namespace Compression.Registry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The historical <see cref="List(Stream,string?)"/> / <see cref="Extract(Stream,string,string?,string[]?)"/>
+/// The historical <see cref="List(Stream,string?)"/> / <c>Extract(Stream, ...)</c>
 /// methods remain the descriptor's native compatibility surface. The explicit input-mode methods
 /// below make the three archive-reading models available uniformly to every archive and
 /// pseudo-archive: forward-only stream input, required-seek input, and in-memory
@@ -110,7 +110,7 @@ public interface IArchiveFormatOperations {
   /// </para>
   /// <para>
   /// The default implementation intentionally does <b>not</b> materialize a
-  /// <c>byte[]</c>. It asks <see cref="Extract(Stream,string,string?,string[]?)"/> for the selected entry in an
+  /// <c>byte[]</c>. It asks <c>Extract(Stream, ...)</c> for the selected entry in an
   /// isolated temporary directory, opens the resulting file as a seekable
   /// stream, and deletes that tree on dispose. This gives every descriptor a
   /// large-file-safe streaming fallback even before it grows a native per-entry
