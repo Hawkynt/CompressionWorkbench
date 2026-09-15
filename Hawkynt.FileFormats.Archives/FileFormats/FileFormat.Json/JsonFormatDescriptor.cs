@@ -19,7 +19,7 @@ public sealed class JsonFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".json";
-  public IReadOnlyList<string> Extensions => [];
+  public IReadOnlyList<string> Extensions => [".json"];
   public IReadOnlyList<string> CompoundExtensions => [".cwb.json"];
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("json", "JSON")];

@@ -18,7 +18,7 @@ public sealed class XmlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     FormatCapabilities.CanCreate | FormatCapabilities.CanTest | FormatCapabilities.SupportsMultipleEntries |
     FormatCapabilities.SupportsDirectories;
   public string DefaultExtension => ".xml";
-  public IReadOnlyList<string> Extensions => [];
+  public IReadOnlyList<string> Extensions => [".xml"];
   public IReadOnlyList<string> CompoundExtensions => [".cwb.xml"];
   public IReadOnlyList<MagicSignature> MagicSignatures => [new("<?xml"u8.ToArray(), Confidence: 0.55)];
   public IReadOnlyList<FormatMethodInfo> Methods => [new("xml", "XML")];
