@@ -18,13 +18,14 @@ namespace FileSystem.OneFs;
 public readonly record struct OneFsLin(ulong Value) {
 
   /// <summary>
-  /// Parses a OneFS LIN written as hexadecimal digits, optionally grouped by
-  /// colons as shown by <c>isi get -D</c>.
+  /// Parses a OneFS LIN in either contiguous lookup form or the three-group
+  /// hexadecimal form emitted by <c>isi get -D</c>.
   /// </summary>
   /// <remarks>
-  /// Colons are presentation separators only: after removing them the input must
-  /// contain between one and sixteen hexadecimal digits. Empty groups, leading or
-  /// trailing colons, and other punctuation are rejected.
+  /// The grouped form is interpreted as <c>high32:middle16:low16</c>: one to
+  /// eight hexadecimal digits followed by two exactly four-digit groups. The
+  /// contiguous form accepts one to sixteen hexadecimal digits. Prefixes such as
+  /// <c>0x</c>, signs and other punctuation are rejected.
   /// </remarks>
   public static bool TryParse(ReadOnlySpan<char> text, out OneFsLin lin) {
     lin = default;
@@ -32,43 +33,53 @@ public readonly record struct OneFsLin(ulong Value) {
     if (text.IsEmpty)
       return false;
 
-    Span<char> hexadecimal = stackalloc char[16];
-    var written = 0;
-    var previousWasSeparator = false;
-    var sawSeparator = false;
-
-    foreach (var character in text) {
-      if (character == ':') {
-        if (written == 0 || previousWasSeparator)
-          return false;
-        previousWasSeparator = true;
-        sawSeparator = true;
-        continue;
-      }
-
-      if (written >= hexadecimal.Length || !Uri.IsHexDigit(character))
+    var firstColon = text.IndexOf(':');
+    if (firstColon < 0) {
+      if (text.Length > 16
+          || !ulong.TryParse(
+            text,
+            NumberStyles.AllowHexSpecifier,
+            CultureInfo.InvariantCulture,
+            out var contiguousValue))
         return false;
 
-      hexadecimal[written++] = character;
-      previousWasSeparator = false;
+      lin = new OneFsLin(contiguousValue);
+      return true;
     }
 
-    if (written == 0 || previousWasSeparator)
+    var remainder = text[(firstColon + 1)..];
+    var secondColonRelative = remainder.IndexOf(':');
+    if (secondColonRelative < 0)
+      return false;
+    var secondColon = firstColon + 1 + secondColonRelative;
+
+    var highText = text[..firstColon];
+    var middleText = text[(firstColon + 1)..secondColon];
+    var lowText = text[(secondColon + 1)..];
+    if (highText is { Length: < 1 or > 8 }
+        || middleText.Length != 4
+        || lowText.Length != 4
+        || lowText.IndexOf(':') >= 0)
       return false;
 
-    // OneFS CLI examples use a three-group presentation. Avoid accepting an
-    // arbitrary colon grammar while still accepting the contiguous lookup form.
-    if (sawSeparator && Count(text, ':') != 2)
-      return false;
-
-    if (!ulong.TryParse(
-          hexadecimal[..written],
+    if (!uint.TryParse(
+          highText,
           NumberStyles.AllowHexSpecifier,
           CultureInfo.InvariantCulture,
-          out var value))
+          out var high)
+        || !ushort.TryParse(
+          middleText,
+          NumberStyles.AllowHexSpecifier,
+          CultureInfo.InvariantCulture,
+          out var middle)
+        || !ushort.TryParse(
+          lowText,
+          NumberStyles.AllowHexSpecifier,
+          CultureInfo.InvariantCulture,
+          out var low))
       return false;
 
-    lin = new OneFsLin(value);
+    lin = new OneFsLin(((ulong)high << 32) | ((ulong)middle << 16) | low);
     return true;
   }
 
@@ -113,12 +124,4 @@ public readonly record struct OneFsLin(ulong Value) {
 
   /// <inheritdoc />
   public override string ToString() => this.ToDisplayString();
-
-  private static int Count(ReadOnlySpan<char> text, char value) {
-    var result = 0;
-    foreach (var character in text)
-      if (character == value)
-        ++result;
-    return result;
-  }
 }
