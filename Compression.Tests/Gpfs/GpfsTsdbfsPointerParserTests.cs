@@ -48,8 +48,10 @@ public class GpfsTsdbfsPointerParserTests {
     Assert.Multiple(() => {
       Assert.That(pointers.DeclaredSlotCount, Is.EqualTo(32));
       Assert.That(pointers.Pointers, Has.Count.EqualTo(4));
-      Assert.That(pointers.Pointers[0], Is.EqualTo(new GpfsDiskPointerOracle(0, new[] { new GpfsDiskAddress(31, 217629376) })));
-      Assert.That(pointers.Pointers[1], Is.EqualTo(new GpfsDiskPointerOracle(1, new[] { new GpfsDiskAddress(30, 217632960) })));
+      Assert.That(pointers.Pointers[0].SlotIndex, Is.EqualTo(0));
+      Assert.That(pointers.Pointers[0].Replicas, Is.EqualTo(new[] { new GpfsDiskAddress(31, 217629376) }));
+      Assert.That(pointers.Pointers[1].SlotIndex, Is.EqualTo(1));
+      Assert.That(pointers.Pointers[1].Replicas, Is.EqualTo(new[] { new GpfsDiskAddress(30, 217632960) }));
       Assert.That(pointers.Pointers[2].Replicas, Is.Empty);
       Assert.That(pointers.Pointers[3].SlotIndex, Is.EqualTo(31));
     });
