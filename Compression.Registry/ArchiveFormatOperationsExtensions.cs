@@ -38,14 +38,14 @@ public static class ArchiveFormatOperationsExtensions {
     string[]? files)
     => operations.ExtractSeekable(archive, outputDir, password, files);
 
-  /// <inheritdoc cref="IArchiveFormatOperations.List(ReadOnlySpan{byte},string?)"/>
+  /// <summary>Lists entries from an in-memory archive image.</summary>
   public static List<ArchiveEntryInfo> List(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
     string? password)
     => operations.List(archive, password);
 
-  /// <inheritdoc cref="IArchiveFormatOperations.Extract(ReadOnlySpan{byte},string,string?,string[]?)"/>
+  /// <summary>Extracts entries from an in-memory archive image.</summary>
   public static void Extract(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
@@ -70,7 +70,7 @@ public static class ArchiveFormatOperationsExtensions {
     string? password)
     => operations.OpenEntrySeekable(archive, entryName, password);
 
-  /// <inheritdoc cref="IArchiveFormatOperations.OpenEntry(ReadOnlySpan{byte},string,string?)"/>
+  /// <summary>Opens one entry from an in-memory archive image.</summary>
   public static Stream OpenEntry(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
@@ -86,7 +86,7 @@ public static class ArchiveFormatOperationsExtensions {
     string? password)
     => operations.ExtractEntryToMemoryStreaming(archive, entryName, password);
 
-  /// <inheritdoc cref="IArchiveFormatOperations.ExtractEntryToMemory(ReadOnlySpan{byte},string,string?)"/>
+  /// <summary>Extracts one entry from an in-memory archive image into a new byte array.</summary>
   public static byte[] ExtractEntryToMemory(
     this IArchiveFormatOperations operations,
     ReadOnlySpan<byte> archive,
