@@ -13,6 +13,7 @@ public class CpioVariantTests {
   [TestCase(CpioArchiveFormat.PortableAscii)]
   [TestCase(CpioArchiveFormat.BinaryLittleEndian)]
   [TestCase(CpioArchiveFormat.BinaryBigEndian)]
+  [TestCase(CpioArchiveFormat.PwbBinary)]
   [Category("RoundTrip")]
   public void WriterReader_RoundTripsEverySupportedVariant(CpioArchiveFormat format) {
     using var archive = new MemoryStream();
@@ -22,7 +23,10 @@ public class CpioVariantTests {
     }
 
     archive.Position = 0;
-    using var reader = new CpioReader(archive, leaveOpen: true);
+    using var reader = new CpioReader(
+      archive,
+      leaveOpen: true,
+      assumePwbBinary: format == CpioArchiveFormat.PwbBinary);
     var entries = reader.ReadAll();
 
     Assert.That(entries, Has.Count.EqualTo(1));
@@ -102,6 +106,69 @@ public class CpioVariantTests {
   }
 
   [Test]
+  [Category("Compatibility")]
+  public void Reader_AutoDetectsDistinctivePwbInodeMode() {
+    // PWB/V6 directory mode 0140755 = IALLOC + directory + 0755. A V7 reader
+    // would call 014xxxx a socket. nlink=2 makes the old-directory reading the
+    // conservative interpretation and normalization drops the inode-only flag.
+    byte[] archive = [
+      0xC7, 0x71,
+      0x00, 0x00,
+      0x01, 0x00,
+      0xED, 0xC1, // 0140755
+      0x00, 0x00,
+      0x00, 0x00,
+      0x02, 0x00, // directory link count
+      0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x04, 0x00, // "dir\0"
+      0x00, 0x00, 0x00, 0x00,
+      (byte)'d', (byte)'i', (byte)'r', 0,
+    ];
+
+    using var reader = new CpioReader(new MemoryStream(archive));
+    var entry = reader.ReadEntry(out var data);
+
+    Assert.That(entry, Is.Not.Null);
+    Assert.Multiple(() => {
+      Assert.That(entry!.Format, Is.EqualTo(CpioArchiveFormat.PwbBinary));
+      Assert.That(entry.Mode, Is.EqualTo(0x41ED));
+      Assert.That(entry.IsDirectory, Is.True);
+      Assert.That(data, Is.Empty);
+    });
+  }
+
+  [Test]
+  [Category("Compatibility")]
+  public void Reader_ExplicitPwbModeDisambiguatesRegularFile() {
+    using var archive = new MemoryStream();
+    using (var writer = new CpioWriter(archive, CpioArchiveFormat.PwbBinary, leaveOpen: true)) {
+      writer.AddFile("regular", Payload);
+      writer.Finish();
+    }
+
+    archive.Position = 0;
+    using var reader = new CpioReader(archive, leaveOpen: true, assumePwbBinary: true);
+    var entry = reader.ReadEntry(out var data);
+
+    Assert.That(entry, Is.Not.Null);
+    Assert.Multiple(() => {
+      Assert.That(entry!.Format, Is.EqualTo(CpioArchiveFormat.PwbBinary));
+      Assert.That(entry.IsRegularFile, Is.True);
+      Assert.That(data, Is.EqualTo(Payload));
+    });
+  }
+
+  [Test]
+  [Category("Boundary")]
+  public void PwbWriter_RejectsFilesPast24BitLimit() {
+    using var archive = new MemoryStream();
+    using var writer = new CpioWriter(archive, CpioArchiveFormat.PwbBinary, leaveOpen: true);
+    Assert.Throws<ArgumentOutOfRangeException>(() =>
+      writer.AddStreamingFile("too-large", 0x1000000, Stream.Null));
+  }
+
+  [Test]
   [Category("Corruption")]
   public void NewCrcReader_RejectsMismatchedChecksum() {
     using var archive = new MemoryStream();
@@ -156,7 +223,7 @@ public class CpioVariantTests {
     var format = ((IFormatOptionsSchema)descriptor).OptionsSchema.Single(x => x.Key == "Format");
     Assert.Multiple(() => {
       Assert.That(format.Default, Is.EqualTo("newc"));
-      Assert.That(format.AllowedValues, Is.SupersetOf(new[] { "newc", "crc", "odc", "bin-le", "bin-be" }));
+      Assert.That(format.AllowedValues, Is.SupersetOf(new[] { "newc", "crc", "odc", "bin-le", "bin-be", "pwb" }));
       Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(5));
     });
   }
@@ -164,7 +231,7 @@ public class CpioVariantTests {
   [TestCase("odc", "070707")]
   [TestCase("crc", "070702")]
   [Category("Registry")]
-  public void Descriptor_CreateHonorsFormatOption(string format, string expectedMagic) {
+  public void Descriptor_CreateHonorsAsciiFormatOption(string format, string expectedMagic) {
     var descriptor = new CpioFormatDescriptor();
     using var output = new MemoryStream();
     descriptor.Create(
@@ -174,5 +241,22 @@ public class CpioVariantTests {
 
     var image = output.ToArray();
     Assert.That(Encoding.ASCII.GetString(image, 0, 6), Is.EqualTo(expectedMagic));
+  }
+
+  [Test]
+  [Category("Registry")]
+  public void Descriptor_CreateHonorsPwbFormatOption() {
+    var descriptor = new CpioFormatDescriptor();
+    using var output = new MemoryStream();
+    descriptor.Create(
+      output,
+      [ArchiveInputInfo.InMemory("x", [1, 2, 3])],
+      new FormatCreateOptions { FormatSpecific = new() { ["Format"] = "pwb" } });
+
+    var image = output.ToArray();
+    Assert.That(image[..2], Is.EqualTo(new byte[] { 0xC7, 0x71 }));
+    using var reader = new CpioReader(new MemoryStream(image), assumePwbBinary: true);
+    Assert.That(reader.ReadEntry(out var data)?.Format, Is.EqualTo(CpioArchiveFormat.PwbBinary));
+    Assert.That(data, Is.EqualTo(new byte[] { 1, 2, 3 }));
   }
 }
