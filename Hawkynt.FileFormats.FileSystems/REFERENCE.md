@@ -3248,27 +3248,30 @@ Represents a bee gfs entry.
 
 #### `BeeGfsFormatDescriptor`
 
-Describes BeeGFS without inventing a standalone byte-stream image format.
+Describes BeeGFS as a distributed target set rather than inventing a standalone byte-stream image format.
 
-Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`.
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`, `IMultiStreamFilesystemDriverProvider`, `IMultiStreamFilesystemDriverReadinessProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BeeGfsFormatDescriptor` | `BeeGfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the single-stream capabilities. BeeGFS has none because it is not a standalone stream/image format. |
-| `Category` | `FormatCategory Category { get; }` | Gets the category used by the filesystem package. |
-| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | BeeGFS has no compound file extensions. |
-| `DefaultExtension` | `string DefaultExtension { get; }` | BeeGFS has no canonical file extension. |
-| `Description` | `string Description { get; }` | Gets the format description. |
-| `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
-| `Extensions` | `IReadOnlyList<string> Extensions { get; }` | BeeGFS has no canonical file extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the registry family. |
-| `Id` | `string Id { get; }` | Gets the registry id. |
-| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | BeeGFS has no standalone stream header. Target directories are identified structurally by their service metadata, not by magic bytes at offset zero of one file. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | There is no archive/storage method for a synthetic BeeGFS image. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | BeeGFS is not a tar compound format. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Single-stream format capabilities remain empty because BeeGFS is not one standalone image. Multi-target mounted capabilities are reported by `ProbeFilesystem`. |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(FilesystemStreamSet sources, FilesystemDriverTarget target)` |  |
 | `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(FilesystemStreamSet sources, FilesystemOpenOptions options)` |  |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(FilesystemStreamSet sources)` |  |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `BeeGfsReader`
