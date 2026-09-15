@@ -99,9 +99,12 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
     _namespace.Dispose();
     foreach (var target in _targets)
       target.Session.Dispose();
-    if (!_leaveOpen)
-      foreach (var stream in _sources.Select(source => source.Stream).Distinct(ReferenceEqualityComparer.Instance))
-        stream.Dispose();
+    if (!_leaveOpen) {
+      var disposed = new HashSet<Stream>(ReferenceEqualityComparer.Instance);
+      foreach (var source in _sources)
+        if (disposed.Add(source.Stream))
+          source.Stream.Dispose();
+    }
   }
 
   private (FilesystemSnapshotNode[] Nodes, FilesystemSnapshotDirectoryEntry[] Entries, FilesystemNodeId RootNodeId)
@@ -216,13 +219,15 @@ internal sealed class BeeGfsReadOnlyFilesystemSession : IFilesystemSession {
         throw new InvalidDataException(
           $"BeeGFS namespace entry '{dentry.Name}' references missing parent EntryID '{dentry.ParentEntryId}'.");
 
-    foreach (var (contentEntryId, _) in contentOwners)
-      if (contentEntryId != RootEntryId && !nodesByEntryId.TryGetValue(contentEntryId, out var node))
+    foreach (var contentEntryId in contentOwners.Keys) {
+      if (contentEntryId == RootEntryId) continue;
+      if (!nodesByEntryId.TryGetValue(contentEntryId, out var node))
         throw new InvalidDataException(
           $"BeeGFS metadata contains an orphan content directory for unknown EntryID '{contentEntryId}'.");
-      else if (contentEntryId != RootEntryId && node.Kind != FilesystemNodeKind.Directory)
+      if (node.Kind != FilesystemNodeKind.Directory)
         throw new InvalidDataException(
           $"BeeGFS content directory EntryID '{contentEntryId}' resolves to non-directory kind {node.Kind}.");
+    }
 
     return (nodesByEntryId.Values.ToArray(), links.ToArray(), rootId);
   }
