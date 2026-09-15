@@ -43,9 +43,10 @@ public readonly record struct OneFsDeviceIdentity {
 /// <c>ifs_baddr_t</c> on disk in the same byte order or field layout.
 /// </para>
 /// <para>
-/// The published examples use byte addresses aligned to the documented 8 KiB
-/// filesystem block size. Alignment helpers are therefore provided, but parsing
-/// accepts non-aligned diagnostic values rather than silently normalizing them.
+/// Published diagnostics include both 8 KiB filesystem-block extents and 512-byte
+/// inode addresses that need not start on an 8 KiB boundary. Parsing therefore
+/// preserves byte offset and length exactly. The block helpers report a value only
+/// when a diagnostic extent actually satisfies the documented 8 KiB geometry.
 /// </para>
 /// </remarks>
 public readonly record struct OneFsDiagnosticBlockAddress {
