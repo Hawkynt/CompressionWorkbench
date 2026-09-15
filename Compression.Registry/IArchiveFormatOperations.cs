@@ -82,7 +82,7 @@ public interface IArchiveFormatOperations {
   /// the span once because a <see cref="Stream"/> cannot safely retain a borrowed span; native
   /// span parsers should override this method to remain allocation-free.
   /// </summary>
-  public virtual List<ArchiveEntryInfo> List(ReadOnlySpan<byte> archive, string? password) {
+  public virtual List<ArchiveEntryInfo> ListSpan(ReadOnlySpan<byte> archive, string? password) {
     using var stream = new MemoryStream(archive.ToArray(), writable: false);
     return this.ListSeekable(stream, password);
   }
@@ -91,7 +91,7 @@ public interface IArchiveFormatOperations {
   /// Extracts entries from an in-memory archive image. Native span parsers can override this
   /// method to avoid the compatibility copy used by the default implementation.
   /// </summary>
-  public virtual void Extract(ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+  public virtual void ExtractSpan(ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
     using var stream = new MemoryStream(archive.ToArray(), writable: false);
     this.ExtractSeekable(stream, outputDir, password, files);
   }
@@ -161,7 +161,7 @@ public interface IArchiveFormatOperations {
   /// this call, the default bridge owns one copy of the supplied span until that stream is disposed.
   /// Native span readers can override this method when they can return independently owned output.
   /// </summary>
-  public virtual Stream OpenEntry(ReadOnlySpan<byte> archive, string entryName, string? password) {
+  public virtual Stream OpenEntrySpan(ReadOnlySpan<byte> archive, string entryName, string? password) {
     ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
     var source = new MemoryStream(archive.ToArray(), writable: false);
     try {
@@ -203,8 +203,8 @@ public interface IArchiveFormatOperations {
   }
 
   /// <summary>Extracts one entry from an in-memory archive image into a new byte array.</summary>
-  public virtual byte[] ExtractEntryToMemory(ReadOnlySpan<byte> archive, string entryName, string? password) {
-    using var entry = this.OpenEntry(archive, entryName, password);
+  public virtual byte[] ExtractEntryToMemorySpan(ReadOnlySpan<byte> archive, string entryName, string? password) {
+    using var entry = this.OpenEntrySpan(archive, entryName, password);
     using var memory = new MemoryStream();
     entry.CopyTo(memory);
     return memory.ToArray();
