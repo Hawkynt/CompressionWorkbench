@@ -129,9 +129,6 @@ public sealed class CpioWriter : IDisposable {
   }
 
   private void WriteNewAsciiHeader(ReadOnlySpan<byte> nameBytes, uint inode, uint mode, long fileSize, uint checksum) {
-    if (nameBytes.Length > uint.MaxValue)
-      throw new ArgumentOutOfRangeException(nameof(nameBytes), "CPIO pathname is too large for newc.");
-
     var magic = this._format == CpioArchiveFormat.NewCrc
       ? CpioConstants.NewCrcMagic
       : CpioConstants.NewAsciiMagic;
@@ -187,29 +184,17 @@ public sealed class CpioWriter : IDisposable {
     Span<byte> header = stackalloc byte[CpioConstants.BinaryHeaderSize];
     var littleEndian = this._format == CpioArchiveFormat.BinaryLittleEndian;
 
-    void WriteWord(int offset, ushort value) {
-      if (littleEndian)
-        BinaryPrimitives.WriteUInt16LittleEndian(header[offset..], value);
-      else
-        BinaryPrimitives.WriteUInt16BigEndian(header[offset..], value);
-    }
-
-    void WriteLong(int offset, uint value) {
-      WriteWord(offset, (ushort)(value >> 16));
-      WriteWord(offset + 2, (ushort)value);
-    }
-
-    WriteWord(0, CpioConstants.BinaryMagic);
-    WriteWord(2, 0);
-    WriteWord(4, checked((ushort)inode));
-    WriteWord(6, checked((ushort)mode));
-    WriteWord(8, 0);
-    WriteWord(10, 0);
-    WriteWord(12, 1);
-    WriteWord(14, 0);
-    WriteLong(16, 0);
-    WriteWord(20, checked((ushort)nameBytes.Length));
-    WriteLong(22, checked((uint)fileSize));
+    WriteBinaryWord(header, 0, CpioConstants.BinaryMagic, littleEndian);
+    WriteBinaryWord(header, 2, 0, littleEndian);
+    WriteBinaryWord(header, 4, checked((ushort)inode), littleEndian);
+    WriteBinaryWord(header, 6, checked((ushort)mode), littleEndian);
+    WriteBinaryWord(header, 8, 0, littleEndian);
+    WriteBinaryWord(header, 10, 0, littleEndian);
+    WriteBinaryWord(header, 12, 1, littleEndian);
+    WriteBinaryWord(header, 14, 0, littleEndian);
+    WriteBinaryLong(header, 16, 0, littleEndian);
+    WriteBinaryWord(header, 20, checked((ushort)nameBytes.Length), littleEndian);
+    WriteBinaryLong(header, 22, checked((uint)fileSize), littleEndian);
 
     this._stream.Write(header);
     this._stream.Write(nameBytes);
@@ -288,6 +273,18 @@ public sealed class CpioWriter : IDisposable {
   };
 
   private static int Padding(long length, int alignment) => (int)((alignment - length % alignment) % alignment);
+
+  private static void WriteBinaryWord(Span<byte> buffer, int offset, ushort value, bool littleEndian) {
+    if (littleEndian)
+      BinaryPrimitives.WriteUInt16LittleEndian(buffer[offset..], value);
+    else
+      BinaryPrimitives.WriteUInt16BigEndian(buffer[offset..], value);
+  }
+
+  private static void WriteBinaryLong(Span<byte> buffer, int offset, uint value, bool littleEndian) {
+    WriteBinaryWord(buffer, offset, (ushort)(value >> 16), littleEndian);
+    WriteBinaryWord(buffer, offset + 2, (ushort)value, littleEndian);
+  }
 
   private static string ToOctal(ulong value, int width) {
     var text = Convert.ToString(checked((long)value), 8);
