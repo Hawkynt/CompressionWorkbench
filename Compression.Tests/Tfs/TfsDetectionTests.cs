@@ -8,16 +8,16 @@ public class TfsDetectionTests {
 
   private static byte[] BuildMinimal() {
     var image = new byte[4096];
-    // "TFS\x01" magic at offset 0.
+    // Historical repository heuristic; no located source establishes it as a TFS signature.
     image[0] = 0x54; image[1] = 0x46; image[2] = 0x53; image[3] = 0x01;
     return image;
   }
 
   [Test, Category("HappyPath")]
-  public void Detector_IdentifiesTfs_ByMagic() {
+  public void Detector_DoesNotIdentifyTfs_ByUnverifiedRepositoryHeuristic() {
     var image = BuildMinimal();
     var fmt = FormatDetector.DetectByMagic(image.AsSpan(0, 512));
-    Assert.That(fmt.ToString(), Is.EqualTo("Tfs").IgnoreCase,
-      $"FormatDetector must recognise TFS via 0x54465301 at offset 0. Got: {fmt}");
+    Assert.That(fmt.ToString(), Is.Not.EqualTo("Tfs").IgnoreCase,
+      $"FormatDetector must not recognise TFS from the unverified 0x54465301 repository heuristic. Got: {fmt}");
   }
 }
