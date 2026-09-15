@@ -69,8 +69,12 @@ internal readonly record struct WaflClassicBlockMapEntry(
     uint ReservedBits,
     bool ConsistencyPointBit) {
   /// <summary>
-  /// The classic patent declares a block free only when all 32 allocation bits
-  /// are zero, including active-file-system, snapshot and consistency-point bits.
+  /// Conservative free-block predicate for future maintenance use. The patent's
+  /// allocation test requires the active-FS and all snapshot bits to be clear;
+  /// bit 31 mirrors the active-FS bit in a consistent on-disk blkmap and bits
+  /// 21..30 are reserved. Requiring the complete word to be zero deliberately
+  /// refuses unknown/reserved or inconsistent states instead of treating them as
+  /// safely writable.
   /// </summary>
   internal bool IsFree => this.RawValue == 0;
 
