@@ -59,6 +59,8 @@ The original WAFL patents are unusually concrete for the legacy profile:
 - level 1 uses the inode's 16 VBNs directly, level 2 points to single-indirect blocks and level 3 points to double-indirect blocks;
 - the fsinfo block contains the inode that roots the inode file.
 
+The 64/64 split is independently repeated in later NetApp patent material: the on-disk inode is described as a metadata section plus a data section, and the data section stores the complete payload when it is at most 64 bytes or up to sixteen 4-byte block pointers otherwise. Those later descriptions name metadata such as type and size, but they still do **not** publish numeric byte widths or byte offsets for those fields. Figure labels such as `312` and `314` are drawing reference numbers, not disk offsets.
+
 US5819292 and US6289356 also describe the legacy metadata files:
 
 - `blkmap`: one 32-bit allocation/snapshot entry per 4 KiB block;
@@ -81,6 +83,8 @@ The explicit sparse-pointer policy matters: public NetApp patent material descri
 
 That removes the classic block-tree algorithm itself from the Stage-2 blocker list. It does **not** make arbitrary 128-byte windows inside fsinfo into trustworthy inode records. The root-inode placement and its metadata fields still need an independently verified byte layout before `WaflReader` can bind the helper to an image automatically.
 
+The original patent's Figure 15 visually places the inode-file inode after miscellaneous fsinfo data, checksum and generation information, but neither the figure nor the accompanying text assigns it a numeric byte offset. The implementation therefore does not infer an offset from drawing proportions. Likewise, the figure identifies the structure semantically as an inode; it does not supply the missing packed type/size/level offsets inside that inode.
+
 ## Classic allocation-map primitives
 
 The same original patents are byte-precise about the classic allocation maps, so those codecs are implemented independently of inode discovery as `WaflClassicAllocationMaps`:
@@ -89,14 +93,14 @@ The same original patents are byte-precise about the classic allocation maps, so
 - bit 0 marks membership in the active filesystem;
 - bits 1 through 20 mark references from snapshots 1 through 20;
 - bits 21 through 30 are reserved in the disclosed layout;
-- bit 31 is the consistency-point bookkeeping bit;
-- the patent declares the block free only when **all 32 bits are zero**;
+- bit 31 is the consistency-point bookkeeping bit and, in a consistent on-disk entry, mirrors bit 0;
+- the published allocation condition requires bit 0 and all snapshot bits to be clear before a block can be available for allocation;
 - each `inomap` entry is one byte and records the number of allocated inodes in the corresponding 4 KiB inode-file block;
 - because the classic inode is 128 bytes, an inomap value is valid only from 0 through 32, and free-inode count is `32 - allocated`.
 
-The implementation decodes either byte order for blkmap entries, exposes the active/snapshot/reserved/CP fields separately, rejects partial 32-bit entries, rejects impossible inomap counts, and does not yet treat a decoded free blkmap entry as globally wipe-safe. Binding these maps to the correct metadata inodes and reconciling every retained filesystem root still has to be proven first.
+The implementation decodes either byte order for blkmap entries, exposes the active/snapshot/reserved/CP fields separately, rejects partial 32-bit entries and rejects impossible inomap counts. Its `IsFree` predicate is intentionally **stricter** than the minimum published allocation condition: it returns true only for a raw all-zero entry. That refuses reserved-bit or CP/FS-inconsistent states instead of silently treating unknown state as safely writable. Even an all-zero decoded entry is not yet treated as globally wipe-safe; binding the correct map and reconciling every retained filesystem root still have to be proven first.
 
-This is nevertheless useful maintenance groundwork: once the classic metadata inodes can be located and snapshot reachability is connected, the block map provides the format-defined primitive needed to distinguish allocated from genuinely free classic WAFL blocks instead of inferring free space from gaps.
+This is nevertheless useful maintenance groundwork: once the classic metadata inodes can be located and snapshot reachability is connected, the block map provides the format-defined primitive needed to distinguish allocation state instead of inferring free space from gaps.
 
 ## Inode generations: do not conflate classic and modern WAFL
 
@@ -129,14 +133,16 @@ A flat logical VBN image is therefore a useful Stage-1 target, but a raw member 
 
 A defensible file walker still needs at least one versioned profile with independently verified byte offsets for:
 
-1. the inode-of-inode-file inside fsinfo;
-2. inode type and logical-size fields (the classic tree level itself can then be derived/validated from the published size ranges); 
+1. the inode-of-inode-file inside fsinfo — the original patent proves its presence and role but Figure 15 does not publish a numeric location;
+2. inode type and logical-size fields — later NetApp patents independently name these fields but do not publish their packed widths/offsets (the classic tree level itself can then be derived/validated from the published size ranges);
 3. a reliable profile/version discriminator before choosing classic 128-byte, pre-ONTAP-9 192-byte or ONTAP-9 288-byte inode decoding;
 4. modern/FlexVol block-pointer encoding where the image is not the classic flat-VBN profile;
 5. sparse/hole pointer semantics for any profile where sparse reconstruction is required;
-6. reserved metadata/root-directory inode identities or another proved way to locate the namespace root;
-7. directory fixed-record width and field offsets;
+6. reserved metadata/root-directory inode identities or another proved way to locate the namespace root — Figure 16 establishes the semantic order `blkmap`, `inomap`, root directory but does not assign numeric inode IDs;
+7. directory fixed-record width and field offsets — Figure 14 and its text establish hash, name pointer, file ID and generation semantics but omit their byte widths and ordering;
 8. validation/checksum fields used to reject stale or malformed blocks.
+
+A 2025 Tianjin University recovery patent, CN119739562B, independently reports inode/file ID 2 as the root of the WAFL namespace and describes recovering node size/type/block mappings. It does not identify the ONTAP generation or 128/192/288-byte inode profile and does not publish the missing byte offsets. It is therefore recorded only as a cross-check and is **not** used to bind the classic parser or assign classic inode numbers.
 
 The commercial UFS Explorer implementation is useful only as a behavioural oracle: its public release notes advertise experimental WAFL metadata versions 2–4, including 32/64-bit and traditional/Flex profiles. No proprietary implementation code is used or translated here.
 
@@ -188,11 +194,13 @@ Public factual/specification sources:
 - Dave Hitz, James Lau, Michael Malcolm, *File System Design for an NFS File Server Appliance* (TR-3002 / USENIX).
 - US5819292, consistency points/snapshots and classic WAFL structures.
 - US5963962 / US6289356, classic inode, block-map, inode-map and directory architecture.
+- later NetApp inode diagrams such as US20050187985/US6892211-family material, used only to independently corroborate metadata/data-section semantics rather than infer byte offsets from figure labels.
 - US7313720 / US8122286, volinfo/fsinfo hierarchy and VBN lookup table.
 - US7321962 / US7194595, hybrid FlexVol VBN translation and special-block handling.
 - EP1875393 / related sparse-volume material, VBN numbering behaviour only.
 - NetApp, *FlexVol: Flexible, Efficient File Volume Virtualization in WAFL*.
 - NetApp, *Scalable Write Allocation in the WAFL File System*.
+- CN119739562B, independent recovery-behaviour cross-check only; no unspecified-generation constants are imported.
 - Aaru issue #61, feasibility/oracle information only.
 - UFS Explorer public WAFL support notes, behavioural-oracle scope only.
 
