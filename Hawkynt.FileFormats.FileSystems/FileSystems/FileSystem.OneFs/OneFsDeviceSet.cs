@@ -28,24 +28,24 @@ public sealed record OneFsDeviceGeometry(
 }
 
 /// <summary>
-/// Non-destructive inventory and bounded block-access surface for a candidate set
+/// Non-destructive inventory and bounded raw-access surface for a candidate set
 /// of Dell PowerScale / Isilon OneFS data-device images.
 /// </summary>
 /// <remarks>
 /// <para>
-/// OneFS is cluster-wide: LIN and protection metadata can address blocks on
-/// other nodes and drives. A one-stream abstraction therefore cannot represent
-/// enough media for future offline namespace reconstruction. This type is the
-/// multi-device bootstrap surface: it keeps the supplied streams separate,
-/// records their documented physical geometry, and permits explicit per-device
-/// 8 KiB block reads without interpreting proprietary bytes.
+/// OneFS is cluster-wide: LIN and protection metadata can address bytes on other
+/// nodes and drives. A one-stream abstraction therefore cannot represent enough
+/// media for future offline namespace reconstruction. This type is the
+/// multi-device bootstrap surface: it keeps supplied streams separate, records
+/// documented physical geometry, and permits explicit per-device reads without
+/// interpreting proprietary bytes.
 /// </para>
 /// <para>
 /// The supplied streams remain owned by the caller. <see cref="Open(IEnumerable{Stream})"/>
-/// never reads them, changes their positions, or disposes them. <see cref="ReadBlock(int,long,Span{byte})"/>
-/// restores the selected stream position after each explicit read. Membership in
-/// a common OneFS cluster is intentionally <b>not</b> asserted: that requires the
-/// still-unverified raw superblock/device identity serialization.
+/// never reads them, changes their positions, or disposes them. Explicit reads
+/// restore the selected stream position. Membership in a common OneFS cluster is
+/// intentionally <b>not</b> asserted: that requires the still-unverified raw
+/// superblock/device identity serialization.
 /// </para>
 /// </remarks>
 public sealed class OneFsDeviceSet {
@@ -107,7 +107,7 @@ public sealed class OneFsDeviceSet {
   /// <param name="devices">Readable, seekable candidate raw-device streams.</param>
   /// <returns>An immutable geometry snapshot retaining the supplied streams for bounded member reads and future format-local parsers.</returns>
   /// <exception cref="ArgumentNullException"><paramref name="devices"/> is null.</exception>
-  /// <exception cref="ArgumentException">No devices were supplied, or a stream is null, unreadable, or unseekable.</exception>
+  /// <exception cref="ArgumentException">No devices were supplied; a stream is null, duplicated, unreadable, or unseekable.</exception>
   /// <exception cref="InvalidDataException">A supplied candidate device is empty.</exception>
   /// <exception cref="OverflowException">Aggregate geometry cannot be represented by signed 64-bit counters.</exception>
   public static OneFsDeviceSet Open(IEnumerable<Stream> devices) {
@@ -118,6 +118,7 @@ public sealed class OneFsDeviceSet {
       throw new ArgumentException("At least one candidate OneFS data device is required.", nameof(devices));
 
     var geometry = new OneFsDeviceGeometry[streams.Length];
+    var uniqueStreams = new HashSet<Stream>(ReferenceEqualityComparer.Instance);
     long totalBytes = 0;
     long totalBlocks = 0;
     long totalCylinderGroups = 0;
@@ -125,6 +126,10 @@ public sealed class OneFsDeviceSet {
     for (var index = 0; index < streams.Length; ++index) {
       var stream = streams[index]
         ?? throw new ArgumentException($"Candidate OneFS device {index} is null.", nameof(devices));
+      if (!uniqueStreams.Add(stream))
+        throw new ArgumentException(
+          $"Candidate OneFS device {index} reuses a stream already supplied for another member.",
+          nameof(devices));
       if (!stream.CanRead)
         throw new ArgumentException($"Candidate OneFS device {index} must be readable.", nameof(devices));
       if (!stream.CanSeek)
@@ -236,17 +241,41 @@ public sealed class OneFsDeviceSet {
     if (blockIndex < 0 || blockIndex >= device.CompleteBlockCount)
       throw new ArgumentOutOfRangeException(nameof(blockIndex));
 
-    var stream = this._streams[deviceIndex];
     var byteOffset = checked(blockIndex * (long)OneFsReader.PhysicalBlockSize);
-    lock (this._streamLocks[deviceIndex]) {
-      var originalPosition = stream.Position;
-      try {
-        stream.Position = byteOffset;
-        stream.ReadExactly(destination[..OneFsReader.PhysicalBlockSize]);
-      } finally {
-        stream.Position = originalPosition;
-      }
-    }
+    this.ReadRange(deviceIndex, byteOffset, destination[..OneFsReader.PhysicalBlockSize]);
+  }
+
+  /// <summary>
+  /// Resolves and reads the exact byte extent described by a Dell diagnostic
+  /// address from its explicitly identified candidate device.
+  /// </summary>
+  /// <param name="address">Dell <c>devid,Lnum,address:length</c> extent.</param>
+  /// <param name="destination">Destination with room for the entire diagnostic extent.</param>
+  /// <exception cref="ArgumentException">The extent is too large for a span or <paramref name="destination"/> is too small.</exception>
+  /// <exception cref="ArgumentOutOfRangeException">The diagnostic extent lies outside the inventoried candidate image.</exception>
+  /// <exception cref="KeyNotFoundException">No candidate was explicitly assigned the address's <c>(devid,Lnum)</c> identity.</exception>
+  /// <remarks>
+  /// Dell publishes inode addresses with 512-byte lengths as well as 8 KiB data
+  /// extents. This method therefore preserves the diagnostic byte range exactly;
+  /// it does not round to filesystem-block boundaries or infer semantic type.
+  /// </remarks>
+  public void ReadDiagnosticExtent(OneFsDiagnosticBlockAddress address, Span<byte> destination) {
+    if (!this._identifiedDevices.TryGetValue(address.Device, out var deviceIndex))
+      throw new KeyNotFoundException($"No supplied OneFS candidate is mapped to diagnostic device {address.Device}.");
+    if (address.Length > int.MaxValue)
+      throw new ArgumentException("Diagnostic extent is too large to expose through a single Span<byte> read.", nameof(address));
+
+    var length = checked((int)address.Length);
+    if (destination.Length < length)
+      throw new ArgumentException(
+        $"Diagnostic extent requires {length} destination bytes but only {destination.Length} were supplied.",
+        nameof(destination));
+
+    var device = this._devices[deviceIndex];
+    if (address.Length > device.ImageSize || address.ByteOffset > device.ImageSize - address.Length)
+      throw new ArgumentOutOfRangeException(nameof(address), "Diagnostic extent lies outside the supplied candidate device.");
+
+    this.ReadRange(deviceIndex, address.ByteOffset, destination[..length]);
   }
 
   /// <summary>
@@ -264,18 +293,30 @@ public sealed class OneFsDeviceSet {
       throw new ArgumentException(
         $"Diagnostic block reads require one aligned {OneFsReader.PhysicalBlockSize}-byte address extent.",
         nameof(address));
-    if (!this._identifiedDevices.TryGetValue(address.Device, out var deviceIndex))
-      throw new KeyNotFoundException($"No supplied OneFS candidate is mapped to diagnostic device {address.Device}.");
 
-    this.ReadBlock(deviceIndex, address.BlockIndex!.Value, destination);
+    this.ReadDiagnosticExtent(address, destination);
   }
 
   /// <summary>
   /// Gets a candidate device stream for future OneFS format-local parsers.
   /// </summary>
   /// <remarks>
-  /// Internal on purpose: public consumers use the bounded block API until a
-  /// verified raw OneFS structure parser exists. The stream remains caller-owned.
+  /// Internal on purpose: public consumers use the bounded raw-access methods
+  /// until a verified raw OneFS structure parser exists. The stream remains
+  /// caller-owned.
   /// </remarks>
   internal Stream GetDeviceStream(int index) => this._streams[index];
+
+  private void ReadRange(int deviceIndex, long byteOffset, Span<byte> destination) {
+    var stream = this._streams[deviceIndex];
+    lock (this._streamLocks[deviceIndex]) {
+      var originalPosition = stream.Position;
+      try {
+        stream.Position = byteOffset;
+        stream.ReadExactly(destination);
+      } finally {
+        stream.Position = originalPosition;
+      }
+    }
+  }
 }
