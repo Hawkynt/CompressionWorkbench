@@ -1,62 +1,91 @@
 namespace FileFormat.UuEncoding;
 
 /// <summary>
-/// Classic Unix-to-Unix encoding for binary-to-text conversion.
+/// Classic Unix-to-Unix encoding and the <c>begin-base64</c> wrapper used by
+/// libarchive's b64encode filter.
 /// </summary>
 public static class UuEncoder {
 
-  /// <summary>Encodes binary data into UUEncoded text.</summary>
+  /// <summary>Encodes binary data into classic UUEncoded text without buffering the full input.</summary>
   public static void Encode(Stream input, Stream output, string filename, int mode = 0644) {
-    using var ms = new MemoryStream();
-    input.CopyTo(ms);
-    var data = ms.ToArray();
-    using var writer = new StreamWriter(output, leaveOpen: true);
-    writer.NewLine = "\n";
-    writer.WriteLine($"begin {Convert.ToString(mode, 8)} {filename}");
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(filename);
 
-    var offset = 0;
-    while (offset < data.Length) {
-      var count = Math.Min(45, data.Length - offset);
+    using var writer = new StreamWriter(output, leaveOpen: true) { NewLine = "\n" };
+    writer.WriteLine($"begin {Convert.ToString(mode & 0777, 8)} {filename}");
+
+    Span<byte> data = stackalloc byte[45];
+    while (true) {
+      var count = ReadUpTo(input, data);
+      if (count == 0)
+        break;
+
       writer.Write((char)(count + 32));
       for (var i = 0; i < count; i += 3) {
-        var b0 = data[offset + i];
-        var b1 = i + 1 < count ? data[offset + i + 1] : (byte)0;
-        var b2 = i + 2 < count ? data[offset + i + 2] : (byte)0;
+        var b0 = data[i];
+        var b1 = i + 1 < count ? data[i + 1] : (byte)0;
+        var b2 = i + 2 < count ? data[i + 2] : (byte)0;
         writer.Write(UuChar((b0 >> 2) & 0x3F));
         writer.Write(UuChar(((b0 << 4) | (b1 >> 4)) & 0x3F));
         writer.Write(UuChar(((b1 << 2) | (b2 >> 6)) & 0x3F));
         writer.Write(UuChar(b2 & 0x3F));
       }
       writer.WriteLine();
-      offset += count;
     }
-    // End marker: backtick (zero-length line) then "end"
+
     writer.WriteLine("`");
     writer.WriteLine("end");
     writer.Flush();
   }
 
-  /// <summary>Decodes UUEncoded text back to binary.</summary>
+  /// <summary>
+  /// Encodes binary data using the libarchive/GNU-style <c>begin-base64</c>
+  /// uuencode wrapper. Input is consumed in 57-byte blocks, yielding canonical
+  /// 76-character Base64 lines.
+  /// </summary>
+  public static void EncodeBase64(Stream input, Stream output, string filename = "-", int mode = 0644) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    ArgumentNullException.ThrowIfNull(filename);
+
+    using var writer = new StreamWriter(output, leaveOpen: true) { NewLine = "\n" };
+    writer.WriteLine($"begin-base64 {Convert.ToString(mode & 0777, 8)} {filename}");
+
+    var data = new byte[57];
+    while (true) {
+      var count = ReadUpTo(input, data);
+      if (count == 0)
+        break;
+      writer.WriteLine(Convert.ToBase64String(data, 0, count));
+    }
+
+    writer.WriteLine("====");
+    writer.Flush();
+  }
+
+  /// <summary>Decodes classic uuencode or <c>begin-base64</c> text back to binary.</summary>
   public static (string FileName, int Mode, byte[] Data) Decode(Stream input) {
+    ArgumentNullException.ThrowIfNull(input);
+
     using var reader = new StreamReader(input, leaveOpen: true);
     string? line;
     string filename = "unknown";
     int mode = 0644;
 
-    // Find begin line
     while ((line = reader.ReadLine()) != null) {
-      if (line.StartsWith("begin ")) {
+      if (line.StartsWith("begin ", StringComparison.Ordinal)) {
         var parts = line.Split(' ', 3);
         if (parts.Length >= 3) {
-          try { mode = Convert.ToInt32(parts[1], 8); } catch { mode = 0644; }
+          mode = ParseMode(parts[1]);
           filename = parts[2];
         }
         break;
       }
-      if (line.StartsWith("begin-base64 ")) {
+      if (line.StartsWith("begin-base64 ", StringComparison.Ordinal)) {
         var parts = line.Split(' ', 3);
         if (parts.Length >= 3) {
-          try { mode = Convert.ToInt32(parts[1], 8); } catch { mode = 0644; }
+          mode = ParseMode(parts[1]);
           filename = parts[2];
         }
         return DecodeBase64Body(reader, filename, mode);
@@ -86,14 +115,35 @@ public static class UuEncoder {
   }
 
   private static (string FileName, int Mode, byte[] Data) DecodeBase64Body(StreamReader reader, string filename, int mode) {
-    var sb = new System.Text.StringBuilder();
+    using var output = new MemoryStream();
     string? line;
     while ((line = reader.ReadLine()) != null) {
-      if (line == "====" || line == "end") break;
-      sb.Append(line);
+      if (line == "====" || line == "end")
+        break;
+      if (line.Length == 0)
+        continue;
+      var decoded = Convert.FromBase64String(line);
+      output.Write(decoded);
     }
-    return (filename, mode, Convert.FromBase64String(sb.ToString()));
+    return (filename, mode, output.ToArray());
   }
 
-  private static char UuChar(int val) => (char)(val == 0 ? 96 : val + 32); // 0 maps to backtick, rest to space+val
+  private static int ReadUpTo(Stream input, Span<byte> buffer) {
+    var total = 0;
+    while (total < buffer.Length) {
+      var read = input.Read(buffer[total..]);
+      if (read == 0)
+        break;
+      total += read;
+    }
+    return total;
+  }
+
+  private static int ParseMode(string text) {
+    try { return Convert.ToInt32(text, 8); }
+    catch (FormatException) { return 0644; }
+    catch (OverflowException) { return 0644; }
+  }
+
+  private static char UuChar(int val) => (char)(val == 0 ? 96 : val + 32);
 }

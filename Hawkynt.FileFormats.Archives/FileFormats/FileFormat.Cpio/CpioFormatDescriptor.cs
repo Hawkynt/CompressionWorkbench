@@ -6,16 +6,22 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Cpio;
 
 /// <summary>
-/// cpio archive — Unix copy-in/copy-out container (binary, portable-ASCII odc and newc variants).
+/// cpio archive — Unix copy-in/copy-out container (PWB/binary, portable-ASCII odc and SVR4 variants).
 ///
 /// References:
 /// <list type="bullet">
-///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the cpio interchange headers</description></item>
-///   <item><description><c>cpio(5)</c> man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants</description></item>
-///   <item><description><c>https://en.wikipedia.org/wiki/Cpio</c> — format overview</description></item>
+///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the portable cpio interchange header</description></item>
+///   <item><description><c>cpio(5)</c> man page (libarchive / FreeBSD) — documents PWB, binary, odc, newc and crc variants</description></item>
 /// </list>
 /// </summary>
-public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap {
+public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
+
+  /// <inheritdoc />
+  public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
+    new("Format", "Header format", FormatOptionKind.Enum, "newc",
+      AllowedValues: ["newc", "crc", "odc", "bin-le", "bin-be", "pwb"],
+      Description: "CPIO header variant: SVR4 newc/crc, POSIX portable ASCII (odc), 7th Edition binary, or PWB/UNIX binary."),
+  ];
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order.</summary>
   public void Defragment(Stream archive)
@@ -23,14 +29,15 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive per the requested mode.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
+    var format = DetectFormat(archive);
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
-        var r = new CpioReader(stream);
+        var r = new CpioReader(stream, assumePwbBinary: format == CpioArchiveFormat.PwbBinary);
         return r.ReadAll().Where(x => !x.Entry.IsDirectory).Select(x => (x.Entry.Name, x.Data));
       },
       buildImage: files => {
         using var ms = new MemoryStream();
-        var w = new CpioWriter(ms);
+        var w = new CpioWriter(ms, format);
         foreach (var (n, d) in files) w.AddFile(n, d);
         w.Finish();
         return ms.ToArray();
@@ -42,22 +49,20 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     archive.Position = 0;
     using var r = new CpioReader(archive, leaveOpen: true);
     var entries = r.ReadAll();
-    // Walk the stream sequentially to compute entry positions
     archive.Position = 0;
-    foreach (var (entry, data) in entries) {
+    foreach (var (entry, _) in entries) {
       var nameSize = System.Text.Encoding.ASCII.GetByteCount(entry.Name) + 1;
-      var headerPlusName = CpioConstants.NewAsciiHeaderSize + nameSize;
-      var namePadding = (4 - headerPlusName % 4) % 4;
-      var totalHeader = headerPlusName + namePadding;
+      var headerSize = GetHeaderSize(entry.Format);
+      var alignment = GetAlignment(entry.Format);
+      var namePadding = alignment <= 1 ? 0 : Padding(headerSize + nameSize, alignment);
+      var totalHeader = headerSize + nameSize + namePadding;
       var pos = archive.Position;
       yield return new DefragBlockInfo(pos, totalHeader, DefragBlockKind.MetadataReserved, FileName: $"Header: {entry.Name}");
-      if (entry.FileSize > 0) {
+      if (entry.FileSize > 0)
         yield return new DefragBlockInfo(pos + totalHeader, entry.FileSize, DefragBlockKind.Used, FileName: entry.Name);
-        var dataPadding = (4 - entry.FileSize % 4) % 4;
-        archive.Position = pos + totalHeader + entry.FileSize + dataPadding;
-      } else {
-        archive.Position = pos + totalHeader;
-      }
+
+      var dataPadding = alignment <= 1 ? 0 : Padding(entry.FileSize, alignment);
+      archive.Position = pos + totalHeader + entry.FileSize + dataPadding;
     }
   }
 
@@ -81,18 +86,50 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     FormatCapabilities.CanModify | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
-  /// <summary>Adds (or replaces by name) files via <see cref="CpioModifier"/>.</summary>
+  /// <summary>
+  /// Adds or replaces files. SVR4 newc uses the native in-place modifier;
+  /// variants whose header layout differs are rebuilt while preserving their
+  /// original wire format when it can be distinguished.
+  /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
-    foreach (var (name, data) in FilesOnly(inputs)) {
-      CpioModifier.RemoveFile(archive, name, wipeData: true);
-      CpioModifier.AddFile(archive, name, data);
+    var additions = FilesOnly(inputs).ToArray();
+    if (additions.Length == 0)
+      return;
+
+    var format = DetectFormat(archive);
+    if (format == CpioArchiveFormat.NewAscii) {
+      foreach (var (name, data) in additions) {
+        CpioModifier.RemoveFile(archive, name, wipeData: true);
+        CpioModifier.AddFile(archive, name, data);
+      }
+      return;
     }
+
+    RebuildArchive(archive, format, entries => {
+      foreach (var (name, data) in additions) {
+        entries.RemoveAll(x => string.Equals(x.Entry.Name, name, StringComparison.Ordinal));
+        entries.Add((new CpioEntry { Name = name, Mode = 0x81A4 }, data));
+      }
+    });
   }
 
-  /// <summary>Removes named entries via <see cref="CpioModifier"/>.</summary>
+  /// <summary>
+  /// Removes named entries. SVR4 newc compacts in place; all other variants are
+  /// rebuilt so their original header format and alignment rules are retained.
+  /// </summary>
   public void Remove(Stream archive, string[] entryNames) {
-    foreach (var name in entryNames)
-      CpioModifier.RemoveFile(archive, name, wipeData: true);
+    if (entryNames.Length == 0)
+      return;
+
+    var format = DetectFormat(archive);
+    if (format == CpioArchiveFormat.NewAscii) {
+      foreach (var name in entryNames)
+        CpioModifier.RemoveFile(archive, name, wipeData: true);
+      return;
+    }
+
+    var names = entryNames.ToHashSet(StringComparer.Ordinal);
+    RebuildArchive(archive, format, entries => entries.RemoveAll(x => names.Contains(x.Entry.Name)));
   }
 
   /// <summary>
@@ -111,8 +148,11 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Gets the magic signatures.
   /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [
-    new([0xC7, 0x71], Confidence: 0.90),
-    new([(byte)'0', (byte)'7', (byte)'0', (byte)'7', (byte)'0', (byte)'7'], Confidence: 0.95)
+    new([0xC7, 0x71], Confidence: 0.95),
+    new([0x71, 0xC7], Confidence: 0.95),
+    new([(byte)'0', (byte)'7', (byte)'0', (byte)'7', (byte)'0', (byte)'1'], Confidence: 0.98),
+    new([(byte)'0', (byte)'7', (byte)'0', (byte)'7', (byte)'0', (byte)'2'], Confidence: 0.98),
+    new([(byte)'0', (byte)'7', (byte)'0', (byte)'7', (byte)'0', (byte)'7'], Confidence: 0.98),
   ];
   /// <summary>
   /// Gets the methods.
@@ -129,14 +169,12 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Unix copy-in/copy-out archive format";
+  public string Description => "Unix copy-in/copy-out archive format (PWB/binary, odc, newc and crc variants)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
-    // Header-only walk: ReadAll materialises every entry, so listing an archive
-    // with a multi-gigabyte member would fail for no reason.
     var r = new CpioReader(stream);
     var result = new List<ArchiveEntryInfo>();
     var index = 0;
@@ -153,9 +191,6 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
-    // Stream each entry straight to disk: ReadAll materialises every entry, which
-    // an entry larger than an array cannot survive. Skipped entries still have
-    // their data consumed so the reader stays aligned on the next header.
     var r = new CpioReader(stream);
     while (r.ReadNextHeader() is { } entry) {
       if (files != null && !MatchesFilter(entry.Name, files)) { r.CopyCurrentEntryData(null); continue; }
@@ -171,9 +206,6 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>
   /// Opens a single CPIO entry as a bounded read-only <see cref="Stream"/>.
-  /// CPIO stores each entry uncompressed; the reader's <c>ReadAll</c> walk
-  /// surfaces (entry, byte[]) tuples which the bounded wrapper sizes to the
-  /// entry's file size.
   /// </summary>
   public Stream OpenEntry(Stream archive, string entryName, string? password) {
     ArgumentNullException.ThrowIfNull(archive);
@@ -202,7 +234,8 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// Performs the create operation.
   /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    var w = new CpioWriter(output);
+    var format = ResolveFormat(options);
+    var w = new CpioWriter(output, format);
     foreach (var i in inputs) {
       if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
       else w.AddFile(i.ArchiveName, i.ReadContent());
@@ -211,18 +244,13 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   }
 
   /// <summary>
-  /// Large-file-safe streaming variant of <see cref="Create"/>. The cpio
-  /// "new" ASCII header encodes each member's size before its payload, so the
-  /// pre-known <see cref="StreamingArchiveInput.Size"/> lets the writer emit
-  /// the header and then copy the payload in 64 KB chunks via
-  /// <see cref="CpioWriter.AddStreamingFile"/> — peak memory is bounded by the
-  /// copy buffer regardless of member size. Inode allocation, headers, and
-  /// padding match <see cref="Create"/> byte-for-byte for the same inputs.
+  /// Large-file-safe streaming variant of <see cref="Create"/>.
   /// </summary>
   public void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(target);
     ArgumentNullException.ThrowIfNull(inputs);
-    var w = new CpioWriter(target);
+    var format = ResolveFormat(options);
+    var w = new CpioWriter(target, format);
     foreach (var i in inputs) {
       if (i.IsDirectory) { w.AddDirectory(i.Name); continue; }
       using var src = i.OpenStream();
@@ -230,4 +258,108 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
     w.Finish();
   }
+
+  private static CpioArchiveFormat ResolveFormat(FormatCreateOptions options)
+    => options.GetOption("Format", "newc").ToLowerInvariant() switch {
+      "newc" => CpioArchiveFormat.NewAscii,
+      "crc" => CpioArchiveFormat.NewCrc,
+      "odc" => CpioArchiveFormat.PortableAscii,
+      "bin" or "bin-le" => CpioArchiveFormat.BinaryLittleEndian,
+      "bin-be" => CpioArchiveFormat.BinaryBigEndian,
+      "pwb" => CpioArchiveFormat.PwbBinary,
+      var format => throw new ArgumentException($"Unsupported CPIO format '{format}'.", nameof(options)),
+    };
+
+  private static CpioArchiveFormat DetectFormat(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanSeek)
+      throw new NotSupportedException("CPIO format detection for modification requires a seekable stream.");
+
+    var originalPosition = archive.Position;
+    try {
+      archive.Position = 0;
+      Span<byte> prefix = stackalloc byte[6];
+      var read = 0;
+      while (read < prefix.Length) {
+        var count = archive.Read(prefix[read..]);
+        if (count == 0)
+          break;
+        read += count;
+      }
+
+      if (read == 0)
+        return CpioArchiveFormat.NewAscii;
+      if (read >= 6) {
+        if (prefix.SequenceEqual("070701"u8)) return CpioArchiveFormat.NewAscii;
+        if (prefix.SequenceEqual("070702"u8)) return CpioArchiveFormat.NewCrc;
+        if (prefix.SequenceEqual("070707"u8)) return CpioArchiveFormat.PortableAscii;
+      }
+      if (read >= 2) {
+        if (prefix[0] == 0x71 && prefix[1] == 0xC7) return CpioArchiveFormat.BinaryBigEndian;
+        if (prefix[0] == 0xC7 && prefix[1] == 0x71) {
+          archive.Position = 0;
+          using var reader = new CpioReader(archive, leaveOpen: true);
+          while (reader.ReadNextHeader() is { } entry) {
+            var format = entry.Format;
+            reader.CopyCurrentEntryData(null);
+            if (format == CpioArchiveFormat.PwbBinary)
+              return CpioArchiveFormat.PwbBinary;
+          }
+          return CpioArchiveFormat.BinaryLittleEndian;
+        }
+      }
+      throw new InvalidDataException("Unsupported or invalid CPIO magic.");
+    } finally {
+      archive.Position = originalPosition;
+    }
+  }
+
+  private static void RebuildArchive(
+    Stream archive,
+    CpioArchiveFormat format,
+    Action<List<(CpioEntry Entry, byte[] Data)>> mutate
+  ) {
+    archive.Position = 0;
+    List<(CpioEntry Entry, byte[] Data)> entries;
+    using (var reader = new CpioReader(
+      archive,
+      leaveOpen: true,
+      assumePwbBinary: format == CpioArchiveFormat.PwbBinary))
+      entries = reader.ReadAll();
+
+    mutate(entries);
+
+    using var rebuilt = new MemoryStream();
+    using (var writer = new CpioWriter(rebuilt, format, leaveOpen: true)) {
+      foreach (var (entry, data) in entries) {
+        if (entry.IsDirectory)
+          writer.AddDirectory(entry.Name, entry.Mode);
+        else
+          writer.AddFile(entry.Name, data, entry.Mode);
+      }
+      writer.Finish();
+    }
+
+    archive.Position = 0;
+    archive.SetLength(0);
+    rebuilt.Position = 0;
+    rebuilt.CopyTo(archive);
+    archive.Position = 0;
+  }
+
+  private static int GetHeaderSize(CpioArchiveFormat format) => format switch {
+    CpioArchiveFormat.PortableAscii => CpioConstants.PortableAsciiHeaderSize,
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary
+      => CpioConstants.BinaryHeaderSize,
+    _ => CpioConstants.NewAsciiHeaderSize,
+  };
+
+  private static int GetAlignment(CpioArchiveFormat format) => format switch {
+    CpioArchiveFormat.PortableAscii => 1,
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary => 2,
+    _ => 4,
+  };
+
+  private static int Padding(long length, int alignment)
+    => (int)((alignment - length % alignment) % alignment);
 }
