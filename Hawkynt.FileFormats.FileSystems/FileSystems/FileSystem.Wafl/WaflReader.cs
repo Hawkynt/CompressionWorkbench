@@ -19,11 +19,13 @@ namespace FileSystem.Wafl;
 /// </para>
 /// <para>
 /// Stage 1 is deliberately narrower than "WAFL reader": for the disclosed
-/// classic 32-bit direct-fsinfo lookup-table profile, candidate VBN pointers are
-/// accepted only when their target block starts with the fsinfo compatibility
-/// magic copied into volinfo. No inode offsets, directory-entry sizes, FlexVol
-/// container maps, RAID placement or free-space semantics are guessed. Images
-/// that cannot satisfy those structural checks remain at Stage 0.
+/// 32-bit direct-fsinfo lookup-table shape, candidate VBN pointers are accepted
+/// only when their target block starts with the fsinfo compatibility magic copied
+/// into volinfo. That root-table shape does not identify the inode/address profile
+/// by itself; in particular, it is not used as evidence for the classic 128-byte
+/// inode tree. No inode offsets, directory-entry sizes, FlexVol container maps,
+/// RAID placement or free-space semantics are guessed. Images that cannot satisfy
+/// those structural checks remain at Stage 0.
 /// </para>
 /// </remarks>
 public sealed class WaflReader : IDisposable {
@@ -43,8 +45,8 @@ public sealed class WaflReader : IDisposable {
   private const int SecondVolInfoVbn = 2;
   private const uint VolInfoMagic = 0xDAB8FBAB;
   private const int MinimumImageSize = (SecondVolInfoVbn + 1) * BlockSize;
-  private const int ClassicVbnSize = sizeof(uint);
-  private const int MaxClassicFsInfoPointers = 256; // active + the 255 PCPIs disclosed by US7313720
+  private const int DirectFsInfoPointerSize = sizeof(uint);
+  private const int MaxDirectFsInfoPointers = 256; // active + the 255 PCPIs disclosed by US7313720
 
   private readonly Stream _stream;
   private readonly bool _ownsStream;
@@ -142,9 +144,9 @@ public sealed class WaflReader : IDisposable {
     this.ValidHeader = true;
 
     if (this._firstVolInfo is { } first)
-      this._firstFsInfoTable = this.ProbeClassicFsInfoTable(firstBlock, first);
+      this._firstFsInfoTable = this.ProbeDirectFsInfoTable(firstBlock, first);
     if (this._secondVolInfo is { } second)
-      this._secondFsInfoTable = this.ProbeClassicFsInfoTable(secondBlock, second);
+      this._secondFsInfoTable = this.ProbeDirectFsInfoTable(secondBlock, second);
 
     this.PromoteStructuralStage();
 
@@ -188,13 +190,14 @@ public sealed class WaflReader : IDisposable {
   }
 
   /// <summary>
-  /// Discovers the classic direct fsinfo lookup table without assuming its byte
-  /// offset. The fsinfo compatibility magic at the start of volinfo is used as a
-  /// target-block invariant; only in-range 32-bit VBNs whose target starts with
-  /// that same magic are candidates. A table start must be unique and its next
-  /// entry must be either zero or another verified fsinfo reference.
+  /// Discovers the direct 32-bit fsinfo lookup table without assuming its byte
+  /// offset or inferring the surrounding inode/address profile. The fsinfo
+  /// compatibility magic at the start of volinfo is used as a target-block
+  /// invariant; only in-range 32-bit VBNs whose target starts with that same
+  /// magic are candidates. A table start must be unique and its next entry must
+  /// be either zero or another verified fsinfo reference.
   /// </summary>
-  private FsInfoTableProbe? ProbeClassicFsInfoTable(ReadOnlySpan<byte> volInfoBlock, VolInfoProbe volInfo) {
+  private FsInfoTableProbe? ProbeDirectFsInfoTable(ReadOnlySpan<byte> volInfoBlock, VolInfoProbe volInfo) {
     if (volInfoBlock.Length < 8) return null;
 
     var fsInfoMagic = ReadUInt32(volInfoBlock[..sizeof(uint)], volInfo.LittleEndian);
@@ -208,10 +211,10 @@ public sealed class WaflReader : IDisposable {
 
     var cache = new Dictionary<uint, bool>();
     var references = new List<FsInfoReference>();
-    var scanStart = AlignUp(volInfo.MagicOffset + 2 * sizeof(uint), ClassicVbnSize);
+    var scanStart = AlignUp(volInfo.MagicOffset + 2 * sizeof(uint), DirectFsInfoPointerSize);
 
-    for (var offset = scanStart; offset <= volInfoBlock.Length - ClassicVbnSize; offset += ClassicVbnSize) {
-      var vbn = ReadUInt32(volInfoBlock.Slice(offset, ClassicVbnSize), volInfo.LittleEndian);
+    for (var offset = scanStart; offset <= volInfoBlock.Length - DirectFsInfoPointerSize; offset += DirectFsInfoPointerSize) {
+      var vbn = ReadUInt32(volInfoBlock.Slice(offset, DirectFsInfoPointerSize), volInfo.LittleEndian);
       if (vbn <= SecondVolInfoVbn || vbn >= blockCount)
         continue;
       if (!this.BlockStartsWithMagic(vbn, fsInfoMagic, volInfo.LittleEndian, cache))
@@ -227,14 +230,14 @@ public sealed class WaflReader : IDisposable {
     // plain loop instead of a query.
     var starts = new List<FsInfoReference>();
     foreach (var reference in references)
-      if (IsClassicTableStart(volInfoBlock, reference, verifiedOffsets, volInfo.LittleEndian))
+      if (IsDirectTableStart(volInfoBlock, reference, verifiedOffsets, volInfo.LittleEndian))
         starts.Add(reference);
 
     if (starts.Count != 1)
       return new FsInfoTableProbe(fsInfoMagic, fsInfoVersion, null, -1, references, starts.Count > 1);
 
     var tableStart = starts[0];
-    var tableEnd = Math.Min(volInfoBlock.Length, tableStart.Offset + MaxClassicFsInfoPointers * ClassicVbnSize);
+    var tableEnd = Math.Min(volInfoBlock.Length, tableStart.Offset + MaxDirectFsInfoPointers * DirectFsInfoPointerSize);
     var tableReferences = references
       .Where(reference => reference.Offset >= tableStart.Offset && reference.Offset < tableEnd)
       .OrderBy(reference => reference.Offset)
@@ -249,19 +252,19 @@ public sealed class WaflReader : IDisposable {
       Ambiguous: false);
   }
 
-  private static bool IsClassicTableStart(
+  private static bool IsDirectTableStart(
       ReadOnlySpan<byte> block,
       FsInfoReference reference,
       HashSet<int> verifiedOffsets,
       bool littleEndian) {
-    if (verifiedOffsets.Contains(reference.Offset - ClassicVbnSize))
+    if (verifiedOffsets.Contains(reference.Offset - DirectFsInfoPointerSize))
       return false;
 
-    var nextOffset = reference.Offset + ClassicVbnSize;
-    if (nextOffset > block.Length - ClassicVbnSize)
+    var nextOffset = reference.Offset + DirectFsInfoPointerSize;
+    if (nextOffset > block.Length - DirectFsInfoPointerSize)
       return false;
 
-    var next = ReadUInt32(block.Slice(nextOffset, ClassicVbnSize), littleEndian);
+    var next = ReadUInt32(block.Slice(nextOffset, DirectFsInfoPointerSize), littleEndian);
     return next == 0 || verifiedOffsets.Contains(nextOffset);
   }
 
@@ -319,11 +322,11 @@ public sealed class WaflReader : IDisposable {
       vbns.Add(reference.Vbn);
 
       var relativeOffset = reference.Offset - table.TableOffset;
-      if (relativeOffset <= 0 || relativeOffset % ClassicVbnSize != 0)
+      if (relativeOffset <= 0 || relativeOffset % DirectFsInfoPointerSize != 0)
         continue;
 
-      var pcpiId = relativeOffset / ClassicVbnSize;
-      if ((uint)pcpiId >= MaxClassicFsInfoPointers)
+      var pcpiId = relativeOffset / DirectFsInfoPointerSize;
+      if ((uint)pcpiId >= MaxDirectFsInfoPointers)
         continue;
 
       retainedRoots.Add(new WaflPcpiRoot(pcpiId, reference.Vbn));
@@ -343,7 +346,10 @@ public sealed class WaflReader : IDisposable {
     bldr.Append(CultureInfo.InvariantCulture, $"volinfo_version={this.Version}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"image_size={this._imageSize}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"allocation_block_size={BlockSize}\n");
-    bldr.Append("structural_profile=classic-32bit-direct-fsinfo\n");
+    bldr.Append("structural_profile=32bit-direct-fsinfo-table\n");
+    bldr.Append("legacy_structural_profile=classic-32bit-direct-fsinfo\n");
+    bldr.Append("inode_profile=unresolved\n");
+    bldr.Append("block_pointer_profile=unresolved\n");
     bldr.Append(CultureInfo.InvariantCulture, $"fsinfo_reference_count={this._fsInfoVbns.Count}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"active_fsinfo_vbn={(this.ActiveFsInfoVbn is { } active ? active.ToString(CultureInfo.InvariantCulture) : "unknown")}\n");
     bldr.Append(CultureInfo.InvariantCulture, $"retained_fsinfo_root_count={this._retainedFsInfoRoots.Count}\n");
@@ -353,20 +359,21 @@ public sealed class WaflReader : IDisposable {
     bldr.Append("maintenance_support=none\n");
 
     if (this.Stage > 0) {
-      bldr.Append("note=Stage 1 — volinfo-to-fsinfo structural traversal succeeded for the disclosed classic 32-bit direct-fsinfo lookup-table profile. ");
+      bldr.Append("note=Stage 1 — volinfo-to-fsinfo structural traversal succeeded for the disclosed 32-bit direct-fsinfo lookup-table shape. ");
       bldr.Append("Entry 0 is the active root; verified later table slots are retained PCPI roots and are conservatively unioned across redundant volinfo copies. ");
+      bldr.Append("The table shape does not identify the inode or block-pointer profile, so classic 128-byte and FlexVol dual-VBN decoding remain separately gated. ");
       bldr.Append("Verified fsinfo blocks are surfaced under fsinfo/. This does not imply inode or namespace decoding. ");
       if (this.ActiveFsInfoVbn is null)
         bldr.Append("The redundant volinfo roots disagree, so no single active fsinfo root is asserted. ");
     } else {
-      bldr.Append("note=Stage 0 — documented volinfo detection succeeded, but the classic direct-fsinfo lookup table could not be identified unambiguously. ");
+      bldr.Append("note=Stage 0 — documented volinfo detection succeeded, but the direct 32-bit fsinfo lookup table could not be identified unambiguously. ");
     }
 
     bldr.Append("The input is treated as a flat logical VBN image, not as a physical ONTAP RAID member. ");
     bldr.Append("Full file walking and mutation still require version-specific inode layout, FBN/VBN/PVBN translation, FlexVol container mapping, ");
     bldr.Append("RAID member reconstruction, snapshot reachability, allocation maps and consistency-point/checksum commit semantics.\n");
     bldr.Append("upgrade_blockers=inode-layout,directory-layout,fbn-vbn-pvbn-translation,flexvol-container-map,raid-member-map,snapshot-reachability,allocation-maps,cp-checksums\n");
-    bldr.Append("references=NetApp-ONTAP-EMS-raid.vol.volinfo.mismatch,US7313720,US5819292,US6289356,US7321962,Aaru-issue-61\n");
+    bldr.Append("references=NetApp-ONTAP-EMS-raid.vol.volinfo.mismatch,US7313720,US5819292,US6289356,US7321962,US7730277,Aaru-issue-61\n");
     return Encoding.UTF8.GetBytes(bldr.ToString());
   }
 
@@ -481,5 +488,5 @@ public sealed class WaflReader : IDisposable {
     bool Ambiguous);
 }
 
-/// <summary>A retained persistent consistency-point fsinfo root from the classic direct lookup-table profile.</summary>
+/// <summary>A retained persistent consistency-point fsinfo root from the direct lookup-table profile.</summary>
 public readonly record struct WaflPcpiRoot(int PcpiId, uint Vbn);
