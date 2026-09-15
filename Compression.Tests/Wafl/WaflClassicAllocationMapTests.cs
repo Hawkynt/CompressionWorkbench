@@ -82,6 +82,26 @@ public class WaflClassicAllocationMapTests {
   }
 
   [Test, Category("Sad")]
+  public void BlockMap_ConservativeFreePredicateRejectsNonzeroReservedOrCpState() {
+    Span<byte> bytes = stackalloc byte[sizeof(uint)];
+
+    BinaryPrimitives.WriteUInt32BigEndian(bytes, 1u << 21);
+    var reservedOnly = WaflClassicAllocationMaps.ReadBlockMapEntry(bytes, littleEndian: false);
+
+    BinaryPrimitives.WriteUInt32BigEndian(bytes, 1u << 31);
+    var cpOnly = WaflClassicAllocationMaps.ReadBlockMapEntry(bytes, littleEndian: false);
+
+    Assert.Multiple(() => {
+      Assert.That(reservedOnly.InActiveFileSystem, Is.False);
+      Assert.That(reservedOnly.SnapshotMask, Is.Zero);
+      Assert.That(reservedOnly.IsFree, Is.False);
+      Assert.That(cpOnly.InActiveFileSystem, Is.False);
+      Assert.That(cpOnly.SnapshotMask, Is.Zero);
+      Assert.That(cpOnly.IsFree, Is.False);
+    });
+  }
+
+  [Test, Category("Sad")]
   public void BlockMap_RejectsPartialEntry() {
     Assert.Throws<ArgumentException>(() => _ = WaflClassicAllocationMaps.ReadBlockMapEntry([0, 0, 0], false));
     Assert.Throws<InvalidDataException>(() => _ = WaflClassicAllocationMaps.ReadBlockMap([0, 0, 0, 0, 0], false));
