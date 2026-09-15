@@ -140,7 +140,6 @@ public class CpioVariantTests {
     using var archive = new MemoryStream();
     archive.Write(Encoding.ASCII.GetBytes(header));
     archive.Write("x\0"u8);
-    archive.Write([0, 0]); // name alignment padding
     archive.Write([1, 2]); // declares 5 bytes, supplies 2
     archive.Position = 0;
 
@@ -156,7 +155,7 @@ public class CpioVariantTests {
 
     var format = ((IFormatOptionsSchema)descriptor).OptionsSchema.Single(x => x.Key == "Format");
     Assert.Multiple(() => {
-      Assert.That(format.DefaultValue, Is.EqualTo("newc"));
+      Assert.That(format.Default, Is.EqualTo("newc"));
       Assert.That(format.AllowedValues, Is.SupersetOf(new[] { "newc", "crc", "odc", "bin-le", "bin-be" }));
       Assert.That(descriptor.MagicSignatures, Has.Count.EqualTo(5));
     });
