@@ -83,8 +83,8 @@ public sealed class BeeGfsFormatDescriptor :
     "on local filesystems such as ext4/XFS. It has no standalone byte-stream image, canonical " +
     ".beegfs extension, or stream magic. CompressionWorkbench accepts a FilesystemStreamSet, " +
     "validates the real multi-target topology, and mounts the proven non-mirrored V3/V6 RAID0 " +
-    "subset read-only by reconstructing BeeGFS EntryIDs, dentries and storage chunks. Unknown, " +
-    "mirrored, sparse, remote-storage and non-inline-hardlink profiles fail closed.";
+    "subset read-only, including V3 namespace dentries and V6 inline or separate regular-file " +
+    "inodes. Unknown, mirrored, sparse, remote-storage and unsupported metadata profiles fail closed.";
 
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
