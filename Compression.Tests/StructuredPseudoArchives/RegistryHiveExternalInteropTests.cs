@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FileFormat.Creg;
 using FileFormat.Regf;
 
 namespace Compression.Tests.StructuredPseudoArchives;
@@ -6,6 +7,10 @@ namespace Compression.Tests.StructuredPseudoArchives;
 [TestFixture]
 [Category("ExternalInterop")]
 public sealed class RegistryHiveExternalInteropTests {
+  private const string DfWinRegRevision = "92ac103fe5072e83272463f61c9a1e65d4820997";
+  private const string Windows9xUserDatUrl =
+    $"https://raw.githubusercontent.com/log2timeline/dfwinreg/{DfWinRegRevision}/test_data/USER.DAT";
+
   [Test]
   public void Regf_ParsesHiveSavedByWindowsRegExe() {
     if (!OperatingSystem.IsWindows())
@@ -33,6 +38,37 @@ public sealed class RegistryHiveExternalInteropTests {
       TryRunReg("delete", key, "/f");
       try { File.Delete(hivePath); } catch { }
     }
+  }
+
+  [Test]
+  public async Task Creg_ParsesApacheLicensedWindows9xUserDatFixture() {
+    // log2timeline/dfwinreg is Apache-2.0 and publishes this real Windows 9x USER.DAT
+    // as test data. Pin the repository revision so this behavioral oracle is immutable.
+    byte[] bytes;
+    try {
+      using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+      bytes = await client.GetByteArrayAsync(Windows9xUserDatUrl);
+    } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) {
+      Assert.Ignore($"Windows 9x CREG fixture could not be downloaded: {ex.Message}");
+      return;
+    }
+
+    Assert.Multiple(() => {
+      Assert.That(bytes.Length, Is.EqualTo(159_776));
+      Assert.That(bytes.AsSpan(0, 4).SequenceEqual("CREG"u8), Is.True);
+    });
+
+    var descriptor = new CregFormatDescriptor();
+    using var stream = new MemoryStream(bytes, writable: false);
+    var entries = descriptor.List(stream, null);
+
+    const string autorun = ".DEFAULT/Software/Microsoft/Windows/CurrentVersion/Explorer/MountPoints/A/_Autorun";
+    Assert.Multiple(() => {
+      Assert.That(entries.Any(e => e.IsDirectory && e.Name == ".DEFAULT"), Is.True);
+      Assert.That(entries.Any(e => e.IsDirectory && e.Name == "Software"), Is.True);
+      Assert.That(entries.Any(e => e.IsDirectory && e.Name == autorun), Is.True);
+      Assert.That(entries.Any(e => e.Name == autorun + "/LastUpdate"), Is.True);
+    });
   }
 
   private static void RunReg(params string[] arguments) {
