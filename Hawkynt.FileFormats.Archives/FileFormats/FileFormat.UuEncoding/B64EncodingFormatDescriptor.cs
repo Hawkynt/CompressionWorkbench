@@ -80,12 +80,12 @@ public sealed class B64EncodingFormatDescriptor : IFormatDescriptor, IStreamForm
     try {
       var value = Convert.ToInt32(text, 8);
       if (value is < 0 or > 0777)
-        throw new ArgumentOutOfRangeException(nameof(text), "Base64 wrapper mode must fit 0000..0777 octal.");
+        throw new ArgumentOutOfRangeException(nameof(text), text, "Base64 wrapper mode must fit 0000..0777 octal.");
       return value;
     } catch (FormatException ex) {
       throw new ArgumentException("Base64 wrapper mode must contain octal digits only.", nameof(text), ex);
     } catch (OverflowException ex) {
-      throw new ArgumentOutOfRangeException(nameof(text), text, "Base64 wrapper mode is too large.", ex);
+      throw new ArgumentException("Base64 wrapper mode is too large.", nameof(text), ex);
     }
   }
 }
