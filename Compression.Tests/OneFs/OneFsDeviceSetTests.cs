@@ -67,11 +67,17 @@ public sealed class OneFsDeviceSetTests {
 
   [Test, Category("Malformed")]
   public void Open_RejectsMissingOrInvalidCandidateDevices() {
+    var duplicate = new GeometryOnlyStream(OneFsReader.PhysicalBlockSize);
+
     Assert.Multiple(() => {
       Assert.That(() => OneFsDeviceSet.Open([]), Throws.TypeOf<ArgumentException>());
       Assert.That(() => OneFsDeviceSet.Open([new GeometryOnlyStream(0)]), Throws.TypeOf<InvalidDataException>());
       Assert.That(() => OneFsDeviceSet.Open([new GeometryOnlyStream(1, canRead: false)]), Throws.TypeOf<ArgumentException>());
       Assert.That(() => OneFsDeviceSet.Open([new GeometryOnlyStream(1, canSeek: false)]), Throws.TypeOf<ArgumentException>());
+      Assert.That(
+        () => OneFsDeviceSet.Open([duplicate, duplicate]),
+        Throws.TypeOf<ArgumentException>(),
+        "One stream object cannot safely represent two independent OneFS members with separate cursors/locks.");
     });
   }
 
