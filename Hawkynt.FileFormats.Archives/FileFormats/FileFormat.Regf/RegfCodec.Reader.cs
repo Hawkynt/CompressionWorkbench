@@ -21,10 +21,13 @@ internal static class RegfCodec {
     var major = U32(data, 20);
     var minor = U32(data, 24);
     var fileType = U32(data, 28);
+    var fileFormat = U32(data, 32);
     if (major != 1 || minor is < 1 or > 6)
       throw new InvalidDataException($"Unsupported REGF version {major}.{minor}.");
     if (fileType != 0)
       throw new InvalidDataException("REGF transaction-log files are not registry hives.");
+    if (fileFormat != 1)
+      throw new InvalidDataException($"Unsupported REGF file format {fileFormat}.");
 
     var hbinsSize = U32(data, 40);
     if (hbinsSize > int.MaxValue || HeaderSize + (long)hbinsSize > data.Length)
@@ -35,11 +38,11 @@ internal static class RegfCodec {
         throw new InvalidDataException("REGF first hive-bin header is missing.");
     }
 
-    var parser = new Parser(data);
+    var parser = new Parser(data, minor);
     return parser.ReadRoot(U32(data, 36));
   }
 
-  private sealed class Parser(byte[] data) {
+  private sealed class Parser(byte[] data, uint minorVersion) {
     private readonly HashSet<uint> _activeKeys = [];
     private readonly HashSet<uint> _activeIndexes = [];
     private int _keyCount;
@@ -75,7 +78,8 @@ internal static class RegfCodec {
         var nameLength = ReadU16(payload, 72);
 
         EnsureSpan(payload, 76, nameLength, "REGF key name");
-        var name = DecodeName(payload.Slice(76, nameLength), (flags & 0x20) != 0);
+        var compressedName = minorVersion != 1 && (flags & 0x20) != 0;
+        var name = DecodeName(payload.Slice(76, nameLength), compressedName);
         var node = StructuredNode.Object("registry-key");
 
         this.ReadValues(node, valueCount, valueListOffset);
@@ -117,10 +121,11 @@ internal static class RegfCodec {
       var rawDataSize = ReadU32(payload, 4);
       var dataOffset = ReadU32(payload, 8);
       var type = ReadU32(payload, 12);
-      var flags = ReadU16(payload, 16);
+      var flags = minorVersion == 1 ? (ushort)0 : ReadU16(payload, 16);
       EnsureSpan(payload, 20, nameLength, "REGF value name");
 
-      var name = nameLength == 0 ? "@" : DecodeName(payload.Slice(20, nameLength), (flags & 0x0001) != 0);
+      var compressedName = minorVersion != 1 && (flags & 0x0001) != 0;
+      var name = nameLength == 0 ? "@" : DecodeName(payload.Slice(20, nameLength), compressedName);
       var dataSize = rawDataSize & ~InlineDataFlag;
       if (dataSize > 256 * 1024 * 1024u)
         throw new InvalidDataException("REGF value exceeds the 256 MiB safety limit.");
@@ -144,7 +149,7 @@ internal static class RegfCodec {
         throw new InvalidDataException("REGF value has data but no data-cell offset.");
 
       var payload = this.Cell(dataOffset, "REGF value-data cell");
-      if (dataSize > LargeValueThreshold && payload.Length >= 8
+      if (minorVersion >= 4 && dataSize > LargeValueThreshold && payload.Length >= 8
           && payload[0] == (byte)'d' && payload[1] == (byte)'b')
         return this.ReadBigData(payload, dataSize);
 
@@ -213,8 +218,8 @@ internal static class RegfCodec {
         var count = ReadU16(payload, 2);
 
         switch (signature0, signature1) {
-          case ((byte)'l', (byte)'f'):
-          case ((byte)'l', (byte)'h'): {
+          case ((byte)'l', (byte)'f') when minorVersion >= 3:
+          case ((byte)'l', (byte)'h') when minorVersion >= 5: {
             if ((long)count * 8 + 4 > payload.Length)
               throw new InvalidDataException("REGF lf/lh subkey list is truncated.");
             for (var i = 0; i < count && output.Count < limit; ++i)
@@ -238,6 +243,10 @@ internal static class RegfCodec {
             break;
           }
 
+          case ((byte)'l', (byte)'f'):
+            throw new InvalidDataException($"REGF {minorVersion} predates lf fast-leaf indexes.");
+          case ((byte)'l', (byte)'h'):
+            throw new InvalidDataException($"REGF {minorVersion} predates lh hash-leaf indexes.");
           default:
             throw new InvalidDataException($"Unsupported REGF subkey-list signature '{(char)signature0}{(char)signature1}'.");
         }
@@ -250,8 +259,9 @@ internal static class RegfCodec {
       if (relativeOffset == NoOffset || relativeOffset > int.MaxValue)
         throw new InvalidDataException($"{what} offset is invalid.");
 
+      var cellHeaderSize = minorVersion == 1 ? 8 : 4;
       var absolute = CellBase + (long)relativeOffset;
-      if (absolute < CellBase || absolute + 4 > data.Length)
+      if (absolute < CellBase || absolute + cellHeaderSize > data.Length)
         throw new InvalidDataException($"{what} offset is outside the hive.");
 
       var headerOffset = (int)absolute;
@@ -259,9 +269,9 @@ internal static class RegfCodec {
       if (rawSize >= 0)
         throw new InvalidDataException($"{what} references an unallocated cell.");
       var size = -(long)rawSize;
-      if (size < 4 || absolute + size > data.Length)
+      if (size < cellHeaderSize || absolute + size > data.Length)
         throw new InvalidDataException($"{what} cell size is out of bounds.");
-      return data.AsSpan(headerOffset + 4, checked((int)size - 4));
+      return data.AsSpan(headerOffset + cellHeaderSize, checked((int)size - cellHeaderSize));
     }
   }
 
