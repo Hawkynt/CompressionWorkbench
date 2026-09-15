@@ -6,12 +6,12 @@ using static Compression.Registry.FormatHelpers;
 namespace FileFormat.Cpio;
 
 /// <summary>
-/// cpio archive — Unix copy-in/copy-out container (binary, portable-ASCII odc and newc variants).
+/// cpio archive — Unix copy-in/copy-out container (PWB/binary, portable-ASCII odc and SVR4 variants).
 ///
 /// References:
 /// <list type="bullet">
 ///   <item><description><c>https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html</c> — POSIX pax — defines the portable cpio interchange header</description></item>
-///   <item><description><c>cpio(5)</c> man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants</description></item>
+///   <item><description><c>cpio(5)</c> man page (libarchive / FreeBSD) — documents PWB, binary, odc, newc and crc variants</description></item>
 /// </list>
 /// </summary>
 public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IFormatOptionsSchema {
@@ -19,8 +19,8 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
     new("Format", "Header format", FormatOptionKind.Enum, "newc",
-      AllowedValues: ["newc", "crc", "odc", "bin-le", "bin-be"],
-      Description: "CPIO header variant: SVR4 newc/crc, POSIX portable ASCII (odc), or 7th Edition binary."),
+      AllowedValues: ["newc", "crc", "odc", "bin-le", "bin-be", "pwb"],
+      Description: "CPIO header variant: SVR4 newc/crc, POSIX portable ASCII (odc), 7th Edition binary, or PWB/UNIX binary."),
   ];
 
   /// <summary>Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order.</summary>
@@ -32,7 +32,7 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     var format = DetectFormat(archive);
     DefragRebuilder.Rebuild(archive, options,
       readEntries: stream => {
-        var r = new CpioReader(stream);
+        var r = new CpioReader(stream, assumePwbBinary: format == CpioArchiveFormat.PwbBinary);
         return r.ReadAll().Where(x => !x.Entry.IsDirectory).Select(x => (x.Entry.Name, x.Data));
       },
       buildImage: files => {
@@ -89,7 +89,7 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Adds or replaces files. SVR4 newc uses the native in-place modifier;
   /// variants whose header layout differs are rebuilt while preserving their
-  /// original wire format.
+  /// original wire format when it can be distinguished.
   /// </summary>
   public void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs) {
     var additions = FilesOnly(inputs).ToArray();
@@ -169,7 +169,7 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// Gets the description.
   /// </summary>
-  public string Description => "Unix copy-in/copy-out archive format (newc/crc, odc and binary variants)";
+  public string Description => "Unix copy-in/copy-out archive format (PWB/binary, odc, newc and crc variants)";
 
   /// <summary>
   /// Lists the entries in the supplied container.
@@ -266,6 +266,7 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       "odc" => CpioArchiveFormat.PortableAscii,
       "bin" or "bin-le" => CpioArchiveFormat.BinaryLittleEndian,
       "bin-be" => CpioArchiveFormat.BinaryBigEndian,
+      "pwb" => CpioArchiveFormat.PwbBinary,
       var format => throw new ArgumentException($"Unsupported CPIO format '{format}'.", nameof(options)),
     };
 
@@ -294,8 +295,18 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         if (prefix.SequenceEqual("070707"u8)) return CpioArchiveFormat.PortableAscii;
       }
       if (read >= 2) {
-        if (prefix[0] == 0xC7 && prefix[1] == 0x71) return CpioArchiveFormat.BinaryLittleEndian;
         if (prefix[0] == 0x71 && prefix[1] == 0xC7) return CpioArchiveFormat.BinaryBigEndian;
+        if (prefix[0] == 0xC7 && prefix[1] == 0x71) {
+          archive.Position = 0;
+          using var reader = new CpioReader(archive, leaveOpen: true);
+          while (reader.ReadNextHeader() is { } entry) {
+            var format = entry.Format;
+            reader.CopyCurrentEntryData(null);
+            if (format == CpioArchiveFormat.PwbBinary)
+              return CpioArchiveFormat.PwbBinary;
+          }
+          return CpioArchiveFormat.BinaryLittleEndian;
+        }
       }
       throw new InvalidDataException("Unsupported or invalid CPIO magic.");
     } finally {
@@ -310,7 +321,10 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   ) {
     archive.Position = 0;
     List<(CpioEntry Entry, byte[] Data)> entries;
-    using (var reader = new CpioReader(archive, leaveOpen: true))
+    using (var reader = new CpioReader(
+      archive,
+      leaveOpen: true,
+      assumePwbBinary: format == CpioArchiveFormat.PwbBinary))
       entries = reader.ReadAll();
 
     mutate(entries);
@@ -335,13 +349,14 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   private static int GetHeaderSize(CpioArchiveFormat format) => format switch {
     CpioArchiveFormat.PortableAscii => CpioConstants.PortableAsciiHeaderSize,
-    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => CpioConstants.BinaryHeaderSize,
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary
+      => CpioConstants.BinaryHeaderSize,
     _ => CpioConstants.NewAsciiHeaderSize,
   };
 
   private static int GetAlignment(CpioArchiveFormat format) => format switch {
     CpioArchiveFormat.PortableAscii => 1,
-    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => 2,
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary => 2,
     _ => 4,
   };
 
