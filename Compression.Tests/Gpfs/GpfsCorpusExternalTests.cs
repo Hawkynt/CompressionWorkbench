@@ -1,5 +1,4 @@
 #pragma warning disable CS1591
-using Category = NUnit.Framework.CategoryAttribute;
 using FileSystem.Gpfs;
 
 namespace Compression.Tests.Gpfs;
@@ -11,9 +10,9 @@ namespace Compression.Tests.Gpfs;
 /// roots produced by tools/gpfs-lab/run-controlled-corpus.sh.
 /// </summary>
 [TestFixture]
-[Category("ExternalFsInterop")]
+[NUnit.Framework.CategoryAttribute("ExternalFsInterop")]
 public sealed class GpfsCorpusExternalTests {
-  [Test, CancelAfter(300_000), Category("HappyPath")]
+  [Test, CancelAfter(300_000), NUnit.Framework.CategoryAttribute("HappyPath")]
   public void ConfiguredIndependentCorpora_HaveResolvableIBMReportedRawAddresses() {
     var roots = GetConfiguredCorpusRoots();
     var corpora = roots.Select(LoadCorpus).ToArray();
@@ -29,7 +28,7 @@ public sealed class GpfsCorpusExternalTests {
       CorrelateEveryCapture(root, corpus);
   }
 
-  [Test, CancelAfter(300_000), Category("HappyPath")]
+  [Test, CancelAfter(300_000), NUnit.Framework.CategoryAttribute("HappyPath")]
   public void ConfiguredCorpora_RebalancePairConstrainsDiskAddressPacking() {
     var roots = GetConfiguredCorpusRoots();
 
