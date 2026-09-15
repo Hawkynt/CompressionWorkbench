@@ -56,6 +56,24 @@ CWB_GPFS_CORPUS_B=/path/to/gpfs-evidence/corpus-b \
   dotnet test Compression.Tests --filter 'TestCategory=ExternalFsInterop'
 ```
 
+For a disposable Linux lab host, the complete A/B workflow can instead be run as
+one fail-closed command:
+
+```bash
+./tools/gpfs-lab/run-two-corpora.sh \
+  /path/to/Storage_Scale_Developer-6.0.1.0-x86_64-Linux-install \
+  libvirt \
+  /path/to/new-empty-gpfs-work-root
+```
+
+`run-two-corpora.sh` requires a new or empty work root. It provisions lab A, runs
+and exports the full controlled corpus, destroys and removes lab A, provisions a
+separate lab B checkout/backing-disk set, runs and exports corpus B, verifies both
+filesystem UIDs are independent, and finally runs only
+`Compression.Tests.Gpfs.GpfsCorpusExternalTests` with both corpus environment
+variables set. Lab B is deliberately left provisioned for the later mutation,
+remount and `mmfsckx` gate. The script never downloads the IBM installer.
+
 The large corpus directories stay outside Git. Only mechanically extracted,
 provenance-labelled byte ranges should ever be considered for small checked-in
 test vectors after the clean-room derivation has identified what they prove.
