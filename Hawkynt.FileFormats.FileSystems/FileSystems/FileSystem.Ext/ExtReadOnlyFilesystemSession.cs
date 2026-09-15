@@ -3,12 +3,13 @@ using Compression.Registry;
 
 namespace FileSystem.Ext;
 
-internal sealed class ExtReadOnlyFilesystemSession : IFilesystemSession {
+internal sealed class ExtReadOnlyFilesystemSession : IFilesystemSession, IFilesystemExtendedAttributeReader {
   private readonly Stream _image;
   private readonly bool _leaveOpen;
   private readonly object _ioGate = new();
   private readonly ExtReader _reader;
   private readonly ReadOnlyFilesystemSnapshotSession _namespace;
+  private readonly Dictionary<FilesystemNodeId, string> _pathByNode = [];
   private bool _disposed;
 
   public ExtReadOnlyFilesystemSession(Stream image, FilesystemDriverProfile profile, bool leaveOpen) {
@@ -47,6 +48,15 @@ internal sealed class ExtReadOnlyFilesystemSession : IFilesystemSession {
   public void Flush() => _namespace.Flush();
   public IFilesystemTransaction BeginTransaction() => _namespace.BeginTransaction();
 
+  public IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(FilesystemNodeId nodeId) {
+    if (_disposed) throw new ObjectDisposedException(nameof(ExtReadOnlyFilesystemSession));
+    _ = _namespace.Stat(nodeId);
+    if (!_pathByNode.TryGetValue(nodeId, out var path))
+      throw new FileNotFoundException($"ext node {nodeId.Value}:{nodeId.Generation} has no decoded namespace path.");
+    lock (_ioGate)
+      return ExtExtendedAttributes.Read(_image, path);
+  }
+
   public void Dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -67,6 +77,7 @@ internal sealed class ExtReadOnlyFilesystemSession : IFilesystemSession {
     var links = new List<FilesystemSnapshotDirectoryEntry>(records.Count);
 
     nodesByInode[2] = MakeNode(rootId, rootInode, string.Empty, default, null);
+    _pathByNode[rootId] = string.Empty;
 
     foreach (var record in records.OrderBy(r => Depth(r.Name)).ThenBy(r => r.Name, StringComparer.Ordinal)) {
       var path = Normalize(record.Name);
@@ -81,6 +92,7 @@ internal sealed class ExtReadOnlyFilesystemSession : IFilesystemSession {
       if (!nodesByInode.TryGetValue(record.Inode, out var existing)) {
         var captured = record;
         nodesByInode[record.Inode] = MakeNode(nodeId, inode, name, parentId, captured);
+        _pathByNode.TryAdd(nodeId, path);
       } else if (existing.NodeId != nodeId || existing.Kind != inode.Kind || existing.Size != inode.Size) {
         throw new InvalidDataException($"ext hard-link aliases for inode {record.Inode} disagree on object metadata.");
       }

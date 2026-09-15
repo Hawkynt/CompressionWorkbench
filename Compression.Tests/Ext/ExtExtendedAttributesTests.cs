@@ -1,3 +1,4 @@
+using Compression.Registry;
 using FileSystem.Ext;
 
 namespace Compression.Tests.Ext;
@@ -54,6 +55,30 @@ public class ExtExtendedAttributesTests {
     using var reader = new ExtReader(image, leaveOpen: true);
     var entry = reader.Entries.Single(entry => entry.Name == "brick/data.txt");
     Assert.That(reader.Extract(entry), Is.EqualTo("payload"u8.ToArray()));
+  }
+
+  [Test, Category("RoundTrip")]
+  public void MountedSession_ExposesXattrsByStableNodeId() {
+    using var image = BuildImage();
+    var beeGfsMetadata = Enumerable.Range(0, 24).Select(i => (byte)(0xA0 + i)).ToArray();
+    ExtExtendedAttributes.Set(image, "brick/data.txt", "user.fhgfs", beeGfsMetadata);
+    image.Position = 0;
+
+    var adapter = new ExtFilesystemDriverAdapter();
+    using var session = adapter.OpenFilesystem(image, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var xattrs = session as IFilesystemExtendedAttributeReader;
+    var brick = session.Lookup(session.RootNodeId, "brick");
+    var data = brick is { } brickId ? session.Lookup(brickId, "data.txt") : null;
+
+    Assert.Multiple(() => {
+      Assert.That(xattrs, Is.Not.Null,
+        "The mounted ext session must surface native xattrs without a format-specific cast.");
+      Assert.That(brick, Is.Not.Null);
+      Assert.That(data, Is.Not.Null);
+    });
+
+    var attributes = xattrs!.ReadExtendedAttributes(data!.Value);
+    Assert.That(attributes["user.fhgfs"], Is.EqualTo(beeGfsMetadata));
   }
 
   [Test, Category("ErrorHandling")]

@@ -30,16 +30,16 @@ public static class FormatRegistry {
     // A FileSystem.* project is not allowed to stop at an isolated parser API.
     // Every registered filesystem must be reachable through the common driver
     // contract either natively/through a sidecar or through the conservative
-    // read-only List/OpenEntry projection. This is structural; per-image Probe
-    // can still reject damaged or unsupported feature profiles.
+    // read-only List/OpenEntry projection. Multi-stream-only providers count as
+    // native coverage even though they intentionally reject a single image stream.
     foreach (var id in _filesystemFormatIds) {
       if (!_byId.TryGetValue(id, out var descriptor))
         throw new InvalidOperationException($"Generated filesystem id '{id}' has no registered descriptor.");
-      if (descriptor is IFilesystemDriverProvider) continue;
+      if (descriptor is IFilesystemDriverProvider or IMultiStreamFilesystemDriverProvider) continue;
       if (_filesystemDrivers.ContainsKey(id)) continue;
       if (descriptor is IArchiveFormatOperations) continue;
       throw new InvalidOperationException(
-        $"Filesystem '{id}' exposes no IFilesystemDriverProvider, generated sidecar, or IArchiveFormatOperations projection.");
+        $"Filesystem '{id}' exposes no native filesystem provider, generated sidecar, or IArchiveFormatOperations projection.");
     }
 
     // Publish initialized only after every cross-registry invariant succeeds.
@@ -130,7 +130,8 @@ public static class FormatRegistry {
   /// <summary>
   /// Structural driver coverage for all FileSystem.* descriptors. This is safe
   /// to inspect without an image and is intended for CI/readiness dashboards.
-  /// Use <see cref="AssessFilesystemDriver"/> for exact per-image semantics.
+  /// Use <see cref="AssessFilesystemDriver(string, Stream, FilesystemDriverTarget, string?)"/>
+  /// or its multi-stream overload for exact per-source semantics.
   /// </summary>
   public static IReadOnlyList<FilesystemDriverCoverage> GetFilesystemDriverCoverage()
     => _filesystemFormatIds
@@ -144,7 +145,8 @@ public static class FormatRegistry {
     var descriptor = GetById(id)
       ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
     var sidecar = _filesystemDrivers.GetValueOrDefault(id);
-    var binding = descriptor is IFilesystemDriverProvider
+    var descriptorNative = descriptor is IFilesystemDriverProvider or IMultiStreamFilesystemDriverProvider;
+    var binding = descriptorNative
       ? FilesystemDriverBindingKind.DescriptorNative
       : sidecar != null
         ? FilesystemDriverBindingKind.SidecarNative
@@ -160,8 +162,11 @@ public static class FormatRegistry {
       HasExtentMap: descriptor is IFilesystemExtentMap,
       HasBlockMover: descriptor is IFilesystemBlockMover,
       HasBlockDeviceProvider: descriptor is IRandomAccessBlockDeviceProvider,
+      HasMultiStreamProvider:
+        descriptor is IMultiStreamFilesystemDriverProvider || sidecar is IMultiStreamFilesystemDriverProvider,
       HasNativeReadinessProvider:
-        descriptor is IFilesystemDriverReadinessProvider || sidecar is IFilesystemDriverReadinessProvider);
+        descriptor is IFilesystemDriverReadinessProvider or IMultiStreamFilesystemDriverReadinessProvider
+        || sidecar is IFilesystemDriverReadinessProvider or IMultiStreamFilesystemDriverReadinessProvider);
   }
 
   public static FilesystemDriverProfile ProbeFilesystem(
@@ -175,6 +180,31 @@ public static class FormatRegistry {
     if (_filesystemDrivers.TryGetValue(id, out var adapter))
       return adapter.ProbeFilesystem(image);
     return FilesystemDriverDerivation.Probe(descriptor, image, password);
+  }
+
+  /// <summary>Probes a logical filesystem whose source spans multiple streams.</summary>
+  public static FilesystemDriverProfile ProbeFilesystem(
+      string id,
+      FilesystemStreamSet sources,
+      string? password = null) {
+    ArgumentNullException.ThrowIfNull(sources);
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    if (descriptor is IMultiStreamFilesystemDriverProvider multi)
+      return multi.ProbeFilesystem(sources);
+    if (_filesystemDrivers.TryGetValue(id, out var adapter)
+        && adapter is IMultiStreamFilesystemDriverProvider multiAdapter)
+      return multiAdapter.ProbeFilesystem(sources);
+    if (sources.Count == 1)
+      return ProbeFilesystem(id, sources[0].Stream, password);
+    return new FilesystemDriverProfile(
+      descriptor.Id,
+      "no multi-stream filesystem provider",
+      FilesystemDriverCapabilities.None,
+      FilesystemMutationModel.None,
+      CanMount: false,
+      CanMountWritable: false,
+      [$"{descriptor.Id} does not expose IMultiStreamFilesystemDriverProvider for {sources.Count} sources."]);
   }
 
   public static IFilesystemSession OpenFilesystem(
@@ -191,6 +221,27 @@ public static class FormatRegistry {
     return FilesystemDriverDerivation.Open(descriptor, image, options, password);
   }
 
+  /// <summary>Opens a logical filesystem whose source spans multiple streams.</summary>
+  public static IFilesystemSession OpenFilesystem(
+      string id,
+      FilesystemStreamSet sources,
+      FilesystemOpenOptions options,
+      string? password = null) {
+    ArgumentNullException.ThrowIfNull(sources);
+    ArgumentNullException.ThrowIfNull(options);
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    if (descriptor is IMultiStreamFilesystemDriverProvider multi)
+      return multi.OpenFilesystem(sources, options);
+    if (_filesystemDrivers.TryGetValue(id, out var adapter)
+        && adapter is IMultiStreamFilesystemDriverProvider multiAdapter)
+      return multiAdapter.OpenFilesystem(sources, options);
+    if (sources.Count == 1)
+      return OpenFilesystem(id, sources[0].Stream, options, password);
+    throw new NotSupportedException(
+      $"{descriptor.Id} does not expose IMultiStreamFilesystemDriverProvider for {sources.Count} sources.");
+  }
+
   public static FilesystemDriverReadinessReport AssessFilesystemDriver(
       string id,
       Stream image,
@@ -203,6 +254,51 @@ public static class FormatRegistry {
     if (_filesystemDrivers.TryGetValue(id, out var adapter))
       return adapter.DescribeFilesystemDriverReadiness(image, target);
     return FilesystemDriverDerivation.Assess(descriptor, image, target, password);
+  }
+
+  /// <summary>Assesses mounted-driver readiness for an exact multi-stream source set.</summary>
+  public static FilesystemDriverReadinessReport AssessFilesystemDriver(
+      string id,
+      FilesystemStreamSet sources,
+      FilesystemDriverTarget target,
+      string? password = null) {
+    ArgumentNullException.ThrowIfNull(sources);
+    var descriptor = GetById(id)
+      ?? throw new KeyNotFoundException($"Unknown format id '{id}'.");
+    if (descriptor is IMultiStreamFilesystemDriverReadinessProvider specific)
+      return specific.DescribeFilesystemDriverReadiness(sources, target);
+    if (_filesystemDrivers.TryGetValue(id, out var adapter)
+        && adapter is IMultiStreamFilesystemDriverReadinessProvider specificAdapter)
+      return specificAdapter.DescribeFilesystemDriverReadiness(sources, target);
+    if (sources.Count == 1)
+      return AssessFilesystemDriver(id, sources[0].Stream, target, password);
+
+    var required = target == FilesystemDriverTarget.ReadOnly
+      ? FilesystemDriverReadinessLayer.ImageValidation |
+        FilesystemDriverReadinessLayer.Namespace |
+        FilesystemDriverReadinessLayer.SessionStableNodeIds |
+        FilesystemDriverReadinessLayer.ReadData |
+        FilesystemDriverReadinessLayer.RandomAccessRead
+      : FilesystemDriverReadinessLayer.ImageValidation |
+        FilesystemDriverReadinessLayer.Namespace |
+        FilesystemDriverReadinessLayer.SessionStableNodeIds |
+        FilesystemDriverReadinessLayer.ReadData |
+        FilesystemDriverReadinessLayer.RandomAccessRead |
+        FilesystemDriverReadinessLayer.AllocationMap |
+        FilesystemDriverReadinessLayer.WriteData |
+        FilesystemDriverReadinessLayer.Truncate |
+        FilesystemDriverReadinessLayer.NamespaceMutation |
+        FilesystemDriverReadinessLayer.Flush |
+        FilesystemDriverReadinessLayer.DurabilityModel |
+        FilesystemDriverReadinessLayer.Concurrency;
+    return new FilesystemDriverReadinessReport(
+      descriptor.Id,
+      target,
+      FilesystemDriverReadinessLayer.None,
+      required,
+      Derivable: false,
+      UsesNativeProvider: descriptor is IMultiStreamFilesystemDriverProvider,
+      [$"{descriptor.Id} has no multi-stream readiness provider for {sources.Count} sources."]);
   }
 
   public static IAsyncArchiveOperations? GetAsyncArchiveOps(string id)
