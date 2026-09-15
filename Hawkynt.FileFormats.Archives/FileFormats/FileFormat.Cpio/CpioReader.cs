@@ -5,12 +5,13 @@ using System.Text;
 namespace FileFormat.Cpio;
 
 /// <summary>
-/// Reads entries from SVR4 newc/crc, POSIX portable-ASCII (odc), and
-/// 7th Edition binary CPIO archives.
+/// Reads entries from SVR4 newc/crc, POSIX portable-ASCII (odc), 7th Edition
+/// binary CPIO, and PWB/UNIX binary CPIO archives.
 /// </summary>
 public sealed class CpioReader : IDisposable {
   private readonly Stream _stream;
   private readonly bool _leaveOpen;
+  private bool _assumePwbBinary;
   private bool _disposed;
   private CpioEntry? _current;
 
@@ -19,9 +20,16 @@ public sealed class CpioReader : IDisposable {
   /// </summary>
   /// <param name="stream">The stream containing the cpio archive.</param>
   /// <param name="leaveOpen">Whether to leave the stream open on dispose.</param>
-  public CpioReader(Stream stream, bool leaveOpen = false) {
+  /// <param name="assumePwbBinary">
+  /// Interpret little-endian binary headers using PWB/UNIX mode semantics.
+  /// PWB and 7th Edition little-endian CPIO have the same physical header layout,
+  /// so this explicit override is the only unambiguous choice for archives whose
+  /// inode modes do not contain a distinctive old PWB flag combination.
+  /// </param>
+  public CpioReader(Stream stream, bool leaveOpen = false, bool assumePwbBinary = false) {
     this._stream = stream ?? throw new ArgumentNullException(nameof(stream));
     this._leaveOpen = leaveOpen;
+    this._assumePwbBinary = assumePwbBinary;
   }
 
   /// <summary>
@@ -214,22 +222,68 @@ public sealed class CpioReader : IDisposable {
     uint ReadLong(int offset) => ((uint)ReadWord(offset) << 16) | ReadWord(offset + 2);
 
     var device = ReadWord(2);
+    var rawMode = ReadWord(6);
+    var numLinks = ReadWord(12);
     var rDevice = ReadWord(14);
+    var fileSize = ReadLong(22);
+    var format = littleEndian ? CpioArchiveFormat.BinaryLittleEndian : CpioArchiveFormat.BinaryBigEndian;
+    var mode = (uint)rawMode;
+
+    if (littleEndian && (this._assumePwbBinary || LooksLikePwbMode(rawMode, numLinks, rDevice, fileSize))) {
+      this._assumePwbBinary = true;
+      format = CpioArchiveFormat.PwbBinary;
+      mode = NormalizePwbMode(rawMode);
+    }
+
     var entry = new CpioEntry {
-      Format = littleEndian ? CpioArchiveFormat.BinaryLittleEndian : CpioArchiveFormat.BinaryBigEndian,
+      Format = format,
       Inode = ReadWord(4),
-      Mode = ReadWord(6),
+      Mode = mode,
       Uid = ReadWord(8),
       Gid = ReadWord(10),
-      NumLinks = ReadWord(12),
+      NumLinks = numLinks,
       ModificationTime = ReadLong(16),
-      FileSize = ReadLong(22),
+      FileSize = fileSize,
       DevMajor = (uint)device >> 8,
       DevMinor = (uint)device & 0xFF,
       RDevMajor = (uint)rDevice >> 8,
       RDevMinor = (uint)rDevice & 0xFF,
     };
     return (entry, ReadWord(20));
+  }
+
+  /// <summary>
+  /// PWB and 7th Edition little-endian CPIO are byte-layout identical. Auto
+  /// detection is therefore deliberately conservative: only old inode modes
+  /// that are invalid or strongly implausible under 7th Edition semantics cause
+  /// the reader to switch the remainder of the archive to PWB interpretation.
+  /// </summary>
+  private static bool LooksLikePwbMode(ushort mode, ushort numLinks, ushort rDevice, uint fileSize) {
+    var type = mode & 0xF000;
+    var isKnownV7Type = type is 0x1000 or 0x2000 or 0x4000 or 0x6000 or 0x8000 or 0xA000 or 0xC000;
+    if (!isKnownV7Type)
+      return true;
+
+    // PWB directories frequently carried the old IALLOC bit, yielding 014xxxx,
+    // which V7 would call a socket. Directory link counts are normally >= 2.
+    if (type == 0xC000 && numLinks >= 2)
+      return true;
+
+    // IALLOC + PWB character-device type yields 012xxxx, a V7 symlink. A real
+    // symlink has no rdev, while a character device normally does.
+    return type == 0xA000 && rDevice != 0 && fileSize == 0;
+  }
+
+  /// <summary>
+  /// Drops PWB/V6 inode-only IALLOC and ILARG bits, then maps the PWB regular-file
+  /// representation (no remaining type bits) to the modern regular-file type.
+  /// This is the same public behavior expected from a PWB-aware cpio reader.
+  /// </summary>
+  private static uint NormalizePwbMode(ushort mode) {
+    var normalized = (uint)(mode & 0x6FFF); // octal 067777: clear IALLOC (0100000) + ILARG (0010000)
+    if ((normalized & 0xF000) == 0)
+      normalized |= 0x8000;
+    return normalized;
   }
 
   private static bool IsBinaryMagic(ReadOnlySpan<byte> bytes, out bool littleEndian) {
@@ -247,13 +301,15 @@ public sealed class CpioReader : IDisposable {
 
   private static int GetNamePadding(CpioArchiveFormat format, int headerSize, int nameSize) => format switch {
     CpioArchiveFormat.NewAscii or CpioArchiveFormat.NewCrc => Padding(headerSize + nameSize, 4),
-    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => Padding(headerSize + nameSize, 2),
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary
+      => Padding(headerSize + nameSize, 2),
     _ => 0,
   };
 
   private static int GetDataPadding(CpioArchiveFormat format, long fileSize) => format switch {
     CpioArchiveFormat.NewAscii or CpioArchiveFormat.NewCrc => Padding(fileSize, 4),
-    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian => Padding(fileSize, 2),
+    CpioArchiveFormat.BinaryLittleEndian or CpioArchiveFormat.BinaryBigEndian or CpioArchiveFormat.PwbBinary
+      => Padding(fileSize, 2),
     _ => 0,
   };
 
