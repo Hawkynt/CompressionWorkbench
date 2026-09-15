@@ -14,7 +14,7 @@ public sealed class RegistryHiveTests {
 
     var entries = descriptor.List(stream, null);
 
-    Assert.That(entries.Any(e => e.Name == "Name" && e.Kind == "REG_SZ" && e.UncompressedSize == 6), Is.True);
+    Assert.That(entries.Any(e => e.Name == "Name" && e.Kind == "REG_SZ" && e.OriginalSize == 6), Is.True);
   }
 
   [Test]
