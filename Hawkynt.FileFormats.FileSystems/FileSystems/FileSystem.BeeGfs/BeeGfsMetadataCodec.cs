@@ -164,8 +164,14 @@ internal static class BeeGfsMetadataCodec {
     if ((inodeFeatures & FileInodeFeatureHasRemoteStorageTargets) != 0)
       throw new NotSupportedException("BeeGFS remote-storage-target metadata is outside the current read-only subset.");
 
-    var state = (inodeFeatures & FileInodeFeatureHasStateFlags) != 0 ? reader.ReadByte() : (byte)0;
-    reader.Skip(3);
+    byte state;
+    if ((inodeFeatures & FileInodeFeatureHasStateFlags) != 0) {
+      state = reader.ReadByte();
+      reader.Skip(3);
+    } else {
+      state = 0;
+      reader.Skip(4);
+    }
     if ((state & 0x1F) != 0)
       throw new NotSupportedException($"BeeGFS file state 0x{state:X2} carries access restrictions; offline reads fail closed.");
     if ((state & 0xE0) != 0)

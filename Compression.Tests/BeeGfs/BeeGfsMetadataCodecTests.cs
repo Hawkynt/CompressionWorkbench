@@ -128,7 +128,9 @@ public sealed class BeeGfsMetadataCodecTests {
     var complete = BuildV6File("1-6705972F-1", "root", 10, 0, 1, [1]);
     var truncated = complete[..Math.Min(bytesToKeep, complete.Length)];
 
-    Assert.Throws<Exception>(() => BeeGfsMetadataCodec.ParseDentry(truncated, "root"));
+    Assert.That(
+      () => BeeGfsMetadataCodec.ParseDentry(truncated, "root"),
+      Throws.Exception);
   }
 
   private static byte[] BuildV3Directory(string entryId, uint ownerNodeId, ushort dentryFlags = 16) {
