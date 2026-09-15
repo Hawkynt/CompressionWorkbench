@@ -7,6 +7,9 @@ public sealed class CpioEntry {
   /// <summary>Gets or sets the file name.</summary>
   public string Name { get; set; } = "";
 
+  /// <summary>Gets the on-disk CPIO header variant used by this entry.</summary>
+  public CpioArchiveFormat Format { get; internal set; } = CpioArchiveFormat.NewAscii;
+
   /// <summary>Gets or sets the inode number.</summary>
   public uint Inode { get; set; }
 
@@ -40,7 +43,7 @@ public sealed class CpioEntry {
   /// <summary>Gets or sets the rdev minor number (for device files).</summary>
   public uint RDevMinor { get; set; }
 
-  /// <summary>Gets or sets the CRC-32 checksum (for CRC format only).</summary>
+  /// <summary>Gets or sets the additive unsigned-byte checksum used by the SVR4 CRC variant.</summary>
   public uint Checksum { get; set; }
 
   /// <summary>Gets whether this entry is a directory.</summary>
