@@ -16,7 +16,11 @@ public static class UuEncoder {
     writer.WriteLine($"begin {Convert.ToString(mode & 0777, 8)} {filename}");
 
     Span<byte> data = stackalloc byte[45];
-    while (ReadUpTo(input, data) is var count && count > 0) {
+    while (true) {
+      var count = ReadUpTo(input, data);
+      if (count == 0)
+        break;
+
       writer.Write((char)(count + 32));
       for (var i = 0; i < count; i += 3) {
         var b0 = data[i];
@@ -49,8 +53,12 @@ public static class UuEncoder {
     writer.WriteLine($"begin-base64 {Convert.ToString(mode & 0777, 8)} {filename}");
 
     var data = new byte[57];
-    while (ReadUpTo(input, data) is var count && count > 0)
+    while (true) {
+      var count = ReadUpTo(input, data);
+      if (count == 0)
+        break;
       writer.WriteLine(Convert.ToBase64String(data, 0, count));
+    }
 
     writer.WriteLine("====");
     writer.Flush();
