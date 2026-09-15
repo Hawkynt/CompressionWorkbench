@@ -12,17 +12,26 @@ namespace FileSystem.Wafl;
 /// <para>
 /// Stage 0 validates the documented volinfo roots at VBNs 1 and 2 using NetApp's
 /// published <c>0xdab8fbab</c> magic. Stage 1 follows the additional public
-/// volinfo contract for the classic 32-bit direct-fsinfo profile: volinfo carries
-/// a backward-compatible fsinfo magic and a VBN lookup table whose entry zero
-/// references the active fsinfo block. Candidate references are accepted only
-/// when their target blocks carry that fsinfo magic, and ambiguity fails closed.
+/// 32-bit direct-fsinfo-table contract: volinfo carries a backward-compatible
+/// fsinfo magic and a lookup table whose entry zero references the active fsinfo
+/// block. Candidate references are accepted only when their target blocks carry
+/// that fsinfo magic, and ambiguity fails closed.
+/// </para>
+/// <para>
+/// The direct fsinfo-table shape does not identify the inode/address profile by
+/// itself. Public NetApp material also describes direct 32-bit fsinfo references
+/// for FlexVol while its inode block pointers use paired VVBN/PVBN addressing.
+/// The published classic 128-byte inode Levels 0–3 tree plus classic blkmap and
+/// inomap encodings are therefore separate helpers and are intentionally not
+/// auto-bound to a Stage-1 fsinfo root.
 /// </para>
 /// <para>
 /// This does not yet decode the inode file or namespace, and it does not turn a
 /// physical ONTAP RAID member into a logical VBN image. Version-specific inode
-/// layouts, FlexVol VVBN/PVBN mapping, allocation maps, snapshots and consistency
-/// point commit/checksum rules remain prerequisites for safe mutation. Compact,
-/// defrag, wipe, shrink, re-layout and purge therefore remain unavailable.
+/// layouts, FlexVol VVBN/PVBN mapping, metadata-file discovery, snapshots and
+/// consistency-point commit/checksum rules remain prerequisites for safe
+/// mutation. Compact, defrag, wipe, shrink, re-layout and purge therefore remain
+/// unavailable.
 /// </para>
 /// </remarks>
 public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations {
@@ -68,9 +77,10 @@ public sealed class WaflFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>Gets the description.</summary>
   public string Description =>
-    "NetApp WAFL — Stage 0 documented volinfo detection plus Stage 1 structural volinfo→fsinfo traversal for the disclosed classic 32-bit direct-fsinfo profile. " +
-    "Verified fsinfo blocks are listable/extractable while inode and namespace decoding remain intentionally unavailable. " +
-    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, allocation maps and snapshot/free-space reachability are still required for safe offline R/W, " +
+    "NetApp WAFL — Stage 0 documented volinfo detection plus Stage 1 structural volinfo→fsinfo traversal for the disclosed 32-bit direct-fsinfo table. " +
+    "That table does not select an inode/address profile; classic 128-byte inode Levels 0–3 block-tree, blkmap and inomap decoders remain separately gated on byte-precise profile evidence. " +
+    "Verified fsinfo blocks remain listable/extractable while namespace decoding is intentionally unavailable. " +
+    "Modern FlexVol aggregate/RAID mapping, version-specific inode/directory layouts, snapshot reachability and consistency-point mutation rules are still required for safe offline R/W, " +
     "so compact/defrag/wipe/shrink/layout/purge remain disabled.";
 
   /// <summary>Lists the entries in the supplied container.</summary>

@@ -1,6 +1,6 @@
 # NetApp WAFL: structural read boundary and maintenance feasibility
 
-This note records what `FileSystem.Wafl` can establish from public NetApp material, the clean-room path from Stage 0 to Stage 1, and the remaining evidence needed for namespace reads and safe mutation.
+This note records what `FileSystem.Wafl` can establish from public NetApp material, the clean-room path from Stage 0 to Stage 1, the classic metadata primitives now implemented as Stage-2 prerequisites, and the remaining evidence needed for namespace reads and safe mutation.
 
 ## Corrected detector
 
@@ -35,20 +35,18 @@ For the disclosed **classic 32-bit direct-fsinfo profile**, `WaflReader` now:
 
 1. derives the fsinfo compatibility magic from the start of each valid volinfo copy;
 2. scans only aligned 32-bit words after the recognized volinfo header;
-3. rejects zero, reserved root VBNs and out-of-image values;
+3. rejects zero, reserved root VBNs and out-of-image values for fsinfo-table candidates;
 4. dereferences each candidate and accepts it only when the target block begins with the same fsinfo magic;
 5. recognizes a lookup-table start only when it is unique and the following slot is either zero or another verified fsinfo reference;
 6. performs that work independently for both redundant volinfo roots;
 7. exposes every verified fsinfo block as `fsinfo/vbn-N.bin`;
-8. reports one `ActiveFsInfoVbn` only when the usable redundant roots agree, or when only one usable volinfo root remains.
+8. reports one `ActiveFsInfoVbn` only when the usable redundant volinfo roots agree, or when only one usable volinfo root remains.
 
 If multiple plausible tables are present, the parser fails closed at Stage 0. If the two valid volinfo copies identify different active fsinfo roots, it reports both verified roots but does not arbitrarily choose one. That matters because the redundant roots can represent different consistency-point states.
 
 This is a genuine Stage-1 read path: it follows an on-disk pointer relation and validates the target block. It is not yet a namespace reader.
 
-## What the public material says about the next layer
-
-### Classic WAFL inode profile
+## Classic WAFL inode and block-tree profile
 
 The original WAFL patents are unusually concrete for the legacy profile:
 
@@ -56,23 +54,69 @@ The original WAFL patents are unusually concrete for the legacy profile:
 - an on-disk inode is **128 bytes**;
 - the first 64 bytes contain ordinary inode metadata;
 - the final 64 bytes either hold inline file data for files up to 64 bytes or **16 × 32-bit block numbers** at a common indirection level;
-- a 4 KiB inode-file data block therefore contains **32 inodes**;
-- indirect blocks contain **1024 × 32-bit VBNs**;
+- a 4 KiB inode-file data block therefore contains **32 classic 128-byte inodes**;
+- a 4 KiB indirect block contains **1024 × 32-bit VBNs**;
+- level 1 uses the inode's 16 VBNs directly, level 2 points to single-indirect blocks and level 3 points to double-indirect blocks;
 - the fsinfo block contains the inode that roots the inode file.
+
+The 64/64 split is independently repeated in later NetApp patent material: the on-disk inode is described as a metadata section plus a data section, and the data section stores the complete payload when it is at most 64 bytes or up to sixteen 4-byte block pointers otherwise. Those later descriptions name metadata such as type and size, but they still do **not** publish numeric byte widths or byte offsets for those fields. Figure labels such as `312` and `314` are drawing reference numbers, not disk offsets.
 
 US5819292 and US6289356 also describe the legacy metadata files:
 
 - `blkmap`: one 32-bit allocation/snapshot entry per 4 KiB block;
-- `inomap`: one 8-bit free-inode count per inode-file block;
-- directories: 4 KiB blocks with fixed-size directory records at one end and packed variable-length names at the other; records include file ID, generation, name hash and name pointer/offset.
+- `inomap`: one 8-bit allocated-inode count per inode-file block;
+- directories: 4 KiB blocks with fixed-size directory records at one end and packed variable-length names at the other; records include a name hash and a pointer to the packed name, plus the normal file identity/generation information.
 
-These facts are sufficient to implement a classic buftree engine once the byte offsets for the fsinfo inode and the inode metadata fields that identify size/type/level are established independently.
+### Implemented classic block-tree primitive
 
-### Modern WAFL is not the same inode format
+`WaflClassicBlockTree` implements the byte-level mechanics actually specified for the 128-byte profile without inventing the still-missing inode metadata offsets:
 
-The legacy 128-byte structure must not be silently applied to modern ONTAP. Published work with NetApp authors describes a current **192-byte on-disk inode**, and FlexVol block pointers carry both virtual and physical addressing information. Modern ONTAP EMS also reports VBN/VVBN/FBN values using wide integer fields.
+- level-0 inline data is copied from the published final 64-byte inode area;
+- levels 1, 2 and 3 traverse direct, single-indirect and double-indirect 32-bit VBN trees respectively;
+- the caller supplies the already-decoded inode level and logical block count, so this helper does not guess where those fields live;
+- sparse-hole recognition is also caller supplied rather than assigning special meaning to pointer value zero;
+- traversal is lazy and bounded by the caller's logical size;
+- both byte orders are supported because the enclosing Stage-1 profile already establishes byte order;
+- malformed trees are rejected for out-of-range VBNs, non-4-KiB indirect blocks, impossible level capacity and indirect-block cycles.
 
-The implementation therefore does **not** scan arbitrary 128-byte chunks and call plausible-looking values inodes. That would turn a useful old patent into a corruption generator.
+The explicit sparse-pointer policy matters: public NetApp patent material describes WAFL volume block numbering as beginning at VBN 0 in at least one disclosed profile. Current NetApp documentation confirms sparse files exist, but the sources reviewed here do not publish one universal on-disk hole sentinel. The decoder therefore treats zero as an ordinary in-range VBN unless a proven profile supplies a predicate identifying that value as a hole.
+
+That removes the classic block-tree algorithm itself from the Stage-2 blocker list. It does **not** make arbitrary 128-byte windows inside fsinfo into trustworthy inode records. The root-inode placement and its metadata fields still need an independently verified byte layout before `WaflReader` can bind the helper to an image automatically.
+
+The original patent's Figure 15 visually places the inode-file inode after miscellaneous fsinfo data, checksum and generation information, but neither the figure nor the accompanying text assigns it a numeric byte offset. The implementation therefore does not infer an offset from drawing proportions. Likewise, the figure identifies the structure semantically as an inode; it does not supply the missing packed type/size/level offsets inside that inode.
+
+## Classic allocation-map primitives
+
+The same original patents are byte-precise about the classic allocation maps, so those codecs are implemented independently of inode discovery as `WaflClassicAllocationMaps`:
+
+- each `blkmap` entry is 32 bits and corresponds to one 4 KiB volume block;
+- bit 0 marks membership in the active filesystem;
+- bits 1 through 20 mark references from snapshots 1 through 20;
+- bits 21 through 30 are reserved in the disclosed layout;
+- bit 31 is the consistency-point bookkeeping bit and, in a consistent on-disk entry, mirrors bit 0;
+- the published allocation condition requires bit 0 and all snapshot bits to be clear before a block can be available for allocation;
+- each `inomap` entry is one byte and records the number of allocated inodes in the corresponding 4 KiB inode-file block;
+- because the classic inode is 128 bytes, an inomap value is valid only from 0 through 32, and free-inode count is `32 - allocated`.
+
+The implementation decodes either byte order for blkmap entries, exposes the active/snapshot/reserved/CP fields separately, rejects partial 32-bit entries and rejects impossible inomap counts. Its `IsFree` predicate is intentionally **stricter** than the minimum published allocation condition: it returns true only for a raw all-zero entry. That refuses reserved-bit or CP/FS-inconsistent states instead of silently treating unknown state as safely writable. Even an all-zero decoded entry is not yet treated as globally wipe-safe; binding the correct map and reconciling every retained filesystem root still have to be proven first.
+
+This is nevertheless useful maintenance groundwork: once the classic metadata inodes can be located and snapshot reachability is connected, the block map provides the format-defined primitive needed to distinguish allocation state instead of inferring free space from gaps.
+
+## Inode generations: do not conflate classic and modern WAFL
+
+The earlier rationale incorrectly described 192 bytes as the current ONTAP inode size. NetApp's current public documentation is explicit:
+
+- the historical patent profile discussed above uses a **128-byte** on-disk inode;
+- Data ONTAP releases **earlier than 9.0 use 192-byte inodes**;
+- **ONTAP 9 uses 288-byte inodes**.
+
+See NetApp KB, *What are the ONTAP limitations on files, directories, and subdirectories?*:
+https://kb.netapp.com/on-prem/ontap/Ontap_OS/OS-KBs/What_are_the_ONTAP_limitations_on_files_directories_and_subdirectories
+
+NetApp's separate *What is an inode?* article likewise states that current ONTAP inodes use 288 bytes and that files smaller than 64 bytes can live in the inode itself:
+https://kb.netapp.com/on-prem/ontap/Ontap_OS/OS-KBs/What_is_an_inode
+
+The implementation therefore does **not** apply the 128-byte patent layout to modern ONTAP, nor does it treat the 192-byte pre-9 profile as the current format. Modern FlexVol block pointers also carry virtual/physical addressing information, so the classic 32-bit VBN decoder is a specifically named profile rather than a universal WAFL parser.
 
 ## Aggregate and FlexVol boundary
 
@@ -89,12 +133,16 @@ A flat logical VBN image is therefore a useful Stage-1 target, but a raw member 
 
 A defensible file walker still needs at least one versioned profile with independently verified byte offsets for:
 
-1. the inode-of-inode-file inside fsinfo;
-2. inode type, logical size and indirection-level fields;
-3. classic or modern block-pointer encoding;
-4. reserved metadata/root-directory inode identities;
-5. directory fixed-record width and field offsets;
-6. validation/checksum fields used to reject stale or malformed blocks.
+1. the inode-of-inode-file inside fsinfo — the original patent proves its presence and role but Figure 15 does not publish a numeric location;
+2. inode type and logical-size fields — later NetApp patents independently name these fields but do not publish their packed widths/offsets (the classic tree level itself can then be derived/validated from the published size ranges);
+3. a reliable profile/version discriminator before choosing classic 128-byte, pre-ONTAP-9 192-byte or ONTAP-9 288-byte inode decoding;
+4. modern/FlexVol block-pointer encoding where the image is not the classic flat-VBN profile;
+5. sparse/hole pointer semantics for any profile where sparse reconstruction is required;
+6. reserved metadata/root-directory inode identities or another proved way to locate the namespace root — Figure 16 establishes the semantic order `blkmap`, `inomap`, root directory but does not assign numeric inode IDs;
+7. directory fixed-record width and field offsets — Figure 14 and its text establish hash, name pointer, file ID and generation semantics but omit their byte widths and ordering;
+8. validation/checksum fields used to reject stale or malformed blocks.
+
+A 2025 Tianjin University recovery patent, CN119739562B, independently reports inode/file ID 2 as the root of the WAFL namespace and describes recovering node size/type/block mappings. It does not identify the ONTAP generation or 128/192/288-byte inode profile and does not publish the missing byte offsets. It is therefore recorded only as a cross-check and is **not** used to bind the classic parser or assign classic inode numbers.
 
 The commercial UFS Explorer implementation is useful only as a behavioural oracle: its public release notes advertise experimental WAFL metadata versions 2–4, including 32/64-bit and traditional/Flex profiles. No proprietary implementation code is used or translated here.
 
@@ -102,9 +150,9 @@ The independent Aaru investigation is likewise used only as a feasibility cross-
 
 ## Why R/W and maintenance still remain disabled
 
-The Stage-1 root walk improves read-side knowledge but does not establish block liveness. A complete modern writer must prove:
+The Stage-1 root walk plus classic block-tree/allocation-map decoders improve read-side knowledge but do not yet establish global block liveness. A complete modern writer must prove:
 
-1. version-specific inode and indirect-block encodings;
+1. version-specific inode and directory encodings;
 2. FBN/VBN/VVBN/PVBN translation and aggregate-to-FlexVol container mappings;
 3. active/summary/space/owner-map semantics and versioning;
 4. allocation reachability across the active filesystem and every retained snapshot;
@@ -117,7 +165,7 @@ NetApp's own `wafliron` documentation reinforces this coupling: aggregate metada
 | --- | --- | --- |
 | Compact | unavailable | composite operation; underlying relocation/rebuild cannot yet be proven safe |
 | Defrag | unavailable | moving a block requires every active/snapshot reference to be repointed correctly |
-| Wipe | unavailable | a block is not free merely because the active root no longer references it |
+| Wipe | unavailable | blkmap decoding exists, but the correct map must first be located and validated across retained states |
 | Shrink | unavailable | requires proving no active or snapshot root can reach the truncated tail |
 | Layout | unavailable | needs a complete versioned creator plus CP/checksum commit rules |
 | Purge | unavailable | needs valid empty root metadata and allocation maps |
@@ -126,7 +174,7 @@ No maintenance interface is added merely to make the matrix greener. Green corru
 
 ## Streaming behaviour
 
-The pseudo-archive now exposes:
+The pseudo-archive currently exposes:
 
 - `metadata.ini` — detector and structural-probe evidence;
 - `fsinfo/vbn-N.bin` — each fsinfo block reached and validated by a Stage-1 lookup-table probe;
@@ -134,18 +182,25 @@ The pseudo-archive now exposes:
 
 Seekable sources are never copied wholesale during reader construction. Volinfo and verified fsinfo blocks are read in 4 KiB units; the raw image remains a bounded view over the caller's stream. The explicitly buffered `Extract` compatibility API materializes the raw image only when requested and refuses arrays beyond `Array.MaxLength`.
 
+The classic metadata helpers are intentionally not exposed as additional pseudo-files yet: until the fsinfo root inode and the metadata-file inodes can be bound from documented byte offsets, doing so would turn correct primitive decoders into a heuristic filesystem parser.
+
 ## Sources and clean-room licensing posture
 
 Public factual/specification sources:
 
 - NetApp ONTAP EMS `raid.vol.volinfo.mismatch`.
+- NetApp KB, *What are the ONTAP limitations on files, directories, and subdirectories?*.
+- NetApp KB, *What is an inode?*.
 - Dave Hitz, James Lau, Michael Malcolm, *File System Design for an NFS File Server Appliance* (TR-3002 / USENIX).
 - US5819292, consistency points/snapshots and classic WAFL structures.
 - US5963962 / US6289356, classic inode, block-map, inode-map and directory architecture.
+- later NetApp inode diagrams such as US20050187985/US6892211-family material, used only to independently corroborate metadata/data-section semantics rather than infer byte offsets from figure labels.
 - US7313720 / US8122286, volinfo/fsinfo hierarchy and VBN lookup table.
 - US7321962 / US7194595, hybrid FlexVol VBN translation and special-block handling.
+- EP1875393 / related sparse-volume material, VBN numbering behaviour only.
 - NetApp, *FlexVol: Flexible, Efficient File Volume Virtualization in WAFL*.
 - NetApp, *Scalable Write Allocation in the WAFL File System*.
+- CN119739562B, independent recovery-behaviour cross-check only; no unspecified-generation constants are imported.
 - Aaru issue #61, feasibility/oracle information only.
 - UFS Explorer public WAFL support notes, behavioural-oracle scope only.
 
