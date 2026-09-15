@@ -12,6 +12,7 @@ VERIFY="$SCRIPT_DIR/verify-corpora.sh"
   echo "provider must be libvirt or virtualbox" >&2
   exit 2
 }
+[[ $REMOTE == /* ]] || { echo "remote corpus root must be an absolute path" >&2; exit 2; }
 [[ -d "$LAB/$PROVIDER" ]] || { echo "provider directory not found: $LAB/$PROVIDER" >&2; exit 2; }
 [[ -x $VERIFY ]] || { echo "corpus verifier not found: $VERIFY" >&2; exit 2; }
 for cmd in vagrant rsync ssh mktemp find grep mkdir; do
@@ -34,13 +35,22 @@ trap cleanup EXIT
   vagrant ssh-config m1
 ) >"$ssh_config"
 
+ssh -F "$ssh_config" m1 "sudo test -d '$REMOTE'" || {
+  echo "remote corpus root does not exist: $REMOTE" >&2
+  exit 4
+}
+
 # IBM/StorageScaleVagrant maps ../setup into /vagrant with Vagrant's rsync
 # synced-folder type. That direction is host -> guest only, so evidence under
 # /var/tmp must be explicitly pulled before a destructive reprovision. Use the
 # exact Vagrant SSH identity/port and remote sudo rsync so root-owned raw images
-# remain readable. --sparse preserves zero runs in the copied NSD images.
+# remain readable. --sparse preserves zero runs in the copied NSD images. Owner
+# and group are deliberately not preserved because the host-side evidence needs
+# no privileged ownership and the caller should not need root.
 rsync \
   --archive \
+  --no-owner \
+  --no-group \
   --hard-links \
   --sparse \
   --human-readable \
