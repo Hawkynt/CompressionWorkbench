@@ -87,6 +87,18 @@ public sealed class BeeGfsMetadataCodecTests {
     });
   }
 
+  [TestCase((ushort)4)]
+  [TestCase((ushort)8)]
+  [Category("Exception")]
+  public void MirroredDentry_FailsClosed(ushort mirroredFlag) {
+    var bytes = BuildV3Directory("0-67059D13-1", ownerNodeId: 7, dentryFlags: (ushort)(16 | mirroredFlag));
+
+    var error = Assert.Throws<NotSupportedException>(() =>
+      BeeGfsMetadataCodec.ParseDentry(bytes, "root"));
+
+    Assert.That(error!.Message, Does.Contain("mirrored dentry"));
+  }
+
   [Test, Category("Exception")]
   public void SparseV6File_FailsClosedBeforeVariableBlockVector() {
     var bytes = BuildV6File("1-A-B", "root", 10, statFlags: 1, patternType: 1, targetIds: [1]);
@@ -119,12 +131,12 @@ public sealed class BeeGfsMetadataCodecTests {
     Assert.Throws<Exception>(() => BeeGfsMetadataCodec.ParseDentry(truncated, "root"));
   }
 
-  private static byte[] BuildV3Directory(string entryId, uint ownerNodeId) {
+  private static byte[] BuildV3Directory(string entryId, uint ownerNodeId, ushort dentryFlags = 16) {
     using var output = new MemoryStream();
     using var writer = new BinaryWriter(output, Encoding.UTF8, leaveOpen: true);
     writer.Write((byte)2); // DiskMetaDataType_DIRDENTRY
     writer.Write((byte)3);
-    writer.Write((ushort)16); // DENTRY_FEATURE_32BITIDS
+    writer.Write(dentryFlags); // DENTRY_FEATURE_*
     writer.Write((byte)1); // directory
     writer.Write(new byte[3]);
     WriteAlignedString4(writer, entryId);

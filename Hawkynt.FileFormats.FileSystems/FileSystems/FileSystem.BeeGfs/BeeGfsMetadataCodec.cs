@@ -93,6 +93,9 @@ internal static class BeeGfsMetadataCodec {
     var dentryFeatures = reader.ReadUInt16();
     if ((dentryFeatures & ~SupportedDentryFeatures) != 0)
       throw new NotSupportedException($"BeeGFS dentry uses unknown feature flags 0x{dentryFeatures:X4}.");
+    if ((dentryFeatures & (DentryFeatureMirrored | DentryFeatureBuddyMirrored)) != 0)
+      throw new NotSupportedException(
+        "BeeGFS mirrored dentry metadata requires management/buddy-group mapping and is outside the current read-only subset.");
 
     var kind = KindFor(reader.ReadByte());
     // The legacy mirrored-header variant stores a 16-bit mirror-node id in the
