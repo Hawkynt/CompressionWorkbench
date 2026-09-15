@@ -32,6 +32,16 @@ public sealed class RegistryHiveTests {
   }
 
   [Test]
+  public void Regf_ParsesVersion11LegacyCellsAndUtf16Names() {
+    var descriptor = new RegfFormatDescriptor();
+    using var stream = new MemoryStream(BuildRegf11Vector());
+
+    var entries = descriptor.List(stream, null);
+
+    Assert.That(entries.Any(e => e.Name == "Number" && e.Kind == "REG_DWORD"), Is.True);
+  }
+
+  [Test]
   public void Regf_RejectsUnallocatedRootCell() {
     var bytes = BuildRegfVector();
     var rootOffset = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(36, 4));
@@ -171,6 +181,66 @@ public sealed class RegistryHiveTests {
     WriteU32(rootKey, 48, 0xffffffff);
     WriteU16(rootKey, 72, 4);
     Encoding.Latin1.GetBytes("ROOT").CopyTo(rootKey, 76);
+    var rootKeyOffset = Alloc(rootKey);
+    WriteU32(data, 36, rootKeyOffset);
+
+    return data;
+  }
+
+  private static byte[] BuildRegf11Vector() {
+    var data = new byte[8192];
+    "regf"u8.CopyTo(data);
+    WriteU32(data, 4, 1);
+    WriteU32(data, 8, 1);
+    WriteU32(data, 20, 1);
+    WriteU32(data, 24, 1);
+    WriteU32(data, 28, 0);
+    WriteU32(data, 32, 1);
+    WriteU32(data, 40, 4096);
+    WriteU32(data, 44, 1);
+
+    "hbin"u8.CopyTo(data.AsSpan(4096));
+    WriteU32(data, 4096 + 4, 0);
+    WriteU32(data, 4096 + 8, 4096);
+
+    var nextRelative = 0x20;
+    uint previousRelative = 0xffffffff;
+    uint Alloc(ReadOnlySpan<byte> payload) {
+      var totalSize = (payload.Length + 8 + 15) & ~15;
+      var relative = checked((uint)nextRelative);
+      var absolute = 4096 + nextRelative;
+      BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(absolute, 4), -totalSize);
+      WriteU32(data, absolute + 4, previousRelative);
+      payload.CopyTo(data.AsSpan(absolute + 8));
+      previousRelative = relative;
+      nextRelative += totalSize;
+      return relative;
+    }
+
+    var value = new byte[32];
+    "vk"u8.CopyTo(value);
+    WriteU16(value, 2, 12);
+    WriteU32(value, 4, 0x80000004);
+    WriteU32(value, 8, 42);
+    WriteU32(value, 12, 4);
+    Encoding.Unicode.GetBytes("Number").CopyTo(value, 20);
+    var valueOffset = Alloc(value);
+
+    var valueList = new byte[4];
+    WriteU32(valueList, 0, valueOffset);
+    var valueListOffset = Alloc(valueList);
+
+    var rootKey = new byte[84];
+    "nk"u8.CopyTo(rootKey);
+    WriteU32(rootKey, 16, 0xffffffff);
+    WriteU32(rootKey, 28, 0xffffffff);
+    WriteU32(rootKey, 32, 0xffffffff);
+    WriteU32(rootKey, 36, 1);
+    WriteU32(rootKey, 40, valueListOffset);
+    WriteU32(rootKey, 44, 0xffffffff);
+    WriteU32(rootKey, 48, 0xffffffff);
+    WriteU16(rootKey, 72, 8);
+    Encoding.Unicode.GetBytes("ROOT").CopyTo(rootKey, 76);
     var rootKeyOffset = Alloc(rootKey);
     WriteU32(data, 36, rootKeyOffset);
 
