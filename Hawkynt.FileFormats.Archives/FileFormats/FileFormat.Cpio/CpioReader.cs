@@ -120,13 +120,13 @@ public sealed class CpioReader : IDisposable {
     int nameSize;
     int headerSize;
 
-    if (prefix.SequenceEqual(CpioConstants.NewAsciiMagicu8)) {
+    if (prefix.SequenceEqual("070701"u8)) {
       (entry, nameSize) = this.ReadNewAsciiHeader(prefix, CpioArchiveFormat.NewAscii);
       headerSize = CpioConstants.NewAsciiHeaderSize;
-    } else if (prefix.SequenceEqual(CpioConstants.NewCrcMagicu8)) {
+    } else if (prefix.SequenceEqual("070702"u8)) {
       (entry, nameSize) = this.ReadNewAsciiHeader(prefix, CpioArchiveFormat.NewCrc);
       headerSize = CpioConstants.NewAsciiHeaderSize;
-    } else if (prefix.SequenceEqual(CpioConstants.PortableAsciiMagicu8)) {
+    } else if (prefix.SequenceEqual("070707"u8)) {
       (entry, nameSize) = this.ReadPortableAsciiHeader(prefix);
       headerSize = CpioConstants.PortableAsciiHeaderSize;
     } else if (IsBinaryMagic(prefix[..2], out var littleEndian)) {
