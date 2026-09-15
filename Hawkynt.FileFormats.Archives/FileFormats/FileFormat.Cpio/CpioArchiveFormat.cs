@@ -18,4 +18,11 @@ public enum CpioArchiveFormat {
 
   /// <summary>7th Edition binary CPIO using big-endian 16-bit words.</summary>
   BinaryBigEndian,
+
+  /// <summary>
+  /// PWB/UNIX (6th Edition-derived) binary CPIO. Its byte layout is physically
+  /// identical to the little-endian 7th Edition variant; only inode-mode
+  /// semantics and representable file types/sizes differ.
+  /// </summary>
+  PwbBinary,
 }
