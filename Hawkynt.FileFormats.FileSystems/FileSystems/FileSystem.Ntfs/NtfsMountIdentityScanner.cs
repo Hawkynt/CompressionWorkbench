@@ -8,7 +8,8 @@ namespace FileSystem.Ntfs;
 /// Reads the native file-reference identity needed by the mounted NTFS view.
 /// A reference is the 48-bit MFT segment number plus the 16-bit sequence number;
 /// both $FILE_NAME parent references and directory-index child references are
-/// validated before a namespace is published.
+/// validated before a namespace is published. The same FILE-record pass also
+/// derives direct resident/non-resident data layouts for mounted positional reads.
 /// </summary>
 internal sealed class NtfsMountIdentityScanner {
   private const uint AttributeTypeData = 0x80;
@@ -16,6 +17,8 @@ internal sealed class NtfsMountIdentityScanner {
   private const uint AttributeTypeIndexRoot = 0x90;
   private const uint AttributeTypeIndexAllocation = 0xA0;
   private const uint AttributeEnd = 0xFFFFFFFF;
+  private const ushort AttributeFlagCompressed = 0x0001;
+  private const ushort AttributeFlagEncrypted = 0x4000;
 
   private readonly Stream _image;
   private readonly NtfsDriverGeometry _geometry;
@@ -84,7 +87,15 @@ internal sealed class NtfsMountIdentityScanner {
         parentIdentity.Sequence,
         $"$FILE_NAME parent reference for '{path}'");
 
-      identities.Add(new NtfsMountedEntryIdentity(entry, identity.Sequence, identity.HardLinkCount));
+      NtfsMountedDataLayout? dataLayout = null;
+      if (!entry.IsDirectory && !entry.IsSymlink)
+        dataLayout = ParseDataLayout(identity.Record, entry.MftRecord, entry.Size);
+
+      identities.Add(new NtfsMountedEntryIdentity(
+        entry,
+        identity.Sequence,
+        identity.HardLinkCount,
+        dataLayout));
       if (entry.IsDirectory) {
         pathToRecord[path] = entry.MftRecord;
         directoryRecords.Add(entry.MftRecord);
@@ -130,7 +141,7 @@ internal sealed class NtfsMountIdentityScanner {
     var sequence = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(16));
     var hardLinks = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(18));
     var fileNames = ParseFileNames(record, recordNumber);
-    var result = new RecordIdentity(recordNumber, sequence, hardLinks, fileNames);
+    var result = new RecordIdentity(recordNumber, sequence, hardLinks, fileNames, record);
     _records.Add(recordNumber, result);
     return result;
   }
@@ -387,6 +398,82 @@ internal sealed class NtfsMountIdentityScanner {
     throw new NotSupportedException("NTFS mounted identity could not find the unnamed $MFT::$DATA attribute in record 0.");
   }
 
+  private NtfsMountedDataLayout ParseDataLayout(byte[] record, uint recordNumber, long decodedSize) {
+    var firstAttribute = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(20));
+    var used = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24)));
+    ValidateAttributeBounds(record, recordNumber, firstAttribute, used);
+
+    var position = (int)firstAttribute;
+    while (position <= used - 8) {
+      var type = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position));
+      if (type == AttributeEnd) break;
+      var length = ReadAttributeLength(record, recordNumber, position, used);
+      var nameLength = record[position + 9];
+      var name = ReadAttributeName(record, position, length, nameLength);
+      if (type != AttributeTypeData || name is not null) {
+        position += length;
+        continue;
+      }
+
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 12));
+      if ((flags & AttributeFlagEncrypted) != 0)
+        throw new NotSupportedException($"NTFS MFT record {recordNumber} has encrypted unnamed $DATA; mounted plaintext reads are not available.");
+
+      var nonResident = record[position + 8] != 0;
+      if (!nonResident) {
+        if ((flags & AttributeFlagCompressed) != 0)
+          throw new InvalidDataException($"NTFS MFT record {recordNumber} marks resident $DATA as compressed.");
+        var (valueOffset, valueLength) = ReadResidentValueBounds(record, recordNumber, position, length);
+        if (decodedSize != valueLength)
+          throw new InvalidDataException(
+            $"NTFS MFT record {recordNumber} resident $DATA length {valueLength} disagrees with decoded size {decodedSize}.");
+        var resident = record.AsSpan(position + valueOffset, valueLength).ToArray();
+        return new NtfsMountedDataLayout(valueLength, valueLength, resident, [], Compressed: false);
+      }
+
+      if (length < 64)
+        throw new InvalidDataException($"NTFS MFT record {recordNumber} has a truncated non-resident $DATA header.");
+      var mappingOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position + 32));
+      if (mappingOffset < 64 || mappingOffset >= length)
+        throw new InvalidDataException($"NTFS MFT record {recordNumber} has an invalid $DATA mapping-pairs offset.");
+      var dataLength = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(position + 48));
+      var initializedLength = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(position + 56));
+      if (dataLength < 0 || initializedLength < 0 || initializedLength > dataLength)
+        throw new InvalidDataException($"NTFS MFT record {recordNumber} has invalid data/initialized lengths.");
+      if (dataLength != decodedSize)
+        throw new InvalidDataException(
+          $"NTFS MFT record {recordNumber} $DATA length {dataLength} disagrees with decoded size {decodedSize}.");
+
+      var runs = ParseRuns(record.AsSpan(position + mappingOffset, length - mappingOffset));
+      var mappedClusters = runs.Count == 0 ? 0L : checked(runs[^1].Vcn + runs[^1].ClusterCount);
+      var mappedBytes = checked(mappedClusters * (long)_clusterSize);
+      if (dataLength > mappedBytes)
+        throw new InvalidDataException(
+          $"NTFS MFT record {recordNumber} maps only {mappedBytes} bytes for a {dataLength}-byte stream.");
+
+      foreach (var run in runs) {
+        if (run.Sparse) continue;
+        var physical = checked(run.Lcn * (long)_clusterSize);
+        var byteLength = checked(run.ClusterCount * (long)_clusterSize);
+        if (physical < 0 || physical > _image.Length - byteLength)
+          throw new InvalidDataException(
+            $"NTFS MFT record {recordNumber} has a $DATA run outside the backing image.");
+      }
+
+      return new NtfsMountedDataLayout(
+        dataLength,
+        initializedLength,
+        ResidentData: null,
+        runs.Select(static run => new NtfsMountedDataRun(run.Vcn, run.Lcn, run.ClusterCount, run.Sparse)).ToArray(),
+        Compressed: (flags & AttributeFlagCompressed) != 0);
+    }
+
+    if (decodedSize == 0)
+      return new NtfsMountedDataLayout(0, 0, [], [], Compressed: false);
+    throw new NotSupportedException(
+      $"NTFS MFT record {recordNumber} has no unnamed base-record $DATA attribute; attribute-list continuation is not yet available to the mounted reader.");
+  }
+
   private static List<MftRun> ParseRuns(ReadOnlySpan<byte> mappingPairs) {
     var runs = new List<MftRun>();
     long previousLcn = 0;
@@ -519,7 +606,8 @@ internal sealed class NtfsMountIdentityScanner {
     uint RecordNumber,
     ushort Sequence,
     ushort HardLinkCount,
-    FileNameReference[] FileNames);
+    FileNameReference[] FileNames,
+    byte[] Record);
   private readonly record struct FileNameReference(
     uint ParentRecord,
     ushort ParentSequence,
@@ -535,4 +623,5 @@ internal sealed record NtfsMountIdentityMap(
 internal readonly record struct NtfsMountedEntryIdentity(
   NtfsEntry Entry,
   ushort Sequence,
-  ushort HardLinkCount);
+  ushort HardLinkCount,
+  NtfsMountedDataLayout? DataLayout);
