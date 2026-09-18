@@ -120,7 +120,17 @@ public sealed class NtfsWriter {
 
   private int UsaOffset => NtfsRecordLayout.UpdateSequenceOffsetFor(this.ExtendedRecordHeader);
 
-  private bool FitsResident(string fileName, long length) => length <= ResidentThreshold;
+  // Whether a file of this name and length can live inside its MFT record. The flat
+  // threshold is the policy — NTFS keeps small files resident — but the record has to
+  // have room for the data beside $STANDARD_INFORMATION and $FILE_NAME, and both of
+  // those vary: the attribute is 24 bytes longer from NTFS 3.0 on, and the name grows
+  // with its own length. A file that clears the threshold but not the record goes
+  // non-resident rather than overrunning the record it was going to be written into.
+  private bool FitsResident(string fileName, long length)
+    => length <= ResidentThreshold
+       && length <= NtfsRecordLayout.MaxResidentDataLength(
+         this._mftRecordSize, this.UsaOffset, BytesPerSector,
+         this._version.StandardInformationLength(), fileName.Length);
 
   // Size of the $LogFile data region in bytes. Real NTFS typically uses
   // ≥2 MiB; for our minimal images we size proportionally to the volume

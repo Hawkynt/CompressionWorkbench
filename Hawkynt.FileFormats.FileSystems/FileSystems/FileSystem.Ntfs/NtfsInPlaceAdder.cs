@@ -61,8 +61,10 @@ public static class NtfsInPlaceAdder {
     if (parts.Length == 1)
       try { NtfsRemover.Remove(image, leafName); } catch (FileNotFoundException) { /* new file */ }
 
-    // Decide $DATA residency: small files live inside the MFT record (resident).
-    var resident = data.Length <= geo.ResidentThreshold;
+    // Decide $DATA residency: small files live inside the MFT record (resident), but
+    // only where the record has room for them beside $STANDARD_INFORMATION — 24 bytes
+    // longer on a 3.x volume — and a $FILE_NAME that grows with the name.
+    var resident = data.Length <= geo.ResidentThreshold && data.Length <= geo.MaxResidentData(leafName);
     List<(long Lcn, long Count)> dataRuns = [];
     if (!resident) {
       var clustersNeeded = (data.Length + geo.ClusterSize - 1) / geo.ClusterSize;
@@ -370,6 +372,11 @@ public static class NtfsInPlaceAdder {
     /// <summary>Where a record built for this volume puts its first attribute.</summary>
     public int AttributeStart
       => NtfsRecordLayout.AttributeStart(this.UsaOffset, this.MftRecordSize, this.BytesPerSector);
+
+    /// <summary>The largest resident <c>$DATA</c> a record named this can still hold.</summary>
+    public int MaxResidentData(string fileName)
+      => NtfsRecordLayout.MaxResidentDataLength(
+        this.MftRecordSize, this.UsaOffset, this.BytesPerSector, this.StdInfoLength, fileName.Length);
   }
 
   private static Geo ParseBoot(byte[] image) {

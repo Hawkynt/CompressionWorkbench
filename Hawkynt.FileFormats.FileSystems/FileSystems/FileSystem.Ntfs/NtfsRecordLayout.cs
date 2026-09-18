@@ -72,6 +72,29 @@ internal static class NtfsRecordLayout {
       (usaOffset + 2 * UpdateSequenceCount(recordSize, bytesPerSector) + 7) & ~7);
 
   /// <summary>
+  /// The largest resident <c>$DATA</c> value that still fits in a record of this
+  /// geometry beside the two mandatory attributes.
+  /// </summary>
+  /// <remarks>
+  /// A flat byte threshold is not enough on its own, because three things compete for
+  /// the same record: the update-sequence array (which moves where the attributes
+  /// start), <c>$STANDARD_INFORMATION</c> (48 bytes up to NTFS 1.2, 72 from 3.0) and
+  /// <c>$FILE_NAME</c>, which grows by two bytes per character of the name. A file
+  /// whose data would not fit has to go non-resident; writing it resident anyway
+  /// overruns the record.
+  /// </remarks>
+  internal static int MaxResidentDataLength(
+    int recordSize, int usaOffset, int bytesPerSector, int standardInformationLength, int fileNameChars) {
+    var attributeStart = AttributeStart(usaOffset, recordSize, bytesPerSector);
+    var standardInformation = (24 + standardInformationLength + 7) & ~7;
+    var fileName = (24 + 66 + 2 * fileNameChars + 7) & ~7;
+
+    // Eight bytes for the end-of-attributes marker, then the $DATA header itself.
+    var available = recordSize - attributeStart - standardInformation - fileName - 8 - 24;
+    return Math.Max(0, available);
+  }
+
+  /// <summary>
   /// Reads a record's update-sequence array position and rejects it unless it lies
   /// wholly inside the record and clear of the record's own fixed header.
   /// </summary>
