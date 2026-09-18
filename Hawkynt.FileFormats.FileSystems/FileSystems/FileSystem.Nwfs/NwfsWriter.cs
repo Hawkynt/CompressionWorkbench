@@ -35,12 +35,14 @@ public sealed class NwfsWriter {
   /// </summary>
   public long MinimumImageSize { get; set; }
 
+  /// <summary>Adds a file. Directories in <paramref name="path" /> are made as needed.</summary>
   public void AddFile(string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add((NormalizePath(path), data));
   }
 
+  /// <summary>Adds an explicit directory, including an empty one.</summary>
   public void AddDirectory(string path) {
     ArgumentNullException.ThrowIfNull(path);
     var normalized = NormalizePath(path);
@@ -57,6 +59,7 @@ public sealed class NwfsWriter {
 
   private sealed record PlacedFile(DirectoryNode Parent, string Name, byte[] Data, uint RecordNumber);
 
+  /// <summary>Builds the image.</summary>
   public byte[] Build() {
     if (!NwfsLayout.IsValidBlockSize(this.BlockSize))
       throw new InvalidOperationException(

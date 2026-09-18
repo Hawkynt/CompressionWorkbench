@@ -112,19 +112,19 @@ public sealed class NwfsRawStructureTests {
         $"master copy at sector 0x{sector:X} differs");
     }
 
-    var hotfix = firstMaster.AsSpan(0, SectorSize);
-    var mirror = firstMaster.AsSpan(SectorSize, SectorSize);
-    var nwvpMirror = firstMaster.AsSpan(SectorSize * 2, SectorSize);
+    var hotfix = firstMaster[..SectorSize];
+    var mirror = firstMaster[SectorSize..(SectorSize * 2)];
+    var nwvpMirror = firstMaster[(SectorSize * 2)..(SectorSize * 3)];
     Assert.Multiple(() => {
-      Assert.That(hotfix[..8].SequenceEqual("HOTFIX00"u8), Is.True);
-      Assert.That(mirror[..8].SequenceEqual("MIRROR00"u8), Is.True);
-      Assert.That(nwvpMirror[..16].SequenceEqual("NWVP MIRROR 0001"u8), Is.True);
+      Assert.That(hotfix.AsSpan(0, 8).SequenceEqual("HOTFIX00"u8), Is.True);
+      Assert.That(mirror.AsSpan(0, 8).SequenceEqual("MIRROR00"u8), Is.True);
+      Assert.That(nwvpMirror.AsSpan(0, 16).SequenceEqual("NWVP MIRROR 0001"u8), Is.True);
 
       // HOTFIX_BLOCK_TABLE is HotFix1, BadBlock1, HotFix2, BadBlock2.
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix[28..]), Is.EqualTo(20u * 8));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix[32..]), Is.EqualTo(28u * 8));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix[36..]), Is.EqualTo(36u * 8));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix[40..]), Is.EqualTo(44u * 8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix.AsSpan(28)), Is.EqualTo(20u * 8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix.AsSpan(32)), Is.EqualTo(28u * 8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix.AsSpan(36)), Is.EqualTo(36u * 8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(hotfix.AsSpan(40)), Is.EqualTo(44u * 8));
     });
 
     var firstVolumeTable = image.AsSpan(
@@ -136,19 +136,19 @@ public sealed class NwfsRawStructureTests {
         $"volume table copy at logical block {block} differs");
     }
 
-    var entry = firstVolumeTable.AsSpan(32, 60);
+    var entry = firstVolumeTable[32..92];
     Assert.Multiple(() => {
       Assert.That(firstVolumeTable.AsSpan(0, 16).SequenceEqual("NetWare Volumes\0"u8), Is.True);
       Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(firstVolumeTable.AsSpan(16, 4)), Is.EqualTo(1));
       Assert.That(entry[0], Is.EqualTo(3));
-      Assert.That(entry.Slice(1, 3).SequenceEqual("SYS"u8), Is.True);
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry[16..]), Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry[20..]), Is.EqualTo(0x00000106u));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry[24..]), Is.EqualTo(20u * 8));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry[36..]), Is.Zero);
+      Assert.That(entry.AsSpan(1, 3).SequenceEqual("SYS"u8), Is.True);
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(16)), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(20)), Is.EqualTo(0x00000106u));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(24)), Is.EqualTo(20u * 8));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(36)), Is.Zero);
       Assert.That(layout.Fat1, Is.Zero);
       Assert.That(layout.Fat2, Is.EqualTo(8));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry[56..]), Is.Zero);
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(entry.AsSpan(56)), Is.Zero);
     });
 
     var firstFat = image.AsSpan((int)layout.VolumeOffset, IoBlockSize);
@@ -170,21 +170,21 @@ public sealed class NwfsRawStructureTests {
 
     var root1 = image.AsSpan(
       checked((int)(layout.VolumeOffset + (long)layout.Directory1 * layout.ClusterSize)),
-      128);
+      128).ToArray();
     var root2 = image.AsSpan(
       checked((int)(layout.VolumeOffset + (long)layout.Directory2 * layout.ClusterSize)),
-      128);
-    Assert.That(root1.SequenceEqual(root2), Is.True);
+      128).ToArray();
+    Assert.That(root1.AsSpan().SequenceEqual(root2), Is.True);
     Assert.Multiple(() => {
       Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(root1), Is.EqualTo(0xFFFFFFFDu));
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(root1[4..]), Is.EqualTo(0x10u));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(root1.AsSpan(4)), Is.EqualTo(0x10u));
       Assert.That(root1[9] & 0x04, Is.Not.Zero);
       Assert.That(root1[9] & 0x10, Is.Not.Zero);
       Assert.That(root1[10], Is.Zero);
       Assert.That(root1[11], Is.EqualTo(1));
       Assert.That(root1[23], Is.Zero);
-      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(root1[28..]), Is.EqualTo(0x01000000u));
-      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(root1[100..]), Is.EqualTo(0xFFFF));
+      Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(root1.AsSpan(28)), Is.EqualTo(0x01000000u));
+      Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(root1.AsSpan(100)), Is.EqualTo(0xFFFF));
     });
   }
 

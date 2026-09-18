@@ -8,7 +8,25 @@ namespace FileSystem.Nwfs;
 /// Reads the supported single-segment Traditional NetWare profile, selecting
 /// valid redundant master/volume metadata and reconstructing the mirrored FAT.
 /// </summary>
+/// <remarks>
+/// <para>The route is the one a NetWare reader takes. The partition table gives
+/// the partition; the hotfix header at sector 32 of it gives the distance to
+/// the logical partition; the volume table in that logical partition gives the
+/// allocation-cluster size and the clusters the FAT and the directory start at;
+/// and the volume area, which follows the volume table, is what every cluster
+/// number counts from.</para>
+///
+/// <para>Master and volume metadata are held in several copies and the FAT is
+/// mirrored, so each structure is taken from whichever copy is valid rather
+/// than from a fixed one.</para>
+///
+/// <para>Directory entries are flat. Each names the directory it belongs to
+/// rather than being nested inside it, so a path is walked by collecting every
+/// entry once and then following parent ids down from the root.</para>
+/// </remarks>
 public sealed class NwfsReader {
+
+  /// <summary>One thing on the volume: a file or a directory.</summary>
   public sealed record Item(string Path, bool IsDirectory, long Length, uint FirstBlock);
 
   private readonly byte[] _image;
@@ -25,7 +43,10 @@ public sealed class NwfsReader {
   private readonly uint _clusterCount;
   private readonly int _fatPhysicalBlocks;
 
+  /// <summary>What the volume calls itself.</summary>
   public string VolumeName { get; }
+
+  /// <summary>Bytes to an allocation cluster on this volume.</summary>
   public int BlockSize => this._clusterSize;
 
   internal long PartitionOffset => this._partitionOffset;
@@ -78,6 +99,7 @@ public sealed class NwfsReader {
     this._directory = directory;
   }
 
+  /// <summary>Opens the first NetWare volume in <paramref name="image" />, or null if there is none.</summary>
   public static NwfsReader? TryOpen(byte[] image) {
     ArgumentNullException.ThrowIfNull(image);
     try {
@@ -562,6 +584,7 @@ public sealed class NwfsReader {
     }
   }
 
+  /// <summary>Everything on the volume, each with the path it is reached by.</summary>
   public List<Item> List() {
     var found = new List<Item>();
     var pending = new Queue<(uint Id, string Prefix)>();
@@ -588,6 +611,7 @@ public sealed class NwfsReader {
     return found;
   }
 
+  /// <summary>The bytes of the file at <paramref name="path" />, or null if there is none.</summary>
   public byte[]? ReadFile(string path) {
     ArgumentNullException.ThrowIfNull(path);
     var wanted = path.Replace('\\', '/').Trim('/');
@@ -596,6 +620,7 @@ public sealed class NwfsReader {
     return item == null ? null : this.Read(item);
   }
 
+  /// <summary>The bytes of <paramref name="item" />, followed through the FAT.</summary>
   public byte[] Read(Item item) {
     ArgumentNullException.ThrowIfNull(item);
     if (item.Length > int.MaxValue)
