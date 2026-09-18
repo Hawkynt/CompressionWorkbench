@@ -30,8 +30,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image
   /// size (Auto + fixed presets), volume label (capped at 32 chars to match
-  /// $VOLUME_NAME), cluster size, MFT record size and the 8.3 short-name
-  /// toggle. Cluster + MFT record size cooperate via
+  /// $VOLUME_NAME), cluster size, MFT record size, the 8.3 short-name toggle
+  /// and the NTFS version — which selects the FILE record header layout every
+  /// MFT record is written in, not only the $VOLUME_INFORMATION stamp.
+  /// Cluster + MFT record size cooperate via
   /// <see cref="NtfsWriter.BuildAutoSized"/> when both are on Auto. The MFT
   /// reserve % knob (stash) is not honoured by the upstream writer yet —
   /// see Build()'s constant MFT zone — so it's not published here.
@@ -67,8 +69,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Kind: FormatOptionKind.Enum,
       Default: "3.1",
       AllowedValues: ["3.1", "3.0"],
-      Description: "Volume version stamped into $VOLUME_INFORMATION. 3.1 (Windows XP and later) is the modern default; " +
-        "3.0 marks the volume as a Windows 2000-era NTFS volume."),
+      Description: "Volume version, which selects both the $VOLUME_INFORMATION stamp and the FILE record header layout " +
+        "every MFT record is written in. 3.1 (Windows XP and later, the modern default) records carry the MFT record " +
+        "number as a uint32 at offset 44 and start their update-sequence array at 48; 3.0 (Windows 2000) records have " +
+        "no record-number field and start the array at 42."),
   ];
 
   /// <summary>
@@ -405,8 +409,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// <summary>
   /// NTFS filesystem image with LZNT1 compression support. The writer emits
   /// every reserved system MFT record (0-15) with real content: $MFT,
-  /// $MFTMirr, $LogFile, $Volume (with a version-3.1 $VOLUME_INFORMATION
-  /// and a $VOLUME_NAME), $AttrDef, root ., $Bitmap, $Boot, $BadClus,
+  /// $MFTMirr, $LogFile, $Volume (with a $VOLUME_INFORMATION carrying the
+  /// version the NtfsVersion option selects — 3.1 by default — and a
+  /// $VOLUME_NAME), $AttrDef, root ., $Bitmap, $Boot, $BadClus,
   /// $Secure, $UpCase (128 KiB UTF-16 table), and $Extend. Every record
   /// carries $STANDARD_INFORMATION and $FILE_NAME, the Update Sequence
   /// Array (USA) fixup is applied at sector boundaries, and the on-disk
@@ -566,7 +571,8 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // Applies the create-glue knobs that the writer can honour for both the
   // in-memory and streaming build paths: LZNT1 compression (in-memory only —
   // a no-op on streaming entries, which the writer leaves uncompressed) and the
-  // NTFS minor version stamped into $VOLUME_INFORMATION.
+  // NTFS version, which drives both the $VOLUME_INFORMATION stamp and the FILE
+  // record header layout.
   private static void ApplyWriterOptions(NtfsWriter w, IReadOnlyDictionary<string, string>? specific) {
     if (specific == null) return;
     if (string.Equals(specific.GetValueOrDefault("Compression"), "LZNT1", StringComparison.OrdinalIgnoreCase))

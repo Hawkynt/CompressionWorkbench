@@ -25,11 +25,66 @@ internal static class MftInspector {
 
   // Reads MFT record <paramref name="recordNumber"/> and undoes its USA fixup.
   internal static byte[] ReadRecord(byte[] image, uint recordNumber) {
-    var (_, mftOffset, recordSize) = Geometry(image);
-    var offset = (int)(mftOffset + recordNumber * recordSize);
-    var record = image.AsSpan(offset, recordSize).ToArray();
+    var record = ReadRawRecord(image, recordNumber);
     UndoUsaFixup(record);
     return record;
+  }
+
+  // Reads MFT record <paramref name="recordNumber"/> exactly as it sits on disk —
+  // update-sequence fixup still applied. The only way to assert that a field the
+  // fixup could have trampled (the NTFS 3.1 record number at 44) actually survived
+  // it is to look at the bytes the fixup left behind.
+  internal static byte[] ReadRawRecord(byte[] image, uint recordNumber) {
+    var (_, mftOffset, recordSize) = Geometry(image);
+    var offset = (int)(mftOffset + recordNumber * recordSize);
+    return image.AsSpan(offset, recordSize).ToArray();
+  }
+
+  // Where a record says its update-sequence array starts: 42 for the pre-3.1 FILE
+  // header, 48 for the NTFS 3.1 one. This is the only field that tells them apart.
+  internal static int UpdateSequenceOffset(byte[] record)
+    => BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
+
+  // The four bytes at offset 44, whatever they currently mean: the MFT record
+  // number under the NTFS 3.1 header, two update-sequence slots under the older one.
+  internal static uint RecordNumberField(byte[] record)
+    => BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(44));
+
+  // Number of the MFT record whose Win32/Win32&DOS $FILE_NAME matches.
+  internal static uint FindRecordNumberByFileName(byte[] image, string fileName) {
+    var (_, mftOffset, recordSize) = Geometry(image);
+    for (uint rec = 16; ; rec++) {
+      var off = (int)(mftOffset + rec * recordSize);
+      if (off + recordSize > image.Length) break;
+      if (image[off] != 'F' || image[off + 1] != 'I' || image[off + 2] != 'L' || image[off + 3] != 'E') break;
+
+      var record = ReadRecord(image, rec);
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(22));
+      if ((flags & 0x01) == 0) continue;
+
+      string? found = null;
+      ForEachAttribute(record, (type, pos) => {
+        if (type != 0x30) return;
+        var (name, _) = ReadFileName(record, pos);
+        found ??= name;
+      });
+      if (string.Equals(found, fileName, StringComparison.OrdinalIgnoreCase)) return rec;
+    }
+    throw new InvalidOperationException($"no MFT record carries $FILE_NAME '{fileName}'");
+  }
+
+  // Highest in-use MFT record number in the image.
+  internal static uint LastInUseRecord(byte[] image) {
+    var (_, mftOffset, recordSize) = Geometry(image);
+    uint last = 0;
+    for (uint rec = 0; ; rec++) {
+      var off = (int)(mftOffset + rec * recordSize);
+      if (off + recordSize > image.Length) break;
+      if (image[off] != 'F' || image[off + 1] != 'I' || image[off + 2] != 'L' || image[off + 3] != 'E') break;
+      var record = ReadRecord(image, rec);
+      if ((BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(22)) & 0x01) != 0) last = rec;
+    }
+    return last;
   }
 
   // Scans user MFT records (>= 16) for the one whose Win32/Win32&DOS $FILE_NAME
@@ -178,9 +233,13 @@ internal static class MftInspector {
     }
   }
 
+  // Takes the array position from the record's own header rather than assuming a
+  // layout, and refuses one that overlaps the header it was read from or runs past
+  // the record — both would have this helper corrupt the record it is inspecting.
   private static void UndoUsaFixup(byte[] record) {
     var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
     var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
+    if (usaCount < 2 || usaOffset < 42 || usaOffset + usaCount * 2 > record.Length) return;
     for (var i = 1; i < usaCount; i++) {
       var sectorEnd = i * BytesPerSector - 2;
       if (sectorEnd + 2 > record.Length) break;

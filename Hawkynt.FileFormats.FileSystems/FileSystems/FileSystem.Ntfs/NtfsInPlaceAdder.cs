@@ -127,18 +127,19 @@ public static class NtfsInPlaceAdder {
   // an empty resident $INDEX_ROOT ($I30) holding only the end-marker entry.
   private static byte[] BuildDirectoryRecord(Geo geo, uint recordNum, string name, uint parent) {
     var record = new byte[geo.MftRecordSize];
-    var usaCount = 1 + geo.MftRecordSize / geo.BytesPerSector;
-    const int attrStart = 56;
+    var usaCount = NtfsRecordLayout.UpdateSequenceCount(geo.MftRecordSize, geo.BytesPerSector);
+    var attrStart = geo.AttributeStart;
 
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), (ushort)geo.UsaOffset);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), 1);                 // sequence
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(18), 1);                 // hard link count
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), attrStart);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), (ushort)attrStart);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(22), 0x03);              // in-use + directory
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)geo.MftRecordSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
+    if (geo.ExtendedRecordHeader)                                                   // NTFS 3.1 field only
+      BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
 
     var pos = attrStart;
     pos = WriteStdInfo(record, pos, isDirectory: true);
@@ -359,8 +360,16 @@ public static class NtfsInPlaceAdder {
 
   private readonly record struct Geo(
       int BytesPerSector, int SectorsPerCluster, int ClusterSize,
-      long MftOffset, long MftMirrOffset, int MftRecordSize, long TotalClusters) {
+      long MftOffset, long MftMirrOffset, int MftRecordSize, long TotalClusters,
+      int UsaOffset) {
     public int ResidentThreshold => 700;
+
+    /// <summary>Whether the volume's records carry the NTFS 3.1 record-number field at 44.</summary>
+    public bool ExtendedRecordHeader => this.UsaOffset >= NtfsRecordLayout.ExtendedFileHeaderSize;
+
+    /// <summary>Where a record built for this volume puts its first attribute.</summary>
+    public int AttributeStart
+      => NtfsRecordLayout.AttributeStart(this.UsaOffset, this.MftRecordSize, this.BytesPerSector);
   }
 
   private static Geo ParseBoot(byte[] image) {
@@ -374,7 +383,21 @@ public static class NtfsInPlaceAdder {
     var cpr = (sbyte)image[64];
     var recSize = cpr < 0 ? 1 << (-cpr) : cpr * clusterSize;
     return new Geo(bps, spc, clusterSize, mftCluster * clusterSize, mftMirrCluster * clusterSize,
-      recSize, totalSectors / spc);
+      recSize, totalSectors / spc, ReadVolumeUsaOffset(image, mftCluster * clusterSize, recSize));
+  }
+
+  // The FILE header layout this volume already uses, read off $MFT's own record
+  // rather than assumed. Records we add have to match what is already there: a
+  // pre-3.1 volume must not grow NTFS 3.1 records, and a 3.1 volume's new records
+  // must carry the record number the rest of its records carry.
+  private static int ReadVolumeUsaOffset(byte[] image, long mftOffset, int recordSize) {
+    if (mftOffset < 0 || recordSize <= 0 || mftOffset + recordSize > image.Length)
+      return NtfsRecordLayout.ExtendedFileHeaderSize;
+    var record0 = image.AsSpan((int)mftOffset, recordSize);
+    return NtfsRecordLayout.TryReadUpdateSequence(record0, out var usaOffset, out _)
+           && usaOffset < NtfsRecordLayout.ExtendedFileHeaderSize
+      ? NtfsRecordLayout.LegacyFileHeaderSize
+      : NtfsRecordLayout.ExtendedFileHeaderSize;
   }
 
   // $MFTMirr (record 1) holds byte-identical copies of MFT records 0..3; ntfs-3g
@@ -638,18 +661,19 @@ public static class NtfsInPlaceAdder {
   private static byte[] BuildFileRecord(Geo geo, uint recordNum, string name, uint parent,
       byte[]? residentData, List<(long Lcn, long Count)>? runs, long dataSize) {
     var record = new byte[geo.MftRecordSize];
-    var usaCount = 1 + geo.MftRecordSize / geo.BytesPerSector;
-    const int attrStart = 56;
+    var usaCount = NtfsRecordLayout.UpdateSequenceCount(geo.MftRecordSize, geo.BytesPerSector);
+    var attrStart = geo.AttributeStart;
 
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42);                 // USA offset
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), (ushort)geo.UsaOffset); // USA offset, matching the volume
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), 1);                 // sequence
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(18), 1);                 // hard link count
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), attrStart);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(20), (ushort)attrStart);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(22), 0x01);              // in-use, file
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)geo.MftRecordSize);
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
+    if (geo.ExtendedRecordHeader)                                                   // NTFS 3.1 field only
+      BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
 
     var pos = attrStart;
     pos = WriteStdInfo(record, pos);
@@ -1220,9 +1244,7 @@ public static class NtfsInPlaceAdder {
   // USA fixup for an INDX (or any) block where the record size may exceed 512:
   // sectors are bytesPerSector wide. Used when re-reading INDX leaves.
   private static void ApplyFixupGeneric(byte[] block) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(6));
-    if (usaOffset + usaCount * 2 > block.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(block, out var usaOffset, out var usaCount)) return;
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(block.AsSpan(usaOffset));
     // Sector stride is (block length / (usaCount-1)).
     var stride = block.Length / (usaCount - 1);
@@ -1290,9 +1312,7 @@ public static class NtfsInPlaceAdder {
 
   // Reverse the USA fixup (for parsing a copy) — identical to NtfsRemover.
   private static void ApplyFixup(byte[] record) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaOffset + usaCount * 2 > record.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
     for (var i = 1; i < usaCount; i++) {
       var sectorEnd = i * 512 - 2;
@@ -1312,9 +1332,8 @@ public static class NtfsInPlaceAdder {
   // the USA before being stamped with the USN. Must be byte-stride agnostic so it
   // works for either layout and for the actual sector size in the boot record.
   private static void WriteUsaFixup(byte[] record, Geo geo) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaCount < 2 || usaOffset + usaCount * 2 > record.Length) return;
+    _ = geo;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
 
     // Bump the existing USN (wrapping; 0 and 0xFFFF are reserved sentinels in some
     // implementations, so skip them on wrap).
