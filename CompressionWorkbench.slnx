@@ -18,7 +18,6 @@
   </Folder>
   <Folder Name="/Apps/">
     <Project Path="Compression.CLI/Compression.CLI.csproj" />
-    <Project Path="Compression.UI/Compression.UI.csproj" />
     <Project Path="Compression.Shell/Compression.Shell.csproj" />
     <Project Path="Compression.Sfx.Cli/Compression.Sfx.Cli.csproj" />
     <Project Path="Compression.Sfx.Ui/Compression.Sfx.Ui.csproj" />

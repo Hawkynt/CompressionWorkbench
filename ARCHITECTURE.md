@@ -29,8 +29,7 @@ CompressionWorkbench.slnx
 |
 +-- User Interfaces
 |   +-- Compression.CLI                   Command-line tool (cwb)
-|   +-- Compression.UI                    WPF archive browser and analysis wizard
-|   +-- Compression.NativeUI              Cross-platform NativeForms shell for the mounting workflow
+|   +-- Compression.NativeUI              Cross-platform NativeForms shell: archive browser, analysis, maintenance
 |   +-- Compression.Shell                 Windows Explorer context menu integration
 |
 +-- Self-Extracting Archives
@@ -68,8 +67,7 @@ Compression.Lib <----- Compression.Registry.Generator  (source generator, compil
 Compression.Analysis -> Compression.Lib          (format detection, trial decompression)
 Compression.Mounting -> Compression.Registry     (mount-neutral session contracts)
 Compression.CLI ------> Compression.Analysis
-Compression.UI -------> Compression.Analysis
-Compression.NativeUI -> Compression.Mounting, Compression.Mounting.Dokan, Compression.Mounting.Fuse
+Compression.NativeUI -> Compression.Analysis, Compression.Mounting, Compression.Mounting.Dokan, Compression.Mounting.Fuse
 Compression.Tests ----> Compression.Lib, Compression.Analysis
 ```
 
