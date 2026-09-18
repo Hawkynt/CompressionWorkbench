@@ -12,6 +12,14 @@
     <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.219" />
     <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.62" />
     <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.71" />
+
+    <!--
+      The preview window decodes through this package, which carries readers for several hundred
+      image formats. It is aliased because it also ships FileFormat.Dng.DngReader and
+      FileFormat.Heif.HeifReader under the same fully-qualified names as Compression.Lib's own,
+      and an unaliased reference would make both ambiguous.
+    -->
+    <PackageReference Include="Hawkynt.FileFormats.Images" Version="1.0.0.145" Aliases="images" />
   </ItemGroup>
 
   <ItemGroup>

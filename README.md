@@ -318,8 +318,18 @@ work from the bytes outward instead of stopping at "unsupported".
 ### 🖥️ Compression.NativeUI — browser, analyser and heatmap
 
 The archive browser is the conventional half: file list with name, size, compressed size, ratio,
-method and modified columns; open / extract / create / test flows; text and hex preview; properties
-with compression-ratio visualization; benchmark tooling; and Explorer context-menu integration.
+method and modified columns; open / extract / create / test flows; text, hex and image preview;
+properties with compression-ratio visualization; benchmark tooling; and Explorer context-menu
+integration.
+
+**Image preview** decodes in two tiers. Animated PNG, GIF, JPEG, BMP, ICO and CUR are read by the UI
+toolkit itself, which is the only one of the two that returns every frame with its timing, so those
+play in place. Everything else falls through to `Hawkynt.FileFormats.Images`, which covers several
+hundred formats as stills — TIFF, WebP, TGA, DDS, PCX, SGI, ILBM and a long tail of platform and
+era-specific screen formats. Many of the older ones carry no magic bytes at all (an Atari or BBC
+Micro screen dump is raw pixels from byte zero), so when the header identifies nothing the entry's
+extension is used instead. An entry that no reader recognizes falls back to the text or hex view
+rather than erroring.
 
 Power-user navigation includes:
 
