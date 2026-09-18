@@ -10149,7 +10149,7 @@ Writes the NSS container described in `NssLayout`.
 
 ### Namespace `FileSystem.Ntfs`
 
-[`Lznt1`](#lznt1) · [`NtfsBlockMover`](#ntfsblockmover) · [`NtfsEntry`](#ntfsentry) · [`NtfsExtentMap`](#ntfsextentmap) · [`NtfsFilesystemDriverAdapter`](#ntfsfilesystemdriveradapter) · [`NtfsFormatDescriptor`](#ntfsformatdescriptor) · [`NtfsInPlaceAdder`](#ntfsinplaceadder) · [`NtfsInPlaceShrinker`](#ntfsinplaceshrinker) · [`NtfsInPlaceShrinker.ShrinkResult`](#ntfsinplaceshrinkershrinkresult) · [`NtfsReader`](#ntfsreader) · [`NtfsRemover`](#ntfsremover) · [`NtfsWriter`](#ntfswriter)
+[`Lznt1`](#lznt1) · [`NtfsBlockMover`](#ntfsblockmover) · [`NtfsEntry`](#ntfsentry) · [`NtfsExtentMap`](#ntfsextentmap) · [`NtfsFilesystemDriverAdapter`](#ntfsfilesystemdriveradapter) · [`NtfsFormatDescriptor`](#ntfsformatdescriptor) · [`NtfsInPlaceAdder`](#ntfsinplaceadder) · [`NtfsInPlaceShrinker`](#ntfsinplaceshrinker) · [`NtfsInPlaceShrinker.ShrinkResult`](#ntfsinplaceshrinkershrinkresult) · [`NtfsReader`](#ntfsreader) · [`NtfsRemover`](#ntfsremover) · [`NtfsVersion`](#ntfsversion) · [`NtfsVersions`](#ntfsversions) · [`NtfsWriter`](#ntfswriter)
 
 #### `Lznt1`
 
@@ -10230,14 +10230,14 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
-| `Description` | `string Description { get; }` | NTFS filesystem image with LZNT1 compression support. The writer emits every reserved system MFT record (0-15) with real content: $MFT, $MFTMirr, $LogFile, $Volume (with a $VOLUME_INFORMATION carrying the version the NtfsVersion option selects — 3.1 by default — and a $VOLUME_NAME), $AttrDef, root ., $Bitmap, $Boot, $BadClus, $Secure, $UpCase (128 KiB UTF-16 table), and $Extend. Every record carries $STANDARD_INFORMATION and $FILE_NAME, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects actual allocations. |
+| `Description` | `string Description { get; }` | NTFS filesystem image with LZNT1 compression support. The writer emits every reserved system MFT record (0-15) with real content: $MFT, $MFTMirr, $LogFile, $Volume (with a $VOLUME_INFORMATION carrying the version the NtfsVersion option selects — 3.1 by default — and a $VOLUME_NAME), $AttrDef, root ., $Bitmap, $Boot, $BadClus, $Secure (or $Quota on a 1.2 volume), $UpCase (128 KiB UTF-16 table), and, from NTFS 3.0 on, $Extend. Every record carries $STANDARD_INFORMATION and $FILE_NAME, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects actual allocations. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image size (Auto + fixed presets), volume label (capped at 32 chars to match $VOLUME_NAME), cluster size, MFT record size, the 8.3 short-name toggle and the NTFS version — which selects the FILE record header layout every MFT record is written in, not only the $VOLUME_INFORMATION stamp. Cluster + MFT record size cooperate via `BuildAutoSized` when both are on Auto. The MFT reserve % knob (stash) is not honoured by the upstream writer yet — see Build()'s constant MFT zone — so it's not published here. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` | NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image size (Auto + fixed presets), volume label (capped at 32 chars to match $VOLUME_NAME), cluster size, MFT record size, the 8.3 short-name toggle and the NTFS version — which selects every version-sensitive structure in the image (record header layout, metadata file set, $AttrDef table, $STANDARD_INFORMATION shape), not only the $VOLUME_INFORMATION stamp. Cluster + MFT record size cooperate via `BuildAutoSized` when both are on Auto. The MFT reserve % knob (stash) is not honoured by the upstream writer yet — see Build()'s constant MFT zone — so it's not published here. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds the supplied entry to the target container. |
 | `CreateFromStreams` | `void CreateFromStreams(Stream output, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Two-pass streaming creation: pre-known per-input sizes drive MFT-record + cluster geometry in pass 1; pass 2 emits all reserved system MFT records + per-user MFT records (with single-run non-resident $DATA for large files), then streams each non-resident entry's bytes from its `OpenStream` factory into its allocated cluster run via 64 KB chunks. Cluster tail past each entry's exact `Size` stays sparse-zero. Resident files (≤ 700 bytes) buffer their bounded source bytes inline in the MFT record — the bound itself caps anything past `Size`. |
@@ -10299,7 +10299,9 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NtfsReader` | `NtfsReader(Stream stream, bool leaveOpen = false)` | Initializes a new instance of `NtfsReader`. |
+| `DeclaredVersion` | `NtfsVersion? DeclaredVersion { get; }` | The version `$VOLUME_INFORMATION` declares, or `null` when the volume names a major/minor pair this implementation does not know. |
 | `Entries` | `IReadOnlyList<NtfsEntry> Entries { get; }` | Gets the entries. |
+| `VersionInconsistencies` | `IReadOnlyList<string> VersionInconsistencies { get; }` | Every way the volume's content contradicts the version it declares, empty when the two agree. |
 | `Dispose` | `void Dispose()` | Releases resources held by this instance. |
 | `Extract` | `byte[] Extract(NtfsEntry entry)` | Extracts a file's data from the NTFS image. |
 
@@ -10311,9 +10313,37 @@ Secure-remove implementation for NTFS images. Finds the named file in the MFT (r
 | --- | --- | --- |
 | `Remove` | `static void Remove(byte[] image, string fileName)` | Removes `fileName` from the in-memory NTFS image. Throws `FileNotFoundException` if no MFT record matches. The image is modified in place. |
 
+#### `NtfsVersion`
+
+The NTFS volume versions this writer produces and this reader accepts, as the `$VOLUME_INFORMATION` major/minor pair that names them.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `V12` | `258` | NTFS 1.2 — Windows NT 3.51 and NT 4.0. |
+| `V30` | `768` | NTFS 3.0 — Windows 2000. |
+| `V31` | `769` | NTFS 3.1 — Windows XP and later. |
+
+#### `NtfsVersions`
+
+What a declared `NtfsVersion` obliges the volume's content to be.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Default` | `const NtfsVersion Default` | The default a caller gets who does not choose: NTFS 3.1. |
+| `All` | `static IReadOnlyList<NtfsVersion> All { get; }` | Every version this implementation writes and reads, oldest first. |
+| `HasCentralisedSecurity` | `static bool HasCentralisedSecurity(this NtfsVersion version)` | Whether the volume centralises security descriptors in `$Secure` (MFT record 9) and carries the `$Extend` directory (record 11) — both arrivals of NTFS 3.0. |
+| `Major` | `static byte Major(this NtfsVersion version)` | The `$VOLUME_INFORMATION` major version byte. |
+| `Minor` | `static byte Minor(this NtfsVersion version)` | The `$VOLUME_INFORMATION` minor version byte. |
+| `Record9Name` | `static string Record9Name(this NtfsVersion version)` | The name MFT record 9 carries: `$Quota` before NTFS 3.0, `$Secure` from it. |
+| `StandardInformationLength` | `static int StandardInformationLength(this NtfsVersion version)` | The `$STANDARD_INFORMATION` value length this version writes: 48 bytes up to NTFS 1.2, 72 from 3.0 on, where OwnerId, SecurityId, QuotaCharged and the USN were appended. |
+| `ToVersionText` | `static string ToVersionText(this NtfsVersion version)` | The version as the option and the tooling spell it — "1.2", "3.0", "3.1". |
+| `TryFromOnDisk` | `static bool TryFromOnDisk(byte major, byte minor, out NtfsVersion version)` | Recognises an on-disk major/minor pair, refusing one we do not implement. |
+| `TryParse` | `static bool TryParse(string text, out NtfsVersion version)` | Parses the "1.2"/"3.0"/"3.1" spelling the creation option uses. |
+| `UsesExtendedRecordHeader` | `static bool UsesExtendedRecordHeader(this NtfsVersion version)` | Whether MFT records carry the NTFS 3.1 record-number field at offset 44, which puts their update-sequence array at 48 instead of 42. |
+
 #### `NtfsWriter`
 
-Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $Secure, $UpCase, and $Extend. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute; larger files use non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsMinorVersion`, which also selects the FILE record header layout that goes with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. A single B+tree level is built: the resident root points directly at leaf blocks. To keep all routing pointers resident, the INDX block size is grown (power-of-two, 4 KiB..64 KiB) as the entry count rises. With the default 1024-byte MFT record this handles tens of thousands of short-named entries per directory; only a directory whose routing pointers would overflow even a 64 KiB block (hundreds of thousands of entries) would need a second tree level, which is not yet implemented. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
+Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile, $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11 reserved. Every record carries the mandatory $STANDARD_INFORMATION and $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied at sector boundaries, and the on-disk cluster bitmap reflects which clusters are actually allocated. Small files (<700 bytes) use a resident $DATA attribute where the record has room for it beside $STANDARD_INFORMATION and a $FILE_NAME that grows with the name; everything else uses non-resident cluster runs. Images produced by this writer carry all the structure that chkdsk and the Linux ntfs-3g driver check at mount time: volume serial, valid boot signature, every system file has its "FILE" magic, USA fixup at `record[510..512]` and `record[1022..1024]`, $Volume carries a valid $VOLUME_INFORMATION (version 3.1 by default; see `SetNtfsVersion`, which also selects the FILE record header layout, the metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only marks clusters that hold actual filesystem metadata/data. Large directories: when a directory's $I30 file-name index no longer fits in the resident $INDEX_ROOT inside its MFT record, it spills into a non-resident $INDEX_ALLOCATION (a stream of "INDX" index records, each with its own USA fixup) tracked by a named $BITMAP. The $INDEX_ROOT then holds routing pointer entries (subnode VCN flag 0x01 + 8-byte child VCN at the entry tail) into those INDX leaves, and the FILE_NAME entries live in the leaves sorted by NTFS file-name collation. A single B+tree level is built: the resident root points directly at leaf blocks. To keep all routing pointers resident, the INDX block size is grown (power-of-two, 4 KiB..64 KiB) as the entry count rises. With the default 1024-byte MFT record this handles tens of thousands of short-named entries per directory; only a directory whose routing pointers would overflow even a 64 KiB block (hundreds of thousands of entries) would need a second tree level, which is not yet implemented. 8.3 short names: by default every $FILE_NAME is recorded in the Win32&DOS namespace (3) so the long name also serves as the 8.3 short name, the way a freshly formatted Windows volume does. Passing `generateShortNames: false` records names in the Win32-only namespace (1) and emits no DOS short name — the equivalent of `fsutil behavior set disable8dot3`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10330,7 +10360,7 @@ Builds spec-compliant NTFS filesystem images. All reserved system MFT records (0
 | `Build` | `byte[] Build(int totalSize, int clusterSize, int mftRecordSize)` | Builds the NTFS filesystem image with a tunable cluster size and MFT record size. |
 | `PlanAutoSize` | `ValueTuple<long, int, int> PlanAutoSize(int requestedClusterSize = 0, int requestedMftRecordSize = 0)` | Volume size, cluster size and MFT-record size an auto-sized build would use for the files added. The size is a long: clamping it to int for `Build` is exactly what capped an auto-sized volume at 2 GB, and the streaming path needs no such clamp. |
 | `SetCompression` | `void SetCompression(bool enabled)` | Enables or disables NTFS LZNT1 compression of file `$DATA` for this build. When enabled every non-resident file is stored as a compressed attribute (16-cluster compression units, the `0x0001` compressed flag, sparse runs for saved clusters). Resident files (≤ ~700 bytes) are left uncompressed, mirroring real NTFS which never compresses resident data. Default is off; call before any `Build` overload. |
-| `SetNtfsMinorVersion` | `void SetNtfsMinorVersion(byte minorVersion)` | Sets the NTFS minor version of the volume (the major version is always 3). Accepts 0 (NTFS 3.0, Windows 2000) or 1 (NTFS 3.1, Windows XP and later — the default). |
+| `SetNtfsVersion` | `void SetNtfsVersion(NtfsVersion version)` | Sets the NTFS version of the volume: 1.2 (NT 3.51/4.0), 3.0 (Windows 2000) or 3.1 (Windows XP and later — the default). |
 | `SetVolumeSerial` | `void SetVolumeSerial(long serial)` | Fixes the volume serial, for a build that has to come out the same twice. |
 
 ### Namespace `FileSystem.Nwfs`
