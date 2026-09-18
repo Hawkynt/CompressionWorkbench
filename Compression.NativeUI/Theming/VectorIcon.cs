@@ -119,15 +119,27 @@ internal static class VectorIconRenderer {
 
   private const int SuperSample = 4;
 
-  /// <summary>Renders <paramref name="shapes"/> into a fresh <paramref name="size"/>-square ARGB buffer.</summary>
-  public static int[] Render(IReadOnlyList<IconShape> shapes, int size) {
-    ArgumentNullException.ThrowIfNull(shapes);
-    ArgumentOutOfRangeException.ThrowIfLessThan(size, 1);
+  /// <summary>Renders the shapes into a fresh square ARGB buffer.</summary>
+  /// <param name="shapes">Layers to composite, in the 16-unit design space.</param>
+  /// <param name="size">Edge length of the square output, in pixels.</param>
+  public static int[] Render(IReadOnlyList<IconShape> shapes, int size)
+    => Render(shapes, size, size, size / DesignSize);
 
-    var pixels = new int[size * size];
-    var scale = size / DesignSize;
-    var coverage = new byte[size * size];
-    var hits = new int[size * size];
+  /// <summary>
+  /// Renders <paramref name="shapes"/> whose coordinates are already in pixels — for the
+  /// diagram-style drawings that size themselves to a control rather than to a 16-unit grid.
+  /// </summary>
+  public static int[] RenderPixels(IReadOnlyList<IconShape> shapes, int width, int height)
+    => Render(shapes, width, height, 1.0);
+
+  private static int[] Render(IReadOnlyList<IconShape> shapes, int width, int height, double scale) {
+    ArgumentNullException.ThrowIfNull(shapes);
+    ArgumentOutOfRangeException.ThrowIfLessThan(width, 1);
+    ArgumentOutOfRangeException.ThrowIfLessThan(height, 1);
+
+    var pixels = new int[width * height];
+    var coverage = new byte[pixels.Length];
+    var hits = new int[pixels.Length];
 
     foreach (var shape in shapes) {
       Array.Clear(hits);
@@ -136,9 +148,9 @@ internal static class VectorIconRenderer {
         : BuildStrokeOutline(shape, scale);
 
       if (shape.Kind == IconShapeKind.Fill)
-        AccumulateEvenOdd(hits, size, polygons, scale);
+        AccumulateEvenOdd(hits, width, height, polygons, scale);
       else
-        AccumulateUnion(hits, size, polygons, scale);
+        AccumulateUnion(hits, width, height, polygons, scale);
 
       const int Samples = SuperSample * SuperSample;
       for (var i = 0; i < coverage.Length; ++i)
@@ -192,10 +204,10 @@ internal static class VectorIconRenderer {
     return pieces.ToArray();
   }
 
-  private static void AccumulateEvenOdd(int[] hits, int size, (double X, double Y)[][] polygons, double scale) {
+  private static void AccumulateEvenOdd(int[] hits, int width, int height, (double X, double Y)[][] polygons, double scale) {
     var crossings = new List<double>(16);
 
-    for (var py = 0; py < size; ++py)
+    for (var py = 0; py < height; ++py)
       for (var sy = 0; sy < SuperSample; ++sy) {
         var y = (py + (sy + 0.5) / SuperSample) / scale;
         crossings.Clear();
@@ -205,15 +217,15 @@ internal static class VectorIconRenderer {
 
         crossings.Sort();
         for (var i = 0; i + 1 < crossings.Count; i += 2)
-          MarkSpan(hits, size, py, crossings[i] * scale, crossings[i + 1] * scale);
+          MarkSpan(hits, width, py, crossings[i] * scale, crossings[i + 1] * scale);
       }
   }
 
-  private static void AccumulateUnion(int[] hits, int size, (double X, double Y)[][] polygons, double scale) {
+  private static void AccumulateUnion(int[] hits, int width, int height, (double X, double Y)[][] polygons, double scale) {
     var crossings = new List<double>(8);
-    var row = new bool[size * SuperSample];
+    var row = new bool[width * SuperSample];
 
-    for (var py = 0; py < size; ++py)
+    for (var py = 0; py < height; ++py)
       for (var sy = 0; sy < SuperSample; ++sy) {
         var y = (py + (sy + 0.5) / SuperSample) / scale;
         Array.Clear(row);
@@ -225,13 +237,13 @@ internal static class VectorIconRenderer {
           if (crossings.Count < 2) continue;
           crossings.Sort();
           for (var i = 0; i + 1 < crossings.Count; i += 2)
-            any |= MarkSubRow(row, size, crossings[i] * scale, crossings[i + 1] * scale);
+            any |= MarkSubRow(row, width, crossings[i] * scale, crossings[i + 1] * scale);
         }
 
         if (!any) continue;
         for (var sx = 0; sx < row.Length; ++sx)
           if (row[sx])
-            ++hits[py * size + sx / SuperSample];
+            ++hits[py * width + sx / SuperSample];
       }
   }
 
@@ -247,20 +259,20 @@ internal static class VectorIconRenderer {
     }
   }
 
-  private static void MarkSpan(int[] hits, int size, int py, double x0, double x1) {
+  private static void MarkSpan(int[] hits, int width, int py, double x0, double x1) {
     var from = (int)Math.Ceiling(x0 * SuperSample - 0.5);
     var to = (int)Math.Ceiling(x1 * SuperSample - 0.5);
     if (from < 0) from = 0;
-    if (to > size * SuperSample) to = size * SuperSample;
+    if (to > width * SuperSample) to = width * SuperSample;
     for (var sx = from; sx < to; ++sx)
-      ++hits[py * size + sx / SuperSample];
+      ++hits[py * width + sx / SuperSample];
   }
 
-  private static bool MarkSubRow(bool[] row, int size, double x0, double x1) {
+  private static bool MarkSubRow(bool[] row, int width, double x0, double x1) {
     var from = (int)Math.Ceiling(x0 * SuperSample - 0.5);
     var to = (int)Math.Ceiling(x1 * SuperSample - 0.5);
     if (from < 0) from = 0;
-    if (to > size * SuperSample) to = size * SuperSample;
+    if (to > width * SuperSample) to = width * SuperSample;
     var any = false;
     for (var sx = from; sx < to; ++sx) {
       row[sx] = true;
