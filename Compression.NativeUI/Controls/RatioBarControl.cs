@@ -32,6 +32,12 @@ internal sealed class RatioBarControl : OwnerDrawnControl {
     if (w <= 8 || h <= 8) return;
 
     e.Graphics.FillRectangle(DefaultTheme.Instance.WindowBackground, new(0, 0, w, h));
+
+    // The isometric rise is derived from the width, so a cell that is wide and short leaves no room
+    // between the top and bottom faces and the box turns itself inside out. Nothing sensible can be
+    // drawn at that aspect, so only the ground is.
+    if (h < w * 0.2 + 12) return;
+
     e.Graphics.DrawImage(Images.FromArgb(w, h, VectorIconRenderer.RenderPixels(this.BuildShapes(w, h), w, h)), new(0, 0, w, h));
   }
 
