@@ -627,9 +627,7 @@ public static class NtfsInPlaceShrinker {
   }
 
   private static void ApplyFixup(byte[] record) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaOffset + usaCount * 2 > record.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
     for (var i = 1; i < usaCount; i++) {
       var sectorEnd = i * 512 - 2;
@@ -641,9 +639,7 @@ public static class NtfsInPlaceShrinker {
 
   private static void WriteUsaFixup(byte[] record, Geo geo) {
     _ = geo;
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaCount < 2 || usaOffset + usaCount * 2 > record.Length) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
     var usn = (ushort)(BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset)) + 1);
     if (usn is 0 or 0xFFFF) usn = 1;
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaOffset), usn);

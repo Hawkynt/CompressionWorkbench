@@ -397,11 +397,17 @@ internal sealed class NtfsMountIdentityScanner {
 
     var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
     var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
+    // An array that started inside the record's own fixed header would have the
+    // fixup overwrite the very fields that say how to read it: a FILE record's
+    // fields reach 42 even in the pre-3.1 layout, an INDX record's reach 40.
+    var minimumUsaOffset = record.AsSpan(0, 4).SequenceEqual("FILE"u8)
+      ? NtfsRecordLayout.LegacyFileHeaderSize
+      : NtfsRecordLayout.IndexHeaderSize;
     var expectedSectors = checked(record.Length / _geometry.BytesPerSector);
     if (record.Length % _geometry.BytesPerSector != 0 || usaCount != expectedSectors + 1)
       throw new InvalidDataException(
         $"NTFS {context} has USA count {usaCount}, expected {expectedSectors + 1} for {_geometry.BytesPerSector}-byte sectors.");
-    if (usaOffset < 8 || usaOffset > record.Length - checked(usaCount * 2))
+    if (usaOffset < minimumUsaOffset || usaOffset > record.Length - checked(usaCount * 2))
       throw new InvalidDataException($"NTFS {context} update-sequence array lies outside the record.");
 
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
@@ -425,11 +431,10 @@ internal sealed class NtfsMountIdentityScanner {
     // those, offset 44 is the saved trailer of a sector and reading it as a
     // record number compares against whatever two bytes that sector ended with.
     // Where the USA starts is what tells the two layouts apart.
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    if (usaOffset < 48) return;
+    if (!NtfsRecordLayout.HasRecordNumberField(record)) return;
 
     // NTFS 3.1 may still leave the field zero, so only a non-zero value is authoritative.
-    var recordedNumber = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(44));
+    var recordedNumber = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset));
     if (recordedNumber != 0 && recordedNumber != expectedRecordNumber)
       throw new InvalidDataException(
         $"NTFS FILE header says MFT record {recordedNumber}, but the $MFT mapping selected record {expectedRecordNumber}.");

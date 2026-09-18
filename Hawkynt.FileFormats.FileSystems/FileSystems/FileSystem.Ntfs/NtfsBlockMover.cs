@@ -709,9 +709,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   /// restored from the fixup array.
   /// </summary>
   private static void ApplyFixup(byte[] record) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaOffset + usaCount * 2 > record.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
 
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
     for (var i = 1; i < usaCount; i++) {
@@ -729,9 +727,7 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   /// Matches the writer's implementation.
   /// </summary>
   private static void ApplyUsaFixup(byte[] record) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-    if (usaOffset + usaCount * 2 > record.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
 
     // Increment the USN for the new write (keeps it non-zero).
     var oldUsn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));

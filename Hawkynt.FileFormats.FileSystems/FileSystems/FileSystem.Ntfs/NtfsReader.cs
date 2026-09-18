@@ -234,10 +234,7 @@ public sealed class NtfsReader : IDisposable {
   }
 
   private static void ApplyFixup(byte[] record) {
-    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
-    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
-
-    if (usaOffset + usaCount * 2 > record.Length || usaCount < 2) return;
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out var usaCount)) return;
 
     var usn = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(usaOffset));
 
