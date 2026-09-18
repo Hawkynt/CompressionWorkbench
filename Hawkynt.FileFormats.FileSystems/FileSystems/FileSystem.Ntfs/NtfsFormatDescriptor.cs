@@ -31,8 +31,9 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// NTFS creation knobs surfaced by the Convert Archive dialog / CLI: image
   /// size (Auto + fixed presets), volume label (capped at 32 chars to match
   /// $VOLUME_NAME), cluster size, MFT record size, the 8.3 short-name toggle
-  /// and the NTFS version — which selects the FILE record header layout every
-  /// MFT record is written in, not only the $VOLUME_INFORMATION stamp.
+  /// and the NTFS version — which selects every version-sensitive structure in
+  /// the image (record header layout, metadata file set, $AttrDef table,
+  /// $STANDARD_INFORMATION shape), not only the $VOLUME_INFORMATION stamp.
   /// Cluster + MFT record size cooperate via
   /// <see cref="NtfsWriter.BuildAutoSized"/> when both are on Auto. The MFT
   /// reserve % knob (stash) is not honoured by the upstream writer yet —
@@ -68,11 +69,14 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       DisplayName: "NTFS version",
       Kind: FormatOptionKind.Enum,
       Default: "3.1",
-      AllowedValues: ["3.1", "3.0"],
-      Description: "Volume version, which selects both the $VOLUME_INFORMATION stamp and the FILE record header layout " +
-        "every MFT record is written in. 3.1 (Windows XP and later, the modern default) records carry the MFT record " +
-        "number as a uint32 at offset 44 and start their update-sequence array at 48; 3.0 (Windows 2000) records have " +
-        "no record-number field and start the array at 42."),
+      AllowedValues: ["3.1", "3.0", "1.2"],
+      Description: "Volume version, which selects every version-sensitive structure in the image, not just the " +
+        "$VOLUME_INFORMATION stamp. 3.1 (Windows XP and later, the modern default) records carry the MFT record " +
+        "number as a uint32 at offset 44 and start their update-sequence array at 48; 3.0 (Windows 2000) and 1.2 " +
+        "(Windows NT 3.51/4.0) records have no record-number field and start the array at 42. 3.0 and 3.1 carry " +
+        "$Secure (record 9), the $Extend directory (record 11), the 3.x $AttrDef table and the 72-byte " +
+        "$STANDARD_INFORMATION; 1.2 has $Quota at record 9, no $Extend, the 1.2 $AttrDef table (with " +
+        "$VOLUME_VERSION, $SYMBOLIC_LINK and no $LOGGED_UTILITY_STREAM) and the 48-byte $STANDARD_INFORMATION."),
   ];
 
   /// <summary>
@@ -412,7 +416,8 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// $MFTMirr, $LogFile, $Volume (with a $VOLUME_INFORMATION carrying the
   /// version the NtfsVersion option selects — 3.1 by default — and a
   /// $VOLUME_NAME), $AttrDef, root ., $Bitmap, $Boot, $BadClus,
-  /// $Secure, $UpCase (128 KiB UTF-16 table), and $Extend. Every record
+  /// $Secure (or $Quota on a 1.2 volume), $UpCase (128 KiB UTF-16 table),
+  /// and, from NTFS 3.0 on, $Extend. Every record
   /// carries $STANDARD_INFORMATION and $FILE_NAME, the Update Sequence
   /// Array (USA) fixup is applied at sector boundaries, and the on-disk
   /// cluster bitmap reflects actual allocations.
@@ -571,14 +576,15 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   // Applies the create-glue knobs that the writer can honour for both the
   // in-memory and streaming build paths: LZNT1 compression (in-memory only —
   // a no-op on streaming entries, which the writer leaves uncompressed) and the
-  // NTFS version, which drives both the $VOLUME_INFORMATION stamp and the FILE
-  // record header layout.
+  // NTFS version, which drives the $VOLUME_INFORMATION stamp, the FILE record
+  // header layout, the metadata file set, the $AttrDef table and the
+  // $STANDARD_INFORMATION shape.
   private static void ApplyWriterOptions(NtfsWriter w, IReadOnlyDictionary<string, string>? specific) {
     if (specific == null) return;
     if (string.Equals(specific.GetValueOrDefault("Compression"), "LZNT1", StringComparison.OrdinalIgnoreCase))
       w.SetCompression(true);
-    if (specific.GetValueOrDefault("NtfsVersion")?.Trim() == "3.0")
-      w.SetNtfsMinorVersion(0);
+    if (NtfsVersions.TryParse(specific.GetValueOrDefault("NtfsVersion"), out var version))
+      w.SetNtfsVersion(version);
   }
 
   // Parses the NTFS image-size labels ("16 MB".."16 GB"); "Auto …" → 0.

@@ -61,8 +61,10 @@ public static class NtfsInPlaceAdder {
     if (parts.Length == 1)
       try { NtfsRemover.Remove(image, leafName); } catch (FileNotFoundException) { /* new file */ }
 
-    // Decide $DATA residency: small files live inside the MFT record (resident).
-    var resident = data.Length <= geo.ResidentThreshold;
+    // Decide $DATA residency: small files live inside the MFT record (resident), but
+    // only where the record has room for them beside $STANDARD_INFORMATION — 24 bytes
+    // longer on a 3.x volume — and a $FILE_NAME that grows with the name.
+    var resident = data.Length <= geo.ResidentThreshold && data.Length <= geo.MaxResidentData(leafName);
     List<(long Lcn, long Count)> dataRuns = [];
     if (!resident) {
       var clustersNeeded = (data.Length + geo.ClusterSize - 1) / geo.ClusterSize;
@@ -142,7 +144,7 @@ public static class NtfsInPlaceAdder {
       BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
 
     var pos = attrStart;
-    pos = WriteStdInfo(record, pos, isDirectory: true);
+    pos = WriteStdInfo(record, pos, geo, isDirectory: true);
     pos = WriteFileName(record, pos, name, parent, 0, isDirectory: true);
     pos = WriteEmptyIndexRoot(record, pos);
 
@@ -361,7 +363,7 @@ public static class NtfsInPlaceAdder {
   private readonly record struct Geo(
       int BytesPerSector, int SectorsPerCluster, int ClusterSize,
       long MftOffset, long MftMirrOffset, int MftRecordSize, long TotalClusters,
-      int UsaOffset) {
+      int UsaOffset, int StdInfoLength) {
     public int ResidentThreshold => 700;
 
     /// <summary>Whether the volume's records carry the NTFS 3.1 record-number field at 44.</summary>
@@ -370,6 +372,11 @@ public static class NtfsInPlaceAdder {
     /// <summary>Where a record built for this volume puts its first attribute.</summary>
     public int AttributeStart
       => NtfsRecordLayout.AttributeStart(this.UsaOffset, this.MftRecordSize, this.BytesPerSector);
+
+    /// <summary>The largest resident <c>$DATA</c> a record named this can still hold.</summary>
+    public int MaxResidentData(string fileName)
+      => NtfsRecordLayout.MaxResidentDataLength(
+        this.MftRecordSize, this.UsaOffset, this.BytesPerSector, this.StdInfoLength, fileName.Length);
   }
 
   private static Geo ParseBoot(byte[] image) {
@@ -383,7 +390,29 @@ public static class NtfsInPlaceAdder {
     var cpr = (sbyte)image[64];
     var recSize = cpr < 0 ? 1 << (-cpr) : cpr * clusterSize;
     return new Geo(bps, spc, clusterSize, mftCluster * clusterSize, mftMirrCluster * clusterSize,
-      recSize, totalSectors / spc, ReadVolumeUsaOffset(image, mftCluster * clusterSize, recSize));
+      recSize, totalSectors / spc, ReadVolumeUsaOffset(image, mftCluster * clusterSize, recSize),
+      ReadVolumeStdInfoLength(image, mftCluster * clusterSize, recSize));
+  }
+
+  // The $STANDARD_INFORMATION shape this volume already uses, read off $MFT's own
+  // record rather than assumed — the same rule the update-sequence offset follows,
+  // and for the same reason. NTFS 1.2 ends the attribute at 48 bytes and its
+  // $AttrDef permits nothing longer; NTFS 3.0 appended OwnerId, SecurityId,
+  // QuotaCharged and the USN, taking it to 72. Adding a file to a 1.2 volume must
+  // not drop a 3.x-shaped attribute into it, and adding to a 3.x volume should
+  // grow records in the shape the rest of that volume is in.
+  private static int ReadVolumeStdInfoLength(byte[] image, long mftOffset, int recordSize) {
+    const int legacy = 48;
+    const int extended = 72;
+    if (mftOffset < 0 || recordSize <= 0 || mftOffset + recordSize > image.Length) return legacy;
+
+    var record0 = image.AsSpan((int)mftOffset, recordSize).ToArray();
+    ApplyFixup(record0);
+    var (attrPos, _) = FindAttr(record0, 0x10, unnamedOnly: true);
+    if (attrPos < 0 || attrPos + 24 > record0.Length) return legacy;
+
+    var valueLength = BinaryPrimitives.ReadUInt32LittleEndian(record0.AsSpan(attrPos + 16));
+    return valueLength >= extended ? extended : legacy;
   }
 
   // The FILE header layout this volume already uses, read off $MFT's own record
@@ -676,7 +705,7 @@ public static class NtfsInPlaceAdder {
       BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
 
     var pos = attrStart;
-    pos = WriteStdInfo(record, pos);
+    pos = WriteStdInfo(record, pos, geo);
     pos = WriteFileName(record, pos, name, parent, dataSize);
     pos = residentData != null
       ? WriteResidentData(record, pos, residentData)
@@ -689,19 +718,8 @@ public static class NtfsInPlaceAdder {
     return record;
   }
 
-  private static int WriteStdInfo(byte[] record, int pos, bool isDirectory = false) {
-    const int valueLen = 48;
-    var attrLen = (24 + valueLen + 7) & ~7;
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x10);
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 16), valueLen);
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
-    var now = DateTime.UtcNow.ToFileTimeUtc();
-    var v = pos + 24;
-    for (var t = 0; t < 4; t++) BinaryPrimitives.WriteInt64LittleEndian(record.AsSpan(v + t * 8), now);
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(v + 32), isDirectory ? 0x10u : 0x80u); // DIRECTORY / NORMAL
-    return pos + attrLen;
-  }
+  private static int WriteStdInfo(byte[] record, int pos, Geo geo, bool isDirectory = false)
+    => NtfsWriter.WriteStandardInformationAttr(record, pos, isDirectory, geo.StdInfoLength);
 
   private static int WriteFileName(byte[] record, int pos, string name, uint parent, long size, bool isDirectory = false) {
     var nameBytes = Encoding.Unicode.GetBytes(name);

@@ -184,6 +184,123 @@ internal static class MftInspector {
     return version ?? throw new InvalidOperationException("record has no $VOLUME_INFORMATION attribute");
   }
 
+  // The value length of the record's unnamed $STANDARD_INFORMATION: 48 up to NTFS
+  // 1.2, 72 from 3.0 on, where OwnerId, SecurityId, QuotaCharged and the USN were
+  // appended.
+  internal static int StandardInformationLength(byte[] record) {
+    int? length = null;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x10 || record[pos + 9] != 0) return;
+      length ??= (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 16));
+    });
+    return length ?? throw new InvalidOperationException("record has no $STANDARD_INFORMATION attribute");
+  }
+
+  // The record's first $FILE_NAME, or null when it carries none — which is what a
+  // reserved MFT slot looks like.
+  internal static string? FileNameOf(byte[] image, uint recordNumber) {
+    var record = ReadRecord(image, recordNumber);
+    if ((BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(22)) & 0x01) == 0) return null;
+
+    string? found = null;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x30) return;
+      var (name, _) = ReadFileName(record, pos);
+      found ??= name;
+    });
+    return found;
+  }
+
+  // The bytes the record says it uses, which must never exceed the record itself.
+  internal static uint UsedSize(byte[] record) => BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(24));
+
+  // Whether the MFT slot carries the in-use flag.
+  internal static bool RecordIsInUse(byte[] image, uint recordNumber)
+    => (BinaryPrimitives.ReadUInt16LittleEndian(ReadRecord(image, recordNumber).AsSpan(22)) & 0x01) != 0;
+
+  // Every attribute type code the record carries, in the order it carries them.
+  internal static List<uint> AttributeTypes(byte[] record) {
+    var types = new List<uint>();
+    ForEachAttribute(record, (type, _) => types.Add(type));
+    return types;
+  }
+
+  // The bytes of the record's unnamed $DATA, resident or followed through its
+  // cluster runs, truncated to the declared real size. This is how a system file's
+  // content ($AttrDef's attribute-definition table) is read back out of an image.
+  internal static byte[] ReadDefaultDataStream(byte[] image, uint recordNumber) {
+    var (clusterSize, _, _) = Geometry(image);
+    var record = ReadRecord(image, recordNumber);
+    byte[]? content = null;
+
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x80 || record[pos + 9] != 0 || content != null) return;
+
+      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 20));
+      if (record[pos + 8] == 0) {
+        var valueLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(pos + 16));
+        content = record.AsSpan(pos + valueOffset, valueLength).ToArray();
+        return;
+      }
+
+      var realSize = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(pos + 48));
+      var runsOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 32));
+      var buffer = new byte[realSize];
+      var written = 0;
+      long lcn = 0;
+      var o = pos + runsOffset;
+      while (o < record.Length && written < realSize) {
+        var header = record[o];
+        if (header == 0) break;
+        var lengthBytes = header & 0x0F;
+        var offsetBytes = (header >> 4) & 0x0F;
+        ++o;
+
+        long length = 0;
+        for (var i = 0; i < lengthBytes; ++i) length |= (long)record[o + i] << (i * 8);
+        o += lengthBytes;
+
+        long delta = 0;
+        for (var i = 0; i < offsetBytes; ++i) delta |= (long)record[o + i] << (i * 8);
+        if (offsetBytes > 0 && (record[o + offsetBytes - 1] & 0x80) != 0)
+          delta -= 1L << (offsetBytes * 8);
+        o += offsetBytes;
+        lcn += delta;
+
+        var copy = (int)Math.Min(length * clusterSize, realSize - written);
+        image.AsSpan((int)(lcn * clusterSize), copy).CopyTo(buffer.AsSpan(written));
+        written += copy;
+      }
+      content = buffer;
+    });
+
+    return content ?? throw new InvalidOperationException($"MFT record {recordNumber} has no unnamed $DATA attribute");
+  }
+
+  // Where $Volume's major/minor version bytes sit in the image itself, so a test can
+  // restamp a volume with a version its content does not match. The pair never falls in
+  // a sector's last two bytes, so no update-sequence fixup covers it — asserted here
+  // rather than assumed, since writing through a fixup slot would corrupt the record
+  // instead of restamping it.
+  internal static int VolumeVersionByteOffset(byte[] image) {
+    var (_, mftOffset, recordSize) = Geometry(image);
+    var recordStart = (int)(mftOffset + 3 * recordSize);
+    var record = ReadRecord(image, 3);
+
+    int? offsetInRecord = null;
+    ForEachAttribute(record, (type, pos) => {
+      if (type != 0x70) return;
+      var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(pos + 20));
+      offsetInRecord ??= pos + valueOffset + 8;
+    });
+
+    var found = offsetInRecord ?? throw new InvalidOperationException("$Volume has no $VOLUME_INFORMATION attribute");
+    if ((found + 1) / BytesPerSector != found / BytesPerSector || found % BytesPerSector >= BytesPerSector - 2)
+      throw new InvalidOperationException("the version bytes lie under an update-sequence fixup slot");
+
+    return recordStart + found;
+  }
+
   // Every $FILE_NAME namespace byte in the record (offset +65 of each
   // attribute value): 0 POSIX, 1 Win32, 2 DOS, 3 Win32&DOS.
   internal static List<byte> FileNameNamespaces(byte[] record) {

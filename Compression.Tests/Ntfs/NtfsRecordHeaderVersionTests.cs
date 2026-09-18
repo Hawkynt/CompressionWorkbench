@@ -34,19 +34,19 @@ public class NtfsRecordHeaderVersionTests {
 
   // ── Fixtures ────────────────────────────────────────────────────────────
 
-  private static NtfsWriter Writer(byte minorVersion, params (string Name, byte[] Data)[] files) {
+  private static NtfsWriter Writer(NtfsVersion version, params (string Name, byte[] Data)[] files) {
     var w = new NtfsWriter("VERSIONED");
-    w.SetNtfsMinorVersion(minorVersion);
+    w.SetNtfsVersion(version);
     foreach (var (name, data) in files) w.AddFile(name, data);
     return w;
   }
 
-  private static byte[] Build(byte minorVersion, params (string Name, byte[] Data)[] files)
-    => Writer(minorVersion, files).Build(16 * 1024 * 1024);
+  private static byte[] Build(NtfsVersion version, params (string Name, byte[] Data)[] files)
+    => Writer(version, files).Build(16 * 1024 * 1024);
 
-  private static byte[] BuildSized(byte minorVersion, int totalSize, int clusterSize, int recordSize,
+  private static byte[] BuildSized(NtfsVersion version, int totalSize, int clusterSize, int recordSize,
     params (string Name, byte[] Data)[] files)
-    => Writer(minorVersion, files).Build(totalSize, clusterSize, recordSize);
+    => Writer(version, files).Build(totalSize, clusterSize, recordSize);
 
   private static byte[] Payload(int length, int seed) {
     var data = new byte[length];
@@ -70,14 +70,15 @@ public class NtfsRecordHeaderVersionTests {
   // ── The option drives the layout ────────────────────────────────────────
 
   [Test, Category("HappyPath")]
-  [TestCase((byte)1, ExtendedUsaOffset)]
-  [TestCase((byte)0, LegacyUsaOffset)]
-  public void Create_VolumeVersion_SelectsTheRecordHeaderLayout(byte minorVersion, int expectedUsaOffset) {
-    var image = Build(minorVersion, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 3)));
+  [TestCase(NtfsVersion.V31, ExtendedUsaOffset)]
+  [TestCase(NtfsVersion.V30, LegacyUsaOffset)]
+  [TestCase(NtfsVersion.V12, LegacyUsaOffset)]
+  public void Create_VolumeVersion_SelectsTheRecordHeaderLayout(NtfsVersion version, int expectedUsaOffset) {
+    var image = Build(version, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 3)));
 
     Assert.Multiple(() => {
       Assert.That(MftInspector.VolumeVersion(MftInspector.ReadRecord(image, 3)),
-        Is.EqualTo(((byte)3, minorVersion)), "$VOLUME_INFORMATION must carry the version that was asked for");
+        Is.EqualTo((version.Major(), version.Minor())), "$VOLUME_INFORMATION must carry the version that was asked for");
       foreach (var (number, raw) in RawRecords(image))
         Assert.That(MftInspector.UpdateSequenceOffset(raw), Is.EqualTo(expectedUsaOffset),
           $"MFT record {number} must use the header layout the volume version declares");
@@ -92,7 +93,7 @@ public class NtfsRecordHeaderVersionTests {
   /// </summary>
   [Test, Category("HappyPath")]
   public void Create_Ntfs31_RecordNumberSurvivesTheUpdateSequenceFixup() {
-    var image = Build(1, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 5)));
+    var image = Build(NtfsVersion.V31, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 5)));
 
     Assert.Multiple(() => {
       foreach (var (number, raw) in RawRecords(image)) {
@@ -110,8 +111,10 @@ public class NtfsRecordHeaderVersionTests {
   /// sector trailers — never a record number stamped over them.
   /// </summary>
   [Test, Category("HappyPath")]
-  public void Create_Ntfs30_LeavesNothingStampedWhereTheUpdateSequenceArrayLives() {
-    var image = Build(0, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 7)));
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Create_PreNtfs31_LeavesNothingStampedWhereTheUpdateSequenceArrayLives(NtfsVersion version) {
+    var image = Build(version, ("alpha.txt", "alpha"u8.ToArray()), ("beta.bin", Payload(9000, 7)));
 
     Assert.Multiple(() => {
       foreach (var (number, raw) in RawRecords(image)) {
@@ -134,12 +137,13 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void Create_EitherLayout_RoundTripsThroughTheReader(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Create_EveryVersion_RoundTripsThroughTheReader(NtfsVersion version) {
     var small = "resident content"u8.ToArray();
     var large = Payload(40_000, 11);
-    var image = Build(minorVersion, ("small.txt", small), ("large.bin", large), ("dir/nested.txt", small));
+    var image = Build(version, ("small.txt", small), ("large.bin", large), ("dir/nested.txt", small));
 
     var files = ReadBack(image);
     Assert.Multiple(() => {
@@ -149,11 +153,12 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void Create_EitherLayout_MountsThroughTheDriver(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Create_EveryVersion_MountsThroughTheDriver(NtfsVersion version) {
     var payload = Payload(20_000, 13);
-    var image = Build(minorVersion, ("mounted.bin", payload), ("tiny.txt", "t"u8.ToArray()));
+    var image = Build(version, ("mounted.bin", payload), ("tiny.txt", "t"u8.ToArray()));
 
     using var stream = new MemoryStream(image, writable: false);
     using var session = FormatRegistry.OpenFilesystem(
@@ -167,26 +172,28 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void Create_EitherLayout_SurvivesTheFormatDescriptorOption(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Create_EveryVersion_SurvivesTheFormatDescriptorOption(NtfsVersion version) {
     var descriptor = new NtfsFormatDescriptor();
-    var version = minorVersion == 1 ? "3.1" : "3.0";
+    var text = version.ToVersionText();
     var option = descriptor.OptionsSchema.Single(o => o.Key == "NtfsVersion");
 
     var output = new MemoryStream();
     descriptor.Create(output, [], new FormatCreateOptions {
-      FormatSpecific = new Dictionary<string, string> { ["NtfsVersion"] = version }
+      FormatSpecific = new Dictionary<string, string> { ["NtfsVersion"] = text }
     });
     var image = output.ToArray();
 
     Assert.Multiple(() => {
-      Assert.That(option.AllowedValues, Does.Contain(version));
+      Assert.That(option.AllowedValues, Does.Contain(text));
       Assert.That(option.Description, Does.Not.Contain("Volume version stamped into $VOLUME_INFORMATION."),
         "the option no longer only stamps $VOLUME_INFORMATION");
       Assert.That(MftInspector.UpdateSequenceOffset(MftInspector.ReadRawRecord(image, 5)),
-        Is.EqualTo(minorVersion == 1 ? ExtendedUsaOffset : LegacyUsaOffset));
-      Assert.That(MftInspector.VolumeVersion(MftInspector.ReadRecord(image, 3)).Minor, Is.EqualTo(minorVersion));
+        Is.EqualTo(version.UsesExtendedRecordHeader() ? ExtendedUsaOffset : LegacyUsaOffset));
+      Assert.That(MftInspector.VolumeVersion(MftInspector.ReadRecord(image, 3)),
+        Is.EqualTo((version.Major(), version.Minor())));
     });
   }
 
@@ -199,17 +206,20 @@ public class NtfsRecordHeaderVersionTests {
   /// the two layouts stop agreeing on where the attributes begin.
   /// </summary>
   [Test, Category("Boundary")]
-  [TestCase((byte)1, 1024)]
-  [TestCase((byte)1, 2048)]
-  [TestCase((byte)1, 4096)]
-  [TestCase((byte)0, 1024)]
-  [TestCase((byte)0, 2048)]
-  [TestCase((byte)0, 4096)]
-  public void Create_RecordSize_PlacesAttributesPastTheUpdateSequenceArray(byte minorVersion, int recordSize) {
+  [TestCase(NtfsVersion.V31, 1024)]
+  [TestCase(NtfsVersion.V31, 2048)]
+  [TestCase(NtfsVersion.V31, 4096)]
+  [TestCase(NtfsVersion.V30, 1024)]
+  [TestCase(NtfsVersion.V30, 2048)]
+  [TestCase(NtfsVersion.V30, 4096)]
+  [TestCase(NtfsVersion.V12, 1024)]
+  [TestCase(NtfsVersion.V12, 2048)]
+  [TestCase(NtfsVersion.V12, 4096)]
+  public void Create_RecordSize_PlacesAttributesPastTheUpdateSequenceArray(NtfsVersion version, int recordSize) {
     var payload = Payload(30_000, recordSize);
-    var image = BuildSized(minorVersion, 24 * 1024 * 1024, 4096, recordSize, ("geo.bin", payload));
+    var image = BuildSized(version, 24 * 1024 * 1024, 4096, recordSize, ("geo.bin", payload));
 
-    var usaOffset = minorVersion == 1 ? ExtendedUsaOffset : LegacyUsaOffset;
+    var usaOffset = version.UsesExtendedRecordHeader() ? ExtendedUsaOffset : LegacyUsaOffset;
     var usaCount = 1 + recordSize / BytesPerSector;
     var expectedAttributeStart = Math.Max(56, (usaOffset + 2 * usaCount + 7) & ~7);
 
@@ -230,11 +240,12 @@ public class NtfsRecordHeaderVersionTests {
   // ── In-place operations must keep the layout they found ─────────────────
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1, ExtendedUsaOffset)]
-  [TestCase((byte)0, LegacyUsaOffset)]
-  public void InPlaceAdd_KeepsTheLayoutOfTheImageItModifies(byte minorVersion, int expectedUsaOffset) {
+  [TestCase(NtfsVersion.V31, ExtendedUsaOffset)]
+  [TestCase(NtfsVersion.V30, LegacyUsaOffset)]
+  [TestCase(NtfsVersion.V12, LegacyUsaOffset)]
+  public void InPlaceAdd_KeepsTheLayoutOfTheImageItModifies(NtfsVersion version, int expectedUsaOffset) {
     var seed = "SEED"u8.ToArray();
-    var image = Build(minorVersion, ("seed.txt", seed));
+    var image = Build(version, ("seed.txt", seed));
     var added = Encoding.ASCII.GetBytes("ADDED-IN-PLACE");
 
     NtfsInPlaceAdder.AddFile(image, "added.txt", added);
@@ -265,11 +276,12 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1, ExtendedUsaOffset)]
-  [TestCase((byte)0, LegacyUsaOffset)]
-  public void Remove_KeepsTheLayoutOfTheImageItModifies(byte minorVersion, int expectedUsaOffset) {
+  [TestCase(NtfsVersion.V31, ExtendedUsaOffset)]
+  [TestCase(NtfsVersion.V30, LegacyUsaOffset)]
+  [TestCase(NtfsVersion.V12, LegacyUsaOffset)]
+  public void Remove_KeepsTheLayoutOfTheImageItModifies(NtfsVersion version, int expectedUsaOffset) {
     var keep = Payload(9000, 17);
-    var image = Build(minorVersion, ("keep.bin", keep), ("drop.bin", Payload(9000, 19)));
+    var image = Build(version, ("keep.bin", keep), ("drop.bin", Payload(9000, 19)));
 
     NtfsRemover.Remove(image, "drop.bin");
 
@@ -284,11 +296,12 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1, ExtendedUsaOffset)]
-  [TestCase((byte)0, LegacyUsaOffset)]
-  public void Shrink_KeepsTheLayoutOfTheImageItModifies(byte minorVersion, int expectedUsaOffset) {
+  [TestCase(NtfsVersion.V31, ExtendedUsaOffset)]
+  [TestCase(NtfsVersion.V30, LegacyUsaOffset)]
+  [TestCase(NtfsVersion.V12, LegacyUsaOffset)]
+  public void Shrink_KeepsTheLayoutOfTheImageItModifies(NtfsVersion version, int expectedUsaOffset) {
     var alpha = Payload(200_000, 23);
-    var image = Writer(minorVersion, ("alpha.bin", alpha)).Build(24 * 1024 * 1024);
+    var image = Writer(version, ("alpha.bin", alpha)).Build(24 * 1024 * 1024);
 
     var result = NtfsInPlaceShrinker.ShrinkToFit(image);
     Assert.That(result.WasReduced, Is.True);
@@ -302,11 +315,12 @@ public class NtfsRecordHeaderVersionTests {
   }
 
   [Test, Category("RoundTrip")]
-  [TestCase((byte)1, ExtendedUsaOffset)]
-  [TestCase((byte)0, LegacyUsaOffset)]
-  public void BlockMover_KeepsTheLayoutOfTheImageItModifies(byte minorVersion, int expectedUsaOffset) {
+  [TestCase(NtfsVersion.V31, ExtendedUsaOffset)]
+  [TestCase(NtfsVersion.V30, LegacyUsaOffset)]
+  [TestCase(NtfsVersion.V12, LegacyUsaOffset)]
+  public void BlockMover_KeepsTheLayoutOfTheImageItModifies(NtfsVersion version, int expectedUsaOffset) {
     var payload = Payload(20_000, 29);
-    var image = Writer(minorVersion, ("moved.bin", payload)).Build(16 * 1024 * 1024);
+    var image = Writer(version, ("moved.bin", payload)).Build(16 * 1024 * 1024);
 
     using var stream = new MemoryStream(image);
     var extent = NtfsExtentMap.Enumerate(stream).First(e => e.FileName == "moved.bin");
@@ -383,7 +397,7 @@ public class NtfsRecordHeaderVersionTests {
   [Test, Category("Exceptional")]
   public void Reader_RecordWithAnImpossibleUpdateSequenceOffset_DoesNotCorruptTheWalk() {
     var keep = "keep me"u8.ToArray();
-    var image = Build(1, ("keep.txt", keep), ("broken.txt", "broken"u8.ToArray()));
+    var image = Build(NtfsVersion.V31, ("keep.txt", keep), ("broken.txt", "broken"u8.ToArray()));
 
     var broken = MftInspector.FindRecordNumberByFileName(image, "broken.txt");
     var recordOffset = (int)NtfsInPlaceAdder.MftRecordByteOffset(image, (int)broken);
