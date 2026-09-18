@@ -12541,7 +12541,19 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 
 ### Namespace `FileFormat.Cpio`
 
-[`CpioEntry`](#cpioentry) · [`CpioFormatDescriptor`](#cpioformatdescriptor) · [`CpioModifier`](#cpiomodifier) · [`CpioReader`](#cpioreader) · [`CpioWriter`](#cpiowriter)
+[`CpioArchiveFormat`](#cpioarchiveformat) · [`CpioEntry`](#cpioentry) · [`CpioFormatDescriptor`](#cpioformatdescriptor) · [`CpioModifier`](#cpiomodifier) · [`CpioReader`](#cpioreader) · [`CpioWriter`](#cpiowriter)
+
+#### `CpioArchiveFormat`
+
+The on-disk CPIO header variants `CpioReader` reads and `CpioWriter` writes — the same set libarchive's `bsdcpio` calls `bin`, `odc`, `newc` and `crc`.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `NewAscii` | `0` | SVR4 "new" ASCII (`070701`): hexadecimal fields, header+name and data aligned to 4 bytes. |
+| `NewCrc` | `1` | SVR4 CRC (`070702`): identical to `NewAscii` plus an additive byte-sum over the payload. |
+| `PortableAscii` | `2` | POSIX portable ASCII / `odc` (`070707`): octal fields, no alignment padding anywhere. |
+| `BinaryLittleEndian` | `3` | 7th Edition binary, 16-bit words in little-endian order — what a PDP-11-descended x86 host writes. |
+| `BinaryBigEndian` | `4` | 7th Edition binary, 16-bit words in big-endian order — the same header written on a big-endian host. |
 
 #### `CpioEntry`
 
@@ -12550,10 +12562,11 @@ Represents a single entry in a cpio archive.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CpioEntry` | `CpioEntry()` |  |
-| `Checksum` | `uint Checksum { get; set; }` | Gets or sets the CRC-32 checksum (for CRC format only). |
+| `Checksum` | `uint Checksum { get; set; }` | Gets or sets the header's checksum field, meaningful only for `NewCrc`. Despite the variant's name this is not a CRC-32 but the unsigned sum of every payload byte, taken modulo 2^32 — see `cpio(5)`. |
 | `DevMajor` | `uint DevMajor { get; set; }` | Gets or sets the device major number. |
 | `DevMinor` | `uint DevMinor { get; set; }` | Gets or sets the device minor number. |
 | `FileSize` | `long FileSize { get; set; }` | Gets or sets the file size in bytes. |
+| `Format` | `CpioArchiveFormat Format { get; set; }` | Gets or sets the on-disk header variant this entry was parsed from (or is to be written as). CPIO records the variant per entry rather than per archive, so this is a property of the entry and not of the reader. |
 | `Gid` | `uint Gid { get; set; }` | Gets or sets the owner GID. |
 | `Inode` | `uint Inode { get; set; }` | Gets or sets the inode number. |
 | `IsDirectory` | `bool IsDirectory { get; }` | Gets whether this entry is a directory. |
@@ -12569,13 +12582,14 @@ Represents a single entry in a cpio archive.
 
 #### `CpioFormatDescriptor`
 
-cpio archive — Unix copy-in/copy-out container (binary, portable-ASCII odc and newc variants). References: `https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the cpio interchange headers`cpio(5)` man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants`https://en.wikipedia.org/wiki/Cpio` — format overview
+cpio archive — Unix copy-in/copy-out container. All four historical header variants are read and written: 7th Edition binary in either byte order, POSIX portable ASCII ("odc"), SVR4 new ASCII ("newc") and SVR4 CRC. References: `https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html` — POSIX pax — defines the portable (odc) cpio interchange header`cpio(5)` man page (libarchive / FreeBSD) — documents the binary, odc, newc and crc variants`https://en.wikipedia.org/wiki/Cpio` — format overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CpioFormatDescriptor` | `CpioFormatDescriptor()` |  |
+| `FormatOptionKey` | `const string FormatOptionKey` | Option key selecting which on-disk header variant `Create` writes. |
 | `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
@@ -12587,12 +12601,13 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files via `CpioModifier`. |
-| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create`. The cpio "new" ASCII header encodes each member's size before its payload, so the pre-known `Size` lets the writer emit the header and then copy the payload in 64 KB chunks via `AddStreamingFile` — peak memory is bounded by the copy buffer regardless of member size. Inode allocation, headers, and padding match `Create` byte-for-byte for the same inputs. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds (or replaces by name) files via `CpioModifier`, in place and in whatever header variant the archive already uses. |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` | Large-file-safe streaming variant of `Create`. Every cpio header encodes a member's size before its payload, so the pre-known `Size` lets the writer emit the header and then copy the payload in 64 KB chunks via `AddStreamingFile` — peak memory is bounded by the copy buffer regardless of member size. Inode allocation, headers, and padding match `Create` byte-for-byte for the same inputs. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Rebuild-based defrag: extracts then re-creates the CPIO archive in listing order. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the CPIO archive per the requested mode. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-based defrag: extracts then re-creates the CPIO archive per the requested mode. The rebuilt archive keeps the variant the original was written in — a defrag that quietly turned an odc archive into a newc one would be a format conversion, not maintenance. |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
@@ -12602,40 +12617,44 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 #### `CpioModifier`
 
-Random-access in-place modifier for CPIO archives (newc/odc "070701"/"070702"). Add appends a new entry just before the trailer — touches only the new entry's bytes plus the (small) trailer rewrite. Remove walks the entry chain to locate the target, then shifts trailing bytes forward to close the gap (necessary because CPIO has no central directory).
+Random-access in-place modifier for CPIO archives. Add appends a new entry just before the trailer — touching only the new entry's bytes plus the (small) trailer rewrite. Remove walks the entry chain to locate the target, then shifts trailing bytes forward to close the gap (necessary because CPIO has no central directory).
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AddFile` | `static void AddFile(Stream cpio, string name, byte[] data)` | Appends a regular file entry. Walks the existing entry chain to find the trailer entry, writes the new header + data + padding in its place, then re-writes the trailer and truncates to the new length. |
+| `AddFile` | `static void AddFile(Stream cpio, string name, byte[] data)` | Appends a regular file entry. Walks the existing entry chain to find the trailer entry, writes the new header + data + padding in its place in the archive's own variant, then re-writes the trailer and truncates to the new length. |
 | `RemoveFile` | `static bool RemoveFile(Stream cpio, string name, bool wipeData = true)` | Removes the named entry. Returns true if found. The trailing portion of the file is shifted forward to close the gap (CPIO has no central directory; readers walk entries sequentially, so we must compact). |
 
 #### `CpioReader`
 
-Reads entries from a cpio archive in the "new" (SVR4) ASCII format.
+Reads entries from a cpio archive in any of the four historical header variants: 7th Edition binary (either byte order), POSIX portable ASCII ("odc", `070707`), SVR4 new ASCII (`070701`) and SVR4 CRC (`070702`).
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `CpioReader` | `CpioReader(Stream stream, bool leaveOpen = false)` | Initializes a new `CpioReader` from a stream. |
-| `CopyCurrentEntryData` | `void CopyCurrentEntryData(Stream destination)` | Copies the current entry's data to `destination` (or discards it when null) and consumes the 4-byte alignment padding. |
+| `CopyCurrentEntryData` | `void CopyCurrentEntryData(Stream destination)` | Copies the current entry's data to `destination` (or discards it when null), verifies an SVR4 CRC entry's payload sum, and consumes the alignment padding the entry's own variant calls for. |
 | `Dispose` | `void Dispose()` |  |
+| `PeekFormat` | `static CpioArchiveFormat? PeekFormat(Stream archive)` | Identifies the header variant at `archive`'s current position without consuming anything, or returns `null` when the bytes there are not a cpio header. Requires a seekable stream. |
 | `ReadAll` | `List<ValueTuple<CpioEntry, byte[]>> ReadAll()` | Reads all entries from the archive. |
 | `ReadEntry` | `CpioEntry ReadEntry(out byte[] data)` | Reads the next entry from the archive. |
 | `ReadNextHeader` | `CpioEntry ReadNextHeader()` | Reads the next entry's header, leaving the stream positioned at its data. Returns null at the trailer. Pair with `CopyCurrentEntryData`, which must be called before the next header even for skipped entries so the reader stays aligned. |
+| `SkipCurrentEntryData` | `void SkipCurrentEntryData()` | Advances past the current entry's payload and alignment padding without reading the payload, for callers that only walk headers. Falls back to a buffered discard when the stream cannot seek. |
 
 #### `CpioWriter`
 
-Creates a cpio archive in the "new" (SVR4) ASCII format.
+Creates a cpio archive in any of the four historical header variants: 7th Edition binary (either byte order), POSIX portable ASCII ("odc"), SVR4 new ASCII and SVR4 CRC. Defaults to SVR4 new ASCII, the variant every modern producer writes.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `CpioWriter` | `CpioWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `CpioWriter`. |
+| `CpioWriter` | `CpioWriter(Stream stream, CpioArchiveFormat format, bool leaveOpen = false)` | Initializes a new `CpioWriter` writing the requested variant. |
+| `CpioWriter` | `CpioWriter(Stream stream, bool leaveOpen = false)` | Initializes a new `CpioWriter` writing the SVR4 new ASCII variant. |
+| `Format` | `CpioArchiveFormat Format { get; }` | Gets the on-disk variant this writer emits. |
 | `AddDirectory` | `void AddDirectory(string name, uint mode = 16877)` | Adds a directory entry. |
 | `AddFile` | `void AddFile(string name, ReadOnlySpan<byte> data, uint mode = 33188)` | Adds a file entry. |
-| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Stream data, uint mode = 33188)` | Adds a file entry whose payload is streamed from `data` in bounded 64 KB chunks rather than buffered into RAM. The cpio "new" header encodes the file size before the payload, so the pre-known `size` is written into the header, then exactly `size` bytes are copied, then the 4-byte alignment pad. |
+| `AddStreamingFile` | `void AddStreamingFile(string name, long size, Stream data, uint mode = 33188)` | Adds a file entry whose payload is streamed from `data` in bounded 64 KB chunks rather than buffered into RAM. Every cpio variant encodes the file size before the payload, so the pre-known `size` is written into the header, then exactly `size` bytes are copied, then the variant's alignment pad. |
 | `Dispose` | `void Dispose()` |  |
 | `Finish` | `void Finish()` | Writes the trailer and finishes the archive. |
 
