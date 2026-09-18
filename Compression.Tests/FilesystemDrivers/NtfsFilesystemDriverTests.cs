@@ -205,12 +205,17 @@ public sealed class NtfsFilesystemDriverTests {
     // there, so offset 44 holds a saved sector trailer rather than the record
     // number. Reading it as one compares against whatever two bytes that sector
     // happened to end with, and any record whose text reaches the end of its
-    // first sector then looks like it belongs to a different MFT slot.
-    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    // first sector then looks like it belongs to a different MFT slot. The
+    // volume is created as 3.0 on purpose — the writer's default is 3.1, whose
+    // records do name themselves at 44.
+    var image = BuildImage(writer => {
+      writer.SetNtfsMinorVersion(0);
+      writer.AddFile("x.txt", "payload"u8.ToArray());
+    });
     var recordOffset = MftRecordOffset(image, FindMftRecordByFileName(image, "x.txt"));
 
     Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recordOffset + 4, 2)), Is.LessThan(48),
-      "the writer emits the pre-3.1 FILE header this guards against");
+      "a 3.0 volume must emit the pre-3.1 FILE header this guards against");
     Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(recordOffset + 24, 4)), Is.LessThan(510u),
       "the sector trailer the fixup restores lies past the record's used bytes");
 
@@ -221,6 +226,30 @@ public sealed class NtfsFilesystemDriverTests {
     var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
 
     Assert.That(profile.CanMount, Is.True, string.Join("; ", profile.Limitations));
+  }
+
+  [Test]
+  public void MountRefusesA31FileHeaderThatNamesTheWrongRecord() {
+    // The other half of the same rule: on a 3.1 volume offset 44 IS the record
+    // number, so one that disagrees with the slot the $MFT mapping reached means
+    // the mapping and the record describe different files. That check was dead
+    // while the writer emitted pre-3.1 headers under a 3.1 volume version.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var recordNumber = FindMftRecordByFileName(image, "x.txt");
+    var recordOffset = MftRecordOffset(image, recordNumber);
+
+    Assert.That(BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(recordOffset + 4, 2)), Is.EqualTo(48),
+      "the writer's default volume version emits the NTFS 3.1 FILE header");
+    Assert.That(BinaryPrimitives.ReadUInt32LittleEndian(image.AsSpan(recordOffset + 44, 4)), Is.EqualTo(recordNumber),
+      "precondition: the record names itself before we corrupt it");
+
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(recordOffset + 44, 4), recordNumber + 1);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
+
+    Assert.That(profile.CanMount, Is.False,
+      "a record that names a different MFT slot must not be published as a mountable namespace");
   }
 
   [Test]
