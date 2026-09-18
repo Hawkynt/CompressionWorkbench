@@ -18,7 +18,9 @@ namespace FileSystem.Ntfs;
 /// the Linux ntfs-3g driver check at mount time: volume serial, valid boot
 /// signature, every system file has its "FILE" magic, USA fixup at
 /// <c>record[510..512]</c> and <c>record[1022..1024]</c>, $Volume carries a
-/// valid $VOLUME_INFORMATION (version 3.1), the $UpCase data stream is
+/// valid $VOLUME_INFORMATION (version 3.1 by default; see
+/// <see cref="SetNtfsMinorVersion"/>, which also selects the FILE record
+/// header layout that goes with it), the $UpCase data stream is
 /// 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only
 /// marks clusters that hold actual filesystem metadata/data.
 /// </para>
@@ -101,7 +103,17 @@ public sealed class NtfsWriter {
   // $VOLUME_INFORMATION minor version written into $Volume (offset 9). NTFS
   // major version is always 3 for the volumes this writer produces; the minor
   // version selects 3.0 (Windows 2000) vs 3.1 (Windows XP+). Default 3.1.
+  // It also selects the FILE record header layout — see UsaOffset.
   private byte _ntfsMinorVersion = 1;
+
+  // NTFS 3.1 appended a reserved u16 at 42 and the MFT record number as a u32 at
+  // 44 to the FILE header, so its update-sequence array starts at 48; 3.0 and
+  // earlier end the header at 42 and start the array there, with no record
+  // number anywhere. A volume that says one and does the other is the defect
+  // this switch exists to prevent, so both follow the one version field.
+  private bool ExtendedRecordHeader => this._ntfsMinorVersion >= 1;
+
+  private int UsaOffset => NtfsRecordLayout.UpdateSequenceOffsetFor(this.ExtendedRecordHeader);
 
   // Size of the $LogFile data region in bytes. Real NTFS typically uses
   // ≥2 MiB; for our minimal images we size proportionally to the volume
@@ -226,10 +238,17 @@ public sealed class NtfsWriter {
   public void SetCompression(bool enabled) => this._compressFiles = enabled;
 
   /// <summary>
-  /// Sets the NTFS minor version stamped into <c>$VOLUME_INFORMATION</c> (the
-  /// major version is always 3). Accepts 0 (NTFS 3.0, Windows 2000) or 1
-  /// (NTFS 3.1, Windows XP and later — the default).
+  /// Sets the NTFS minor version of the volume (the major version is always 3).
+  /// Accepts 0 (NTFS 3.0, Windows 2000) or 1 (NTFS 3.1, Windows XP and later —
+  /// the default).
   /// </summary>
+  /// <remarks>
+  /// The version reaches the image twice: as the minor-version byte of
+  /// <c>$VOLUME_INFORMATION</c>, and as the FILE record header layout every MFT
+  /// record is written in. 3.1 records carry the MFT record number as a
+  /// <c>u32</c> at offset 44 and start their update-sequence array at 48; 3.0
+  /// records have no record-number field and start the array at 42.
+  /// </remarks>
   /// <param name="minorVersion">0 for NTFS 3.0, 1 for NTFS 3.1.</param>
   public void SetNtfsMinorVersion(byte minorVersion) {
     if (minorVersion > 1)
@@ -1259,13 +1278,13 @@ public sealed class NtfsWriter {
 
   // Number of Update-Sequence-Array entries: 1 record-wide USN + one per
   // 512-byte sector spanned by the record.
-  private int UsaCount => 1 + this._mftRecordSize / BytesPerSector;
+  private int UsaCount => NtfsRecordLayout.UpdateSequenceCount(this._mftRecordSize, BytesPerSector);
 
-  // Offset of the first attribute. The USA lives at byte 42 and occupies
-  // 2*UsaCount bytes; the attribute region starts after it, 8-byte aligned.
-  // Floored at 56 so the default 1024-byte record stays byte-identical to the
-  // original writer (which padded attrStart to 56).
-  private int AttrStart => Math.Max(56, (42 + 2 * this.UsaCount + 7) & ~7);
+  // Offset of the first attribute. The USA lives at UsaOffset (42 or 48, by
+  // version) and occupies 2*UsaCount bytes; the attribute region starts after
+  // it, 8-byte aligned, floored at 56 — which is where mkfs.ntfs and Windows
+  // both put it for the default 1024-byte record under either layout.
+  private int AttrStart => NtfsRecordLayout.AttributeStart(this.UsaOffset, this._mftRecordSize, BytesPerSector);
 
   // Writes a reserved (not-in-use) MFT record with FILE magic but no
   // attributes and the "in use" flag cleared. chkdsk treats these as empty
@@ -1280,7 +1299,7 @@ public sealed class NtfsWriter {
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
 
     // USA offset/count.
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42);
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), (ushort)this.UsaOffset);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount);
     // Sequence number.
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), 1);
@@ -1289,8 +1308,10 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(22), 0);
     // Allocated size.
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)this._mftRecordSize);
-    // MFT record number.
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
+    // MFT record number — an NTFS 3.1 field only. Under the older layout offset 44
+    // is inside the update-sequence array, where the fixup would overwrite it.
+    if (this.ExtendedRecordHeader)
+      BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
     // End-of-attributes marker at attrs offset, and the used size that covers it.
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)WriteEndOfAttributes(record, attrStart));
 
@@ -1335,7 +1356,7 @@ public sealed class NtfsWriter {
 
     // --- Header ---
     record[0] = (byte)'F'; record[1] = (byte)'I'; record[2] = (byte)'L'; record[3] = (byte)'E';
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), 42); // USA offset
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(4), (ushort)this.UsaOffset); // USA offset (42 pre-3.1, 48 from 3.1)
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(6), (ushort)usaCount); // 1 USN + one per sector
     BinaryPrimitives.WriteUInt64LittleEndian(record.AsSpan(8), 0);  // LSN
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(16), sequence);
@@ -1346,7 +1367,10 @@ public sealed class NtfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(28), (uint)this._mftRecordSize);
     BinaryPrimitives.WriteUInt64LittleEndian(record.AsSpan(32), 0); // base MFT ref
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(40), 0); // next attribute instance
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(44), recordNum);
+    // 42 holds a reserved u16 and 44 the MFT record number — both NTFS 3.1 fields.
+    // Under the pre-3.1 header the update-sequence array occupies those bytes instead.
+    if (this.ExtendedRecordHeader)
+      BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(NtfsRecordLayout.RecordNumberOffset), recordNum);
 
     var pos = attrStart;
 
@@ -1436,7 +1460,12 @@ public sealed class NtfsWriter {
   // the matching USN as a torn-write detector.
   private void ApplyUsaFixup(byte[] record) {
     const ushort usn = 0x0001;
-    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(42), usn);
+
+    // Take the array's position from the record just written rather than from the
+    // writer's own version: that is the same rule every reader here follows, and it
+    // keeps the two halves from drifting apart the way a second literal would.
+    if (!NtfsRecordLayout.TryReadUpdateSequence(record, out var usaOffset, out _)) return;
+    BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaOffset), usn);
 
     // One fixup per 512-byte sector spanned by the record: stash the sector's
     // trailing two bytes into the USA slot, then stamp the USN at the sector
@@ -1446,7 +1475,7 @@ public sealed class NtfsWriter {
     var sectors = this._mftRecordSize / BytesPerSector;
     for (var s = 0; s < sectors; s++) {
       var sectorEnd = s * BytesPerSector + 510;
-      var usaSlot = 44 + s * 2; // 42 holds the USN; per-sector slots start at 44
+      var usaSlot = usaOffset + 2 + s * 2; // slot 0 holds the USN; per-sector slots follow
       BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(usaSlot), BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(sectorEnd)));
       BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(sectorEnd), usn);
     }
