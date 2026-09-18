@@ -67,6 +67,7 @@ internal sealed class MainForm : Form {
     this.BuildEntryList();
     this.BuildStatusBar();
 
+    // Added in one place, in z-order: the drop overlay sits above the list it covers.
     this.Controls.AddRange(this._menu, this._toolbar, this._breadcrumbBar, this._entries, this._dropOverlay, this._status);
 
     this.DragOver += this.OnDragOver;
@@ -102,7 +103,10 @@ internal sealed class MainForm : Form {
         Item("Extract &Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
         Item("&Test Integrity", IconKeys.Test, Keys.Control | Keys.T, this._model.TestCommand),
         new ToolStripSeparator(),
-        Item("&View as Text", IconKeys.ViewText, Keys.Enter, this._model.ViewAsTextCommand),
+        Item("Go &Up", IconKeys.NavigateUp, Keys.Back, this._model.NavigateUpCommand),
+        Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
+        new ToolStripSeparator(),
+        Item("&View as Text", IconKeys.ViewText, Keys.None, this._model.ViewAsTextCommand, "Enter"),
         Item("View as &Hex", IconKeys.ViewHex, Keys.None, this._model.ViewAsHexCommand),
         new ToolStripSeparator(),
         Item("&Properties", IconKeys.Properties, Keys.Alt | Keys.Enter, this._model.PropertiesCommand),
@@ -124,8 +128,6 @@ internal sealed class MainForm : Form {
         Action("&About", IconKeys.About, () => new AboutWindow().ShowDialog(this)),
       ]),
     ]);
-
-    this.Controls.Add(this._menu);
   }
 
   private static ToolStripMenuItem Menu(string text, ToolStripItem[] children) {
@@ -134,9 +136,16 @@ internal sealed class MainForm : Form {
     return item;
   }
 
-  private ToolStripMenuItem Item(string text, string iconKey, Keys shortcut, ICommand command) {
+  /// <summary>
+  /// A menu item bound to a command. <paramref name="displayShortcut"/> only labels the item — it
+  /// is for keys another control already owns, where registering a second global handler would take
+  /// the key away from the control that should act on it.
+  /// </summary>
+  private ToolStripMenuItem Item(
+    string text, string iconKey, Keys shortcut, ICommand command, string? displayShortcut = null) {
     var item = new ToolStripMenuItem(text) { Image = Images.Icon(iconKey) };
     if (shortcut != Keys.None) item.ShortcutKeys = shortcut;
+    if (displayShortcut is not null) item.ShortcutKeyDisplayString = displayShortcut;
     item.Click += (_, _) => {
       if (command.CanExecute(null)) command.Execute(null);
     };
@@ -165,8 +174,6 @@ internal sealed class MainForm : Form {
       Button("Analyze", IconKeys.Analyze, "Analyze binary file", this._model.AnalyzeFileCommand),
     ]);
 
-    this.Controls.Add(this._toolbar);
-
     static ToolStripButton Button(string text, string iconKey, string tip, ICommand command) {
       var button = new ToolStripButton(text) { Image = Images.Icon(iconKey), ToolTipText = tip };
       button.Click += (_, _) => {
@@ -186,7 +193,6 @@ internal sealed class MainForm : Form {
 
     this._breadcrumbBar.BackColor = DefaultTheme.Instance.ControlBackground;
     this._breadcrumbBar.Controls.AddRange(this._formatLabel, this._breadcrumb);
-    this.Controls.Add(this._breadcrumbBar);
   }
 
   private void BuildEntryList() {
@@ -215,7 +221,6 @@ internal sealed class MainForm : Form {
     this._entries.ContextMenuStrip = this._entryMenu;
 
     this.BuildEntryContextMenu();
-    this.Controls.Add(this._entries);
   }
 
   private void BuildEntryContextMenu() {
@@ -248,14 +253,14 @@ internal sealed class MainForm : Form {
       new ToolStripSeparator(),
       this.Item("&Extract Selected...", IconKeys.ExtractSelected, Keys.None, this._model.ExtractSelectedCommand),
       this.Item("Extract &All...", IconKeys.Extract, Keys.None, this._model.ExtractAllCommand),
-      this.Item("&Delete", IconKeys.Remove, Keys.Delete, this._model.DeleteSelectedCommand),
+      this.Item("&Delete", IconKeys.Remove, Keys.None, this._model.DeleteSelectedCommand, "Del"),
       new ToolStripSeparator(),
       this.Item("&Add Files...", IconKeys.Add, Keys.None, this._model.AddFilesCommand),
       new ToolStripSeparator(),
       maintenance,
       Action("Con&vert Archive...", IconKeys.Create, () => _ = this.ConvertArchiveAsync()),
       this.Item("A&nalyze...", IconKeys.Analyze, Keys.None, this._model.AnalyzeCommand),
-      this.Item("&Properties", IconKeys.Properties, Keys.None, this._model.PropertiesCommand),
+      this.Item("&Properties", IconKeys.Properties, Keys.None, this._model.PropertiesCommand, "Alt+Enter"),
     ]);
 
     ToolStripMenuItem Tip(ToolStripMenuItem item, string tip) {
@@ -267,7 +272,6 @@ internal sealed class MainForm : Form {
   private void BuildStatusBar() {
     this._progress.Visible = false;
     this._status.Items.AddRange([this._statusText, this._progress]);
-    this.Controls.Add(this._status);
   }
 
   private void LayoutChildren() {

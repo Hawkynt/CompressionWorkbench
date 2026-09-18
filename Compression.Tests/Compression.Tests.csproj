@@ -38,6 +38,10 @@
          built by the solution anyway, and ExecutablePackerCliTests locate cwb.exe at the
          win-x64 path and Assert.Ignore when absent, so no reference is needed here. -->
     <ProjectReference Include="..\Compression.Analysis\Compression.Analysis.csproj" />
+    <!-- The NativeUI tests build the shell against a headless backend and paint its own-drawn
+         controls into a buffer. It is a WinExe, but nothing here is published, so it is an ordinary
+         build-order reference. -->
+    <ProjectReference Include="..\Compression.NativeUI\Compression.NativeUI.csproj" />
   </ItemGroup>
 
   <ItemGroup>
