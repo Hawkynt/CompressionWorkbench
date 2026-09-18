@@ -14552,7 +14552,7 @@ Walks an XFS image and yields its actual on-disk byte layout. Targets the WORM w
 
 #### `XfsFilesystemDriverAdapter`
 
-Native XFS read-only driver sidecar. XFS inode numbers and di_gen are used as path-independent object identities; duplicate directory entries targeting one inode therefore naturally become hard links in the common session. The current reader supports local and inline extent forks. Btree-format data forks, sparse logical gaps and unsupported v5 incompat features fail closed until their mappings are decoded rather than being flattened incorrectly.
+Native XFS read-only driver sidecar. XFS inode numbers and di_gen are used as path-independent object identities; duplicate directory entries targeting one inode therefore naturally become hard links in the common session. Local and inline-extent file forks are read positionally without spooling; sparse logical holes and unwritten extents correctly synthesize zeroes. Btree-format data forks and unsupported v5 incompat features fail closed.
 
 Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 

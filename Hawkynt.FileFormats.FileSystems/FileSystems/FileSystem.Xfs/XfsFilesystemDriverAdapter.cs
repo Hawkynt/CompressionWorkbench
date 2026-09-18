@@ -9,9 +9,9 @@ namespace FileSystem.Xfs;
 /// Native XFS read-only driver sidecar. XFS inode numbers and di_gen are used
 /// as path-independent object identities; duplicate directory entries targeting
 /// one inode therefore naturally become hard links in the common session.
-/// The current reader supports local and inline extent forks. Btree-format data
-/// forks, sparse logical gaps and unsupported v5 incompat features fail closed
-/// until their mappings are decoded rather than being flattened incorrectly.
+/// Local and inline-extent file forks are read positionally without spooling;
+/// sparse logical holes and unwritten extents correctly synthesize zeroes.
+/// Btree-format data forks and unsupported v5 incompat features fail closed.
 /// </summary>
 public sealed class XfsFilesystemDriverAdapter :
   IFilesystemDriverAdapter,
@@ -39,6 +39,7 @@ public sealed class XfsFilesystemDriverAdapter :
         FilesystemDriverCapabilities.StableNodeIds |
         FilesystemDriverCapabilities.HardLinks |
         FilesystemDriverCapabilities.SymbolicLinks |
+        FilesystemDriverCapabilities.SparseFiles |
         FilesystemDriverCapabilities.CaseSensitiveNames |
         FilesystemDriverCapabilities.CasePreservingNames,
         FilesystemMutationModel.None,
@@ -46,8 +47,8 @@ public sealed class XfsFilesystemDriverAdapter :
         CanMountWritable: false,
         [
           "Native inode+di_gen identities are preserved; multiple decoded directory entries can reference the same session object as hard links.",
-          "Regular-file reads stream local/extent forks into a bounded positional spool; direct extent-at-offset handles are the next read-path optimization.",
-          "Sparse logical gaps and btree-format data forks are rejected because the current XfsReader extent streamer would otherwise flatten them.",
+          "Regular-file handles read local and inline-extent forks directly at the requested offset; no whole-file spool is required.",
+          "Sparse logical holes and XFS_EXT_UNWRITTEN regular-file extents read as zeroes; btree-format data forks remain fail-closed until BMBT traversal is implemented.",
           "Mounted writes remain disabled until allocation-group btrees, log transactions/replay and complete directory/data-fork mutation share one transactional core.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
@@ -125,7 +126,7 @@ public sealed class XfsFilesystemDriverAdapter :
       : FilesystemDriverReadinessLayer.None;
     var blockers = new List<string>(profile.Limitations);
     if (target == FilesystemDriverTarget.ReadWrite) {
-      blockers.Add("Implement direct positional extent/local/btree file handles, including sparse and unwritten extent semantics and extent-btree growth/merge.");
+      blockers.Add("Implement writable local/extent/btree data forks, including extent-btree growth/merge and sparse/unwritten allocation-state transitions.");
       blockers.Add("Move create/unlink/mkdir/rmdir/rename/link/symlink behind common inode + dir2/dir3 shortform/block/leaf/node mutation with exact name-hash/collation semantics.");
       blockers.Add("Unify bnobt/cntbt/inobt/finobt/rmapbt/refcountbt allocation ownership and per-AG free-space updates behind bounded block-device transactions.");
       blockers.Add("Implement XFS log item formatting, transaction commit ordering, log grant/tail handling, recovery replay and superblock/AG/inode CRC publication.");
@@ -247,16 +248,7 @@ internal sealed class XfsReadOnlyFilesystemSession : IFilesystemSession {
     Func<IFilesystemFileHandle>? open = null;
     string? symlink = null;
     if (record != null && inode.Kind == FilesystemNodeKind.RegularFile) {
-      var captured = record;
-      open = () => SpoolingReadOnlyFileHandle.Create(
-        nodeId,
-        inode.Size,
-        output => {
-          long written;
-          lock (_ioGate) written = _reader.ExtractTo(captured, output);
-          if (written != inode.Size)
-            throw new InvalidDataException($"XFS inode {inode.Number} yielded {written:N0} of {inode.Size:N0} logical bytes.");
-        });
+      open = () => XfsDirectReadOnlyFileHandle.Open(_image, _ioGate, _geometry, nodeId, inode);
     } else if (record != null && inode.Kind == FilesystemNodeKind.SymbolicLink) {
       if (inode.Size > 64 * 1024)
         throw new NotSupportedException($"XFS symlink inode {inode.Number} has implausible size {inode.Size:N0}.");
@@ -454,23 +446,26 @@ internal readonly record struct XfsDriverGeometry(
         image.Position = original;
       }
     }
-    ulong logical = 0;
+    ulong previousEnd = 0;
     for (var i = 0; i < nextents; ++i) {
       var hi = BinaryPrimitives.ReadUInt64BigEndian(extentBytes.AsSpan(i * 16, 8));
       var lo = BinaryPrimitives.ReadUInt64BigEndian(extentBytes.AsSpan(i * 16 + 8, 8));
+      var unwritten = (hi & (1UL << 63)) != 0;
       var startOff = (hi >> 9) & 0x003F_FFFF_FFFF_FFFFUL;
       var startBlock = ((hi & 0x1FF) << 43) | (lo >> 21);
       var blockCount = lo & 0x1F_FFFFUL;
-      if (blockCount == 0) throw new InvalidDataException($"XFS inode {inode.Number} contains a zero-length extent.");
-      if (startOff != logical)
-        throw new NotSupportedException($"XFS inode {inode.Number} has a sparse/non-contiguous logical extent map; mounted sparse reads are not decoded yet.");
+      if (blockCount == 0)
+        throw new InvalidDataException($"XFS inode {inode.Number} contains a zero-length extent.");
+      if (i != 0 && startOff < previousEnd)
+        throw new InvalidDataException($"XFS inode {inode.Number} contains overlapping or out-of-order extents.");
+      if (inode.Kind == FilesystemNodeKind.SymbolicLink && startOff != previousEnd)
+        throw new NotSupportedException($"XFS symlink inode {inode.Number} contains a sparse logical gap; the symlink decoder requires a contiguous fork.");
+      if (inode.Kind is FilesystemNodeKind.Directory or FilesystemNodeKind.SymbolicLink && unwritten)
+        throw new NotSupportedException($"XFS {inode.Kind} inode {inode.Number} contains an unwritten extent that cannot hold live namespace data.");
       if (startBlock >= DataBlocks || blockCount > DataBlocks - startBlock)
         throw new InvalidDataException($"XFS inode {inode.Number} extent points outside the data device.");
-      logical += blockCount;
+      previousEnd = checked(startOff + blockCount);
     }
-    var covered = checked(logical * BlockSize);
-    if (covered < (ulong)inode.Size)
-      throw new InvalidDataException($"XFS inode {inode.Number} extents cover {covered:N0} of {inode.Size:N0} logical bytes.");
   }
 
   private long InodeOffset(ulong ino) {
