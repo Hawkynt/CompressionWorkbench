@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The shell and its controls are internal; the tests drive them directly. -->
+    <InternalsVisibleTo Include="Compression.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The About window renders this at runtime, so the shipped binary always describes its own build. -->
     <EmbeddedResource Include="..\README.md" Link="README.md" LogicalName="README.md" />
   </ItemGroup>
