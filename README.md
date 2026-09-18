@@ -509,8 +509,15 @@ dotnet build CompressionWorkbench.slnx
 dotnet test
 ```
 
-The WPF UI targets Windows. On Linux, `run-wine.sh` builds and launches the self-contained Windows UI
-under Wine.
+Two frontends ship. `Compression.UI` is the WPF workstation and targets Windows; on Linux,
+`run-wine.sh` builds and launches the self-contained Windows UI under Wine.
+`Compression.NativeUI` is the cross-platform NativeForms frontend (Win32 and GTK backends) and
+releases as a native `linux-x64` binary — today it covers the mounting workflow only, so it is a
+companion to the WPF UI rather than a replacement.
+
+```bash
+dotnet run --project Compression.NativeUI/Compression.NativeUI.csproj
+```
 
 ---
 
