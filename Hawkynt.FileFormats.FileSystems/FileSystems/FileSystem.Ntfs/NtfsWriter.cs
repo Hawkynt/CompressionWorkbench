@@ -7,20 +7,25 @@ namespace FileSystem.Ntfs;
 /// <summary>
 /// Builds spec-compliant NTFS filesystem images. All reserved system MFT
 /// records (0-15) are populated with real content: $MFT, $MFTMirr, $LogFile,
-/// $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $Secure, $UpCase,
-/// and $Extend. Every record carries the mandatory $STANDARD_INFORMATION and
+/// $Volume, $AttrDef, root $., $Bitmap, $Boot, $BadClus, $UpCase, and — on a
+/// volume declaring NTFS 3.0 or later — $Secure at record 9 and the $Extend
+/// directory at record 11. A 1.2 volume names record 9 $Quota and leaves 11
+/// reserved. Every record carries the mandatory $STANDARD_INFORMATION and
 /// $FILE_NAME attributes, the Update Sequence Array (USA) fixup is applied
 /// at sector boundaries, and the on-disk cluster bitmap reflects which
 /// clusters are actually allocated. Small files (&lt;700 bytes) use a
-/// resident $DATA attribute; larger files use non-resident cluster runs.
+/// resident $DATA attribute where the record has room for it beside
+/// $STANDARD_INFORMATION and a $FILE_NAME that grows with the name;
+/// everything else uses non-resident cluster runs.
 /// <para>
 /// Images produced by this writer carry all the structure that chkdsk and
 /// the Linux ntfs-3g driver check at mount time: volume serial, valid boot
 /// signature, every system file has its "FILE" magic, USA fixup at
 /// <c>record[510..512]</c> and <c>record[1022..1024]</c>, $Volume carries a
 /// valid $VOLUME_INFORMATION (version 3.1 by default; see
-/// <see cref="SetNtfsMinorVersion"/>, which also selects the FILE record
-/// header layout that goes with it), the $UpCase data stream is
+/// <see cref="SetNtfsVersion"/>, which also selects the FILE record header
+/// layout, the metadata file set, the $AttrDef table and the
+/// $STANDARD_INFORMATION shape that go with it), the $UpCase data stream is
 /// 128 KiB long (65 536 UTF-16 upper-case mappings) and $Bitmap only
 /// marks clusters that hold actual filesystem metadata/data.
 /// </para>
@@ -100,20 +105,22 @@ public sealed class NtfsWriter {
   // value, i.e. 4.
   private const int ClustersPerCompressionUnit = 16;
 
-  // $VOLUME_INFORMATION minor version written into $Volume (offset 9). NTFS
-  // major version is always 3 for the volumes this writer produces; the minor
-  // version selects 3.0 (Windows 2000) vs 3.1 (Windows XP+). Default 3.1.
-  // It also selects the FILE record header layout — see UsaOffset.
-  private byte _ntfsMinorVersion = 1;
+  // The version this volume declares in $VOLUME_INFORMATION and, with it, every
+  // version-sensitive structure in the image: the FILE record header layout, the
+  // metadata file set, the $AttrDef table and the $STANDARD_INFORMATION shape.
+  // See NtfsVersions for what each version obliges. Default 3.1.
+  private NtfsVersion _version = NtfsVersions.Default;
 
   // NTFS 3.1 appended a reserved u16 at 42 and the MFT record number as a u32 at
   // 44 to the FILE header, so its update-sequence array starts at 48; 3.0 and
   // earlier end the header at 42 and start the array there, with no record
   // number anywhere. A volume that says one and does the other is the defect
   // this switch exists to prevent, so both follow the one version field.
-  private bool ExtendedRecordHeader => this._ntfsMinorVersion >= 1;
+  private bool ExtendedRecordHeader => this._version.UsesExtendedRecordHeader();
 
   private int UsaOffset => NtfsRecordLayout.UpdateSequenceOffsetFor(this.ExtendedRecordHeader);
+
+  private bool FitsResident(string fileName, long length) => length <= ResidentThreshold;
 
   // Size of the $LogFile data region in bytes. Real NTFS typically uses
   // ≥2 MiB; for our minimal images we size proportionally to the volume
@@ -238,22 +245,25 @@ public sealed class NtfsWriter {
   public void SetCompression(bool enabled) => this._compressFiles = enabled;
 
   /// <summary>
-  /// Sets the NTFS minor version of the volume (the major version is always 3).
-  /// Accepts 0 (NTFS 3.0, Windows 2000) or 1 (NTFS 3.1, Windows XP and later —
-  /// the default).
+  /// Sets the NTFS version of the volume: 1.2 (NT 3.51/4.0), 3.0 (Windows 2000) or
+  /// 3.1 (Windows XP and later — the default).
   /// </summary>
   /// <remarks>
-  /// The version reaches the image twice: as the minor-version byte of
-  /// <c>$VOLUME_INFORMATION</c>, and as the FILE record header layout every MFT
-  /// record is written in. 3.1 records carry the MFT record number as a
-  /// <c>u32</c> at offset 44 and start their update-sequence array at 48; 3.0
-  /// records have no record-number field and start the array at 42.
+  /// <para>The version is not a stamp. It reaches the image everywhere the on-disk
+  /// format differs by version: the <c>$VOLUME_INFORMATION</c> major/minor pair, the
+  /// FILE record header layout (3.1 records name themselves at offset 44 and start
+  /// their update-sequence array at 48; earlier ones have no record-number field and
+  /// start the array at 42), the metadata file set (record 9 is <c>$Quota</c> before
+  /// 3.0 and <c>$Secure</c> from it, record 11 is empty before 3.0 and the
+  /// <c>$Extend</c> directory from it), the <c>$AttrDef</c> table, and the
+  /// <c>$STANDARD_INFORMATION</c> value length (48 bytes for 1.2, 72 from 3.0).</para>
   /// </remarks>
-  /// <param name="minorVersion">0 for NTFS 3.0, 1 for NTFS 3.1.</param>
-  public void SetNtfsMinorVersion(byte minorVersion) {
-    if (minorVersion > 1)
-      throw new ArgumentOutOfRangeException(nameof(minorVersion), minorVersion, "NTFS minor version must be 0 (3.0) or 1 (3.1).");
-    this._ntfsMinorVersion = minorVersion;
+  /// <param name="version">The volume version to produce.</param>
+  public void SetNtfsVersion(NtfsVersion version) {
+    if (!Enum.IsDefined(version))
+      throw new ArgumentOutOfRangeException(nameof(version), version, "NTFS version must be 1.2, 3.0 or 3.1.");
+
+    this._version = version;
   }
 
   /// <summary>Adds a file to the NTFS image.</summary>
@@ -578,7 +588,7 @@ public sealed class NtfsWriter {
     // it past the end of the region this materialises, where writing its table is a
     // silent no-op: the record then named a cluster of zeroes, and a driver that
     // reads the attribute definitions before anything else called the volume corrupt.
-    var attrDefTable = BuildAttrDefTable();
+    var attrDefTable = BuildAttrDefTable(this._version);
     var attrDefIsResident = attrDefTable.Length <= ResidentThreshold;
     var attrDefCluster = nextCluster;
     var attrDefClusters = attrDefIsResident
@@ -597,7 +607,7 @@ public sealed class NtfsWriter {
     var lastInlineCluster = nextCluster;
     foreach (var node in fileNodes) {
       var effLen = node.EffectiveLength;
-      if (effLen <= ResidentThreshold) {
+      if (this.FitsResident(node.Name, effLen)) {
         node.Resident = true;
         continue;
       }
@@ -840,24 +850,42 @@ public sealed class NtfsWriter {
       sparseNamedStream: new SparseNamedStream("$Bad",
         ((totalSectors - 1) * BytesPerSector) / this._clusterSize));
 
-    // Record 9: $Secure — carries the security-descriptor stream, which on a fresh
-    // volume holds nothing; per-file security attributes cover what it would.
-    // Its two indexes are not optional, though: a driver reads $SDH and $SII before
-    // it will use the record at all, and calls it corrupt when either is missing.
-    // $SDH sorts descriptors by hash, $SII by identifier, and both start empty.
-    WriteMftRecord(
-      disk, mftOffset, 9, sequence: 9,
-      fileName: "$Secure",
-      parentRecord: 5,
-      isDirectory: false,
-      residentData: [],
-      nonResidentRuns: null,
-      dataSize: 0,
-      sizeHintInFileName: 0,
-      namedIndexRoots: [
-        ("$SDH", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x12)),
-        ("$SII", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x10)),
-      ]);
+    // Record 9: $Secure from NTFS 3.0, $Quota before it. $Secure carries the
+    // security-descriptor stream, which on a fresh volume holds nothing; its two
+    // indexes are not optional, though: a driver reads $SDH and $SII before it will
+    // use the record at all, and calls it corrupt when either is missing. $SDH sorts
+    // descriptors by hash, $SII by identifier, and both start empty.
+    //
+    // NTFS 1.2 has no centralised security store. Record 9 is $Quota there — a name
+    // NT allocated and never used — with an empty $DATA and neither index, which is
+    // what the reference formatter writes for a 1.2 volume. Emitting $Secure under a
+    // 1.2 stamp would be the version/content disagreement this switch exists to
+    // prevent; and it is precisely because the volume declares 1.2 that leaving the
+    // store out is safe, since ntfs-3g only opens $Secure above major version 3.
+    if (this._version.HasCentralisedSecurity())
+      WriteMftRecord(
+        disk, mftOffset, 9, sequence: 9,
+        fileName: "$Secure",
+        parentRecord: 5,
+        isDirectory: false,
+        residentData: [],
+        nonResidentRuns: null,
+        dataSize: 0,
+        sizeHintInFileName: 0,
+        namedIndexRoots: [
+          ("$SDH", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x12)),
+          ("$SII", this.BuildEmptyIndexRoot(keyType: 0, collationRule: 0x10)),
+        ]);
+    else
+      WriteMftRecord(
+        disk, mftOffset, 9, sequence: 9,
+        fileName: "$Quota",
+        parentRecord: 5,
+        isDirectory: false,
+        residentData: [],
+        nonResidentRuns: null,
+        dataSize: 0,
+        sizeHintInFileName: 0);
 
     // Record 10: $UpCase — 65 536-entry Unicode uppercase mapping. Written
     // to its own cluster run so the 128 KiB payload doesn't bloat the MFT.
@@ -873,22 +901,26 @@ public sealed class NtfsWriter {
       dataSize: upCase.Length,
       sizeHintInFileName: upCase.Length);
 
-    // Record 11: $Extend — empty directory (no children in a minimal image).
-    WriteMftRecord(
-      disk, mftOffset, 11, sequence: 11,
-      fileName: "$Extend",
-      parentRecord: 5,
-      isDirectory: true,
-      residentData: null,
-      nonResidentRuns: null,
-      dataSize: 0,
-      sizeHintInFileName: 0,
-      indexRootData: BuildEmptyIndexRoot());
+    // Record 11: $Extend — empty directory (no children in a minimal image). It and
+    // its children ($ObjId, $Quota, $Reparse, $UsnJrnl) are new to NTFS 3.0; on a 1.2
+    // volume record 11 holds nothing and is not named from the root index, so it joins
+    // the reserved placeholders below.
+    if (this._version.HasCentralisedSecurity())
+      WriteMftRecord(
+        disk, mftOffset, 11, sequence: 11,
+        fileName: "$Extend",
+        parentRecord: 5,
+        isDirectory: true,
+        residentData: null,
+        nonResidentRuns: null,
+        dataSize: 0,
+        sizeHintInFileName: 0,
+        indexRootData: BuildEmptyIndexRoot());
 
-    // Records 12-15: reserved placeholders. Real NTFS leaves them with a
-    // FILE signature but the "in-use" flag cleared, so chkdsk sees them as
+    // Records 12-15 (and 11 before NTFS 3.0): reserved placeholders. Real NTFS leaves
+    // them with a FILE signature but the "in-use" flag cleared, so chkdsk sees them as
     // "allocated MFT entries waiting to be used" rather than corruption.
-    for (uint r = 12; r <= 15; r++) {
+    for (var r = this._version.HasCentralisedSecurity() ? 12u : 11u; r <= 15; r++) {
       WriteReservedMftRecord(disk, mftOffset, r);
     }
 
@@ -1375,7 +1407,7 @@ public sealed class NtfsWriter {
     var pos = attrStart;
 
     // 0x10 $STANDARD_INFORMATION — mandatory, always first.
-    pos = WriteStandardInformationAttr(record, pos, isDirectory);
+    pos = WriteStandardInformationAttr(record, pos, isDirectory, this._version.StandardInformationLength());
 
     // 0x30 $FILE_NAME — mandatory for every record including system files.
     pos = this.WriteFileNameAttr(record, pos, fileName, parentRecord, sizeHintInFileName, isDirectory);
@@ -1481,15 +1513,27 @@ public sealed class NtfsWriter {
     }
   }
 
-  private static int WriteStandardInformationAttr(byte[] record, int pos, bool isDirectory) {
-    const int valueLen = 48; // v1.2 shape — our reader and ntfs-3g both accept it
+  /// <summary>
+  /// Writes the mandatory <c>$STANDARD_INFORMATION</c> in the shape the declared
+  /// version permits.
+  /// </summary>
+  /// <remarks>
+  /// NTFS 1.2 ends the value after the four timestamps, the DOS attributes and the
+  /// version triple, at 48 bytes, and its <c>$AttrDef</c> gives that as both the
+  /// minimum and the maximum. NTFS 3.0 appended OwnerId, SecurityId, QuotaCharged and
+  /// the USN, taking it to 72. Those four stay zero here: this writer stores no
+  /// security descriptors and leaves <c>$Secure</c> empty, and SecurityId 0 is the
+  /// value that agrees with an empty <c>$Secure</c> — a driver resolves it to no
+  /// descriptor rather than to one that is not there.
+  /// </remarks>
+  internal static int WriteStandardInformationAttr(byte[] record, int pos, bool isDirectory, int valueLen) {
     var attrLen = (24 + valueLen + 7) & ~7;
 
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos), 0x10);
     BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 4), (uint)attrLen);
     record[pos + 8] = 0; // resident
     record[pos + 9] = 0; // unnamed
-    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 16), valueLen);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(pos + 16), (uint)valueLen);
     BinaryPrimitives.WriteUInt16LittleEndian(record.AsSpan(pos + 20), 24);
 
     var v = pos + 24;
@@ -1844,14 +1888,15 @@ public sealed class NtfsWriter {
   // The child entries a directory's $I30 index must hold, sorted by NTFS
   // file-name collation. For the root directory, the system files resolved by
   // name at mount time are prepended.
-  private static List<(uint Record, string Name)> CollectIndexEntries(TreeNode dir, bool includeSystemEntries) {
+  private List<(uint Record, string Name)> CollectIndexEntries(TreeNode dir, bool includeSystemEntries) {
     // ntfs-3g resolves system files like $Secure via path lookup through the
     // root directory's $I30 index, NOT by hard-coded record number — so the
-    // root index must list the reserved metadata files we populate. Records
-    // 12-15 are reserved and not exposed (matches `mkfs.ntfs`).
+    // root index must list the reserved metadata files we populate. Record 9 is
+    // named for what it holds at this version; records 12-15 are reserved and not
+    // exposed (matches `mkfs.ntfs`).
     var indexed = new List<(uint Record, string Name)>();
     if (includeSystemEntries)
-      indexed.Add((9, "$Secure")); // ntfs_open_secure() does pathname_to_inode("$Secure")
+      indexed.Add((9, this._version.Record9Name())); // ntfs_open_secure() does pathname_to_inode("$Secure")
 
     foreach (var child in dir.Children)
       indexed.Add((child.RecordNumber, child.Name));
@@ -2260,38 +2305,72 @@ public sealed class NtfsWriter {
     // $VOLUME_INFORMATION (type 0x70) layout (12 bytes):
     //   u64 reserved, u8 major_version, u8 minor_version, u16 flags.
     var v = new byte[12];
-    v[8] = 3;                       // major version (NTFS 3.x → major 3)
-    v[9] = this._ntfsMinorVersion;  // minor version (0 = 3.0, 1 = 3.1)
+    v[8] = this._version.Major();   // 1 for NTFS 1.2, 3 for NTFS 3.x
+    v[9] = this._version.Minor();
     // flags = 0 (clean volume; no VOLUME_IS_DIRTY bit set).
     return v;
   }
 
   // ── $AttrDef standard table ─────────────────────────────────────────────
 
+  private readonly record struct AttrDefEntry(
+    string Name, uint Type, uint DisplayRule, uint Collation, uint Flags, long MinSize, long MaxSize);
+
+  // The attribute definitions a volume of the given version declares. Three of the
+  // sixteen type codes were reused when NTFS 3.0 arrived — 0x40 went from
+  // $VOLUME_VERSION to $OBJECT_ID, 0xC0 from $SYMBOLIC_LINK to $REPARSE_POINT — and
+  // 0xF0 $PROPERTY_SET was dropped in favour of 0x100 $LOGGED_UTILITY_STREAM, so a
+  // volume that stamps one version and tabulates the other's types is telling a driver
+  // that an attribute means something it does not.
+  //
+  // Both tables are the ones the reference formatter compiles in (mkntfs's
+  // attrdef_ntfs12_array and attrdef_ntfs3x_array), which is also what a freshly
+  // formatted volume's $AttrDef reads back as: the 3.x table here is byte-identical to
+  // the one mkfs.ntfs writes, terminating zero entry included. The 1.2 table's
+  // $STANDARD_INFORMATION entry allows 48 bytes and no more, where the 3.x one allows
+  // 48 to 72 — that is the rule that makes the 72-byte shape a 3.x form.
+  private static AttrDefEntry[] AttrDefEntriesFor(NtfsVersion version) => version.HasCentralisedSecurity()
+    ? [
+      new("$STANDARD_INFORMATION", 0x10, 0, 0, 0x40, 48, 72),
+      new("$ATTRIBUTE_LIST",       0x20, 0, 0, 0x80, 0, -1),
+      new("$FILE_NAME",            0x30, 0, 0, 0x42, 68, 578),
+      new("$OBJECT_ID",            0x40, 0, 0, 0x40, 0, 256),
+      new("$SECURITY_DESCRIPTOR",  0x50, 0, 0, 0x80, 0, -1),
+      new("$VOLUME_NAME",          0x60, 0, 0, 0x40, 2, 256),
+      new("$VOLUME_INFORMATION",   0x70, 0, 0, 0x40, 12, 12),
+      new("$DATA",                 0x80, 0, 0, 0x00, 0, -1),
+      new("$INDEX_ROOT",           0x90, 0, 0, 0x40, 0, -1),
+      new("$INDEX_ALLOCATION",     0xA0, 0, 0, 0x80, 0, -1),
+      new("$BITMAP",               0xB0, 0, 0, 0x80, 0, -1),
+      new("$REPARSE_POINT",        0xC0, 0, 0, 0x80, 0, 0x4000),
+      new("$EA_INFORMATION",       0xD0, 0, 0, 0x40, 8, 8),
+      new("$EA",                   0xE0, 0, 0, 0x00, 0, 0x10000),
+      new("$LOGGED_UTILITY_STREAM", 0x100, 0, 0, 0x80, 0, 0x10000),
+    ]
+    : [
+      new("$STANDARD_INFORMATION", 0x10, 0, 0, 0x40, 48, 48),
+      new("$ATTRIBUTE_LIST",       0x20, 0, 0, 0x80, 0, -1),
+      new("$FILE_NAME",            0x30, 0, 0, 0x42, 68, 578),
+      new("$VOLUME_VERSION",       0x40, 0, 0, 0x40, 8, 8),
+      new("$SECURITY_DESCRIPTOR",  0x50, 0, 0, 0x80, 0, -1),
+      new("$VOLUME_NAME",          0x60, 0, 0, 0x40, 2, 256),
+      new("$VOLUME_INFORMATION",   0x70, 0, 0, 0x40, 12, 12),
+      new("$DATA",                 0x80, 0, 0, 0x00, 0, -1),
+      new("$INDEX_ROOT",           0x90, 0, 0, 0x40, 0, -1),
+      new("$INDEX_ALLOCATION",     0xA0, 0, 0, 0x80, 0, -1),
+      new("$BITMAP",               0xB0, 0, 0, 0x80, 0, -1),
+      new("$SYMBOLIC_LINK",        0xC0, 0, 0, 0x80, 0, -1),
+      new("$EA_INFORMATION",       0xD0, 0, 0, 0x40, 8, 8),
+      new("$EA",                   0xE0, 0, 0, 0x00, 0, 0x10000),
+    ];
+
   // Canonical NTFS attribute-definition entries the system driver expects.
   // Each entry is 160 bytes: 128-byte UTF-16 name, u32 type, u32 display rule,
-  // u32 collation rule, u32 flags, u64 min size, u64 max size.
-  private static byte[] BuildAttrDefTable() {
-    (string Name, uint Type, uint DisplayRule, uint Collation, uint Flags, long MinSize, long MaxSize)[] defs =
-    [
-      ("$STANDARD_INFORMATION", 0x10, 0, 0, 0x40, 48, 72),
-      ("$ATTRIBUTE_LIST",        0x20, 0, 0, 0x40, 0, -1),
-      ("$FILE_NAME",             0x30, 1, 1, 0x42, 68, 578),
-      ("$OBJECT_ID",             0x40, 0, 0, 0x40, 0, 256),
-      ("$SECURITY_DESCRIPTOR",   0x50, 0, 0, 0x00, 0, -1),
-      ("$VOLUME_NAME",           0x60, 0, 0, 0x40, 2, 256),
-      ("$VOLUME_INFORMATION",    0x70, 0, 0, 0x40, 12, 12),
-      ("$DATA",                  0x80, 0, 0, 0x00, 0, -1),
-      ("$INDEX_ROOT",            0x90, 0, 0, 0x40, 0, -1),
-      ("$INDEX_ALLOCATION",      0xA0, 0, 0, 0x00, 0, -1),
-      ("$BITMAP",                0xB0, 0, 0, 0x00, 0, -1),
-      ("$REPARSE_POINT",         0xC0, 0, 0, 0x00, 0, 0x4000),
-      ("$EA_INFORMATION",        0xD0, 0, 0, 0x40, 8, 8),
-      ("$EA",                    0xE0, 0, 0, 0x00, 0, 0x10000),
-      ("$PROPERTY_SET",          0xF0, 0, 0, 0x40, 0, -1),
-      ("$LOGGED_UTILITY_STREAM", 0x100, 0, 0, 0x00, 0, 0x10000),
-    ];
-    var table = new byte[defs.Length * 160];
+  // u32 collation rule, u32 flags, u64 min size, u64 max size. A zeroed entry
+  // terminates the table, so the file is one entry longer than the definitions.
+  internal static byte[] BuildAttrDefTable(NtfsVersion version) {
+    var defs = AttrDefEntriesFor(version);
+    var table = new byte[(defs.Length + 1) * 160];
     for (var i = 0; i < defs.Length; i++) {
       var d = defs[i];
       var o = i * 160;
