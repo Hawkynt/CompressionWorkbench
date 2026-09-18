@@ -41,7 +41,7 @@ ShellRegistrar.Unregister();                     // Remove them again
 
 ## Relationship to the UI
 
-`Compression.UI` does not reference this project. Its *File associations* window
+`Compression.NativeUI` does not reference this project. Its *File associations* window
 carries its own registration code, which additionally offers an HKLM (all-users)
 mode — that mode is the one that needs administrator rights. This project is the
 standalone path, for an installer or a script that has no UI to drive.
