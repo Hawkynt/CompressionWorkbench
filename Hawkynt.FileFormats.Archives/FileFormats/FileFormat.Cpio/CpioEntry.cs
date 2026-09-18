@@ -4,6 +4,13 @@ namespace FileFormat.Cpio;
 /// Represents a single entry in a cpio archive.
 /// </summary>
 public sealed class CpioEntry {
+  /// <summary>
+  /// Gets or sets the on-disk header variant this entry was parsed from (or is
+  /// to be written as). CPIO records the variant per entry rather than per
+  /// archive, so this is a property of the entry and not of the reader.
+  /// </summary>
+  public CpioArchiveFormat Format { get; set; } = CpioArchiveFormat.NewAscii;
+
   /// <summary>Gets or sets the file name.</summary>
   public string Name { get; set; } = "";
 
@@ -40,7 +47,12 @@ public sealed class CpioEntry {
   /// <summary>Gets or sets the rdev minor number (for device files).</summary>
   public uint RDevMinor { get; set; }
 
-  /// <summary>Gets or sets the CRC-32 checksum (for CRC format only).</summary>
+  /// <summary>
+  /// Gets or sets the header's checksum field, meaningful only for
+  /// <see cref="CpioArchiveFormat.NewCrc"/>. Despite the variant's name this is
+  /// not a CRC-32 but the unsigned sum of every payload byte, taken modulo
+  /// 2^32 — see <c>cpio(5)</c>.
+  /// </summary>
   public uint Checksum { get; set; }
 
   /// <summary>Gets whether this entry is a directory.</summary>
