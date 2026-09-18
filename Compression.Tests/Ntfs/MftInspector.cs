@@ -353,6 +353,29 @@ internal static class MftInspector {
   // Takes the array position from the record's own header rather than assuming a
   // layout, and refuses one that overlaps the header it was read from or runs past
   // the record — both would have this helper corrupt the record it is inspecting.
+  // Writes a record back after it has been edited in its fixup-applied form: lifts each
+  // sector's last two bytes into the update-sequence array and stamps the sequence number
+  // in their place, which is the state a record is in on disk. An edit that reaches past
+  // the first sector has to go through this — writing it straight into the image would
+  // put record content where the fixup expects its own marker, and the next reader would
+  // reject the record as torn.
+  internal static void WriteRecord(byte[] image, uint recordNumber, byte[] record) {
+    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
+    var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));
+    if (usaCount >= 2 && usaOffset >= 42 && usaOffset + usaCount * 2 <= record.Length) {
+      var usn = record.AsSpan(usaOffset, 2).ToArray();
+      for (var i = 1; i < usaCount; i++) {
+        var sectorEnd = i * BytesPerSector - 2;
+        if (sectorEnd + 2 > record.Length) break;
+        record.AsSpan(sectorEnd, 2).CopyTo(record.AsSpan(usaOffset + i * 2));
+        usn.CopyTo(record.AsSpan(sectorEnd));
+      }
+    }
+
+    var (_, mftOffset, recordSize) = Geometry(image);
+    record.AsSpan(0, recordSize).CopyTo(image.AsSpan((int)(mftOffset + recordNumber * recordSize)));
+  }
+
   private static void UndoUsaFixup(byte[] record) {
     var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
     var usaCount = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(6));

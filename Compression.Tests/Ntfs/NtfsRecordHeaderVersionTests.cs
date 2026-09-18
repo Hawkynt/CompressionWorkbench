@@ -414,6 +414,134 @@ public class NtfsRecordHeaderVersionTests {
     });
   }
 
+  // ── The extent map names the reserved records ───────────────────────────
+
+  /// <summary>
+  /// Record 9 holds a different file before and after 3.0, and the map has to say which.
+  /// </summary>
+  /// <remarks>
+  /// Naming the reserved slots from a table indexed by record number is right for the eleven that
+  /// never move and wrong for the two that do. A map of a genuine NT 4 volume would announce a
+  /// <c>$Secure</c> that the volume has no concept of, and point at <c>$Quota</c>'s clusters while
+  /// doing it.
+  /// </remarks>
+  [TestCase(NtfsVersion.V12, "$Quota")]
+  [TestCase(NtfsVersion.V30, "$Secure")]
+  [TestCase(NtfsVersion.V31, "$Secure")]
+  [Category("EquivalenceClass")]
+  public void TheExtentMapNamesRecordNineAfterTheVolumeVersion(NtfsVersion version, string expected) {
+    var image = Build(version, ("payload.bin", Payload(4096, 11)));
+    GiveRecordSomeClusters(image, 9u);
+
+    using var stream = new MemoryStream(image);
+    var names = NtfsExtentMap.Enumerate(stream).Select(e => e.FileName).ToList();
+
+    Assert.That(names, Has.Some.EqualTo(expected),
+      $"a {version} volume's record 9 is {expected}; the map listed {string.Join(", ", names)}");
+  }
+
+  /// <summary>
+  /// The map and the block mover have to use one vocabulary.
+  /// </summary>
+  /// <remarks>
+  /// The planner matches an extent's owner name against <c>RelocatableMetadata</c> to decide whether
+  /// a region is a file to relink or a structure to repoint, and hands that same name back to the
+  /// mover. A name the map emits and the mover does not know is a region reported as movable and
+  /// then refused mid-plan.
+  /// </remarks>
+  [TestCase(NtfsVersion.V12, "$Quota")]
+  [TestCase(NtfsVersion.V31, "$Secure")]
+  [Category("EquivalenceClass")]
+  public void TheBlockMoverAnswersToTheNameTheMapGivesRecordNine(NtfsVersion version, string expected) {
+    var image = Build(version, ("payload.bin", Payload(4096, 13)));
+    GiveRecordSomeClusters(image, 9u);
+
+    using var stream = new MemoryStream(image);
+    var mapped = NtfsExtentMap.Enumerate(stream).Select(e => e.FileName).ToList();
+
+    var mover = new NtfsBlockMover();
+    mover.Init(image);
+
+    Assert.Multiple(() => {
+      Assert.That(mapped, Has.Some.EqualTo(expected));
+      Assert.That(mover.RelocatableMetadata, Has.Member(expected),
+        $"the map calls record 9 {expected} on a {version} volume, so the mover has to accept it");
+    });
+  }
+
+  /// <summary>
+  /// Gives a reserved record the non-resident <c>$DATA</c> it has on a real volume.
+  /// </summary>
+  /// <remarks>
+  /// The map emits a region per run of clusters, so a record whose data sits inside its own MFT
+  /// entry never reaches the point where it would be named. Ours does: we write no security
+  /// descriptors and no quota entries, so record 9 is resident and empty at every version, and the
+  /// label is dead code on any image this package produces. It is not dead on a volume NT or
+  /// <c>mkntfs</c> wrote, where <c>$Secure</c> runs to a few hundred kilobytes — which is the volume
+  /// the naming has to be right for.
+  /// <para/>
+  /// The unnamed <c>$DATA</c> is appended rather than rewritten in place: the parser takes the last
+  /// one it walks, and appending needs no attribute after it to be shifted. The edit happens on the
+  /// record in its restored form and goes back through the fixup, because on the records that
+  /// already carry an index or a pair of named streams the free space begins past the first sector.
+  /// </remarks>
+  private static void GiveRecordSomeClusters(byte[] image, uint recordNumber) {
+    var record = MftInspector.ReadRecord(image, recordNumber);
+    var usedSize = (int)MftInspector.UsedSize(record);
+
+    // The terminator sits at the end of the used area; the new attribute takes its place.
+    var attr = usedSize - 8;
+    const int attrLen = 72;
+    const int runsOffset = 64;
+    Assert.That(attr + attrLen + 8, Is.LessThanOrEqualTo(record.Length),
+      $"MFT record {recordNumber} has no room for another attribute");
+
+    var span = record.AsSpan(attr, attrLen + 8);
+    span.Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(span, 0x80);          // $DATA
+    BinaryPrimitives.WriteUInt32LittleEndian(span[4..], attrLen);
+    span[8] = 1;                                                   // non-resident
+    BinaryPrimitives.WriteInt64LittleEndian(span[24..], 3);        // last VCN
+    BinaryPrimitives.WriteUInt16LittleEndian(span[32..], runsOffset);
+    BinaryPrimitives.WriteInt64LittleEndian(span[40..], 4 * 4096); // allocated
+    BinaryPrimitives.WriteInt64LittleEndian(span[48..], 4 * 4096); // data size
+    BinaryPrimitives.WriteInt64LittleEndian(span[56..], 4 * 4096); // initialised
+
+    // One run: four clusters at LCN 100, then the run-list terminator.
+    span[runsOffset] = 0x11;
+    span[runsOffset + 1] = 4;
+    span[runsOffset + 2] = 100;
+
+    BinaryPrimitives.WriteUInt32LittleEndian(span[attrLen..], 0xFFFFFFFF);
+    BinaryPrimitives.WriteUInt32LittleEndian(record.AsSpan(24), (uint)(usedSize + attrLen));
+    MftInspector.WriteRecord(image, recordNumber, record);
+  }
+
+  /// <summary>
+  /// The eleven fixed slots keep their curated labels, whatever the record calls itself.
+  /// </summary>
+  /// <remarks>
+  /// Record 5 is the one that would change if the record's own name were preferred everywhere: the
+  /// root directory names itself <c>.</c>, which is accurate and says nothing in a list of regions.
+  /// </remarks>
+  [TestCase(NtfsVersion.V12)]
+  [TestCase(NtfsVersion.V31)]
+  [Category("Boundary")]
+  public void TheFixedReservedSlotsKeepTheirCuratedLabels(NtfsVersion version) {
+    var image = Build(version, ("payload.bin", Payload(4096, 12)));
+    GiveRecordSomeClusters(image, 5u);
+
+    using var stream = new MemoryStream(image);
+    var names = NtfsExtentMap.Enumerate(stream).Select(e => e.FileName).ToList();
+
+    Assert.Multiple(() => {
+      Assert.That(names, Has.Some.EqualTo("root ."), "record 5 keeps its curated label");
+      Assert.That(names, Has.None.EqualTo("."), "and must not fall back to what the record calls itself");
+      Assert.That(names, Has.Some.EqualTo("$MFT"));
+      Assert.That(names, Has.Some.EqualTo("$UpCase"));
+    });
+  }
+
   // Minimal FILE record shell: magic, the claimed array position and slot count.
   private static byte[] FileRecord(int size, int usaOffset, int usaCount) {
     var record = new byte[size];
