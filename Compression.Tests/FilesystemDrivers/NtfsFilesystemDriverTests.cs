@@ -224,6 +224,70 @@ public sealed class NtfsFilesystemDriverTests {
   }
 
   [Test]
+  public void OrdinaryDataOpensThroughABoundedPositionalHandle() {
+    // Resident and ordinary non-resident $DATA both have a proven cluster map,
+    // so neither needs the whole decoded stream materialised to be read.
+    var payload = Enumerable.Range(0, 200 * 1024).Select(static i => (byte)(i * 29 + 7)).ToArray();
+    var image = BuildImage(writer => {
+      writer.AddFile("dir/data.bin", payload);
+      writer.AddFile("dir/small.txt", "resident payload"u8.ToArray());
+      writer.AddFile("dir/empty.bin", []);
+    });
+
+    using var stream = new MemoryStream(image, writable: false);
+    using var session = new NtfsFilesystemDriverAdapter().OpenFilesystem(
+      stream, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var directory = session.Lookup(session.RootNodeId, "dir")!.Value;
+
+    using var large = session.OpenFile(session.Lookup(directory, "data.bin")!.Value, FileAccess.Read);
+    using var small = session.OpenFile(session.Lookup(directory, "small.txt")!.Value, FileAccess.Read);
+    using var empty = session.OpenFile(session.Lookup(directory, "empty.bin")!.Value, FileAccess.Read);
+
+    Assert.Multiple(() => {
+      Assert.That(large, Is.InstanceOf<NtfsDirectReadOnlyFileHandle>());
+      Assert.That(small, Is.InstanceOf<NtfsDirectReadOnlyFileHandle>());
+      Assert.That(empty, Is.InstanceOf<NtfsDirectReadOnlyFileHandle>());
+      Assert.That(large.Length, Is.EqualTo(payload.Length));
+      Assert.That(empty.Length, Is.Zero);
+    });
+
+    var whole = new byte[payload.Length];
+    Assert.That(large.Read(0, whole), Is.EqualTo(payload.Length));
+    Assert.That(whole, Is.EqualTo(payload));
+
+    // A short read in the middle costs its own range and nothing more.
+    var slice = new byte[2049];
+    Assert.That(large.Read(73_333, slice), Is.EqualTo(slice.Length));
+    Assert.That(slice, Is.EqualTo(payload.AsSpan(73_333, slice.Length).ToArray()));
+
+    var resident = new byte[16];
+    Assert.That(small.Read(0, resident), Is.EqualTo(16));
+    Assert.That(resident, Is.EqualTo("resident payload"u8.ToArray()));
+  }
+
+  [Test]
+  public void CompressedDataKeepsTheDecodedStreamFallback() {
+    // LZNT1 units cannot be addressed by a cluster run, so a compressed file
+    // still spools the reader's decoded stream — and must still read correctly.
+    var payload = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("compressible payload. ", 3000)));
+    var image = BuildImage(writer => {
+      writer.SetCompression(true);
+      writer.AddFile("repeating.txt", payload);
+    });
+
+    using var stream = new MemoryStream(image, writable: false);
+    using var session = new NtfsFilesystemDriverAdapter().OpenFilesystem(
+      stream, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    using var handle = session.OpenFile(session.Lookup(session.RootNodeId, "repeating.txt")!.Value, FileAccess.Read);
+
+    Assert.That(handle, Is.InstanceOf<SpoolingReadOnlyFileHandle>());
+    Assert.That(handle.Length, Is.EqualTo(payload.Length));
+    var whole = new byte[payload.Length];
+    Assert.That(handle.Read(0, whole), Is.EqualTo(payload.Length));
+    Assert.That(whole, Is.EqualTo(payload));
+  }
+
+  [Test]
   public void ReadinessClaimsNativeStableIdentityOnlyAfterSequenceValidation() {
     var writer = new NtfsWriter();
     writer.AddFile("x.txt", "x"u8.ToArray());

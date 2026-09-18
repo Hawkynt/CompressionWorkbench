@@ -10203,7 +10203,7 @@ Walks an NTFS image and yields its actual on-disk byte layout — the boot secto
 
 #### `NtfsFilesystemDriverAdapter`
 
-Native NTFS driver sidecar. Namespace identity uses the complete native file reference identity available in a FILE record: MFT segment number plus its sequence number. The reader already decodes resident/non-resident $DATA, sparse runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories. Mounted writes remain fail-closed until $LogFile transactions/replay and the remaining mutable namespace/index semantics are part of the mounted core.
+Native NTFS driver sidecar. Namespace identity uses the complete native file reference identity available in a FILE record: MFT segment number plus its sequence number. Resident, sparse and ordinary non-resident $DATA is read through bounded positional handles over the validated cluster map; LZNT1, encrypted and $ATTRIBUTE_LIST-continued streams keep the decoded-stream fallback. Mounted writes remain fail-closed until $LogFile transactions and replay, and the remaining mutable namespace/index semantics, are part of the mounted core.
 
 Implements `IBlockDeviceFilesystemDriverProvider`, `IFilesystemDriverAdapter`, `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`.
 

@@ -21,6 +21,10 @@ internal sealed class NtfsMountIdentityScanner {
   private const uint AttributeTypeBitmap = 0xB0;
   private const uint AttributeEnd = 0xFFFFFFFF;
 
+  /// <summary>Attribute-header flags: LZNT1 compression, and EFS encryption.</summary>
+  private const ushort AttributeFlagCompressed = 0x0001;
+  private const ushort AttributeFlagEncrypted = 0x4000;
+
   /// <summary>Bit 1 of an index entry's flags: the terminal entry, which carries no key.</summary>
   private const ushort IndexEntryIsLast = 0x0002;
 
@@ -97,7 +101,13 @@ internal sealed class NtfsMountIdentityScanner {
         parentIdentity.Sequence,
         $"$FILE_NAME parent reference for '{path}'");
 
-      identities.Add(new NtfsMountedEntryIdentity(entry, identity.Sequence, identity.HardLinkCount));
+      // A symlink's content is its target text, which the reader synthesises
+      // rather than reading from $DATA, and a directory has no $DATA at all.
+      var dataLayout = entry.IsDirectory || entry.IsSymlink
+        ? null
+        : TryParseDataLayout(identity.Record, entry.MftRecord, entry.Size);
+
+      identities.Add(new NtfsMountedEntryIdentity(entry, identity.Sequence, identity.HardLinkCount, dataLayout));
       if (entry.IsDirectory) {
         pathToRecord[path] = entry.MftRecord;
         directoryRecords.Add(entry.MftRecord);
@@ -443,6 +453,71 @@ internal sealed class NtfsMountIdentityScanner {
   }
 
   /// <summary>
+  /// Derives the direct read layout of a file's unnamed $DATA stream.
+  /// </summary>
+  /// <returns>
+  /// The layout, or <see langword="null"/> where the stream is valid NTFS the
+  /// direct reader does not cover — LZNT1-compressed or encrypted data, a $DATA
+  /// continued through an $ATTRIBUTE_LIST, or a length the decoded namespace
+  /// disagrees with. Those keep the decoded-stream fallback. Damage inside a
+  /// $DATA attribute is not one of those cases and fails the probe.
+  /// </returns>
+  private NtfsMountedDataLayout? TryParseDataLayout(byte[] record, uint recordNumber, long decodedSize) {
+    foreach (var attribute in EnumerateAttributes(record, recordNumber)) {
+      if (attribute.Type != AttributeTypeData || attribute.NameLength != 0) continue;
+
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attribute.Position + 12));
+      if ((flags & (AttributeFlagCompressed | AttributeFlagEncrypted)) != 0) return null;
+
+      if (!attribute.NonResident) {
+        var resident = ReadResidentValue(record, recordNumber, attribute);
+        return resident.Length == decodedSize
+          ? new NtfsMountedDataLayout(resident.Length, resident.Length, resident.ToArray(), [])
+          : null;
+      }
+
+      // A fragment that does not start the stream belongs to an $ATTRIBUTE_LIST
+      // continuation record, which the mounted reader cannot follow yet.
+      if (attribute.Length < 64 || BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(attribute.Position + 16)) != 0)
+        return null;
+
+      var (runs, dataLength) = ReadNonResidentMap(record, recordNumber, attribute, "$DATA");
+      var initializedLength = BinaryPrimitives.ReadInt64LittleEndian(record.AsSpan(attribute.Position + 56));
+      if (initializedLength < 0)
+        throw new InvalidDataException(
+          $"NTFS MFT record {recordNumber} has a negative initialized $DATA length of {initializedLength}.");
+      // Writers that round the initialized length up to the allocation claim
+      // more than the stream holds. Capping it says the whole stream was
+      // written, which is what reading every mapped byte already assumed.
+      initializedLength = Math.Min(initializedLength, dataLength);
+      if (dataLength != decodedSize) return null;
+
+      var mappedBytes = runs.Count == 0 ? 0L : checked((runs[^1].Vcn + runs[^1].ClusterCount) * (long)_clusterSize);
+      if (dataLength > mappedBytes)
+        throw new InvalidDataException(
+          $"NTFS MFT record {recordNumber} maps only {mappedBytes:N0} bytes for a {dataLength:N0}-byte $DATA stream.");
+
+      foreach (var run in runs) {
+        if (run.Sparse) continue;
+        var physical = checked(run.Lcn * (long)_clusterSize);
+        if (physical < 0 || physical > _image.Length - checked(run.ClusterCount * (long)_clusterSize))
+          throw new InvalidDataException($"NTFS MFT record {recordNumber} has a $DATA run outside the backing image.");
+      }
+
+      return new NtfsMountedDataLayout(
+        dataLength,
+        initializedLength,
+        ResidentData: null,
+        runs.Select(static run => new NtfsMountedDataRun(run.Vcn, run.Lcn, run.ClusterCount, run.Sparse)).ToArray());
+    }
+
+    // A record with no unnamed $DATA at all holds an empty file — unless the
+    // namespace says otherwise, in which case the stream lives in an
+    // $ATTRIBUTE_LIST continuation record.
+    return decodedSize == 0 ? new NtfsMountedDataLayout(0, 0, [], []) : null;
+  }
+
+  /// <summary>
   /// Reads a non-resident attribute's VCN→LCN map and its logical length.
   /// </summary>
   private static (List<MftRun> Runs, long DataSize) ReadNonResidentMap(
@@ -612,4 +687,5 @@ internal sealed record NtfsMountIdentityMap(
 internal readonly record struct NtfsMountedEntryIdentity(
   NtfsEntry Entry,
   ushort Sequence,
-  ushort HardLinkCount);
+  ushort HardLinkCount,
+  NtfsMountedDataLayout? DataLayout);

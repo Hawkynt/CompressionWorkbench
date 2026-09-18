@@ -7,10 +7,12 @@ namespace FileSystem.Ntfs;
 /// <summary>
 /// Native NTFS driver sidecar. Namespace identity uses the complete native file
 /// reference identity available in a FILE record: MFT segment number plus its
-/// sequence number. The reader already decodes resident/non-resident $DATA,
-/// sparse runs, LZNT1, reparse symlinks and INDEX_ALLOCATION directories.
-/// Mounted writes remain fail-closed until $LogFile transactions/replay and the
-/// remaining mutable namespace/index semantics are part of the mounted core.
+/// sequence number. Resident, sparse and ordinary non-resident $DATA is read
+/// through bounded positional handles over the validated cluster map; LZNT1,
+/// encrypted and $ATTRIBUTE_LIST-continued streams keep the decoded-stream
+/// fallback. Mounted writes remain fail-closed until $LogFile transactions and
+/// replay, and the remaining mutable namespace/index semantics, are part of the
+/// mounted core.
 /// </summary>
 public sealed class NtfsFilesystemDriverAdapter :
   IFilesystemDriverAdapter,
@@ -44,7 +46,8 @@ public sealed class NtfsFilesystemDriverAdapter :
           "Mounted node ids use the MFT segment number plus FILE-record sequence number, so a reused MFT slot cannot alias a stale file reference.",
           "$FILE_NAME parent references and $I30 directory-index child references are both checked against the live FILE-record sequence before the namespace is published, so an index entry that outlived its file cannot resolve to a reused MFT slot.",
           "The current namespace reader still retains one preferred $FILE_NAME per MFT record; reconstruct every live alias from the parent $I30 indexes before claiming complete hard-link enumeration.",
-          "File data is decoded by the native NTFS reader; the transitional positional handle spools that decoded stream while a direct resident/data-run/LZNT1 positional handle is completed.",
+          "Resident, sparse and ordinary non-resident $DATA is read through bounded positional handles over the validated cluster map, so a mounted read costs the requested range rather than the whole file.",
+          "LZNT1-compressed, encrypted and $ATTRIBUTE_LIST-continued $DATA streams still spool the decoded stream; compression-unit random access and attribute-list traversal are what a direct handle for those needs.",
           "$LogFile restart/replay and transactional publication are not implemented, so writable mounting remains disabled even though offline add/remove/block-move primitives exist.",
         ]);
     } catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException) {
@@ -124,7 +127,8 @@ public sealed class NtfsFilesystemDriverAdapter :
     var blockers = new List<string>(profile.Limitations);
     if (target == FilesystemDriverTarget.ReadWrite) {
       blockers.Add("Reconstruct and validate every live hard-link alias from $INDEX_ROOT/$INDEX_ALLOCATION $I30 entries instead of the current one-preferred-$FILE_NAME namespace projection.");
-      blockers.Add("Move resident/data-run/LZNT1 reads and writes behind direct positional handles; remove whole-file materialization from the mounted path.");
+      blockers.Add("Complete positional reads for the LZNT1, encrypted and $ATTRIBUTE_LIST-continued $DATA profiles that still spool a decoded stream.");
+      blockers.Add("Implement bounded positional writes over the same cluster map, without whole-file materialization.");
       blockers.Add("Implement arbitrary-directory create/unlink/mkdir/rmdir/rename/link with $INDEX_ROOT/$INDEX_ALLOCATION B+tree split/merge and correct namespace collation.");
       blockers.Add("Implement resident↔non-resident conversion, sparse/compressed run-list growth, truncate and $Bitmap allocation as bounded block-device transactions.");
       blockers.Add("Implement $LogFile restart areas, redo/undo records, transaction publication, replay/recovery and volume dirty/clean state before enabling writes.");
@@ -185,7 +189,11 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
     _reader = new NtfsReader(image, leaveOpen: true);
     var identityMap = NtfsMountIdentityScanner.Read(image, geometry, _reader.Entries);
     var root = new FilesystemNodeId(5, identityMap.RootSequence);
-    var (nodes, links) = BuildNamespace(identityMap.Entries, root, identityMap.RootHardLinkCount);
+    var (nodes, links) = BuildNamespace(
+      identityMap.Entries,
+      root,
+      identityMap.RootHardLinkCount,
+      geometry.ClusterSize);
     _namespace = new ReadOnlyFilesystemSnapshotSession(profile, root, nodes, links);
   }
 
@@ -221,7 +229,8 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
   private (FilesystemSnapshotNode[] Nodes, FilesystemSnapshotDirectoryEntry[] Links) BuildNamespace(
       IReadOnlyList<NtfsMountedEntryIdentity> records,
       FilesystemNodeId rootId,
-      ushort rootHardLinkCount) {
+      ushort rootHardLinkCount,
+      int clusterSize) {
     var nodes = new Dictionary<uint, FilesystemSnapshotNode>();
     var links = new List<FilesystemSnapshotDirectoryEntry>(records.Count);
     var pathToNode = new Dictionary<string, FilesystemNodeId>(StringComparer.OrdinalIgnoreCase) {
@@ -252,14 +261,16 @@ internal sealed class NtfsReadOnlyFilesystemSession : IFilesystemSession {
         var captured = record;
         Func<IFilesystemFileHandle>? open = null;
         if (!record.IsDirectory && !record.IsSymlink) {
-          open = () => SpoolingReadOnlyFileHandle.Create(
-            nodeId,
-            record.Size,
-            output => {
-              byte[] data;
-              lock (_ioGate) data = _reader.Extract(captured);
-              output.Write(data);
-            });
+          open = mounted.DataLayout is { } layout
+            ? () => new NtfsDirectReadOnlyFileHandle(_image, _ioGate, nodeId, layout, clusterSize)
+            : () => SpoolingReadOnlyFileHandle.Create(
+              nodeId,
+              record.Size,
+              output => {
+                byte[] data;
+                lock (_ioGate) data = _reader.Extract(captured);
+                output.Write(data);
+              });
         }
         nodes[record.MftRecord] = new FilesystemSnapshotNode(
           nodeId,
