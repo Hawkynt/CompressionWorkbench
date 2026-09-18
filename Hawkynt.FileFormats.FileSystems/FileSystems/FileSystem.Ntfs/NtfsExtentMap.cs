@@ -106,7 +106,7 @@ public static class NtfsExtentMap {
         // $AttrDef, root ., $Bitmap, $Boot, $BadClus, $Secure, $UpCase, $Extend
         // and 4 more reserved slots. Flag their data as MetadataReserved.
         var isSystem = i < Reserved;
-        var label = isSystem ? SystemFileName(i) : (rec.FileName ?? $"mft#{i}");
+        var label = isSystem ? SystemFileName(i, rec.FileName) : (rec.FileName ?? $"mft#{i}");
         var kind = isSystem ? DefragBlockKind.MetadataReserved : DefragBlockKind.Used;
 
         if (rec.IsResident) {
@@ -142,12 +142,38 @@ public static class NtfsExtentMap {
     }
   }
 
-  private static string SystemFileName(int i) => i switch {
-    0 => "$MFT", 1 => "$MFTMirr", 2 => "$LogFile", 3 => "$Volume",
-    4 => "$AttrDef", 5 => "root .", 6 => "$Bitmap", 7 => "$Boot",
-    8 => "$BadClus", 9 => "$Secure", 10 => "$UpCase", 11 => "$Extend",
-    _ => $"$reserved{i}",
-  };
+  /// <summary>
+  /// What to call one of the reserved records, preferring what the record calls itself.
+  /// </summary>
+  /// <remarks>
+  /// Two of these slots hold different files depending on the volume's version: record 9 is
+  /// <c>$Quota</c> on NTFS 1.2 and <c>$Secure</c> from 3.0, and record 11 is unused before 3.0 and
+  /// <c>$Extend</c> from it. Naming them by record number alone therefore labels a genuine NT 4
+  /// volume's <c>$Quota</c> as <c>$Secure</c> — a map that says the wrong thing about a disk this
+  /// package can now read.
+  /// <para/>
+  /// The record's own <c>$FILE_NAME</c> settles it. Deriving the name from the volume's declared
+  /// version instead — <see cref="NtfsVersions.Record9Name" /> already answers exactly this
+  /// question — would mean believing the stamp over the metadata, and a volume where those two
+  /// disagree is a case this package reports rather than assumes away
+  /// (<c>NtfsReader.VersionInconsistencies</c>). What the record calls itself is the evidence; the
+  /// stamp is a claim about it.
+  /// <para/>
+  /// The table stays as the fallback for a record carrying no name, and record 5 keeps its curated
+  /// label: the root directory names itself <c>.</c>, which is accurate and useless in a list of
+  /// regions.
+  /// </remarks>
+  private static string SystemFileName(int i, string? recorded) {
+    if (i is 9 or 11 && !string.IsNullOrEmpty(recorded))
+      return recorded;
+
+    return i switch {
+      0 => "$MFT", 1 => "$MFTMirr", 2 => "$LogFile", 3 => "$Volume",
+      4 => "$AttrDef", 5 => "root .", 6 => "$Bitmap", 7 => "$Boot",
+      8 => "$BadClus", 9 => "$Secure", 10 => "$UpCase", 11 => "$Extend",
+      _ => $"$reserved{i}",
+    };
+  }
 
   private sealed class Rec {
     public string? FileName;

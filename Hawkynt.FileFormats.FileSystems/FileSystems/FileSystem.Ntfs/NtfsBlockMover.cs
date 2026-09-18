@@ -213,13 +213,29 @@ public sealed class NtfsBlockMover : IFilesystemBlockMover, IFilesystemMetadataM
   /// points at it. $Volume and root are resident inside their records, so they
   /// occupy no clusters of their own to move.
   /// </summary>
+  /// <remarks>
+  /// Record 9 answers to two names because it holds two different files: $Quota
+  /// on NTFS 1.2 and $Secure from 3.0 on. A volume has one or the other, never
+  /// both, so accepting either resolves to the record the caller meant. The
+  /// names arrive from the extent map, and a 1.2 volume's map calls that region
+  /// $Quota — without the second key its clusters would be reported as movable
+  /// and then refused.
+  /// </remarks>
   private static readonly Dictionary<string, int> SystemFileRecords =
     new(StringComparer.OrdinalIgnoreCase) {
       ["$MFT"] = 0, ["$MFTMirr"] = 1, ["$LogFile"] = 2, ["$AttrDef"] = 4,
-      ["$Bitmap"] = 6, ["$Secure"] = 9, ["$UpCase"] = 10,
+      ["$Bitmap"] = 6, ["$Secure"] = 9, ["$Quota"] = 9, ["$UpCase"] = 10,
     };
 
-  /// <inheritdoc />
+  /// <summary>
+  /// The system files whose clusters are described by data runs in their own MFT record: $MFT,
+  /// $MFTMirr, $LogFile, $AttrDef, $Bitmap, $UpCase, and record 9 under either of the two names it
+  /// carries — $Quota on NTFS 1.2, $Secure from 3.0. Moving one is the same edit an ordinary file
+  /// gets, because the run list is the whole of what says where it lives. $Boot is pinned: the boot
+  /// sector is what everything else is found through, and nothing points at it. $Volume and the root
+  /// directory occupy no clusters of their own — both are resident inside their records — so there
+  /// is nothing of theirs to move.
+  /// </summary>
   public IReadOnlySet<string> RelocatableMetadata { get; } =
     SystemFileRecords.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
