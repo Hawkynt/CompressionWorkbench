@@ -65,6 +65,35 @@ public class ArchiveOperationsAddRemoveReplaceTests {
     } finally { Directory.Delete(dir, true); }
   }
 
+  [Test, Category("RoundTrip")]
+  public void Add_ModifierPath_Ecryptfs_ForwardsPassword() {
+    var dir = MakeTempDir();
+    try {
+      const string password = "archive-mutation-secret";
+      var original = Path.Combine(dir, "original.bin");
+      var replacement = Path.Combine(dir, "replacement.bin");
+      File.WriteAllText(original, "before");
+      File.WriteAllText(replacement, "after");
+
+      var imagePath = Path.Combine(dir, "payload.ecryptfs");
+      var options = new CompressionOptions { Password = password };
+      ArchiveOperations.Create(
+        imagePath,
+        [new ArchiveInput(original, "content.bin")],
+        options,
+        FormatDetector.Format.Ecryptfs);
+
+      ArchiveOperations.Add(
+        imagePath,
+        [new ArchiveInput(replacement, "content.bin")],
+        options);
+
+      var outputDir = Path.Combine(dir, "out");
+      ArchiveOperations.Extract(imagePath, outputDir, password, files: null);
+      Assert.That(File.ReadAllText(Path.Combine(outputDir, "content.bin")), Is.EqualTo("after"));
+    } finally { Directory.Delete(dir, true); }
+  }
+
   // ── Rebuild path: ZIP (no IArchiveModifiable) ──────────────────────
 
   [Test, Category("RoundTrip")]
