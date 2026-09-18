@@ -42,7 +42,7 @@ public sealed class NtfsFilesystemDriverAdapter :
         CanMountWritable: false,
         [
           "Mounted node ids use the MFT segment number plus FILE-record sequence number, so a reused MFT slot cannot alias a stale file reference.",
-          "$FILE_NAME parent references are checked against the live parent FILE-record sequence before the namespace is published.",
+          "$FILE_NAME parent references and $I30 directory-index child references are both checked against the live FILE-record sequence before the namespace is published, so an index entry that outlived its file cannot resolve to a reused MFT slot.",
           "The current namespace reader still retains one preferred $FILE_NAME per MFT record; reconstruct every live alias from the parent $I30 indexes before claiming complete hard-link enumeration.",
           "File data is decoded by the native NTFS reader; the transitional positional handle spools that decoded stream while a direct resident/data-run/LZNT1 positional handle is completed.",
           "$LogFile restart/replay and transactional publication are not implemented, so writable mounting remains disabled even though offline add/remove/block-move primitives exist.",

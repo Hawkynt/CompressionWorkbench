@@ -77,6 +77,129 @@ public sealed class NtfsFilesystemDriverTests {
   }
 
   [Test]
+  public void ProbeRejectsStaleResidentIndexChildReference() {
+    // Given a directory whose $I30 index still fits in its resident $INDEX_ROOT,
+    // when one child reference names a generation the live FILE record does not
+    // have, then the volume must not mount: after MFT-slot reuse that entry
+    // resolves to an unrelated file.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var child = FindMftRecordByFileName(image, "x.txt");
+    var entry = FindIndexEntry(image, child);
+    Assert.That(entry.InIndexBlock, Is.False, "a one-file root index stays resident");
+
+    BumpSequence(image, entry.Offset);
+
+    AssertRejected(image, "stale", "index");
+  }
+
+  [Test]
+  public void ProbeRejectsStaleIndexAllocationChildReference() {
+    // Same defect one level down: the entry lives in an INDX block of a spilled
+    // $INDEX_ALLOCATION rather than in the resident root.
+    var image = BuildLargeDirectoryImage(out var childNames);
+    var child = FindMftRecordByFileName(image, childNames[^1]);
+    var entry = FindIndexEntry(image, child);
+    Assert.That(entry.InIndexBlock, Is.True, "a 200-entry directory spills into $INDEX_ALLOCATION");
+
+    BumpSequence(image, entry.Offset);
+
+    AssertRejected(image, "stale", "index");
+  }
+
+  [Test]
+  public void ProbeAcceptsIndexChildReferenceWithoutSequence() {
+    // Sequence zero is the absence of a generation, not a wrong one: there is
+    // nothing to compare against and the reference is taken at face value.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var child = FindMftRecordByFileName(image, "x.txt");
+    var entry = FindIndexEntry(image, child);
+    AssertNotSectorTrailer(entry.Offset + 6);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entry.Offset + 6, 2), 0);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
+
+    Assert.That(profile.CanMount, Is.True, string.Join("; ", profile.Limitations));
+  }
+
+  [Test]
+  public void ProbeRejectsIndexReferenceToUnusedMftRecord() {
+    // An index entry naming a record whose in-use flag is clear is the same
+    // stale reference seen from the other side.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var child = FindMftRecordByFileName(image, "x.txt");
+    var flagsOffset = MftRecordOffset(image, child) + 22;
+    var flags = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(flagsOffset, 2));
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(flagsOffset, 2), (ushort)(flags & ~0x0001));
+
+    AssertRejected(image, "not in use");
+  }
+
+  [TestCase((ushort)0, TestName = "ProbeRejectsIndexEntryShorterThanItsHeader")]
+  [TestCase((ushort)20, TestName = "ProbeRejectsMisalignedIndexEntryLength")]
+  public void ProbeRejectsMalformedIndexEntryLength(ushort entryLength) {
+    // Boundaries of the entry-length field: below the 16-byte header, and a
+    // value that is not the 8-byte multiple every index entry must be.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var child = FindMftRecordByFileName(image, "x.txt");
+    var entry = FindIndexEntry(image, child);
+    AssertNotSectorTrailer(entry.Offset + 8);
+    BinaryPrimitives.WriteUInt16LittleEndian(image.AsSpan(entry.Offset + 8, 2), entryLength);
+
+    AssertRejected(image, "index-entry length");
+  }
+
+  [Test]
+  public void ProbeRejectsIndexEntriesReachingBeyondTheirIndexHeader() {
+    // The INDEX_HEADER's index length bounds the entry stream. A value past the
+    // end of the containing attribute would let the walk read neighbouring bytes
+    // as index entries.
+    var image = BuildImage(writer => writer.AddFile("x.txt", "payload"u8.ToArray()));
+    var headerOffset = FindResidentIndexHeader(image, directoryRecord: 5);
+    AssertNotSectorTrailer(headerOffset + 8);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(headerOffset + 4, 4), 0x0000FFFF);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(headerOffset + 8, 4), 0x0000FFFF);
+
+    AssertRejected(image, "outside");
+  }
+
+  [Test]
+  public void ProbeIgnoresStaleReferencesInFreeIndexBlocks() {
+    // A released INDX block keeps the entries it had. The $I30 $BITMAP is what
+    // says it is no longer part of the index, so its contents must not be read
+    // back — otherwise every deletion would look like a stale reference.
+    var image = BuildLargeDirectoryImage(out var childNames);
+    var child = FindMftRecordByFileName(image, childNames[^1]);
+    var entry = FindIndexEntry(image, child);
+    Assert.That(entry.InIndexBlock, Is.True);
+
+    var blockIndex = IndexBlockVcnOrder(image, entry.BlockOffset);
+    ClearIndexBitmapBit(image, blockIndex);
+    BumpSequence(image, entry.Offset);
+
+    using var stream = new MemoryStream(image, writable: false);
+    var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
+
+    Assert.That(profile.CanMount, Is.True, string.Join("; ", profile.Limitations));
+  }
+
+  [Test]
+  public void LargeDirectoryWithSpilledIndexMountsAndEnumerates() {
+    // The happy path of the same walk: a directory whose index lives in INDX
+    // blocks still mounts and still lists every child.
+    var image = BuildLargeDirectoryImage(out var childNames);
+
+    using var stream = new MemoryStream(image, writable: false);
+    using var session = new NtfsFilesystemDriverAdapter().OpenFilesystem(
+      stream, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+
+    var directory = session.Lookup(session.RootNodeId, "dir");
+    Assert.That(directory, Is.Not.Null);
+    var listed = session.Enumerate(directory!.Value).Select(static e => e.Name).ToHashSet(StringComparer.Ordinal);
+    Assert.That(listed, Is.SupersetOf(childNames));
+  }
+
+  [Test]
   public void MountReadsNoRecordNumberFromAPre31FileHeader() {
     // A pre-3.1 FILE header ends at 0x2A and puts its update-sequence array
     // there, so offset 44 holds a saved sector trailer rather than the record
@@ -179,11 +302,82 @@ public sealed class NtfsFilesystemDriverTests {
     throw new InvalidDataException($"No resident $FILE_NAME named '{leafName}' was found in the writer MFT.");
   }
 
+  // ── image fixtures ──────────────────────────────────────────────────────
+
   private static byte[] BuildImage(Action<NtfsWriter> populate) {
     var writer = new NtfsWriter();
     populate(writer);
     return writer.Build(8 * 1024 * 1024);
   }
+
+  /// <summary>
+  /// A directory with enough children that its $I30 index cannot stay resident
+  /// and spills into $INDEX_ALLOCATION blocks tracked by a $BITMAP.
+  /// </summary>
+  private static byte[] BuildLargeDirectoryImage(out string[] childNames) {
+    var names = Enumerable.Range(0, 200).Select(static i => $"file{i:D4}.bin").ToArray();
+    childNames = names;
+    return BuildImage(writer => {
+      foreach (var name in names)
+        writer.AddFile("dir/" + name, Encoding.ASCII.GetBytes(name));
+    });
+  }
+
+  private static void AssertRejected(byte[] image, params string[] fragments) {
+    using var stream = new MemoryStream(image, writable: false);
+    var profile = new NtfsFilesystemDriverAdapter().ProbeFilesystem(stream);
+    var reported = string.Join("; ", profile.Limitations);
+
+    Assert.That(profile.CanMount, Is.False, reported);
+    foreach (var fragment in fragments)
+      Assert.That(
+        profile.Limitations.Any(text => text.Contains(fragment, StringComparison.OrdinalIgnoreCase)),
+        Is.True,
+        $"expected '{fragment}' in: {reported}");
+  }
+
+  // ── image surgery ───────────────────────────────────────────────────────
+
+  /// <summary>
+  /// Advances the sequence component of the file reference at
+  /// <paramref name="referenceOffset"/> so it no longer names the live record.
+  /// </summary>
+  private static void BumpSequence(byte[] image, int referenceOffset) {
+    var field = referenceOffset + 6;
+    AssertNotSectorTrailer(field);
+    var live = BinaryPrimitives.ReadUInt16LittleEndian(image.AsSpan(field, 2));
+    Assert.That(live, Is.Not.Zero, "the writer stamps a real generation into every file reference");
+    BinaryPrimitives.WriteUInt16LittleEndian(
+      image.AsSpan(field, 2),
+      live == ushort.MaxValue ? (ushort)1 : (ushort)(live + 1));
+  }
+
+  /// <summary>
+  /// Guards the fixtures against writing into the two bytes of a sector that the
+  /// update-sequence array owns; such a write is undone when fixups are applied.
+  /// </summary>
+  private static void AssertNotSectorTrailer(int offset)
+    => Assert.That(offset % 512, Is.LessThanOrEqualTo(508),
+      "fixture would overwrite an update-sequence slot instead of the field it targets");
+
+  private static void ClearIndexBitmapBit(byte[] image, long blockIndex) {
+    var directory = FindMftRecordByFileName(image, "dir");
+    var recordOffset = MftRecordOffset(image, directory);
+    var record = RestoredRecord(image, recordOffset);
+    foreach (var attribute in EnumerateAttributes(record)) {
+      if (attribute.Type != 0xB0 || attribute.NonResident || AttributeName(record, attribute) != "$I30") continue;
+      var (valueOffset, valueLength) = ResidentValueBounds(record, attribute);
+      var bit = recordOffset + attribute.Position + valueOffset + checked((int)(blockIndex >> 3));
+      Assert.That(blockIndex >> 3, Is.LessThan(valueLength));
+      AssertNotSectorTrailer(bit);
+      image[bit] &= (byte)~(1 << (int)(blockIndex & 7));
+      return;
+    }
+
+    throw new InvalidDataException("The large-directory fixture has no resident $I30 $BITMAP.");
+  }
+
+  // ── image navigation ────────────────────────────────────────────────────
 
   private static int MftRecordOffset(byte[] image, uint recordNumber) {
     var (mftOffset, recordSize, _) = ReadWriterGeometry(image);
@@ -217,6 +411,89 @@ public sealed class NtfsFilesystemDriverTests {
     return false;
   }
 
+  /// <summary>Where a directory's resident $I30 INDEX_HEADER starts in the image.</summary>
+  private static int FindResidentIndexHeader(byte[] image, uint directoryRecord) {
+    var recordOffset = MftRecordOffset(image, directoryRecord);
+    var record = RestoredRecord(image, recordOffset);
+    foreach (var attribute in EnumerateAttributes(record)) {
+      if (attribute.Type != 0x90 || attribute.NonResident || AttributeName(record, attribute) != "$I30") continue;
+      var (valueOffset, _) = ResidentValueBounds(record, attribute);
+      return recordOffset + attribute.Position + valueOffset + 16;
+    }
+
+    throw new InvalidDataException($"MFT record {directoryRecord} has no resident $I30 $INDEX_ROOT.");
+  }
+
+  private readonly record struct IndexEntryLocation(int Offset, bool InIndexBlock, int BlockOffset);
+
+  /// <summary>
+  /// Locates one $I30 index entry naming <paramref name="childRecord"/>, in a
+  /// resident $INDEX_ROOT or in an INDX block, whichever holds it.
+  /// </summary>
+  private static IndexEntryLocation FindIndexEntry(byte[] image, uint childRecord) {
+    var (mftOffset, recordSize, _) = ReadWriterGeometry(image);
+    var maxRecords = checked((int)((image.LongLength - mftOffset) / recordSize));
+    for (var recordNumber = 5; recordNumber < maxRecords; ++recordNumber) {
+      var physical = checked((int)(mftOffset + (long)recordNumber * recordSize));
+      if (!image.AsSpan(physical, 4).SequenceEqual("FILE"u8)) continue;
+      var record = RestoredRecord(image, physical);
+      foreach (var attribute in EnumerateAttributes(record)) {
+        if (attribute.Type != 0x90 || attribute.NonResident || AttributeName(record, attribute) != "$I30") continue;
+        var (valueOffset, valueLength) = ResidentValueBounds(record, attribute);
+        var valueStart = attribute.Position + valueOffset;
+        var entry = FindIndexEntryIn(record.AsSpan(valueStart, valueLength), indexHeaderOffset: 16, childRecord);
+        if (entry >= 0) return new IndexEntryLocation(physical + valueStart + entry, false, -1);
+      }
+    }
+
+    foreach (var blockOffset in FindIndexBlocks(image)) {
+      var block = RestoredRecord(image, blockOffset, IndexBlockSize(image, blockOffset));
+      var entry = FindIndexEntryIn(block, indexHeaderOffset: 24, childRecord);
+      if (entry >= 0) return new IndexEntryLocation(blockOffset + entry, true, blockOffset);
+    }
+
+    throw new InvalidDataException($"No $I30 index entry names MFT record {childRecord}.");
+  }
+
+  private static int FindIndexEntryIn(ReadOnlySpan<byte> buffer, int indexHeaderOffset, uint childRecord) {
+    var entriesOffset = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(indexHeaderOffset, 4));
+    var indexLength = BinaryPrimitives.ReadUInt32LittleEndian(buffer.Slice(indexHeaderOffset + 4, 4));
+    var position = checked((int)(indexHeaderOffset + entriesOffset));
+    var end = Math.Min(buffer.Length, checked((int)(indexHeaderOffset + indexLength)));
+
+    while (position <= end - 16) {
+      var reference = BinaryPrimitives.ReadUInt64LittleEndian(buffer.Slice(position, 8));
+      var entryLength = BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(position + 8, 2));
+      var flags = BinaryPrimitives.ReadUInt16LittleEndian(buffer.Slice(position + 12, 2));
+      if (entryLength < 16) break;
+      if ((flags & 0x0002) == 0 && (reference & 0x0000FFFFFFFFFFFFUL) == childRecord) return position;
+      if ((flags & 0x0002) != 0) break;
+      position += entryLength;
+    }
+
+    return -1;
+  }
+
+  private static IEnumerable<int> FindIndexBlocks(byte[] image) {
+    for (var offset = 0; offset + 512 <= image.Length; offset += 512)
+      if (image.AsSpan(offset, 4).SequenceEqual("INDX"u8))
+        yield return offset;
+  }
+
+  /// <summary>An INDX block's size, from the allocated length its INDEX_HEADER advertises.</summary>
+  private static int IndexBlockSize(byte[] image, int blockOffset)
+    => checked(BinaryPrimitives.ReadInt32LittleEndian(image.AsSpan(blockOffset + 24 + 8, 4)) + 24);
+
+  /// <summary>Which block of a $I30 allocation stream an INDX block is, by its VCN.</summary>
+  private static long IndexBlockVcnOrder(byte[] image, int blockOffset) {
+    var (_, _, bytesPerSector) = ReadWriterGeometry(image);
+    var clusterSize = checked(bytesPerSector * image[13]);
+    var vcn = BinaryPrimitives.ReadInt64LittleEndian(image.AsSpan(blockOffset + 16, 8));
+    return checked(vcn * clusterSize / IndexBlockSize(image, blockOffset));
+  }
+
+  // ── record decoding ─────────────────────────────────────────────────────
+
   private readonly record struct AttributeSpan(uint Type, int Position, int Length, bool NonResident, byte NameLength);
 
   private static IEnumerable<AttributeSpan> EnumerateAttributes(byte[] record) {
@@ -238,6 +515,12 @@ public sealed class NtfsFilesystemDriverTests {
   private static (int ValueOffset, int ValueLength) ResidentValueBounds(byte[] record, AttributeSpan attribute) => (
     BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attribute.Position + 20)),
     checked((int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attribute.Position + 16))));
+
+  private static string? AttributeName(byte[] record, AttributeSpan attribute) {
+    if (attribute.NameLength == 0) return null;
+    var nameOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attribute.Position + 10));
+    return Encoding.Unicode.GetString(record, attribute.Position + nameOffset, attribute.NameLength * 2);
+  }
 
   /// <summary>A copy of a FILE record or INDX block with its USA fixups undone.</summary>
   private static byte[] RestoredRecord(byte[] image, int offset, int length = 0) {
