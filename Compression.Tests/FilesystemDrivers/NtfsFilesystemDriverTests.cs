@@ -209,7 +209,7 @@ public sealed class NtfsFilesystemDriverTests {
     // volume is created as 3.0 on purpose — the writer's default is 3.1, whose
     // records do name themselves at 44.
     var image = BuildImage(writer => {
-      writer.SetNtfsMinorVersion(0);
+      writer.SetNtfsVersion(NtfsVersion.V30);
       writer.AddFile("x.txt", "payload"u8.ToArray());
     });
     var recordOffset = MftRecordOffset(image, FindMftRecordByFileName(image, "x.txt"));

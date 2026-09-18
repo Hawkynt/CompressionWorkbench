@@ -39,9 +39,9 @@ public class NtfsRecordHeaderVersionExternalTests {
                     $"Run inside WSL: `sudo apt install -y {aptPackage}`.");
   }
 
-  private string BuildImage(byte minorVersion, string fileName) {
+  private string BuildImage(NtfsVersion version, string fileName) {
     var w = new NtfsWriter("VERSIONED");
-    w.SetNtfsMinorVersion(minorVersion);
+    w.SetNtfsVersion(version);
     w.AddFile("hello.txt", "Hello from the versioned NTFS writer."u8.ToArray());
     w.AddFile("payload.bin", Payload(20_000));
     var path = Path.Combine(this._tmpDir, fileName);
@@ -55,16 +55,17 @@ public class NtfsRecordHeaderVersionExternalTests {
     return data;
   }
 
-  private static string VersionText(byte minorVersion) => minorVersion == 1 ? "3.1" : "3.0";
+
 
   // ── Both layouts must satisfy the reference tooling ─────────────────────
 
   [Test, CancelAfter(60_000)]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void Created_EitherLayout_NtfsfixAcceptsAndNamesTheVersion(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Created_EveryVersion_NtfsfixAcceptsAndNamesTheVersion(NtfsVersion version) {
     RequireWslTool("ntfsfix");
-    var image = this.BuildImage(minorVersion, $"ntfsfix_{minorVersion}.img");
+    var image = this.BuildImage(version, $"ntfsfix_{version}.img");
 
     var result = FsInteropToolbox.RunWsl($"ntfsfix --no-action {FsInteropToolbox.WinToWsl(image)}");
     TestContext.Out.WriteLine($"exit={result.ExitCode}\nstdout:\n{result.StdOut}\nstderr:\n{result.StdErr}");
@@ -72,18 +73,19 @@ public class NtfsRecordHeaderVersionExternalTests {
     Assert.Multiple(() => {
       Assert.That(result.ExitCode, Is.Zero, "ntfsfix rejected the volume");
       Assert.That(result.StdOut, Does.Contain("Processing of $MFT and $MFTMirr completed successfully"));
-      Assert.That(result.StdOut, Does.Contain($"NTFS volume version is {VersionText(minorVersion)}"),
+      Assert.That(result.StdOut, Does.Contain($"NTFS volume version is {version.ToVersionText()}"),
         "ntfsfix must read back the version the volume was created as");
     });
   }
 
   [Test, CancelAfter(60_000)]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void Created_EitherLayout_NtfsinfoAndNtfslsWalkTheMft(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void Created_EveryVersion_NtfsinfoAndNtfslsWalkTheMft(NtfsVersion version) {
     RequireWslTool("ntfsinfo");
     RequireWslTool("ntfsls");
-    var image = this.BuildImage(minorVersion, $"ntfsinfo_{minorVersion}.img");
+    var image = this.BuildImage(version, $"ntfsinfo_{version}.img");
     var wsl = FsInteropToolbox.WinToWsl(image);
 
     var info = FsInteropToolbox.RunWsl($"ntfsinfo -m {wsl}");
@@ -93,7 +95,7 @@ public class NtfsRecordHeaderVersionExternalTests {
 
     Assert.Multiple(() => {
       Assert.That(info.ExitCode, Is.Zero, "ntfsinfo rejected the volume");
-      Assert.That(info.StdOut, Does.Contain($"Volume Version: {VersionText(minorVersion)}"));
+      Assert.That(info.StdOut, Does.Contain($"Volume Version: {version.ToVersionText()}"));
       Assert.That(list.ExitCode, Is.Zero, "ntfsls rejected the volume");
       Assert.That(list.StdOut, Does.Contain("hello.txt"));
       Assert.That(list.StdOut, Does.Contain("payload.bin"));
@@ -101,21 +103,22 @@ public class NtfsRecordHeaderVersionExternalTests {
   }
 
   [Test, CancelAfter(90_000)]
-  [TestCase((byte)1)]
-  [TestCase((byte)0)]
-  public void InPlaceAdd_EitherLayout_StaysAcceptableToNtfsfix(byte minorVersion) {
+  [TestCase(NtfsVersion.V31)]
+  [TestCase(NtfsVersion.V30)]
+  [TestCase(NtfsVersion.V12)]
+  public void InPlaceAdd_EveryVersion_StaysAcceptableToNtfsfix(NtfsVersion version) {
     RequireWslTool("ntfsfix");
     RequireWslTool("ntfscat");
 
     var w = new NtfsWriter("VERSIONED");
-    w.SetNtfsMinorVersion(minorVersion);
+    w.SetNtfsVersion(version);
     w.AddFile("seed.txt", "seed"u8.ToArray());
     var image = w.Build(16 * 1024 * 1024);
 
     var added = "added in place, in the layout the volume already used"u8.ToArray();
     NtfsInPlaceAdder.AddFile(image, "added.txt", added);
 
-    var path = Path.Combine(this._tmpDir, $"inplace_{minorVersion}.img");
+    var path = Path.Combine(this._tmpDir, $"inplace_{version}.img");
     File.WriteAllBytes(path, image);
     var wsl = FsInteropToolbox.WinToWsl(path);
 
@@ -126,7 +129,7 @@ public class NtfsRecordHeaderVersionExternalTests {
 
     Assert.Multiple(() => {
       Assert.That(fix.ExitCode, Is.Zero, "ntfsfix rejected the volume after an in-place add");
-      Assert.That(fix.StdOut, Does.Contain($"NTFS volume version is {VersionText(minorVersion)}"),
+      Assert.That(fix.StdOut, Does.Contain($"NTFS volume version is {version.ToVersionText()}"),
         "an in-place add must not change the volume's version or its record layout");
       Assert.That(cat.ExitCode, Is.Zero, "ntfscat could not read the added file");
       Assert.That(cat.StdOut.TrimEnd('\n', '\r'), Is.EqualTo(System.Text.Encoding.UTF8.GetString(added)));
@@ -150,7 +153,7 @@ public class NtfsRecordHeaderVersionExternalTests {
 
     var reference = File.ReadAllBytes(path);
     var ours = new NtfsWriter("VERSIONED");
-    ours.SetNtfsMinorVersion(1);
+    ours.SetNtfsVersion(NtfsVersion.V31);
     ours.AddFile("hello.txt", "hello"u8.ToArray());
     var mine = ours.Build(16 * 1024 * 1024);
 
