@@ -23,6 +23,35 @@ public sealed class NtfsReader : IDisposable {
   /// </summary>
   public IReadOnlyList<NtfsEntry> Entries => _entries;
 
+  /// <summary>
+  /// The version <c>$VOLUME_INFORMATION</c> declares, or <see langword="null"/> when the
+  /// volume names a major/minor pair this implementation does not know.
+  /// </summary>
+  public NtfsVersion? DeclaredVersion { get; private set; }
+
+  /// <summary>
+  /// Every way the volume's content contradicts the version it declares, empty when the
+  /// two agree.
+  /// </summary>
+  /// <remarks>
+  /// <para>A version field is a claim about the structures on the volume, and a volume
+  /// that stamps one version over another's metadata is the defect this reader is asked
+  /// to surface rather than to paper over. The two structures that moved between 1.2 and
+  /// 3.0 and are cheap to check by name are MFT record 9 — <c>$Quota</c> before 3.0,
+  /// <c>$Secure</c> from it — and MFT record 11, empty before 3.0 and the <c>$Extend</c>
+  /// directory from it.</para>
+  ///
+  /// <para>$STANDARD_INFORMATION is deliberately not part of this: the 3.x
+  /// <c>$AttrDef</c> permits 48 and 72 alike, and real 3.1 volumes mix the two — which
+  /// makes its size evidence of nothing on a 3.x volume. On a 1.2 volume the 1.2
+  /// <c>$AttrDef</c> permits 48 and no more, so anything longer there <em>is</em>
+  /// diagnosable, and that direction is checked.</para>
+  ///
+  /// <para>This is reported, not thrown: the reader's job is to read volumes other
+  /// tools wrote, including ones that are wrong.</para>
+  /// </remarks>
+  public IReadOnlyList<string> VersionInconsistencies { get; private set; } = [];
+
   // Boot sector fields
   private int _bytesPerSector;
   private int _sectorsPerCluster;
@@ -132,8 +161,49 @@ public sealed class NtfsReader : IDisposable {
         CollectIndexAllocationRefs(rec);
     }
 
+    this.ReadDeclaredVersion();
+
     // Enumerate files from root directory (record 5)
     EnumerateDirectory(5, "");
+  }
+
+  // Reads the version $Volume declares and measures the metadata set against it.
+  private void ReadDeclaredVersion() {
+    if (!_mftRecords.TryGetValue(3, out var volume) || volume.DeclaredVersion is not { } onDisk) return;
+
+    if (!NtfsVersions.TryFromOnDisk(onDisk.Major, onDisk.Minor, out var version)) {
+      this.VersionInconsistencies =
+        [$"$VOLUME_INFORMATION declares NTFS {onDisk.Major}.{onDisk.Minor}, which is not a version this implementation writes or recognises."];
+      return;
+    }
+
+    this.DeclaredVersion = version;
+
+    var issues = new List<string>();
+    var expectedRecord9 = version.Record9Name();
+    if (_mftRecords.TryGetValue(9, out var record9) && record9.FileName is { Length: > 0 } name9
+        && !string.Equals(name9, expectedRecord9, StringComparison.Ordinal))
+      issues.Add($"MFT record 9 is named '{name9}' on a volume declaring NTFS {version.ToVersionText()}, which names it '{expectedRecord9}'.");
+
+    var hasExtend = _mftRecords.TryGetValue(11, out var record11)
+                    && string.Equals(record11.FileName, "$Extend", StringComparison.Ordinal);
+    if (hasExtend != version.HasCentralisedSecurity())
+      issues.Add(version.HasCentralisedSecurity()
+        ? $"MFT record 11 is not the $Extend directory, which NTFS {version.ToVersionText()} requires."
+        : $"MFT record 11 is the $Extend directory, which arrived with NTFS 3.0 and cannot exist on a volume declaring NTFS {version.ToVersionText()}.");
+
+    // The 1.2 $AttrDef gives $STANDARD_INFORMATION minimum and maximum 48, so a longer
+    // one there is illegal. The 3.x table permits 48 to 72 and real volumes use both,
+    // so there is nothing to check in the other direction.
+    if (!version.HasCentralisedSecurity())
+      foreach (var record in _mftRecords.Values)
+        if (record.StandardInformationLength > 48) {
+          issues.Add($"MFT record {record.RecordNumber} carries a {record.StandardInformationLength}-byte $STANDARD_INFORMATION, "
+                     + $"which NTFS {version.ToVersionText()} caps at 48.");
+          break;
+        }
+
+    this.VersionInconsistencies = issues;
   }
 
   // Maps MFT record slot N to its physical byte offset. With no $MFT:$DATA run
@@ -224,6 +294,18 @@ public sealed class NtfsReader : IDisposable {
         case 0xC0: // $REPARSE_POINT — symbolic links, junctions/mount points
           if (nonResident == 0)
             ParseReparsePoint(record, attrPos, mft);
+          break;
+        case 0x10: // $STANDARD_INFORMATION — 48 bytes up to NTFS 1.2, 72 from 3.0
+          if (nonResident == 0)
+            mft.StandardInformationLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(attrPos + 16));
+          break;
+        case 0x70: // $VOLUME_INFORMATION — the version the volume declares
+          if (nonResident == 0) {
+            var valueOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(attrPos + 20));
+            var value = attrPos + valueOffset;
+            if (value + 10 <= record.Length)
+              mft.DeclaredVersion = (record[value + 8], record[value + 9]);
+          }
           break;
       }
 
@@ -741,6 +823,8 @@ public sealed class NtfsReader : IDisposable {
     public long FileNameSize;
     public bool IsSymlink;
     public string? LinkTarget;
+    public (byte Major, byte Minor)? DeclaredVersion;
+    public int StandardInformationLength;
 
     // Data attribute
     public bool IsResident;
