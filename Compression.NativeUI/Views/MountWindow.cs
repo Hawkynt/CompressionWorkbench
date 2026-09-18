@@ -3,9 +3,13 @@ using Compression.Mounting;
 using Compression.Registry;
 using Hawkynt.NativeForms;
 
-namespace Compression.NativeUI;
+namespace Compression.NativeUI.Views;
 
-internal sealed class MainForm : Form {
+/// <summary>
+/// Mounts a filesystem image through Dokan or FUSE: pick a source, probe what the driver can
+/// actually offer for it, then mount and unmount.
+/// </summary>
+internal sealed class MountWindow : Form {
   private readonly IFilesystemMountBackend[] _backends;
   private readonly MountBackendRegistry _mountBackends;
   private readonly IMountLauncher? _mountLauncher;
@@ -39,7 +43,7 @@ internal sealed class MainForm : Form {
   private IMountSession? _mountSession;
   private bool _busy;
 
-  public MainForm(IEnumerable<IFilesystemMountBackend> backends, IMountLauncher? mountLauncher = null) {
+  public MountWindow(IEnumerable<IFilesystemMountBackend> backends, IMountLauncher? mountLauncher = null) {
     ArgumentNullException.ThrowIfNull(backends);
     this._backends = backends.ToArray();
     this._mountBackends = new(this._backends);
