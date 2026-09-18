@@ -22,4 +22,9 @@
     <ProjectReference Include="..\Compression.Mounting.Fuse\Compression.Mounting.Fuse.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The About window renders this at runtime, so the shipped binary always describes its own build. -->
+    <EmbeddedResource Include="..\README.md" Link="README.md" LogicalName="README.md" />
+  </ItemGroup>
+
 </Project>
