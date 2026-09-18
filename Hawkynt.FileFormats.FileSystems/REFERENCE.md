@@ -14350,7 +14350,7 @@ Builds a VxFS volume the Linux `freevxfs` driver mounts.
 
 ### Namespace `FileSystem.Wafl`
 
-[`WaflEntry`](#waflentry) · [`WaflFormatDescriptor`](#waflformatdescriptor) · [`WaflReader`](#waflreader)
+[`WaflEntry`](#waflentry) · [`WaflFormatDescriptor`](#waflformatdescriptor) · [`WaflPcpiRoot`](#waflpcpiroot) · [`WaflReader`](#waflreader)
 
 #### `WaflEntry`
 
@@ -14389,6 +14389,18 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts the supplied pseudo-entries. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+#### `WaflPcpiRoot`
+
+A retained persistent consistency-point fsinfo root from the direct lookup-table profile.
+
+Implements `IEquatable<WaflPcpiRoot>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `WaflPcpiRoot` | `WaflPcpiRoot(int PcpiId, uint Vbn)` | A retained persistent consistency-point fsinfo root from the direct lookup-table profile. |
+| `PcpiId` | `int PcpiId { get; init; }` |  |
+| `Vbn` | `uint Vbn { get; init; }` |  |
+
 #### `WaflReader`
 
 Read-only structural reader for a flat logical NetApp WAFL volume image.
@@ -14403,6 +14415,7 @@ Implements `IDisposable`.
 | `ActiveFsInfoVbn` | `uint? ActiveFsInfoVbn { get; }` | Gets the active fsinfo VBN when all usable redundant volinfo copies agree, or when only one usable volinfo copy remains. Null means no safe consensus. |
 | `Entries` | `IReadOnlyList<WaflEntry> Entries { get; }` | Gets the entries surfaced by the structural reader. |
 | `FsInfoVbns` | `IReadOnlyList<uint> FsInfoVbns { get; }` | Gets every structurally verified fsinfo VBN reached from a recognized lookup table. |
+| `RetainedFsInfoRoots` | `IReadOnlyList<WaflPcpiRoot> RetainedFsInfoRoots { get; }` | Gets retained PCPI fsinfo roots from every usable redundant volinfo copy. The list is a conservative union: if two copies map the same PCPI ID to different VBNs, both roots are retained for future reachability analysis. |
 | `Stage` | `int Stage { get; }` | Gets the structural parsing stage: 0 is volinfo detection only; 1 means at least one volinfo copy yielded a structurally verified direct fsinfo root. |
 | `ValidHeader` | `bool ValidHeader { get; }` | Gets a value indicating whether at least one documented volinfo superblock was recognized. |
 | `Version` | `uint Version { get; }` | Gets the volinfo version from the first valid superblock copy. When VBN 1 is damaged, the value is taken from VBN 2. |
