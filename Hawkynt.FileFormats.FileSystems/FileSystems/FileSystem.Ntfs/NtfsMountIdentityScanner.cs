@@ -197,8 +197,16 @@ internal sealed class NtfsMountIdentityScanner {
     if (!record.AsSpan(0, 4).SequenceEqual("FILE"u8))
       throw new InvalidDataException($"NTFS MFT record {expectedRecordNumber} has no FILE signature.");
 
-    // NTFS 3.1 stores the low 32 bits of the record number at offset 44. NTFS
-    // 3.0 may leave the field zero, so only a non-zero value is authoritative.
+    // The low 32 bits of the record number sit at offset 44 — but only in the
+    // NTFS 3.1 FILE header, which the update-sequence array follows at 0x30. The
+    // pre-3.1 header ends at 0x2A and puts the USA there instead, so in one of
+    // those, offset 44 is the saved trailer of a sector and reading it as a
+    // record number compares against whatever two bytes that sector ended with.
+    // Where the USA starts is what tells the two layouts apart.
+    var usaOffset = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(4));
+    if (usaOffset < 48) return;
+
+    // NTFS 3.1 may still leave the field zero, so only a non-zero value is authoritative.
     var recordedNumber = BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(44));
     if (recordedNumber != 0 && recordedNumber != expectedRecordNumber)
       throw new InvalidDataException(
