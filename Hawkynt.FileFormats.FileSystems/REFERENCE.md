@@ -10769,7 +10769,76 @@ Writer for DEC VAX/VMS ODS-1 (Files-11 Level 1) disk images. Produces a minimal 
 
 ### Namespace `FileSystem.OneFs`
 
-[`OneFsEntry`](#onefsentry) · [`OneFsFormatDescriptor`](#onefsformatdescriptor) · [`OneFsReader`](#onefsreader)
+[`OneFsDeviceGeometry`](#onefsdevicegeometry) · [`OneFsDeviceIdentity`](#onefsdeviceidentity) · [`OneFsDeviceSet`](#onefsdeviceset) · [`OneFsDiagnosticBlockAddress`](#onefsdiagnosticblockaddress) · [`OneFsEntry`](#onefsentry) · [`OneFsExactBlockCopyGroup`](#onefsexactblockcopygroup) · [`OneFsFormatDescriptor`](#onefsformatdescriptor) · [`OneFsLin`](#onefslin) · [`OneFsMediaCorrelator`](#onefsmediacorrelator) · [`OneFsMemberBlockFingerprint`](#onefsmemberblockfingerprint) · [`OneFsReader`](#onefsreader) · [`OneFsSameOffsetCorrelation`](#onefssameoffsetcorrelation)
+
+#### `OneFsDeviceGeometry`
+
+Documented physical geometry for one candidate OneFS data-device image.
+
+Implements `IEquatable<OneFsDeviceGeometry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsDeviceGeometry` | `OneFsDeviceGeometry(int Index, long ImageSize, long CompleteBlockCount, int PartialBlockBytes, long CompleteCylinderGroupCount, int CylinderGroupTailBytes)` | Documented physical geometry for one candidate OneFS data-device image. |
+| `CompleteBlockCount` | `long CompleteBlockCount { get; init; }` |  |
+| `CompleteCylinderGroupCount` | `long CompleteCylinderGroupCount { get; init; }` |  |
+| `CylinderGroupTailBytes` | `int CylinderGroupTailBytes { get; init; }` |  |
+| `ImageSize` | `long ImageSize { get; init; }` |  |
+| `Index` | `int Index { get; init; }` |  |
+| `IsBlockAligned` | `bool IsBlockAligned { get; }` | Gets whether the image length is an exact multiple of the documented 8 KiB block size. |
+| `IsCylinderGroupAligned` | `bool IsCylinderGroupAligned { get; }` | Gets whether the image length is an exact multiple of the documented 32 MiB cylinder-group size. |
+| `PartialBlockBytes` | `int PartialBlockBytes { get; init; }` |  |
+
+#### `OneFsDeviceIdentity`
+
+Identity of one OneFS data device in Dell diagnostic output.
+
+Implements `IEquatable<OneFsDeviceIdentity>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsDeviceIdentity` | `OneFsDeviceIdentity(int deviceId, int logicalDriveNumber)` | Creates a diagnostic OneFS device identity. |
+| `DeviceId` | `int DeviceId { get; }` | Gets the OneFS node array id (`devid`). |
+| `LogicalDriveNumber` | `int LogicalDriveNumber { get; }` | Gets the persistent logical drive id (`Lnum`). |
+| `ToString` | `override string ToString()` |  |
+
+#### `OneFsDeviceSet`
+
+Non-destructive inventory and bounded raw-access surface for a candidate set of Dell PowerScale / Isilon OneFS data-device images.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `AllDevicesBlockAligned` | `bool AllDevicesBlockAligned { get; }` | Gets whether every supplied device ends on an 8 KiB block boundary. |
+| `AllDevicesCylinderGroupAligned` | `bool AllDevicesCylinderGroupAligned { get; }` | Gets whether every supplied device ends on a 32 MiB cylinder-group boundary. |
+| `Devices` | `IReadOnlyList<OneFsDeviceGeometry> Devices { get; }` | Gets the candidate devices in caller-supplied order. |
+| `IdentifiedDevices` | `IReadOnlyDictionary<OneFsDeviceIdentity, int> IdentifiedDevices { get; }` | Gets caller-supplied diagnostic `(devid,Lnum)` identities mapped to candidate-device indices. |
+| `TotalCompleteBlockCount` | `long TotalCompleteBlockCount { get; }` | Gets the total number of complete documented 8 KiB blocks across the device set. |
+| `TotalCompleteCylinderGroupCount` | `long TotalCompleteCylinderGroupCount { get; }` | Gets the total number of complete documented 32 MiB cylinder groups across the device set. |
+| `TotalImageSize` | `long TotalImageSize { get; }` | Gets the total byte length of all supplied candidate devices. |
+| `Open` | `static OneFsDeviceSet Open(IEnumerable<Stream> devices)` | Inventories a candidate set of OneFS data-device images without reading any payload bytes. |
+| `ReadBlock` | `void ReadBlock(int deviceIndex, long blockIndex, Span<byte> destination)` | Reads one complete documented 8 KiB block from one candidate device while preserving that stream's caller-visible position. |
+| `ReadDiagnosticBlock` | `void ReadDiagnosticBlock(OneFsDiagnosticBlockAddress address, Span<byte> destination)` | Resolves and reads one 8 KiB Dell diagnostic block address from its explicitly identified candidate device. |
+| `ReadDiagnosticExtent` | `void ReadDiagnosticExtent(OneFsDiagnosticBlockAddress address, Span<byte> destination)` | Resolves and reads the exact byte extent described by a Dell diagnostic address from its explicitly identified candidate device. |
+| `TryResolveDevice` | `bool TryResolveDevice(OneFsDeviceIdentity identity, out int deviceIndex)` | Tries to resolve an explicit OneFS diagnostic device identity to a supplied candidate index. |
+| `WithDeviceIdentities` | `OneFsDeviceSet WithDeviceIdentities(IReadOnlyList<OneFsDeviceIdentity?> identities)` | Returns a new device-set view with explicit Dell diagnostic identities for some or all candidate streams. |
+
+#### `OneFsDiagnosticBlockAddress`
+
+Parsed textual OneFS block address as emitted by Dell diagnostics, for example `6,3,669847150592:8192`.
+
+Implements `IEquatable<OneFsDiagnosticBlockAddress>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsDiagnosticBlockAddress` | `OneFsDiagnosticBlockAddress(OneFsDeviceIdentity device, long byteOffset, long length)` | Creates a parsed diagnostic block address. |
+| `BlockCount` | `long? BlockCount { get; }` | Gets the number of complete 8 KiB blocks when the length is block aligned; otherwise null. |
+| `BlockIndex` | `long? BlockIndex { get; }` | Gets the zero-based 8 KiB block index when the address is block aligned; otherwise null. |
+| `ByteOffset` | `long ByteOffset { get; }` | Gets the diagnostic byte address within that logical drive. |
+| `Device` | `OneFsDeviceIdentity Device { get; }` | Gets the node/drive identity from the diagnostic tuple. |
+| `IsFilesystemBlockAligned` | `bool IsFilesystemBlockAligned { get; }` | Gets whether both address and length are aligned to complete 8 KiB OneFS blocks. |
+| `Length` | `long Length { get; }` | Gets the diagnostic byte length. |
+| `ToString` | `override string ToString()` |  |
+| `TryParse` | `static bool TryParse(ReadOnlySpan<char> text, out OneFsDiagnosticBlockAddress address)` | Parses Dell's strict `devid,Lnum,address:length` diagnostic form. |
 
 #### `OneFsEntry`
 
@@ -10783,6 +10852,19 @@ Represents an one fs entry.
 | `Name` | `string Name { get; init; }` | Gets or sets the name. |
 | `Offset` | `long Offset { get; init; }` | Gets or sets the offset. |
 | `Size` | `long Size { get; init; }` | Gets or sets the size. |
+
+#### `OneFsExactBlockCopyGroup`
+
+One exact-copy group among explicitly supplied candidate block offsets.
+
+Implements `IEquatable<OneFsExactBlockCopyGroup>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsExactBlockCopyGroup` | `OneFsExactBlockCopyGroup(int DeviceIndex, string Sha256, IReadOnlyList<long> BlockIndices)` | One exact-copy group among explicitly supplied candidate block offsets. |
+| `BlockIndices` | `IReadOnlyList<long> BlockIndices { get; init; }` |  |
+| `DeviceIndex` | `int DeviceIndex { get; init; }` |  |
+| `Sha256` | `string Sha256 { get; init; }` |  |
 
 #### `OneFsFormatDescriptor`
 
@@ -10809,6 +10891,46 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`, `ILayoutOptimizable`
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts selected inspection entries through bounded streams. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the two conservative inspection entries without reading the image payload. |
 
+#### `OneFsLin`
+
+A OneFS Logical Inode Number (LIN).
+
+Implements `IEquatable<OneFsLin>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsLin` | `OneFsLin(ulong Value)` | A OneFS Logical Inode Number (LIN). |
+| `Value` | `ulong Value { get; init; }` |  |
+| `FromFileHandleBytes` | `static OneFsLin FromFileHandleBytes(ReadOnlySpan<byte> bytes)` | Reads the exact eight-byte little-endian LIN representation Dell documents inside a OneFS NFS filehandle. |
+| `ToDisplayString` | `string ToDisplayString()` | Formats the grouped hexadecimal form observed in Dell `isi get -D` output: high 32 bits without leading zeroes, then two four-digit groups. |
+| `ToLookupString` | `string ToLookupString()` | Formats the 16-digit hexadecimal value accepted by `isi get -L`. |
+| `ToString` | `override string ToString()` |  |
+| `TryParse` | `static bool TryParse(ReadOnlySpan<char> text, out OneFsLin lin)` | Parses a OneFS LIN in either contiguous lookup form or the three-group hexadecimal form emitted by `isi get -D`. |
+| `WriteFileHandleBytes` | `void WriteFileHandleBytes(Span<byte> destination)` | Writes the exact eight-byte little-endian LIN representation Dell documents inside a OneFS NFS filehandle. |
+
+#### `OneFsMediaCorrelator`
+
+Clean-room forensic correlation helpers for candidate OneFS raw members.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsMediaCorrelator` | `OneFsMediaCorrelator(OneFsDeviceSet devices)` |  |
+| `CompareSameOffset` | `OneFsSameOffsetCorrelation CompareSameOffset(long blockIndex)` | Compares the same complete block index across every member that contains it. |
+| `FindExactCopies` | `IReadOnlyList<OneFsExactBlockCopyGroup> FindExactCopies(int deviceIndex, IEnumerable<long> candidateBlockIndices)` | Finds byte-identical copies among explicit candidate block indices on one member. |
+
+#### `OneFsMemberBlockFingerprint`
+
+Per-member fingerprint for one empirically inspected OneFS-sized block.
+
+Implements `IEquatable<OneFsMemberBlockFingerprint>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsMemberBlockFingerprint` | `OneFsMemberBlockFingerprint(int DeviceIndex, long BlockIndex, string Sha256)` | Per-member fingerprint for one empirically inspected OneFS-sized block. |
+| `BlockIndex` | `long BlockIndex { get; init; }` |  |
+| `DeviceIndex` | `int DeviceIndex { get; init; }` |  |
+| `Sha256` | `string Sha256 { get; init; }` |  |
+
 #### `OneFsReader`
 
 Conservative single-image inspection surface for Dell PowerScale / Isilon OneFS media.
@@ -10832,6 +10954,22 @@ Implements `IDisposable`.
 | `Dispose` | `void Dispose()` | Releases the source stream when ownership was requested. |
 | `Extract` | `byte[] Extract(OneFsEntry entry)` | Materializes an entry in memory. Prefer `OpenEntry` for the raw image so large media remains streaming. |
 | `OpenEntry` | `Stream OpenEntry(OneFsEntry entry)` | Opens an entry as a bounded read-only stream. Opening the raw image resets the source to byte zero but never copies the payload into managed memory. |
+
+#### `OneFsSameOffsetCorrelation`
+
+Byte-stability summary for the same candidate block offset across multiple raw device images.
+
+Implements `IEquatable<OneFsSameOffsetCorrelation>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OneFsSameOffsetCorrelation` | `OneFsSameOffsetCorrelation(long BlockIndex, IReadOnlyList<OneFsMemberBlockFingerprint> Members, int StableByteCount, int VariantByteCount)` | Byte-stability summary for the same candidate block offset across multiple raw device images. |
+| `AllBytesStable` | `bool AllBytesStable { get; }` |  |
+| `AllFingerprintsEqual` | `bool AllFingerprintsEqual { get; }` |  |
+| `BlockIndex` | `long BlockIndex { get; init; }` |  |
+| `Members` | `IReadOnlyList<OneFsMemberBlockFingerprint> Members { get; init; }` |  |
+| `StableByteCount` | `int StableByteCount { get; init; }` |  |
+| `VariantByteCount` | `int VariantByteCount { get; init; }` |  |
 
 ### Namespace `FileSystem.OpenVms`
 
