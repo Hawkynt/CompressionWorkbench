@@ -18,6 +18,13 @@ namespace FileSystem.Ext;
 /// <see cref="SectorCache"/> so multi-TB ext4 images (a 50 TB volume's BGD
 /// table + bitmaps are tens of MB) work without OOM.
 /// </para>
+/// <para>
+/// The walk names what it recognises; the block/cluster bitmap then accounts
+/// for everything it did not. Only a block the bitmap positively proves free
+/// is reported free, so external xattr blocks, EA-inode payloads, extent-tree
+/// and indirect-pointer blocks, orphan and quota metadata, and metadata a
+/// later revision introduces stay reserved rather than becoming wipe targets.
+/// </para>
 /// </summary>
 public static class ExtExtentMap {
 
@@ -27,6 +34,44 @@ public static class ExtExtentMap {
   private const uint ExtentsFlag = 0x80000;
   private const ushort ExtentMagic = 0xF30A;
   private const uint RootInode = 2;
+  private const uint IncompatMetaBg = 0x0010;
+  private const uint Incompat64Bit = 0x0080;
+  private const uint RoCompatBigalloc = 0x0200;
+  private const ushort BgBlockUninit = 0x0002;
+
+  /// <summary>
+  /// Returns the decoded layout completed against the allocation bitmap, so
+  /// every byte of the image is either named, proven free, or reserved.
+  /// </summary>
+  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (!image.CanRead || !image.CanSeek)
+      throw new ArgumentException("ext extent enumeration requires a readable, seekable stream.", nameof(image));
+    if (image.Length <= 0) return [];
+
+    var decoded = EnumerateDecoded(image).ToList();
+    if (decoded.Count == 0) return [];
+
+    var position = image.Position;
+    List<(long Offset, long Length)> free;
+    try {
+      using var cache = new SectorCache(image);
+
+      // META_BG scatters the descriptor table, so the bitmaps cannot be located
+      // by the contiguous rule below. Proving nothing free reserves the image.
+      free = TryReadGeometry(cache, out var geometry) && geometry.DescriptorTableIsContiguous
+        ? ReadProvenFreeRanges(cache, geometry)
+        : [];
+    } catch (InvalidDataException) {
+      free = [];
+    } catch (IOException) {
+      free = [];
+    } finally {
+      image.Position = position;
+    }
+
+    return FilesystemAllocationMapCompleter.Complete(image.Length, decoded, free);
+  }
 
   /// <summary>
   /// Single-pass walker. Parses superblock + BGD table; emits the metadata
@@ -35,8 +80,7 @@ public static class ExtExtentMap {
   /// the directory tree from inode 2 and emits one extent per contiguous
   /// data-block run per file.
   /// </summary>
-  public static IEnumerable<DefragBlockInfo> Enumerate(Stream image) {
-    ArgumentNullException.ThrowIfNull(image);
+  private static IEnumerable<DefragBlockInfo> EnumerateDecoded(Stream image) {
     if (image.Length < SuperblockOffset + 264) yield break;
 
     // Read just the superblock (1 KB at offset 1024).
@@ -473,4 +517,172 @@ public static class ExtExtentMap {
       this._runStart = -1;
     }
   }
+
+  private static bool TryReadGeometry(SectorCache cache, out Geometry geometry) {
+    geometry = default;
+    if (cache.Length < SuperblockOffset + 1024) return false;
+
+    var sb = cache.Read(SuperblockOffset, 1024);
+    if (BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(56)) != ExtMagic) return false;
+
+    var logBlockSize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(24));
+    if (logBlockSize > 6) return false;
+    var blockSize = 1024 << checked((int)logBlockSize);
+    if (blockSize is < 1024 or > 65536 || (blockSize & (blockSize - 1)) != 0) return false;
+
+    var featureIncompat = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(96));
+    var featureRoCompat = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(100));
+    var blocksLow = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(4));
+    var blocksHigh = (featureIncompat & Incompat64Bit) != 0
+      ? BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(0x150))
+      : 0u;
+    var blocksCount = blocksLow | (ulong)blocksHigh << 32;
+    if (blocksCount == 0) return false;
+
+    var firstDataBlock = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(20));
+    var blocksPerGroup = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(32));
+    var clustersPerGroup = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(36));
+    var inodesPerGroup = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(40));
+    if (blocksPerGroup == 0 || inodesPerGroup == 0 || blocksCount <= firstDataBlock) return false;
+
+    var inodeSize = BinaryPrimitives.ReadUInt16LittleEndian(sb.AsSpan(88));
+    if (inodeSize == 0) inodeSize = 128;
+    if (inodeSize < 128 || inodeSize > blockSize || (inodeSize & 3) != 0) return false;
+
+    var logClusterSize = BinaryPrimitives.ReadUInt32LittleEndian(sb.AsSpan(28));
+    if (logClusterSize < logBlockSize || logClusterSize - logBlockSize > 20) return false;
+    var clusterBlocks = 1 << checked((int)(logClusterSize - logBlockSize));
+    if ((featureRoCompat & RoCompatBigalloc) == 0) clusterBlocks = 1;
+
+    var rawGroupCount = (blocksCount - firstDataBlock + blocksPerGroup - 1) / blocksPerGroup;
+    if (rawGroupCount == 0 || rawGroupCount > int.MaxValue) return false;
+    var groupCount = checked((int)rawGroupCount);
+    var descriptorSize = ExtBlockGroupGeometry.DescriptorSize(sb);
+    if (descriptorSize is < 32 or > 1024) return false;
+
+    var declaredBytes = blocksCount > (ulong)(long.MaxValue / blockSize)
+      ? long.MaxValue
+      : checked((long)blocksCount * blockSize);
+    if (declaredBytes > cache.Length) return false;
+
+    var descriptorTableIsContiguous = (featureIncompat & IncompatMetaBg) == 0;
+    var groups = new GroupInfo[groupCount];
+    if (descriptorTableIsContiguous) {
+      var bgdtBlock = (ulong)firstDataBlock + 1;
+      var bgdtOffset = checked((long)bgdtBlock * blockSize);
+      for (var group = 0; group < groupCount; ++group) {
+        var descriptorOffset = bgdtOffset + (long)group * descriptorSize;
+        if (descriptorOffset < 0 || descriptorOffset + descriptorSize > cache.Length) return false;
+        var descriptor = cache.Read(descriptorOffset, descriptorSize);
+
+        ulong blockBitmap = BinaryPrimitives.ReadUInt32LittleEndian(descriptor);
+        ulong inodeTable = BinaryPrimitives.ReadUInt32LittleEndian(descriptor.AsSpan(8));
+        ulong freeUnits = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(12));
+        if ((featureIncompat & Incompat64Bit) != 0 && descriptorSize >= 64) {
+          blockBitmap |= (ulong)BinaryPrimitives.ReadUInt32LittleEndian(descriptor.AsSpan(32)) << 32;
+          inodeTable |= (ulong)BinaryPrimitives.ReadUInt32LittleEndian(descriptor.AsSpan(40)) << 32;
+          freeUnits |= (ulong)BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(44)) << 16;
+        }
+
+        var flags = BinaryPrimitives.ReadUInt16LittleEndian(descriptor.AsSpan(18));
+        groups[group] = new GroupInfo(blockBitmap, inodeTable, freeUnits, flags);
+      }
+    }
+
+    geometry = new Geometry(
+      blockSize,
+      blocksCount,
+      firstDataBlock,
+      blocksPerGroup,
+      clustersPerGroup,
+      clusterBlocks,
+      inodesPerGroup,
+      inodeSize,
+      featureIncompat,
+      featureRoCompat,
+      descriptorSize,
+      descriptorTableIsContiguous,
+      groups);
+    return true;
+  }
+
+  private static List<(long Offset, long Length)> ReadProvenFreeRanges(SectorCache cache, Geometry geometry) {
+    var result = new List<(long Offset, long Length)>();
+
+    for (var group = 0; group < geometry.Groups.Length; ++group) {
+      var info = geometry.Groups[group];
+      if ((info.Flags & BgBlockUninit) != 0) continue;
+      if (info.BlockBitmap == 0 || info.BlockBitmap >= geometry.BlocksCount) continue;
+
+      var bitmapOffset = checked((long)info.BlockBitmap * geometry.BlockSize);
+      if (bitmapOffset < 0 || bitmapOffset + geometry.BlockSize > cache.Length) continue;
+      var bitmap = cache.Read(bitmapOffset, geometry.BlockSize);
+
+      var groupStart = (ulong)geometry.FirstDataBlock + (ulong)group * geometry.BlocksPerGroup;
+      if (groupStart >= geometry.BlocksCount) break;
+      var groupBlocks = Math.Min((ulong)geometry.BlocksPerGroup, geometry.BlocksCount - groupStart);
+      var validUnits = (groupBlocks + (ulong)geometry.ClusterBlocks - 1) / (ulong)geometry.ClusterBlocks;
+      if (geometry.ClustersPerGroup != 0 && validUnits > geometry.ClustersPerGroup) continue;
+      if (validUnits > (ulong)bitmap.Length * 8) continue;
+
+      ulong freeCount = 0;
+      for (ulong unit = 0; unit < validUnits; ++unit)
+        if ((bitmap[checked((int)(unit >> 3))] & (1 << (int)(unit & 7))) == 0)
+          ++freeCount;
+
+      // The descriptor count cross-check turns a stale/corrupt bitmap into an
+      // all-allocated group rather than trusting it with destructive operations.
+      if (freeCount != info.FreeUnits) continue;
+
+      ulong runStart = 0;
+      ulong runLength = 0;
+      void Flush() {
+        if (runLength == 0) return;
+        var firstBlock = groupStart + runStart * (ulong)geometry.ClusterBlocks;
+        var endBlock = Math.Min(
+          groupStart + groupBlocks,
+          firstBlock + runLength * (ulong)geometry.ClusterBlocks);
+        if (endBlock > firstBlock) {
+          var offset = checked((long)firstBlock * geometry.BlockSize);
+          var length = checked((long)(endBlock - firstBlock) * geometry.BlockSize);
+          result.Add((offset, length));
+        }
+        runLength = 0;
+      }
+
+      for (ulong unit = 0; unit < validUnits; ++unit) {
+        var isFree = (bitmap[checked((int)(unit >> 3))] & (1 << (int)(unit & 7))) == 0;
+        if (isFree) {
+          if (runLength == 0) runStart = unit;
+          ++runLength;
+        } else {
+          Flush();
+        }
+      }
+      Flush();
+    }
+
+    return result;
+  }
+
+  private readonly record struct Geometry(
+    int BlockSize,
+    ulong BlocksCount,
+    uint FirstDataBlock,
+    uint BlocksPerGroup,
+    uint ClustersPerGroup,
+    int ClusterBlocks,
+    uint InodesPerGroup,
+    int InodeSize,
+    uint FeatureIncompat,
+    uint FeatureRoCompat,
+    int DescriptorSize,
+    bool DescriptorTableIsContiguous,
+    GroupInfo[] Groups);
+
+  private readonly record struct GroupInfo(
+    ulong BlockBitmap,
+    ulong InodeTable,
+    ulong FreeUnits,
+    ushort Flags);
 }

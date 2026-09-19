@@ -83,6 +83,9 @@ public class XfsPlannedDefragTests {
     image.Position = 0;
     var claimed = new HashSet<long>();
     foreach (var extent in new XfsFormatDescriptor().EnumerateExtents(image)) {
+      // A region the map reports as free is the map agreeing with the tree, not
+      // a competing claim on those blocks.
+      if (extent.Kind == DefragBlockKind.Free) continue;
       var first = extent.Offset / blockSize;
       var last = (extent.Offset + extent.Length + blockSize - 1) / blockSize;
       for (var block = first; block < last; ++block) claimed.Add(block);

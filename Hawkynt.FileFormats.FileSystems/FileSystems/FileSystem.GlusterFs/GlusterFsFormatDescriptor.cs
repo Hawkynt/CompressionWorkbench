@@ -3,13 +3,14 @@ using System.Buffers.Binary;
 using Compression.Registry;
 using Compression.Registry.Streaming;
 using FileSystem.Ext;
+using FileSystem.Xfs;
 using static Compression.Registry.FormatHelpers;
 
 namespace FileSystem.GlusterFs;
 
 /// <summary>
-/// Read-only single-brick view for GlusterFS backing-store images, with a
-/// conservative backing-store shrink operation where it is provably metadata-safe.
+/// Read-only single-brick view for GlusterFS backing-store images, with
+/// allocation-safe backing-store maintenance where it is provably metadata-safe.
 ///
 /// <para>GlusterFS has no independent block format: a volume is a logical
 /// collection of bricks and each brick is an export directory on an ordinary
@@ -23,19 +24,25 @@ namespace FileSystem.GlusterFs;
 /// which to distinguish a brick image automatically. The former workbench-only
 /// 0xCAFE5BAB probe convention is deliberately not recognised as GlusterFS.</para>
 ///
-/// <para>The native XFS/ext layers can now read Gluster xattrs and conservatively
-/// mutate the common short-form/in-inode storage cases. General archive mutation
-/// remains disabled until every xattr storage form that a maintenance operation can
-/// encounter (including ext external blocks/EA inodes and XFS leaf/btree/remote
-/// attributes) is preserved. Advertising a rebuild-based mutation before then
-/// could silently discard <c>trusted.gfid</c> or <c>trusted.glusterfs.*</c> state.</para>
+/// <para>The backing extent maps are allocation-complete and fail closed. ext uses
+/// the block/cluster bitmap; XFS cross-checks the per-AG BNO and CNT free-space
+/// btrees against each other and against <c>agf_freeblks</c>. Any allocated range
+/// that cannot be decoded as file data is metadata-reserved. This includes Gluster
+/// xattr storage such as ext external xattr blocks/EA inodes and XFS attribute
+/// leaf/node/remote blocks, so generic free-space wiping cannot destroy GFIDs,
+/// DHT/AFR/EC state, directory metadata, journals, or other allocated structures.</para>
 ///
-/// <para>Shrink is the deliberate exception. For ext-backed bricks the native
-/// in-place shrinker chooses its boundary from the filesystem allocation bitmap;
-/// every allocated xattr block therefore pins the boundary just like file data and
-/// is preserved byte-for-byte. XFS-backed bricks copy through unchanged because the
-/// current XFS shrink path may rebuild the image. This is a backing-store geometry
-/// operation only; it is not Gluster's remove-brick command.</para>
+/// <para>General archive mutation and defragmentation remain disabled. Native xattr
+/// writers still cover only conservative inline/short-form subsets, and the current
+/// filesystem block movers have narrower update guarantees than the complete maps
+/// (for example nested/btree-backed files). A complete allocation map makes wipe
+/// safe; it does not by itself make every allocated object movable.</para>
+///
+/// <para>Shrink remains conservative. For ext-backed bricks the native in-place
+/// shrinker chooses its boundary from the filesystem allocation bitmap; every
+/// allocated xattr block therefore pins the boundary just like file data and is
+/// preserved byte-for-byte. XFS-backed bricks copy through unchanged because the
+/// current XFS shrink path may rebuild the image.</para>
 ///
 /// <para>Gluster volume operations such as rebalance, fix-layout, and remove-brick
 /// are explicitly outside this single-image abstraction. They coordinate multiple
@@ -48,11 +55,16 @@ namespace FileSystem.GlusterFs;
 ///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/GlusterFS-Introduction/</c> — backing filesystems must support extended attributes</description></item>
 ///   <item><description><c>https://docs.gluster.org/en/latest/Administrator-Guide/Managing-Volumes/</c> — remove-brick/rebalance/fix-layout are volume operations</description></item>
 ///   <item><description><c>https://docs.kernel.org/filesystems/ext4/attributes.html</c> — ext4 xattr on-disk layout</description></item>
-///   <item><description><c>https://www.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — XFS short-form attribute layout</description></item>
+///   <item><description><c>https://docs.kernel.org/filesystems/ext4/super.html</c> — ext allocation/group geometry</description></item>
+///   <item><description><c>https://www.kernel.org/pub/linux/utils/fs/xfs/docs/xfs_filesystem_structure.pdf</c> — XFS allocation and attribute btrees</description></item>
 ///   <item><description><c>https://github.com/gluster/glusterfs</c> — canonical GlusterFS implementation, dual GPLv2/LGPLv3+</description></item>
 /// </list>
 /// </summary>
-public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable {
+public sealed class GlusterFsFormatDescriptor :
+  IFormatDescriptor,
+  IArchiveFormatOperations,
+  IArchiveShrinkable,
+  IFilesystemExtentMap {
 
   /// <summary>
   /// Gets the id.
@@ -104,12 +116,11 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
   /// Gets the description.
   /// </summary>
   public string Description =>
-    "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. Native backing " +
-    "accessors read trusted.gfid/trusted.glusterfs.* and mutate inline/short-form xattrs. " +
-    "General writes, defrag, wipe, layout and purge stay disabled until all xattr storage " +
-    "forms are safe. Shrink-to-fit is supported for ext-backed bricks via the allocation " +
-    "bitmap; XFS-backed bricks copy through unchanged. Cluster rebalance, fix-layout and " +
-    "remove-brick are intentionally out of scope.";
+    "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. Complete fail-closed " +
+    "allocation maps make wipe-unused-space safe while preserving unknown allocated metadata, " +
+    "including xattr leaf/remote/external storage. ext-backed shrink-to-fit is supported; XFS " +
+    "shrink copies through. General writes/defrag/layout/purge stay disabled. Cluster rebalance, " +
+    "fix-layout and remove-brick are intentionally out of scope.";
 
   /// <summary>
   /// Lists the entries in the supplied brick backing-store image.
@@ -140,6 +151,28 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
       ?? throw new FileNotFoundException($"GlusterFS brick entry not found: {entryName}");
     var data = reader.Extract(entry);
     return new BoundedEntryStream(new MemoryStream(data, writable: false), data.Length, leaveOpen: false);
+  }
+
+  /// <summary>
+  /// Enumerates the complete backing-filesystem allocation map. Unknown allocated
+  /// ranges are metadata-reserved by the native map, never inferred free.
+  /// </summary>
+  public IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var original = image.CanSeek ? image.Position : 0;
+    try {
+      if (IsXfsBacking(image)) {
+        image.Position = 0;
+        return XfsExtentMap.Enumerate(image).ToArray();
+      }
+      if (IsExtBacking(image)) {
+        image.Position = 0;
+        return ExtExtentMap.Enumerate(image).ToArray();
+      }
+      return [];
+    } finally {
+      if (image.CanSeek) image.Position = original;
+    }
   }
 
   /// <summary>
@@ -181,9 +214,22 @@ public sealed class GlusterFsFormatDescriptor : IFormatDescriptor, IArchiveForma
     target.Position = 0;
   }
 
+  private static bool IsXfsBacking(Stream image) {
+    if (!image.CanRead || !image.CanSeek || image.Length < 4) return false;
+    var original = image.Position;
+    Span<byte> magic = stackalloc byte[4];
+    try {
+      image.Position = 0;
+      image.ReadExactly(magic);
+      return magic.SequenceEqual("XFSB"u8);
+    } finally {
+      image.Position = original;
+    }
+  }
+
   private static bool IsExtBacking(Stream image) {
     const long magicOffset = 1024 + 56;
-    if (image.Length < magicOffset + sizeof(ushort)) return false;
+    if (!image.CanRead || !image.CanSeek || image.Length < magicOffset + sizeof(ushort)) return false;
     var original = image.Position;
     Span<byte> magic = stackalloc byte[sizeof(ushort)];
     try {
