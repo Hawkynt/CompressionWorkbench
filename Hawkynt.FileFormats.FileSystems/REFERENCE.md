@@ -13852,7 +13852,20 @@ Implements `IDisposable`.
 
 ### Namespace `FileSystem.Tux3`
 
-[`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3Reader`](#tux3reader)
+[`Tux3BlockRun`](#tux3blockrun) · [`Tux3Entry`](#tux3entry) · [`Tux3FormatDescriptor`](#tux3formatdescriptor) · [`Tux3JournalRecord`](#tux3journalrecord) · [`Tux3JournalRecordType`](#tux3journalrecordtype) · [`Tux3Reader`](#tux3reader)
+
+#### `Tux3BlockRun`
+
+One contiguous run from the effective TUX3 allocation bitmap.
+
+Implements `IEquatable<Tux3BlockRun>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tux3BlockRun` | `Tux3BlockRun(ulong StartBlock, ulong BlockCount, bool IsAllocated)` | One contiguous run from the effective TUX3 allocation bitmap. |
+| `BlockCount` | `ulong BlockCount { get; init; }` |  |
+| `IsAllocated` | `bool IsAllocated { get; init; }` |  |
+| `StartBlock` | `ulong StartBlock { get; init; }` |  |
 
 #### `Tux3Entry`
 
@@ -13869,7 +13882,7 @@ Represents a tux 3 entry.
 
 #### `Tux3FormatDescriptor`
 
-Native-superblock descriptor for the linux-tux3 research filesystem.
+Native metadata descriptor for the linux-tux3 research filesystem.
 
 Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFilesystemExtentMap`, `IFormatDescriptor`, `ISyntheticEntryNames`, `IWipeEmpty`.
 
@@ -13889,14 +13902,56 @@ Implements `IArchiveFormatOperations`, `IArchiveShrinkable`, `IFilesystemExtentM
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
 | `SyntheticEntryNames` | `IReadOnlySet<string> SyntheticEntryNames { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates the provable byte layout without guessing at undecoded TUX3 allocation state. The declared native volume is reserved wholesale; only trailing bytes outside it are free. Invalid or arithmetically unrepresentable volume metadata reserves the complete physical image. |
+| `EnumerateExtents` | `IEnumerable<DefragBlockInfo> EnumerateExtents(Stream image)` | Enumerates only byte ranges proven by native metadata. When the allocation bitmap and active allocation-only journal records are trustworthy, allocated runs stay metadata-reserved and unallocated runs are exposed as Free. Otherwise the declared volume remains reserved wholesale. Bytes physically appended beyond the declared TUX3 volume are always outside the filesystem. Invalid, unrepresentable, or truncated volume metadata reserves the complete physical image. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
 | `Shrink` | `void Shrink(Stream input, Stream output)` | Removes only bytes beyond the volume size declared by `volblocks * blocksize`. Malformed, truncated, or arithmetically invalid images are copied through unchanged. |
 
+#### `Tux3JournalRecord`
+
+Decoded journal record. Fields which are not meaningful for a record type are zero. Block addresses and keys are widened from the native 48-bit representation.
+
+Implements `IEquatable<Tux3JournalRecord>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Tux3JournalRecord` | `Tux3JournalRecord(Tux3JournalRecordType Type, ulong Block = 0, ulong OtherBlock = 0, ulong Key = 0, uint Count = 0)` | Decoded journal record. Fields which are not meaningful for a record type are zero. Block addresses and keys are widened from the native 48-bit representation. |
+| `Block` | `ulong Block { get; init; }` |  |
+| `Count` | `uint Count { get; init; }` |  |
+| `Key` | `ulong Key { get; init; }` |  |
+| `OtherBlock` | `ulong OtherBlock { get; init; }` |  |
+| `Type` | `Tux3JournalRecordType Type { get; init; }` |  |
+
+#### `Tux3JournalRecordType`
+
+Native TUX3 journal record identifiers.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `BlockAllocate` | `51` |  |
+| `BlockFree` | `52` |  |
+| `BlockFreeOnUnify` | `53` |  |
+| `BlockFreeRelog` | `54` |  |
+| `LeafRedirect` | `55` |  |
+| `LeafFree` | `56` |  |
+| `BNodeRedirect` | `57` |  |
+| `BNodeRoot` | `58` |  |
+| `BNodeSplit` | `59` |  |
+| `BNodeAdd` | `60` |  |
+| `BNodeUpdate` | `61` |  |
+| `BNodeMerge` | `62` |  |
+| `BNodeDelete` | `63` |  |
+| `BNodeAdjust` | `64` |  |
+| `BNodeFree` | `65` |  |
+| `OrphanAdd` | `66` |  |
+| `OrphanDelete` | `67` |  |
+| `FreeBlocks` | `68` |  |
+| `Unify` | `69` |  |
+| `Delta` | `70` |  |
+
 #### `Tux3Reader`
 
-Native-superblock reader for the linux-tux3 research filesystem.
+Native metadata reader for the linux-tux3 research filesystem.
 
 Implements `IDisposable`.
 
@@ -13907,17 +13962,22 @@ Implements `IDisposable`.
 | `Legacy2012Magic` | `static readonly byte[] Legacy2012Magic` | Older 2012-12-20 userspace-tree disk-format magic. |
 | `Magic` | `static readonly byte[] Magic` | Current linux-tux3 disk-format magic (2014-05-06 revision). |
 | `SuperblockOffset` | `const int SuperblockOffset` | Fixed byte offset of `struct disksuper`. |
+| `AllocationMapValid` | `bool AllocationMapValid { get; }` | Gets whether the allocation bitmap plus applicable journal deltas were proven trustworthy. |
+| `AllocationRuns` | `IReadOnlyList<Tux3BlockRun> AllocationRuns { get; }` | Gets coalesced effective allocation runs covering the complete declared volume. |
 | `AtomDictionarySize` | `ulong AtomDictionarySize { get; }` |  |
 | `AtomGeneration` | `uint AtomGeneration { get; }` |  |
 | `Birthday` | `ulong Birthday { get; }` |  |
 | `BlockBits` | `ushort BlockBits { get; }` |  |
-| `Entries` | `IReadOnlyList<Tux3Entry> Entries { get; }` | Gets the entries exposed by this metadata-only reader. |
+| `Entries` | `IReadOnlyList<Tux3Entry> Entries { get; }` | Gets the entries exposed by this metadata reader. |
 | `Flags` | `ulong Flags { get; }` |  |
 | `FreeAtom` | `uint FreeAtom { get; }` |  |
 | `IRoot` | `ulong IRoot { get; }` |  |
+| `JournalRecords` | `IReadOnlyList<Tux3JournalRecord> JournalRecords { get; }` | Gets decoded journal records in chronological order. |
+| `JournalValid` | `bool JournalValid { get; }` | Gets whether the complete declared journal chain was structurally valid. |
 | `Length` | `long Length { get; }` | Gets the total image size. |
 | `LogChain` | `ulong LogChain { get; }` |  |
 | `LogCount` | `uint LogCount { get; }` |  |
+| `NativeMetadataStatus` | `string NativeMetadataStatus { get; }` | Gets the native-metadata parser status. |
 | `NextBlock` | `ulong NextBlock { get; }` |  |
 | `ORoot` | `ulong ORoot { get; }` |  |
 | `Revision` | `string Revision { get; }` | Gets the disk-format revision identified by the eight-byte magic. |
