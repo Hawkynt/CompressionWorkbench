@@ -63,14 +63,19 @@ public class UuEncodingTests {
     var data = new byte[1024];
     new Random(0xB64).NextBytes(data);
 
+    // The mode is a permission word, and the header carries its octal text.
+    // C# has no octal literal, so the value is spelled in hex: 0x180 is octal 600.
+    const int Mode = 0x180;
+
     using var encoded = new MemoryStream();
-    UuEncoder.EncodeBase64(new MemoryStream(data), encoded, "payload.bin", 0600);
+    UuEncoder.EncodeBase64(new MemoryStream(data), encoded, "payload.bin", Mode);
     encoded.Position = 0;
     var (name, mode, decoded) = UuEncoder.Decode(encoded);
 
     Assert.Multiple(() => {
       Assert.That(name, Is.EqualTo("payload.bin"));
-      Assert.That(mode, Is.EqualTo(0600));
+      Assert.That(Encoding.ASCII.GetString(encoded.ToArray()), Does.StartWith("begin-base64 600 payload.bin\n"));
+      Assert.That(mode, Is.EqualTo(Mode));
       Assert.That(decoded, Is.EqualTo(data));
     });
   }

@@ -76,10 +76,13 @@ public sealed class B64EncodingFormatDescriptor : IFormatDescriptor, IStreamForm
     UuEncoder.EncodeBase64(input, output, name, mode);
   }
 
+  /// <summary>Permission bits of a mode word, octal 777. C# has no octal literal, so the bound is written in hex.</summary>
+  private const int MaxMode = 0x1FF;
+
   private static int ParseOctalMode(string text) {
     try {
       var value = Convert.ToInt32(text, 8);
-      if (value is < 0 or > 0777)
+      if (value is < 0 or > MaxMode)
         throw new ArgumentOutOfRangeException(nameof(text), text, "Base64 wrapper mode must fit 0000..0777 octal.");
       return value;
     } catch (FormatException ex) {

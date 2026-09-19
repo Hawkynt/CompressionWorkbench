@@ -6,14 +6,24 @@ namespace FileFormat.UuEncoding;
 /// </summary>
 public static class UuEncoder {
 
+  /// <summary>
+  /// Permission bits of a mode word, octal 777. C# has no octal literal, so the
+  /// mask is written in hex: a literal <c>0777</c> would be the decimal number
+  /// 777 and would clear bits that belong to the permission field.
+  /// </summary>
+  private const int PermissionMask = 0x1FF;
+
+  /// <summary>Default mode both wrappers announce, octal 644 — the value uuencode and libarchive use.</summary>
+  private const int DefaultMode = 0x1A4;
+
   /// <summary>Encodes binary data into classic UUEncoded text without buffering the full input.</summary>
-  public static void Encode(Stream input, Stream output, string filename, int mode = 0644) {
+  public static void Encode(Stream input, Stream output, string filename, int mode = DefaultMode) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(filename);
 
     using var writer = new StreamWriter(output, leaveOpen: true) { NewLine = "\n" };
-    writer.WriteLine($"begin {Convert.ToString(mode & 0777, 8)} {filename}");
+    writer.WriteLine($"begin {Convert.ToString(mode & PermissionMask, 8)} {filename}");
 
     Span<byte> data = stackalloc byte[45];
     while (true) {
@@ -44,13 +54,13 @@ public static class UuEncoder {
   /// uuencode wrapper. Input is consumed in 57-byte blocks, yielding canonical
   /// 76-character Base64 lines.
   /// </summary>
-  public static void EncodeBase64(Stream input, Stream output, string filename = "-", int mode = 0644) {
+  public static void EncodeBase64(Stream input, Stream output, string filename = "-", int mode = DefaultMode) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(filename);
 
     using var writer = new StreamWriter(output, leaveOpen: true) { NewLine = "\n" };
-    writer.WriteLine($"begin-base64 {Convert.ToString(mode & 0777, 8)} {filename}");
+    writer.WriteLine($"begin-base64 {Convert.ToString(mode & PermissionMask, 8)} {filename}");
 
     var data = new byte[57];
     while (true) {
@@ -71,7 +81,7 @@ public static class UuEncoder {
     using var reader = new StreamReader(input, leaveOpen: true);
     string? line;
     string filename = "unknown";
-    int mode = 0644;
+    int mode = DefaultMode;
 
     while ((line = reader.ReadLine()) != null) {
       if (line.StartsWith("begin ", StringComparison.Ordinal)) {
@@ -141,8 +151,8 @@ public static class UuEncoder {
 
   private static int ParseMode(string text) {
     try { return Convert.ToInt32(text, 8); }
-    catch (FormatException) { return 0644; }
-    catch (OverflowException) { return 0644; }
+    catch (FormatException) { return DefaultMode; }
+    catch (OverflowException) { return DefaultMode; }
   }
 
   private static char UuChar(int val) => (char)(val == 0 ? 96 : val + 32);
