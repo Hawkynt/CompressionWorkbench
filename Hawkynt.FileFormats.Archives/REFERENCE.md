@@ -21629,6 +21629,94 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
+### Namespace `FileFormat.Mtree`
+
+[`MtreeEntry`](#mtreeentry) · [`MtreeEntryType`](#mtreeentrytype) · [`MtreeFormatDescriptor`](#mtreeformatdescriptor) · [`MtreeReader`](#mtreereader) · [`MtreeWriter`](#mtreewriter)
+
+#### `MtreeEntry`
+
+One filesystem object described by an mtree manifest.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MtreeEntry` | `MtreeEntry()` |  |
+| `ContentsPath` | `string ContentsPath { get; set; }` | Gets or sets the external contents path declared by the non-archival `contents=` keyword. |
+| `Gid` | `uint? Gid { get; set; }` | Gets or sets the numeric group id, when present. |
+| `IsDirectory` | `bool IsDirectory { get; }` | Gets whether the entry represents a directory. |
+| `IsSymlink` | `bool IsSymlink { get; }` | Gets whether the entry represents a symbolic link. |
+| `Keywords` | `IReadOnlyDictionary<string, string> Keywords { get; }` | Gets the effective keyword set after applying `/set` defaults. Flag-style keywords have a null value. |
+| `LinkTarget` | `string LinkTarget { get; set; }` | Gets or sets the symbolic-link target, when `Type` is `Link`. |
+| `Mode` | `uint? Mode { get; set; }` | Gets or sets the numeric POSIX mode, when present and numeric. |
+| `ModificationTime` | `DateTimeOffset? ModificationTime { get; set; }` | Gets or sets the declared modification time, when present. |
+| `Path` | `string Path { get; set; }` | Gets or sets the slash-separated path relative to the manifest root. |
+| `Size` | `long? Size { get; set; }` | Gets or sets the declared byte size, when present. |
+| `Type` | `MtreeEntryType Type { get; set; }` | Gets or sets the declared object type. |
+| `Uid` | `uint? Uid { get; set; }` | Gets or sets the numeric owner id, when present. |
+
+#### `MtreeEntryType`
+
+Filesystem object types described by an mtree manifest.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `Unknown` | `0` |  |
+| `File` | `1` |  |
+| `Directory` | `2` |  |
+| `Link` | `3` |  |
+| `Block` | `4` |  |
+| `Character` | `5` |  |
+| `Fifo` | `6` |  |
+| `Socket` | `7` |  |
+
+#### `MtreeFormatDescriptor`
+
+BSD mtree(5) filesystem manifest.
+
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MtreeFormatDescriptor` | `MtreeFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `CreateFromStreams` | `void CreateFromStreams(Stream target, IEnumerable<StreamingArchiveInput> inputs, FormatCreateOptions options)` |  |
+| `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
+| `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
+
+#### `MtreeReader`
+
+Reads BSD mtree(5) manifests, including `/set`/`/unset`, full-path entries, classic relative-directory traversal, and octal pathname escapes.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MtreeReader` | `MtreeReader(Stream stream)` | Initializes a reader over `stream`. |
+| `ReadAll` | `List<MtreeEntry> ReadAll()` | Reads all manifest entries. |
+
+#### `MtreeWriter`
+
+Writes portable full-path mtree(5) manifests.
+
+Implements `IDisposable`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `MtreeWriter` | `MtreeWriter(Stream stream, bool leaveOpen = false)` | Initializes a writer over `stream`. |
+| `Dispose` | `void Dispose()` |  |
+| `Flush` | `void Flush()` | Flushes the manifest to its underlying stream. |
+| `WriteEntry` | `void WriteEntry(MtreeEntry entry)` | Writes one manifest entry. |
+
 ### Namespace `FileFormat.Mus`
 
 [`MusFormatDescriptor`](#musformatdescriptor) · [`MusToMidiConverter`](#mustomidiconverter) · [`MusToMidiConverter.Result`](#mustomidiconverterresult)
@@ -29478,20 +29566,47 @@ Implements `IEquatable<PeSection>`.
 
 ### Namespace `FileFormat.UuEncoding`
 
-[`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor)
+[`B64EncodingFormatDescriptor`](#b64encodingformatdescriptor) · [`UuEncoder`](#uuencoder) · [`UuEncodingFormatDescriptor`](#uuencodingformatdescriptor)
 
-#### `UuEncoder`
+#### `B64EncodingFormatDescriptor`
 
-Classic Unix-to-Unix encoding for binary-to-text conversion.
+libarchive/GNU-style `begin-base64` binary-to-text wrapper.
+
+Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `Decode` | `static ValueTuple<string, int, byte[]> Decode(Stream input)` | Decodes UUEncoded text back to binary. |
-| `Encode` | `static void Encode(Stream input, Stream output, string filename, int mode = 644)` | Encodes binary data into UUEncoded text. |
+| `B64EncodingFormatDescriptor` | `B64EncodingFormatDescriptor()` |  |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` |  |
+| `Category` | `FormatCategory Category { get; }` |  |
+| `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` |  |
+| `DefaultExtension` | `string DefaultExtension { get; }` |  |
+| `Description` | `string Description { get; }` |  |
+| `DisplayName` | `string DisplayName { get; }` |  |
+| `Extensions` | `IReadOnlyList<string> Extensions { get; }` |  |
+| `Family` | `AlgorithmFamily Family { get; }` |  |
+| `Id` | `string Id { get; }` |  |
+| `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
+| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
+| `Compress` | `void Compress(Stream input, Stream output)` |  |
+| `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` |  |
+| `Decompress` | `void Decompress(Stream input, Stream output)` |  |
+
+#### `UuEncoder`
+
+Classic Unix-to-Unix encoding and the `begin-base64` wrapper used by libarchive's b64encode filter.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Decode` | `static ValueTuple<string, int, byte[]> Decode(Stream input)` | Decodes classic uuencode or `begin-base64` text back to binary. |
+| `EncodeBase64` | `static void EncodeBase64(Stream input, Stream output, string filename = "-", int mode = 420)` | Encodes binary data using the libarchive/GNU-style `begin-base64` uuencode wrapper. Input is consumed in 57-byte blocks, yielding canonical 76-character Base64 lines. The mode is a permission word written to the header as octal, so the default 420 appears there as 644. |
+| `Encode` | `static void Encode(Stream input, Stream output, string filename, int mode = 420)` | Encodes binary data into classic UUEncoded text without buffering the full input. The mode is a permission word written to the header as octal, so the default 420 appears there as 644. |
 
 #### `UuEncodingFormatDescriptor`
 
-Describes uu encoding format.
+Describes classic uu encoding format.
 
 Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 

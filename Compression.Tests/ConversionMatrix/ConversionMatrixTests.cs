@@ -322,7 +322,7 @@ public class ConversionMatrixTests {
       }
 
       var expected = ExpectedFiles(srcDesc, dstDesc);
-      VerifyPayload(pair, dstPath, dstEntries, expected);
+      VerifyPayload(pair, dstDesc!, dstPath, dstEntries, expected);
   }
 
   /// <summary>
@@ -355,10 +355,17 @@ public class ConversionMatrixTests {
   /// case-folding targets per the documented domain quirks; content is always
   /// authoritative.
   /// </summary>
-  private static void VerifyPayload(Pair pair, string dstPath,
+  private static void VerifyPayload(Pair pair, IFormatDescriptor dstDesc, string dstPath,
       List<ArchiveEntry> dstEntries, Dictionary<string, byte[]> expected) {
 
     var nameSynth = NameSynthesizingTargets.Contains(pair.TargetId);
+
+    // A target that advertises creation but not extraction records metadata
+    // rather than bytes — mtree is a filesystem manifest, and the format has
+    // nowhere to put a file body. Its entry names are still verifiable, so the
+    // conversion is exercised and only the byte comparison is skipped; the
+    // matrix must not read the missing payload as a conversion failure.
+    var manifestOnly = (dstDesc.Capabilities & FormatCapabilities.CanExtract) == 0;
 
     // Count: the target must carry at least as many files as we expect, unless
     // it is a name-synthesizing single-stream-ish format (then assert >= 1).
@@ -398,6 +405,9 @@ public class ConversionMatrixTests {
       Assert.That(entry, Is.Not.Null,
         $"{pair}: expected file '{name}' missing from target " +
         $"([{string.Join(",", dstEntries.Select(e => e.Name))}]).");
+
+      if (manifestOnly)
+        continue;
 
       var actual = SafeExtract(dstPath, entry!.Name);
       Assert.That(actual, Is.Not.Null, $"{pair}: extraction of '{entry.Name}' returned null.");
