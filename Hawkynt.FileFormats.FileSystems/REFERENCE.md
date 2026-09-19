@@ -872,7 +872,7 @@ Implements `IDisposable`.
 
 ### Namespace `FileFormat.Nrg`
 
-[`NrgDiscDefinition`](#nrgdiscdefinition) · [`NrgEntry`](#nrgentry) · [`NrgFormatDescriptor`](#nrgformatdescriptor) · [`NrgInPlaceModifier`](#nrginplacemodifier) · [`NrgInPlaceModifier.SectorGeometry`](#nrginplacemodifiersectorgeometry) · [`NrgReader`](#nrgreader) · [`NrgSessionDefinition`](#nrgsessiondefinition) · [`NrgTrackDefinition`](#nrgtrackdefinition) · [`NrgTrackMode`](#nrgtrackmode) · [`NrgWriter`](#nrgwriter)
+[`NrgDiscDefinition`](#nrgdiscdefinition) · [`NrgEntry`](#nrgentry) · [`NrgEntryKind`](#nrgentrykind) · [`NrgFormatDescriptor`](#nrgformatdescriptor) · [`NrgInPlaceModifier`](#nrginplacemodifier) · [`NrgInPlaceModifier.SectorGeometry`](#nrginplacemodifiersectorgeometry) · [`NrgReader`](#nrgreader) · [`NrgSessionDefinition`](#nrgsessiondefinition) · [`NrgSessionInfo`](#nrgsessioninfo) · [`NrgTrackDefinition`](#nrgtrackdefinition) · [`NrgTrackInfo`](#nrgtrackinfo) · [`NrgTrackMode`](#nrgtrackmode) · [`NrgWriter`](#nrgwriter)
 
 #### `NrgDiscDefinition`
 
@@ -888,16 +888,29 @@ Implements `IEquatable<NrgDiscDefinition>`.
 
 #### `NrgEntry`
 
-Represents a file or directory entry in a Nero NRG disc image.
+Represents a filesystem or raw-track entry in a Nero NRG disc image.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NrgEntry` | `NrgEntry()` |  |
-| `FullPath` | `string FullPath { get; init; }` | Gets the full path within the disc image, using forward slashes. |
+| `FullPath` | `string FullPath { get; init; }` | Gets the full path within the archive view, using forward slashes. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Gets whether this entry is a directory. |
+| `Kind` | `NrgEntryKind Kind { get; init; }` | Gets the backing entry kind. |
 | `Name` | `string Name { get; init; }` | Gets the filename or directory name of this entry. |
+| `SessionNumber` | `int? SessionNumber { get; init; }` | Gets the one-based containing NRG session number when known. |
 | `Size` | `long Size { get; init; }` | Gets the file size in bytes (0 for directories). |
-| `StartLba` | `int StartLba { get; init; }` | Gets the starting LBA (Logical Block Address) of this entry's data. |
+| `StartLba` | `int StartLba { get; init; }` | Gets the starting LBA of an ISO extent, or index-1 LBA for a raw track when known. |
+| `TrackNumber` | `int? TrackNumber { get; init; }` | Gets the globally numbered NRG track number when known. |
+
+#### `NrgEntryKind`
+
+Identifies how an `NrgEntry` is backed by the disc image.
+
+| Value | Numeric | Summary |
+| --- | --- | --- |
+| `IsoFile` | `0` | An ISO 9660 file. |
+| `IsoDirectory` | `1` | An ISO 9660 directory. |
+| `RawTrack` | `2` | A raw stored track exposed because no ISO file tree represents its content. |
 
 #### `NrgFormatDescriptor`
 
@@ -920,15 +933,15 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces named ISO entries through a verified rebuild. Multi-track or audio NRGs are deliberately refused here because flattening them to the generic single-ISO create profile would destroy disc structure. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces named ISO entries through a verified rebuild. Multi-track, audio and non-ISO NRGs are deliberately refused here because flattening them to the generic single-ISO create profile would destroy disc structure. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Creates the generic archive API profile: one DAO session containing one cooked Mode-1 ISO 9660 track. Call `Write` directly for multi-session, mixed data/audio, pregap, MCN, ISRC, CD-TEXT or raw-sector authoring. |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-defragments the single-data-track R/W profile. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Progress-reporting rebuild defrag for the single-data-track R/W profile. |
-| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts ISO 9660 entries from the first readable data track. |
-| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the ISO 9660 entries from the first readable data track in the supplied container. |
-| `Purge` | `void Purge(Stream archive)` | Purges the single-data-track R/W profile to a valid empty NRG. |
+| `Defragment` | `void Defragment(Stream archive)` | Rebuild-defragments the single-ISO-track R/W profile. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Progress-reporting rebuild defrag for the single-ISO-track R/W profile. |
+| `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Extracts ISO files and exact stored raw-track entries without transcoding CD-DA. |
+| `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists ISO files from every readable data track plus exact raw entries for CD-DA and non-ISO tracks. The first ISO filesystem remains rooted at the archive root for backwards compatibility. |
+| `Purge` | `void Purge(Stream archive)` | Purges the single-ISO-track R/W profile to a valid empty NRG. |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes named ISO entries through the same profile-gated verified rebuild. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Tight-packs the single-data-track profile. Multi-track/audio images are copied through unchanged rather than being flattened into one ISO track. |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | Tight-packs the single-ISO-track profile. Multi-track, audio and non-ISO images are copied through unchanged rather than being flattened into one ISO track. |
 
 #### `NrgInPlaceModifier`
 
@@ -962,17 +975,22 @@ Implements `IEquatable<SectorGeometry>`.
 
 #### `NrgReader`
 
-Reads the ISO 9660 data track embedded in a Nero Burning ROM NRG image. NRG stores disc sectors first, then a chunked session/track descriptor, and finally a footer pointing back to that descriptor.
+Reads Nero Burning ROM NRG disc images, including DAO/TAO session and track topology, raw CD-DA/data tracks, and ISO 9660 file trees from every readable data track.
 
 Implements `IDisposable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NrgReader` | `NrgReader(Stream stream, bool leaveOpen = false)` | Initializes a new `NrgReader` from an NRG stream. |
-| `Entries` | `IReadOnlyList<NrgEntry> Entries { get; }` | Gets all file and directory entries found in the ISO 9660 file system. |
+| `CdText` | `ReadOnlyMemory<byte> CdText { get; }` | Gets the raw CD-TEXT pack bytes, or an empty memory when no CDTX chunk was present. |
+| `Entries` | `IReadOnlyList<NrgEntry> Entries { get; }` | Gets the archive view. The first ISO 9660 tree remains at the archive root for compatibility; later ISO trees are namespaced below `.nrg/session-XX/track-YY/iso`. Audio and non-ISO data tracks are exposed as exact stored raw-track files below `.nrg/session-XX/tracks`. |
+| `Sessions` | `IReadOnlyList<NrgSessionInfo> Sessions { get; }` | Gets all reconstructed sessions in physical disc order. |
+| `Tracks` | `IReadOnlyList<NrgTrackInfo> Tracks { get; }` | Gets all reconstructed tracks, flattened in physical order. |
 | `Version` | `int Version { get; }` | Gets the NRG format version detected from the footer (1 or 2), or 0 if no valid footer was found. |
+| `CopyTrackTo` | `void CopyTrackTo(NrgTrackInfo track, Stream output, bool includePregap = false)` | Copies one track without transcoding. CD-DA therefore remains 2,352-byte raw audio sectors (or 2,448-byte sectors when subchannel data is stored). Set `includePregap` to include the stored index-0/pregap bytes as well. |
 | `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(NrgEntry entry)` | Extracts the raw data for a file entry. |
+| `ExtractTrack` | `byte[] ExtractTrack(NrgTrackInfo track)` | Extracts the exact stored index-1/program bytes of one track. |
+| `Extract` | `byte[] Extract(NrgEntry entry)` | Extracts one archive-view entry. |
 
 #### `NrgSessionDefinition`
 
@@ -985,6 +1003,21 @@ Implements `IEquatable<NrgSessionDefinition>`.
 | `NrgSessionDefinition` | `NrgSessionDefinition(IReadOnlyList<NrgTrackDefinition> Tracks)` | One NRG session. Track numbers are assigned globally and consecutively across sessions. |
 | `Mcn` | `string Mcn { get; init; }` | Optional 13-digit media catalog number (MCN/EAN-13). |
 | `Tracks` | `IReadOnlyList<NrgTrackDefinition> Tracks { get; init; }` | Tracks in this session. |
+
+#### `NrgSessionInfo`
+
+Describes one logical NRG session reconstructed from DAO/CUE or ETN metadata.
+
+Implements `IEquatable<NrgSessionInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NrgSessionInfo` | `NrgSessionInfo()` |  |
+| `LeadInLba` | `int? LeadInLba { get; init; }` | Gets the optional lead-in LBA from CUE metadata. |
+| `LeadOutLba` | `int? LeadOutLba { get; init; }` | Gets the optional lead-out LBA from CUE/ETN metadata. |
+| `Mcn` | `string Mcn { get; init; }` | Gets the optional media catalog number (MCN/EAN-13). |
+| `SessionNumber` | `int SessionNumber { get; init; }` | Gets the one-based session number in physical disc order. |
+| `Tracks` | `IReadOnlyList<NrgTrackInfo> Tracks { get; init; }` | Gets the tracks in this session, in physical order. |
 
 #### `NrgTrackDefinition`
 
@@ -1001,6 +1034,35 @@ Implements `IEquatable<NrgTrackDefinition>`.
 | `Mode` | `NrgTrackMode Mode { get; init; }` | On-disc/storage mode. |
 | `PregapData` | `byte[] PregapData { get; init; }` | Optional pregap bytes. When supplied they must contain exactly `PregapSectors` sectors, or, when `PregapSectors` is zero, determine the pregap length themselves. Raw framed and subchannel modes require explicit bytes because an all-zero sector would not be valid framing. |
 | `PregapSectors` | `int PregapSectors { get; init; }` | Number of sectors in index 00 before index 01. Defaults to no stored pregap. |
+
+#### `NrgTrackInfo`
+
+Describes one NRG track and the exact byte range backing it in the container.
+
+Implements `IEquatable<NrgTrackInfo>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `NrgTrackInfo` | `NrgTrackInfo()` |  |
+| `AdrCtl` | `byte? AdrCtl { get; init; }` | Gets the ADR/control byte from CUE metadata when available. |
+| `DataOffset` | `long DataOffset { get; init; }` | Gets the first byte of index 1 / program data. |
+| `EndOffset` | `long EndOffset { get; init; }` | Gets the exclusive end byte of this track. |
+| `HasIso9660` | `bool HasIso9660 { get; }` | Gets whether the reader found an ISO 9660 primary volume descriptor on this track. |
+| `HasSubchannel` | `bool HasSubchannel { get; }` | Gets whether the stored sectors include the 96-byte subchannel area. |
+| `Index0Lba` | `int? Index0Lba { get; init; }` | Gets the index-0 LBA when present in CUE/ETN metadata. |
+| `Index1Lba` | `int? Index1Lba { get; init; }` | Gets the index-1 LBA when present in CUE/ETN metadata. |
+| `IsAudio` | `bool IsAudio { get; }` | Gets whether this track contains CD-DA audio sectors. |
+| `Isrc` | `string Isrc { get; init; }` | Gets the optional 12-character ISRC. |
+| `ModeCode` | `byte ModeCode { get; init; }` | Gets the raw NRG mode code. |
+| `Mode` | `NrgTrackMode Mode { get; }` | Gets the mode code as `NrgTrackMode` when it is one of the modes understood by the writer. |
+| `PregapLength` | `long PregapLength { get; }` | Gets the number of bytes in the stored pregap. |
+| `PregapOffset` | `long PregapOffset { get; init; }` | Gets the first byte of the stored pregap/index-0 area. |
+| `SectorCount` | `long SectorCount { get; }` | Gets the number of complete stored sectors in index 1/program data. |
+| `SectorSize` | `int SectorSize { get; init; }` | Gets the stored bytes per sector. |
+| `SessionNumber` | `int SessionNumber { get; init; }` | Gets the containing one-based session number. |
+| `StoredLength` | `long StoredLength { get; }` | Gets the exact number of bytes occupied by index 1/program data. |
+| `TrackNumber` | `int TrackNumber { get; init; }` | Gets the globally numbered Compact Disc track number. |
+| `UserDataOffset` | `int UserDataOffset { get; init; }` | Gets the offset of the 2,048-byte user-data area within each stored sector when one is known. |
 
 #### `NrgTrackMode`
 
