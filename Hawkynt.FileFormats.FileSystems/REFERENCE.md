@@ -121,9 +121,9 @@ Represents a file or directory entry in a DiscJuggler CDI disc image.
 
 #### `CdiFormatDescriptor`
 
-DiscJuggler CDI disc image (Padus) — CD track data followed by a trailing session/track descriptor. The public specification was never released. Descriptor parsing follows the independently documented on-disk layout and is cross-checked against CDIrip, Aaru and mkdcdisc; see `docs/CDI-ON-DISK.md`.
+DiscJuggler CDI disc image (Padus) — CD track data followed by a trailing session/track descriptor. Reading covers modern and old v2/v3 descriptor dialects; supported Mode-1 and Mode-2 Form-1 filesystems can be rebuilt inside an existing multi-track layout without rewriting the optical descriptor.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveShrinkable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -139,16 +139,17 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Id` | `string Id { get; }` |  |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` |  |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` |  |
+| `OptionsSchema` | `IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; }` |  |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` |  |
-| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces ordinary ISO files through a verified rebuild when the image is the layout-preserving single-track Mode-1 profile. Mixed/multisession images are readable but intentionally refused for mutation because a rebuild would silently discard their audio tracks, pregaps or session map. |
+| `Add` | `void Add(Stream archive, IReadOnlyList<ArchiveInputInfo> inputs)` | Adds/replaces ordinary ISO files. Descriptor-bearing images use a transactional embedded-ISO rebuild that leaves all optical tracks and the descriptor byte layout in place. Raw Mode-1 and Mode-2 Form-1 sectors have their standard CD EDC/ECC regenerated; Form-2/formless sectors fail closed. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` |  |
-| `Defragment` | `void Defragment(Stream archive)` | Rebuild-defragments the supported single-track profile. |
-| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Rebuild-defragments with progress/cancellation while preserving the profile gate. |
+| `Defragment` | `void Defragment(Stream archive)` | Consolidates the active data track, preserving the optical layout where the rebuilder can. |
+| `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Consolidating defragmentation with progress and cancellation; other modes are refused. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` |  |
-| `Purge` | `void Purge(Stream archive)` | Purges only profiles whose optical layout the creator can preserve. |
-| `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes ordinary ISO files through the same profile-preserving rebuild path. |
-| `Shrink` | `void Shrink(Stream input, Stream output)` | Shrinks by verified rebuild only when rebuilding preserves the optical layout profile. |
+| `Purge` | `void Purge(Stream archive)` | Empties the active data track, preserving the optical layout where the rebuilder can. |
+| `Remove` | `void Remove(Stream archive, string[] entryNames)` |  |
+| `Shrink` | `void Shrink(Stream input, Stream output)` | A multi-track CDI has a fixed optical track map, so shrink cannot remove bytes without rewriting that map. Raw/Mode-2 tracks likewise cannot be recreated smaller by the current cooked-only creator without changing their sector geometry. Those profiles therefore copy through unchanged. A single cooked Mode-1 track may be rebuilt smaller while preserving its descriptor compatibility target. |
 
 #### `CdiInPlaceModifier`
 

@@ -187,6 +187,7 @@ public sealed class CdiFormatDescriptor :
     });
   }
 
+  /// <summary>Empties the active data track, preserving the optical layout where the rebuilder can.</summary>
   public void Purge(Stream archive) {
     ArgumentNullException.ThrowIfNull(archive);
     if (CanPreserveOpticalLayout(archive)) {
@@ -204,9 +205,11 @@ public sealed class CdiFormatDescriptor :
     RebuildVerb.PurgeViaModifier(archive, this, this);
   }
 
+  /// <summary>Consolidates the active data track, preserving the optical layout where the rebuilder can.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
 
+  /// <summary>Consolidating defragmentation with progress and cancellation; other modes are refused.</summary>
   public void Defragment(Stream archive, DefragOptions options) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(options);

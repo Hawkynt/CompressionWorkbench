@@ -105,11 +105,17 @@ public sealed class CdiRealWorldLayoutTests {
     });
   }
 
+  /// <summary>
+  /// A disc whose only tracks are audio has no data track to rewrite, so every
+  /// mutating verb refuses it and leaves the stored bytes alone.
+  /// </summary>
   [Test, Category("ErrorPath")]
-  public void MixedLayout_MutationAndMaintenanceFailClosed_WithoutChangingImage() {
+  public void AudioOnlyLayout_MutationAndMaintenanceFailClosed_WithoutChangingImage() {
     var image = BuildCdi([
-      [AudioTrack(startLba: 0, dataSectors: 3, fill: 0x5A)],
-      [Mode2IsoTrack(startLba: 11700, "keep-me"u8.ToArray(), CdiReadMode.Mode2_2336)],
+      [
+        AudioTrack(startLba: 0, dataSectors: 3, fill: 0x5A),
+        AudioTrack(startLba: 454, dataSectors: 4, fill: 0x42),
+      ],
     ]);
     var descriptor = new CdiFormatDescriptor();
 
@@ -120,21 +126,60 @@ public sealed class CdiRealWorldLayoutTests {
 
     Assert.Throws<NotSupportedException>(() =>
       ((IArchiveModifiable)descriptor).Add(archive, [ArchiveInputInfo.InMemory("NEW.BIN", "new"u8)]));
-    Assert.That(archive.ToArray(), Is.EqualTo(original), "Add changed the refused mixed-layout image");
+    Assert.That(archive.ToArray(), Is.EqualTo(original), "Add changed the refused audio-only image");
 
     archive.Position = 0;
     Assert.Throws<NotSupportedException>(() => ((IArchivePurgeable)descriptor).Purge(archive));
-    Assert.That(archive.ToArray(), Is.EqualTo(original), "Purge changed the refused mixed-layout image");
+    Assert.That(archive.ToArray(), Is.EqualTo(original), "Purge changed the refused audio-only image");
 
     archive.Position = 0;
     Assert.Throws<NotSupportedException>(() => ((IArchiveDefragmentable)descriptor).Defragment(archive));
-    Assert.That(archive.ToArray(), Is.EqualTo(original), "Defrag changed the refused mixed-layout image");
+    Assert.That(archive.ToArray(), Is.EqualTo(original), "Defrag changed the refused audio-only image");
 
     archive.Position = 0;
     using var shrunk = new MemoryStream();
     Assert.Throws<NotSupportedException>(() => ((IArchiveShrinkable)descriptor).Shrink(archive, shrunk));
-    Assert.That(archive.ToArray(), Is.EqualTo(original), "Shrink changed the refused mixed-layout image");
-    Assert.That(shrunk.Length, Is.Zero, "Shrink wrote output before refusing the mixed layout");
+    Assert.That(archive.ToArray(), Is.EqualTo(original), "Shrink changed the refused audio-only image");
+    Assert.That(shrunk.Length, Is.Zero, "Shrink wrote output before refusing the audio-only layout");
+  }
+
+  /// <summary>
+  /// The same audio-plus-Mode-2 disc that used to be refused outright is now
+  /// mutated through its data track alone: the audio track keeps every stored
+  /// byte, and the existing ISO file survives alongside the added one.
+  /// </summary>
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void MixedLayout_AddRewritesOnlyTheDataTrack_LeavingAudioBytesIntact() {
+    var image = BuildCdi([
+      [AudioTrack(startLba: 0, dataSectors: 3, fill: 0x5A)],
+      [Mode2IsoTrack(startLba: 11700, "keep-me"u8.ToArray(), CdiReadMode.Mode2_2336)],
+    ]);
+    var audioBytes = image.AsSpan(0, (Pregap + 3) * 2352).ToArray();
+
+    using var archive = new MemoryStream();
+    archive.Write(image);
+    archive.Position = 0;
+
+    ((IArchiveModifiable)new CdiFormatDescriptor()).Add(
+      archive, [ArchiveInputInfo.InMemory("NEW.BIN", "new"u8)]);
+
+    archive.Position = 0;
+    using var reader = new CdiReader(archive, leaveOpen: true);
+    var kept = reader.Entries.Single(entry =>
+      !entry.IsDirectory && entry.Name.Equals("README.TXT", StringComparison.OrdinalIgnoreCase));
+    var added = reader.Entries.Single(entry =>
+      !entry.IsDirectory && entry.Name.Equals("NEW.BIN", StringComparison.OrdinalIgnoreCase));
+
+    Assert.Multiple(() => {
+      Assert.That(archive.ToArray().AsSpan(0, audioBytes.Length).ToArray(), Is.EqualTo(audioBytes),
+        "Add rewrote bytes belonging to the audio track");
+      Assert.That(reader.SessionCount, Is.EqualTo(2));
+      Assert.That(reader.Tracks, Has.Count.EqualTo(2));
+      Assert.That(reader.Tracks[0].Mode, Is.EqualTo(CdiTrackMode.Audio));
+      Assert.That(reader.ActiveDataTrack!.ReadMode, Is.EqualTo(CdiReadMode.Mode2_2336));
+      Assert.That(reader.Extract(kept), Is.EqualTo("keep-me"u8.ToArray()));
+      Assert.That(reader.Extract(added), Is.EqualTo("new"u8.ToArray()));
+    });
   }
 
   private static FixtureTrack AudioTrack(int startLba, int dataSectors, byte fill) {
