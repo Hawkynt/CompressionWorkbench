@@ -16,7 +16,19 @@ public static class UuEncoder {
   /// <summary>Default mode both wrappers announce, octal 644 — the value uuencode and libarchive use.</summary>
   private const int DefaultMode = 0x1A4;
 
-  /// <summary>Encodes binary data into classic UUEncoded text without buffering the full input.</summary>
+  /// <summary>
+  /// Encodes binary data into classic UUEncoded text without buffering the full
+  /// input. The mode is a permission word written to the header as octal, so the
+  /// default 420 appears there as 644.
+  /// </summary>
+  /// <param name="input">Binary data to encode.</param>
+  /// <param name="output">Destination for the encoded text.</param>
+  /// <param name="filename">Name announced in the <c>begin</c> header.</param>
+  /// <param name="mode">
+  /// Permission word announced in the header, written there as octal. The
+  /// default 420 is octal 644; C# has no octal literal, so the numeric value is
+  /// what appears here.
+  /// </param>
   public static void Encode(Stream input, Stream output, string filename, int mode = DefaultMode) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
@@ -52,8 +64,17 @@ public static class UuEncoder {
   /// <summary>
   /// Encodes binary data using the libarchive/GNU-style <c>begin-base64</c>
   /// uuencode wrapper. Input is consumed in 57-byte blocks, yielding canonical
-  /// 76-character Base64 lines.
+  /// 76-character Base64 lines. The mode is a permission word written to the
+  /// header as octal, so the default 420 appears there as 644.
   /// </summary>
+  /// <param name="input">Binary data to encode.</param>
+  /// <param name="output">Destination for the encoded text.</param>
+  /// <param name="filename">Name announced in the <c>begin-base64</c> header.</param>
+  /// <param name="mode">
+  /// Permission word announced in the header, written there as octal. The
+  /// default 420 is octal 644; C# has no octal literal, so the numeric value is
+  /// what appears here.
+  /// </param>
   public static void EncodeBase64(Stream input, Stream output, string filename = "-", int mode = DefaultMode) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
