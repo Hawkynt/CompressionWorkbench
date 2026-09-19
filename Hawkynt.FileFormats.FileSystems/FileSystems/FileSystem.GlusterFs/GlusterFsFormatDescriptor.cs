@@ -66,31 +66,55 @@ public sealed class GlusterFsFormatDescriptor :
   IArchiveShrinkable,
   IFilesystemExtentMap {
 
-  /// <summary>Gets the id.</summary>
+  /// <summary>
+  /// Gets the id.
+  /// </summary>
   public string Id => "GlusterFs";
-  /// <summary>Gets the display name.</summary>
+  /// <summary>
+  /// Gets the display name.
+  /// </summary>
   public string DisplayName => "GlusterFS brick";
-  /// <summary>Gets the category.</summary>
+  /// <summary>
+  /// Gets the category.
+  /// </summary>
   public FormatCategory Category => FormatCategory.Archive;
-  /// <summary>Gets the capabilities.</summary>
+  /// <summary>
+  /// Gets the capabilities.
+  /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
-  /// <summary>Gets the default extension.</summary>
+  /// <summary>
+  /// Gets the default extension.
+  /// </summary>
   public string DefaultExtension => ".gluster";
-  /// <summary>Gets the extensions.</summary>
+  /// <summary>
+  /// Gets the extensions.
+  /// </summary>
   public IReadOnlyList<string> Extensions => [".gluster"];
-  /// <summary>Gets the compound extensions.</summary>
+  /// <summary>
+  /// Gets the compound extensions.
+  /// </summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-  /// <summary>Gets the magic signatures. Empty because GlusterFS has no separate on-disk magic.</summary>
+  /// <summary>
+  /// Gets the magic signatures. Empty by design because GlusterFS has no separate on-disk magic.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
-  /// <summary>Gets the methods.</summary>
+  /// <summary>
+  /// Gets the methods.
+  /// </summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [new("stored", "Stored")];
-  /// <summary>Gets the tar compression format id.</summary>
+  /// <summary>
+  /// Gets the tar compression format id.
+  /// </summary>
   public string? TarCompressionFormatId => null;
-  /// <summary>Gets the family.</summary>
+  /// <summary>
+  /// Gets the family.
+  /// </summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
-  /// <summary>Gets the description.</summary>
+  /// <summary>
+  /// Gets the description.
+  /// </summary>
   public string Description =>
     "GlusterFS single-brick R/O backing-store view via XFS/ext delegation. Complete fail-closed " +
     "allocation maps make wipe-unused-space safe while preserving unknown allocated metadata, " +
@@ -98,14 +122,18 @@ public sealed class GlusterFsFormatDescriptor :
     "shrink copies through. General writes/defrag/layout/purge stay disabled. Cluster rebalance, " +
     "fix-layout and remove-brick are intentionally out of scope.";
 
-  /// <summary>Lists entries in the supplied brick backing-store image.</summary>
+  /// <summary>
+  /// Lists the entries in the supplied brick backing-store image.
+  /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     using var reader = new GlusterFsReader(stream);
     return reader.Entries.Select((entry, index) => new ArchiveEntryInfo(
       index, entry.Name, entry.Size, entry.Size, "Stored", entry.IsDirectory, false, null)).ToList();
   }
 
-  /// <summary>Extracts entries from the supplied single-brick physical view.</summary>
+  /// <summary>
+  /// Extracts entries from the supplied single-brick physical view.
+  /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     using var reader = new GlusterFsReader(stream);
     foreach (var entry in reader.Entries) {

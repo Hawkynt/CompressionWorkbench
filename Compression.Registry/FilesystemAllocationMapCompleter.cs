@@ -1,133 +1,135 @@
 namespace Compression.Registry;
 
 /// <summary>
-/// Converts a filesystem's authoritative free-space information plus any decoded
-/// file extents into a non-overlapping, gap-free physical allocation map.
+/// Completes a decoded filesystem layout so that every byte of the image is
+/// accounted for, using the filesystem's authoritative free-space structure.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The free-space structure is the authority. Bytes that are not positively proven
-/// free are allocated, and allocated bytes that are not positively decoded as one
-/// file are reported as <see cref="DefragBlockKind.MetadataReserved"/>. This is the
-/// fail-closed rule required by <see cref="IFilesystemExtentMap"/>: new or unknown
-/// metadata can reduce optimisation opportunities, but can never become a wipe target.
+/// The decoded extents are the walker's own answer and are passed through
+/// verbatim — same offsets, same lengths, same names, same kinds. They may
+/// legitimately overlap: a map that describes an inode chunk and the individual
+/// inodes inside it is describing two real things at two granularities, and a
+/// file run that stops at its last valid byte rather than at the end of its
+/// allocation unit is what makes cluster-tip wiping possible. Rewriting either
+/// shape would destroy information the maintenance consumers depend on.
 /// </para>
 /// <para>
-/// Decoded file extents are rounded outward to allocation-unit boundaries. A decoded
-/// extent that starts off-boundary is ignored rather than guessed. If decoded file
-/// data overlaps proven free space, or two different owners claim the same bytes, the
-/// conflicting range becomes metadata-reserved instead of trusting either claim.
+/// Completion is therefore additive. Bytes no decoded extent covers are
+/// classified from the free-space structure: a byte the allocator positively
+/// proves free becomes <see cref="DefragBlockKind.Free"/>, and every remaining
+/// byte becomes <see cref="DefragBlockKind.MetadataReserved"/>. That is the
+/// fail-closed rule <see cref="IFilesystemExtentMap"/> states: allocated but
+/// undecoded bytes — external xattr blocks, extent-tree and indirect blocks,
+/// journals, quota and orphan metadata, and metadata a future revision adds —
+/// stay reserved instead of silently reading as free space.
+/// </para>
+/// <para>
+/// A proven-free range is trimmed against the decoded extents before it is
+/// emitted, so an emitted <see cref="DefragBlockKind.Free"/> run can never
+/// overlap a byte something else claims. The generic wiper zeroes exactly the
+/// <see cref="DefragBlockKind.Free"/> runs it is given, so that trimming is what
+/// keeps a disagreement between the allocator and the walker from becoming a
+/// destructive write.
 /// </para>
 /// </remarks>
 public static class FilesystemAllocationMapCompleter {
 
   /// <summary>
-  /// Produces a complete physical map covering <c>[0, imageLength)</c>.
+  /// Produces a complete map covering <c>[0, imageLength)</c> from the decoded
+  /// extents and the ranges the allocator proves free.
   /// </summary>
+  /// <param name="imageLength">Physical length of the image in bytes.</param>
+  /// <param name="decoded">Extents the filesystem walker decoded. Emitted verbatim.</param>
+  /// <param name="provenFree">Ranges the on-disk allocator positively proves free.</param>
+  /// <returns>The decoded extents followed by the classification of every byte they left uncovered.</returns>
   public static IReadOnlyList<DefragBlockInfo> Complete(
       long imageLength,
-      int allocationUnit,
       IEnumerable<DefragBlockInfo> decoded,
       IEnumerable<(long Offset, long Length)> provenFree) {
-    if (imageLength <= 0) return [];
-    if (allocationUnit <= 0) throw new ArgumentOutOfRangeException(nameof(allocationUnit));
     ArgumentNullException.ThrowIfNull(decoded);
     ArgumentNullException.ThrowIfNull(provenFree);
-
-    var events = new List<BoundaryEvent>();
-
-    foreach (var (offset, length) in provenFree) {
-      if (!TryClip(offset, length, imageLength, out var start, out var end)) continue;
-      events.Add(BoundaryEvent.Free(start, +1));
-      events.Add(BoundaryEvent.Free(end, -1));
-    }
-
-    foreach (var extent in decoded) {
-      if (extent.Kind != DefragBlockKind.Used || string.IsNullOrEmpty(extent.FileName)) continue;
-      if (extent.Offset < 0 || extent.Length <= 0 || extent.Offset % allocationUnit != 0) continue;
-
-      var endRaw = SaturatingAdd(extent.Offset, extent.Length);
-      var endAligned = AlignUp(endRaw, allocationUnit);
-      if (!TryClip(extent.Offset, endAligned - extent.Offset, imageLength, out var start, out var end)) continue;
-
-      events.Add(BoundaryEvent.ForOwner(start, extent.FileName!, extent.Classification, +1));
-      events.Add(BoundaryEvent.ForOwner(end, extent.FileName!, extent.Classification, -1));
-    }
-
-    events.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
+    if (imageLength <= 0) return [];
 
     var result = new List<DefragBlockInfo>();
-    var activeOwners = new Dictionary<string, OwnerState>(StringComparer.Ordinal);
-    var freeDepth = 0;
-    var current = 0L;
-    var eventIndex = 0;
+    var claimed = new List<(long Start, long End)>();
 
-    while (eventIndex < events.Count) {
-      var at = Math.Clamp(events[eventIndex].Offset, 0, imageLength);
-      if (at > current)
-        Append(result, current, at - current, Classify(freeDepth, activeOwners));
-
-      while (eventIndex < events.Count && events[eventIndex].Offset == at) {
-        var change = events[eventIndex++];
-        freeDepth += change.FreeDelta;
-        if (change.Owner is not { } owner) continue;
-
-        if (!activeOwners.TryGetValue(owner, out var state))
-          state = new OwnerState(0, change.Classification);
-        state = state with { Count = state.Count + change.OwnerDelta };
-        if (state.Count <= 0)
-          activeOwners.Remove(owner);
-        else
-          activeOwners[owner] = state;
-      }
-
-      current = at;
-      if (current >= imageLength) break;
+    foreach (var extent in decoded) {
+      result.Add(extent);
+      if (TryClip(extent.Offset, extent.Length, imageLength, out var start, out var end))
+        claimed.Add((start, end));
     }
 
-    if (current < imageLength)
-      Append(result, current, imageLength - current, Classify(freeDepth, activeOwners));
+    // Nothing decoded at all is not a licence to call the image empty: the
+    // inherited wipe treats an empty map as "walk failed" and writes nothing.
+    if (result.Count == 0) return [];
+
+    var free = new List<(long Start, long End)>();
+    foreach (var (offset, length) in provenFree)
+      if (TryClip(offset, length, imageLength, out var start, out var end))
+        free.Add((start, end));
+
+    var claimedRuns = Merge(claimed);
+    foreach (var (start, end) in Subtract(Merge(free), claimedRuns))
+      result.Add(new DefragBlockInfo(start, end - start, DefragBlockKind.Free));
+
+    // Whatever is left is allocated as far as the allocator is concerned but no
+    // walker named it. It stays reserved.
+    var accounted = Merge([.. claimedRuns, .. Merge(free)]);
+    foreach (var (start, end) in Subtract([(0L, imageLength)], accounted))
+      result.Add(new DefragBlockInfo(start, end - start, DefragBlockKind.MetadataReserved,
+        "allocated metadata/unknown", DefragBlockClass.Directory));
 
     return result;
   }
 
-  private static (DefragBlockKind Kind, string? Owner, DefragBlockClass? Classification) Classify(
-      int freeDepth,
-      Dictionary<string, OwnerState> activeOwners) {
-    if (freeDepth > 0)
-      return activeOwners.Count == 0
-        ? (DefragBlockKind.Free, null, null)
-        : (DefragBlockKind.MetadataReserved, "allocation conflict", DefragBlockClass.Directory);
+  /// <summary>Coalesces overlapping and touching ranges into ordered disjoint runs.</summary>
+  private static List<(long Start, long End)> Merge(List<(long Start, long End)> ranges) {
+    var result = new List<(long Start, long End)>();
+    if (ranges.Count == 0) return result;
 
-    if (activeOwners.Count == 1) {
-      var pair = activeOwners.First();
-      return (DefragBlockKind.Used, pair.Key, pair.Value.Classification);
+    ranges.Sort(static (left, right) => left.Start.CompareTo(right.Start));
+    var (currentStart, currentEnd) = ranges[0];
+    for (var i = 1; i < ranges.Count; ++i) {
+      var (start, end) = ranges[i];
+      if (start <= currentEnd) {
+        if (end > currentEnd) currentEnd = end;
+        continue;
+      }
+
+      result.Add((currentStart, currentEnd));
+      (currentStart, currentEnd) = (start, end);
     }
 
-    return activeOwners.Count > 1
-      ? (DefragBlockKind.MetadataReserved, "shared/ambiguous allocation", DefragBlockClass.Directory)
-      : (DefragBlockKind.MetadataReserved, "allocated metadata/unknown", DefragBlockClass.Directory);
+    result.Add((currentStart, currentEnd));
+    return result;
   }
 
-  private static void Append(
-      List<DefragBlockInfo> result,
-      long offset,
-      long length,
-      (DefragBlockKind Kind, string? Owner, DefragBlockClass? Classification) state) {
-    if (length <= 0) return;
+  /// <summary>Removes <paramref name="holes"/> from the already disjoint, ordered <paramref name="ranges"/>.</summary>
+  private static List<(long Start, long End)> Subtract(
+      List<(long Start, long End)> ranges,
+      List<(long Start, long End)> holes) {
+    var result = new List<(long Start, long End)>();
+    var holeIndex = 0;
 
-    if (result.Count > 0) {
-      var previous = result[^1];
-      if (previous.Offset + previous.Length == offset &&
-          previous.Kind == state.Kind &&
-          string.Equals(previous.FileName, state.Owner, StringComparison.Ordinal) &&
-          previous.Classification == state.Classification) {
-        result[^1] = previous with { Length = previous.Length + length };
-        return;
+    foreach (var (start, end) in ranges) {
+      var cursor = start;
+      while (holeIndex > 0 && holes[holeIndex - 1].End > cursor) --holeIndex;
+
+      while (cursor < end) {
+        while (holeIndex < holes.Count && holes[holeIndex].End <= cursor) ++holeIndex;
+        if (holeIndex >= holes.Count || holes[holeIndex].Start >= end) {
+          result.Add((cursor, end));
+          break;
+        }
+
+        if (holes[holeIndex].Start > cursor)
+          result.Add((cursor, holes[holeIndex].Start));
+        cursor = Math.Max(cursor, holes[holeIndex].End);
       }
     }
 
-    result.Add(new DefragBlockInfo(offset, length, state.Kind, state.Owner, state.Classification));
+    return result;
   }
 
   private static bool TryClip(long offset, long length, long limit, out long start, out long end) {
@@ -135,38 +137,9 @@ public static class FilesystemAllocationMapCompleter {
     end = 0;
     if (length <= 0 || offset >= limit) return false;
 
-    var rawEnd = SaturatingAdd(offset, length);
+    var rawEnd = offset > long.MaxValue - length ? long.MaxValue : offset + length;
     start = Math.Max(0, offset);
     end = Math.Min(limit, rawEnd);
     return end > start;
   }
-
-  private static long AlignUp(long value, int alignment) {
-    if (value <= 0) return 0;
-    var remainder = value % alignment;
-    if (remainder == 0) return value;
-    return SaturatingAdd(value, alignment - remainder);
-  }
-
-  private static long SaturatingAdd(long left, long right) {
-    if (right > 0 && left > long.MaxValue - right) return long.MaxValue;
-    if (right < 0 && left < long.MinValue - right) return long.MinValue;
-    return left + right;
-  }
-
-  private readonly record struct BoundaryEvent(
-    long Offset,
-    int FreeDelta,
-    string? Owner,
-    DefragBlockClass? Classification,
-    int OwnerDelta) {
-
-    public static BoundaryEvent Free(long offset, int delta)
-      => new(offset, delta, null, null, 0);
-
-    public static BoundaryEvent ForOwner(long offset, string owner, DefragBlockClass? classification, int delta)
-      => new(offset, 0, owner, classification, delta);
-  }
-
-  private readonly record struct OwnerState(int Count, DefragBlockClass? Classification);
 }

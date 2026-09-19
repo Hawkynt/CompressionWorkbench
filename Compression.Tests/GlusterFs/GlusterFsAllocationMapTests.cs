@@ -13,7 +13,7 @@ public sealed class GlusterFsAllocationMapTests {
   ];
 
   [Test, Category("HappyPath")]
-  public void Completer_CoversEveryByteAndFailsClosedOnConflicts() {
+  public void Completer_CoversEveryByteAndNeverFreesWhatSomethingClaims() {
     const int block = 4096;
     var decoded = new[] {
       new DefragBlockInfo(2L * block, block, DefragBlockKind.Used, "file.bin"),
@@ -24,15 +24,24 @@ public sealed class GlusterFsAllocationMapTests {
       (Offset: 3L * block, Length: (long)block),
     };
 
-    var map = FilesystemAllocationMapCompleter.Complete(4L * block, block, decoded, free);
+    var map = FilesystemAllocationMapCompleter.Complete(4L * block, decoded, free);
 
     AssertCompleteCoverage(map, 4L * block);
     Assert.Multiple(() => {
-      Assert.That(Find(map, 0).Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
-      Assert.That(Find(map, block).Kind, Is.EqualTo(DefragBlockKind.Free));
-      Assert.That(Find(map, 2L * block).Kind, Is.EqualTo(DefragBlockKind.Used));
-      Assert.That(Find(map, 2L * block).FileName, Is.EqualTo("file.bin"));
-      Assert.That(Find(map, 3L * block).Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+      // Nothing decoded block 0 and the allocator did not prove it free, so it stays reserved.
+      Assert.That(Owner(map, 0).Kind, Is.EqualTo(DefragBlockKind.MetadataReserved));
+      Assert.That(Owner(map, block).Kind, Is.EqualTo(DefragBlockKind.Free));
+      Assert.That(Owner(map, 2L * block).Kind, Is.EqualTo(DefragBlockKind.Used));
+      Assert.That(Owner(map, 2L * block).FileName, Is.EqualTo("file.bin"));
+
+      // The allocator calls block 3 free while the walker decoded a file there.
+      // The decoded claim survives verbatim and the free run is trimmed away, so
+      // the disagreement can never reach the wiper as a zeroing instruction.
+      Assert.That(Owner(map, 3L * block).Kind, Is.EqualTo(DefragBlockKind.Used));
+      Assert.That(Owner(map, 3L * block).FileName, Is.EqualTo("conflict.bin"));
+      Assert.That(map.Any(extent => extent.Kind == DefragBlockKind.Free
+          && extent.Offset < 4L * block && 3L * block < extent.Offset + extent.Length),
+        Is.False, "a proven-free run must never overlap a decoded claim");
     });
   }
 
@@ -138,20 +147,44 @@ public sealed class GlusterFsAllocationMapTests {
     Assert.That(actual.ToArray(), Is.EqualTo(new byte[32]));
   }
 
-  private static DefragBlockInfo Find(IReadOnlyList<DefragBlockInfo> map, long offset)
-    => map.Single(extent => extent.Offset <= offset && offset < extent.Offset + extent.Length);
+  /// <summary>
+  /// The extent that decides what may happen to <paramref name="offset"/>. A map
+  /// describes real structures at more than one granularity — an inode inside its
+  /// chunk, a file run inside its allocation unit — so a byte can legitimately
+  /// carry several descriptions. Any claim outranks free space.
+  /// </summary>
+  private static DefragBlockInfo Owner(IReadOnlyList<DefragBlockInfo> map, long offset) {
+    var covering = map.Where(extent => extent.Offset <= offset && offset < extent.Offset + extent.Length).ToArray();
+    Assert.That(covering, Is.Not.Empty, $"byte {offset} is described by nothing");
+    return covering.FirstOrDefault(extent => extent.Kind != DefragBlockKind.Free) ?? covering[0];
+  }
 
+  /// <summary>
+  /// Every byte is described by something, and nothing offered for zeroing is
+  /// also claimed. Those are the two properties maintenance actually relies on;
+  /// requiring a single flat partition instead would forbid describing a
+  /// structure and its contents at the same time.
+  /// </summary>
   private static void AssertCompleteCoverage(IReadOnlyList<DefragBlockInfo> map, long length) {
     Assert.That(map, Is.Not.Empty);
+    foreach (var extent in map)
+      Assert.That(extent.Length, Is.GreaterThan(0));
+
     var ordered = map.OrderBy(extent => extent.Offset).ToArray();
-    var cursor = 0L;
+    var reached = 0L;
     foreach (var extent in ordered) {
-      Assert.Multiple(() => {
-        Assert.That(extent.Length, Is.GreaterThan(0));
-        Assert.That(extent.Offset, Is.EqualTo(cursor), $"gap/overlap before {extent}");
-      });
-      cursor = checked(cursor + extent.Length);
+      Assert.That(extent.Offset, Is.LessThanOrEqualTo(reached),
+        $"nothing describes the bytes at {reached}");
+      reached = Math.Max(reached, checked(extent.Offset + extent.Length));
     }
-    Assert.That(cursor, Is.EqualTo(length));
+
+    Assert.That(reached, Is.EqualTo(length));
+
+    var claimed = ordered.Where(extent => extent.Kind != DefragBlockKind.Free).ToArray();
+    foreach (var free in ordered.Where(extent => extent.Kind == DefragBlockKind.Free))
+      Assert.That(
+        claimed.Any(other => other.Offset < free.Offset + free.Length && free.Offset < other.Offset + other.Length),
+        Is.False,
+        $"the free run at {free.Offset} overlaps something that claims those bytes");
   }
 }

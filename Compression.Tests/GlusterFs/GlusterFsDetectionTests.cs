@@ -172,8 +172,27 @@ public class GlusterFsDetectionTests {
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveModifiable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchivePurgeable>());
       Assert.That(descriptor, Is.Not.InstanceOf<IArchiveDefragmentable>());
-      Assert.That(descriptor, Is.Not.InstanceOf<IWipeEmpty>());
       Assert.That(descriptor, Is.Not.InstanceOf<ILayoutOptimizable>());
+    });
+  }
+
+  [Test, Category("Regression")]
+  public void Descriptor_WipesOnlyThroughTheCompleteBackingMap() {
+    var descriptor = new GlusterFsFormatDescriptor();
+
+    Assert.Multiple(() => {
+      // Wipe is reachable only because the backing ext/XFS maps account for every
+      // allocated byte; it is the extent map that carries the safety argument, so
+      // the two capabilities must arrive together and never separately.
+      Assert.That(descriptor, Is.InstanceOf<IFilesystemExtentMap>());
+      Assert.That(descriptor, Is.InstanceOf<IWipeEmpty>());
+
+      // A backing store the map cannot walk yields no extents, and the inherited
+      // wipe then writes nothing rather than guessing the image is empty.
+      using var opaque = new MemoryStream(new byte[64 * 1024]);
+      Assert.That(((IFilesystemExtentMap)descriptor).EnumerateExtents(opaque), Is.Empty);
+      Assert.That(((IWipeEmpty)descriptor).WipeUnusedSpace(opaque, wipeClusterTips: true, wipeDeletedEntries: true),
+        Is.Zero);
     });
   }
 
