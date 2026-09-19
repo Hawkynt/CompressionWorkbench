@@ -10428,11 +10428,11 @@ Best-effort detector for the Novell NetWare 386 (NWFS386) filesystem — a.k.a. 
 
 #### `NwfsReader`
 
-Reads a NetWare 386 volume: finds the partition, walks the directory chain, and follows a file through the FAT to its bytes.
+Reads the supported single-segment Traditional NetWare profile, selecting valid redundant master/volume metadata and reconstructing the mirrored FAT.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `BlockSize` | `int BlockSize { get; }` | Bytes to a block on this volume. |
+| `BlockSize` | `int BlockSize { get; }` | Bytes to an allocation cluster on this volume. |
 | `VolumeName` | `string VolumeName { get; }` | What the volume calls itself. |
 | `List` | `List<Item> List()` | Everything on the volume, each with the path it is reached by. |
 | `ReadFile` | `byte[] ReadFile(string path)` | The bytes of the file at `path`, or null if there is none. |
@@ -10455,17 +10455,16 @@ Implements `IEquatable<Item>`.
 
 #### `NwfsWriter`
 
-Writes a NetWare 386 disk image: a partition table naming one NetWare partition, the hotfix, mirror and volume headers that open it, and a volume whose files a NetWare reader walks by the same route a real one does.
+Writes the managed, writable Traditional NetWare profile: one 0x65 partition, one unmirrored logical partition, one volume segment, DOS namespace entries and ordinary FAT chains.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `NwfsWriter` | `NwfsWriter()` |  |
-| `BlockSize` | `int BlockSize { get; set; }` | Bytes to a block. A NetWare volume may use 1 KB to 256 KB, by powers of two. |
-| `MinimumImageSize` | `long MinimumImageSize { get; set; }` | Minimum total image length. Zero means tight-pack. The writer rounds a larger request up to a whole allocation block and leaves the added blocks free in the FAT. |
-| `PartitionStartSector` | `uint PartitionStartSector { get; set; }` | Where the NetWare partition begins, in sectors. |
-| `RedirectionSectors` | `uint RedirectionSectors { get; set; }` | Sectors between the hotfix header and the volume area. |
-| `Timestamp` | `DateTime Timestamp { get; set; }` | When the volume and everything on it is dated. |
-| `VolumeName` | `string VolumeName { get; set; }` | What the volume is called. NetWare's own first volume is SYS. |
+| `BlockSize` | `int BlockSize { get; set; }` | NetWare allocation-cluster size: 4, 8, 16, 32 or 64 KiB. |
+| `MinimumImageSize` | `long MinimumImageSize { get; set; }` | Minimum total image length. The image is rounded up to a complete allocation cluster and the added clusters stay free. |
+| `PartitionStartSector` | `uint PartitionStartSector { get; set; }` | Where the NetWare partition begins, in 512-byte sectors. |
+| `Timestamp` | `DateTime Timestamp { get; set; }` | Timestamp used for freshly-authored directory records. |
+| `VolumeName` | `string VolumeName { get; set; }` | Length-prefixed Traditional volume name, at most 15 ASCII characters. |
 | `AddDirectory` | `void AddDirectory(string path)` | Adds an explicit directory, including an empty one. |
 | `AddFile` | `void AddFile(string path, byte[] data)` | Adds a file. Directories in `path` are made as needed. |
 | `Build` | `byte[] Build()` | Builds the image. |

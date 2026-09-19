@@ -1,5 +1,4 @@
 using Compression.Registry;
-using System.Linq;
 using FileSystem.Nwfs;
 
 namespace Compression.Tests.Nwfs;
@@ -14,7 +13,7 @@ public sealed class NwfsMaintenanceTests {
   }
 
   private static MemoryStream CreatePaddedVolume() {
-    var writer = new NwfsWriter { MinimumImageSize = 512 * 1024 };
+    var writer = new NwfsWriter { MinimumImageSize = 2 * 1024 * 1024 };
     writer.AddDirectory("EMPTY");
     writer.AddFile("HELLO.TXT", Bytes(6000, 1));
     writer.AddFile("DOCS/NOTE.TXT", Bytes(700, 2));
@@ -36,6 +35,14 @@ public sealed class NwfsMaintenanceTests {
       Assert.That(descriptor, Is.InstanceOf<ILayoutOptimizable>());
       Assert.That(descriptor, Is.InstanceOf<IArchivePurgeable>());
     });
+  }
+
+  [Test, Category("Compatibility")]
+  public void OptionsSchema_OffersOnlyTraditional4KThrough64KClusters() {
+    var blockSize = new NwfsFormatDescriptor().OptionsSchema.Single(option => option.Key == "BlockSize");
+
+    Assert.That(blockSize.AllowedValues,
+      Is.EqualTo(new[] { "Auto", "4 KB", "8 KB", "16 KB", "32 KB", "64 KB" }));
   }
 
   [Test, Category("HappyPath")]
@@ -83,7 +90,7 @@ public sealed class NwfsMaintenanceTests {
       Assert.That(modified.ReadFile("HELLO.TXT"), Is.EqualTo(replacement));
       Assert.That(modified.ReadFile("NEW.BIN"), Is.EqualTo(added));
       Assert.That(modified.ReadFile("DOCS/NOTE.TXT"), Is.Not.Null);
-      Assert.That(image.Length, Is.GreaterThanOrEqualTo(originalLength));
+      Assert.That(image.Length, Is.EqualTo(originalLength));
     });
 
     descriptor.Remove(image, ["DOCS"]);
@@ -93,11 +100,12 @@ public sealed class NwfsMaintenanceTests {
       Assert.That(removed.List().Select(static i => i.Path), Does.Not.Contain("DOCS"));
       Assert.That(removed.ReadFile("HELLO.TXT"), Is.EqualTo(replacement));
       Assert.That(removed.ReadFile("NEW.BIN"), Is.EqualTo(added));
+      Assert.That(image.Length, Is.EqualTo(originalLength));
     });
   }
 
   [Test, Category("HappyPath")]
-  public void Purge_LeavesAValidEmptyVolume() {
+  public void Purge_LeavesAValidEmptyVolumeAndKeepsDirectories() {
     var descriptor = new NwfsFormatDescriptor();
     using var image = CreatePaddedVolume();
 
@@ -105,9 +113,11 @@ public sealed class NwfsMaintenanceTests {
 
     var volume = NwfsReader.TryOpen(image.ToArray());
     Assert.That(volume, Is.Not.Null);
-    // Purge removes every live NON-DIRECTORY entry; the directory tree is meant to survive, which
-    // is what IArchivePurgeable documents and what the Erofs and NWFS386 purge tests assert.
-    Assert.That(volume!.List().Where(entry => !entry.IsDirectory), Is.Empty);
+    Assert.Multiple(() => {
+      Assert.That(volume!.List().Where(entry => !entry.IsDirectory), Is.Empty);
+      Assert.That(volume.List().Where(entry => entry.IsDirectory).Select(entry => entry.Path),
+        Does.Contain("EMPTY"));
+    });
   }
 
   [Test, Category("HappyPath")]
@@ -149,7 +159,7 @@ public sealed class NwfsMaintenanceTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Layout_RebuildsWithRequestedBlockSize() {
+  public void Layout_RebuildsWithRequestedClusterSize() {
     var descriptor = new NwfsFormatDescriptor();
     using var source = CreatePaddedVolume();
     using var target = new MemoryStream();
@@ -166,7 +176,7 @@ public sealed class NwfsMaintenanceTests {
   }
 
   [Test, Category("HappyPath")]
-  public void Wipe_ZeroesDeclaredFreeBlocksAndPreservesLivePayload() {
+  public void Wipe_ZeroesDeclaredFreeClustersAndPreservesLivePayload() {
     var descriptor = new NwfsFormatDescriptor();
     using var image = CreatePaddedVolume();
     var free = descriptor.EnumerateExtents(image)
@@ -189,6 +199,21 @@ public sealed class NwfsMaintenanceTests {
       Assert.That(volume.ReadFile("HELLO.TXT"), Is.EqualTo(Bytes(6000, 1)));
       Assert.That(volume.ReadFile("DOCS/NOTE.TXT"), Is.EqualTo(Bytes(700, 2)));
     });
+  }
+
+  [Test, Category("Compatibility")]
+  public void ExtentMap_AccountsForTheVolumeInPhysical4KBlocks() {
+    var descriptor = new NwfsFormatDescriptor();
+    using var image = CreatePaddedVolume();
+
+    var extents = descriptor.EnumerateExtents(image).ToList();
+
+    Assert.That(extents, Is.Not.Empty);
+    Assert.That(extents.Sum(static extent => extent.Length), Is.EqualTo(image.Length));
+    Assert.That(extents.All(static extent => extent.Offset % 4096 == 0 && extent.Length % 4096 == 0), Is.True);
+    Assert.That(extents.Any(static extent => extent.Kind == DefragBlockKind.Free), Is.True);
+    Assert.That(extents.Any(static extent => extent.Kind == DefragBlockKind.MetadataReserved), Is.True);
+    Assert.That(extents.Any(static extent => extent.Kind == DefragBlockKind.Used && extent.FileName == "HELLO.TXT"), Is.True);
   }
 
   [Test, Category("ErrorHandling")]

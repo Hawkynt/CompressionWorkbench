@@ -5,55 +5,33 @@ using System.Text;
 namespace FileSystem.Nwfs;
 
 /// <summary>
-/// Writes a NetWare 386 disk image: a partition table naming one NetWare
-/// partition, the hotfix, mirror and volume headers that open it, and a volume
-/// whose files a NetWare reader walks by the same route a real one does.
+/// Writes the managed, writable Traditional NetWare profile: one 0x65
+/// partition, one unmirrored logical partition, one volume segment, DOS
+/// namespace entries and ordinary FAT chains.
 /// </summary>
-/// <remarks>
-/// <para><b>How a volume is found.</b> A reader takes the partition's start
-/// from the partition table, reads the hotfix header at sector 32 of it, and
-/// takes from there how many redirection sectors separate that header from the
-/// volume area. The volume area names the volume, its block size, and the block
-/// its directory begins at. Everything after the volume area is the data area,
-/// and block numbers count from its first byte.</para>
-///
-/// <para><b>How a file is found.</b> The directory is a chain of blocks holding
-/// fixed 128-byte entries, each naming the directory it sits in rather than
-/// being nested under it — so a reader collects the lot and then filters by
-/// parent. A file entry carries its length and its first block; the rest of it
-/// is followed through the FAT, which sits at the very start of the data area
-/// and gives, for each block, the block that comes after it.</para>
-///
-/// <para><b>What is written for the sake of being ordinary.</b> A volume
-/// carries a volume-information entry ahead of its files, its unused directory
-/// slots are marked available rather than left zero — a zeroed slot would read
-/// as an unnamed file in the root — and the directory is written twice, the
-/// second copy where a real volume keeps its own.</para>
-/// </remarks>
 public sealed class NwfsWriter {
+  private const uint PartitionId = 0x55500001;
+  private const uint MirrorGroupId = 0x55500002;
+  private const uint MirrorClosedStatus = 0x534F4C43;
 
   private readonly List<(string Path, byte[] Data)> _files = [];
   private readonly HashSet<string> _directories = new(StringComparer.OrdinalIgnoreCase);
 
-  /// <summary>Bytes to a block. A NetWare volume may use 1 KB to 256 KB, by powers of two.</summary>
+  /// <summary>NetWare allocation-cluster size: 4, 8, 16, 32 or 64 KiB.</summary>
   public int BlockSize { get; set; } = 4096;
 
-  /// <summary>What the volume is called. NetWare's own first volume is SYS.</summary>
+  /// <summary>Length-prefixed Traditional volume name, at most 15 ASCII characters.</summary>
   public string VolumeName { get; set; } = "SYS";
 
-  /// <summary>Where the NetWare partition begins, in sectors.</summary>
+  /// <summary>Where the NetWare partition begins, in 512-byte sectors.</summary>
   public uint PartitionStartSector { get; set; } = 32;
 
-  /// <summary>Sectors between the hotfix header and the volume area.</summary>
-  public uint RedirectionSectors { get; set; } = 128;
-
-  /// <summary>When the volume and everything on it is dated.</summary>
+  /// <summary>Timestamp used for freshly-authored directory records.</summary>
   public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
   /// <summary>
-  /// Minimum total image length. Zero means tight-pack. The writer rounds a
-  /// larger request up to a whole allocation block and leaves the added blocks
-  /// free in the FAT.
+  /// Minimum total image length. The image is rounded up to a complete
+  /// allocation cluster and the added clusters stay free.
   /// </summary>
   public long MinimumImageSize { get; set; }
 
@@ -61,47 +39,53 @@ public sealed class NwfsWriter {
   public void AddFile(string path, byte[] data) {
     ArgumentNullException.ThrowIfNull(path);
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add((path.Replace('\\', '/').Trim('/'), data));
+    this._files.Add((NormalizePath(path), data));
   }
 
   /// <summary>Adds an explicit directory, including an empty one.</summary>
   public void AddDirectory(string path) {
     ArgumentNullException.ThrowIfNull(path);
-    var normalized = path.Replace('\\', '/').Trim('/');
-    if (normalized.Length > 0) this._directories.Add(normalized);
+    var normalized = NormalizePath(path);
+    if (normalized.Length > 0)
+      this._directories.Add(normalized);
   }
 
-  private sealed class Directory {
+  private sealed class DirectoryNode {
     public required string Name;
-    public required uint Id;
-    public required uint ParentId;
-    public readonly Dictionary<string, Directory> Children = new(StringComparer.OrdinalIgnoreCase);
+    public required uint RecordNumber;
+    public required uint ParentRecordNumber;
+    public readonly Dictionary<string, DirectoryNode> Children = new(StringComparer.OrdinalIgnoreCase);
   }
+
+  private sealed record PlacedFile(DirectoryNode Parent, string Name, byte[] Data, uint RecordNumber);
 
   /// <summary>Builds the image.</summary>
   public byte[] Build() {
     if (!NwfsLayout.IsValidBlockSize(this.BlockSize))
-      throw new InvalidOperationException($"block size {this.BlockSize} is not one NetWare names");
+      throw new InvalidOperationException(
+        $"cluster size {this.BlockSize} is not a Traditional NWFS cluster size (4, 8, 16, 32 or 64 KiB)");
     if (this.MinimumImageSize < 0)
       throw new InvalidOperationException("minimum image size cannot be negative");
 
-    var volumeName = this.VolumeName.ToUpperInvariant();
-    if (volumeName.Length is 0 or > NwfsLayout.MaxVolumeNameLength)
-      throw new InvalidOperationException("volume name must be 1 to 19 characters");
+    var volumeName = NormalizeVolumeName(this.VolumeName);
+    var root = new DirectoryNode {
+      Name = "",
+      RecordNumber = NwfsLayout.RootDirectoryRecord,
+      ParentRecordNumber = NwfsLayout.RootDirectoryRecord,
+    };
+    var directories = new List<DirectoryNode>();
 
-    // The directory tree, and an id for every directory in it. The root is
-    // zero, which is what entries at the top of the volume name as their parent.
-    var root = new Directory { Name = "", Id = NwfsLayout.RootDirectoryId, ParentId = NwfsLayout.RootDirectoryId };
-    var directories = new List<Directory>();
-    var nextDirectoryId = NwfsLayout.RootDirectoryId + 1;
-
-    Directory EnsureDirectory(string path) {
+    DirectoryNode EnsureDirectory(string path) {
       var here = root;
       foreach (var piece in path.Split('/', StringSplitOptions.RemoveEmptyEntries)) {
-        var name = Normalise(piece);
+        var name = NormalizeDosName(piece);
         if (!here.Children.TryGetValue(name, out var child)) {
-          child = new Directory { Name = name, Id = nextDirectoryId++, ParentId = here.Id };
-          here.Children[name] = child;
+          child = new DirectoryNode {
+            Name = name,
+            RecordNumber = checked((uint)directories.Count + 1),
+            ParentRecordNumber = here.RecordNumber,
+          };
+          here.Children.Add(name, child);
           directories.Add(child);
         }
         here = child;
@@ -112,230 +96,374 @@ public sealed class NwfsWriter {
     foreach (var path in this._directories.Order(StringComparer.OrdinalIgnoreCase))
       _ = EnsureDirectory(path);
 
-    var placed = new List<(Directory Parent, string Name, byte[] Data)>();
+    var pendingFiles = new List<(DirectoryNode Parent, string Name, byte[] Data)>();
     foreach (var (path, data) in this._files) {
       var pieces = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-      if (pieces.Length == 0) throw new InvalidOperationException("a file needs a name");
-
-      var parent = pieces.Length == 1
-        ? root
-        : EnsureDirectory(string.Join('/', pieces[..^1]));
-      placed.Add((parent, Normalise(pieces[^1]), data));
+      if (pieces.Length == 0)
+        throw new InvalidOperationException("a file needs a name");
+      var parent = pieces.Length == 1 ? root : EnsureDirectory(string.Join('/', pieces[..^1]));
+      pendingFiles.Add((parent, NormalizeDosName(pieces[^1]), data));
     }
 
-    var entriesPerBlock = this.BlockSize / NwfsLayout.DirectoryEntryBytes;
-    var usedEntries = 1 + directories.Count + placed.Count;   // the volume-information entry, then the rest
-    var directoryBlocks = Math.Max(1, (usedEntries + entriesPerBlock - 1) / entriesPerBlock);
-
-    var fileBlocks = 0;
-    foreach (var (_, _, data) in placed)
-      fileBlocks = checked(fileBlocks + (data.Length + this.BlockSize - 1) / this.BlockSize);
-
-    var hotfixOffset = (long)this.PartitionStartSector * NwfsLayout.SectorSize + NwfsLayout.HotfixOffsetInPartition;
-    var volumeAreaOffset = hotfixOffset + (long)this.RedirectionSectors * NwfsLayout.SectorSize;
-    var dataAreaOffset = volumeAreaOffset + NwfsLayout.VolumeAreaBytes;
-    var minimumBlocksLong = this.MinimumImageSize <= dataAreaOffset
-      ? 0
-      : (this.MinimumImageSize - dataAreaOffset + this.BlockSize - 1) / this.BlockSize;
-    if (minimumBlocksLong > int.MaxValue)
-      throw new InvalidOperationException("requested NWFS image is too large for the managed writer");
-    var minimumBlocks = (int)minimumBlocksLong;
-
-    // The FAT lives in the data area and so describes itself. Its size depends
-    // on the block count, which depends on its size, so settle the two. A caller
-    // may reserve extra free blocks by requesting a minimum image length.
-    var fatBlocks = 1;
-    int totalBlocks;
-    while (true) {
-      totalBlocks = Math.Max(minimumBlocks, checked(fatBlocks + directoryBlocks * 2 + fileBlocks));
-      var needed = Math.Max(1, ((long)totalBlocks * NwfsLayout.FatEntryBytes + this.BlockSize - 1) / this.BlockSize);
-      if (needed == fatBlocks) break;
-      if (needed > int.MaxValue) throw new InvalidOperationException("NWFS FAT is too large for the managed writer");
-      fatBlocks = (int)needed;
+    var placedFiles = new List<PlacedFile>(pendingFiles.Count);
+    var firstFileRecord = checked((uint)directories.Count + 1);
+    for (var i = 0; i < pendingFiles.Count; ++i) {
+      var file = pendingFiles[i];
+      placedFiles.Add(new PlacedFile(
+        file.Parent,
+        file.Name,
+        file.Data,
+        checked(firstFileRecord + (uint)i)));
     }
 
-    var firstDirectoryBlock = (uint)fatBlocks;
-    var firstDirectoryCopyBlock = firstDirectoryBlock + (uint)directoryBlocks;
-    var firstFileBlock = firstDirectoryCopyBlock + (uint)directoryBlocks;
+    var entriesPerCluster = this.BlockSize / NwfsLayout.DirectoryEntryBytes;
+    var usedDirectoryEntries = checked(1 + directories.Count + placedFiles.Count);
+    var directoryClusters = Math.Max(1,
+      (usedDirectoryEntries + entriesPerCluster - 1) / entriesPerCluster);
 
-    var imageLength = checked(dataAreaOffset + (long)totalBlocks * this.BlockSize);
+    var fileClusterCount = 0;
+    foreach (var file in placedFiles)
+      fileClusterCount = checked(fileClusterCount
+        + (int)NwfsLayout.DivideRoundUp(file.Data.LongLength, this.BlockSize));
+
+    var volumeOffset = NwfsLayout.VolumeOffset(this.PartitionStartSector);
+    var minimumClusters = this.MinimumImageSize <= volumeOffset
+      ? 0u
+      : checked((uint)NwfsLayout.DivideRoundUp(this.MinimumImageSize - volumeOffset, this.BlockSize));
+
+    var plan = NwfsLayout.Plan(this.BlockSize, directoryClusters, fileClusterCount, minimumClusters);
+    var imageLength = NwfsLayout.TightImageLength(this.PartitionStartSector, this.BlockSize, plan.ClusterCount);
     if (imageLength > int.MaxValue)
       throw new InvalidOperationException("NWFS writer currently supports images up to 2 GiB");
+
     var image = new byte[(int)imageLength];
     var stamp = DosTimestamp(this.Timestamp);
+    var partitionOffset = NwfsLayout.PartitionOffset(this.PartitionStartSector);
+    var logicalPartitionOffset = NwfsLayout.LogicalPartitionOffset(this.PartitionStartSector);
+    var logicalBlocks = checked(NwfsLayout.VolumeSegmentStartBlock
+      + (int)((long)plan.ClusterCount * plan.BlocksPerCluster));
+    var partitionSectors = checked((uint)((long)(NwfsLayout.HotfixBlocks + logicalBlocks)
+      * NwfsLayout.SectorsPerIoBlock));
 
-    WritePartitionTable(image, this.PartitionStartSector,
-      (uint)((image.LongLength - (long)this.PartitionStartSector * NwfsLayout.SectorSize) / NwfsLayout.SectorSize));
+    WritePartitionTable(image, this.PartitionStartSector, partitionSectors);
+    WriteMasterMetadataCopies(image, partitionOffset, checked((uint)(logicalBlocks * NwfsLayout.SectorsPerIoBlock)), stamp);
+    WriteHotfixTables(image, partitionOffset);
+    WriteVolumeTableCopies(image, logicalPartitionOffset, volumeName, plan);
 
-    // Hotfix. The redirection sector count is what a reader adds to this
-    // header's own position to reach the volume area.
-    var hotfix = image.AsSpan((int)hotfixOffset);
-    "HOTFIX00"u8.CopyTo(hotfix);
-    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[8..], HotfixId);
-    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[20..],
-      (uint)((long)totalBlocks * this.BlockSize / NwfsLayout.SectorSize));
-    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[24..], this.RedirectionSectors);
+    var managedClusterCount = checked((int)plan.ClusterCount);
+    var fatIndex = new uint[managedClusterCount];
+    var fatNext = new uint[managedClusterCount];
 
-    // Mirror. The flags word reads 0x90000 on a partition that is not mirrored,
-    // and both hotfix slots name this partition's own hotfix area.
-    var mirror = image.AsSpan((int)(hotfixOffset + NwfsLayout.SectorSize));
-    "MIRROR00"u8.CopyTo(mirror);
-    BinaryPrimitives.WriteUInt32LittleEndian(mirror[8..], stamp);
-    BinaryPrimitives.WriteUInt32LittleEndian(mirror[12..], 0x90000);
-    BinaryPrimitives.WriteUInt32LittleEndian(mirror[32..], HotfixId);
-    BinaryPrimitives.WriteUInt32LittleEndian(mirror[36..], HotfixId);
+    MarkChain(fatIndex, fatNext, plan.Fat1Clusters);
+    MarkChain(fatIndex, fatNext, plan.Fat2Clusters);
+    MarkChain(fatIndex, fatNext, plan.Directory1Clusters);
+    MarkChain(fatIndex, fatNext, plan.Directory2Clusters);
 
-    // Volume area: the header, then one entry for the single volume.
-    var volumes = image.AsSpan((int)volumeAreaOffset);
-    "NetWare Volumes\0"u8.CopyTo(volumes);
-    BinaryPrimitives.WriteUInt32LittleEndian(volumes[16..], 1);
-
-    var entry = volumes[32..];
-    var nameBytes = Encoding.ASCII.GetBytes(volumeName);
-    entry[0] = (byte)nameBytes.Length;
-    nameBytes.CopyTo(entry[1..]);
-    BinaryPrimitives.WriteUInt16LittleEndian(entry[22..], 0);                         // first segment
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[24..], NwfsLayout.FirstSectorOfFirstSegment);
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[28..],
-      (uint)((long)totalBlocks * this.BlockSize / NwfsLayout.SectorSize));            // sectors in the segment
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[32..], (uint)totalBlocks);
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[36..], 0);                         // blocks count from here
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[44..], NwfsLayout.BlockValue(this.BlockSize));
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[48..], firstDirectoryBlock);
-    BinaryPrimitives.WriteUInt32LittleEndian(entry[52..], firstDirectoryCopyBlock);
-
-    // The FAT. Every entry starts free; chains are laid over it as blocks are used.
-    var fat = image.AsSpan((int)dataAreaOffset, totalBlocks * NwfsLayout.FatEntryBytes);
-    for (var i = 0; i < totalBlocks; ++i) {
-      BinaryPrimitives.WriteUInt32LittleEndian(fat[(i * NwfsLayout.FatEntryBytes)..], NwfsLayout.NoBlock);
-      BinaryPrimitives.WriteUInt32LittleEndian(fat[(i * NwfsLayout.FatEntryBytes + 4)..], NwfsLayout.NoBlock);
+    var fileChains = new Dictionary<uint, uint[]>();
+    var dataCursor = 0;
+    foreach (var file in placedFiles) {
+      var count = (int)NwfsLayout.DivideRoundUp(file.Data.LongLength, this.BlockSize);
+      var chain = count == 0 ? [] : plan.DataClusters.AsSpan(dataCursor, count).ToArray();
+      dataCursor += count;
+      fileChains.Add(file.RecordNumber, chain);
+      MarkChain(fatIndex, fatNext, chain);
     }
 
-    Chain(image, dataAreaOffset, firstDirectoryBlock, directoryBlocks);
-    Chain(image, dataAreaOffset, firstDirectoryCopyBlock, directoryBlocks);
+    WriteFatCopies(image, volumeOffset, plan, fatIndex, fatNext);
 
-    // The directory, built whole and then laid into its blocks.
-    var slots = new byte[directoryBlocks * entriesPerBlock][];
-    for (var i = 0; i < slots.Length; ++i) {
-      var available = new byte[NwfsLayout.DirectoryEntryBytes];
-      BinaryPrimitives.WriteUInt32LittleEndian(available, NwfsLayout.DirIdAvailable);
-      slots[i] = available;
-    }
+    var directoryBytes = BuildDirectoryTable(
+      directories,
+      placedFiles,
+      fileChains,
+      directoryClusters,
+      entriesPerCluster,
+      stamp);
+    WriteClusterChain(image, volumeOffset, plan.Directory1Clusters, directoryBytes);
+    WriteClusterChain(image, volumeOffset, plan.Directory2Clusters, directoryBytes);
 
-    var next = 0;
-    slots[next++] = VolumeInformationEntry(stamp);
-    foreach (var directory in directories)
-      slots[next++] = DirectoryEntry(directory, stamp);
-
-    var block = firstFileBlock;
-    foreach (var (parent, name, data) in placed) {
-      var blocks = (data.Length + this.BlockSize - 1) / this.BlockSize;
-      var first = blocks == 0 ? NwfsLayout.NoBlock : block;
-      if (blocks > 0) {
-        Chain(image, dataAreaOffset, block, blocks);
-        data.CopyTo(image.AsSpan((int)(dataAreaOffset + (long)block * this.BlockSize)));
-        block += (uint)blocks;
+    foreach (var file in placedFiles) {
+      var chain = fileChains[file.RecordNumber];
+      var remaining = file.Data.AsSpan();
+      foreach (var cluster in chain) {
+        var offset = checked((int)(volumeOffset + (long)cluster * this.BlockSize));
+        var take = Math.Min(this.BlockSize, remaining.Length);
+        remaining[..take].CopyTo(image.AsSpan(offset, take));
+        remaining = remaining[take..];
       }
-
-      slots[next++] = FileEntry(parent.Id, name, data.Length, first, stamp);
-    }
-
-    for (var i = 0; i < slots.Length; ++i) {
-      var at = (long)(firstDirectoryBlock + i / entriesPerBlock) * this.BlockSize
-               + i % entriesPerBlock * NwfsLayout.DirectoryEntryBytes;
-      slots[i].CopyTo(image.AsSpan((int)(dataAreaOffset + at)));
-      var copy = at + (long)directoryBlocks * this.BlockSize;
-      slots[i].CopyTo(image.AsSpan((int)(dataAreaOffset + copy)));
     }
 
     return image;
   }
 
-  /// <summary>An id shared by the hotfix header and the mirror entries naming it.</summary>
-  private const uint HotfixId = 0x00000001;
+  private static byte[] BuildDirectoryTable(
+      List<DirectoryNode> directories,
+      List<PlacedFile> files,
+      IReadOnlyDictionary<uint, uint[]> fileChains,
+      int directoryClusters,
+      int entriesPerCluster,
+      uint stamp) {
+    var entries = checked(directoryClusters * entriesPerCluster);
+    var table = new byte[checked(entries * NwfsLayout.DirectoryEntryBytes)];
+    for (var i = 0; i < entries; ++i)
+      BinaryPrimitives.WriteUInt32LittleEndian(
+        table.AsSpan(i * NwfsLayout.DirectoryEntryBytes),
+        NwfsLayout.FreeNode);
 
-  /// <summary>
-  /// Lays a run of consecutive blocks into the FAT as one chain: each block
-  /// numbered by its place in the run and pointing at the block after it, the
-  /// last of them ending the chain.
-  /// </summary>
-  private static void Chain(byte[] image, long dataAreaOffset, uint first, int count) {
-    for (var i = 0; i < count; ++i) {
-      var at = (int)(dataAreaOffset + (long)(first + i) * NwfsLayout.FatEntryBytes);
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(at), (uint)i);
-      BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(at + 4),
-        i == count - 1 ? NwfsLayout.NoBlock : first + (uint)i + 1);
+    WriteRootEntry(table.AsSpan(0, NwfsLayout.DirectoryEntryBytes), stamp);
+
+    foreach (var directory in directories) {
+      var entry = table.AsSpan(
+        checked((int)directory.RecordNumber * NwfsLayout.DirectoryEntryBytes),
+        NwfsLayout.DirectoryEntryBytes);
+      WriteCommonEntry(
+        entry,
+        directory.ParentRecordNumber,
+        NwfsLayout.AttributeDirectory,
+        (byte)(NwfsLayout.FlagSubdirectory | NwfsLayout.FlagPrimaryNamespace),
+        directory.Name,
+        stamp);
+      BinaryPrimitives.WriteUInt16LittleEndian(entry[100..], 0xFFFF);
+    }
+
+    foreach (var file in files) {
+      var entry = table.AsSpan(
+        checked((int)file.RecordNumber * NwfsLayout.DirectoryEntryBytes),
+        NwfsLayout.DirectoryEntryBytes);
+      WriteCommonEntry(
+        entry,
+        file.Parent.RecordNumber,
+        NwfsLayout.AttributeArchive,
+        NwfsLayout.FlagPrimaryNamespace,
+        file.Name,
+        stamp);
+      BinaryPrimitives.WriteUInt32LittleEndian(entry[48..], checked((uint)file.Data.Length));
+      var chain = fileChains[file.RecordNumber];
+      BinaryPrimitives.WriteUInt32LittleEndian(entry[52..],
+        chain.Length == 0 ? NwfsLayout.EndOfChain : chain[0]);
+      BinaryPrimitives.WriteUInt16LittleEndian(entry[96..], 0xFFFF);
+    }
+
+    return table;
+  }
+
+  private static void WriteRootEntry(Span<byte> entry, uint stamp) {
+    entry.Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(entry, NwfsLayout.RootNode);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], NwfsLayout.AttributeDirectory);
+    entry[9] = (byte)(NwfsLayout.FlagSubdirectory | NwfsLayout.FlagPrimaryNamespace);
+    entry[10] = NwfsLayout.DosNameSpace;
+    entry[11] = 1;
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[24..], stamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[28..], NwfsLayout.SupervisorObjectId);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[40..], stamp);
+    BinaryPrimitives.WriteUInt16LittleEndian(entry[100..], 0xFFFF);
+  }
+
+  private static void WriteCommonEntry(
+      Span<byte> entry,
+      uint parent,
+      uint attributes,
+      byte flags,
+      string name,
+      uint stamp) {
+    entry.Clear();
+    BinaryPrimitives.WriteUInt32LittleEndian(entry, parent);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[4..], attributes);
+    entry[9] = flags;
+    entry[10] = NwfsLayout.DosNameSpace;
+    var bytes = Encoding.ASCII.GetBytes(name);
+    entry[11] = checked((byte)bytes.Length);
+    bytes.CopyTo(entry[12..]);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[24..], stamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[28..], NwfsLayout.SupervisorObjectId);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[40..], stamp);
+  }
+
+  private static void MarkChain(uint[] indices, uint[] next, ReadOnlySpan<uint> chain) {
+    for (var i = 0; i < chain.Length; ++i) {
+      var cluster = chain[i];
+      if (cluster >= (uint)indices.Length)
+        throw new InvalidOperationException("NWFS layout allocated a cluster beyond the volume.");
+      var at = checked((int)cluster);
+      indices[at] = checked((uint)i);
+      next[at] = i + 1 == chain.Length ? NwfsLayout.EndOfChain : chain[i + 1];
     }
   }
 
-  private static string Normalise(string name) {
+  private static void WriteFatCopies(
+      byte[] image,
+      long volumeOffset,
+      NwfsLayout.VolumePlan plan,
+      uint[] indices,
+      uint[] next) {
+    var block = new byte[NwfsLayout.IoBlockSize];
+    for (var streamBlock = 0; streamBlock < plan.FatPhysicalBlocks; ++streamBlock) {
+      block.AsSpan().Clear();
+      var firstEntry = checked(streamBlock * NwfsLayout.FatEntriesPerIoBlock);
+      var entries = Math.Min(
+        NwfsLayout.FatEntriesPerIoBlock,
+        Math.Max(0, indices.Length - firstEntry));
+
+      for (var i = 0; i < entries; ++i) {
+        var at = i * NwfsLayout.FatEntryBytes;
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(at), indices[firstEntry + i]);
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(at + 4), next[firstEntry + i]);
+      }
+
+      var primaryBlock = NwfsLayout.FatPrimaryPhysicalBlock(streamBlock);
+      var mirrorBlock = NwfsLayout.FatMirrorPhysicalBlock(streamBlock);
+      block.CopyTo(image.AsSpan(checked((int)(volumeOffset + (long)primaryBlock * NwfsLayout.IoBlockSize))));
+      block.CopyTo(image.AsSpan(checked((int)(volumeOffset + (long)mirrorBlock * NwfsLayout.IoBlockSize))));
+    }
+  }
+
+  private void WriteVolumeTableCopies(
+      byte[] image,
+      long logicalPartitionOffset,
+      string volumeName,
+      NwfsLayout.VolumePlan plan) {
+    var table = new byte[NwfsLayout.VolumeTableBytes];
+    "NetWare Volumes\0"u8.CopyTo(table);
+    BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(16), 1);
+
+    var entry = table.AsSpan(32, NwfsLayout.VolumeEntryBytes);
+    var nameBytes = Encoding.ASCII.GetBytes(volumeName);
+    entry[0] = checked((byte)nameBytes.Length);
+    nameBytes.CopyTo(entry[1..]);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[16..], 0);
+    var signature = checked((uint)(0x100 | NwfsLayout.ClusterCode(this.BlockSize)));
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[20..], signature);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[24..], NwfsLayout.VolumeRootSector);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[28..],
+      checked(plan.ClusterCount * (uint)plan.BlocksPerCluster * (uint)NwfsLayout.SectorsPerIoBlock));
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[32..], plan.ClusterCount);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[36..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[40..], plan.Fat1);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[44..], plan.Fat2);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[48..], plan.Directory1);
+    BinaryPrimitives.WriteUInt32LittleEndian(entry[52..], plan.Directory2);
+
+    foreach (var logicalBlock in NwfsLayout.VolumeTableLogicalBlocks) {
+      var offset = checked((int)(logicalPartitionOffset + (long)logicalBlock * NwfsLayout.IoBlockSize));
+      table.CopyTo(image.AsSpan(offset, table.Length));
+    }
+  }
+
+  private static void WriteMasterMetadataCopies(
+      byte[] image,
+      long partitionOffset,
+      uint logicalSectors,
+      uint stamp) {
+    var block = new byte[NwfsLayout.IoBlockSize];
+    var hotfix = block.AsSpan(0, NwfsLayout.SectorSize);
+    "HOTFIX00"u8.CopyTo(hotfix);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[8..], PartitionId);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[12..], NwfsLayout.HotfixFlags);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[16..], NwfsLayout.FormatStamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[20..], logicalSectors);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[24..], NwfsLayout.HotfixSectors);
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[28..], checked((uint)(20 * NwfsLayout.SectorsPerIoBlock)));
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[32..], checked((uint)(28 * NwfsLayout.SectorsPerIoBlock)));
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[36..], checked((uint)(36 * NwfsLayout.SectorsPerIoBlock)));
+    BinaryPrimitives.WriteUInt32LittleEndian(hotfix[40..], checked((uint)(44 * NwfsLayout.SectorsPerIoBlock)));
+
+    var mirror = block.AsSpan(NwfsLayout.SectorSize, NwfsLayout.SectorSize);
+    "MIRROR00"u8.CopyTo(mirror);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[8..], PartitionId);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[12..], NwfsLayout.MirrorInSyncFlags);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[16..], NwfsLayout.FormatStamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[20..], NwfsLayout.MirrorBaseStatus);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[24..], logicalSectors);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[28..], MirrorGroupId);
+    BinaryPrimitives.WriteUInt32LittleEndian(mirror[32..], PartitionId);
+
+    var internalMirror = block.AsSpan(NwfsLayout.SectorSize * 2, NwfsLayout.SectorSize);
+    "NWVP MIRROR 0001"u8.CopyTo(internalMirror);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[16..], MirrorGroupId);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[20..], stamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[24..], stamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[32..], PartitionId);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[36..], stamp);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[40..], 0);
+    BinaryPrimitives.WriteUInt32LittleEndian(internalMirror[44..], MirrorClosedStatus);
+
+    foreach (var sector in NwfsLayout.MasterCopySectors) {
+      var offset = checked((int)(partitionOffset + (long)sector * NwfsLayout.SectorSize));
+      block.CopyTo(image.AsSpan(offset, block.Length));
+    }
+  }
+
+  private static void WriteHotfixTables(byte[] image, long partitionOffset) {
+    var hotfix = new byte[NwfsLayout.IoBlockSize];
+    var bad = new byte[NwfsLayout.IoBlockSize];
+
+    static void MarkReserved(Span<byte> table, int entry)
+      => BinaryPrimitives.WriteUInt32LittleEndian(table[(entry * sizeof(uint))..], uint.MaxValue);
+
+    for (var i = 0; i < 20; ++i) {
+      MarkReserved(hotfix, i);
+      MarkReserved(bad, i);
+    }
+    foreach (var i in new[] { 20, 28, 36, 44 }) {
+      MarkReserved(hotfix, i);
+      MarkReserved(bad, i);
+    }
+
+    hotfix.CopyTo(image.AsSpan(checked((int)(partitionOffset + 20L * NwfsLayout.IoBlockSize))));
+    bad.CopyTo(image.AsSpan(checked((int)(partitionOffset + 28L * NwfsLayout.IoBlockSize))));
+    hotfix.CopyTo(image.AsSpan(checked((int)(partitionOffset + 36L * NwfsLayout.IoBlockSize))));
+    bad.CopyTo(image.AsSpan(checked((int)(partitionOffset + 44L * NwfsLayout.IoBlockSize))));
+  }
+
+  private void WriteClusterChain(
+      byte[] image,
+      long volumeOffset,
+      ReadOnlySpan<uint> chain,
+      ReadOnlySpan<byte> data) {
+    var remaining = data;
+    foreach (var cluster in chain) {
+      var offset = checked((int)(volumeOffset + (long)cluster * this.BlockSize));
+      var take = Math.Min(this.BlockSize, remaining.Length);
+      if (take > 0)
+        remaining[..take].CopyTo(image.AsSpan(offset, take));
+      remaining = remaining[take..];
+    }
+    if (!remaining.IsEmpty)
+      throw new InvalidOperationException("NWFS cluster chain is shorter than its data.");
+  }
+
+  private static string NormalizePath(string path)
+    => path.Replace('\\', '/').Trim('/');
+
+  private static string NormalizeDosName(string name) {
     var upper = name.ToUpperInvariant();
-    if (upper.Length is 0 or > NwfsLayout.MaxNameLength)
-      throw new InvalidOperationException($"'{name}' must be 1 to twelve characters long");
+    if (upper.Length is 0 or > NwfsLayout.MaxNameLength || upper.Any(static c => c > 0x7F))
+      throw new InvalidOperationException($"'{name}' must be 1 to 12 ASCII characters long");
     return upper;
   }
 
-  private static byte[] VolumeInformationEntry(uint stamp) {
-    var e = new byte[NwfsLayout.DirectoryEntryBytes];
-    BinaryPrimitives.WriteUInt32LittleEndian(e, NwfsLayout.DirIdVolumeInfo);
-    BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(24), stamp);
-    BinaryPrimitives.WriteUInt32BigEndian(e.AsSpan(28), NwfsLayout.SupervisorObjectId);
-    BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(40), stamp);
-    return e;
+  private static string NormalizeVolumeName(string name) {
+    var upper = (name ?? string.Empty).Trim().ToUpperInvariant();
+    if (upper.Length is 0 or > NwfsLayout.MaxVolumeNameLength || upper.Any(static c => c > 0x7F))
+      throw new InvalidOperationException("volume name must be 1 to 15 ASCII characters long");
+    return upper;
   }
 
-  private static void WriteCommon(Span<byte> e, uint parentId, uint attributes, string name, uint stamp) {
-    BinaryPrimitives.WriteUInt32LittleEndian(e, parentId);
-    BinaryPrimitives.WriteUInt32LittleEndian(e[4..], attributes);
-    var bytes = Encoding.ASCII.GetBytes(name);
-    e[11] = (byte)bytes.Length;
-    bytes.CopyTo(e[12..]);
-    BinaryPrimitives.WriteUInt32LittleEndian(e[24..], stamp);
-    BinaryPrimitives.WriteUInt32BigEndian(e[28..], NwfsLayout.SupervisorObjectId);
-    BinaryPrimitives.WriteUInt32LittleEndian(e[40..], stamp);
-  }
-
-  private static byte[] DirectoryEntry(Directory directory, uint stamp) {
-    var e = new byte[NwfsLayout.DirectoryEntryBytes];
-    WriteCommon(e, directory.ParentId, NwfsLayout.AttributeDirectory, directory.Name, stamp);
-    BinaryPrimitives.WriteUInt16LittleEndian(e.AsSpan(100), 0xFFFF);   // every right inherited
-    BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(120), directory.Id);
-    return e;
-  }
-
-  private static byte[] FileEntry(uint parentId, string name, int length, uint firstBlock, uint stamp) {
-    var e = new byte[NwfsLayout.DirectoryEntryBytes];
-    WriteCommon(e, parentId, NwfsLayout.AttributeArchive, name, stamp);
-    BinaryPrimitives.WriteUInt32BigEndian(e.AsSpan(44), NwfsLayout.SupervisorObjectId);
-    BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(48), (uint)length);
-    BinaryPrimitives.WriteUInt32LittleEndian(e.AsSpan(52), firstBlock);
-    return e;
-  }
-
-  /// <summary>
-  /// A partition table naming one NetWare partition, which is how a reader
-  /// finds where the hotfix header is to be looked for.
-  /// </summary>
   private static void WritePartitionTable(Span<byte> image, uint startSector, uint sectors) {
     const int tableOffset = 446;
     const byte netWare386 = 0x65;
 
     var e = image[tableOffset..];
-    e[0] = 0x00;                    // not bootable
+    e[0] = 0;
     WriteChs(e[1..], startSector);
     e[4] = netWare386;
-    WriteChs(e[5..], startSector + sectors - 1);
+    WriteChs(e[5..], checked(startSector + sectors - 1));
     BinaryPrimitives.WriteUInt32LittleEndian(e[8..], startSector);
     BinaryPrimitives.WriteUInt32LittleEndian(e[12..], sectors);
-
     image[510] = 0x55;
     image[511] = 0xAA;
   }
 
-  /// <summary>
-  /// The cylinder-head-sector form of a sector number, capped where the three
-  /// bytes stop counting — which is what a table for any sizeable disk holds.
-  /// </summary>
   private static void WriteChs(Span<byte> chs, uint sector) {
     const int headsPerCylinder = 255;
     const int sectorsPerTrack = 63;
@@ -355,12 +483,9 @@ public sealed class NwfsWriter {
     chs[2] = (byte)cylinder;
   }
 
-  /// <summary>
-  /// The packed date and time NetWare shares with DOS: the date in the high
-  /// half, the time in the low, and seconds counted in twos.
-  /// </summary>
   private static uint DosTimestamp(DateTime when) {
-    if (when.Year < 1980) when = new DateTime(1980, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    if (when.Year < 1980)
+      when = new DateTime(1980, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     var date = (uint)(when.Year - 1980 << 9 | when.Month << 5 | when.Day);
     var time = (uint)(when.Hour << 11 | when.Minute << 5 | when.Second / 2);
     return date << 16 | time;

@@ -4,13 +4,14 @@ using Compression.Registry;
 namespace FileSystem.Nwfs;
 
 /// <summary>
-/// Transactional rebuild and allocation-map helpers for the plain, single-volume
-/// NWFS profile supported by <see cref="NwfsReader"/> and <see cref="NwfsWriter"/>.
+/// Transactional rebuild and allocation-map helpers for the deliberately
+/// narrow single-segment Traditional NWFS writable profile.
 /// </summary>
 internal static class NwfsMaintenance {
   internal sealed record Snapshot(
     string VolumeName,
     int BlockSize,
+    uint PartitionStartSector,
     long ImageLength,
     List<string> Directories,
     Dictionary<string, byte[]> Files,
@@ -28,13 +29,24 @@ internal static class NwfsMaintenance {
     stream.ReadExactly(image);
     var reader = NwfsReader.TryOpen(image)
       ?? throw new InvalidDataException("The image is not a supported plain NWFS volume.");
+
     var directories = new List<string>();
     var files = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
     foreach (var item in reader.List()) {
-      if (item.IsDirectory) directories.Add(item.Path);
-      else files[item.Path] = reader.Read(item);
+      if (item.IsDirectory)
+        directories.Add(item.Path);
+      else
+        files[item.Path] = reader.Read(item);
     }
-    return new Snapshot(reader.VolumeName, reader.BlockSize, image.LongLength, directories, files, reader);
+
+    return new Snapshot(
+      reader.VolumeName,
+      reader.BlockSize,
+      checked((uint)(reader.PartitionOffset / NwfsLayout.SectorSize)),
+      image.LongLength,
+      directories,
+      files,
+      reader);
   }
 
   internal static byte[] Build(
@@ -46,6 +58,7 @@ internal static class NwfsMaintenance {
     var writer = new NwfsWriter {
       BlockSize = blockSize ?? snapshot.BlockSize,
       VolumeName = string.IsNullOrWhiteSpace(volumeName) ? snapshot.VolumeName : volumeName,
+      PartitionStartSector = snapshot.PartitionStartSector,
       MinimumImageSize = minimumImageSize,
     };
     foreach (var directory in snapshot.Directories)
@@ -70,43 +83,39 @@ internal static class NwfsMaintenance {
   internal static long FileSlack(Snapshot snapshot, int blockSize) {
     long slack = 0;
     foreach (var data in snapshot.Files.Values) {
-      if (data.Length == 0) continue;
-      slack += AlignUp(data.LongLength, blockSize) - data.LongLength;
+      if (data.Length == 0)
+        continue;
+      slack = checked(slack + NwfsLayout.AlignUp(data.LongLength, blockSize) - data.LongLength);
     }
     return slack;
   }
 
   internal static long EstimateTightImageLength(Snapshot snapshot, int blockSize) {
-    if (!NwfsLayout.IsValidBlockSize(blockSize)) return long.MaxValue;
-    var entriesPerBlock = blockSize / NwfsLayout.DirectoryEntryBytes;
-    var usedEntries = 1L + snapshot.Directories.Count + snapshot.Files.Count;
-    var directoryBlocks = Math.Max(1L, (usedEntries + entriesPerBlock - 1) / entriesPerBlock);
-    long fileBlocks = 0;
+    if (!NwfsLayout.IsValidBlockSize(blockSize))
+      return long.MaxValue;
+
+    var entriesPerCluster = blockSize / NwfsLayout.DirectoryEntryBytes;
+    var usedEntries = checked(1L + snapshot.Directories.Count + snapshot.Files.Count);
+    var directoryClusters = checked((int)Math.Max(
+      1,
+      NwfsLayout.DivideRoundUp(usedEntries, entriesPerCluster)));
+
+    var fileClusters = 0;
     foreach (var data in snapshot.Files.Values)
-      fileBlocks = checked(fileBlocks + (data.LongLength + blockSize - 1) / blockSize);
+      fileClusters = checked(fileClusters
+        + (int)NwfsLayout.DivideRoundUp(data.LongLength, blockSize));
 
-    long fatBlocks = 1;
-    long totalBlocks;
-    while (true) {
-      totalBlocks = checked(fatBlocks + directoryBlocks * 2 + fileBlocks);
-      var needed = Math.Max(1L, (totalBlocks * NwfsLayout.FatEntryBytes + blockSize - 1) / blockSize);
-      if (needed == fatBlocks) break;
-      fatBlocks = needed;
-    }
-
-    var dataAreaOffset = (long)32 * NwfsLayout.SectorSize
-                         + NwfsLayout.HotfixOffsetInPartition
-                         + (long)128 * NwfsLayout.SectorSize
-                         + NwfsLayout.VolumeAreaBytes;
-    return checked(dataAreaOffset + totalBlocks * blockSize);
+    var plan = NwfsLayout.Plan(blockSize, directoryClusters, fileClusters);
+    return NwfsLayout.TightImageLength(snapshot.PartitionStartSector, blockSize, plan.ClusterCount);
   }
 
   internal static int FindOptimalBlockSize(Snapshot snapshot) {
     var best = snapshot.BlockSize;
     var bestLength = long.MaxValue;
-    for (var candidate = 1024; candidate <= 256 * 1024; candidate <<= 1) {
+    for (var candidate = NwfsLayout.IoBlockSize; candidate <= 64 * 1024; candidate <<= 1) {
       var length = EstimateTightImageLength(snapshot, candidate);
-      if (length >= bestLength) continue;
+      if (length >= bestLength)
+        continue;
       bestLength = length;
       best = candidate;
     }
@@ -122,81 +131,92 @@ internal static class NwfsMaintenance {
     }
 
     var reader = snapshot.Reader;
-    if (reader.TotalBlocks > int.MaxValue) return [];
-    var totalBlocks = (int)reader.TotalBlocks;
-    var kinds = new DefragBlockKind[totalBlocks];
-    var known = new bool[totalBlocks];
-    var owners = new string?[totalBlocks];
+    var physicalBlocks = reader.TotalPhysicalBlocks;
+    if (physicalBlocks <= 0)
+      return [];
 
-    void MarkBlock(uint block, DefragBlockKind kind, string? owner = null) {
-      if (block < reader.FirstSegmentBlock) return;
-      var relative = (long)block - reader.FirstSegmentBlock;
-      if ((ulong)relative >= (ulong)totalBlocks) return;
-      var index = (int)relative;
-      known[index] = true;
-      kinds[index] = kind;
-      owners[index] = owner;
+    var kinds = new DefragBlockKind[physicalBlocks];
+    var owners = new string?[physicalBlocks];
+
+    void MarkPhysical(int physicalBlock, DefragBlockKind kind, string? owner = null) {
+      if ((uint)physicalBlock >= (uint)physicalBlocks)
+        return;
+      kinds[physicalBlock] = kind;
+      owners[physicalBlock] = owner;
     }
 
-    var fatBlocks = Math.Max(1, (totalBlocks * NwfsLayout.FatEntryBytes + reader.BlockSize - 1) / reader.BlockSize);
-    for (var i = 0; i < fatBlocks && i < totalBlocks; ++i)
-      MarkBlock(reader.FirstSegmentBlock + (uint)i, DefragBlockKind.MetadataReserved);
-
-    foreach (var block in reader.WalkChain(reader.RootDirectoryBlock))
-      MarkBlock(block, DefragBlockKind.MetadataReserved);
-    foreach (var block in reader.WalkChain(reader.SecondDirectoryBlock))
-      MarkBlock(block, DefragBlockKind.MetadataReserved);
-
-    foreach (var item in reader.List()) {
-      if (item.IsDirectory || item.FirstBlock == NwfsLayout.NoBlock) continue;
-      foreach (var block in reader.WalkChain(item.FirstBlock))
-        MarkBlock(block, DefragBlockKind.Used, item.Path);
+    void MarkCluster(uint cluster, DefragBlockKind kind, string? owner = null) {
+      if (cluster >= reader.TotalClusters)
+        return;
+      var first = checked((int)cluster * reader.BlocksPerCluster);
+      for (var i = 0; i < reader.BlocksPerCluster; ++i)
+        MarkPhysical(first + i, kind, owner);
     }
 
-    // Any FAT entry that is not the all-ones free marker is allocated to a
-    // structure the current namespace reader does not understand. Preserve it
-    // as metadata rather than guessing (suballocation/salvage are examples).
-    for (var i = 0; i < totalBlocks; ++i) {
-      if (known[i]) continue;
-      var block = reader.FirstSegmentBlock + (uint)i;
-      if (!reader.TryReadFatEntry(block, out var index, out var next)) {
-        known[i] = true;
-        kinds[i] = DefragBlockKind.MetadataReserved;
-      } else if (index == NwfsLayout.NoBlock && next == NwfsLayout.NoBlock) {
-        known[i] = true;
-        kinds[i] = DefragBlockKind.Free;
+    for (uint cluster = 0; cluster < reader.TotalClusters; ++cluster) {
+      if (!reader.TryReadFatEntry(cluster, out var index, out var next)) {
+        MarkCluster(cluster, DefragBlockKind.MetadataReserved);
+      } else if (index == NwfsLayout.FreeFatIndex && next == NwfsLayout.FreeFatCluster) {
+        MarkCluster(cluster, DefragBlockKind.Free);
       } else {
-        known[i] = true;
-        kinds[i] = DefragBlockKind.MetadataReserved;
+        MarkCluster(cluster, DefragBlockKind.MetadataReserved);
       }
     }
 
-    var result = new List<DefragBlockInfo> {
-      new(0, reader.DataAreaOffset, DefragBlockKind.MetadataReserved),
-    };
+    foreach (var physicalBlock in reader.EnumerateFatPhysicalBlocks())
+      MarkPhysical(physicalBlock, DefragBlockKind.MetadataReserved);
+
+    foreach (var cluster in reader.WalkChain(reader.RootDirectoryBlock))
+      MarkCluster(cluster, DefragBlockKind.MetadataReserved);
+    foreach (var cluster in reader.WalkChain(reader.SecondDirectoryBlock))
+      MarkCluster(cluster, DefragBlockKind.MetadataReserved);
+
+    foreach (var item in reader.List()) {
+      if (item.IsDirectory || item.FirstBlock == NwfsLayout.EndOfChain)
+        continue;
+      foreach (var cluster in reader.WalkChain(item.FirstBlock))
+        MarkCluster(cluster, DefragBlockKind.Used, item.Path);
+    }
+
+    var result = new List<DefragBlockInfo>();
+    if (reader.VolumeOffset > 0)
+      result.Add(new DefragBlockInfo(
+        0,
+        reader.VolumeOffset,
+        DefragBlockKind.MetadataReserved,
+        null,
+        DefragBlockClass.Directory));
+
     var start = 0;
-    while (start < totalBlocks) {
+    while (start < physicalBlocks) {
       var kind = kinds[start];
       var owner = owners[start];
       var end = start + 1;
-      while (end < totalBlocks && kinds[end] == kind
+      while (end < physicalBlocks
+             && kinds[end] == kind
              && string.Equals(owners[end], owner, StringComparison.Ordinal))
         ++end;
+
       result.Add(new DefragBlockInfo(
-        reader.DataAreaOffset + (long)start * reader.BlockSize,
-        (long)(end - start) * reader.BlockSize,
+        reader.VolumeOffset + (long)start * NwfsLayout.IoBlockSize,
+        (long)(end - start) * NwfsLayout.IoBlockSize,
         kind,
         owner,
-        kind == DefragBlockKind.MetadataReserved ? DefragBlockClass.Directory : DefragBlockClass.Normal));
+        kind == DefragBlockKind.MetadataReserved
+          ? DefragBlockClass.Directory
+          : DefragBlockClass.Normal));
       start = end;
     }
 
-    var volumeEnd = reader.DataAreaOffset + (long)totalBlocks * reader.BlockSize;
+    var volumeEnd = reader.VolumeOffset + (long)physicalBlocks * NwfsLayout.IoBlockSize;
     if (snapshot.ImageLength > volumeEnd)
-      result.Add(new DefragBlockInfo(volumeEnd, snapshot.ImageLength - volumeEnd, DefragBlockKind.MetadataReserved));
+      result.Add(new DefragBlockInfo(
+        volumeEnd,
+        snapshot.ImageLength - volumeEnd,
+        DefragBlockKind.MetadataReserved,
+        null,
+        DefragBlockClass.Directory));
+
     return result;
   }
-
-  private static long AlignUp(long value, int alignment)
-    => checked((value + alignment - 1) / alignment * alignment);
 }
