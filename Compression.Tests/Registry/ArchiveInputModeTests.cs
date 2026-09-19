@@ -42,7 +42,7 @@ public sealed class ArchiveInputModeTests {
   public void ListSpan_ConcreteDescriptor_UsesUniversalSpanSurface() {
     var ops = new SeekOnlyArchiveOperations();
 
-    var entries = ops.List(ArchiveBytes.AsSpan(), password: null);
+    var entries = ops.ListSpan(ArchiveBytes.AsSpan(), password: null);
 
     Assert.That(entries, Has.Count.EqualTo(1));
     Assert.That(entries[0].Name, Is.EqualTo("payload.bin"));
@@ -80,7 +80,7 @@ public sealed class ArchiveInputModeTests {
   public void OpenEntrySpan_OwnsCompatibilityBufferForReturnedStreamLifetime() {
     var ops = new SeekOnlyArchiveOperations();
 
-    using var entry = ops.OpenEntry(ArchiveBytes.AsSpan(), "payload.bin", password: null);
+    using var entry = ops.OpenEntrySpan(ArchiveBytes.AsSpan(), "payload.bin", password: null);
     using var sink = new MemoryStream();
     entry.CopyTo(sink);
 
