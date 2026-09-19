@@ -34,7 +34,8 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 
 | State | Meaning |
 | --- | --- |
-| **R** | Open, list and extract only. For network, distributed and encrypted formats this is detection of the on-disk signature plus whatever metadata the object carries. |
+| **N/A** | Registered filesystem domain that is not represented by a standalone image/container descriptor; specialized multi-source drivers may expose mounted capabilities separately. |
+| **R** | Open, list and extract an existing standalone image/container. |
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
@@ -215,7 +216,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
-| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | multi-stream V3/V6 decoder + native ext/XFS xattr/backing-image tests | Read-only offline metadata/storage target sets; V3 dentries + V6 inline/separate regular-file inodes; non-mirrored non-sparse RAID0 | [BeeGFS](https://www.beegfs.io/) |
 | [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | Dell architecture/diagnostics; raw serialization not public | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |

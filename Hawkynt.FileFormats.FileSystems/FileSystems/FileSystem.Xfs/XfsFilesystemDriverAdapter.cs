@@ -150,7 +150,7 @@ public sealed class XfsFilesystemDriverAdapter :
   }
 }
 
-internal sealed class XfsReadOnlyFilesystemSession : IFilesystemSession {
+internal sealed class XfsReadOnlyFilesystemSession : IFilesystemSession, IFilesystemExtendedAttributeReader {
   private readonly Stream _image;
   private readonly bool _leaveOpen;
   private readonly object _ioGate = new();
@@ -179,6 +179,11 @@ internal sealed class XfsReadOnlyFilesystemSession : IFilesystemSession {
   public FilesystemNodeId? Lookup(FilesystemNodeId parentDirectory, string name) => _namespace.Lookup(parentDirectory, name);
   public IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory) => _namespace.Enumerate(directory);
   public IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access) => _namespace.OpenFile(nodeId, access);
+  public IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(FilesystemNodeId nodeId) {
+    _ = _namespace.Stat(nodeId); // validates both inode number and generation
+    lock (_ioGate)
+      return XfsExtendedAttributes.ReadByInode(_image, nodeId.Value);
+  }
   public FilesystemNodeId CreateFile(FilesystemNodeId parentDirectory, string name) => _namespace.CreateFile(parentDirectory, name);
   public FilesystemNodeId CreateDirectory(FilesystemNodeId parentDirectory, string name) => _namespace.CreateDirectory(parentDirectory, name);
   public void DeleteFile(FilesystemNodeId parentDirectory, string name) => _namespace.DeleteFile(parentDirectory, name);

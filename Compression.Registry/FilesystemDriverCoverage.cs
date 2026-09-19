@@ -28,6 +28,7 @@ public sealed record FilesystemDriverCoverage(
   bool HasExtentMap,
   bool HasBlockMover,
   bool HasBlockDeviceProvider,
+  bool HasMultiStreamProvider,
   bool HasNativeReadinessProvider
 ) {
   public bool HasDriverPath => Binding != FilesystemDriverBindingKind.None;

@@ -4,7 +4,8 @@ using Compression.Registry;
 namespace FileSystem.BeeGfs;
 
 /// <summary>
-/// Describes BeeGFS without inventing a standalone byte-stream image format.
+/// Describes BeeGFS as a distributed target set rather than inventing a standalone
+/// byte-stream image format.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,20 +14,24 @@ namespace FileSystem.BeeGfs;
 /// targets and depends on target/stripe mappings; it is not a self-contained disk image.
 /// </para>
 /// <para>
-/// CompressionWorkbench's filesystem-driver boundary currently opens one <see cref="Stream"/>.
-/// That cannot represent a BeeGFS deployment or an offline cluster snapshot, so this descriptor
-/// deliberately fails closed instead of advertising a synthetic extension, magic signature,
-/// archive projection, or mounted namespace.
+/// The legacy one-stream driver entry point therefore remains fail-closed. The multi-stream
+/// entry point accepts named backing filesystem images through <see cref="FilesystemStreamSet"/>,
+/// opens each one through CompressionWorkbench's normal filesystem parser, resolves its target
+/// root, validates BeeGFS target markers/identities, and reconstructs the supported read-only
+/// logical namespace from BeeGFS metadata rather than exposing physical target directories.
 /// </para>
 /// <para>
-/// References: BeeGFS manual installation documentation (storage directories on local
-/// filesystems) and the upstream BeeGFS storage-toolkit format/target marker definitions.
+/// References: BeeGFS manual installation/architecture/deep-inspection documentation and the
+/// upstream BeeGFS serialization/storage-toolkit definitions. Upstream source is used only as a
+/// behavioral/layout oracle; this implementation is independently written against those format facts.
 /// </para>
 /// </remarks>
 public sealed class BeeGfsFormatDescriptor :
   IFormatDescriptor,
   IFilesystemDriverProvider,
-  IFilesystemDriverReadinessProvider {
+  IFilesystemDriverReadinessProvider,
+  IMultiStreamFilesystemDriverProvider,
+  IMultiStreamFilesystemDriverReadinessProvider {
 
   private const FilesystemDriverReadinessLayer ReadOnlyRequired =
     FilesystemDriverReadinessLayer.ImageValidation |
@@ -45,61 +50,42 @@ public sealed class BeeGfsFormatDescriptor :
     FilesystemDriverReadinessLayer.DurabilityModel |
     FilesystemDriverReadinessLayer.Concurrency;
 
+  private const FilesystemDriverReadinessLayer NativeReadOnlyAvailable =
+    ReadOnlyRequired |
+    FilesystemDriverReadinessLayer.NativeStableNodeIds;
+
   private static readonly string[] StreamModelLimitations = [
     "BeeGFS has no standalone filesystem image or canonical single-stream representation.",
     "BeeGFS metadata and storage targets are directories on underlying local filesystems such as ext4 or XFS.",
-    "A logical BeeGFS namespace can require multiple metadata/storage targets plus target and stripe mappings; one Stream is insufficient.",
+    "Use FilesystemStreamSet to provide the participating metadata/storage backing images and target roots.",
   ];
 
-  /// <summary>Gets the registry id.</summary>
   public string Id => "BeeGfs";
-
-  /// <summary>Gets the display name.</summary>
   public string DisplayName => "BeeGFS";
-
-  /// <summary>Gets the category used by the filesystem package.</summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <summary>
-  /// Gets the single-stream capabilities. BeeGFS has none because it is not a standalone
-  /// stream/image format.
+  /// Single-stream format capabilities remain empty because BeeGFS is not one standalone image.
+  /// Multi-target mounted capabilities are reported by <see cref="ProbeFilesystem(FilesystemStreamSet)"/>.
   /// </summary>
   public FormatCapabilities Capabilities => FormatCapabilities.None;
 
-  /// <summary>BeeGFS has no canonical file extension.</summary>
   public string DefaultExtension => string.Empty;
-
-  /// <summary>BeeGFS has no canonical file extensions.</summary>
   public IReadOnlyList<string> Extensions => [];
-
-  /// <summary>BeeGFS has no compound file extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
-
-  /// <summary>
-  /// BeeGFS has no standalone stream header. Target directories are identified structurally
-  /// by their service metadata, not by magic bytes at offset zero of one file.
-  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
-
-  /// <summary>There is no archive/storage method for a synthetic BeeGFS image.</summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [];
-
-  /// <summary>BeeGFS is not a tar compound format.</summary>
   public string? TarCompressionFormatId => null;
-
-  /// <summary>Gets the registry family.</summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
-  /// <summary>Gets the format description.</summary>
   public string Description =>
     "BeeGFS is a distributed filesystem whose metadata and storage targets are directories " +
-    "on local filesystems such as ext4/XFS. A logical namespace can span multiple targets " +
-    "and requires target/stripe mappings, so BeeGFS has no standalone byte-stream image, " +
-    "canonical .beegfs extension, or stream magic. CompressionWorkbench currently accepts " +
-    "one Stream per filesystem driver; BeeGFS therefore remains registered but deliberately " +
-    "non-mountable until a directory-/multi-target snapshot abstraction exists.";
+    "on local filesystems such as ext4/XFS. It has no standalone byte-stream image, canonical " +
+    ".beegfs extension, or stream magic. CompressionWorkbench accepts a FilesystemStreamSet, " +
+    "validates the real multi-target topology, and mounts the proven non-mirrored V3/V6 RAID0 " +
+    "subset read-only, including V3 namespace dentries and V6 inline or separate regular-file " +
+    "inodes. Unknown, mirrored, sparse, remote-storage and unsupported metadata profiles fail closed.";
 
-  /// <inheritdoc />
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     return new FilesystemDriverProfile(
@@ -112,17 +98,52 @@ public sealed class BeeGfsFormatDescriptor :
       StreamModelLimitations);
   }
 
-  /// <inheritdoc />
+  public FilesystemDriverProfile ProbeFilesystem(FilesystemStreamSet sources) {
+    ArgumentNullException.ThrowIfNull(sources);
+    BeeGfsTargetTopology topology;
+    try {
+      topology = BeeGfsMultiStreamTopology.Inspect(sources);
+    } catch (Exception e) when (IsProbeException(e)) {
+      return UnsupportedProfile("invalid or unsupported BeeGFS target set", e.Message);
+    }
+
+    try {
+      using var session = new BeeGfsReadOnlyFilesystemSession(sources, topology, leaveOpen: true);
+      return session.Profile;
+    } catch (Exception e) when (IsProbeException(e)) {
+      return new FilesystemDriverProfile(
+        this.Id,
+        $"validated BeeGFS topology; unsupported logical profile ({topology.MetadataTargets.Count} metadata, {topology.StorageTargets.Count} storage)",
+        FilesystemDriverCapabilities.None,
+        FilesystemMutationModel.None,
+        CanMount: false,
+        CanMountWritable: false,
+        [
+          TopologySummary(topology),
+          FirstLine(e.Message),
+        ]);
+    }
+  }
+
   public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(options);
     throw new NotSupportedException(
-      "BeeGFS cannot be opened from one Stream. A real BeeGFS namespace requires metadata/storage " +
-      "target directories and their target/stripe mappings; CompressionWorkbench has no multi-target " +
-      "snapshot input contract yet.");
+      "BeeGFS cannot be opened from one Stream. Supply the metadata/storage backing images as a " +
+      "FilesystemStreamSet so their target roots and identities can be validated.");
   }
 
-  /// <inheritdoc />
+  public IFilesystemSession OpenFilesystem(FilesystemStreamSet sources, FilesystemOpenOptions options) {
+    ArgumentNullException.ThrowIfNull(sources);
+    ArgumentNullException.ThrowIfNull(options);
+    if (!options.ReadOnly)
+      throw new NotSupportedException(
+        "Writable BeeGFS mounting is disabled until metadata/chunk allocation, mapping, buddy consistency, " +
+        "durability/recovery and concurrency are transactional across the complete target set.");
+    var topology = BeeGfsMultiStreamTopology.Inspect(sources);
+    return new BeeGfsReadOnlyFilesystemSession(sources, topology, options.LeaveOpen);
+  }
+
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
       Stream image,
       FilesystemDriverTarget target) {
@@ -144,5 +165,79 @@ public sealed class BeeGfsFormatDescriptor :
       Derivable: false,
       UsesNativeProvider: true,
       blockers);
+  }
+
+  public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
+      FilesystemStreamSet sources,
+      FilesystemDriverTarget target) {
+    ArgumentNullException.ThrowIfNull(sources);
+    BeeGfsTargetTopology topology;
+    try {
+      topology = BeeGfsMultiStreamTopology.Inspect(sources);
+    } catch (Exception e) when (IsProbeException(e)) {
+      return new FilesystemDriverReadinessReport(
+        this.Id,
+        target,
+        FilesystemDriverReadinessLayer.None,
+        target == FilesystemDriverTarget.ReadWrite ? ReadWriteRequired : ReadOnlyRequired,
+        Derivable: false,
+        UsesNativeProvider: true,
+        [FirstLine(e.Message)]);
+    }
+
+    try {
+      using var session = new BeeGfsReadOnlyFilesystemSession(sources, topology, leaveOpen: true);
+      var blockers = new List<string>(session.Profile.Limitations);
+      if (target == FilesystemDriverTarget.ReadWrite) {
+        blockers.Add(
+          "Implement coordinated BeeGFS dentry/inode/chunk allocation and deletion across every participating target.");
+        blockers.Add(
+          "Integrate management target/buddy/storage-pool mappings and define crash-consistent multi-target commit/recovery semantics.");
+        blockers.Add(
+          "Add mounted mutation locking/concurrency plus interoperability and fault-injection validation before enabling writes.");
+      }
+      var required = target == FilesystemDriverTarget.ReadWrite ? ReadWriteRequired : ReadOnlyRequired;
+      var available = NativeReadOnlyAvailable;
+      return new FilesystemDriverReadinessReport(
+        this.Id,
+        target,
+        available,
+        required,
+        Derivable: (available & required) == required,
+        UsesNativeProvider: true,
+        blockers.Distinct(StringComparer.Ordinal).ToArray());
+    } catch (Exception e) when (IsProbeException(e)) {
+      return new FilesystemDriverReadinessReport(
+        this.Id,
+        target,
+        FilesystemDriverReadinessLayer.ImageValidation,
+        target == FilesystemDriverTarget.ReadWrite ? ReadWriteRequired : ReadOnlyRequired,
+        Derivable: false,
+        UsesNativeProvider: true,
+        [
+          TopologySummary(topology),
+          FirstLine(e.Message),
+        ]);
+    }
+  }
+
+  private FilesystemDriverProfile UnsupportedProfile(string name, string reason) => new(
+    this.Id,
+    name,
+    FilesystemDriverCapabilities.None,
+    FilesystemMutationModel.None,
+    CanMount: false,
+    CanMountWritable: false,
+    [FirstLine(reason)]);
+
+  private static string TopologySummary(BeeGfsTargetTopology topology)
+    => $"Validated {topology.MetadataTargets.Count} metadata target(s) and {topology.StorageTargets.Count} storage target(s), including backing filesystem mounts, BeeGFS format versions, target roots, and numeric target identities.";
+
+  private static bool IsProbeException(Exception e)
+    => e is InvalidDataException or NotSupportedException or IOException or ArgumentException or OverflowException;
+
+  private static string FirstLine(string message) {
+    var end = message.IndexOfAny(['\r', '\n']);
+    return end < 0 ? message : message[..end];
   }
 }
