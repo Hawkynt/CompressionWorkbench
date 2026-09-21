@@ -180,6 +180,9 @@ internal sealed class XfsReadOnlyFilesystemSession : IFilesystemSession, IFilesy
   public IReadOnlyList<FilesystemDirectoryEntry> Enumerate(FilesystemNodeId directory) => _namespace.Enumerate(directory);
   public IFilesystemFileHandle OpenFile(FilesystemNodeId nodeId, FileAccess access) => _namespace.OpenFile(nodeId, access);
   public IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(FilesystemNodeId nodeId) {
+    // Every other member here forwards to the snapshot, which owns its own lifetime.
+    // This one reaches past it to the image, so it has to answer for the image's.
+    if (_disposed) throw new ObjectDisposedException(nameof(XfsReadOnlyFilesystemSession));
     _ = _namespace.Stat(nodeId); // validates both inode number and generation
     lock (_ioGate)
       return XfsExtendedAttributes.ReadByInode(_image, nodeId.Value);
