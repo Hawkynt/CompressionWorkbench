@@ -9,8 +9,8 @@ using Hawkynt.NativeForms.Backends;
 // Without a backend the window silently has nothing to draw on and the stub dies on launch — inside
 // someone's SFX archive, where it is least debuggable. A RID whose condition matched neither one is
 // a build failure here rather than a broken archive later.
-#if !BACKEND_WINDOWS && !BACKEND_GTK
-#error No NativeForms backend selected. Publish with -r win-* or -r linux-*; other runtimes get the CLI stub.
+#if !BACKEND_WINDOWS && !BACKEND_GTK && !BACKEND_MACOS
+#error No NativeForms backend selected. Publish with -r win-*, linux-* or osx-*.
 #endif
 
 #if BACKEND_WINDOWS
@@ -18,6 +18,9 @@ BackendRegistry.Register(new Hawkynt.NativeForms.Backends.Windows.Win32Backend()
 #endif
 #if BACKEND_GTK
 BackendRegistry.Register(new Hawkynt.NativeForms.Backends.Gtk.GtkBackend());
+#endif
+#if BACKEND_MACOS
+BackendRegistry.Register(new Hawkynt.NativeForms.Backends.MacOS.MacOSBackend());
 #endif
 
 Application.Run(new SfxWindow());

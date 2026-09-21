@@ -2,27 +2,70 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Compression.Sfx.Ui</RootNamespace>
     <AssemblyName>sfx-ui</AssemblyName>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-
-    <!-- Single-file publish config (also used by post-build bundle target below). -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableSingleFileBundle>true</EnableSingleFileBundle>
-    <!-- No debug symbols in published stub -->
-    <DebugType>none</DebugType>
-    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <!--
-    One backend per stub. The stub is prepended to every archive built with it, so a second
-    platform's backend would be dead weight in every one of them; the matching DefineConstant
-    keeps Program.cs from referencing a package that is not there.
+    NativeAOT, so a self-extracting archive needs nothing installed on the machine it lands on.
+    That was the point: the old stub was framework-dependent, so handing someone an SFX without
+    .NET on their box simply failed.
+
+    Costura and PublishSingleFile are deliberately gone. Costura works by embedding assemblies as
+    resources and resolving them through Assembly.Load(byte[]), which AOT cannot do at all.
+  -->
+  <PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <EventSourceSupport>false</EventSourceSupport>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <!--
+      Trim analysis across the whole format library is noisy and not actionable from here; the
+      guarantee that matters is behavioural and comes from the round-trip gate, which extracts a
+      real archive with the published stub and compares bytes.
+    -->
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <NoWarn>$(NoWarn);IL2026;IL2070;IL2072;IL2075;IL2077;IL2087;IL2091;IL3050;IL3053</NoWarn>
+  </PropertyGroup>
+
+  <!-- Carved: one format, named directly, so the linker drops every other. ~1.5 MB. -->
+  <PropertyGroup Condition="'$(SfxTier)' == 'Carved'">
+    <DefineConstants>$(DefineConstants);SFX_TIER_CARVED;SFX_FORMAT_$(SfxFormat.ToUpperInvariant())</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SfxTier)' == 'Carved'">
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\Hawkynt.FileFormats.Archives\Hawkynt.FileFormats.Archives.csproj" />
+  </ItemGroup>
+
+  <!--
+    Universal: every archive descriptor, discovered by the generator from this project's reference
+    closure. Compression.Lib is deliberately absent — routing through it would add the filesystem
+    and audio descriptors, which no SFX payload can ever be, and triples the binary (33 MB vs 10 MB).
+  -->
+  <ItemGroup Condition="'$(SfxTier)' != 'Carved'">
+    <ProjectReference Include="..\Compression.Registry\Compression.Registry.csproj" />
+    <ProjectReference Include="..\Compression.Core\Hawkynt.Compression.Core.csproj" />
+    <ProjectReference Include="..\Hawkynt.FileFormats.Archives\Hawkynt.FileFormats.Archives.csproj" />
+    <ProjectReference Include="..\Compression.Registry.Generator\Compression.Registry.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!--
+    One backend per stub, chosen by the runtime it is published for. A stub is prepended to every
+    archive built with it, so a second platform's backend would be dead weight in every one of them.
+    Without any backend the window has nothing to draw on and the stub dies on launch inside
+    someone's archive, so an unmatched runtime is a build failure rather than a broken archive.
   -->
   <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
     <DefineConstants>$(DefineConstants);BACKEND_WINDOWS</DefineConstants>
@@ -32,29 +75,25 @@
     <DefineConstants>$(DefineConstants);BACKEND_GTK</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('osx'))">
+    <DefineConstants>$(DefineConstants);BACKEND_MACOS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.219" />
     <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.62"
                       Condition="$(RuntimeIdentifier.StartsWith('win'))" />
     <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.71"
                       Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.macOS" Version="1.0.0.92"
+                      Condition="$(RuntimeIdentifier.StartsWith('osx'))" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Fody weaves the SFX stub's managed deps into the main assembly at build time,
-         giving us a compact single-file stub even without `dotnet publish`. -->
-    <PackageReference Include="Fody" Version="6.9.1">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Costura.Fody" Version="6.0.0">
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
+    <Compile Include="..\Compression.Sfx.Shared\SfxPayload.cs" Link="Shared\SfxPayload.cs" />
+    <Compile Include="..\Compression.Sfx.Shared\SfxFormatResolver.cs" Link="Shared\SfxFormatResolver.cs" />
+    <Compile Include="..\Compression.Sfx.Shared\GeneratedRegistrationHost.cs" Link="Shared\GeneratedRegistrationHost.cs"
+             Condition="'$(SfxTier)' != 'Carved'" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Compression.Lib\Compression.Lib.csproj" />
-  </ItemGroup>
-
-  <Import Project="..\build\SingleFileBundle.targets" />
 
 </Project>
