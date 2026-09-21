@@ -56,6 +56,25 @@ public static class XfsExtendedAttributes {
     }
   }
 
+  /// <summary>Reads short-form xattrs directly by native XFS inode number.</summary>
+  internal static IReadOnlyDictionary<string, byte[]> ReadByInode(Stream image, ulong inodeNumber) {
+    ArgumentNullException.ThrowIfNull(image);
+    if (inodeNumber == 0) throw new ArgumentOutOfRangeException(nameof(inodeNumber));
+    EnsureReadableSeekable(image);
+
+    var original = image.Position;
+    try {
+      var geometry = Geometry.Read(image);
+      var inode = ReadAt(image, geometry.InodeOffset(inodeNumber), geometry.InodeSize);
+      return ParseShortForm(inode, geometry).ToDictionary(
+        attribute => ExpandName(attribute.Flags, attribute.Name),
+        attribute => attribute.Value,
+        StringComparer.Ordinal);
+    } finally {
+      image.Position = original;
+    }
+  }
+
   /// <summary>
   /// Creates or replaces a short-form xattr. If the resulting fork does not fit
   /// in the inode, the call fails without modifying the image.

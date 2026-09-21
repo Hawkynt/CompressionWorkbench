@@ -3248,14 +3248,14 @@ Represents a bee gfs entry.
 
 #### `BeeGfsFormatDescriptor`
 
-Describes BeeGFS without inventing a standalone byte-stream image format.
+Describes BeeGFS as a distributed target set rather than inventing a standalone byte-stream image format.
 
-Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`.
+Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `IFormatDescriptor`, `IMultiStreamFilesystemDriverProvider`, `IMultiStreamFilesystemDriverReadinessProvider`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `BeeGfsFormatDescriptor` | `BeeGfsFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the single-stream capabilities. BeeGFS has none because it is not a standalone stream/image format. |
+| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Single-stream format capabilities remain empty because BeeGFS is not one standalone image. Multi-target mounted capabilities are reported by `ProbeFilesystem`. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category used by the filesystem package. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | BeeGFS has no compound file extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | BeeGFS has no canonical file extension. |
@@ -3267,8 +3267,11 @@ Implements `IFilesystemDriverProvider`, `IFilesystemDriverReadinessProvider`, `I
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | BeeGFS has no standalone stream header. Target directories are identified structurally by their service metadata, not by magic bytes at offset zero of one file. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | There is no archive/storage method for a synthetic BeeGFS image. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | BeeGFS is not a tar compound format. |
+| `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(FilesystemStreamSet sources, FilesystemDriverTarget target)` | Reports which readiness layers the validated target set satisfies. The read-only target is derivable for a supported topology; the read-write target never is, and names the transaction, mapping and fault-injection work that stands between here and a writable BeeGFS mount. |
 | `DescribeFilesystemDriverReadiness` | `FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(Stream image, FilesystemDriverTarget target)` |  |
+| `OpenFilesystem` | `IFilesystemSession OpenFilesystem(FilesystemStreamSet sources, FilesystemOpenOptions options)` | Opens the validated target set as a read-only session over the reconstructed logical namespace. Writable opens are refused: a BeeGFS mutation is not a write to one backing ext/XFS volume but a transaction across every participating target plus management state. |
 | `OpenFilesystem` | `IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options)` |  |
+| `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(FilesystemStreamSet sources)` | Validates the supplied metadata/storage target set and reports the read-only profile the reconstructed logical namespace supports. A target set that cannot be validated, or a namespace outside the supported V3/V6 non-mirrored RAID0 subset, is reported as non-mountable with the first failure line rather than partially exposed. |
 | `ProbeFilesystem` | `FilesystemDriverProfile ProbeFilesystem(Stream image)` |  |
 
 #### `BeeGfsReader`

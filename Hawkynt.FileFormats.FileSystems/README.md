@@ -34,6 +34,7 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 
 | State | Meaning |
 | --- | --- |
+| **N/A** | Registered filesystem domain that is not represented by a standalone image/container descriptor; specialized multi-source drivers may expose mounted capabilities separately. |
 | **R** | Open, list and extract only. For network, distributed and encrypted formats this may be signature/metadata detection; deliberately unverified descriptors can instead require explicit format selection and expose an opaque object. |
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
@@ -215,7 +216,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 | Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
 | --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
-| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | detection of the on-disk signature | Server-side objects only; no self-contained image exists | [BeeGFS](https://www.beegfs.io/) |
+| [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | V3/V6 decoder + RAID0 stripe arithmetic against documented layout, over real ext/XFS backing images and their native `user.fhgfs` xattrs — no BeeGFS-produced target set serves as an oracle | Read-only mounting of offline metadata/storage target sets through `FilesystemStreamSet`; V3 dentries + V6 inline/separate regular-file inodes; non-mirrored non-sparse RAID0. Nothing is created or modified: BeeGFS-level mutation would be a transaction across every target plus management state | [BeeGFS](https://www.beegfs.io/) |
 | [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | Dell architecture/diagnostics; raw serialization not public | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
 | [eCryptfs](https://en.wikipedia.org/wiki/ECryptfs) | `Ecryptfs` | R/W | ✅ | — | ✅ | ✅ | — | ✅ | [ecryptfs-utils passphrase vector](https://github.com/dustinkirkland/ecryptfs-utils/blob/master/tests/userspace/verify-passphrase-sig.sh) + Linux kernel layout | Passphrase lower-file AES-128/192/256 read/create; private-key auth and xattr-only metadata are unsupported | [eCryptfs](https://www.kernel.org/doc/html/latest/filesystems/ecryptfs.html) |
