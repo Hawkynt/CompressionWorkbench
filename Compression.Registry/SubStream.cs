@@ -1,9 +1,14 @@
-namespace Compression.Lib;
+namespace Compression.Registry;
 
 /// <summary>
 /// A stream wrapper that exposes a sub-range of an underlying stream.
-/// Position 0 in the SubStream maps to <paramref name="offset"/> in the underlying stream.
+/// Position 0 in the SubStream maps to the <c>offset</c> constructor argument in the underlying stream.
 /// Used to pass embedded archives (e.g., SFX payloads) to readers that assume Position=0 is the archive start.
+/// <para>
+/// Handing such a reader the whole containing file instead is a real bug, not a tidiness issue: a ZIP
+/// locates its central directory by scanning back from the end of the stream, so it would read the
+/// SFX trailer as archive data and fail on the signature.
+/// </para>
 /// </summary>
 public sealed class SubStream : Stream {
   private readonly Stream _inner;
