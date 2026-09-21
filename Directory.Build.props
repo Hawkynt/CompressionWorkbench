@@ -12,8 +12,12 @@
     <BaseIntermediateOutputPath>obj\slim\</BaseIntermediateOutputPath>
     <!-- Moving the intermediate path stops obj\ itself from being the excluded directory, so the
          ordinary build's generated AssemblyInfo would otherwise be swept up by the default glob
-         and every assembly attribute would be declared twice. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);obj\Debug\**;obj\Release\**</DefaultItemExcludes>
+         and every assembly attribute would be declared twice. Excluding the whole tree rather than
+         named configurations, because a RuntimeIdentifier or Platform adds another path segment
+         (obj\Release vs objd\Release) and an enumerated list silently stops matching. The
+         generated AssemblyInfo the slim build does need is added explicitly by the SDK, not by
+         this glob. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\**;bin\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>
