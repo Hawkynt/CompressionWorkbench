@@ -231,6 +231,24 @@ public sealed class StructuredPseudoArchiveReferenceVectorTests {
     });
   }
 
+  /// <summary>
+  /// Our own archive envelope, rendered by ElementTree rather than by
+  /// <see cref="System.Xml.XmlWriter"/>, and carrying the namespace under the prefix <c>arc</c>
+  /// instead of our writer's <c>cwb</c>. An XML name is its namespace plus its local name; the
+  /// prefix is only a spelling. A reader that quietly grew to match on the prefix reads its sibling
+  /// writer's output perfectly and nothing else, and this is the vector that tells the two apart.
+  /// </summary>
+  [Test]
+  public void Xml_ReadsItsOwnArchiveEnvelopeWhenAThirdPartyRenderedIt() {
+    var descriptor = new XmlFormatDescriptor();
+    var bytes = ReferenceVectorFixture.Load("xml-archive-elementtree.xml");
+    Assert.Multiple(() => {
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "dir/file.bin"), Is.EqualTo(ReferenceVectorFixture.FileBin));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "dir/long.bin"), Is.EqualTo(ReferenceVectorFixture.LongBin));
+      Assert.That(ReferenceVectorFixture.Extract(descriptor, bytes, "top.bin"), Is.EqualTo(ReferenceVectorFixture.TopBin));
+    });
+  }
+
   // -------------------------------------------------------------------------------------- Storable
 
   /// <summary>

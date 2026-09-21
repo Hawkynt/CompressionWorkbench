@@ -146,12 +146,34 @@ def generate_json():
     write("json-archive.json", archive_json.encode("utf-8"))
 
 
+CWB_NAMESPACE = "urn:hawkynt:compressionworkbench:structured-archive:1"
+
+
 def generate_xml():
     root = ElementTree.Element("root", {"id": "7"})
     ElementTree.SubElement(root, "item").text = "A"
     ElementTree.SubElement(root, "item").text = "B"
     ElementTree.SubElement(ElementTree.SubElement(root, "nested"), "leaf").text = "deep"
     write("xml-document.xml", ElementTree.tostring(root, encoding="utf-8", xml_declaration=True))
+
+    # The same archive envelope our writer emits, rendered by ElementTree instead: a different
+    # namespace prefix, a single-quoted declaration, the namespace attribute ahead of `version`.
+    # Our reader has to cope with a third party's rendering of the envelope, not only with
+    # XmlWriter's. No writer parity vector is possible here -- see README.md.
+    # Deliberately not the "cwb" prefix our own writer uses. An XML name is its namespace plus its
+    # local name; the prefix is a spelling. A reader that quietly grew to match on the prefix reads
+    # its sibling writer's output perfectly and nothing else, and only this vector notices.
+    ElementTree.register_namespace("arc", CWB_NAMESPACE)
+    qualified = lambda name: "{%s}%s" % (CWB_NAMESPACE, name)  # noqa: E731
+    archive_root = ElementTree.Element(qualified("archive"), {"version": "1"})
+    directory = ElementTree.SubElement(archive_root, qualified("directory"), {"name": "dir"})
+    for name, payload in (("file.bin", FILE_BIN), ("long.bin", LONG_BIN)):
+        leaf = ElementTree.SubElement(directory, qualified("file"), {"name": name, "encoding": "base64"})
+        leaf.text = base64.b64encode(payload).decode("ascii")
+    top = ElementTree.SubElement(archive_root, qualified("file"), {"name": "top.bin", "encoding": "base64"})
+    top.text = base64.b64encode(TOP_BIN).decode("ascii")
+    ElementTree.indent(archive_root, space="  ")
+    write("xml-archive-elementtree.xml", ElementTree.tostring(archive_root, encoding="utf-8", xml_declaration=True))
 
 
 # -------------------------------------------------------------------------------------------- .reg
