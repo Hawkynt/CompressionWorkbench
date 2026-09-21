@@ -158,6 +158,34 @@ public sealed class CpioFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   public string Description => "Unix copy-in/copy-out archive format (binary, odc, newc and crc variants)";
 
+  // CPIO is a header/name/payload sequence terminated by TRAILER!!!.
+  // CpioReader already consumes alignment padding from non-seekable sources,
+  // so the forward-only API can parse directly instead of spooling first.
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListStreaming(Stream archive, string? password) {
+    PrepareSequentialInput(archive);
+    return this.List(archive, password);
+  }
+
+  void IArchiveFormatOperations.ExtractStreaming(
+      Stream archive, string outputDir, string? password, string[]? files) {
+    PrepareSequentialInput(archive);
+    this.Extract(archive, outputDir, password, files);
+  }
+
+  Stream IArchiveFormatOperations.OpenEntryStreaming(Stream archive, string entryName, string? password) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+    PrepareSequentialInput(archive);
+    return this.OpenEntry(archive, entryName, password);
+  }
+
+  private static void PrepareSequentialInput(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead)
+      throw new ArgumentException("Archive input must be readable.", nameof(archive));
+    if (archive.CanSeek)
+      archive.Position = 0;
+  }
+
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>

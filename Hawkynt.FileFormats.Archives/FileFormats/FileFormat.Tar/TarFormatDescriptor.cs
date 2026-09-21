@@ -219,6 +219,35 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public string Description => "Unix tape archive, no compression, container only";
 
+  // TAR is intrinsically sequential: POSIX ustar/pax stores each 512-byte
+  // header immediately before its payload, and the existing TarReader already
+  // discards padding by reading when the source cannot seek. Bypass the generic
+  // temporary-file spool for the forward-only API.
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListStreaming(Stream archive, string? password) {
+    PrepareSequentialInput(archive);
+    return this.List(archive, password);
+  }
+
+  void IArchiveFormatOperations.ExtractStreaming(
+      Stream archive, string outputDir, string? password, string[]? files) {
+    PrepareSequentialInput(archive);
+    this.Extract(archive, outputDir, password, files);
+  }
+
+  Stream IArchiveFormatOperations.OpenEntryStreaming(Stream archive, string entryName, string? password) {
+    ArgumentException.ThrowIfNullOrWhiteSpace(entryName);
+    PrepareSequentialInput(archive);
+    return this.OpenEntry(archive, entryName, password);
+  }
+
+  private static void PrepareSequentialInput(Stream archive) {
+    ArgumentNullException.ThrowIfNull(archive);
+    if (!archive.CanRead)
+      throw new ArgumentException("Archive input must be readable.", nameof(archive));
+    if (archive.CanSeek)
+      archive.Position = 0;
+  }
+
   /// <summary>
   /// Lists the entries in the supplied container.
   /// </summary>
