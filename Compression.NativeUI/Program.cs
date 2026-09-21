@@ -34,20 +34,26 @@ _ = Task.Run(() => {
   }
 }).ContinueWith(_ => CommandManager.InvalidateRequerySuggested());
 
+// The verbs live in ShellVerbs so the Explorer registration and this dispatch cannot drift apart.
 switch (args) {
   // Launch straight into analysis, optionally on a file.
-  case ["--analyze" or "/analyze" or "-a", .. var rest]: {
+  case [ShellVerbs.Analyze or ShellVerbs.AnalyzeSlash or ShellVerbs.AnalyzeShort, .. var rest]: {
     var window = new AnalysisWindow();
     if (rest is [var path, ..] && File.Exists(path)) window.RunAnalysis(path, File.ReadAllBytes(path));
     Application.Run(window);
     return 0;
   }
 
-  case ["--create-zip" or "--create-7z", var inputPath, ..]:
-    return CreateArchive(inputPath, args[0] == "--create-zip" ? ".zip" : ".7z");
+  case [ShellVerbs.CreateZip or ShellVerbs.Create7z, var inputPath, ..]:
+    return CreateArchive(inputPath, args[0] == ShellVerbs.CreateZip ? ".zip" : ".7z");
 
-  case ["--extract", var archivePath, ..]:
+  case [ShellVerbs.Extract, var archivePath, ..]:
     return ExtractArchive(archivePath);
+
+  // The "Extract here (CWB)" shell verb. It takes no destination because "here" is the archive's
+  // own folder, which is what every other archiver's identically named entry does.
+  case [ShellVerbs.ExtractHere, var archivePath, ..]:
+    return ExtractArchiveHere(archivePath);
 }
 
 var backends = new List<IFilesystemMountBackend>();
@@ -71,7 +77,7 @@ Application.Run(shell);
 return 0;
 
 static bool TryTakeScreenshotArgument(string[] args, out string target, out string fixtureRoot) {
-  const string Prefix = "--screenshot=";
+  const string Prefix = ShellVerbs.ScreenshotPrefix;
   target = "";
   fixtureRoot = Path.Combine(Path.GetTempPath(), "CompressionWorkbench-Screenshots");
 
@@ -116,21 +122,44 @@ static int CreateArchive(string inputPath, string extension) {
 
 static int ExtractArchive(string archivePath) {
   FormatRegistration.EnsureInitialized();
-
-  if (!File.Exists(archivePath)) {
-    MessageBox.Show($"File not found: {archivePath}", "Extract", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    return 1;
-  }
+  if (!RequireArchive(archivePath)) return 1;
 
   var dialog = new FolderBrowserDialog { Title = $"Extract {Path.GetFileName(archivePath)} to:" };
   if (dialog.ShowDialog() != DialogResult.OK) return 0;
 
+  return ExtractTo(archivePath, dialog.SelectedPath);
+}
+
+static int ExtractArchiveHere(string archivePath) {
+  FormatRegistration.EnsureInitialized();
+  if (!RequireArchive(archivePath)) return 1;
+
+  // Explorer passes an absolute path, but a relative one from a console still has to land beside
+  // the archive rather than in whatever the working directory happens to be.
+  var destination = Path.GetDirectoryName(Path.GetFullPath(archivePath));
+  if (string.IsNullOrEmpty(destination)) {
+    MessageBox.Show($"Cannot determine a folder to extract into for {archivePath}.",
+      "Extract Here", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    return 1;
+  }
+
+  return ExtractTo(archivePath, destination, "Extract Here");
+}
+
+static bool RequireArchive(string archivePath) {
+  if (File.Exists(archivePath)) return true;
+
+  MessageBox.Show($"File not found: {archivePath}", "Extract", MessageBoxButtons.OK, MessageBoxIcon.Error);
+  return false;
+}
+
+static int ExtractTo(string archivePath, string destination, string caption = "Extract") {
   try {
-    ArchiveOperations.Extract(archivePath, dialog.SelectedPath, password: null, files: null);
-    MessageBox.Show($"Extracted to {dialog.SelectedPath} successfully.", "Extract", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    ArchiveOperations.Extract(archivePath, destination, password: null, files: null);
+    MessageBox.Show($"Extracted to {destination} successfully.", caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
     return 0;
   } catch (Exception ex) {
-    MessageBox.Show($"Error extracting: {ex.Message}", "Extract", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    MessageBox.Show($"Error extracting: {ex.Message}", caption, MessageBoxButtons.OK, MessageBoxIcon.Error);
     return 1;
   }
 }
