@@ -31,8 +31,14 @@ public sealed class JsonFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) => StructuredArchive.Extract(stream, outputDir, files, Parse);
   public void ExtractEntry(Stream input, string entryName, Stream output, string? password) => StructuredArchive.ExtractEntry(input, entryName, output, Parse);
 
+  /// <summary>
+  /// Emits the two-space indented form that CPython's <c>json.dumps(obj, indent=2)</c> emits for
+  /// the same value. <see cref="JsonWriterOptions.NewLine"/> is pinned to LF because it otherwise
+  /// defaults to <see cref="Environment.NewLine"/>, which would make the same archive come out
+  /// byte-different on Windows and on Linux.
+  /// </summary>
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
-    using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = true });
+    using var writer = new Utf8JsonWriter(output, new JsonWriterOptions { Indented = true, NewLine = "\n" });
     WriteNode(writer, StructuredArchive.FromInputs(inputs));
     writer.Flush();
   }
