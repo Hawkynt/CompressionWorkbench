@@ -109,43 +109,63 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var data = ReadAll(stream);
-    var model = Parse(data);
-    var entries = new List<ArchiveEntryInfo> {
-      new(0, "FULL.ffu", data.Length, data.Length, "Stored", false, false, null, Kind: "Track"),
-      new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
-    };
-    var idx = 2;
-    if (model.Valid && model.PayloadOffset > 0 && model.PayloadLength > 0)
-      entries.Add(new ArchiveEntryInfo(idx++, "payload.bin", model.PayloadLength, model.PayloadLength, "Stored", false, false, null, Kind: "Track"));
-    return entries;
+    return ListCore(data);
   }
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password)
+    => ListCore(archive);
 
   /// <summary>
   /// Decodes the supplied input.
   /// </summary>
   public void Extract(Stream stream, string outputDir, string? password, string[]? files) {
     var data = ReadAll(stream);
-    if (Wants(files, "FULL.ffu"))
-      WriteFile(outputDir, "FULL.ffu", data);
+    ExtractCore(data, outputDir, files);
+  }
 
-    var model = Parse(data);
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files)
+    => ExtractCore(archive, outputDir, files);
+
+  private static List<ArchiveEntryInfo> ListCore(ReadOnlySpan<byte> archive) {
+    var model = Parse(archive);
+    var entries = new List<ArchiveEntryInfo> {
+      new(0, "FULL.ffu", archive.Length, archive.Length, "Stored", false, false, null, Kind: "Track"),
+      // Preserve the historic listing contract: metadata is generated on extraction,
+      // so its size remains reported as unknown/zero here.
+      new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
+    };
+    if (model.Valid && model.PayloadOffset > 0 && model.PayloadLength > 0)
+      entries.Add(new ArchiveEntryInfo(2, "payload.bin", model.PayloadLength, model.PayloadLength, "Stored", false, false, null, Kind: "Track"));
+    return entries;
+  }
+
+  private static void ExtractCore(ReadOnlySpan<byte> archive, string outputDir, string[]? files) {
+    if (Wants(files, "FULL.ffu"))
+      WriteSpanFile(outputDir, "FULL.ffu", archive);
+
+    var model = Parse(archive);
     if (Wants(files, "metadata.ini"))
       WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadataIni(model)));
 
     if (model.Valid && model.PayloadOffset > 0 && model.PayloadLength > 0 &&
-        model.PayloadOffset + model.PayloadLength <= data.Length && Wants(files, "payload.bin")) {
-      var slab = new byte[model.PayloadLength];
-      Array.Copy(data, model.PayloadOffset, slab, 0, model.PayloadLength);
-      WriteFile(outputDir, "payload.bin", slab);
+        model.PayloadOffset + model.PayloadLength <= archive.Length && Wants(files, "payload.bin")) {
+      WriteSpanFile(outputDir, "payload.bin",
+        archive.Slice(checked((int)model.PayloadOffset), checked((int)model.PayloadLength)));
     }
+  }
+
+  private static void WriteSpanFile(string outputDir, string name, ReadOnlySpan<byte> data) {
+    using var target = CreateEntryFile(outputDir, name);
+    target.Write(data);
   }
 
   private static bool Wants(string[]? files, string name)
     => files == null || files.Length == 0 || MatchesFilter(name, files);
 
-  private static FfuModel Parse(byte[] data) {
+  private static FfuModel Parse(ReadOnlySpan<byte> data) {
     try {
-      if (data.Length < 32 || !data.AsSpan(0, SecuritySig.Length).SequenceEqual(SecuritySig))
+      if (data.Length < 32 || !data[..SecuritySig.Length].SequenceEqual(SecuritySig))
         return Invalid();
 
       // Security Header (little-endian): signature[12], chunkSizeInKb (u32),
@@ -169,10 +189,10 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
           ContainsImageSig(data, imageHeaderOffset, out var imgPos)) {
         imageFound = true;
         // Image Header: signature[12], dwManifestLength(u32), dwChunkSize(u32).
-        manifestLen = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(imgPos + 12, 4));
+        manifestLen = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(imgPos + 12, 4));
         var manifestOffset = imgPos + 20;
         if (manifestLen is > 0 and < (16 * 1024 * 1024) && manifestOffset + manifestLen <= data.Length) {
-          manifestText = SafeAscii(data.AsSpan(manifestOffset, (int)manifestLen));
+          manifestText = SafeAscii(data.Slice(manifestOffset, (int)manifestLen));
           // Payload begins after the manifest, rounded up to the chunk boundary.
           var afterManifest = manifestOffset + (long)manifestLen;
           var chunkBytes = chunkKib == 0 ? 0L : (long)chunkKib * 1024;
@@ -192,14 +212,14 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   // The signature can sit at offset 0 (signature-first) or offset 4 (cbSize-first).
   // Return chunk size, catalog size, hash-table size and the computed security-header
   // length (rounded up to the chunk boundary), plus an ok flag.
-  private static (uint Chunk, uint Catalog, uint Hash, uint SecLen, bool Ok) ReadSecurityFields(byte[] data) {
-    var baseOff = data.AsSpan(0, SecuritySig.Length).SequenceEqual(SecuritySig) ? 0 : 4;
+  private static (uint Chunk, uint Catalog, uint Hash, uint SecLen, bool Ok) ReadSecurityFields(ReadOnlySpan<byte> data) {
+    var baseOff = data[..SecuritySig.Length].SequenceEqual(SecuritySig) ? 0 : 4;
     var p = baseOff + 12; // past signature
     if (p + 16 > data.Length) return (0, 0, 0, 0, false);
-    var chunkKib = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p, 4));
+    var chunkKib = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(p, 4));
     // algId at p+4
-    var catalogSize = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p + 8, 4));
-    var hashSize = BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p + 12, 4));
+    var catalogSize = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(p + 8, 4));
+    var hashSize = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(p + 12, 4));
 
     var fixedLen = (uint)(p + 16);
     long rawLen = (long)fixedLen + catalogSize + hashSize;
@@ -213,12 +233,12 @@ public sealed class FfuFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return (chunkKib, catalogSize, hashSize, (uint)secLen, true);
   }
 
-  private static bool ContainsImageSig(byte[] data, long startGuess, out int pos) {
+  private static bool ContainsImageSig(ReadOnlySpan<byte> data, long startGuess, out int pos) {
     pos = 0;
     // Try the exact computed offset first, then scan a small window forward.
     var window = (int)Math.Min(data.Length, startGuess + (long)64 * 1024);
     for (var i = (int)Math.Max(0, startGuess); i + ImageSig.Length <= window; ++i) {
-      if (data.AsSpan(i, ImageSig.Length).SequenceEqual(ImageSig)) { pos = i; return true; }
+      if (data.Slice(i, ImageSig.Length).SequenceEqual(ImageSig)) { pos = i; return true; }
     }
     return false;
   }

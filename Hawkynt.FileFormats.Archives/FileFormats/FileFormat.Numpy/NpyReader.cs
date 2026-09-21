@@ -38,8 +38,32 @@ public sealed class NpyReader {
     byte[] ArrayBytes          // raw payload after the header
   );
 
+  internal readonly record struct NpyLayout(
+    byte MajorVersion,
+    byte MinorVersion,
+    int HeaderLength,
+    string HeaderText,
+    string? Dtype,
+    string? Shape,
+    bool FortranOrder,
+    int BodyOffset);
+
   /// <summary>Parses an NPY file from an in-memory span.</summary>
   public static NpyArray Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    return new NpyArray(
+      MajorVersion: layout.MajorVersion,
+      MinorVersion: layout.MinorVersion,
+      HeaderLength: layout.HeaderLength,
+      HeaderText: layout.HeaderText,
+      Dtype: layout.Dtype,
+      Shape: layout.Shape,
+      FortranOrder: layout.FortranOrder,
+      HeaderBytes: data[..layout.BodyOffset].ToArray(),
+      ArrayBytes: data[layout.BodyOffset..].ToArray());
+  }
+
+  internal static NpyLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 10) throw new InvalidDataException("npy: file shorter than 10-byte preamble.");
     if (!data[..6].SequenceEqual(Magic))
       throw new InvalidDataException("npy: bad magic — expected '\\x93NUMPY'.");
@@ -56,38 +80,30 @@ public sealed class NpyReader {
       case 2:
       case 3:
         if (data.Length < 12) throw new InvalidDataException("npy: v2/v3 preamble truncated.");
-        headerLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(data[8..]);
+        headerLen = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(data[8..]));
         headerStart = 12;
         break;
       default:
         throw new InvalidDataException($"npy: unsupported version {major}.{minor}");
     }
 
-    if (headerStart + headerLen > data.Length)
+    if (headerLen < 0 || headerStart > data.Length - headerLen)
       throw new InvalidDataException("npy: header length exceeds file size.");
 
     var dictBytes = data.Slice(headerStart, headerLen);
-    // v1/v2 headers are latin-1; v3 is UTF-8. Latin-1 round-trips all bytes so it's safe here.
+    // Keep the existing descriptor behaviour: decode the Python-dict header as
+    // Latin-1 so every byte round-trips through the metadata parser.
     var headerText = Encoding.Latin1.GetString(dictBytes);
 
-    var dtype = ExtractDictString(headerText, "descr");
-    var shape = ExtractTuple(headerText, "shape");
-    var fortran = ExtractDictBool(headerText, "fortran_order");
-
-    var bodyStart = headerStart + headerLen;
-    var header = data[..bodyStart].ToArray();
-    var body = data[bodyStart..].ToArray();
-
-    return new NpyArray(
+    return new NpyLayout(
       MajorVersion: major,
       MinorVersion: minor,
       HeaderLength: headerLen,
       HeaderText: headerText,
-      Dtype: dtype,
-      Shape: shape,
-      FortranOrder: fortran,
-      HeaderBytes: header,
-      ArrayBytes: body);
+      Dtype: ExtractDictString(headerText, "descr"),
+      Shape: ExtractTuple(headerText, "shape"),
+      FortranOrder: ExtractDictBool(headerText, "fortran_order"),
+      BodyOffset: headerStart + headerLen);
   }
 
   // Pull a single-quoted or double-quoted value out of a Python-ish dict string.

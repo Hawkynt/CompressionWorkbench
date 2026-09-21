@@ -25,8 +25,36 @@ public sealed class UefiFvReader {
   public sealed record FfsFile(Guid Name, byte Type, byte Attributes, byte State, uint Size, byte[] Contents);
   public sealed record FirmwareVolume(int StartOffset, FvHeader Header, IReadOnlyList<FfsFile> Files);
 
+  internal sealed record FfsFileLayout(
+    Guid Name,
+    byte Type,
+    byte Attributes,
+    byte State,
+    uint Size,
+    int DataOffset,
+    int DataLength);
+
+  internal sealed record FirmwareVolumeLayout(
+    int StartOffset,
+    FvHeader Header,
+    IReadOnlyList<FfsFileLayout> Files);
+
   public static FirmwareVolume Read(ReadOnlySpan<byte> data, int fvStart = 0) {
-    var layout = UefiFvParser.Parse(data, fvStart);
+    var layout = ReadLayout(data, fvStart);
+    var files = new List<FfsFile>(layout.Files.Count);
+    foreach (var file in layout.Files)
+      files.Add(new FfsFile(
+        file.Name,
+        file.Type,
+        file.Attributes,
+        file.State,
+        file.Size,
+        data.Slice(file.DataOffset, file.DataLength).ToArray()));
+    return new FirmwareVolume(layout.StartOffset, layout.Header, files);
+  }
+
+  internal static FirmwareVolumeLayout ReadLayout(ReadOnlySpan<byte> data, int fvStart = 0) {
+    var volume = UefiFvParser.Parse(data, fvStart);
     var fvLength = BinaryPrimitives.ReadUInt64LittleEndian(data[(fvStart + 32)..]);
     var attributes = BinaryPrimitives.ReadUInt32LittleEndian(data[(fvStart + 44)..]);
     var headerLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(fvStart + 48)..]);
@@ -43,18 +71,23 @@ public sealed class UefiFvReader {
       if (blocks == 0 && length == 0) { terminated = true; break; }
       blockMap.Add((blocks, length));
     }
-    if (!terminated) throw new InvalidDataException("UefiFv: firmware-volume block map is not terminated inside HeaderLength.");
+    if (!terminated)
+      throw new InvalidDataException("UefiFv: firmware-volume block map is not terminated inside HeaderLength.");
 
-    // `data` is a ReadOnlySpan, which a lambda cannot capture, so the slices are materialised
-    // here rather than inside the projection.
-    var files = new List<FfsFile>();
-    foreach (var slot in UefiFvParser.LiveSlots(layout))
-      files.Add(new FfsFile(
-        slot.Name, slot.Type, slot.Attributes, slot.RawState, checked((uint)slot.Size),
-        data.Slice(slot.DataOffset, slot.DataLength).ToArray()));
+    var files = new List<FfsFileLayout>();
+    foreach (var slot in UefiFvParser.LiveSlots(volume))
+      files.Add(new FfsFileLayout(
+        slot.Name,
+        slot.Type,
+        slot.Attributes,
+        slot.RawState,
+        checked((uint)slot.Size),
+        slot.DataOffset,
+        slot.DataLength));
+
     var header = new FvHeader(new Guid(data.Slice(fvStart + 16, 16)), fvLength, attributes,
       headerLength, checksum, extOff, revision, blockMap);
-    return new FirmwareVolume(fvStart, header, files);
+    return new FirmwareVolumeLayout(fvStart, header, files);
   }
 
   public static int? FindFirst(ReadOnlySpan<byte> data) {

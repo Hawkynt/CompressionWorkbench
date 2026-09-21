@@ -140,6 +140,38 @@ public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFor
     return memoryStream.ToArray();
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var container = AppleSingleReader.ReadLayout(archive);
+    var metadata = BuildMetadata(container, archive);
+    var result = new List<ArchiveEntryInfo> {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null),
+    };
+
+    foreach (var entry in container.Entries)
+      result.Add(new ArchiveEntryInfo(
+        result.Count, entry.Name, entry.DataLength, entry.DataLength,
+        "stored", false, false, null));
+
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var container = AppleSingleReader.ReadLayout(archive);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(container, archive));
+
+    foreach (var entry in container.Entries) {
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files))
+        continue;
+
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      target.Write(archive.Slice(entry.DataOffset, entry.DataLength));
+    }
+  }
+
   // ── IArchiveCreatable ─────────────────────────────────────────────
 
   /// <summary>
@@ -203,6 +235,24 @@ public sealed class AppleSingleFormatDescriptor : IFormatDescriptor, IArchiveFor
     yield return ("metadata.ini", BuildMetadata(container));
     foreach (var e in container.Entries)
       yield return (e.Name, e.Data);
+  }
+
+  private static byte[] BuildMetadata(
+      AppleSingleReader.ContainerLayout c, ReadOnlySpan<byte> archive) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[applesingle]");
+    sb.Append(CultureInfo.InvariantCulture, $"format = {(c.IsDouble ? "AppleDouble" : "AppleSingle")}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"version = 0x{c.Version:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"entry_count = {c.Entries.Count}\n");
+    foreach (var e in c.Entries)
+      sb.Append(CultureInfo.InvariantCulture, $"entry_{e.EntryId:D2} = {AppleSingleReader.EntryDescription(e.EntryId)} ({e.DataLength} bytes)\n");
+
+    var realName = c.Entries.FirstOrDefault(e => e.EntryId == 3);
+    if (realName != null) {
+      var data = archive.Slice(realName.DataOffset, realName.DataLength);
+      sb.Append(CultureInfo.InvariantCulture, $"real_name = {AppleSingleReader.DecodeRealName(data)}\n");
+    }
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(AppleSingleReader.Container c) {

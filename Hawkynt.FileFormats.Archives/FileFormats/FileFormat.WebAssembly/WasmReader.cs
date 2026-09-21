@@ -28,42 +28,72 @@ public sealed class WasmReader {
   /// <summary>Magic bytes that begin every wasm binary.</summary>
   public static ReadOnlySpan<byte> Magic => [0x00, 0x61, 0x73, 0x6D]; // \0 a s m
 
+  internal sealed record SectionLayout(
+    int Id,
+    string TypeName,
+    string? CustomName,
+    int BodyOffset,
+    int BodyLength);
+
+  internal sealed record ModuleLayout(uint Version, IReadOnlyList<SectionLayout> Sections);
+
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
   public static Module Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    var sections = new List<Section>(layout.Sections.Count);
+    foreach (var section in layout.Sections)
+      sections.Add(new Section(
+        Id: section.Id,
+        TypeName: section.TypeName,
+        CustomName: section.CustomName,
+        Body: data.Slice(section.BodyOffset, section.BodyLength).ToArray()));
+    return new Module(layout.Version, sections);
+  }
+
+  internal static ModuleLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 8) throw new InvalidDataException("wasm: file shorter than 8-byte preamble.");
     if (!data[..4].SequenceEqual(Magic))
       throw new InvalidDataException($"wasm: bad magic 0x{data[0]:X2}{data[1]:X2}{data[2]:X2}{data[3]:X2}");
 
     var version = BinaryPrimitives.ReadUInt32LittleEndian(data[4..]);
 
-    var sections = new List<Section>();
+    var sections = new List<SectionLayout>();
     var pos = 8;
     while (pos < data.Length) {
-      var id = data[pos];
-      pos++;
-      var size = (int)ReadLeb128(data, ref pos, out var ok);
-      if (!ok || pos + size > data.Length) break;
+      var id = data[pos++];
+      var rawSize = ReadLeb128(data, ref pos, out var ok);
+      if (!ok || rawSize > int.MaxValue)
+        break;
 
-      var body = data.Slice(pos, size).ToArray();
+      var size = (int)rawSize;
+      if (size > data.Length - pos)
+        break;
+
+      var bodyOffset = pos;
       string? customName = null;
-      if (id == 0 && body.Length > 0) {
-        // Custom section: body starts with a LEB128-length-prefixed UTF-8 name.
+      if (id == 0 && size > 0) {
+        var body = data.Slice(bodyOffset, size);
         var p = 0;
-        var nameLen = (int)ReadLeb128(body, ref p, out var nameOk);
-        if (nameOk && p + nameLen <= body.Length)
-          customName = Encoding.UTF8.GetString(body, p, nameLen);
+        var rawNameLen = ReadLeb128(body, ref p, out var nameOk);
+        if (nameOk && rawNameLen <= int.MaxValue) {
+          var nameLen = (int)rawNameLen;
+          if (nameLen <= body.Length - p)
+            customName = Encoding.UTF8.GetString(body.Slice(p, nameLen));
+        }
       }
-      sections.Add(new Section(
+
+      sections.Add(new SectionLayout(
         Id: id,
         TypeName: TypeName(id),
         CustomName: customName,
-        Body: body));
+        BodyOffset: bodyOffset,
+        BodyLength: size));
       pos += size;
     }
 
-    return new Module(version, sections);
+    return new ModuleLayout(version, sections);
   }
 
   private static string TypeName(int id) => id switch {

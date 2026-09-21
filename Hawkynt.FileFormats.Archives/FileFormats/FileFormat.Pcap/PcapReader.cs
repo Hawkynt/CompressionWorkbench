@@ -64,8 +64,50 @@ public sealed class PcapReader {
   /// </summary>
   public sealed record Packet(uint TimestampSeconds, uint TimestampFraction, uint OriginalLength, byte[] Data);
 
+  internal sealed record PacketLayout(
+    uint TimestampSeconds,
+    uint TimestampFraction,
+    uint OriginalLength,
+    int DataOffset,
+    int DataLength);
+
+  internal sealed class CaptureLayout {
+    public required ushort VersionMajor { get; init; }
+    public required ushort VersionMinor { get; init; }
+    public required uint Snaplen { get; init; }
+    public required uint LinkType { get; init; }
+    public required bool LittleEndian { get; init; }
+    public required bool Nanosecond { get; init; }
+    public required IReadOnlyList<PacketLayout> Packets { get; init; }
+  }
+
   /// <summary>Parse a pcap file in full.</summary>
   public static Capture Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    return new Capture {
+      VersionMajor = layout.VersionMajor,
+      VersionMinor = layout.VersionMinor,
+      Snaplen = layout.Snaplen,
+      LinkType = layout.LinkType,
+      LittleEndian = layout.LittleEndian,
+      Nanosecond = layout.Nanosecond,
+      Packets = MaterializePackets(data, layout.Packets),
+    };
+  }
+
+  private static List<Packet> MaterializePackets(
+      ReadOnlySpan<byte> data, IReadOnlyList<PacketLayout> layouts) {
+    var packets = new List<Packet>(layouts.Count);
+    foreach (var packet in layouts)
+      packets.Add(new Packet(
+        packet.TimestampSeconds,
+        packet.TimestampFraction,
+        packet.OriginalLength,
+        data.Slice(packet.DataOffset, packet.DataLength).ToArray()));
+    return packets;
+  }
+
+  internal static CaptureLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 24) throw new InvalidDataException("Truncated pcap: file smaller than global header.");
     var magic = BinaryPrimitives.ReadUInt32LittleEndian(data);
     var (little, nano) = magic switch {
@@ -83,11 +125,10 @@ public sealed class PcapReader {
 
     var verMajor = ReadU16(data[4..]);
     var verMinor = ReadU16(data[6..]);
-    // thiszone (int32) at 8, sigfigs (u32) at 12 — both unused by us.
     var snaplen = ReadU32(data[16..]);
     var linktype = ReadU32(data[20..]);
 
-    var packets = new List<Packet>();
+    var packets = new List<PacketLayout>();
     var pos = 24;
     while (pos + 16 <= data.Length) {
       var tsSec = ReadU32(data[pos..]);
@@ -95,15 +136,18 @@ public sealed class PcapReader {
       var inclLen = ReadU32(data[(pos + 8)..]);
       var origLen = ReadU32(data[(pos + 12)..]);
       pos += 16;
-      if (inclLen > int.MaxValue) break;
+
+      if (inclLen > int.MaxValue)
+        break;
       var len = (int)inclLen;
-      if (pos + len > data.Length) break;
-      var payload = data.Slice(pos, len).ToArray();
-      packets.Add(new Packet(tsSec, tsFrac, origLen, payload));
+      if (len > data.Length - pos)
+        break;
+
+      packets.Add(new PacketLayout(tsSec, tsFrac, origLen, pos, len));
       pos += len;
     }
 
-    return new Capture {
+    return new CaptureLayout {
       VersionMajor = verMajor,
       VersionMinor = verMinor,
       Snaplen = snaplen,

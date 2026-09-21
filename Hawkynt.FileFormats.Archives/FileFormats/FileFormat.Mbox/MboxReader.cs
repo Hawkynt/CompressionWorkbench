@@ -11,6 +11,31 @@ namespace FileFormat.Mbox;
 /// </summary>
 public sealed class MboxReader {
 
+  internal sealed record MessageLayout(
+    int RawOffset,
+    int RawLength,
+    int EmlOffset,
+    int EmlLength,
+    string? Subject,
+    string? From,
+    string? Date);
+
+  internal static IReadOnlyList<MessageLayout> ReadLayouts(ReadOnlySpan<byte> data) {
+    var starts = FindFromLineOffsets(data);
+    var result = new List<MessageLayout>(starts.Count);
+    for (var i = 0; i < starts.Count; ++i) {
+      var start = starts[i];
+      var end = i + 1 < starts.Count ? starts[i + 1] : data.Length;
+      var raw = data[start..end];
+      var firstNewline = raw.IndexOf((byte)'\n');
+      var emlOffset = firstNewline >= 0 ? start + firstNewline + 1 : start;
+      var emlLength = end - emlOffset;
+      var (subject, from, date) = ParseHeaders(data.Slice(emlOffset, emlLength));
+      result.Add(new MessageLayout(start, end - start, emlOffset, emlLength, subject, from, date));
+    }
+    return result;
+  }
+
   /// <summary>
   /// Parse all messages from a byte buffer.
   /// </summary>
@@ -47,6 +72,23 @@ public sealed class MboxReader {
     return data[offset] == 'F' && data[offset + 1] == 'r' && data[offset + 2] == 'o'
         && data[offset + 3] == 'm' && data[offset + 4] == ' ';
   }
+  private static (string? Subject, string? From, string? Date) ParseHeaders(ReadOnlySpan<byte> eml) {
+    string? subject = null;
+    string? from = null;
+    string? date = null;
+    var headerText = MboxMessage.SliceHeaders(eml);
+    foreach (var line in MboxMessage.UnfoldHeaders(headerText)) {
+      var colon = line.IndexOf(':');
+      if (colon < 0) continue;
+      var name = line[..colon].Trim();
+      var value = line[(colon + 1)..].Trim();
+      if (name.Equals("Subject", StringComparison.OrdinalIgnoreCase)) subject = value;
+      else if (name.Equals("From", StringComparison.OrdinalIgnoreCase)) from = value;
+      else if (name.Equals("Date", StringComparison.OrdinalIgnoreCase)) date = value;
+    }
+    return (subject, from, date);
+  }
+
 }
 
 /// <summary>One RFC 822 message pulled from an mbox stream.</summary>
@@ -98,7 +140,7 @@ public sealed class MboxMessage {
     };
   }
 
-  private static string SliceHeaders(byte[] eml) {
+  internal static string SliceHeaders(ReadOnlySpan<byte> eml) {
     // Find the first occurrence of "\r\n\r\n" or "\n\n".
     var end = eml.Length;
     for (var i = 0; i + 1 < eml.Length; i++) {
@@ -106,10 +148,10 @@ public sealed class MboxMessage {
       if (i + 3 < eml.Length && eml[i] == '\r' && eml[i + 1] == '\n' &&
           eml[i + 2] == '\r' && eml[i + 3] == '\n') { end = i; break; }
     }
-    return Encoding.Latin1.GetString(eml, 0, end);
+    return Encoding.Latin1.GetString(eml[..end]);
   }
 
-  private static IEnumerable<string> UnfoldHeaders(string text) {
+  internal static IEnumerable<string> UnfoldHeaders(string text) {
     var current = new StringBuilder();
     foreach (var line in text.Split('\n')) {
       var clean = line.TrimEnd('\r');

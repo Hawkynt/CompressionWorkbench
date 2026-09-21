@@ -66,17 +66,60 @@ public sealed class PcapngReader {
     IReadOnlyList<Interface> Interfaces,
     IReadOnlyList<Packet> Packets);
 
+  internal sealed record PacketLayout(
+    int InterfaceId,
+    ulong TimestampRaw,
+    int DataOffset,
+    int DataLength,
+    uint OriginalLength) {
+    public DateTime ToDateTime(int tsResolutionPow10 = 6) {
+      var divisor = 1L;
+      for (var i = 0; i < tsResolutionPow10; i++) divisor *= 10;
+      var seconds = this.TimestampRaw / (ulong)divisor;
+      var fraction = this.TimestampRaw % (ulong)divisor;
+      var ticksPerUnit = TimeSpan.TicksPerSecond / divisor;
+      return DateTime.UnixEpoch.AddSeconds(seconds).AddTicks((long)fraction * ticksPerUnit);
+    }
+  }
+
+  internal sealed record CaptureLayout(
+    bool LittleEndian,
+    ushort VersionMajor,
+    ushort VersionMinor,
+    IReadOnlyList<Interface> Interfaces,
+    IReadOnlyList<PacketLayout> Packets);
+
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
   public static Capture Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    return new Capture(
+      layout.LittleEndian,
+      layout.VersionMajor,
+      layout.VersionMinor,
+      layout.Interfaces,
+      MaterializePackets(data, layout.Packets));
+  }
+
+  private static List<Packet> MaterializePackets(
+      ReadOnlySpan<byte> data, IReadOnlyList<PacketLayout> layouts) {
+    var packets = new List<Packet>(layouts.Count);
+    foreach (var packet in layouts)
+      packets.Add(new Packet(
+        packet.InterfaceId,
+        packet.TimestampRaw,
+        data.Slice(packet.DataOffset, packet.DataLength).ToArray(),
+        packet.OriginalLength));
+    return packets;
+  }
+
+  internal static CaptureLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 12) throw new InvalidDataException("pcapng: file smaller than minimum SHB.");
 
-    // First block must be a Section Header Block. Detect endianness from BOM.
     var blockType = BinaryPrimitives.ReadUInt32LittleEndian(data);
     if (blockType != BtSectionHeader) throw new InvalidDataException("pcapng: first block is not a Section Header.");
 
-    // The BOM is at offset 8 of the SHB body.
     var bomLe = BinaryPrimitives.ReadUInt32LittleEndian(data[8..]);
     var bomBe = BinaryPrimitives.ReadUInt32BigEndian(data[8..]);
     bool little;
@@ -92,15 +135,21 @@ public sealed class PcapngReader {
     var pos = 0;
     ushort verMajor = 1, verMinor = 0;
     var interfaces = new List<Interface>();
-    var packets = new List<Packet>();
+    var packets = new List<PacketLayout>();
 
     while (pos + 12 <= data.Length) {
       var bt = ReadU32(data[pos..]);
       var totalLen = ReadU32(data[(pos + 4)..]);
-      if (totalLen < 12 || pos + totalLen > (uint)data.Length) break;
+      if (totalLen < 12 || totalLen > int.MaxValue)
+        break;
 
-      // Body sits between offset+8 and totalLen-4 (the trailing length copy).
-      var body = data.Slice(pos + 8, (int)totalLen - 12);
+      var blockLength = (int)totalLen;
+      if (blockLength > data.Length - pos)
+        break;
+
+      var bodyOffset = pos + 8;
+      var bodyLength = blockLength - 12;
+      var body = data.Slice(bodyOffset, bodyLength);
 
       switch (bt) {
         case BtSectionHeader:
@@ -108,7 +157,6 @@ public sealed class PcapngReader {
             verMajor = ReadU16(body[4..]);
             verMinor = ReadU16(body[6..]);
           }
-          // New section: drop interface table per spec §4.1.
           interfaces.Clear();
           break;
 
@@ -127,13 +175,15 @@ public sealed class PcapngReader {
             var tsLo = ReadU32(body[8..]);
             var capLen = ReadU32(body[12..]);
             var origLen = ReadU32(body[16..]);
-            if (20 + capLen <= (uint)body.Length) {
-              var packetData = body.Slice(20, (int)capLen).ToArray();
-              packets.Add(new Packet(
-                InterfaceId: ifId,
-                TimestampRaw: ((ulong)tsHi << 32) | tsLo,
-                Data: packetData,
-                OriginalLength: origLen));
+            if (capLen <= int.MaxValue) {
+              var packetLength = (int)capLen;
+              if (packetLength <= body.Length - 20)
+                packets.Add(new PacketLayout(
+                  ifId,
+                  ((ulong)tsHi << 32) | tsLo,
+                  bodyOffset + 20,
+                  packetLength,
+                  origLen));
             }
           }
           break;
@@ -141,26 +191,16 @@ public sealed class PcapngReader {
         case BtSimplePacket:
           if (body.Length >= 4) {
             var origLen = ReadU32(body);
-            // SPB has no captured-length field; the captured length equals body.Length-4
-            // up to snaplen. Take the smaller.
-            var avail = body.Length - 4;
-            var capLen = (int)Math.Min((uint)avail, origLen);
-            var packetData = body.Slice(4, capLen).ToArray();
-            packets.Add(new Packet(InterfaceId: 0, TimestampRaw: 0, Data: packetData, OriginalLength: origLen));
+            var available = body.Length - 4;
+            var packetLength = (int)Math.Min((uint)available, origLen);
+            packets.Add(new PacketLayout(0, 0, bodyOffset + 4, packetLength, origLen));
           }
           break;
-
-        // Other blocks (NRB type 4, ISB type 5, custom 0x00000BAD, etc.) are skipped silently.
       }
 
-      pos += (int)totalLen;
+      pos += blockLength;
     }
 
-    return new Capture(
-      LittleEndian: little,
-      VersionMajor: verMajor,
-      VersionMinor: verMinor,
-      Interfaces: interfaces,
-      Packets: packets);
+    return new CaptureLayout(little, verMajor, verMinor, interfaces, packets);
   }
 }

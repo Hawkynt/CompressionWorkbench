@@ -141,6 +141,46 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var capture = PcapReader.ReadLayout(archive);
+    var total = capture.Packets.Count;
+    var exposed = Math.Min(total, MaxPackets);
+    var metadata = BuildMetadata(capture, total, total > MaxPackets);
+    var result = new List<ArchiveEntryInfo>(exposed + 1) {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null, "Tag"),
+    };
+
+    for (var i = 0; i < exposed; ++i) {
+      var packet = capture.Packets[i];
+      result.Add(new ArchiveEntryInfo(
+        result.Count, $"packet_{i:D4}.bin", packet.DataLength, packet.DataLength,
+        "stored", false, false, PacketTimestamp(capture.Nanosecond, packet.TimestampSeconds, packet.TimestampFraction),
+        "Payload"));
+    }
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var capture = PcapReader.ReadLayout(archive);
+    var total = capture.Packets.Count;
+    var exposed = Math.Min(total, MaxPackets);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(capture, total, total > MaxPackets));
+
+    for (var i = 0; i < exposed; ++i) {
+      var name = $"packet_{i:D4}.bin";
+      if (files is { Length: > 0 } && !MatchesFilter(name, files))
+        continue;
+
+      var packet = capture.Packets[i];
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(archive.Slice(packet.DataOffset, packet.DataLength));
+    }
+  }
+
   // ── Builder ─────────────────────────────────────────────────────────────
 
   private static IReadOnlyList<(string Name, string Kind, DateTime? Timestamp, byte[] Data)>
@@ -159,14 +199,31 @@ public sealed class PcapFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     for (var i = 0; i < exposed; i++) {
       var p = capture.Packets[i];
-      var ts = DateTime.UnixEpoch.AddSeconds(p.TimestampSeconds)
-        .AddTicks(capture.Nanosecond
-          ? p.TimestampFraction / 100                       // ns → 100ns ticks
-          : p.TimestampFraction * 10);                      // µs → 100ns ticks
+      var ts = PacketTimestamp(capture.Nanosecond, p.TimestampSeconds, p.TimestampFraction);
       result.Add(($"packet_{i:D4}.bin", "Payload", ts, p.Data));
     }
     return result;
   }
+
+  private static byte[] BuildMetadata(PcapReader.CaptureLayout c, int totalPackets, bool truncated) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[pcap]");
+    sb.Append("version = ").Append(c.VersionMajor).Append('.').Append(c.VersionMinor).AppendLine();
+    sb.Append("link_type = ").Append(c.LinkType).Append(' ').AppendLine(LinkTypeName(c.LinkType));
+    sb.Append("snaplen = ").Append(c.Snaplen).AppendLine();
+    sb.Append("endian = ").AppendLine(c.LittleEndian ? "little" : "big");
+    sb.Append("timestamp_resolution = ").AppendLine(c.Nanosecond ? "nanosecond" : "microsecond");
+    sb.Append("total_packet_count = ").Append(totalPackets).AppendLine();
+    if (truncated) {
+      sb.Append("exposed_packets = ").Append(MaxPackets).AppendLine();
+      sb.AppendLine("note = capture truncated for listing; remaining packets omitted");
+    }
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+  private static DateTime PacketTimestamp(bool nanosecond, uint seconds, uint fraction)
+    => DateTime.UnixEpoch.AddSeconds(seconds)
+      .AddTicks(nanosecond ? fraction / 100 : fraction * 10L);
 
   private static byte[] BuildMetadata(PcapReader.Capture c, int totalPackets, bool truncated) {
     var sb = new StringBuilder();

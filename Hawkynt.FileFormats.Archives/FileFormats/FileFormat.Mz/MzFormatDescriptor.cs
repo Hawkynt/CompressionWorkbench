@@ -105,6 +105,47 @@ public sealed class MzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var image = MzReader.ReadLayout(archive);
+    var metadata = BuildMetadata(image, archive.Length);
+    var result = new List<ArchiveEntryInfo> {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null),
+      new(1, "header.bin", image.HeaderLength, image.HeaderLength,
+        "stored", false, false, null),
+    };
+    if (image.BodyLength > 0)
+      result.Add(new ArchiveEntryInfo(result.Count, "body.bin", image.BodyLength, image.BodyLength,
+        "stored", false, false, null));
+    if (image.OverlayLength > 0)
+      result.Add(new ArchiveEntryInfo(result.Count, "overlay.bin", image.OverlayLength, image.OverlayLength,
+        "stored", false, false, null));
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var image = MzReader.ReadLayout(archive);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(image, archive.Length));
+
+    WriteSliceIfWanted(archive, outputDir, files, "header.bin", 0, image.HeaderLength);
+    if (image.BodyLength > 0)
+      WriteSliceIfWanted(archive, outputDir, files, "body.bin", image.BodyOffset, image.BodyLength);
+    if (image.OverlayLength > 0)
+      WriteSliceIfWanted(archive, outputDir, files, "overlay.bin", image.OverlayOffset, image.OverlayLength);
+  }
+
+  private static void WriteSliceIfWanted(
+      ReadOnlySpan<byte> archive, string outputDir, string[]? files,
+      string name, int offset, int length) {
+    if (files is { Length: > 0 } && !MatchesFilter(name, files))
+      return;
+    using var target = CreateEntryFile(outputDir, name);
+    target.Write(archive.Slice(offset, length));
+  }
+
   private static IEnumerable<(string Name, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -114,6 +155,29 @@ public sealed class MzFormatDescriptor : IFormatDescriptor, IArchiveFormatOperat
     yield return ("header.bin", image.Header);
     if (image.Body.Length > 0) yield return ("body.bin", image.Body);
     if (image.Overlay.Length > 0) yield return ("overlay.bin", image.Overlay);
+  }
+
+  private static byte[] BuildMetadata(MzReader.MzLayout i, long fileSize) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[mz]");
+    sb.Append(CultureInfo.InvariantCulture, $"file_size = {fileSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_size = {i.HeaderLength}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"body_size = {i.BodyLength}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"overlay_size = {i.OverlayLength}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"blocks_in_file = {i.BlocksInFile}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"bytes_in_last_block = {i.BytesInLastBlock}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_paragraphs = {i.HeaderParagraphs}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"num_relocations = {i.NumRelocs}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"reloc_table_offset = 0x{i.RelocTableOffset:X4}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"min_extra_paragraphs = {i.MinExtraParagraphs}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"max_extra_paragraphs = {i.MaxExtraParagraphs}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"initial_cs_ip = {i.InitialCs:X4}:{i.InitialIp:X4}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"initial_ss_sp = {i.InitialSs:X4}:{i.InitialSp:X4}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"checksum = 0x{i.Checksum:X4}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"overlay_number = {i.OverlayNumber}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"e_lfanew = 0x{i.ExtendedHeaderOffset:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"extended_signature = {(string.IsNullOrEmpty(i.ExtendedSignature) ? "(none - pure MZ)" : i.ExtendedSignature)}\n");
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(MzReader.MzImage i, long fileSize) {

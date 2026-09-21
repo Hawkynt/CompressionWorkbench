@@ -136,6 +136,47 @@ public sealed class PcapngFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var capture = PcapngReader.ReadLayout(archive);
+    var total = capture.Packets.Count;
+    var exposed = Math.Min(total, MaxPackets);
+    var metadata = BuildMetadata(capture, total, total > MaxPackets);
+    var result = new List<ArchiveEntryInfo>(exposed + 1) {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null, "Tag"),
+    };
+
+    for (var i = 0; i < exposed; ++i) {
+      var packet = capture.Packets[i];
+      var timestamp = packet.TimestampRaw == 0 ? (DateTime?)null : packet.ToDateTime();
+      result.Add(new ArchiveEntryInfo(
+        result.Count, $"packet_{i:D4}.bin", packet.DataLength, packet.DataLength,
+        "stored", false, false, timestamp, "Payload"));
+    }
+
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var capture = PcapngReader.ReadLayout(archive);
+    var total = capture.Packets.Count;
+    var exposed = Math.Min(total, MaxPackets);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(capture, total, total > MaxPackets));
+
+    for (var i = 0; i < exposed; ++i) {
+      var name = $"packet_{i:D4}.bin";
+      if (files is { Length: > 0 } && !MatchesFilter(name, files))
+        continue;
+
+      var packet = capture.Packets[i];
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(archive.Slice(packet.DataOffset, packet.DataLength));
+    }
+  }
+
   private static IReadOnlyList<(string Name, string Kind, DateTime? Timestamp, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -155,6 +196,26 @@ public sealed class PcapngFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       result.Add(($"packet_{i:D4}.bin", "Payload", ts, p.Data));
     }
     return result;
+  }
+
+  private static byte[] BuildMetadata(PcapngReader.CaptureLayout c, int totalPackets, bool truncated) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[pcapng]");
+    sb.Append("version = ").Append(c.VersionMajor).Append('.').Append(c.VersionMinor).AppendLine();
+    sb.Append("endian = ").AppendLine(c.LittleEndian ? "little" : "big");
+    sb.Append("interface_count = ").Append(c.Interfaces.Count).Append(CultureInfo.InvariantCulture, $"\n");
+    sb.Append("total_packet_count = ").Append(totalPackets).Append(CultureInfo.InvariantCulture, $"\n");
+    if (truncated) {
+      sb.Append("exposed_packets = ").Append(MaxPackets).Append(CultureInfo.InvariantCulture, $"\n");
+      sb.AppendLine("note = capture truncated for listing; remaining packets omitted");
+    }
+    for (var i = 0; i < c.Interfaces.Count; i++) {
+      var iface = c.Interfaces[i];
+      sb.Append(CultureInfo.InvariantCulture, $"\n[interface_{i}]\n");
+      sb.Append("link_type = ").Append(iface.LinkType).Append(' ').AppendLine(LinkTypeName(iface.LinkType));
+      sb.Append("snaplen = ").Append(iface.Snaplen).Append(CultureInfo.InvariantCulture, $"\n");
+    }
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(PcapngReader.Capture c, int totalPackets, bool truncated) {

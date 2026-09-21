@@ -49,6 +49,52 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var fvStart = UefiFvReader.FindFirst(archive) ?? 0;
+    var fv = UefiFvReader.ReadLayout(archive, fvStart);
+    var metadata = BuildMetadata(fv);
+    var result = new List<ArchiveEntryInfo> {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null),
+    };
+
+    foreach (var file in fv.Files) {
+      if (file.Type == 0xF0)
+        continue;
+      result.Add(new ArchiveEntryInfo(
+        result.Count,
+        UefiFvWriter.EntryName(file.Name, file.Type),
+        file.DataLength,
+        file.DataLength,
+        "stored",
+        false,
+        false,
+        null));
+    }
+
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var fvStart = UefiFvReader.FindFirst(archive) ?? 0;
+    var fv = UefiFvReader.ReadLayout(archive, fvStart);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(fv));
+
+    foreach (var file in fv.Files) {
+      if (file.Type == 0xF0)
+        continue;
+      var name = UefiFvWriter.EntryName(file.Name, file.Type);
+      if (files is { Length: > 0 } && !MatchesFilter(name, files))
+        continue;
+
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(archive.Slice(file.DataOffset, file.DataLength));
+    }
+  }
+
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(inputs);
@@ -96,6 +142,35 @@ public sealed class UefiFvFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       entries.Add((UefiFvWriter.EntryName(f.Name, f.Type), f.Contents, "stored"));
     }
     return entries;
+  }
+
+  private static byte[] BuildMetadata(UefiFvReader.FirmwareVolumeLayout fv) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[uefi_fv]");
+    sb.Append(CultureInfo.InvariantCulture, $"fv_start_offset = 0x{fv.StartOffset:X}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"file_system_guid = {fv.Header.FileSystemGuid:D}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"fv_length = {fv.Header.FvLength}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"attributes = 0x{fv.Header.Attributes:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"erase_byte = 0x{fv.Header.EraseByte:X2}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_length = {fv.Header.HeaderLength}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"checksum = 0x{fv.Header.Checksum:X4}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"ext_header_offset = 0x{fv.Header.ExtHeaderOffset:X}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"revision = {fv.Header.Revision}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"file_count = {fv.Files.Count}\n");
+    sb.AppendLine();
+    sb.AppendLine("[block_map]");
+    for (var i = 0; i < fv.Header.BlockMap.Count; i++) {
+      var (blocks, length) = fv.Header.BlockMap[i];
+      sb.Append(CultureInfo.InvariantCulture, $"block_{i} = {blocks} blocks x {length} bytes\n");
+    }
+    sb.AppendLine();
+    sb.AppendLine("[files]");
+    for (var i = 0; i < fv.Files.Count; i++) {
+      var file = fv.Files[i];
+      sb.Append(CultureInfo.InvariantCulture,
+        $"file_{i} = {file.Name:D} type=0x{file.Type:X2} ({UefiFvReader.FileTypeName(file.Type)}) size={file.Size}\n");
+    }
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(UefiFvReader.FirmwareVolume fv) {
