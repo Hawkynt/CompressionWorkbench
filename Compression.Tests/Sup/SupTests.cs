@@ -39,6 +39,25 @@ public class SupTests {
     return ms.ToArray();
   }
 
+  /// <summary>Builds one large display set from multiple legal-size object segments.</summary>
+  private static byte[] BuildLargeSup(int payloadBytes) {
+    using var ms = new MemoryStream();
+    ms.Write(BuildSegment(SupReader.SegPresentationComposition, 90_000, [0xAA, 0xBB]));
+
+    var remaining = payloadBytes;
+    var marker = 0;
+    while (remaining > 0) {
+      var length = Math.Min(ushort.MaxValue, remaining);
+      var body = new byte[length];
+      body.AsSpan().Fill((byte)marker++);
+      ms.Write(BuildSegment(SupReader.SegObjectDefinition, 90_000, body));
+      remaining -= length;
+    }
+
+    ms.Write(BuildSegment(SupReader.SegEnd, 91_000, []));
+    return ms.ToArray();
+  }
+
   [Test, Category("HappyPath")]
   public void Read_ParsesAllSegments() {
     var data = BuildSup(2);
@@ -47,6 +66,55 @@ public class SupTests {
     Assert.That(stream.Epochs, Has.Count.EqualTo(2));
     Assert.That(stream.Epochs[0].SegmentCount, Is.EqualTo(5));
     Assert.That(stream.Epochs[0].StartPtsRaw, Is.EqualTo(90_000u));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Read_MaterializesNonOwningLayoutByteExactly() {
+    var data = BuildSup(2);
+    var layout = SupReader.ReadLayout(data);
+    var parsed = SupReader.Read(data);
+
+    Assert.That(layout.Segments, Has.Count.EqualTo(parsed.Segments.Count));
+    for (var i = 0; i < layout.Segments.Count; ++i) {
+      var source = layout.Segments[i];
+      var materialized = parsed.Segments[i];
+      Assert.That(materialized.PtsRaw, Is.EqualTo(source.PtsRaw));
+      Assert.That(materialized.DtsRaw, Is.EqualTo(source.DtsRaw));
+      Assert.That(materialized.Type, Is.EqualTo(source.Type));
+      Assert.That(materialized.FileOffset, Is.EqualTo(source.FileOffset));
+      Assert.That(materialized.Body,
+        Is.EqualTo(data.AsSpan(source.BodyOffset, source.BodyLength).ToArray()).AsCollection);
+    }
+
+    Assert.That(layout.Epochs, Has.Count.EqualTo(parsed.Epochs.Count));
+    for (var i = 0; i < layout.Epochs.Count; ++i) {
+      var source = layout.Epochs[i];
+      var materialized = parsed.Epochs[i];
+      Assert.That(materialized.StartPtsRaw, Is.EqualTo(source.StartPtsRaw));
+      Assert.That(materialized.EndPtsRaw, Is.EqualTo(source.EndPtsRaw));
+      Assert.That(materialized.SegmentCount, Is.EqualTo(source.SegmentCount));
+      Assert.That(materialized.RawBytes,
+        Is.EqualTo(data.AsSpan(source.RawOffset, source.RawLength).ToArray()).AsCollection);
+    }
+  }
+
+  [Test, Category("Spec")]
+  public void ReadLayout_LargePayload_DoesNotCopySegmentOrEpochBytes() {
+    const int payloadBytes = 4 * 1024 * 1024;
+    const long allocationLimit = 512 * 1024;
+    var data = BuildLargeSup(payloadBytes);
+
+    _ = SupReader.ReadLayout(data); // warm JIT/type initialization
+
+    var before = GC.GetAllocatedBytesForCurrentThread();
+    var layout = SupReader.ReadLayout(data);
+    var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+    Assert.That(layout.Epochs, Has.Count.EqualTo(1));
+    Assert.That(layout.Epochs[0].RawLength, Is.EqualTo(data.Length));
+    Assert.That(allocated, Is.LessThan(allocationLimit),
+      $"SUP layout parsing allocated {allocated:N0} bytes for a {data.Length:N0}-byte source; " +
+      "the layout parser must retain only offsets/lengths.");
   }
 
   [Test, Category("HappyPath")]
