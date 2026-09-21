@@ -12,11 +12,17 @@ public static class SfxBuilder {
   public enum StubType { Cli, Ui }
 
   /// <summary>
-  /// Known runtime identifiers for cross-platform stub publishing.
+  /// Runtimes a stub is actually published for.
   /// </summary>
+  /// <remarks>
+  /// This is the shipped set, not a wish list. The stubs are NativeAOT binaries so that a
+  /// self-extractor needs nothing installed, and that rules two entries out of the old list:
+  /// NativeAOT has no x86 target at all, and no musl stubs are built. Advertising a target whose
+  /// stub can never exist only turns a clear "unsupported" into a confusing "file not found".
+  /// </remarks>
   public static readonly string[] SupportedTargets = [
-    "win-x64", "win-x86", "win-arm64",
-    "linux-x64", "linux-arm64", "linux-musl-x64", "linux-musl-arm64",
+    "win-x64", "win-arm64",
+    "linux-x64", "linux-arm64",
     "osx-x64", "osx-arm64",
   ];
 
