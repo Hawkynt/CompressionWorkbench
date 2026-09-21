@@ -1,14 +1,13 @@
 using System.Runtime.InteropServices;
+using Compression.Registry;
 
 namespace Compression.Lib;
 
 /// <summary>
 /// Creates self-extracting archives by concatenating a stub executable with archive data.
-/// Layout: [stub.exe][archive data][8-byte archive offset (int64 LE)][4-byte magic "SFX!"]
+/// Layout is defined once by <see cref="SfxTrailer"/>, which the stubs also read.
 /// </summary>
 public static class SfxBuilder {
-
-  private static readonly byte[] Magic = [(byte)'S', (byte)'F', (byte)'X', (byte)'!'];
 
   public enum StubType { Cli, Ui }
 
@@ -39,10 +38,7 @@ public static class SfxBuilder {
       archive.CopyTo(output);
 
     // 3. Write trailer: [8-byte offset][4-byte magic]
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
   }
 
   /// <summary>
@@ -62,10 +58,7 @@ public static class SfxBuilder {
     archiveData.CopyTo(output);
 
     // 3. Write trailer
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
   }
 
   /// <summary>
@@ -82,10 +75,7 @@ public static class SfxBuilder {
     using (var archive = File.OpenRead(archivePath))
       archive.CopyTo(output);
 
-    Span<byte> trailer = stackalloc byte[12];
-    BitConverter.TryWriteBytes(trailer, archiveOffset);
-    Magic.CopyTo(trailer[8..]);
-    output.Write(trailer);
+    SfxTrailer.Write(output, archiveOffset);
   }
 
   /// <summary>
@@ -100,26 +90,15 @@ public static class SfxBuilder {
   /// </summary>
   public static (long Offset, long Length, FormatDetector.Format Format)? ReadTrailer(string sfxPath) {
     using var fs = File.OpenRead(sfxPath);
-    if (fs.Length < 12) return null;
+    if (!SfxTrailer.TryRead(fs, out var location)) return null;
 
-    fs.Seek(-12, SeekOrigin.End);
-    Span<byte> trailer = stackalloc byte[12];
-    fs.ReadExactly(trailer);
-
-    if (trailer[8] != Magic[0] || trailer[9] != Magic[1] || trailer[10] != Magic[2] || trailer[11] != Magic[3])
-      return null;
-
-    var offset = BitConverter.ToInt64(trailer[..8]);
-    var length = fs.Length - 12 - offset;
-    if (offset < 0 || offset >= fs.Length - 12 || length <= 0)
-      return null;
-
-    fs.Seek(offset, SeekOrigin.Begin);
-    var header = new byte[(int)Math.Min(512, length)];
+    // The trailer deliberately records no format, so it is sniffed from the payload every time.
+    fs.Seek(location.Offset, SeekOrigin.Begin);
+    var header = new byte[(int)Math.Min(512, location.Length)];
     var read = fs.Read(header, 0, header.Length);
     var format = FormatDetector.DetectByMagic(header.AsSpan(0, read));
 
-    return (offset, length, format);
+    return (location.Offset, location.Length, format);
   }
 
   /// <summary>
