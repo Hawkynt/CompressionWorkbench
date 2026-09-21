@@ -34,7 +34,7 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 
 | State | Meaning |
 | --- | --- |
-| **R** | Open, list and extract only. For network, distributed and encrypted formats this is detection of the on-disk signature plus whatever metadata the object carries. |
+| **R** | Open, list and extract only. For network, distributed and encrypted formats this may be signature/metadata detection; deliberately unverified descriptors can instead require explicit format selection and expose an opaque object. |
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
@@ -231,7 +231,7 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
 | [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R/W | ✅ | ✅ rebuild | — | ✅ | — | ✅ | own reader + [`xfs_repair -n`](https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git) | CXFS is XFS on disk; authoring targets the pre-CRC XFS v4 (`crc=0`) profile with dir2 short-form directories, and edits rebuild the volume | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
 | [Tahoe-LAFS share / capability namespace](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
-| [TFS (BBN Trans-FS)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | detection of the on-disk signature | BBN Trans-FS; no public on-disk specification | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
+| [TFS (unverified historical BBN Trans-FS label)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | none — explicit format selection only | No normative on-disk specification, reference implementation or genuine sample was located; the historical `TFS\x01` magic and `.tfs` extension are unsourced and no longer detect, so the image is exposed opaquely and only when the caller names the format; see the [format notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Tfs/FORMAT-NOTES.md) | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
 
 <!-- SUPPORT:END -->
 
