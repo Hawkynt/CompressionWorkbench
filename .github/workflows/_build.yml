@@ -150,12 +150,15 @@ jobs:
             $dest = "$stagingDir/$rid"
             New-Item -ItemType Directory -Path $dest -Force | Out-Null
 
+            # SfxSlim drops audio support from the bundled library: a stub only ever extracts, and
+            # it is prepended to every archive built with it. It builds into bin/slim so it cannot
+            # replace the full assemblies the rest of the workflow uses.
             Write-Host "::group::Publishing SFX CLI stub for $rid"
-            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
+            dotnet publish Compression.Sfx.Cli/Compression.Sfx.Cli.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:SfxSlim=true -p:Version=${{ inputs.version }} --nologo
             $cliExit = $LASTEXITCODE
             Write-Host "::endgroup::"
             $exeName = if ($rid.StartsWith("win")) { "sfx-cli.exe" } else { "sfx-cli" }
-            $src = "Compression.Sfx.Cli/bin/Release/net10.0/$rid/publish/$exeName"
+            $src = "Compression.Sfx.Cli/bin/slim/Release/net10.0/$rid/publish/$exeName"
             if ($cliExit -eq 0 -and (Test-Path $src)) {
               Copy-Item $src $dest -Force
               Write-Host "  -> $dest/$exeName" -ForegroundColor Green
@@ -164,19 +167,20 @@ jobs:
               Write-Host "  -> FAILED (exit=$cliExit) for $rid" -ForegroundColor Red
             }
 
-            if ($rid.StartsWith("win")) {
-              Write-Host "::group::Publishing SFX UI stub for $rid"
-              dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }} --nologo
-              $uiExit = $LASTEXITCODE
-              Write-Host "::endgroup::"
-              $src = "Compression.Sfx.Ui/bin/Release/net10.0-windows/$rid/publish/sfx-ui.exe"
-              if ($uiExit -eq 0 -and (Test-Path $src)) {
-                Copy-Item $src $dest -Force
-                Write-Host "  -> $dest/sfx-ui.exe" -ForegroundColor Green
-              } else {
-                $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
-                Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
-              }
+            # The GUI stub is NativeForms now, so it is no longer Windows-only: Win32 on win-*,
+            # GTK on linux-*. There is no macOS backend yet, so osx RIDs get the CLI stub only.
+            Write-Host "::group::Publishing SFX UI stub for $rid"
+            dotnet publish Compression.Sfx.Ui/Compression.Sfx.Ui.csproj -r $rid -c Release -p:ExcludeStubs=true -p:EnableSingleFileBundle=false -p:SfxSlim=true -p:Version=${{ inputs.version }} --nologo
+            $uiExit = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            $uiName = if ($rid.StartsWith("win")) { "sfx-ui.exe" } else { "sfx-ui" }
+            $src = "Compression.Sfx.Ui/bin/slim/Release/net10.0/$rid/publish/$uiName"
+            if ($uiExit -eq 0 -and (Test-Path $src)) {
+              Copy-Item $src $dest -Force
+              Write-Host "  -> $dest/$uiName" -ForegroundColor Green
+            } else {
+              $failures += "Sfx.Ui/$rid (exit=$uiExit, missing=$src)"
+              Write-Host "  -> FAILED (exit=$uiExit) for $rid" -ForegroundColor Red
             }
           }
 

@@ -1,4 +1,21 @@
 <Project>
+
+  <!--
+    SfxSlim builds a reduced flavour of the library for the self-extracting stubs. It must never
+    share bin/obj with the ordinary build: both produce Compression.Lib.dll, and the slim one
+    silently replacing the full one leaves every other project in the same run linked against a
+    library missing half its formats. Redirecting here (rather than in a csproj) catches the whole
+    project graph, and is early enough for the intermediate path to take effect.
+  -->
+  <PropertyGroup Condition="'$(SfxSlim)' == 'true'">
+    <BaseOutputPath>bin\slim\</BaseOutputPath>
+    <BaseIntermediateOutputPath>obj\slim\</BaseIntermediateOutputPath>
+    <!-- Moving the intermediate path stops obj\ itself from being the excluded directory, so the
+         ordinary build's generated AssemblyInfo would otherwise be swept up by the default glob
+         and every assembly attribute would be declared twice. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj\Debug\**;obj\Release\**</DefaultItemExcludes>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>14</LangVersion>

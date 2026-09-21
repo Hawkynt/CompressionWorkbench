@@ -133,7 +133,7 @@ var levelOpt = new Option<int?>("--level", "-l") { Description = "Level 0-9. Def
 var encryptHeadersOpt = new Option<bool>("--encrypt-headers", "-eh") { Description = "Encrypt file names and headers (7z, RAR5). Requires --password" };
 var zipEncryptionOpt = new Option<string?>("--zip-encryption") { Description = "ZIP encryption method: aes256 (default, strong) or zipcrypto (weak, legacy compatible)" };
 var sfxOpt = new Option<bool>("--sfx") { Description = "Create a self-extracting archive (console stub, no runtime needed)" };
-var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker, Windows only)" };
+var sfxUiOpt = new Option<bool>("--sfx-ui") { Description = "Create a self-extracting archive (GUI stub with folder picker; Windows and Linux)" };
 var sfxTargetOpt = new Option<string?>("--sfx-target") { Description = "SFX target platform: win-x64, win-x86, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64" };
 
 var createCmd = new Command("create", """
