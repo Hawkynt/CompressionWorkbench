@@ -16,16 +16,3 @@ public interface IFilesystemExtendedAttributeReader {
   /// </summary>
   IReadOnlyDictionary<string, byte[]> ReadExtendedAttributes(FilesystemNodeId nodeId);
 }
-
-/// <summary>
-/// Optional writable extension to <see cref="IFilesystemExtendedAttributeReader"/>.
-/// Implementations must provide native bounded mutation; whole-image rebuild is not
-/// a mounted xattr write path.
-/// </summary>
-public interface IFilesystemExtendedAttributeWriter : IFilesystemExtendedAttributeReader {
-  /// <summary>Creates or replaces one extended attribute.</summary>
-  void SetExtendedAttribute(FilesystemNodeId nodeId, string name, ReadOnlySpan<byte> value);
-
-  /// <summary>Removes one extended attribute and returns false when it was absent.</summary>
-  bool RemoveExtendedAttribute(FilesystemNodeId nodeId, string name);
-}
