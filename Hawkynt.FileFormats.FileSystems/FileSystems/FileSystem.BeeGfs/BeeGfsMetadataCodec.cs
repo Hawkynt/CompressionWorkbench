@@ -152,7 +152,10 @@ internal static class BeeGfsMetadataCodec {
     if (kind == FilesystemNodeKind.Directory)
       throw new InvalidDataException("BeeGFS directory dentries use the V3 dentry layout, not V6.");
     if ((dentryFeatures & DentryFeatureInodeInline) == 0 && metadataType != BeeGfsDiskMetadataType.FileInode)
-      throw new NotSupportedException("BeeGFS V6 file dentry has no inline inode; separate hard-link inode decoding is not implemented yet.");
+      throw new NotSupportedException(
+        "BeeGFS V6 file dentry has no inline inode. A de-inlined file is reached through its V3 " +
+        "dentry and the separate inodes/*/*/<EntryID> object the owner holds; a V6 dentry that " +
+        "points away from itself is outside the decoded subset.");
     if ((dentryFeatures & DentryFeatureBuddyMirrored) != 0)
       throw new NotSupportedException("BeeGFS buddy-mirrored file metadata requires management buddy-group mapping.");
 
