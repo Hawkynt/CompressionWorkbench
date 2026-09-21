@@ -60,8 +60,13 @@ public sealed class BeeGfsFormatDescriptor :
     "Use FilesystemStreamSet to provide the participating metadata/storage backing images and target roots.",
   ];
 
+  /// <summary>Gets the registry id.</summary>
   public string Id => "BeeGfs";
+
+  /// <summary>Gets the display name.</summary>
   public string DisplayName => "BeeGFS";
+
+  /// <summary>Gets the category used by the filesystem package.</summary>
   public FormatCategory Category => FormatCategory.Archive;
 
   /// <summary>
@@ -70,14 +75,31 @@ public sealed class BeeGfsFormatDescriptor :
   /// </summary>
   public FormatCapabilities Capabilities => FormatCapabilities.None;
 
+  /// <summary>BeeGFS has no canonical file extension.</summary>
   public string DefaultExtension => string.Empty;
+
+  /// <summary>BeeGFS has no canonical file extensions.</summary>
   public IReadOnlyList<string> Extensions => [];
+
+  /// <summary>BeeGFS has no compound file extensions.</summary>
   public IReadOnlyList<string> CompoundExtensions => [];
+
+  /// <summary>
+  /// BeeGFS has no standalone stream header. Target directories are identified structurally
+  /// by their service metadata, not by magic bytes at offset zero of one file.
+  /// </summary>
   public IReadOnlyList<MagicSignature> MagicSignatures => [];
+
+  /// <summary>There is no archive/storage method for a synthetic BeeGFS image.</summary>
   public IReadOnlyList<FormatMethodInfo> Methods => [];
+
+  /// <summary>BeeGFS is not a tar compound format.</summary>
   public string? TarCompressionFormatId => null;
+
+  /// <summary>Gets the registry family.</summary>
   public AlgorithmFamily Family => AlgorithmFamily.Archive;
 
+  /// <summary>Gets the format description.</summary>
   public string Description =>
     "BeeGFS is a distributed filesystem whose metadata and storage targets are directories " +
     "on local filesystems such as ext4/XFS. It has no standalone byte-stream image, canonical " +
@@ -86,6 +108,7 @@ public sealed class BeeGfsFormatDescriptor :
     "subset read-only, including V3 namespace dentries and V6 inline or separate regular-file " +
     "inodes. Unknown, mirrored, sparse, remote-storage and unsupported metadata profiles fail closed.";
 
+  /// <inheritdoc />
   public FilesystemDriverProfile ProbeFilesystem(Stream image) {
     ArgumentNullException.ThrowIfNull(image);
     return new FilesystemDriverProfile(
@@ -98,6 +121,12 @@ public sealed class BeeGfsFormatDescriptor :
       StreamModelLimitations);
   }
 
+  /// <summary>
+  /// Validates the supplied metadata/storage target set and reports the read-only profile the
+  /// reconstructed logical namespace supports. A target set that cannot be validated, or a
+  /// namespace outside the supported V3/V6 non-mirrored RAID0 subset, is reported as
+  /// non-mountable with the first failure line rather than partially exposed.
+  /// </summary>
   public FilesystemDriverProfile ProbeFilesystem(FilesystemStreamSet sources) {
     ArgumentNullException.ThrowIfNull(sources);
     BeeGfsTargetTopology topology;
@@ -125,6 +154,7 @@ public sealed class BeeGfsFormatDescriptor :
     }
   }
 
+  /// <inheritdoc />
   public IFilesystemSession OpenFilesystem(Stream image, FilesystemOpenOptions options) {
     ArgumentNullException.ThrowIfNull(image);
     ArgumentNullException.ThrowIfNull(options);
@@ -133,6 +163,11 @@ public sealed class BeeGfsFormatDescriptor :
       "FilesystemStreamSet so their target roots and identities can be validated.");
   }
 
+  /// <summary>
+  /// Opens the validated target set as a read-only session over the reconstructed logical
+  /// namespace. Writable opens are refused: a BeeGFS mutation is not a write to one backing
+  /// ext/XFS volume but a transaction across every participating target plus management state.
+  /// </summary>
   public IFilesystemSession OpenFilesystem(FilesystemStreamSet sources, FilesystemOpenOptions options) {
     ArgumentNullException.ThrowIfNull(sources);
     ArgumentNullException.ThrowIfNull(options);
@@ -144,6 +179,7 @@ public sealed class BeeGfsFormatDescriptor :
     return new BeeGfsReadOnlyFilesystemSession(sources, topology, options.LeaveOpen);
   }
 
+  /// <inheritdoc />
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
       Stream image,
       FilesystemDriverTarget target) {
@@ -167,6 +203,11 @@ public sealed class BeeGfsFormatDescriptor :
       blockers);
   }
 
+  /// <summary>
+  /// Reports which readiness layers the validated target set satisfies. The read-only target is
+  /// derivable for a supported topology; the read-write target never is, and names the transaction,
+  /// mapping and fault-injection work that stands between here and a writable BeeGFS mount.
+  /// </summary>
   public FilesystemDriverReadinessReport DescribeFilesystemDriverReadiness(
       FilesystemStreamSet sources,
       FilesystemDriverTarget target) {
