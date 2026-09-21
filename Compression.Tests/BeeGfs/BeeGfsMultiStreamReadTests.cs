@@ -179,6 +179,192 @@ public sealed class BeeGfsMultiStreamReadTests {
     });
   }
 
+  [Test, Category("RoundTrip")]
+  public void Registry_ReassemblesWhenTheFinalPartialChunkLandsOnTheSecondTarget() {
+    // Every other RAID0 case here has an even number of full chunks, which puts the
+    // tail back on target 101 and leaves the "tail belongs to a later target" arm of
+    // RequiredTargetLength unexercised. Three full chunks put it on 201.
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var payload = Enumerable.Range(0, checked((int)(ChunkSize * 3 + 4_097)))
+      .Select(i => (byte)((i * 53 + 7) & 0xFF))
+      .ToArray();
+    var (chunk101, chunk201) = Stripe(payload);
+    Assert.Multiple(() => {
+      Assert.That(chunk101.Length, Is.EqualTo(checked((int)(ChunkSize * 2))), "target 101 must hold two whole chunks");
+      Assert.That(chunk201.Length, Is.EqualTo(checked((int)ChunkSize + 4_097)), "target 201 must hold the final partial chunk");
+    });
+
+    using var metadata = BuildMetadataSnapshot(payload.LongLength);
+    using var storage101 = BuildStorageSnapshot(101, chunk101);
+    using var storage201 = BuildStorageSnapshot(201, chunk201);
+    var sources = new FilesystemStreamSet([
+      new FilesystemStreamSource("meta-7", metadata, FilesystemSourceRole.Metadata, "Zip", "/targets/meta"),
+      new FilesystemStreamSource("storage-101", storage101, FilesystemSourceRole.Data, "Zip", "/targets/storage-101"),
+      new FilesystemStreamSource("storage-201", storage201, FilesystemSourceRole.Data, "Zip", "/targets/storage-201"),
+    ]);
+
+    using var session = FormatRegistry.OpenFilesystem(
+      "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var hello = session.Enumerate(session.RootNodeId).Single(entry => entry.Name == "hello.bin");
+    using var handle = session.OpenFile(hello.NodeId, FileAccess.Read);
+
+    var decoded = new byte[payload.Length];
+    Assert.That(handle.Read(0, decoded), Is.EqualTo(payload.Length));
+    Assert.That(decoded, Is.EqualTo(payload));
+
+    // A read that starts in the last whole chunk (target 101) and ends inside the
+    // partial tail (target 201), so it has to cross the boundary and stop at EOF.
+    var tailOffset = checked((long)ChunkSize * 3 - 4_000);
+    var expectedTail = payload.Length - checked((int)tailOffset);
+    var tail = new byte[expectedTail + 1_024];
+    Assert.That(handle.Read(tailOffset, tail), Is.EqualTo(expectedTail));
+    Assert.That(tail.AsSpan(0, expectedTail).ToArray(),
+      Is.EqualTo(payload.AsSpan(checked((int)tailOffset), expectedTail).ToArray()));
+
+    // Reading at the very end returns the short remainder, not a refusal.
+    var remainder = new byte[64];
+    Assert.That(handle.Read(payload.LongLength - 10, remainder), Is.EqualTo(10));
+    Assert.That(handle.Read(payload.LongLength, remainder), Is.EqualTo(0));
+  }
+
+  [Test, Category("HappyPath")]
+  public void Registry_MountsAFileSmallerThanOneChunkWithoutRequiringTheSecondTarget() {
+    // A sub-chunk file occupies target 101 only. Target 201 is part of the stripe
+    // pattern but owns no byte, so it must not be asked for a chunk file.
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var payload = Enumerable.Range(0, checked((int)(ChunkSize / 2)))
+      .Select(i => (byte)((i * 19 + 5) & 0xFF))
+      .ToArray();
+
+    using var metadata = BuildMetadataSnapshot(payload.LongLength);
+    using var storage101 = BuildStorageSnapshot(101, payload);
+    using var storage201 = BuildStorageSnapshotWithoutChunk(201);
+    var sources = new FilesystemStreamSet([
+      new FilesystemStreamSource("meta-7", metadata, FilesystemSourceRole.Metadata, "Zip", "/targets/meta"),
+      new FilesystemStreamSource("storage-101", storage101, FilesystemSourceRole.Data, "Zip", "/targets/storage-101"),
+      new FilesystemStreamSource("storage-201", storage201, FilesystemSourceRole.Data, "Zip", "/targets/storage-201"),
+    ]);
+
+    var profile = FormatRegistry.ProbeFilesystem("BeeGfs", sources);
+    Assert.That(profile.CanMount, Is.True, string.Join('\n', profile.Limitations));
+
+    using var session = FormatRegistry.OpenFilesystem(
+      "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var hello = session.Enumerate(session.RootNodeId).Single(entry => entry.Name == "hello.bin");
+    using var handle = session.OpenFile(hello.NodeId, FileAccess.Read);
+    var decoded = new byte[payload.Length];
+    Assert.That(handle.Read(0, decoded), Is.EqualTo(payload.Length));
+    Assert.That(decoded, Is.EqualTo(payload));
+  }
+
+  [Test, Category("Exception")]
+  public void Probe_FailsClosedWhenTheChunkFileIsAbsentFromAPresentTarget() {
+    // The target itself is present and valid; only the chunk the stripe needs is gone.
+    // Returning zeroes for it would hand back a plausible, wrong file.
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var payload = new byte[checked((int)(ChunkSize + 1))];
+    var (chunk101, _) = Stripe(payload);
+    using var metadata = BuildMetadataSnapshot(payload.LongLength);
+    using var storage101 = BuildStorageSnapshot(101, chunk101);
+    using var storage201 = BuildStorageSnapshotWithoutChunk(201);
+    var sources = new FilesystemStreamSet([
+      new FilesystemStreamSource("meta-7", metadata, FilesystemSourceRole.Metadata, "Zip", "/targets/meta"),
+      new FilesystemStreamSource("storage-101", storage101, FilesystemSourceRole.Data, "Zip", "/targets/storage-101"),
+      new FilesystemStreamSource("storage-201", storage201, FilesystemSourceRole.Data, "Zip", "/targets/storage-201"),
+    ]);
+
+    var profile = FormatRegistry.ProbeFilesystem("BeeGfs", sources);
+
+    Assert.Multiple(() => {
+      Assert.That(profile.CanMount, Is.False);
+      Assert.That(string.Join('\n', profile.Limitations), Does.Contain("is missing chunk"));
+      Assert.That(string.Join('\n', profile.Limitations), Does.Contain("storage target 201"));
+    });
+    Assert.Throws<FileNotFoundException>(() => FormatRegistry.OpenFilesystem(
+      "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true)));
+  }
+
+  [Test, Category("Exception")]
+  public void Probe_FailsClosedWhenAChunkIsShorterThanTheStripeRequires() {
+    // A truncated chunk is the case a zero-filling reader cannot tell from a real
+    // one: the logical size still says the bytes are there.
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var payload = Enumerable.Range(0, checked((int)(ChunkSize * 2 + 12_345)))
+      .Select(i => (byte)((i * 37 + 11) & 0xFF))
+      .ToArray();
+    var (chunk101, chunk201) = Stripe(payload);
+
+    using var metadata = BuildMetadataSnapshot(payload.LongLength);
+    using var storage101 = BuildStorageSnapshot(101, chunk101.AsSpan(0, chunk101.Length - 1).ToArray());
+    using var storage201 = BuildStorageSnapshot(201, chunk201);
+    var sources = new FilesystemStreamSet([
+      new FilesystemStreamSource("meta-7", metadata, FilesystemSourceRole.Metadata, "Zip", "/targets/meta"),
+      new FilesystemStreamSource("storage-101", storage101, FilesystemSourceRole.Data, "Zip", "/targets/storage-101"),
+      new FilesystemStreamSource("storage-201", storage201, FilesystemSourceRole.Data, "Zip", "/targets/storage-201"),
+    ]);
+
+    var profile = FormatRegistry.ProbeFilesystem("BeeGfs", sources);
+
+    Assert.Multiple(() => {
+      Assert.That(profile.CanMount, Is.False);
+      Assert.That(string.Join('\n', profile.Limitations), Does.Contain("are required by logical file size"));
+      Assert.That(string.Join('\n', profile.Limitations), Does.Contain("storage target 101"));
+    });
+    Assert.Throws<EndOfStreamException>(() => FormatRegistry.OpenFilesystem(
+      "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true)));
+  }
+
+  [Test, Category("Exception")]
+  public void MountedSession_RefusesEveryNamespaceMutationAndDataWrite() {
+    // "Read-only" has to be the session's behaviour, not only the profile's claim.
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var payload = Enumerable.Range(0, checked((int)(ChunkSize + 99)))
+      .Select(i => (byte)((i * 41 + 23) & 0xFF))
+      .ToArray();
+    var (chunk101, chunk201) = Stripe(payload);
+
+    using var metadata = BuildMetadataSnapshot(payload.LongLength);
+    using var storage101 = BuildStorageSnapshot(101, chunk101);
+    using var storage201 = BuildStorageSnapshot(201, chunk201);
+    var sources = new FilesystemStreamSet([
+      new FilesystemStreamSource("meta-7", metadata, FilesystemSourceRole.Metadata, "Zip", "/targets/meta"),
+      new FilesystemStreamSource("storage-101", storage101, FilesystemSourceRole.Data, "Zip", "/targets/storage-101"),
+      new FilesystemStreamSource("storage-201", storage201, FilesystemSourceRole.Data, "Zip", "/targets/storage-201"),
+    ]);
+
+    using var session = FormatRegistry.OpenFilesystem(
+      "BeeGfs", sources, new FilesystemOpenOptions(ReadOnly: true, LeaveOpen: true));
+    var root = session.RootNodeId;
+    var hello = session.Enumerate(root).Single(entry => entry.Name == "hello.bin");
+
+    Assert.Multiple(() => {
+      Assert.That(session.Profile.CanMountWritable, Is.False);
+      Assert.That(session.Profile.MutationModel, Is.EqualTo(FilesystemMutationModel.None));
+      Assert.Throws<NotSupportedException>(() => session.CreateFile(root, "new.bin"));
+      Assert.Throws<NotSupportedException>(() => session.CreateDirectory(root, "new-dir"));
+      Assert.Throws<NotSupportedException>(() => session.DeleteFile(root, "hello.bin"));
+      Assert.Throws<NotSupportedException>(() => session.RemoveDirectory(root, "hello.bin"));
+      Assert.Throws<NotSupportedException>(() => session.Rename(root, "hello.bin", root, "renamed.bin", false));
+      Assert.Throws<NotSupportedException>(() => session.CreateHardLink(hello.NodeId, root, "link.bin"));
+      Assert.Throws<NotSupportedException>(() => session.CreateSymbolicLink(root, "link.bin", "hello.bin"));
+      Assert.Throws<NotSupportedException>(() => session.SetMetadata(hello.NodeId, new FilesystemMetadataPatch(NativeAttributes: 0x20)));
+      Assert.Throws<NotSupportedException>(() => session.BeginTransaction());
+      Assert.Throws<NotSupportedException>(() => session.OpenFile(hello.NodeId, FileAccess.Write));
+      Assert.Throws<NotSupportedException>(() => session.OpenFile(hello.NodeId, FileAccess.ReadWrite));
+    });
+
+    using var handle = session.OpenFile(hello.NodeId, FileAccess.Read);
+    Assert.Multiple(() => {
+      Assert.Throws<NotSupportedException>(() => handle.Write(0, new byte[4]));
+      Assert.Throws<NotSupportedException>(() => handle.SetLength(0));
+    });
+
+    // The backing images must still hold exactly what they held before.
+    var decoded = new byte[payload.Length];
+    Assert.That(handle.Read(0, decoded), Is.EqualTo(payload.Length));
+    Assert.That(decoded, Is.EqualTo(payload));
+  }
+
   [TestCase("Ext")]
   [TestCase("Xfs")]
   [Category("RoundTrip")]
@@ -257,6 +443,16 @@ public sealed class BeeGfsMultiStreamReadTests {
     ArchiveInputInfo.InMemory($"targets/storage-{targetId}/format.conf", "version=3\n"u8),
     ArchiveInputInfo.InMemory($"targets/storage-{targetId}/targetNumID", Encoding.ASCII.GetBytes(targetId.ToString())),
     ArchiveInputInfo.InMemory($"targets/storage-{targetId}/chunks/{ChunkPath}", localChunk),
+  ]);
+
+  /// <summary>
+  /// A valid storage target whose <c>chunks</c> tree exists but holds no chunk for the
+  /// file under test — the difference between "target missing" and "chunk missing".
+  /// </summary>
+  private static MemoryStream BuildStorageSnapshotWithoutChunk(ushort targetId) => BuildZip([
+    ArchiveInputInfo.InMemory($"targets/storage-{targetId}/format.conf", "version=3\n"u8),
+    ArchiveInputInfo.InMemory($"targets/storage-{targetId}/targetNumID", Encoding.ASCII.GetBytes(targetId.ToString())),
+    ArchiveInputInfo.InMemory($"targets/storage-{targetId}/chunks/.keep", []),
   ]);
 
   private static MemoryStream BuildNativeMetadataSnapshot(string backingFormat, long fileSize) {
