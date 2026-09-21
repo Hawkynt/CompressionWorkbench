@@ -247,6 +247,123 @@ public sealed class RegistryHiveTests {
     return data;
   }
 
+  /// <summary>
+  /// The root key of a real hive carries the 0xffff "no key-name entry" sentinel in both halves of
+  /// its RGDB reference, because it has no name. Reading that as a block index aborts the hive on
+  /// its very first key, which is what made <c>CanList</c> false for every Windows 9x
+  /// <c>USER.DAT</c> in existence while a synthetic vector that never emits the sentinel passed.
+  /// </summary>
+  [Test]
+  public void Creg_TreatsTheAllOnesKeyNameReferenceAsAnUnnamedKey() {
+    var descriptor = new CregFormatDescriptor();
+    using var stream = new MemoryStream(BuildCregSentinelVector());
+
+    var entries = descriptor.List(stream, null);
+
+    Assert.That(entries.Any(e => e.IsDirectory && e.Name == "Named"), Is.True);
+  }
+
+  /// <summary>
+  /// RGKN addresses a key name by the identifier the RGDB record stores in its own header, not by
+  /// the record's position in the block. Hives reuse freed slots, so the two disagree constantly --
+  /// in the checked-in <c>USER.DAT</c> for 776 of 801 records. Positional lookup does not fail
+  /// loudly on that; it hands back a neighbouring key's name.
+  /// </summary>
+  [Test]
+  public void Creg_ResolvesKeyNamesByRecordIdentifierNotBlockPosition() {
+    var descriptor = new CregFormatDescriptor();
+    // Two records whose identifiers run opposite to their order in the block: position 0 is id 1.
+    using var stream = new MemoryStream(BuildCregLookupVector(
+      records: [(Id: (ushort)1, Name: "Second"), (Id: (ushort)0, Name: "First")],
+      childEntryIndex: 1));
+
+    var entries = descriptor.List(stream, null);
+
+    Assert.That(entries.Any(e => e.IsDirectory && e.Name == "Second"), Is.True,
+      "the key referencing identifier 1 resolved to the record at position 1 instead of the record whose identifier is 1");
+  }
+
+  /// <summary>
+  /// The sentinel on a key that is not the root. The root's own name is discarded by the
+  /// projection, so handling it there could be right by accident; a child has to come through as a
+  /// nameless key, which the projection escapes to <c>%00</c>, rather than aborting the hive.
+  /// </summary>
+  [Test]
+  public void Creg_ProjectsASentinelChildAsANamelessKey() {
+    var descriptor = new CregFormatDescriptor();
+    using var stream = new MemoryStream(BuildCregLookupVector(
+      records: [(Id: (ushort)0, Name: "Named")],
+      childEntryIndex: ushort.MaxValue));
+
+    var entries = descriptor.List(stream, null);
+
+    Assert.That(entries.Any(e => e.IsDirectory && e.Name == "%00"), Is.True);
+  }
+
+  /// <summary>A hive whose root carries the sentinel and whose single child is a named key.</summary>
+  private static byte[] BuildCregSentinelVector()
+    => BuildCregLookupVector([(Id: (ushort)0, Name: "Named")], childEntryIndex: 0, sentinelRoot: true);
+
+  /// <summary>
+  /// A minimal CREG hive: one RGKN record holding a root entry plus one child entry, and one RGDB
+  /// block holding <paramref name="records"/> in the order given. The child points at
+  /// <paramref name="childEntryIndex"/> as an RGDB key-name identifier.
+  /// </summary>
+  private static byte[] BuildCregLookupVector(
+    (ushort Id, string Name)[] records,
+    ushort childEntryIndex,
+    bool sentinelRoot = true
+  ) {
+    const int navigationOffset = 32;
+    const int navigationSize = 96;
+    const int dataBlockOffset = navigationOffset + navigationSize;
+    const int dataBlockSize = 256;
+
+    var data = new byte[dataBlockOffset + dataBlockSize];
+    "CREG"u8.CopyTo(data);
+    WriteU16(data, 4, 0);
+    WriteU16(data, 6, 1);
+    WriteU32(data, 8, dataBlockOffset);
+    WriteU16(data, 16, 1);
+
+    "RGKN"u8.CopyTo(data.AsSpan(navigationOffset));
+    WriteU32(data, navigationOffset + 4, navigationSize);
+    WriteU32(data, navigationOffset + 8, 32); // root entry, relative to the RGKN record
+
+    const int root = navigationOffset + 32;
+    const int child = root + 28;
+    WriteU32(data, root + 12, 0xffffffff); // no parent
+    WriteU32(data, root + 16, (uint)(child - navigationOffset));
+    WriteU32(data, root + 20, 0xffffffff); // no sibling
+    WriteU16(data, root + 24, sentinelRoot ? ushort.MaxValue : (ushort)0);
+    WriteU16(data, root + 26, sentinelRoot ? ushort.MaxValue : (ushort)0);
+
+    WriteU32(data, child + 12, (uint)(root - navigationOffset));
+    WriteU32(data, child + 16, 0xffffffff); // no children
+    WriteU32(data, child + 20, 0xffffffff); // no siblings
+    WriteU16(data, child + 24, childEntryIndex);
+    WriteU16(data, child + 26, 0);
+
+    "RGDB"u8.CopyTo(data.AsSpan(dataBlockOffset));
+    WriteU32(data, dataBlockOffset + 4, dataBlockSize);
+
+    var cursor = dataBlockOffset + 32;
+    foreach (var (id, name) in records) {
+      var nameBytes = Encoding.Latin1.GetBytes(name);
+      var recordSize = 20 + nameBytes.Length;
+      WriteU32(data, cursor, (uint)recordSize);
+      WriteU16(data, cursor + 4, id);
+      WriteU16(data, cursor + 6, 0); // the block this record belongs to
+      WriteU32(data, cursor + 8, (uint)recordSize);
+      WriteU16(data, cursor + 12, (ushort)nameBytes.Length);
+      WriteU16(data, cursor + 14, 0); // no values
+      nameBytes.CopyTo(data, cursor + 20);
+      cursor += recordSize;
+    }
+
+    return data;
+  }
+
   private static void WriteU16(byte[] data, int offset, ushort value)
     => BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(offset, 2), value);
 

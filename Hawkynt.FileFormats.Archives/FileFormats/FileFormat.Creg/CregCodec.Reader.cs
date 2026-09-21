@@ -11,7 +11,16 @@ internal static class CregCodec {
   private const int NavigationHeaderSize = 32;
   private const int HierarchyEntrySize = 28;
   private const int DataBlockHeaderSize = 32;
+
+  // CREG marks "there is nothing here" with an all-ones field rather than with a zero, and the
+  // width of the sentinel follows the width of the reference. Offsets (parent / first child /
+  // next sibling, all relative to the RGKN record) are 32 bit, so their sentinel is 0xffffffff;
+  // the RGDB block number and the key-name entry index are 16 bit, so theirs is 0xffff. A key
+  // whose RGKN entry carries the 16-bit sentinel simply has no RGDB key-name record -- the root
+  // key of every real hive is exactly that, because it has no name -- and an RGDB record that
+  // carries it in its own identifier is a free slot left behind by a deletion.
   private const uint NoOffset = 0xffffffff;
+  private const ushort NoEntry = 0xffff;
 
   public static StructuredNode Read(Stream stream) {
     var data = StructuredArchive.ReadAll(stream);
@@ -43,8 +52,16 @@ internal static class CregCodec {
     return state.ReadRoot(rootHierarchyOffset);
   }
 
-  private static List<List<KeyNameEntry>> ReadDataBlocks(byte[] data, int start, int declaredCount) {
-    var result = new List<List<KeyNameEntry>>(declaredCount);
+  /// <summary>
+  /// Indexes every RGDB block by the key-name identifier each record stores in its own header,
+  /// NOT by the record's position in the block. Real hives reuse freed slots, so the records in
+  /// a block are in allocation order while their identifiers are not: in the Windows 9x
+  /// <c>USER.DAT</c> published by log2timeline/dfwinreg, 776 of 801 records sit at a position
+  /// that differs from their identifier. Position-based lookup therefore resolves keys to the
+  /// wrong names instead of failing loudly.
+  /// </summary>
+  private static List<Dictionary<ushort, KeyNameEntry>> ReadDataBlocks(byte[] data, int start, int declaredCount) {
+    var result = new List<Dictionary<ushort, KeyNameEntry>>(declaredCount);
     var offset = start;
     for (var blockIndex = 0; blockIndex < declaredCount; ++blockIndex) {
       EnsureRange(offset, DataBlockHeaderSize, data.Length, $"CREG data block {blockIndex}");
@@ -55,7 +72,7 @@ internal static class CregCodec {
       if (size < DataBlockHeaderSize)
         throw new InvalidDataException($"CREG data block {blockIndex} is too small.");
 
-      var entries = new List<KeyNameEntry>();
+      var entries = new Dictionary<ushort, KeyNameEntry>();
       var cursor = offset + DataBlockHeaderSize;
       var end = offset + size;
       while (cursor + 20 <= end) {
@@ -65,7 +82,13 @@ internal static class CregCodec {
         if (rawSize > int.MaxValue || rawSize < 20 || cursor + (long)rawSize > end)
           break;
 
-        entries.Add(new(cursor, checked((int)rawSize)));
+        // A slot freed by a deletion keeps its size, so the block stays walkable, but blanks its
+        // identifier to the same 0xffff sentinel. Indexing those would give every freed slot in a
+        // block the same key; skipping them leaves one entry per live identifier.
+        var recordIndex = U16(data, cursor + 4);
+        if (recordIndex != NoEntry)
+          _ = entries.TryAdd(recordIndex, new(cursor, checked((int)rawSize)));
+
         cursor += checked((int)rawSize);
       }
 
@@ -78,7 +101,7 @@ internal static class CregCodec {
 
   private sealed class ReaderState(
     byte[] data,
-    IReadOnlyList<List<KeyNameEntry>> blocks,
+    IReadOnlyList<Dictionary<ushort, KeyNameEntry>> blocks,
     int navigationOffset,
     int navigationEnd
   ) {
@@ -103,7 +126,9 @@ internal static class CregCodec {
         var entryNumber = U16(data, hierarchyOffset + 24);
         var blockNumber = U16(data, hierarchyOffset + 26);
         var keyEntry = this.GetKeyNameEntry(blockNumber, entryNumber);
-        var (name, node) = this.ReadKeyNameEntry(keyEntry);
+        var (name, node) = keyEntry is { } named
+          ? this.ReadKeyNameEntry(named)
+          : (string.Empty, StructuredNode.Object("registry-key"));
 
         var nextChild = U32(data, hierarchyOffset + 16);
         var siblingGuard = new HashSet<uint>();
@@ -123,17 +148,17 @@ internal static class CregCodec {
       }
     }
 
-    private KeyNameEntry GetKeyNameEntry(ushort blockNumber, ushort entryNumber) {
-      if (blockNumber == ushort.MaxValue || blockNumber >= blocks.Count)
-        throw new InvalidDataException($"CREG key references invalid data block {blockNumber}.");
+    /// <summary>Resolves a key's RGDB key-name record, or <see langword="null"/> when it has none.</summary>
+    private KeyNameEntry? GetKeyNameEntry(ushort blockNumber, ushort entryNumber) {
+      if (blockNumber == NoEntry || entryNumber == NoEntry)
+        return null; // an absence, not a corruption -- the hive root is always this shape
 
-      var entries = blocks[blockNumber];
-      var index = (int)entryNumber;
-      if (index >= entries.Count && (entryNumber & 0x0fff) < entries.Count)
-        index = entryNumber & 0x0fff;
-      if ((uint)index >= (uint)entries.Count)
+      if (blockNumber >= blocks.Count)
+        throw new InvalidDataException($"CREG key references invalid data block {blockNumber}.");
+      if (!blocks[blockNumber].TryGetValue(entryNumber, out var entry))
         throw new InvalidDataException($"CREG key references invalid key-name entry {entryNumber} in block {blockNumber}.");
-      return entries[index];
+
+      return entry;
     }
 
     private (string Name, StructuredNode Node) ReadKeyNameEntry(KeyNameEntry entry) {
