@@ -95,6 +95,12 @@ implementation emits for the same value. Both run in the gating test tier, which
 is the point: the predecessor of the CREG assertion sat in `ExternalInterop`,
 failed against the only real hive it was pointed at, and merged regardless.
 
+On top of the frozen bytes, `StructuredPseudoArchiveExternalToolTests` hands our
+live output to CPython, Perl and `reg.exe` and compares what they recover. It has
+its own `ci.yml` step with no `continue-on-error`, alongside the GFS2 and bcachefs
+oracles: a missing tool skips its case and says so, a present tool that rejects
+our bytes fails the build.
+
 Where byte-for-byte parity is not a well-defined question the matrix says so
 rather than implying a gate that does not exist. Two cases:
 

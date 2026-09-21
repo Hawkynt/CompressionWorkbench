@@ -102,11 +102,16 @@ public sealed class StructuredPseudoArchiveExternalToolTests {
 
   /// <summary>
   /// The direction only Windows can answer: does <c>reg.exe</c> accept a <c>.reg</c> file we wrote?
-  /// Importing it and exporting the result again has to reproduce the file we handed in, byte for
-  /// byte, which covers the header, the encoding and the continuation wrapping in one assertion.
+  /// It has to import it, and the key it then holds has to carry our three payloads -- read back out
+  /// of an export <c>reg.exe</c> itself produced, so neither half of the comparison is ours.
+  ///
+  /// What this deliberately does not assert is byte equality between our file and reg.exe's
+  /// re-export. That is a claim about formatting, it is already pinned against a frozen export in
+  /// the gating tier, and hanging it on whichever Windows build a runner happens to be would make
+  /// this fixture fail for a reason that is not about our code.
   /// </summary>
   [Test]
-  public void RegExeImportsWhatWeWroteAndExportsItBackUnchanged() {
+  public void RegExeImportsWhatWeWrote() {
     if (!OperatingSystem.IsWindows()) {
       Assert.Ignore("reg.exe is a Windows tool.");
       return;
@@ -131,8 +136,17 @@ public sealed class StructuredPseudoArchiveExternalToolTests {
       var (exportExit, exportOutput) = RunReg("export", RegistryImportKey, exportPath, "/y");
       Assert.That(exportExit, Is.Zero, $"reg.exe could not export the key it had just imported:{Environment.NewLine}{exportOutput}");
 
-      Assert.That(Convert.ToHexString(File.ReadAllBytes(exportPath)), Is.EqualTo(Convert.ToHexString(scratch)),
-        "reg.exe re-exported the key we imported and produced a different file");
+      var descriptor = new RegFormatDescriptor();
+      var exported = File.ReadAllBytes(exportPath);
+      const string root = "HKEY_CURRENT_USER/Software/CompressionWorkbench/ExternalToolRoundTrip";
+      Assert.Multiple(() => {
+        Assert.That(ReferenceVectorFixture.Extract(descriptor, exported, $"{root}/dir/file.bin"),
+          Is.EqualTo(ReferenceVectorFixture.FileBin));
+        Assert.That(ReferenceVectorFixture.Extract(descriptor, exported, $"{root}/dir/long.bin"),
+          Is.EqualTo(ReferenceVectorFixture.LongBin));
+        Assert.That(ReferenceVectorFixture.Extract(descriptor, exported, $"{root}/top.bin"),
+          Is.EqualTo(ReferenceVectorFixture.TopBin));
+      });
     } finally {
       RunReg("delete", RegistryImportKey, "/f");
       TryDelete(importPath);

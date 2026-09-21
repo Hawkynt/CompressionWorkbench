@@ -188,6 +188,32 @@ jobs:
           --filter "FullyQualifiedName~Compression.Tests.BcacheFs.BcacheFsBucketGenerationExternalTests"
           --logger "trx;LogFileName=bcachefs-generation-tests.trx"
 
+      # python-msgpack is the one oracle below that is not already on both runner images. Advisory
+      # on its own: without it the MessagePack case skips and says so, and the rest still run.
+      - name: Install structured-format oracles
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m pip install --user --break-system-packages msgpack \
+            || python -m pip install --user msgpack \
+            || true
+
+      # The frozen vectors in the core tier pin bytes that CPython, Perl and reg.exe accepted once.
+      # This asks the tools themselves, against live output, and it is a hard gate rather than
+      # advisory because the tools it needs ship with both runner images: CPython with pickle, json
+      # and ElementTree, Perl with Storable, and reg.exe on Windows. A red here means our output
+      # stopped being readable by the implementation that owns the format.
+      #
+      # Individual cases still Assert.Ignore when their own tool is absent, so a runner without one
+      # reports "not validated" for that case instead of failing the build for it. That is the only
+      # thing a missing tool is allowed to do; a tool that IS there and rejects our bytes fails.
+      - name: Structured pseudo-archive writer oracles
+        run: >
+          dotnet test Compression.Tests
+          --configuration Release --no-build
+          --filter "FullyQualifiedName~Compression.Tests.StructuredPseudoArchives.StructuredPseudoArchiveExternalToolTests"
+          --logger "trx;LogFileName=structured-writer-tests.trx"
+
       - name: End-to-end interop tests
         continue-on-error: true
         run: >

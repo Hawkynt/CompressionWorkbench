@@ -16,10 +16,15 @@ Both directions are covered per format:
   the same value.
 
 The tests carrying these assertions are deliberately in **no** NUnit category, which puts them in
-the `Core tests` step of `ci.yml` — the only step that gates a pull request. A vector asserted in
-`ExternalInterop`, `EndToEnd` or any other advisory tier is excluded by the gate filter and proves
-nothing about a merge. `StructuredPseudoArchiveExternalToolTests` runs the tools themselves against
-our live output; that is a supplement, not the gate.
+the `Core tests` step of `ci.yml` — the step that gates every pull request. A vector asserted in a
+tier the gate filter excludes proves nothing about a merge; that is how the CREG reader came to
+list nothing at all on real input while CI stayed green.
+
+`StructuredPseudoArchiveExternalToolTests` is the other half: it hands our live output to CPython,
+Perl and `reg.exe` themselves. `ci.yml` runs it in its own step, **without** `continue-on-error`,
+next to the GFS2 and bcachefs oracles, because the tools it needs ship with both runner images. A
+case whose tool is genuinely absent calls `Assert.Ignore` and reports "not validated"; a tool that
+is present and rejects our bytes fails the build.
 
 ## The vectors
 
