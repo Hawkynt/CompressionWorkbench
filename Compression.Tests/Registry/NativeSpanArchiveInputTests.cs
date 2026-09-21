@@ -9,6 +9,7 @@ using FileFormat.Mz;
 using FileFormat.Numpy;
 using FileFormat.Pcap;
 using FileFormat.Pcapng;
+using FileFormat.Sup;
 using FileFormat.UefiFv;
 using FileFormat.UImage;
 using FileFormat.WebAssembly;
@@ -106,10 +107,39 @@ public sealed class NativeSpanArchiveInputTests {
     }
   }
 
+  [Test]
+  [Category("Spec")]
+  public void Sup_ExtractSpan_Epoch_DoesNotCopyWholeArchive() {
+    var testCase = BuildSupCase(LargePayloadSize);
+    var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-sup-{Guid.NewGuid():N}");
+
+    try {
+      var warmCase = BuildSupCase(257);
+      var warmDirectory = Path.Combine(directory, "warm");
+      warmCase.Operations.ExtractSpan(
+        warmCase.Image, warmDirectory, null, [warmCase.PayloadEntry]);
+      Directory.Delete(warmDirectory, recursive: true);
+
+      var before = GC.GetAllocatedBytesForCurrentThread();
+      testCase.Operations.ExtractSpan(
+        testCase.Image, directory, null, [testCase.PayloadEntry]);
+      var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+      Assert.That(File.ReadAllBytes(Path.Combine(directory, testCase.PayloadEntry)),
+        Is.EqualTo(testCase.ExpectedPayload).AsCollection);
+      Assert.That(allocated, Is.LessThan(AllocationLimit),
+        $"SUP span extraction allocated {allocated:N0} bytes for a {testCase.Image.Length:N0}-byte image.");
+    } finally {
+      if (Directory.Exists(directory))
+        Directory.Delete(directory, recursive: true);
+    }
+  }
+
   private static IReadOnlyList<SpanCase> BuildCases(int payloadSize) => [
     BuildFfuCase(payloadSize),
     BuildHdf4Case(payloadSize),
     BuildNpyCase(payloadSize),
+    BuildSupCase(payloadSize),
     BuildWasmCase(payloadSize),
     BuildAppleSingleCase(payloadSize),
     BuildPcapCase(payloadSize),
@@ -180,6 +210,25 @@ public sealed class NativeSpanArchiveInputTests {
 
     return new SpanCase(
       "NPY", new NpyFormatDescriptor(), image, "array.bin", payload);
+  }
+
+  private static SpanCase BuildSupCase(int payloadSize) {
+    using var output = new MemoryStream();
+    WriteSupSegment(output, SupReader.SegPresentationComposition, 90_000, [0xAA, 0xBB]);
+
+    var remaining = payloadSize;
+    var chunkIndex = 0;
+    while (remaining > 0) {
+      var length = Math.Min(ushort.MaxValue, remaining);
+      var body = Pattern(length, (byte)(0xE1 + chunkIndex++));
+      WriteSupSegment(output, SupReader.SegObjectDefinition, 90_000, body);
+      remaining -= length;
+    }
+
+    WriteSupSegment(output, SupReader.SegEnd, 91_000, []);
+    var image = output.ToArray();
+    return new SpanCase(
+      "SUP", new SupFormatDescriptor(), image, "subtitle_000.bin", image);
   }
 
   private static SpanCase BuildWasmCase(int payloadSize) {
@@ -382,6 +431,22 @@ public sealed class NativeSpanArchiveInputTests {
     for (var i = 0; i < result.Length; ++i)
       result[i] = (byte)(seed + i * 17);
     return result;
+  }
+
+  private static void WriteSupSegment(
+      Stream output, byte type, uint pts, ReadOnlySpan<byte> body, uint dts = 0) {
+    if (body.Length > ushort.MaxValue)
+      throw new ArgumentOutOfRangeException(nameof(body));
+
+    Span<byte> header = stackalloc byte[13];
+    header[0] = (byte)'P';
+    header[1] = (byte)'G';
+    BinaryPrimitives.WriteUInt32BigEndian(header[2..6], pts);
+    BinaryPrimitives.WriteUInt32BigEndian(header[6..10], dts);
+    header[10] = type;
+    BinaryPrimitives.WriteUInt16BigEndian(header[11..13], (ushort)body.Length);
+    output.Write(header);
+    output.Write(body);
   }
 
   private static void WriteUInt32LittleEndian(Stream output, uint value) {
