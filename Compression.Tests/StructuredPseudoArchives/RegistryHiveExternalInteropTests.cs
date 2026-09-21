@@ -1,20 +1,26 @@
 using System.Diagnostics;
-using FileFormat.Creg;
 using FileFormat.Regf;
 
 namespace Compression.Tests.StructuredPseudoArchives;
 
+/// <summary>
+/// Reads a hive Windows produced a moment ago, rather than one recorded years ago.
+///
+/// The gating proof that both hive readers work on real input lives in
+/// <c>StructuredPseudoArchiveReferenceVectorTests</c>, against checked-in hives. This adds the
+/// current Windows build's own output on a host that will hand it over, which the frozen samples
+/// cannot cover. It is advisory: <c>reg.exe save</c> needs <c>SeBackupPrivilege</c>, so on a host
+/// without it the honest report is "not validated", not a red.
+/// </summary>
 [TestFixture]
 [Category("ExternalInterop")]
 public sealed class RegistryHiveExternalInteropTests {
-  private const string DfWinRegRevision = "92ac103fe5072e83272463f61c9a1e65d4820997";
-  private const string Windows9xUserDatUrl =
-    $"https://raw.githubusercontent.com/log2timeline/dfwinreg/{DfWinRegRevision}/test_data/USER.DAT";
-
   [Test]
   public void Regf_ParsesHiveSavedByWindowsRegExe() {
-    if (!OperatingSystem.IsWindows())
+    if (!OperatingSystem.IsWindows()) {
       Assert.Ignore("Windows reg.exe is required for the REGF oracle.");
+      return;
+    }
 
     var suffix = Guid.NewGuid().ToString("N");
     var key = $@"HKCU\Software\CompressionWorkbench\RegistryHiveOracle_{suffix}";
@@ -23,7 +29,15 @@ public sealed class RegistryHiveExternalInteropTests {
     try {
       RunReg("add", key, "/v", "Greeting", "/t", "REG_SZ", "/d", "hello", "/f");
       RunReg("add", key + @"\Child", "/v", "Number", "/t", "REG_DWORD", "/d", "42", "/f");
-      RunReg("save", key, hivePath, "/y");
+
+      var save = StartReg(["save", key, hivePath, "/y"]);
+      if (save.ExitCode != 0) {
+        // "Dem Client fehlt ein erforderliches Recht" / "A required privilege is not held by the
+        // client": the account cannot enable SeBackupPrivilege. That is a statement about the host,
+        // not about the reader, and asserting on it reported a red where it meant "not validated".
+        Assert.Ignore($"reg.exe save could not write a hive on this host: {save.Output.Trim()}");
+        return;
+      }
 
       var descriptor = new RegfFormatDescriptor();
       using var stream = File.OpenRead(hivePath);
@@ -36,39 +50,8 @@ public sealed class RegistryHiveExternalInteropTests {
       });
     } finally {
       TryRunReg("delete", key, "/f");
-      try { File.Delete(hivePath); } catch { }
+      try { File.Delete(hivePath); } catch { /* best effort */ }
     }
-  }
-
-  [Test]
-  public async Task Creg_ParsesApacheLicensedWindows9xUserDatFixture() {
-    // log2timeline/dfwinreg is Apache-2.0 and publishes this real Windows 9x USER.DAT
-    // as test data. Pin the repository revision so this behavioral oracle is immutable.
-    byte[] bytes;
-    try {
-      using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-      bytes = await client.GetByteArrayAsync(Windows9xUserDatUrl);
-    } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) {
-      Assert.Ignore($"Windows 9x CREG fixture could not be downloaded: {ex.Message}");
-      return;
-    }
-
-    Assert.Multiple(() => {
-      Assert.That(bytes.Length, Is.EqualTo(159_776));
-      Assert.That(bytes.AsSpan(0, 4).SequenceEqual("CREG"u8), Is.True);
-    });
-
-    var descriptor = new CregFormatDescriptor();
-    using var stream = new MemoryStream(bytes, writable: false);
-    var entries = descriptor.List(stream, null);
-
-    const string autorun = ".DEFAULT/Software/Microsoft/Windows/CurrentVersion/Explorer/MountPoints/A/_Autorun";
-    Assert.Multiple(() => {
-      Assert.That(entries.Any(e => e.IsDirectory && e.Name == ".DEFAULT"), Is.True);
-      Assert.That(entries.Any(e => e.IsDirectory && e.Name == "Software"), Is.True);
-      Assert.That(entries.Any(e => e.IsDirectory && e.Name == autorun), Is.True);
-      Assert.That(entries.Any(e => e.Name == autorun + "/LastUpdate"), Is.True);
-    });
   }
 
   private static void RunReg(params string[] arguments) {
@@ -77,7 +60,7 @@ public sealed class RegistryHiveExternalInteropTests {
   }
 
   private static void TryRunReg(params string[] arguments) {
-    try { _ = StartReg(arguments); } catch { }
+    try { _ = StartReg(arguments); } catch { /* best effort */ }
   }
 
   private static (int ExitCode, string Output) StartReg(IEnumerable<string> arguments) {
