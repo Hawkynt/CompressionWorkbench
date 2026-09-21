@@ -1,0 +1,13 @@
+# The vectors are asserted byte for byte, so nothing may rewrite a byte of one on the way through
+# git. Without this, `json-archive.json` and `xml-document.xml` look like text, get their newlines
+# translated on checkout, and the parity assertions that pin them fail on whichever platform
+# disagrees with the one they were generated on -- which is the exact class of defect the vectors
+# exist to catch. The generator scripts and this directory's README are ordinary text and stay so.
+*.json    -text -diff
+*.msgpack -text -diff
+*.pickle  -text -diff
+*.reg     -text -diff
+*.storable -text -diff
+*.nrbf    -text -diff
+*.xml     -text -diff
+*.gz      -text -diff

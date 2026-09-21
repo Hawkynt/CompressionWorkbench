@@ -45,4 +45,17 @@
     <PackageReference Include="System.IO.Hashing" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Bytes written by the reference implementation of each structured format: CPython pickle,
+         python-msgpack, Windows reg.exe, Perl Storable, .NET BinaryFormatter, and two real registry
+         hives. They are embedded rather than copied so the gate cannot silently pass on a runner
+         where a content file failed to deploy, and checked in rather than downloaded so it cannot
+         pass on a runner with no network. See ReferenceVectors/README.md for provenance; the
+         generator scripts beside them are documentation, not build inputs. -->
+    <EmbeddedResource Include="StructuredPseudoArchives\ReferenceVectors\*"
+                      Exclude="StructuredPseudoArchives\ReferenceVectors\*.py;StructuredPseudoArchives\ReferenceVectors\*.pl;StructuredPseudoArchives\ReferenceVectors\*.ps1;StructuredPseudoArchives\ReferenceVectors\README.md">
+      <LogicalName>ReferenceVectors.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

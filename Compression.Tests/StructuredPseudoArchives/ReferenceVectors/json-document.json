@@ -1,0 +1,13 @@
+{
+  "dir": {
+    "count": 7,
+    "name": "value",
+    "ratio": 1.5,
+    "flag": true,
+    "missing": null,
+    "list": [
+      1,
+      "two"
+    ]
+  }
+}

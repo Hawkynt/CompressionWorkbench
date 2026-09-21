@@ -70,6 +70,49 @@ There is no separate API for pseudo-archives: a TIFF descriptor implements
 format allows) exactly like ZIP. The README's *Archives and Pseudo-archives*
 section is the catalogue; this section is the rule.
 
+### 2.1 Structured serialization documents
+
+JSON, XML, MessagePack, Python pickle, Perl Storable, MS-NRBF, `.reg` exports and
+the two Windows registry hive layouts all project through one shared model in
+`FileFormat.Structured`: a map/object becomes a folder, an array becomes a folder
+of deterministic `[NNNNNN]` indices, and a scalar becomes a virtual file holding
+its bytes. Path segments are UTF-8 percent-escaped, Windows device names
+included, so a projected name is always a legal one.
+
+None of them parses by handing the document to the format's own runtime. Pickle
+is walked as opcodes, Storable and NRBF as records; no module is imported, no
+serialized type is activated, no constructor or callback runs, and the live
+Windows registry is never opened. `.reg` is an offline text interchange format
+here and nothing more.
+
+**Their capability tiers are gated on third-party bytes, in both directions.**
+`Compression.Tests/StructuredPseudoArchives/ReferenceVectors` holds output from
+CPython's `pickle` and `json`, python-msgpack, Windows `reg.exe export`, Perl
+`nstore`, .NET `BinaryFormatter`, and two real registry hives. The reading
+direction asserts our reader recovers the exact payload from those bytes; the
+writing direction asserts our writer emits the very bytes the reference
+implementation emits for the same value. Both run in the gating test tier, which
+is the point: the predecessor of the CREG assertion sat in `ExternalInterop`,
+failed against the only real hive it was pointed at, and merged regardless.
+
+On top of the frozen bytes, `StructuredPseudoArchiveExternalToolTests` hands our
+live output to CPython, Perl and `reg.exe` and compares what they recover. It has
+its own `ci.yml` step with no `continue-on-error`, alongside the GFS2 and bcachefs
+oracles: a missing tool skips its case and says so, a present tool that rejects
+our bytes fails the build.
+
+Where byte-for-byte parity is not a well-defined question the matrix says so
+rather than implying a gate that does not exist. Two cases:
+
+- **XML** — no two XML writers agree on declaration quoting, attribute order and
+  namespace placement, so there is nothing to compare our envelope against. The
+  reading direction is gated; the writing direction is exercised live against a
+  real parser in the advisory `ExternalInterop` tier.
+- **Pickle** — CPython's memo is keyed on object *identity*, so its output for a
+  given value is not a function of that value alone. Our writer matches it for
+  any graph whose leaves are distinct objects, which is what the vector pins, and
+  the vector's inputs are chosen to keep that true.
+
 ---
 
 ## 3. The five maintenance verbs
