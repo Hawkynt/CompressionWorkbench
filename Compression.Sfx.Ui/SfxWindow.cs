@@ -1,5 +1,6 @@
 using System.Drawing;
-using Compression.Lib;
+using Compression.Registry;
+using Compression.Sfx;
 using Hawkynt.NativeForms;
 using Hawkynt.NativeForms.Drawing;
 
@@ -19,7 +20,6 @@ internal sealed class SfxWindow : Form {
   private const int WindowWidth = 500;
   private const int InnerWidth = WindowWidth - 2 * Gutter;
 
-  private readonly string _exePath = Environment.ProcessPath ?? "";
 
   private readonly Label _formatLabel = new();
   private readonly TextBox _outputPath = new();
@@ -70,22 +70,43 @@ internal sealed class SfxWindow : Form {
     this.DetectArchive();
   }
 
-  /// <summary>Reads the trailer the builder appended, to name what is inside.</summary>
+  /// <summary>Opens the payload once, to name what is inside and to confirm it can be read.</summary>
   private void DetectArchive() {
     try {
-      if (SfxBuilder.ReadTrailer(this._exePath) is not { } info) {
+      if (!SfxPayload.TryOpen(out var container, out var payload)) {
         this.ShowError("No embedded archive found.");
         return;
       }
 
-      if (info.Format == FormatDetector.Format.Unknown) {
-        this.ShowError("Cannot identify the embedded archive format.");
-        return;
+      using (container)
+      using (payload) {
+        if (SfxFormatResolver.Resolve(payload) is null) {
+          this.ShowError("Cannot identify the embedded archive format.");
+          return;
+        }
       }
 
-      this._formatLabel.Text = $"Self-Extracting Archive ({info.Format})";
+      this._formatLabel.Text = $"Self-Extracting Archive ({SfxFormatResolver.FormatName})";
     } catch (Exception ex) {
       this.ShowError($"Error: {ex.Message}");
+    }
+  }
+
+  /// <summary>
+  /// Extracts on a worker thread. The payload is opened fresh rather than held open from detection,
+  /// so a failed attempt cannot leave a half-consumed stream behind for the next one.
+  /// </summary>
+  private static void Extract(string outputDirectory) {
+    if (!SfxPayload.TryOpen(out var container, out var payload))
+      throw new InvalidOperationException("No embedded archive found.");
+
+    using (container)
+    using (payload) {
+      var operations = SfxFormatResolver.Resolve(payload)
+        ?? throw new InvalidOperationException("Cannot identify the embedded archive format.");
+
+      Directory.CreateDirectory(outputDirectory);
+      operations.Extract(payload, outputDirectory, password: null, files: null);
     }
   }
 
@@ -118,7 +139,7 @@ internal sealed class SfxWindow : Form {
     this._status.ForeColor = Color.Black;
 
     try {
-      await Task.Run(() => SfxBuilder.Extract(this._exePath, outputDirectory));
+      await Task.Run(() => Extract(outputDirectory));
 
       this._progress.Style = ProgressBarStyle.Blocks;
       this._progress.Value = 100;
