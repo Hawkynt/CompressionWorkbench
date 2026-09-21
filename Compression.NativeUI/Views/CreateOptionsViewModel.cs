@@ -785,13 +785,10 @@ internal sealed class CreateOptionsViewModel : INotifyPropertyChanged {
   }
 
   private static string[] BuildSfxTargets() {
-    var current = GetCurrentRid();
-    return [
-      $"Current platform ({current})",
-      "win-x64", "win-x86", "win-arm64",
-      "linux-x64", "linux-arm64",
-      "osx-x64", "osx-arm64",
-    ];
+    // SfxBuilder.SupportedTargets is the single source; this list used to be a fourth hand-kept
+    // copy and had already drifted from the other three.
+    string[] targets = [$"Current platform ({GetCurrentRid()})", .. SfxBuilder.SupportedTargets];
+    return targets;
   }
 
   private static string GetCurrentRid() {
