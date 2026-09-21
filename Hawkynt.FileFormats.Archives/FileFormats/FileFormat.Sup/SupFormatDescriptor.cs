@@ -101,6 +101,42 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var parsed = SupReader.ReadLayout(archive);
+    var metadata = BuildMetadata(parsed);
+    var result = new List<ArchiveEntryInfo>(parsed.Epochs.Count + 1) {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null, "Tag"),
+    };
+
+    for (var i = 0; i < parsed.Epochs.Count; ++i) {
+      var epoch = parsed.Epochs[i];
+      result.Add(new ArchiveEntryInfo(
+        i + 1, $"subtitle_{i:D3}.bin", epoch.RawLength, epoch.RawLength,
+        "stored", false, false, null, "Payload"));
+    }
+
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var parsed = SupReader.ReadLayout(archive);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(parsed));
+
+    for (var i = 0; i < parsed.Epochs.Count; ++i) {
+      var name = $"subtitle_{i:D3}.bin";
+      if (files is not null && files.Length > 0 && !MatchesFilter(name, files))
+        continue;
+
+      var epoch = parsed.Epochs[i];
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(archive.Slice(epoch.RawOffset, epoch.RawLength));
+    }
+  }
+
   /// <summary>
   /// Opens a single SUP entry as a bounded read-only stream. Each subtitle
   /// epoch's pre-decoded byte buffer is wrapped in a
@@ -265,17 +301,30 @@ public sealed class SupFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     return result;
   }
 
-  private static byte[] BuildMetadata(SupReader.Stream parsed) {
+  private static byte[] BuildMetadata(SupReader.Stream parsed) =>
+    BuildMetadata(
+      parsed.Segments.Count,
+      parsed.Epochs.Count,
+      parsed.Epochs.Count == 0 ? null : parsed.Epochs[0].StartPtsRaw,
+      parsed.Epochs.Count == 0 ? null : parsed.Epochs[^1].EndPtsRaw);
+
+  private static byte[] BuildMetadata(SupReader.StreamLayout parsed) =>
+    BuildMetadata(
+      parsed.Segments.Count,
+      parsed.Epochs.Count,
+      parsed.Epochs.Count == 0 ? null : parsed.Epochs[0].StartPtsRaw,
+      parsed.Epochs.Count == 0 ? null : parsed.Epochs[^1].EndPtsRaw);
+
+  private static byte[] BuildMetadata(
+      int segmentCount, int subtitleCount, uint? firstPtsRaw, uint? lastPtsRaw) {
     var sb = new StringBuilder();
     sb.AppendLine("[sup]");
-    sb.Append("segment_count = ").Append(parsed.Segments.Count).Append('\n');
-    sb.Append("subtitle_count = ").Append(parsed.Epochs.Count).Append('\n');
-    if (parsed.Epochs.Count > 0) {
-      var first = parsed.Epochs[0];
-      var last = parsed.Epochs[^1];
+    sb.Append("segment_count = ").Append(segmentCount).Append('\n');
+    sb.Append("subtitle_count = ").Append(subtitleCount).Append('\n');
+    if (firstPtsRaw is { } firstPts && lastPtsRaw is { } lastPts) {
       // PTS is in 90 kHz ticks per the PGS spec.
-      var startMs = first.StartPtsRaw / 90.0;
-      var endMs = last.EndPtsRaw / 90.0;
+      var startMs = firstPts / 90.0;
+      var endMs = lastPts / 90.0;
       sb.Append(CultureInfo.InvariantCulture, $"first_pts_ms = {startMs:F3}\n");
       sb.Append(CultureInfo.InvariantCulture, $"last_pts_ms = {endMs:F3}\n");
       sb.Append(CultureInfo.InvariantCulture, $"duration_ms = {endMs - startMs:F3}\n");
