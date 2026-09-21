@@ -13,6 +13,8 @@ namespace FileFormat.Sup;
 /// </remarks>
 public sealed class SupReader {
 
+  private const int SegmentHeaderSize = 13;
+
   // Segment-type constants per PGS spec.
   /// <summary>
   /// Defines the seg palette definition constant value.
@@ -56,25 +58,66 @@ public sealed class SupReader {
     IReadOnlyList<Epoch> Epochs);
 
   /// <summary>
+  /// Non-owning description of one segment. The body remains in the caller's source span;
+  /// this record only identifies its location and size.
+  /// </summary>
+  internal readonly record struct SegmentLayout(
+    uint PtsRaw,
+    uint DtsRaw,
+    byte Type,
+    int FileOffset,
+    int BodyOffset,
+    int BodyLength);
+
+  /// <summary>
+  /// Non-owning description of one PCS-to-END epoch as a contiguous range of the source span.
+  /// </summary>
+  internal readonly record struct EpochLayout(
+    uint StartPtsRaw,
+    uint EndPtsRaw,
+    int SegmentCount,
+    int RawOffset,
+    int RawLength);
+
+  /// <summary>
+  /// Parsed SUP structure without copied segment or epoch payloads.
+  /// </summary>
+  internal sealed record StreamLayout(
+    IReadOnlyList<SegmentLayout> Segments,
+    IReadOnlyList<EpochLayout> Epochs);
+
+  /// <summary>
   /// Parses an entire <c>.sup</c> stream. Stops at first malformed segment without throwing,
   /// so partially-recovered files still yield their leading well-formed epochs.
   /// </summary>
-  public static Stream Read(ReadOnlySpan<byte> data) => ReadCore(data, strict: false);
+  public static Stream Read(ReadOnlySpan<byte> data) => Materialize(data, ReadLayoutCore(data, strict: false));
 
   /// <summary>
   /// Parses an entire <c>.sup</c> stream and rejects any malformed or trailing bytes.
   /// This is the validation path used before muxing/remuxing data back to disk.
   /// </summary>
-  public static Stream ReadStrict(ReadOnlySpan<byte> data) => ReadCore(data, strict: true);
+  public static Stream ReadStrict(ReadOnlySpan<byte> data) => Materialize(data, ReadLayoutCore(data, strict: true));
 
-  private static Stream ReadCore(ReadOnlySpan<byte> data, bool strict) {
-    if (data.Length < 13) throw new InvalidDataException("PGS: file shorter than minimum 13-byte header.");
+  /// <summary>
+  /// Parses SUP structure without taking ownership of segment bodies or epoch byte ranges.
+  /// The returned offsets are valid only for the source span supplied to this call.
+  /// </summary>
+  internal static StreamLayout ReadLayout(ReadOnlySpan<byte> data) => ReadLayoutCore(data, strict: false);
+
+  /// <summary>
+  /// Strict counterpart to <see cref="ReadLayout(ReadOnlySpan{byte})"/>.
+  /// </summary>
+  internal static StreamLayout ReadLayoutStrict(ReadOnlySpan<byte> data) => ReadLayoutCore(data, strict: true);
+
+  private static StreamLayout ReadLayoutCore(ReadOnlySpan<byte> data, bool strict) {
+    if (data.Length < SegmentHeaderSize)
+      throw new InvalidDataException($"PGS: file shorter than minimum {SegmentHeaderSize}-byte header.");
     if (data[0] != (byte)'P' || data[1] != (byte)'G')
       throw new InvalidDataException($"PGS: expected magic 'PG' at offset 0, got 0x{data[0]:X2}{data[1]:X2}.");
 
-    var segments = new List<Segment>();
+    var segments = new List<SegmentLayout>();
     var pos = 0;
-    while (pos + 13 <= data.Length) {
+    while (pos + SegmentHeaderSize <= data.Length) {
       if (data[pos] != (byte)'P' || data[pos + 1] != (byte)'G') {
         if (strict)
           throw new InvalidDataException($"PGS: expected magic 'PG' at offset {pos}.");
@@ -85,48 +128,75 @@ public sealed class SupReader {
       var dts = BinaryPrimitives.ReadUInt32BigEndian(data[(pos + 6)..]);
       var type = data[pos + 10];
       var size = BinaryPrimitives.ReadUInt16BigEndian(data[(pos + 11)..]);
+      var bodyOffset = pos + SegmentHeaderSize;
 
-      if (pos + 13 + size > data.Length) {
+      if (size > data.Length - bodyOffset) {
         if (strict)
           throw new InvalidDataException($"PGS: segment at offset {pos} declares {size} body bytes beyond end of stream.");
         break;
       }
 
-      var body = data.Slice(pos + 13, size).ToArray();
-      segments.Add(new Segment(pts, dts, type, body, pos));
-      pos += 13 + size;
+      segments.Add(new SegmentLayout(
+        PtsRaw: pts,
+        DtsRaw: dts,
+        Type: type,
+        FileOffset: pos,
+        BodyOffset: bodyOffset,
+        BodyLength: size));
+      pos = bodyOffset + size;
     }
 
     if (strict && pos != data.Length)
       throw new InvalidDataException($"PGS: {data.Length - pos} trailing byte(s) remain after the last complete segment at offset {pos}.");
 
-    return new Stream(segments, GroupEpochs(segments, data));
+    return new StreamLayout(segments, GroupEpochs(segments));
+  }
+
+  private static Stream Materialize(ReadOnlySpan<byte> data, StreamLayout layout) {
+    var segments = new List<Segment>(layout.Segments.Count);
+    foreach (var segment in layout.Segments)
+      segments.Add(new Segment(
+        PtsRaw: segment.PtsRaw,
+        DtsRaw: segment.DtsRaw,
+        Type: segment.Type,
+        Body: data.Slice(segment.BodyOffset, segment.BodyLength).ToArray(),
+        FileOffset: segment.FileOffset));
+
+    var epochs = new List<Epoch>(layout.Epochs.Count);
+    foreach (var epoch in layout.Epochs)
+      epochs.Add(new Epoch(
+        StartPtsRaw: epoch.StartPtsRaw,
+        EndPtsRaw: epoch.EndPtsRaw,
+        SegmentCount: epoch.SegmentCount,
+        RawBytes: data.Slice(epoch.RawOffset, epoch.RawLength).ToArray()));
+
+    return new Stream(segments, epochs);
   }
 
   /// <summary>
-  /// Groups segments into "epochs" — runs starting at a Presentation Composition Segment
+  /// Groups segment layouts into "epochs" — runs starting at a Presentation Composition Segment
   /// (PCS) and ending at the next End-of-Display-Set segment (END), inclusive.
   /// Segments that arrive before the first PCS are dropped (they have no display context).
   /// </summary>
-  private static List<Epoch> GroupEpochs(IReadOnlyList<Segment> segments, ReadOnlySpan<byte> data) {
-    var epochs = new List<Epoch>();
+  private static List<EpochLayout> GroupEpochs(IReadOnlyList<SegmentLayout> segments) {
+    var epochs = new List<EpochLayout>();
     var startIdx = -1;
     var startPts = 0u;
     for (var i = 0; i < segments.Count; i++) {
-      var s = segments[i];
-      if (s.Type == SegPresentationComposition && startIdx < 0) {
+      var segment = segments[i];
+      if (segment.Type == SegPresentationComposition && startIdx < 0) {
         startIdx = i;
-        startPts = s.PtsRaw;
+        startPts = segment.PtsRaw;
       }
-      if (s.Type == SegEnd && startIdx >= 0) {
+      if (segment.Type == SegEnd && startIdx >= 0) {
         var beginOffset = segments[startIdx].FileOffset;
-        var endOffset = s.FileOffset + 13 + s.Body.Length;
-        var raw = data.Slice(beginOffset, endOffset - beginOffset).ToArray();
-        epochs.Add(new Epoch(
+        var endOffset = segment.BodyOffset + segment.BodyLength;
+        epochs.Add(new EpochLayout(
           StartPtsRaw: startPts,
-          EndPtsRaw: s.PtsRaw,
+          EndPtsRaw: segment.PtsRaw,
           SegmentCount: i - startIdx + 1,
-          RawBytes: raw));
+          RawOffset: beginOffset,
+          RawLength: endOffset - beginOffset));
         startIdx = -1;
       }
     }
