@@ -35,7 +35,7 @@ push to a working branch     pull request      push to main      manual dispatch
  back onto the branch                               v                   v
                                               _build.yml           _build.yml
                                                     |                   |
-                              5 SFX stubs (win-x64, win-x86, win-arm64, linux-x64,
+                              SFX stubs per runtime (win-x64/arm64, linux-x64/arm64,
                               linux-arm64) staged into Compression.Lib/stubs/,
                               then the three release zips
                                                     |                   |
@@ -90,7 +90,8 @@ READMEs against the house template and regenerates their `REFERENCE.md`.
 - **NuGet publication gates the GitHub release.** The `publish` job `needs` `publish-nuget`, which pushes through nuget.org Trusted Publishing (OIDC). A release cannot go green while the packages are missing.
 - **Coverage is a metric, not a gate.** Instrumenting ~27,000 tests costs 131–233 minutes against 25 uninstrumented, and it was cancelled before reporting on 23 of its last 25 runs as a PR check. It now runs on its own daily cron with the hours it needs and blocks nobody. It is the only cron in the pipeline; everything else is event-driven.
 - **Generated files are committed on the branch, not in CI.** `generate.yml` and `branch-screenshots.yml` run on working branches only and are refused on the default branch. Both commit through `Hawkynt/RepositoryTemplate/commit-generated-file`, and both carry an actor guard so a bot commit cannot retrigger them.
-- **`_build.yml` runs on windows-latest for everything**, including the Linux CLI (via `--runtime linux-x64`). SFX stubs get embedded into `Compression.Lib`, so single-host staging avoids cross-runner artifact passing.
+- **`_build.yml` runs on windows-latest for everything except the SFX stubs**, including the Linux CLI (via `--runtime linux-x64`).
+- **SFX stubs build per runtime.** They are NativeAOT binaries and NativeAOT cannot cross-compile, so `sfx-stubs-universal` (12 legs) and `sfx-stubs-carved` (96 legs) run on a runner matching each runtime — `windows-latest`, `windows-11-arm`, `ubuntu-latest`, `ubuntu-24.04-arm`, `macos-13`, `macos-latest` — and upload one artifact each. The `build` job needs both and downloads them into `Compression.Lib/stubs`, so staging now crosses job boundaries rather than living in one runner.
 - **Stubs use `ExcludeStubs=true` during stub publish** to prevent the Roslyn PE size limit from kicking in when Compression.Lib embeds its own stubs.
 - **3-generation (GFS) retention**, not "keep last N". GFS guarantees at least one build per week for a month and one per month for a quarter.
 

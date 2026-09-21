@@ -34,7 +34,7 @@ CompressionWorkbench.slnx
 |
 +-- Self-Extracting Archives
 |   +-- Compression.Sfx.Cli               Console SFX stub
-|   +-- Compression.Sfx.Ui                GUI SFX stub (NativeForms: Win32 + GTK)
+|   +-- Compression.Sfx.Ui                GUI SFX stub (NativeForms, NativeAOT: Win32/GTK/macOS)
 |
 +-- NuGet meta-packages (each compiles the formats it owns; every format lives in one of them)
 |   +-- Hawkynt.FileFormats.Archives      Compiles the FileFormats/FileFormat.* sources it owns,
