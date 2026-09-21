@@ -133,7 +133,10 @@ Append `+` to any method for optimal encoding:
 - `--threads N` — Parallel compression threads
 - `--solid-size SIZE` — 7z solid block size
 - `--force-compress` — Override incompressibility detection
-- `--sfx` / `--sfx-ui` — Create self-extracting archive
+- `--sfx` / `--sfx-ui` — Create self-extracting archive. `--sfx-ui` shows a small window with a
+  folder picker and is available for Windows and Linux targets; `--sfx` is a console stub and covers
+  every target. Both stubs carry a reduced copy of the format library — they extract archives, so
+  audio containers are not among the formats they recognise.
 
 ## Self-Extracting Archives
 

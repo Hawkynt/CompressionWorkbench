@@ -2,11 +2,9 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Compression.Sfx.Ui</RootNamespace>
     <AssemblyName>sfx-ui</AssemblyName>
-    <UseWPF>true</UseWPF>
-    <UseWindowsForms>true</UseWindowsForms>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
 
@@ -21,7 +19,30 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
+  <!--
+    One backend per stub. The stub is prepended to every archive built with it, so a second
+    platform's backend would be dead weight in every one of them; the matching DefineConstant
+    keeps Program.cs from referencing a package that is not there.
+  -->
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('win'))">
+    <DefineConstants>$(DefineConstants);BACKEND_WINDOWS</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$(RuntimeIdentifier.StartsWith('linux'))">
+    <DefineConstants>$(DefineConstants);BACKEND_GTK</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
+    <PackageReference Include="Hawkynt.NativeForms" Version="1.0.0.219" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Windows" Version="1.0.0.62"
+                      Condition="$(RuntimeIdentifier.StartsWith('win'))" />
+    <PackageReference Include="Hawkynt.NativeForms.Backends.Gtk" Version="1.0.0.71"
+                      Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Fody weaves the SFX stub's managed deps into the main assembly at build time,
+         giving us a compact single-file stub even without `dotnet publish`. -->
     <PackageReference Include="Fody" Version="6.9.1">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
