@@ -14,5 +14,14 @@ public interface ICompressionOptimizable {
   /// Re-encodes <paramref name="input"/> into <paramref name="output"/> using
   /// the format's best supported compression choices.
   /// </summary>
-  void OptimizeCompression(Stream input, Stream output);
+  void OptimizeCompression(Stream input, Stream output) {
+    if (this is not IStreamFormatOperations streamOperations)
+      throw new NotSupportedException(
+        $"The default {nameof(ICompressionOptimizable)} implementation requires {nameof(IStreamFormatOperations)}.");
+
+    using var raw = new MemoryStream();
+    streamOperations.Decompress(input, raw);
+    raw.Position = 0;
+    streamOperations.CompressOptimal(raw, output);
+  }
 }
