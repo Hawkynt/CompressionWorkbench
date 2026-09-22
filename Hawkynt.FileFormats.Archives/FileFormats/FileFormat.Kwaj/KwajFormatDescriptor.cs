@@ -7,7 +7,7 @@ namespace FileFormat.Kwaj;
 /// <summary>
 /// Describes kwaj format.
 /// </summary>
-public sealed class KwajFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class KwajFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
