@@ -16,7 +16,7 @@ namespace FileFormat.JpegArchive;
 /// accessible explicitly via <c>cwb list --format JpegArchive photo.jpg</c>.
 /// </para>
 /// </summary>
-public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable {
+public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveInMemoryExtract, IArchiveLayoutMap, IArchiveDefragmentable, IArchiveCanonicalizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
@@ -34,7 +34,7 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
   /// </summary>
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsMultipleEntries;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -173,6 +173,19 @@ public sealed class JpegArchiveDescriptor : IFormatDescriptor, IArchiveFormatOpe
 
   /// <inheritdoc />
   public IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive) => JpegLayoutMap.Enumerate(archive);
+
+  /// <inheritdoc />
+  public void Canonicalize(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (input.CanSeek) input.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    input.CopyTo(output);
+    output.Position = 0;
+    JpegOptimizer.Optimize(output);
+    output.Position = 0;
+  }
 
   // ── IArchiveDefragmentable ────────────────────────────────────
 
