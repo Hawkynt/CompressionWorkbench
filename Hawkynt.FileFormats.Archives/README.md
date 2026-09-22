@@ -24,7 +24,7 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 
 - Compression-stream readers and writers for modern and historical formats, including the encodings (BinHex, MacBinary, uuencode/base64, yEnc).
 - Archive enumeration, extraction, test, fresh creation and — for most containers — add/replace/remove on an existing archive.
-- Maintenance verbs on the same surface: defragment, shrink, wipe unused space, optimize layout, reorder metadata.
+- Maintenance capabilities are separated by effect: compress, canonicalize, repack, sort directory entries, defragment extents, change allocation geometry, shrink and wipe unused space.
 - Software-package and installer inspection without executing the package or installer.
 - Office, OpenDocument, e-book, mail and web bundles exposed through the same archive surface.
 - Game, engine, console, Amiga and vintage archives beside the mainstream ZIP / TAR / 7z / RAR / CAB families.
@@ -39,7 +39,7 @@ The package bundles the archive-domain `FileFormat.*` assemblies and takes `Hawk
 | **WORM** | Read plus create a fresh archive; no edit of an existing one. |
 | **R/W** | Read plus add / replace / remove on an existing archive. The edit may be byte-preserving in place or a verified extract → edit → re-create rebuild; both keep the result valid. |
 
-Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — the verbs the descriptor implements: `defrag` (`IArchiveDefragmentable`), `shrink` (`IArchiveShrinkable`), `wipe` (`IWipeEmpty` / `IArchiveLayoutMap`), `optimize` (`ILayoutOptimizable` or `SupportsOptimize`), `reorder` (`IFileInternalChunkMover`, moving container metadata such as MP4 `moov` or Matroska `Cues` in place). For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
+Column legend: **Id** is the registry identifier (`FormatRegistry.GetById`, `cwb formats`). **Test** — the descriptor verifies checksums/structure (`CanTest`). **Maintenance** — effect-specific capabilities: compression optimization (`ICompressionOptimizable`), canonicalization (`IArchiveCanonicalizable`), repack (`IArchiveRepackable`), directory ordering (`IFilesystemDirectoryOrderer`), extent defragmentation (`IFilesystemBlockMover` + `IArchiveDefragmentable`), allocation-geometry changes (`ILayoutOptimizable`), plus `shrink` and `wipe`. For media containers **Demux** is per-track extraction, **Mux** is building a container from elementary streams, **Remux / edit** is in-place relayout or editing. **Notes** name the deliberate subset or the naming quirk worth knowing; formats that do not preserve arbitrary entry names say so there.
 
 Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is derived from the descriptor's `Capabilities` and the interfaces its operations object implements; `Compression.Tests.Operations.ArchivesReadmeStateTests` fails when a cell disagrees with the built registry, so the table cannot drift from the code.
 
@@ -74,7 +74,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 | [LZMA (.lzma)](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm) | `Lzma` | `.lzma` | ✅ | ✅ | ✅ |  | [7-zip.org](https://www.7-zip.org/sdk.html) |
 | [lzop](https://en.wikipedia.org/wiki/Lzop) | `Lzop` | `.lzo` | ✅ | ✅ | ✅ |  | [lzop.org](https://www.lzop.org/) |
 | [LZS](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Stac) | `Lzs` | `.lzs` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc2395) |
-| [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | ✅ |  | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
+| [MacBinary](https://en.wikipedia.org/wiki/MacBinary) | `MacBinary` | `.bin` `.macbin` | ✅ | ✅ | — | Canonicalization is exposed separately from compression optimization | [RFC](https://www.rfc-editor.org/rfc/rfc1740) |
 | MCM | `Mcm` | `.mcm` | ✅ | ✅ | ✅ | Optimizer searches Legacy plus reduced Turbo/Fast/Mid/High/Max managed profiles | [GitHub](https://github.com/mathieuchartier/mcm) |
 | [PackBits](https://en.wikipedia.org/wiki/PackBits) | `PackBits` | `.packbits` | ✅ | ✅ | ✅ |  | [developer.apple.com](https://developer.apple.com/library/archive/documentation/mac/pdf/MoreMacintoshToolbox.pdf) |
 | [PAQ8](https://en.wikipedia.org/wiki/PAQ) | `Paq8` | `.paq8l` `.paq8` | ✅ | ✅ | ✅ |  | [mattmahoney.net](https://mattmahoney.net/dc/paq.html) |
@@ -528,8 +528,12 @@ A descriptor advertises what it can do twice, and the two must agree: a `FormatC
 | `IArchiveDefragmentable` | defrag |
 | `IArchiveShrinkable` | shrink |
 | `IWipeEmpty` / `IArchiveLayoutMap` | wipe (zero proven-dead gaps; the layout map also feeds the block-map preview) |
-| `ILayoutOptimizable` | optimize |
-| `IFileInternalLayoutMap` / `IFileInternalChunkMover` | reorder container metadata in place |
+| `ICompressionOptimizable` | recompress live payloads with better compression choices |
+| `IArchiveCanonicalizable` | canonicalize headers / padding / metadata placement |
+| `IArchiveRepackable` | rebuild the same logical entries without implying recompression |
+| `IFilesystemDirectoryOrderer` | sort directory entries |
+| `IFilesystemBlockMover` + `IArchiveDefragmentable` | defragment physical extents |
+| `ILayoutOptimizable` | change allocation geometry |
 | `IStreamFormatOperations` | single-stream compress / decompress with `FormatCreateOptions` tunables |
 
 `CanModify` is withheld from create-only formats whose checksum chain an append would break (WIM, split WIM) and from writers that reject an arbitrary edited member set (Wrapster, OVA), even though the rebuild machinery could run; `WriteCapabilityHonestyTests` enforces that every `CanModify` claimant implements `IArchiveModifiable`, and `ArchiveModifyRoundTripTests` proves the edit round-trips.
