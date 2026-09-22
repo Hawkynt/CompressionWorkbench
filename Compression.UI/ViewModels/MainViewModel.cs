@@ -82,14 +82,17 @@ internal sealed class MainViewModel : ViewModelBase {
   // resolves its target via ResolveMaintenanceTarget — so the verbs work on a
   // standalone archive file, the currently-open archive, OR an archive entry
   // nested inside the open archive (materialised + written back via Replace).
-  public ICommand OptimizeEntryCommand { get; }
+  public ICommand CompressEntryCommand { get; }
+  public ICommand CanonicalizeEntryCommand { get; }
+  public ICommand RepackEntryCommand { get; }
+  public ICommand SortDirectoryEntriesCommand { get; }
+  public ICommand DefragmentExtentsEntryCommand { get; }
+  public ICommand ChangeAllocationGeometryEntryCommand { get; }
   public ICommand ShrinkEntryCommand { get; }
-  public ICommand DefragmentEntryCommand { get; }
   public ICommand PurgeEntryCommand { get; }
   public ICommand WipeEntryCommand { get; }
   public ICommand CompactEntryCommand { get; }
   public ICommand ScrambleEntryCommand { get; }
-  public ICommand ReconfigureEntryCommand { get; }
   public ICommand DeleteSelectedCommand { get; }
 
   // True after a successful in-archive delete on a format whose container leaves
@@ -142,14 +145,17 @@ internal sealed class MainViewModel : ViewModelBase {
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
-    OptimizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Optimize), _ => CanMaintain(Views.MaintenanceVerb.Optimize));
+    CompressEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compress), _ => CanMaintain(Views.MaintenanceVerb.Compress));
+    CanonicalizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Canonicalize), _ => CanMaintain(Views.MaintenanceVerb.Canonicalize));
+    RepackEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Repack), _ => CanMaintain(Views.MaintenanceVerb.Repack));
+    SortDirectoryEntriesCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.SortDirectoryEntries), _ => CanMaintain(Views.MaintenanceVerb.SortDirectoryEntries));
+    DefragmentExtentsEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.DefragmentExtents), _ => CanMaintain(Views.MaintenanceVerb.DefragmentExtents));
+    ChangeAllocationGeometryEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     ShrinkEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Shrink), _ => CanMaintain(Views.MaintenanceVerb.Shrink));
-    DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
     WipeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.WipeEmpty), _ => CanMaintain(Views.MaintenanceVerb.WipeEmpty));
     CompactEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compact), _ => CanMaintain(Views.MaintenanceVerb.Compact));
     ScrambleEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Scramble), _ => CanMaintain(Views.MaintenanceVerb.Scramble));
-    ReconfigureEntryCommand = new RelayCommand(_ => Reconfigure(), _ => CanReconfigure());
     DeleteSelectedCommand = new RelayCommand(_ => DeleteSelectedEntries(), _ => CanDeleteSelected);
   }
 
@@ -346,12 +352,17 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   private bool CanMaintain(Views.MaintenanceVerb verb) {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    if (ops == null) return false;
+    var descriptor = FormatRegistry.GetById(formatId);
+    if (descriptor == null) return false;
+    var ops = descriptor as IArchiveFormatOperations;
     return verb switch {
-      Views.MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
+      Views.MaintenanceVerb.Compress => OptimizationCapabilities.CanCompress(descriptor),
+      Views.MaintenanceVerb.Canonicalize => OptimizationCapabilities.CanCanonicalize(descriptor),
+      Views.MaintenanceVerb.Repack => OptimizationCapabilities.CanRepack(descriptor),
+      Views.MaintenanceVerb.SortDirectoryEntries => OptimizationCapabilities.CanSortDirectoryEntries(descriptor),
+      Views.MaintenanceVerb.DefragmentExtents => OptimizationCapabilities.CanDefragmentExtents(descriptor),
+      Views.MaintenanceVerb.ChangeAllocationGeometry => OptimizationCapabilities.CanChangeAllocationGeometry(descriptor),
       Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
       Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
       Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
@@ -438,10 +449,8 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   private bool CanReconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    return ops is IArchiveCreatable
-        && ops is IFormatOptionsSchema schema
-        && schema.OptionsSchema.Count > 0;
+    var descriptor = FormatRegistry.GetById(formatId);
+    return OptimizationCapabilities.CanChangeAllocationGeometry(descriptor);
   }
 
   /// <summary>
@@ -499,7 +508,7 @@ internal sealed class MainViewModel : ViewModelBase {
     }
 
     var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
-    optsDlg.Title = "Reconfigure — Geometry / Options";
+    optsDlg.Title = "Change allocation geometry";
     var ok = optsDlg.ShowDialog() == true;
     if (!ok) { cleanup?.Invoke(); return; }
 
@@ -515,7 +524,7 @@ internal sealed class MainViewModel : ViewModelBase {
     try {
       var result = ReconfigureOperation.Reconfigure(targetPath, newOptions);
       writeBack?.Invoke();
-      StatusText = $"Reconfigured {Path.GetFileName(targetPath)}: "
+      StatusText = $"Changed allocation geometry for {Path.GetFileName(targetPath)}: "
         + $"{result.FileCount} file(s) preserved, {result.OriginalSize:N0} → {result.NewSize:N0} bytes.";
 
       if (writeBack != null && HasArchive)
@@ -525,9 +534,9 @@ internal sealed class MainViewModel : ViewModelBase {
       else if (IsBrowsingOsFolder)
         RefreshVisibleEntries();
     } catch (Exception ex) {
-      StatusText = $"Reconfigure failed: {ex.Message}";
-      MessageBox.Show($"Reconfigure failed: {ex.Message}\n\nThe original file was left untouched.",
-        "Reconfigure", MessageBoxButton.OK, MessageBoxImage.Warning);
+      StatusText = $"Allocation geometry change failed: {ex.Message}";
+      MessageBox.Show($"Allocation geometry change failed: {ex.Message}\n\nThe original file was left untouched.",
+        "Change allocation geometry", MessageBoxButton.OK, MessageBoxImage.Warning);
     } finally {
       cleanup?.Invoke();
     }
