@@ -85,8 +85,8 @@ public sealed class OptimizationCapabilitySeparationTests {
   public void BlockMover_IsRequiredForExtentDefragmentation() {
     Assert.Multiple(() => {
       Assert.That(OptimizationCapabilities.CanDefragmentExtents(new MfsFormatDescriptor()), Is.True);
-      Assert.That(OptimizationCapabilities.CanDefragmentExtents(new ApplePascalFormatDescriptor()), Is.False,
-        "a descriptor that defragments through a private mover must not advertise the public block-mover capability");
+      Assert.That(OptimizationCapabilities.CanDefragmentExtents(new ApplePascalFormatDescriptor()), Is.True,
+        "Apple Pascal exposes its real extent mover separately from directory ordering");
     });
   }
 }
