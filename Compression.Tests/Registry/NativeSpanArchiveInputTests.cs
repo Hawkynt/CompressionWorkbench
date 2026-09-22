@@ -4,8 +4,10 @@ using Compression.Registry;
 using FileFormat.AppleSingle;
 using FileFormat.Ffu;
 using FileFormat.Hdf4;
+using FileFormat.Ktx2;
 using FileFormat.Mbox;
 using FileFormat.Mz;
+using FileFormat.Nbi;
 using FileFormat.Numpy;
 using FileFormat.Pcap;
 using FileFormat.Pcapng;
@@ -109,6 +111,34 @@ public sealed class NativeSpanArchiveInputTests {
 
   [Test]
   [Category("Spec")]
+  public void NbiAndKtx2_ExtractSpan_LargePayloads_DoNotCopyWholeArchive() {
+    foreach (var (large, warm) in new[] {
+      (BuildNbiCase(LargePayloadSize), BuildNbiCase(257)),
+      (BuildKtx2Case(LargePayloadSize), BuildKtx2Case(257)),
+    }) {
+      var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-extra-{Guid.NewGuid():N}");
+      try {
+        var warmDirectory = Path.Combine(directory, "warm");
+        warm.Operations.ExtractSpan(warm.Image, warmDirectory, null, [warm.PayloadEntry]);
+        Directory.Delete(warmDirectory, recursive: true);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        large.Operations.ExtractSpan(large.Image, directory, null, [large.PayloadEntry]);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        var path = Path.Combine(directory, large.PayloadEntry.Replace('/', Path.DirectorySeparatorChar));
+        Assert.That(File.ReadAllBytes(path), Is.EqualTo(large.ExpectedPayload).AsCollection, large.Name);
+        Assert.That(allocated, Is.LessThan(AllocationLimit),
+          $"{large.Name} span extraction allocated {allocated:N0} bytes for a {large.Image.Length:N0}-byte image.");
+      } finally {
+        if (Directory.Exists(directory))
+          Directory.Delete(directory, recursive: true);
+      }
+    }
+  }
+
+  [Test]
+  [Category("Spec")]
   public void Sup_ExtractSpan_Epoch_DoesNotCopyWholeArchive() {
     var testCase = BuildSupCase(LargePayloadSize);
     var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-sup-{Guid.NewGuid():N}");
@@ -138,6 +168,8 @@ public sealed class NativeSpanArchiveInputTests {
   private static IReadOnlyList<SpanCase> BuildCases(int payloadSize) => [
     BuildFfuCase(payloadSize),
     BuildHdf4Case(payloadSize),
+    BuildKtx2Case(payloadSize),
+    BuildNbiCase(payloadSize),
     BuildNpyCase(payloadSize),
     BuildSupCase(payloadSize),
     BuildWasmCase(payloadSize),
@@ -190,6 +222,49 @@ public sealed class NativeSpanArchiveInputTests {
 
     return new SpanCase(
       "HDF4", new Hdf4FormatDescriptor(), image, "tag_0702_ref_0001.bin", payload);
+  }
+
+  private static SpanCase BuildKtx2Case(int payloadSize) {
+    var payload = Pattern(payloadSize, 0x4B);
+    const int headerSize = 80;
+    const int levelIndexSize = 24;
+    const int payloadOffset = headerSize + levelIndexSize;
+    var image = new byte[payloadOffset + payload.Length];
+
+    Ktx2Decomposer.Identifier.CopyTo(image);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(12, 4), 43);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(16, 4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(20, 4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(24, 4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(36, 4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(40, 4), 1);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(headerSize, 8), payloadOffset);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(headerSize + 8, 8), (ulong)payload.Length);
+    BinaryPrimitives.WriteUInt64LittleEndian(image.AsSpan(headerSize + 16, 8), (ulong)payload.Length);
+    payload.CopyTo(image.AsSpan(payloadOffset));
+
+    return new SpanCase(
+      "KTX2", new Ktx2FormatDescriptor(), image, "levels/level_00.bin", payload);
+  }
+
+  private static SpanCase BuildNbiCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0x5C);
+    var image = new byte[NbiReader.HeaderSectorSize + payload.Length];
+
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(0, 4), NbiReader.Magic);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(4, 4), 2);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(8, 4), 0x00007C00);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(12, 4), 0x00100000);
+
+    image[16] = 1;
+    image[19] = 0x04;
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(20, 4), 0x00100000);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(24, 4), (uint)payload.Length);
+    BinaryPrimitives.WriteUInt32LittleEndian(image.AsSpan(28, 4), (uint)payload.Length);
+    payload.CopyTo(image.AsSpan(NbiReader.HeaderSectorSize));
+
+    return new SpanCase(
+      "NBI", new NbiFormatDescriptor(), image, "segment_00.bin", payload);
   }
 
   private static SpanCase BuildNpyCase(int payloadSize) {

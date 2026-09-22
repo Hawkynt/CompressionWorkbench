@@ -95,6 +95,30 @@ public sealed class Ktx2FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var layout = Ktx2Decomposer.DecomposeLayout(archive);
+    return layout.Entries.Select((entry, index) => new ArchiveEntryInfo(
+      index, entry.Name, entry.Size, entry.Size, "stored",
+      false, false, null, entry.Kind)).ToList();
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var layout = Ktx2Decomposer.DecomposeLayout(archive);
+    foreach (var entry in layout.Entries) {
+      if (files != null && !MatchesFilter(entry.Name, files))
+        continue;
+
+      if (entry.GeneratedData is { } generated) {
+        WriteFile(outputDir, entry.Name, generated);
+        continue;
+      }
+
+      using var target = CreateEntryFile(outputDir, entry.Name);
+      target.Write(archive.Slice(entry.Offset, entry.Length));
+    }
+  }
+
   private static byte[] ReadAll(Stream stream) {
     if (stream.CanSeek) stream.Position = 0;
     using var ms = new MemoryStream();
