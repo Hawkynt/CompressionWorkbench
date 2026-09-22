@@ -6,7 +6,7 @@ namespace FileFormat.Swf;
 /// <summary>
 /// Describes swf format.
 /// </summary>
-public sealed class SwfFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class SwfFormatDescriptor : IFormatDescriptor, IStreamFormatOperations , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
