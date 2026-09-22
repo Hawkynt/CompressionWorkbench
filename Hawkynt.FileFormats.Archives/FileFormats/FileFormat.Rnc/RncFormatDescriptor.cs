@@ -4,7 +4,7 @@ using Compression.Registry;
 namespace FileFormat.Rnc;
 
 /// <summary>Describes the RNC ProPack stream format.</summary>
-public sealed class RncFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class RncFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   private static readonly IReadOnlyDictionary<string, int> DictionarySizes = new Dictionary<string, int> {
     ["4 KB"] = 4 << 10,
     ["16 KB"] = 16 << 10,
