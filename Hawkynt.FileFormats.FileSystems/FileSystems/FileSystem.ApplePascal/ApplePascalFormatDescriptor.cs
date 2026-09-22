@@ -26,7 +26,7 @@ namespace FileSystem.ApplePascal;
 /// </list>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   /// <summary>
   /// Gets the id.
@@ -299,4 +299,13 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     var extents = ApplePascalExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, lookup);
   }
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image) {
+    ArgumentNullException.ThrowIfNull(image);
+    var mover = new ApplePascalBlockMover();
+    mover.Init(image);
+    mover.SortDirectory(image);
+  }
+
 }
