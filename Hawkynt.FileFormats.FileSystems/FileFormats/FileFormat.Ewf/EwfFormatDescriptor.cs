@@ -24,8 +24,9 @@ public sealed class EwfFormatDescriptor :
   IArchiveDefragmentable,
   IArchiveShrinkable,
   IArchiveLayoutMap,
-  ILayoutOptimizable,
-  IFormatOptionsSchema {
+  IFormatOptionsSchema,
+  ICompressionOptimizable,
+  IArchiveCanonicalizable {
 
   /// <summary>
   /// Gets the id.
@@ -293,6 +294,32 @@ public sealed class EwfFormatDescriptor :
     output.Position = 0;
     output.SetLength(0);
     output.Write(best);
+  }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output) {
+    var image = ReadImage(input);
+    if (image.IsLogical)
+      throw new NotSupportedException("LVF logical-evidence compression rewrite is not implemented.");
+    var media = EwfReader.ExtractMedia(image);
+    var rebuilt = WriterFrom(image, compress: true).Build(media);
+    VerifyMedia(rebuilt, media);
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(rebuilt);
+  }
+
+  /// <inheritdoc />
+  public void Canonicalize(Stream input, Stream output) {
+    var image = ReadImage(input);
+    if (image.IsLogical)
+      throw new NotSupportedException("LVF logical-evidence canonicalization is not implemented.");
+    var media = EwfReader.ExtractMedia(image);
+    var rebuilt = WriterFrom(image, HasCompressedChunks(image)).Build(media);
+    VerifyMedia(rebuilt, media);
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(rebuilt);
   }
 
   /// <summary>
