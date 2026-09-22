@@ -135,6 +135,56 @@ public sealed class NbiFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var r = new NbiReader(archive);
+    var entries = new List<ArchiveEntryInfo> {
+      new(0, "FULL.nbi", archive.Length, archive.Length, "Stored", false, false, null, Kind: "Track"),
+      new(1, "metadata.ini", 0, 0, "Stored", false, false, null, Kind: "Tag"),
+    };
+
+    var idx = 2;
+    if (r.IsValid && r.PayloadLength > 0)
+      entries.Add(new ArchiveEntryInfo(idx++, "payload.bin", r.PayloadLength, r.PayloadLength,
+        "Stored", false, false, null, Kind: "Track"));
+    if (r.IsValid && r.SegmentsComplete)
+      for (var i = 0; i < r.Segments.Count; ++i) {
+        var seg = r.Segments[i];
+        entries.Add(new ArchiveEntryInfo(idx++, SegmentName(i), seg.ImageLength, seg.ImageLength,
+          "Stored", false, false, null, Kind: "Track"));
+      }
+
+    return entries;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var r = new NbiReader(archive);
+
+    if (Wants(files, "FULL.nbi")) {
+      using var target = CreateEntryFile(outputDir, "FULL.nbi");
+      target.Write(archive);
+    }
+
+    if (Wants(files, "metadata.ini"))
+      WriteFile(outputDir, "metadata.ini", Encoding.UTF8.GetBytes(BuildMetadata(r, archive.Length)));
+
+    if (r.IsValid && r.PayloadLength > 0 && Wants(files, "payload.bin")) {
+      using var target = CreateEntryFile(outputDir, "payload.bin");
+      target.Write(archive[NbiReader.HeaderSectorSize..]);
+    }
+
+    if (r.IsValid && r.SegmentsComplete)
+      for (var i = 0; i < r.Segments.Count; ++i) {
+        var seg = r.Segments[i];
+        var name = SegmentName(i);
+        if (!Wants(files, name))
+          continue;
+
+        using var target = CreateEntryFile(outputDir, name);
+        target.Write(archive.Slice(checked((int)seg.DataOffset), checked((int)seg.ImageLength)));
+      }
+  }
+
   private static string SegmentName(int index)
     => string.Format(CultureInfo.InvariantCulture, "segment_{0:D2}.bin", index);
 
