@@ -34,9 +34,32 @@ public partial class DefragmentWindow {
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
 
-    // Explicit capability verbs override the legacy shape-based loader. This is
-    // the important boundary: a creator, a geometry tuner and a block mover no
-    // longer become "Optimize" merely because they can all rewrite bytes.
+    RefreshExplicitCapabilityPresentation();
+
+    // Legacy compatibility for callers that still request the old umbrella verb.
+    if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
+      var descriptor = FormatRegistry.GetById(id);
+      var ops = FormatRegistry.GetArchiveOps(id);
+      if (descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
+          && ops is IArchiveCreatable) {
+        this._isArchiveMode = true;
+        this._archiveOps = ops;
+        this._isSevenZipFormat = string.Equals(id, "SevenZip", StringComparison.Ordinal);
+        FsModesGroup.Visibility = Visibility.Collapsed;
+        ArchiveRepackGroup.Visibility = Visibility.Visible;
+        SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = true;
+        SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+        if (LayoutStatusLbl != null)
+          LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
+      }
+    }
+  }
+
+
+  private void RefreshExplicitCapabilityPresentation() {
     if (this._requestedVerb is
         MaintenanceVerb.Compress or
         MaintenanceVerb.Canonicalize or
@@ -91,27 +114,6 @@ public partial class DefragmentWindow {
       SupportLbl.Foreground = supported
         ? System.Windows.Media.Brushes.DarkGreen
         : System.Windows.Media.Brushes.DarkOrange;
-    }
-
-    // Legacy compatibility for callers that still request the old umbrella verb.
-    if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
-      var descriptor = FormatRegistry.GetById(id);
-      var ops = FormatRegistry.GetArchiveOps(id);
-      if (descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-          && ops is IArchiveCreatable) {
-        this._isArchiveMode = true;
-        this._archiveOps = ops;
-        this._isSevenZipFormat = string.Equals(id, "SevenZip", StringComparison.Ordinal);
-        FsModesGroup.Visibility = Visibility.Collapsed;
-        ArchiveRepackGroup.Visibility = Visibility.Visible;
-        SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
-        RunBtn.Content = "Optimize";
-        RunBtn.IsEnabled = true;
-        SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        if (LayoutStatusLbl != null)
-          LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
-      }
     }
   }
 
