@@ -10,5 +10,11 @@ public interface IArchiveRepackable {
   /// Rebuilds <paramref name="input"/> into <paramref name="output"/> while
   /// preserving the logical entry set and contents.
   /// </summary>
-  void Repack(Stream input, Stream output);
+  void Repack(Stream input, Stream output) {
+    if (this is not IArchiveFormatOperations ops || this is not IArchiveCreatable creator)
+      throw new NotSupportedException(
+        "The default Repack requires IArchiveFormatOperations + IArchiveCreatable.");
+
+    RebuildVerb.RebuildToStream(input, output, ops, creator);
+  }
 }
