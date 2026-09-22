@@ -731,6 +731,26 @@ public static class ArchiveOperations {
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
+    // ── Explicit archive compression capability ─────────────────────
+    // Archive containers are not stream formats, so give descriptors that
+    // explicitly opt into compression optimization a chance before the legacy
+    // copy-through compatibility fallback.
+    FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (descriptor is ICompressionOptimizable compressionOptimizable) {
+      var optimizedEntries = 1;
+      if (descriptor is IArchiveFormatOperations archiveOps) {
+        using var listStream = File.OpenRead(inputPath);
+        optimizedEntries = archiveOps.List(listStream, password).Count(entry => !entry.IsDirectory);
+      }
+
+      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+        using var inFs = File.OpenRead(inputPath);
+        compressionOptimizable.OptimizeCompression(inFs, outFs);
+      });
+      return (originalSize, new FileInfo(outputPath).Length, optimizedEntries);
+    }
+
     // ── Unsupported: fall back to copy ───────────────────────────────
     // Use temp+rename so a crash mid-copy doesn't leave a truncated target.
     AtomicFileWriter.WriteAtomic(outputPath, outFs => {
