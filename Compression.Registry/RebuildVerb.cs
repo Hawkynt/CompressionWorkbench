@@ -21,7 +21,8 @@ public static class RebuildVerb {
       IReadOnlyDictionary<string, string>? formatSpecific = null,
       IReadOnlySet<string>? syntheticNames = null,
       Action<DefragProgressEvent>? onProgress = null,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      FormatCreateOptions? createOptions = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(ops);
@@ -123,11 +124,11 @@ public static class RebuildVerb {
         "writing", 0.45, -1, 0, visualSize, targetLayout,
         "Building staged target — original container is still unchanged"));
 
-      // FormatSpecific is a mutable, case-insensitive map; the caller hands in a read-only view,
-      // so copy it and keep the comparer the default initializer uses.
-      var options = new FormatCreateOptions {
-        FormatSpecific = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
-      };
+      // Start from the caller's complete create options when supplied, then let
+      // the legacy formatSpecific bag override individual schema keys. This keeps
+      // MethodName/Level/Optimize/ForceCompress intact for explicit compression
+      // capabilities without changing existing rebuild callers.
+      var options = createOptions?.Copy() ?? new FormatCreateOptions();
       if (formatSpecific != null)
         foreach (var pair in formatSpecific)
           options.FormatSpecific[pair.Key] = pair.Value;
