@@ -223,19 +223,25 @@
           <Separator />
           <MenuItem Header="_Maintenance">
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
-            <MenuItem Header="_Compact (defrag + optimize + shrink)..." Command="{Binding CompactEntryCommand}"
-                      ToolTip="One pass to the smallest valid container holding the same contents. Tick 'Minimal geometry' in the window for the bare-minimum (non-standard) rebuild." />
-            <MenuItem Header="_Reconfigure (geometry/options)..." Command="{Binding ReconfigureEntryCommand}"
-                      ToolTip="Change an existing image's geometry/options after creation (e.g. FAT cluster size or root entries, NTFS MFT record size). Contents preserved byte-for-byte." />
-            <Separator />
-            <MenuItem Header="_Optimize..." Command="{Binding OptimizeEntryCommand}"
-                      ToolTip="Find + apply the best layout / re-encode payload. Size preserved where possible." />
-            <MenuItem Header="_Shrink..." Command="{Binding ShrinkEntryCommand}"
-                      ToolTip="Keep the parameter set; minimise the stored footprint." />
-            <MenuItem Header="_Defragment..." Command="{Binding DefragmentEntryCommand}"
-                      ToolTip="Re-order entries/extents so files are contiguous. Size preserved.">
+            <MenuItem Header="_Compress..." Command="{Binding CompressEntryCommand}"
+                      ToolTip="Re-encode live payloads with better compression choices. Does not change allocation geometry." />
+            <MenuItem Header="_Canonicalize..." Command="{Binding CanonicalizeEntryCommand}"
+                      ToolTip="Rewrite format-defined canonical ordering, headers or padding without treating the rewrite as compression optimization." />
+            <MenuItem Header="_Repack..." Command="{Binding RepackEntryCommand}"
+                      ToolTip="Rebuild the same logical entries in the same format without implying compression optimization." />
+            <MenuItem Header="Sort _directory entries..." Command="{Binding SortDirectoryEntriesCommand}"
+                      ToolTip="Reorder filesystem directory entries only; payload extents are not moved merely for ordering." />
+            <MenuItem Header="Defragment _extents..." Command="{Binding DefragmentExtentsEntryCommand}"
+                      ToolTip="Physically move allocation extents to reduce fragmentation. Requires a real block mover.">
               <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
             </MenuItem>
+            <MenuItem Header="Change allocation _geometry..." Command="{Binding ChangeAllocationGeometryEntryCommand}"
+                      ToolTip="Change allocation-unit or related filesystem geometry while preserving contents." />
+            <Separator />
+            <MenuItem Header="_Compact (defragment + compress + shrink)..." Command="{Binding CompactEntryCommand}"
+                      ToolTip="Composite size-reduction pass. Geometry changes remain a separate explicit action." />
+            <MenuItem Header="_Shrink..." Command="{Binding ShrinkEntryCommand}"
+                      ToolTip="Keep the parameter set; minimise the stored footprint." />
             <Separator />
             <MenuItem Header="_Purge..." Command="{Binding PurgeEntryCommand}"
                       ToolTip="Erase ALL live data, leaving a valid empty container.">
