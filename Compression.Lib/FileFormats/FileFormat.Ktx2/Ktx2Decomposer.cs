@@ -124,7 +124,7 @@ public static class Ktx2Decomposer {
             if (TryRange(byteOffset, byteLength, file.Length, out var levelOffset, out var levelLength))
               entries.Add(new LayoutEntry(
                 $"levels/level_{i:D2}.bin", EntryKinds.Frame, levelOffset, levelLength));
-            meta.Add($"level_{i}_uncompressed_length", (long)Math.Min(uncompressed, long.MaxValue));
+            meta.Add($"level_{i}_uncompressed_length", (long)uncompressed);
           }
 
           if (dfdByteLength > 0 &&
@@ -137,7 +137,7 @@ public static class Ktx2Decomposer {
             entries.Add(new LayoutEntry("kvd.bin", EntryKinds.Tag, kvdOffset, kvdLength));
           }
 
-          meta.Add("supercompression_global_length", (long)Math.Min(sgdByteLength, long.MaxValue));
+          meta.Add("supercompression_global_length", (long)sgdByteLength);
           ok = true;
         }
       }
