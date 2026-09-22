@@ -6,7 +6,7 @@ namespace FileFormat.BriefLz;
 /// <summary>
 /// Describes the BriefLZ <c>blzpack</c> stream format.
 /// </summary>
-public sealed class BriefLzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class BriefLzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
