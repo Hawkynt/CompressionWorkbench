@@ -34,10 +34,66 @@ public partial class DefragmentWindow {
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
 
-    // The original loader sees IArchiveDefragmentable before archive-repack
-    // support. When the caller explicitly asked for Optimize, correct that
-    // ambiguity here so ZIP/7z can expose their repack UI instead of looking like
-    // filesystem-only defraggers.
+    // Explicit capability verbs override the legacy shape-based loader. This is
+    // the important boundary: a creator, a geometry tuner and a block mover no
+    // longer become "Optimize" merely because they can all rewrite bytes.
+    if (this._requestedVerb is
+        MaintenanceVerb.Compress or
+        MaintenanceVerb.Canonicalize or
+        MaintenanceVerb.Repack or
+        MaintenanceVerb.SortDirectoryEntries or
+        MaintenanceVerb.DefragmentExtents
+        && this._formatId is { Length: > 0 } capabilityId) {
+      var descriptor = FormatRegistry.GetById(capabilityId);
+      var verb = this._requestedVerb.Value;
+      var supported = verb switch {
+        MaintenanceVerb.Compress => OptimizationCapabilities.CanCompress(descriptor),
+        MaintenanceVerb.Canonicalize => OptimizationCapabilities.CanCanonicalize(descriptor),
+        MaintenanceVerb.Repack => OptimizationCapabilities.CanRepack(descriptor),
+        MaintenanceVerb.SortDirectoryEntries => OptimizationCapabilities.CanSortDirectoryEntries(descriptor),
+        MaintenanceVerb.DefragmentExtents => OptimizationCapabilities.CanDefragmentExtents(descriptor),
+        _ => false,
+      };
+
+      RunBtn.Content = verb switch {
+        MaintenanceVerb.Compress => "Compress",
+        MaintenanceVerb.Canonicalize => "Canonicalize",
+        MaintenanceVerb.Repack => "Repack",
+        MaintenanceVerb.SortDirectoryEntries => "Sort directory entries",
+        MaintenanceVerb.DefragmentExtents => "Defragment extents",
+        _ => "Run",
+      };
+      RunBtn.IsEnabled = supported;
+      FsModesGroup.Visibility = verb == MaintenanceVerb.DefragmentExtents
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      ArchiveRepackGroup.Visibility = verb is MaintenanceVerb.Compress or MaintenanceVerb.Repack
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      SmartSolidRepackCheck.Visibility = verb == MaintenanceVerb.Compress
+        && string.Equals(capabilityId, "SevenZip", StringComparison.Ordinal)
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      MetadataPlacementPanel.Visibility = verb == MaintenanceVerb.Canonicalize
+        && descriptor is IFileInternalChunkMover
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+      SupportLbl.Text = supported
+        ? verb switch {
+          MaintenanceVerb.Compress => "Compression re-encoding only; allocation geometry is unchanged.",
+          MaintenanceVerb.Canonicalize => "Format-defined canonical rewrite; not reported as compression optimization.",
+          MaintenanceVerb.Repack => "Verified extract + recreate of the same logical entries.",
+          MaintenanceVerb.SortDirectoryEntries => "Directory-table ordering only.",
+          MaintenanceVerb.DefragmentExtents => "Physical extent movement through an explicit block mover.",
+          _ => "Supported.",
+        }
+        : $"This format does not expose the {verb} capability.";
+      SupportLbl.Foreground = supported
+        ? System.Windows.Media.Brushes.DarkGreen
+        : System.Windows.Media.Brushes.DarkOrange;
+    }
+
+    // Legacy compatibility for callers that still request the old umbrella verb.
     if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
       var descriptor = FormatRegistry.GetById(id);
       var ops = FormatRegistry.GetArchiveOps(id);
@@ -149,6 +205,30 @@ public partial class DefragmentWindow {
   private void OnRunWithBlockProgress(object sender, RoutedEventArgs e) {
     if (this._imagePath == null || this._maintenanceCancellation != null) return;
 
+    switch (this._requestedVerb) {
+      case MaintenanceVerb.Compress:
+        RunSeparatedRewrite(
+          "Compress",
+          (input, output) => ArchiveOperations.Compress(input, output, password: null));
+        return;
+      case MaintenanceVerb.Canonicalize:
+        RunSeparatedRewrite(
+          "Canonicalize",
+          (input, output) => ArchiveOperations.Canonicalize(input, output));
+        return;
+      case MaintenanceVerb.Repack:
+        RunSeparatedRewrite(
+          "Repack",
+          (input, output) => ArchiveOperations.Repack(input, output));
+        return;
+      case MaintenanceVerb.SortDirectoryEntries:
+        RunDirectoryOrdering();
+        return;
+      case MaintenanceVerb.DefragmentExtents:
+        RunDefragWithBlockProgress();
+        return;
+    }
+
     if (this._isFileInternalMode) {
       OnRunFileInternalOptimize();
       return;
@@ -170,6 +250,86 @@ public partial class DefragmentWindow {
     }
 
     RunDefragWithBlockProgress();
+  }
+
+  private void RunSeparatedRewrite(
+      string operation,
+      Func<string, string, (long OriginalSize, long NewSize, int Entries)> rewrite) {
+    if (this._imagePath == null) return;
+
+    var path = this._imagePath;
+    var tempOut = path + ".maintenance.tmp";
+    AtomicFileWriter.TryDelete(tempOut);
+    var cancellationToken = BeginMaintenanceOperation(operation, staged: true);
+    Append($"=== {DateTime.Now:HH:mm:ss}  {operation}: {Path.GetFileName(path)} ===");
+
+    Task.Run(() => {
+      Exception? error = null;
+      (long OriginalSize, long NewSize, int Entries) result = default;
+      try {
+        result = rewrite(path, tempOut);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Dispatcher.Invoke(() => {
+          this._maintenanceCommitStarted = true;
+          if (this._maintenanceCancelButton != null)
+            this._maintenanceCancelButton.IsEnabled = false;
+        });
+
+        File.Move(tempOut, path, overwrite: true);
+      } catch (Exception ex) {
+        error = ex;
+      } finally {
+        AtomicFileWriter.TryDelete(tempOut);
+      }
+
+      Dispatcher.Invoke(() => {
+        if (error is OperationCanceledException) {
+          Append("Cancelled — staged target discarded; original unchanged.");
+        } else if (error != null) {
+          Append($"FAILED: {error.GetType().Name}: {error.Message}");
+        } else {
+          Append($"OK — {result.Entries:N0} entr{(result.Entries == 1 ? "y" : "ies")}; "
+            + $"{result.OriginalSize:N0} -> {result.NewSize:N0} bytes.");
+          NotifyMutated(path);
+        }
+        Append("");
+        EndMaintenanceOperation();
+      });
+    });
+  }
+
+  private void RunDirectoryOrdering() {
+    if (this._imagePath == null || this._formatId is not { Length: > 0 } formatId)
+      return;
+    if (FormatRegistry.GetById(formatId) is not IFilesystemDirectoryOrderer orderer)
+      return;
+
+    var path = this._imagePath;
+    _ = BeginMaintenanceOperation("Sort directory entries", staged: false);
+    Append($"=== {DateTime.Now:HH:mm:ss}  Sorting directory entries: {Path.GetFileName(path)} ===");
+
+    Task.Run(() => {
+      Exception? error = null;
+      try {
+        using var image = File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        orderer.SortDirectoryEntries(image);
+        image.Flush(flushToDisk: true);
+      } catch (Exception ex) {
+        error = ex;
+      }
+
+      Dispatcher.Invoke(() => {
+        if (error != null) {
+          Append($"FAILED: {error.GetType().Name}: {error.Message}");
+        } else {
+          Append("OK — directory entries reordered.");
+          NotifyMutated(path);
+        }
+        Append("");
+        EndMaintenanceOperation();
+      });
+    });
   }
 
   private void RunDefragWithBlockProgress() {
