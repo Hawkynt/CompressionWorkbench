@@ -7,7 +7,7 @@ namespace FileFormat.Zlib;
 /// <summary>
 /// Describes zlib format.
 /// </summary>
-public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class ZlibFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
