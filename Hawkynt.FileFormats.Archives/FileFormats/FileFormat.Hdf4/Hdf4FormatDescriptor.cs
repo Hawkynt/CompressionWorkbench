@@ -99,6 +99,74 @@ public sealed class Hdf4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    try {
+      var hdf = Hdf4Reader.Read(archive);
+      var metadata = BuildMetadata(hdf, archive.Length);
+      var result = new List<ArchiveEntryInfo> {
+        new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+          "stored", false, false, null, "Metadata"),
+      };
+
+      foreach (var dd in hdf.DataDescriptors) {
+        if (dd.Length == 0)
+          continue;
+        var end = (long)dd.Offset + dd.Length;
+        if (dd.Offset >= archive.Length || end > archive.Length)
+          continue;
+
+        var name = $"tag_{dd.Tag:D4}_ref_{dd.Reference:D4}.bin";
+        result.Add(new ArchiveEntryInfo(
+          result.Count, name, dd.Length, dd.Length, "stored", false, false, null,
+          Hdf4Reader.TagName(dd.Tag)));
+      }
+
+      return result;
+    } catch (Exception ex) {
+      var metadata = BuildErrorMetadata(archive.Length, ex);
+      return [
+        new ArchiveEntryInfo(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+          "stored", false, false, null, "Metadata"),
+      ];
+    }
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    try {
+      var hdf = Hdf4Reader.Read(archive);
+      if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+        WriteFile(outputDir, "metadata.ini", BuildMetadata(hdf, archive.Length));
+
+      foreach (var dd in hdf.DataDescriptors) {
+        if (dd.Length == 0)
+          continue;
+        var end = (long)dd.Offset + dd.Length;
+        if (dd.Offset >= archive.Length || end > archive.Length)
+          continue;
+
+        var name = $"tag_{dd.Tag:D4}_ref_{dd.Reference:D4}.bin";
+        if (files is { Length: > 0 } && !MatchesFilter(name, files))
+          continue;
+
+        using var target = CreateEntryFile(outputDir, name);
+        target.Write(archive.Slice(checked((int)dd.Offset), checked((int)dd.Length)));
+      }
+    } catch (Exception ex) {
+      if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+        WriteFile(outputDir, "metadata.ini", BuildErrorMetadata(archive.Length, ex));
+    }
+  }
+
+  private static byte[] BuildErrorMetadata(long fileSize, Exception ex) {
+    var sb = new StringBuilder();
+    sb.Append("[hdf4]\r\n");
+    sb.Append("parse_status=error\r\n");
+    sb.Append(CultureInfo.InvariantCulture, $"file_size={fileSize}\r\n");
+    sb.Append("error=").Append(ex.Message).Append("\r\n");
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
   private List<(string Name, byte[] Data, string Kind)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -120,12 +188,7 @@ public sealed class Hdf4FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
         result.Add((name, slice, kind));
       }
     } catch (Exception ex) {
-      var sb = new StringBuilder();
-      sb.Append("[hdf4]\r\n");
-      sb.Append("parse_status=error\r\n");
-      sb.Append(CultureInfo.InvariantCulture, $"file_size={total}\r\n");
-      sb.Append("error=").Append(ex.Message).Append("\r\n");
-      result.Add(("metadata.ini", Encoding.UTF8.GetBytes(sb.ToString()), "Metadata"));
+      result.Add(("metadata.ini", BuildErrorMetadata(total, ex), "Metadata"));
     }
     return result;
   }

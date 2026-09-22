@@ -153,6 +153,58 @@ public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
        data[0] == 0x93 && data[1] == (byte)'N' && data[2] == (byte)'U' &&
        data[3] == (byte)'M' && data[4] == (byte)'P' && data[5] == (byte)'Y';
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    try {
+      var layout = NpyReader.ReadLayout(archive);
+      var metadata = BuildMetadata(layout, archive.Length);
+      return [
+        new ArchiveEntryInfo(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+          "stored", false, false, null, "Metadata"),
+        new ArchiveEntryInfo(1, "header.bin", layout.BodyOffset, layout.BodyOffset,
+          "stored", false, false, null, "Header"),
+        new ArchiveEntryInfo(2, "array.bin", archive.Length - layout.BodyOffset, archive.Length - layout.BodyOffset,
+          "stored", false, false, null, "Payload"),
+      ];
+    } catch (Exception ex) {
+      var metadata = BuildErrorMetadata(archive.Length, ex);
+      return [
+        new ArchiveEntryInfo(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+          "stored", false, false, null, "Metadata"),
+      ];
+    }
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    try {
+      var layout = NpyReader.ReadLayout(archive);
+      if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+        WriteFile(outputDir, "metadata.ini", BuildMetadata(layout, archive.Length));
+
+      if (files is null || files.Length == 0 || MatchesFilter("header.bin", files)) {
+        using var target = CreateEntryFile(outputDir, "header.bin");
+        target.Write(archive[..layout.BodyOffset]);
+      }
+
+      if (files is null || files.Length == 0 || MatchesFilter("array.bin", files)) {
+        using var target = CreateEntryFile(outputDir, "array.bin");
+        target.Write(archive[layout.BodyOffset..]);
+      }
+    } catch (Exception ex) {
+      if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+        WriteFile(outputDir, "metadata.ini", BuildErrorMetadata(archive.Length, ex));
+    }
+  }
+
+  private static byte[] BuildErrorMetadata(long fileSize, Exception ex) {
+    var sb = new StringBuilder();
+    sb.Append("[npy]\r\n");
+    sb.Append("parse_status=error\r\n");
+    sb.Append("file_size=").Append(fileSize).Append("\r\n");
+    sb.Append("error=").Append(ex.Message).Append("\r\n");
+    return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
   private List<(string Name, byte[] Data, string Kind)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -160,33 +212,28 @@ public sealed class NpyFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
 
     var result = new List<(string, byte[], string)>();
     try {
-      var arr = NpyReader.Read(span);
-      result.Add(("metadata.ini", BuildMetadata(arr, ms.Length), "Metadata"));
-      result.Add(("header.bin", arr.HeaderBytes, "Header"));
-      result.Add(("array.bin", arr.ArrayBytes, "Payload"));
+      var layout = NpyReader.ReadLayout(span);
+      result.Add(("metadata.ini", BuildMetadata(layout, ms.Length), "Metadata"));
+      result.Add(("header.bin", span[..layout.BodyOffset].ToArray(), "Header"));
+      result.Add(("array.bin", span[layout.BodyOffset..].ToArray(), "Payload"));
     } catch (Exception ex) {
-      var sb = new StringBuilder();
-      sb.Append("[npy]\r\n");
-      sb.Append("parse_status=error\r\n");
-      sb.Append("file_size=").Append(ms.Length).Append("\r\n");
-      sb.Append("error=").Append(ex.Message).Append("\r\n");
-      result.Add(("metadata.ini", Encoding.UTF8.GetBytes(sb.ToString()), "Metadata"));
+      result.Add(("metadata.ini", BuildErrorMetadata(ms.Length, ex), "Metadata"));
     }
     return result;
   }
 
-  private static byte[] BuildMetadata(NpyReader.NpyArray a, long fileSize) {
+  private static byte[] BuildMetadata(NpyReader.NpyLayout layout, long fileSize) {
     var sb = new StringBuilder();
     sb.Append("[npy]\r\n");
     sb.Append("parse_status=ok\r\n");
     sb.Append(CultureInfo.InvariantCulture, $"file_size={fileSize}\r\n");
-    sb.Append(CultureInfo.InvariantCulture, $"version={a.MajorVersion}.{a.MinorVersion}\r\n");
-    sb.Append(CultureInfo.InvariantCulture, $"header_len={a.HeaderLength}\r\n");
-    sb.Append(CultureInfo.InvariantCulture, $"header_bytes={a.HeaderBytes.Length}\r\n");
-    sb.Append(CultureInfo.InvariantCulture, $"array_bytes={a.ArrayBytes.Length}\r\n");
-    sb.Append("dtype=").Append(a.Dtype ?? "(unknown)").Append("\r\n");
-    sb.Append("shape=").Append(a.Shape ?? "(unknown)").Append("\r\n");
-    sb.Append("fortran_order=").Append(a.FortranOrder ? "true" : "false").Append("\r\n");
+    sb.Append(CultureInfo.InvariantCulture, $"version={layout.MajorVersion}.{layout.MinorVersion}\r\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_len={layout.HeaderLength}\r\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_bytes={layout.BodyOffset}\r\n");
+    sb.Append(CultureInfo.InvariantCulture, $"array_bytes={fileSize - layout.BodyOffset}\r\n");
+    sb.Append("dtype=").Append(layout.Dtype ?? "(unknown)").Append("\r\n");
+    sb.Append("shape=").Append(layout.Shape ?? "(unknown)").Append("\r\n");
+    sb.Append("fortran_order=").Append(layout.FortranOrder ? "true" : "false").Append("\r\n");
     return Encoding.UTF8.GetBytes(sb.ToString());
   }
 }

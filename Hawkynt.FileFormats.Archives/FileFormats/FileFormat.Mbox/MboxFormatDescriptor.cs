@@ -99,12 +99,55 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return result;
   }
 
-  private static bool IsTombstone(MboxMessage m) {
-    if (m.EmlBytes.Length < 32) return false;
+  private static bool IsTombstone(MboxMessage m) => IsTombstone(m.EmlBytes);
+
+  private static bool IsTombstone(ReadOnlySpan<byte> eml) {
+    if (eml.Length < 32) return false;
     // Headers area runs until the first blank line; bound the scan at 1 KiB.
-    var n = Math.Min(m.EmlBytes.Length, 1024);
-    var headers = System.Text.Encoding.Latin1.GetString(m.EmlBytes, 0, n);
+    var n = Math.Min(eml.Length, 1024);
+    var headers = Encoding.Latin1.GetString(eml[..n]);
     return headers.Contains("X-Cwb-Tombstone: 1", StringComparison.Ordinal);
+  }
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var messages = MboxReader.ReadLayouts(archive);
+    var result = new List<ArchiveEntryInfo>(messages.Count);
+    for (var i = 0; i < messages.Count; ++i) {
+      var message = messages[i];
+      var eml = archive.Slice(message.EmlOffset, message.EmlLength);
+      if (IsTombstone(eml))
+        continue;
+
+      var name = EntryName(message.Subject, i);
+      DateTime? lastModified = message.Date != null && DateTime.TryParse(
+        message.Date, null,
+        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+        out var parsedDate)
+        ? parsedDate
+        : null;
+      result.Add(new ArchiveEntryInfo(
+        i, name, message.EmlLength, message.EmlLength,
+        "stored", false, false, lastModified, Kind: "Track"));
+    }
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var messages = MboxReader.ReadLayouts(archive);
+    for (var i = 0; i < messages.Count; ++i) {
+      var message = messages[i];
+      var eml = archive.Slice(message.EmlOffset, message.EmlLength);
+      if (IsTombstone(eml))
+        continue;
+
+      var name = EntryName(message.Subject, i);
+      if (files is { Length: > 0 } && !MatchesFilter(name, files))
+        continue;
+
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(eml);
+    }
   }
 
   /// <summary>
@@ -198,7 +241,7 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
   /// <summary>
   /// Tombstones the named messages in place. The match is by entry name —
-  /// see <see cref="EntryName"/> — so callers should pass the names returned
+  /// see <see cref="EntryName(MboxMessage,int)"/> — so callers should pass the names returned
   /// by <see cref="List"/>. The byte offsets of every non-targeted message
   /// are unchanged after this call.
   /// </summary>
@@ -230,8 +273,10 @@ public sealed class MboxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     return MboxReader.ReadAll(ms.GetBuffer().AsSpan(0, (int)ms.Length));
   }
 
-  private static string EntryName(MboxMessage m, int index) {
-    var slug = SubjectSlug(m.Subject);
+  private static string EntryName(MboxMessage m, int index) => EntryName(m.Subject, index);
+
+  private static string EntryName(string? subject, int index) {
+    var slug = SubjectSlug(subject);
     return string.IsNullOrEmpty(slug)
       ? $"message_{index:D2}.eml"
       : $"message_{index:D2}_{slug}.eml";

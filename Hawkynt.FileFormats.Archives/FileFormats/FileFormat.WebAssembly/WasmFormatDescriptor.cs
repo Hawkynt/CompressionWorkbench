@@ -94,6 +94,42 @@ public sealed class WasmFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var module = WasmReader.ReadLayout(archive);
+    var metadata = BuildMetadata(module);
+    var result = new List<ArchiveEntryInfo> {
+      new(0, "metadata.ini", metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null),
+    };
+
+    var indexById = new Dictionary<int, int>();
+    foreach (var section in module.Sections) {
+      var name = GetSectionName(section.Id, section.TypeName, section.CustomName, indexById);
+      result.Add(new ArchiveEntryInfo(
+        result.Count, name, section.BodyLength, section.BodyLength, "stored",
+        false, false, null));
+    }
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var module = WasmReader.ReadLayout(archive);
+
+    if (files is null || files.Length == 0 || MatchesFilter("metadata.ini", files))
+      WriteFile(outputDir, "metadata.ini", BuildMetadata(module));
+
+    var indexById = new Dictionary<int, int>();
+    foreach (var section in module.Sections) {
+      var name = GetSectionName(section.Id, section.TypeName, section.CustomName, indexById);
+      if (files is { Length: > 0 } && !MatchesFilter(name, files))
+        continue;
+
+      using var target = CreateEntryFile(outputDir, name);
+      target.Write(archive.Slice(section.BodyOffset, section.BodyLength));
+    }
+  }
+
   private static IEnumerable<(string Name, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
@@ -101,26 +137,21 @@ public sealed class WasmFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
 
     yield return ("metadata.ini", BuildMetadata(module));
 
-    // Track section indices per id so multiple custom sections (or duplicates) get
-    // unique filenames.
     var indexById = new Dictionary<int, int>();
+    foreach (var s in module.Sections)
+      yield return (GetSectionName(s.Id, s.TypeName, s.CustomName, indexById), s.Body);
+  }
+
+  private static byte[] BuildMetadata(WasmReader.ModuleLayout module) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[wasm]");
+    sb.Append(CultureInfo.InvariantCulture, $"version = {module.Version}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"section_count = {module.Sections.Count}\n");
     foreach (var s in module.Sections) {
-      indexById.TryGetValue(s.Id, out var idx);
-      indexById[s.Id] = idx + 1;
-
-      string name;
-      if (s.Id == 0 && !string.IsNullOrEmpty(s.CustomName)) {
-        // Sanitize the custom name for filesystem use.
-        var safe = SanitizeForFilename(s.CustomName);
-        name = $"custom_{safe}.bin";
-      } else {
-        name = $"section_{s.Id:D2}_{s.TypeName}.bin";
-      }
-      // Disambiguate repeated names (rare but legal — multiple custom sections with the same name).
-      if (idx > 0) name = Path.GetFileNameWithoutExtension(name) + $".{idx}" + Path.GetExtension(name);
-
-      yield return (name, s.Body);
+      var label = s.Id == 0 && !string.IsNullOrEmpty(s.CustomName) ? $"custom:{s.CustomName}" : s.TypeName;
+      sb.Append(CultureInfo.InvariantCulture, $"section_{s.Id:D2} = {label} ({s.BodyLength} bytes)\n");
     }
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(WasmReader.Module module) {
@@ -133,6 +164,24 @@ public sealed class WasmFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       sb.Append(CultureInfo.InvariantCulture, $"section_{s.Id:D2} = {label} ({s.Body.Length} bytes)\n");
     }
     return Encoding.UTF8.GetBytes(sb.ToString());
+  }
+
+  private static string GetSectionName(
+      int id, string typeName, string? customName, Dictionary<int, int> indexById) {
+    indexById.TryGetValue(id, out var index);
+    indexById[id] = index + 1;
+
+    string name;
+    if (id == 0 && !string.IsNullOrEmpty(customName)) {
+      var safe = SanitizeForFilename(customName);
+      name = $"custom_{safe}.bin";
+    } else {
+      name = $"section_{id:D2}_{typeName}.bin";
+    }
+
+    if (index > 0)
+      name = Path.GetFileNameWithoutExtension(name) + $".{index}" + Path.GetExtension(name);
+    return name;
   }
 
   private static string SanitizeForFilename(string name) {

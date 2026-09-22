@@ -111,6 +111,61 @@ public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     }
   }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    var (header, computedDataCrc) = ReadSpanImage(archive);
+    var metadata = BuildMetadata(header, computedDataCrc);
+    var payloadLength = checked((int)header.DataSize);
+    var result = new List<ArchiveEntryInfo> {
+      new(0, UImageWriter.MetadataName, metadata.LongLength, metadata.LongLength,
+        "stored", false, false, null),
+      new(1, UImageWriter.HeaderName, UImageReader.HeaderSize, UImageReader.HeaderSize,
+        "stored", false, false, null),
+    };
+    if (payloadLength > 0) {
+      result.Add(new ArchiveEntryInfo(result.Count, UImageWriter.PayloadName,
+        payloadLength, payloadLength, "stored", false, false, null));
+      if (header.Compression == 0)
+        result.Add(new ArchiveEntryInfo(result.Count, UImageWriter.DecompressedName,
+          payloadLength, payloadLength, "stored", false, false, null));
+    }
+    return result;
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    var (header, computedDataCrc) = ReadSpanImage(archive);
+    var payloadLength = checked((int)header.DataSize);
+    var payload = archive.Slice(UImageReader.HeaderSize, payloadLength);
+
+    if (files is null || files.Length == 0 || MatchesFilter(UImageWriter.MetadataName, files))
+      WriteFile(outputDir, UImageWriter.MetadataName, BuildMetadata(header, computedDataCrc));
+
+    WriteSpanEntryIfWanted(archive[..UImageReader.HeaderSize], outputDir, files, UImageWriter.HeaderName);
+    if (payloadLength > 0) {
+      WriteSpanEntryIfWanted(payload, outputDir, files, UImageWriter.PayloadName);
+      if (header.Compression == 0)
+        WriteSpanEntryIfWanted(payload, outputDir, files, UImageWriter.DecompressedName);
+    }
+  }
+
+  private static (UImageReader.LegacyHeader Header, uint ComputedDataCrc) ReadSpanImage(ReadOnlySpan<byte> archive) {
+    var header = UImageReader.ReadHeader(archive);
+    var payloadLength = checked((int)header.DataSize);
+    if (payloadLength > archive.Length - UImageReader.HeaderSize)
+      throw new InvalidDataException(
+        $"uImage: header declares {header.DataSize} payload bytes, but only {archive.Length - UImageReader.HeaderSize} are present.");
+    var computedDataCrc = Crc32Ieee.Compute(archive.Slice(UImageReader.HeaderSize, payloadLength));
+    return (header, computedDataCrc);
+  }
+
+  private static void WriteSpanEntryIfWanted(
+      ReadOnlySpan<byte> data, string outputDir, string[]? files, string name) {
+    if (files is { Length: > 0 } && !MatchesFilter(name, files))
+      return;
+    using var target = CreateEntryFile(outputDir, name);
+    target.Write(data);
+  }
+
   /// <summary>
   /// Writes a fresh uImage: the single payload input becomes the body, a
   /// <c>metadata.ini</c> alongside it -- the one this descriptor's own reader
@@ -316,6 +371,30 @@ public sealed class UImageFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       entries.Add((UImageWriter.DecompressedName, img.Body, "stored"));
 
     return entries;
+  }
+
+  private static byte[] BuildMetadata(UImageReader.LegacyHeader i, uint computedDataCrc) {
+    var sb = new StringBuilder();
+    sb.AppendLine("[uimage]");
+    sb.Append(CultureInfo.InvariantCulture, $"magic = 0x{i.Magic:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"name = {i.Name}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"timestamp = {i.Timestamp}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"data_size = {i.DataSize}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"load_address = 0x{i.LoadAddress:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"entry_point = 0x{i.EntryPoint:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"os = {i.Os} ({UImageReader.OsName(i.Os)})\n");
+    sb.Append(CultureInfo.InvariantCulture, $"arch = {i.Architecture} ({UImageReader.ArchName(i.Architecture)})\n");
+    sb.Append(CultureInfo.InvariantCulture, $"type = {i.Type} ({UImageReader.TypeName(i.Type)})\n");
+    sb.Append(CultureInfo.InvariantCulture, $"comp = {i.Compression} ({UImageReader.CompressionName(i.Compression)})\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_crc_stored = 0x{i.HeaderCrc:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"header_crc_computed = 0x{i.ComputedHeaderCrc:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture,
+      $"header_crc_ok = {(i.HeaderCrc == i.ComputedHeaderCrc).ToString().ToLowerInvariant()}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"data_crc_stored = 0x{i.DataCrc:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture, $"data_crc_computed = 0x{computedDataCrc:X8}\n");
+    sb.Append(CultureInfo.InvariantCulture,
+      $"data_crc_ok = {(i.DataCrc == computedDataCrc).ToString().ToLowerInvariant()}\n");
+    return Encoding.UTF8.GetBytes(sb.ToString());
   }
 
   private static byte[] BuildMetadata(UImageReader.UImage i) {

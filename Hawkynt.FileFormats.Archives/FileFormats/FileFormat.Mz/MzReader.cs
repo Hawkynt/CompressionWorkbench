@@ -40,13 +40,58 @@ public sealed class MzReader {
     byte[] Overlay               // bytes imageSize .. eof (can be empty)
   );
 
+  internal readonly record struct MzLayout(
+    ushort BytesInLastBlock,
+    ushort BlocksInFile,
+    ushort NumRelocs,
+    ushort HeaderParagraphs,
+    ushort MinExtraParagraphs,
+    ushort MaxExtraParagraphs,
+    ushort InitialSs,
+    ushort InitialSp,
+    ushort Checksum,
+    ushort InitialIp,
+    ushort InitialCs,
+    ushort RelocTableOffset,
+    ushort OverlayNumber,
+    uint ExtendedHeaderOffset,
+    string ExtendedSignature,
+    int HeaderLength,
+    int BodyOffset,
+    int BodyLength,
+    int OverlayOffset,
+    int OverlayLength);
+
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
   public static MzImage Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    return new MzImage(
+      BytesInLastBlock: layout.BytesInLastBlock,
+      BlocksInFile: layout.BlocksInFile,
+      NumRelocs: layout.NumRelocs,
+      HeaderParagraphs: layout.HeaderParagraphs,
+      MinExtraParagraphs: layout.MinExtraParagraphs,
+      MaxExtraParagraphs: layout.MaxExtraParagraphs,
+      InitialSs: layout.InitialSs,
+      InitialSp: layout.InitialSp,
+      Checksum: layout.Checksum,
+      InitialIp: layout.InitialIp,
+      InitialCs: layout.InitialCs,
+      RelocTableOffset: layout.RelocTableOffset,
+      OverlayNumber: layout.OverlayNumber,
+      ExtendedHeaderOffset: layout.ExtendedHeaderOffset,
+      ExtendedSignature: layout.ExtendedSignature,
+      Header: data[..layout.HeaderLength].ToArray(),
+      Body: data.Slice(layout.BodyOffset, layout.BodyLength).ToArray(),
+      Overlay: data.Slice(layout.OverlayOffset, layout.OverlayLength).ToArray());
+  }
+
+  internal static MzLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 28) throw new InvalidDataException("MZ: file shorter than 28-byte header.");
     if (data[0] != 'M' || data[1] != 'Z')
-      if (data[0] != 'Z' || data[1] != 'M') // old Borland-style swap — accepted by COMMAND.COM
+      if (data[0] != 'Z' || data[1] != 'M')
         throw new InvalidDataException($"MZ: unexpected magic 0x{data[0]:X2}{data[1]:X2}");
 
     var bytesInLast = BinaryPrimitives.ReadUInt16LittleEndian(data[2..]);
@@ -63,33 +108,28 @@ public sealed class MzReader {
     var relocOffset = BinaryPrimitives.ReadUInt16LittleEndian(data[24..]);
     var overlayNum = BinaryPrimitives.ReadUInt16LittleEndian(data[26..]);
 
-    // Extended header dispatch — e_lfanew at 0x3C (only meaningful when the MZ
-    // header is large enough to reach that offset).
     uint eLfanew = 0;
     var extSig = "";
     if (data.Length >= 64 && headerParagraphs * 16 >= 64) {
       eLfanew = BinaryPrimitives.ReadUInt32LittleEndian(data[0x3C..]);
-      if (eLfanew > 0 && eLfanew + 4 <= data.Length) {
-        if (data[(int)eLfanew] == 'P' && data[(int)eLfanew + 1] == 'E') extSig = "PE";
-        else if (data[(int)eLfanew] == 'N' && data[(int)eLfanew + 1] == 'E') extSig = "NE";
-        else if (data[(int)eLfanew] == 'L' && data[(int)eLfanew + 1] == 'E') extSig = "LE";
-        else if (data[(int)eLfanew] == 'L' && data[(int)eLfanew + 1] == 'X') extSig = "LX";
+      if (eLfanew is > 0 and <= int.MaxValue) {
+        var offset = (int)eLfanew;
+        if (offset <= data.Length - 4) {
+          if (data[offset] == 'P' && data[offset + 1] == 'E') extSig = "PE";
+          else if (data[offset] == 'N' && data[offset + 1] == 'E') extSig = "NE";
+          else if (data[offset] == 'L' && data[offset + 1] == 'E') extSig = "LE";
+          else if (data[offset] == 'L' && data[offset + 1] == 'X') extSig = "LX";
+        }
       }
     }
 
-    var headerSize = Math.Min(data.Length, headerParagraphs * 16);
-    // Image size per DOS loader rules: blocks_in_file * 512, with bytes_in_last subtracted
-    // when it's non-zero (a non-zero value says the last block isn't full).
+    var headerLength = Math.Min(data.Length, headerParagraphs * 16);
     long declaredImageSize = (long)blocks * 512;
     if (bytesInLast > 0) declaredImageSize -= 512 - bytesInLast;
-    if (declaredImageSize > data.Length) declaredImageSize = data.Length;
-    if (declaredImageSize < headerSize) declaredImageSize = headerSize;
+    declaredImageSize = Math.Clamp(declaredImageSize, headerLength, data.Length);
 
-    var header = data[..headerSize].ToArray();
-    var body = data.Slice(headerSize, (int)(declaredImageSize - headerSize)).ToArray();
-    var overlay = data[(int)declaredImageSize..].ToArray();
-
-    return new MzImage(
+    var imageEnd = checked((int)declaredImageSize);
+    return new MzLayout(
       BytesInLastBlock: bytesInLast,
       BlocksInFile: blocks,
       NumRelocs: numRelocs,
@@ -105,8 +145,10 @@ public sealed class MzReader {
       OverlayNumber: overlayNum,
       ExtendedHeaderOffset: eLfanew,
       ExtendedSignature: extSig,
-      Header: header,
-      Body: body,
-      Overlay: overlay);
+      HeaderLength: headerLength,
+      BodyOffset: headerLength,
+      BodyLength: imageEnd - headerLength,
+      OverlayOffset: imageEnd,
+      OverlayLength: data.Length - imageEnd);
   }
 }

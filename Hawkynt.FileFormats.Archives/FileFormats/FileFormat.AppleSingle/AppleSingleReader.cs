@@ -35,10 +35,28 @@ public sealed class AppleSingleReader {
     uint Version,
     IReadOnlyList<Entry> Entries);
 
+  internal sealed record EntryLayout(uint EntryId, string Name, int DataOffset, int DataLength);
+
+  internal sealed record ContainerLayout(
+    bool IsDouble,
+    uint Version,
+    IReadOnlyList<EntryLayout> Entries);
+
   /// <summary>
   /// Reads the value from the supplied input.
   /// </summary>
   public static Container Read(ReadOnlySpan<byte> data) {
+    var layout = ReadLayout(data);
+    var entries = new List<Entry>(layout.Entries.Count);
+    foreach (var entry in layout.Entries)
+      entries.Add(new Entry(
+        entry.EntryId,
+        entry.Name,
+        data.Slice(entry.DataOffset, entry.DataLength).ToArray()));
+    return new Container(layout.IsDouble, layout.Version, entries);
+  }
+
+  internal static ContainerLayout ReadLayout(ReadOnlySpan<byte> data) {
     if (data.Length < 26) throw new InvalidDataException("AppleSingle: file shorter than 26-byte header.");
 
     var magic = BinaryPrimitives.ReadUInt32BigEndian(data);
@@ -48,26 +66,29 @@ public sealed class AppleSingleReader {
     else throw new InvalidDataException($"AppleSingle: bad magic 0x{magic:X8}");
 
     var version = BinaryPrimitives.ReadUInt32BigEndian(data[4..]);
-    // bytes 8..24: 16-byte filler (originally home filesystem identifier; ignored in v2).
-
     var numEntries = BinaryPrimitives.ReadUInt16BigEndian(data[24..]);
     var headerEnd = 26 + 12 * numEntries;
     if (headerEnd > data.Length)
       throw new InvalidDataException($"AppleSingle: entry table extends past end of file ({headerEnd} > {data.Length})");
 
-    var entries = new List<Entry>(numEntries);
+    var entries = new List<EntryLayout>(numEntries);
     for (var i = 0; i < numEntries; i++) {
       var off = 26 + 12 * i;
       var id = BinaryPrimitives.ReadUInt32BigEndian(data[off..]);
-      var dataOffset = (int)BinaryPrimitives.ReadUInt32BigEndian(data[(off + 4)..]);
-      var dataLen = (int)BinaryPrimitives.ReadUInt32BigEndian(data[(off + 8)..]);
-      if ((long)dataOffset + dataLen > data.Length) continue; // skip malformed entry
+      var rawDataOffset = BinaryPrimitives.ReadUInt32BigEndian(data[(off + 4)..]);
+      var rawDataLength = BinaryPrimitives.ReadUInt32BigEndian(data[(off + 8)..]);
+      if (rawDataOffset > int.MaxValue || rawDataLength > int.MaxValue)
+        continue;
 
-      var body = data.Slice(dataOffset, dataLen).ToArray();
-      entries.Add(new Entry(id, EntryName(id), body));
+      var dataOffset = (int)rawDataOffset;
+      var dataLength = (int)rawDataLength;
+      if (dataOffset > data.Length || dataLength > data.Length - dataOffset)
+        continue;
+
+      entries.Add(new EntryLayout(id, EntryName(id), dataOffset, dataLength));
     }
 
-    return new Container(isDouble, version, entries);
+    return new ContainerLayout(isDouble, version, entries);
   }
 
   /// <summary>Maps an AppleSingle/AppleDouble entry id to a stable display name.</summary>
@@ -111,6 +132,8 @@ public sealed class AppleSingleReader {
   };
 
   /// <summary>Decodes the embedded "real_name" entry as a UTF-8 (or MacRoman ASCII) string.</summary>
-  public static string DecodeRealName(byte[] data) =>
+  public static string DecodeRealName(byte[] data) => DecodeRealName((ReadOnlySpan<byte>)data);
+
+  internal static string DecodeRealName(ReadOnlySpan<byte> data) =>
     Encoding.UTF8.GetString(data).TrimEnd('\0', ' ');
 }
