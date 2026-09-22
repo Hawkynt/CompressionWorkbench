@@ -355,6 +355,10 @@ public partial class DefragmentWindow : Window {
     // what they're about to defragment/optimize.
     PreviewBlockMap(path, ops);
 
+    // Re-apply capability-specific enablement after every reload. The generic
+    // loader intentionally knows nothing about the separated optimization axes.
+    RefreshExplicitCapabilityPresentation();
+
     // Re-apply the requested-verb focus now that button-enabled state is known.
     ApplyRequestedVerb();
   }
