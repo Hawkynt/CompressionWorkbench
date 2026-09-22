@@ -8,7 +8,7 @@ namespace FileFormat.Crunch;
 /// <summary>
 /// Describes crunch format.
 /// </summary>
-public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class CrunchFormatDescriptor : IFormatDescriptor, IStreamFormatOperations , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
