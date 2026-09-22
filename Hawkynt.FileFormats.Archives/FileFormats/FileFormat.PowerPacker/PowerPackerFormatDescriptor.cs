@@ -6,7 +6,7 @@ namespace FileFormat.PowerPacker;
 /// <summary>
 /// Describes power packer format.
 /// </summary>
-public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class PowerPackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
