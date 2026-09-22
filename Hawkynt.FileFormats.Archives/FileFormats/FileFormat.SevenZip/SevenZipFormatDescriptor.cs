@@ -483,4 +483,17 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
         Level = ValidationLevel.Integrity, Issues = issues };
     }
   }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output)
+    => RebuildVerb.RebuildToStream(
+      input,
+      output,
+      this,
+      this,
+      new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        ["Method"] = "lzma2",
+        ["Level"] = "9",
+      });
+
 }
