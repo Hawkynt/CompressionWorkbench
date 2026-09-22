@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:Compression.UI.Controls"
-        Title="Maintenance — Optimize / Shrink / Defragment / Purge / Wipe" Width="900" Height="780"
+        Title="Maintenance" Width="900" Height="780"
         MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip">
 
@@ -136,11 +136,11 @@
     </GroupBox>
 
     <!-- Archive repack note (visible only when an archive is loaded) -->
-    <GroupBox Grid.Row="2" Header="Archive optimization" Margin="0,0,0,8"
+    <GroupBox Grid.Row="2" Header="Archive rewrite" Margin="0,0,0,8"
               x:Name="ArchiveRepackGroup" Visibility="Collapsed">
       <StackPanel Margin="6">
         <TextBlock TextWrapping="Wrap" Foreground="DimGray"
-                   Text="Archive repack: entries will be extracted and re-created with optimal compression settings. The layout strategy modes above do not apply to archive formats." />
+                   Text="Archive rewrite: the selected capability decides whether payloads are recompressed or merely repacked. Allocation geometry remains a separate operation." />
         <CheckBox x:Name="SmartSolidRepackCheck" Margin="0,6,0,0" Visibility="Collapsed"
                   Content="Smart solid-block repack (7z only)"
                   ToolTip="Tries 5 different file grouping strategies and picks the one that produces the smallest archive. More thorough but slower than a plain repack." />
@@ -336,7 +336,7 @@
                   ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
         <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnCompact" IsEnabled="False"
-                ToolTip="Defragment + optimize + shrink in one pass — the smallest valid container that still holds the same contents. Tick 'Minimal geometry' for the bare-minimum (non-standard) rebuild." />
+                ToolTip="Defragment + compress + shrink in one pass. Allocation-geometry changes remain a separate explicit operation." />
         <Button x:Name="PurgeBtn" Content="Purge" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnPurge" IsEnabled="False"
                 ToolTip="Erase ALL live data, leaving a valid empty container. Distinct from Wipe Empty (which only zeros dead space)." />
