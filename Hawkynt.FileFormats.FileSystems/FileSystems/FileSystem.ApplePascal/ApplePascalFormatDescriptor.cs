@@ -26,7 +26,7 @@ namespace FileSystem.ApplePascal;
 /// </list>
 /// </summary>
 public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
-    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
+    IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   /// <summary>
   /// Gets the id.
@@ -298,6 +298,27 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
     image.Position = 0;
     var extents = ApplePascalExtentMap.Enumerate(image);
     return UnusedSpaceWiper.Wipe(image, extents, imageSize, wipeClusterTips, lookup);
+  }
+
+  /// <inheritdoc />
+  public int AllocationBlockSize => ApplePascalReader.BlockSize;
+
+  /// <inheritdoc />
+  public bool RepointsRunsIndependently => true;
+
+  /// <inheritdoc />
+  public bool SupportsHeldRuns => true;
+
+  /// <inheritdoc />
+  public void MoveExtent(Stream image, long srcOffset, long dstOffset, long length, bool zeroSource = false)
+    => new ApplePascalBlockMover().MoveExtent(image, srcOffset, dstOffset, length, zeroSource);
+
+  /// <inheritdoc />
+  public void UpdateAllocationAfterMove(
+      Stream image, string fileName, long oldOffset, long newOffset, long length) {
+    var mover = new ApplePascalBlockMover();
+    mover.Init(image);
+    mover.UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
   }
 
   /// <inheritdoc />
