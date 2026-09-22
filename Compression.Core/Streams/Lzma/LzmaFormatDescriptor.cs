@@ -7,7 +7,7 @@ namespace FileFormat.Lzma;
 /// <summary>
 /// Describes lzma format.
 /// </summary>
-public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LzmaFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
