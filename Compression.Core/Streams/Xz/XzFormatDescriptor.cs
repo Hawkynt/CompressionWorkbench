@@ -8,7 +8,7 @@ namespace FileFormat.Xz;
 /// <summary>
 /// Describes xz format.
 /// </summary>
-public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class XzFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
