@@ -561,4 +561,17 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         Level = ValidationLevel.Integrity, Issues = issues };
     }
   }
+
+  /// <inheritdoc />
+  public void OptimizeCompression(Stream input, Stream output)
+    => RebuildVerb.RebuildToStream(
+      input,
+      output,
+      this,
+      this,
+      new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        ["Method"] = "deflate",
+        ["Level"] = "9",
+      });
+
 }
