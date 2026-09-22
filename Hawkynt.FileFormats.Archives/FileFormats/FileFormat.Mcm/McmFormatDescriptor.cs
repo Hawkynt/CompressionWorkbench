@@ -7,7 +7,7 @@ namespace FileFormat.Mcm;
 /// <summary>
 /// Describes mcm format.
 /// </summary>
-public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class McmFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
