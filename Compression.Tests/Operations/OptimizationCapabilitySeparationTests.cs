@@ -1,3 +1,4 @@
+using Compression.Lib;
 using Compression.Registry;
 using FileFormat.MacBinary;
 using FileFormat.Zstd;
@@ -59,6 +60,25 @@ public sealed class OptimizationCapabilitySeparationTests {
       Assert.That(OptimizationCapabilities.CanCompress(descriptor), Is.False);
       Assert.That(OptimizationCapabilities.CanCanonicalize(descriptor), Is.False);
     });
+  }
+
+  [Test, Category("Architecture")]
+  public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .Where(descriptor => descriptor is IStreamFormatOperations)
+      .Where(descriptor =>
+        descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize)
+        || descriptor.Methods.Any(method => method.SupportsOptimize))
+      .Where(descriptor => descriptor is not ICompressionOptimizable)
+      .Select(descriptor => descriptor.Id)
+      .OrderBy(id => id, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "Legacy stream optimizer claims must opt into ICompressionOptimizable: "
+      + string.Join(", ", offenders));
   }
 
   [Test, Category("Architecture")]
