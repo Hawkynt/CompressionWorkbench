@@ -7,7 +7,7 @@ namespace FileFormat.Lzs;
 /// <summary>
 /// Describes lzs format.
 /// </summary>
-public sealed class LzsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LzsFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
