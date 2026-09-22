@@ -59,46 +59,21 @@ public static class CompactOperation {
       if (descriptor != null) {
         try {
           var r = CvfOptimizer.Optimize(path, descriptor);
-          steps.Add("optimize");
-          log($"optimize: re-encoded via {r.MethodUsed}.");
+          steps.Add("compress");
+          log($"compress: re-encoded via {r.MethodUsed}.");
         } catch (Exception ex) {
-          log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
+          log($"compress: skipped ({ex.GetType().Name}: {ex.Message}).");
         }
       }
-    } else if (descriptor?.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize) == true
-               && ops is IArchiveCreatable creator
-               && ops is IFormatOptionsSchema archiveSchema
-               && archiveSchema.OptionsSchema.Count > 0
-               && format != F.Zip
-               && !FormatDetector.IsStreamFormat(format)
-               && !FormatDetector.GetTarCompression(format).HasValue) {
-      // Multi-entry containers with their own finite creation schema (EWF,
-      // SquashFS, etc.) need the archive optimizer, not the stream optimizer.
-      // It searches the declared axes and accepts only verified same-format
-      // rebuilds smaller than the source; otherwise it copies through unchanged.
-      var tempOut = path + ".compact-arcopt.tmp";
+    } else if (OptimizationCapabilities.CanCompress(descriptor)) {
+      var tempOut = path + ".compact-compress.tmp";
       try {
-        var r = ArchiveCompressionOptimizer.Optimize(path, tempOut, ops, creator, archiveSchema);
+        var r = ArchiveOperations.Compress(path, tempOut, options.Password);
         File.Move(tempOut, path, overwrite: true);
-        steps.Add("optimize");
-        log(r.OptimizedSize < r.OriginalSize
-          ? $"optimize: {r.OriginalSize:N0} → {r.OptimizedSize:N0} bytes across {r.Probes} parameter probe(s)."
-          : $"optimize: no smaller verified representation after {r.Probes} parameter probe(s).");
+        steps.Add("compress");
+        log($"compress: re-encoded {r.EntriesOptimized} entr(ies).");
       } catch (Exception ex) {
-        log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
-      } finally {
-        if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { }
-      }
-    } else if (format == F.Zip || FormatDetector.IsStreamFormat(format)
-               || FormatDetector.GetTarCompression(format).HasValue) {
-      var tempOut = path + ".compact-opt.tmp";
-      try {
-        var r = ArchiveOperations.Optimize(path, tempOut, options.Password);
-        File.Move(tempOut, path, overwrite: true);
-        steps.Add("optimize");
-        log($"optimize: re-encoded {r.EntriesOptimized} entr(ies).");
-      } catch (Exception ex) {
-        log($"optimize: skipped ({ex.GetType().Name}: {ex.Message}).");
+        log($"compress: skipped ({ex.GetType().Name}: {ex.Message}).");
       } finally {
         if (File.Exists(tempOut)) try { File.Delete(tempOut); } catch { }
       }
