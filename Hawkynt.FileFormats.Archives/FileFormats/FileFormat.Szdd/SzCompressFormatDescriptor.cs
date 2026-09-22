@@ -11,7 +11,7 @@ namespace FileFormat.Szdd;
 /// here it is fully read + write (<see cref="Compress(Stream,Stream)"/> emits
 /// the "SZ " header, <see cref="Decompress"/> auto-detects either variant).
 /// </summary>
-public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class SzCompressFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema , ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>
