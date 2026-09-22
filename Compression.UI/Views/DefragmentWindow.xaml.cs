@@ -15,11 +15,23 @@ namespace Compression.UI.Views;
 /// opened from a specific context-menu entry.
 /// </summary>
 public enum MaintenanceVerb {
-  /// <summary>Find + apply the best layout / re-encode payload (size preserved where possible).</summary>
+  /// <summary>Re-encode live payloads with better compression choices.</summary>
+  Compress,
+  /// <summary>Rewrite format-defined canonical ordering/padding without recompressing by implication.</summary>
+  Canonicalize,
+  /// <summary>Rebuild the same logical entries without implying compression optimization.</summary>
+  Repack,
+  /// <summary>Reorder filesystem directory entries without moving payload extents merely for ordering.</summary>
+  SortDirectoryEntries,
+  /// <summary>Move physical allocation extents to reduce fragmentation.</summary>
+  DefragmentExtents,
+  /// <summary>Change allocation-unit or related filesystem geometry while preserving contents.</summary>
+  ChangeAllocationGeometry,
+  /// <summary>Legacy compatibility verb; new UI does not expose this ambiguous operation.</summary>
   Optimize,
   /// <summary>Keep the parameter set; minimise stored footprint.</summary>
   Shrink,
-  /// <summary>Re-order entries/extents so files are contiguous; size preserved.</summary>
+  /// <summary>Legacy generic defragment verb; new UI exposes physical extent defragmentation explicitly.</summary>
   Defragment,
   /// <summary>Erase all live data, leaving a valid empty container.</summary>
   Purge,
@@ -178,6 +190,12 @@ public partial class DefragmentWindow : Window {
   private void ApplyRequestedVerb() {
     if (this._requestedVerb is not { } verb) return;
     Title = verb switch {
+      MaintenanceVerb.Compress => "Compress",
+      MaintenanceVerb.Canonicalize => "Canonicalize",
+      MaintenanceVerb.Repack => "Repack",
+      MaintenanceVerb.SortDirectoryEntries => "Sort directory entries",
+      MaintenanceVerb.DefragmentExtents => "Defragment extents",
+      MaintenanceVerb.ChangeAllocationGeometry => "Change allocation geometry",
       MaintenanceVerb.Optimize => "Optimize",
       MaintenanceVerb.Shrink => "Shrink",
       MaintenanceVerb.Defragment => "Defragment",
@@ -193,7 +211,7 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.WipeEmpty => WipeEmptyBtn,
       MaintenanceVerb.Compact => CompactBtn,
       MaintenanceVerb.Scramble => ScrambleBtn,
-      _ => RunBtn, // Optimize + Defragment both live on the morphing Run button.
+      _ => RunBtn, // capability-specific actions share the morphing Run button.
     };
     if (target is { IsEnabled: true }) {
       target.IsDefault = true;
