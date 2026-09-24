@@ -44,10 +44,8 @@ public partial class DefragmentWindow {
           && ops is IArchiveCreatable) {
         this._isArchiveMode = true;
         this._archiveOps = ops;
-        this._isSevenZipFormat = string.Equals(id, "SevenZip", StringComparison.Ordinal);
         FsModesGroup.Visibility = Visibility.Collapsed;
         ArchiveRepackGroup.Visibility = Visibility.Visible;
-        SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
         RunBtn.Content = "Optimize";
         RunBtn.IsEnabled = true;
         SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
@@ -91,10 +89,6 @@ public partial class DefragmentWindow {
         ? Visibility.Visible
         : Visibility.Collapsed;
       ArchiveRepackGroup.Visibility = verb is MaintenanceVerb.Compress or MaintenanceVerb.Repack
-        ? Visibility.Visible
-        : Visibility.Collapsed;
-      SmartSolidRepackCheck.Visibility = verb == MaintenanceVerb.Compress
-        && string.Equals(capabilityId, "SevenZip", StringComparison.Ordinal)
         ? Visibility.Visible
         : Visibility.Collapsed;
       MetadataPlacementPanel.Visibility = verb == MaintenanceVerb.Canonicalize
@@ -434,11 +428,6 @@ public partial class DefragmentWindow {
 
   private void RunArchiveOptimizeWithBlockProgress(IArchiveFormatOperations? ops) {
     if (this._imagePath == null || ops == null) return;
-    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
-      RunSmartSevenZipWithBlockProgress(ops);
-      return;
-    }
-
     var path = this._imagePath;
     var formatId = this._formatId;
     if (formatId is "DoubleSpace" or "DriveSpace" or "DriveSpace3") {
@@ -523,111 +512,6 @@ public partial class DefragmentWindow {
           Append($"OK ({sw.ElapsedMilliseconds} ms) — {entriesOptimized} entries re-encoded");
           Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes (Δ {delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
           NotifyMutated(path);
-        }
-        Append("");
-        EndMaintenanceOperation();
-      });
-    });
-  }
-
-  private void RunSmartSevenZipWithBlockProgress(IArchiveFormatOperations ops) {
-    if (this._imagePath == null) return;
-    var path = this._imagePath;
-    var originalSize = new FileInfo(path).Length;
-    var cancellationToken = BeginMaintenanceOperation("7z solid-block re-group", staged: true);
-    SetStagedArchiveMap(path, ops, originalSize);
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Smart solid-block repack: {Path.GetFileName(path)} ===");
-    Append("All candidate layouts are staged. Cancel discards them and leaves the current 7z untouched.");
-    Progress.IsIndeterminate = false;
-    Progress.Value = 0;
-
-    Task.Run(() => {
-      var sw = Stopwatch.StartNew();
-      Exception? error = null;
-      var cancelled = false;
-      FileFormat.SevenZip.SolidBlockOptimizer.OptimizeResult? result = null;
-
-      try {
-        using var fs = File.OpenRead(path);
-        result = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(
-          fs,
-          maxTrials: 5,
-          onProgress: (index, total, name) => Dispatcher.BeginInvoke(() =>
-            Append($"  Trying strategy {index + 1}/{total}: {name}...")),
-          onDetailedProgress: detail => Dispatcher.BeginInvoke(() => {
-            var displaySize = Math.Max(1L, BlockMap.ImageSize > 0 ? BlockMap.ImageSize : originalSize);
-            double fraction;
-            switch (detail.Phase) {
-              case "extracting":
-                fraction = 0.30 * detail.BytesDone / Math.Max(1.0, detail.BytesTotal);
-                BlockMap.ReadHead = Math.Clamp((long)(detail.BytesDone / Math.Max(1.0, detail.BytesTotal) * displaySize), 0, displaySize - 1);
-                BlockMap.WriteHead = -1;
-                break;
-              case "strategy":
-                fraction = 0.30 + 0.10 * detail.Current / Math.Max(1.0, detail.Total);
-                BlockMap.ReadHead = -1;
-                break;
-              case "building":
-                fraction = 0.40 + 0.55 * detail.Current / Math.Max(1.0, detail.Total);
-                BlockMap.ReadHead = -1;
-                BlockMap.WriteHead = Math.Clamp((long)(detail.Current / Math.Max(1.0, detail.Total) * displaySize), 0, displaySize - 1);
-                break;
-              default:
-                fraction = 0;
-                break;
-            }
-            Progress.Value = Math.Clamp(fraction, 0, 0.95) * 100;
-            if (LayoutStatusLbl != null)
-              LayoutStatusLbl.Text = detail.Phase switch {
-                "extracting" => $"Reading source entry: {detail.Name}",
-                "strategy" => $"Planning solid grouping: {detail.Name}",
-                "building" => $"Building staged solid candidate: {detail.Name}",
-                _ => "Staged 7z regrouping",
-              };
-          }),
-          cancellationToken: cancellationToken);
-      } catch (OperationCanceledException) {
-        cancelled = true;
-      } catch (Exception ex) {
-        error = ex;
-      }
-      sw.Stop();
-
-      Dispatcher.Invoke(() => {
-        BlockMap.ReadHead = -1;
-        BlockMap.WriteHead = -1;
-        Progress.Value = 100;
-
-        if (cancelled) {
-          Append($"CANCELLED ({sw.ElapsedMilliseconds} ms) — candidate regroup discarded; existing 7z unchanged.");
-        } else if (error != null) {
-          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {error.GetType().Name}: {error.Message}");
-        } else if (result != null) {
-          foreach (var trial in result.Trials)
-            Append($"    {trial.StrategyName}: {FormatSize(trial.OutputSize)} ({trial.Elapsed.TotalMilliseconds:F0} ms)");
-
-          var newSize = (long)result.Data.Length;
-          var delta = newSize - originalSize;
-          var pct = originalSize > 0 ? (double)delta / originalSize * 100 : 0;
-          Append($"  Winner: {result.WinningStrategy}");
-          Append($"Archive size: {originalSize:N0} -> {newSize:N0} bytes ({delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
-
-          if (newSize < originalSize) {
-            this._maintenanceCommitStarted = true;
-            if (this._maintenanceCancelButton != null) this._maintenanceCancelButton.IsEnabled = false;
-            if (LayoutStatusLbl != null)
-              LayoutStatusLbl.Text = "Winning staged layout selected — committing; cancellation disabled.";
-            try {
-              AtomicFileWriter.WriteAllBytesAtomic(path, result.Data);
-              Append("Optimized archive written.");
-              NotifyMutated(path);
-            } catch (Exception writeError) {
-              Append($"FAILED while committing winner: {writeError.Message}");
-            }
-          } else {
-            Append("No strategy improved on the original size; archive unchanged.");
-          }
         }
         Append("");
         EndMaintenanceOperation();
