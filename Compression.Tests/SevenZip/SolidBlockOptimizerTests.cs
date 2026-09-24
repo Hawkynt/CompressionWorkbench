@@ -129,12 +129,19 @@ public class SolidBlockOptimizerTests {
 
   [Category("HappyPath")]
   [Test]
-  public void Optimize_RunsAllFiveStrategies() {
+  public void Optimize_RunsAllFiveStrategies_AndIncludesOriginalBaseline() {
     using var archive = CreateMixedArchive();
-    var result = SolidBlockOptimizer.Optimize(archive, maxTrials: 5);
+    var attempted = new List<string>();
+    var result = SolidBlockOptimizer.Optimize(archive, maxTrials: 5,
+      onProgress: (_, _, name) => attempted.Add(name));
 
-    Assert.That(result.Trials.Count, Is.EqualTo(5),
-      "Should have tried all 5 strategies");
+    Assert.Multiple(() => {
+      Assert.That(attempted.Count, Is.EqualTo(5), "Should have tried all 5 regrouping strategies");
+      Assert.That(result.Trials.Any(static t => t.StrategyName == "original"), Is.True,
+        "The untouched source must remain a candidate.");
+      Assert.That(result.Data.Length, Is.LessThanOrEqualTo(archive.Length),
+        "Optimization must never replace the source with a larger archive.");
+    });
   }
 
   [Category("HappyPath")]
@@ -194,7 +201,8 @@ public class SolidBlockOptimizerTests {
     using var archive = CreateMixedArchive();
     var result = SolidBlockOptimizer.Optimize(archive, maxTrials: 2);
 
-    Assert.That(result.Trials.Count, Is.LessThanOrEqualTo(2));
+    Assert.That(result.Trials.Count, Is.LessThanOrEqualTo(3),
+      "Two strategy candidates plus the mandatory original baseline.");
   }
 
   [Category("HappyPath")]
@@ -267,5 +275,72 @@ public class SolidBlockOptimizerTests {
       var data = reader.Extract(i);
       Assert.That(data.Length, Is.GreaterThan(0), $"Entry {reader.Entries[i].Name} should not be empty");
     }
+  }
+
+  [Test]
+  [Category("Regression")]
+  public void Optimize_PreservesEmptyDirectoriesAndEntryMetadata() {
+    var modified = new DateTime(2024, 11, 7, 13, 14, 16, DateTimeKind.Utc);
+    var created = new DateTime(2023, 5, 6, 7, 8, 10, DateTimeKind.Utc);
+    using var archive = new MemoryStream();
+    using (var writer = new SevenZipWriter(archive, SevenZipCodec.Lzma2, leaveOpen: true, dictionarySize: 1 << 23)) {
+      writer.AddDirectory(new SevenZipEntry {
+        Name = "empty/",
+        LastWriteTime = modified,
+        CreationTime = created,
+        Attributes = 0x10,
+      });
+      writer.AddEntry(new SevenZipEntry {
+        Name = "zeta.txt",
+        LastWriteTime = modified,
+        CreationTime = created,
+        Attributes = 0x20,
+      }, "same semantic payload same semantic payload"u8);
+      writer.AddEntry(new SevenZipEntry {
+        Name = "alpha.txt",
+        LastWriteTime = modified,
+        CreationTime = created,
+        Attributes = 0x21,
+      }, "same semantic payload same semantic payload"u8);
+      writer.Finish();
+    }
+
+    archive.Position = 0;
+    var result = SolidBlockOptimizer.Optimize(archive);
+    using var optimized = new MemoryStream(result.Data);
+    using var reader = new SevenZipReader(optimized);
+    var byName = reader.Entries.ToDictionary(static e => e.Name, StringComparer.Ordinal);
+
+    Assert.Multiple(() => {
+      Assert.That(byName.ContainsKey("empty/"), Is.True);
+      Assert.That(byName["empty/"].IsDirectory, Is.True);
+      Assert.That(byName["empty/"].LastWriteTime, Is.EqualTo(modified));
+      Assert.That(byName["empty/"].CreationTime, Is.EqualTo(created));
+      Assert.That(byName["empty/"].Attributes, Is.EqualTo(0x10u));
+      Assert.That(byName["alpha.txt"].LastWriteTime, Is.EqualTo(modified));
+      Assert.That(byName["alpha.txt"].CreationTime, Is.EqualTo(created));
+      Assert.That(byName["alpha.txt"].Attributes, Is.EqualTo(0x21u));
+    });
+  }
+
+  [Test]
+  [Category("Regression")]
+  public void Optimize_UnsupportedCompressionProfile_ReturnsOriginalByteForByte() {
+    using var archive = new MemoryStream();
+    using (var writer = new SevenZipWriter(archive, SevenZipCodec.Bzip2, leaveOpen: true)) {
+      writer.AddEntry(new SevenZipEntry { Name = "b.txt" }, "bbbbbbbbbbbbbbbb"u8);
+      writer.AddEntry(new SevenZipEntry { Name = "a.txt" }, "aaaaaaaaaaaaaaaa"u8);
+      writer.Finish();
+    }
+    var original = archive.ToArray();
+    archive.Position = 0;
+
+    var result = SolidBlockOptimizer.Optimize(archive);
+
+    Assert.Multiple(() => {
+      Assert.That(result.WinningStrategy, Is.EqualTo("original"));
+      Assert.That(result.Data, Is.EqualTo(original));
+      Assert.That(result.Trials, Has.Count.EqualTo(1));
+    });
   }
 }
