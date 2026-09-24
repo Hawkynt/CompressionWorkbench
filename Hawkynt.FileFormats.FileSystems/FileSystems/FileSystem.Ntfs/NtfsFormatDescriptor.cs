@@ -491,8 +491,10 @@ public sealed class NtfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       ? new NtfsWriter(generateShortNames: generateShortNames)
       : new NtfsWriter(label, generateShortNames);
     ApplyWriterOptions(w, specific);
-    foreach (var (name, data) in FlatFiles(inputs))
-      w.AddFile(name, data);
+    foreach (var input in inputs) {
+      if (input.IsDirectory) continue;
+      w.AddFile(input.ArchiveName, input.ReadContent(), input.LastModified);
+    }
 
     var totalSize     = ParseImageSizeBytes(specific?.GetValueOrDefault("ImageSize"));
     var clusterSize   = FilesystemSchemaPresets.ParseSize(specific?.GetValueOrDefault("ClusterSize"));
