@@ -22,6 +22,7 @@ namespace FileSystem.Qnx6;
 ///   <item><description>QNX Neutrino <c>fs-qnx6.so</c> documentation (QNX Software Systems)</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Qnx6BlockMover))]
 public sealed class Qnx6FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable , IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Gets the id.

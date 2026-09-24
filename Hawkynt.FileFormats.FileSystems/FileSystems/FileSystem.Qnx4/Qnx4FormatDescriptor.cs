@@ -23,6 +23,7 @@ namespace FileSystem.Qnx4;
 ///   <item><description><c>https://en.wikipedia.org/wiki/QNX</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Qnx4BlockMover))]
 public sealed class Qnx4FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Gets the id.

@@ -43,6 +43,7 @@ namespace FileSystem.Sfs;
 /// volume out again through the same writer, so an add or remove costs the whole
 /// volume rather than the bytes that changed.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(SfsBlockMover))]
 public sealed class SfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap {
 
   /// <summary>Entries that describe the volume rather than live in it.</summary>
