@@ -30,7 +30,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("SectorsPerCluster", "Sectors per cluster", FormatOptionKind.Enum, "0",
       AllowedValues: ["0", "4", "8", "16", "32", "64", "128"],
-      Description: "FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default)."),
+      Description: "FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default).", IsAllocationGeometry: true),
     new("VolumeId", "Volume ID", FormatOptionKind.String, "",
       Description: "32-bit volume identifier (hex or decimal). Blank picks one, the way formatting does."),
   ];
