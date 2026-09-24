@@ -23,7 +23,7 @@
         <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Padding="12,2" Margin="4,0,0,0"
                 Content="Browse..." Click="OnBrowse" />
         <TextBox x:Name="ImagePathBox" VerticalContentAlignment="Center"
-                 IsReadOnly="True" Text="Select a filesystem image to defragment..."
+                 IsReadOnly="True" Text="Select a filesystem image or archive..."
                  Foreground="Gray" />
       </DockPanel>
     </GroupBox>
@@ -323,7 +323,7 @@
         <Button x:Name="ScrambleBtn" Content="Scramble" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnScramble" IsEnabled="False"
                 ToolTip="Scatter every block of every file across the volume — fragmentation on purpose, so Defragment has something real to work against. Content is preserved; only the layout changes. Asks first." />
-        <Button x:Name="RunBtn" Content="Defragment" Width="120" Padding="4" Margin="0,0,8,0"
+        <Button x:Name="RunBtn" Content="Run" Width="120" Padding="4" Margin="0,0,8,0"
                 Click="OnRun" IsDefault="True" IsEnabled="False" />
         <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
       </StackPanel>
