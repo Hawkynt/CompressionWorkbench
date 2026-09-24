@@ -35,6 +35,12 @@ public sealed class SevenZipReader : IDisposable {
   public IReadOnlyList<SevenZipEntry> Entries => this._entries;
 
   /// <summary>
+  /// Gets whether the archive can be rebuilt by <see cref="SolidBlockOptimizer"/>
+  /// without changing codec, dictionary, filter, encryption, or header mode.
+  /// </summary>
+  public bool CanSafelyRegroupDefaultLzma2 { get; private set; }
+
+  /// <summary>
   /// Initializes a new <see cref="SevenZipReader"/> from a seekable stream.
   /// </summary>
   /// <param name="stream">A seekable stream containing the 7z archive.</param>
@@ -67,6 +73,11 @@ public sealed class SevenZipReader : IDisposable {
     using var headerStream = new MemoryStream(nextHeaderData);
     (this._packInfo, this._folders, this._subStreams, this._fileInfos) =
       SevenZipHeaderCodec.ReadHeader(headerStream, password, archiveStream: this._stream);
+
+    this.CanSafelyRegroupDefaultLzma2 =
+      nextHeaderData.Length > 0
+      && nextHeaderData[0] == SevenZipConstants.IdHeader
+      && this._folders.All(IsDefaultLzma2Folder);
 
     // Build entries from file infos and sub-stream sizes
     _entryToFolder = BuildEntries();
@@ -133,6 +144,7 @@ public sealed class SevenZipReader : IDisposable {
     var folderPackedSize = new long[this._folders.Count];
     var folderUnpackedTotal = new long[this._folders.Count];
     var folderMethod = new string[this._folders.Count];
+    var folderEncrypted = new bool[this._folders.Count];
 
     var packIdx = 0;
     for (var fi = 0; fi < this._folders.Count; fi++) {
@@ -153,6 +165,8 @@ public sealed class SevenZipReader : IDisposable {
 
       // Method name from primary coder (last in chain, or first non-filter)
       folderMethod[fi] = GetMethodName(folder);
+      folderEncrypted[fi] = folder.Coders.Any(static c =>
+        c.CodecId.AsSpan().SequenceEqual(SevenZipConstants.CodecAes));
     }
 
     // First pass: accumulate unpacked totals per folder
@@ -213,6 +227,7 @@ public sealed class SevenZipReader : IDisposable {
             : 0;
 
           entry.Method = folderMethod[currentFolder];
+          entry.IsEncrypted = folderEncrypted[currentFolder];
 
           ++subStreamSizeIndex;
           ++currentFileInFolder;
@@ -231,6 +246,16 @@ public sealed class SevenZipReader : IDisposable {
     }
 
     return mapping;
+  }
+
+  private static bool IsDefaultLzma2Folder(SevenZipFolder folder) {
+    if (folder.Coders.Count != 1)
+      return false;
+    var coder = folder.Coders[0];
+    if (!coder.CodecId.AsSpan().SequenceEqual(SevenZipConstants.CodecLzma2))
+      return false;
+    var encodedDictionary = coder.Properties is { Length: > 0 } ? coder.Properties[0] : (byte)0;
+    return DecodeDictionarySize(encodedDictionary) == (1 << 23);
   }
 
   private static string GetMethodName(SevenZipFolder folder) {
