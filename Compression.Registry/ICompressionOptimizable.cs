@@ -15,13 +15,29 @@ public interface ICompressionOptimizable {
   /// the format's best supported compression choices.
   /// </summary>
   void OptimizeCompression(Stream input, Stream output) {
-    if (this is not IStreamFormatOperations streamOperations)
-      throw new NotSupportedException(
-        $"The default {nameof(ICompressionOptimizable)} implementation requires {nameof(IStreamFormatOperations)}.");
+    if (this is IStreamFormatOperations streamOperations) {
+      using var raw = new MemoryStream();
+      streamOperations.Decompress(input, raw);
+      raw.Position = 0;
+      streamOperations.CompressOptimal(raw, output);
+      return;
+    }
 
-    using var raw = new MemoryStream();
-    streamOperations.Decompress(input, raw);
-    raw.Position = 0;
-    streamOperations.CompressOptimal(raw, output);
+    if (this is ILayoutOptimizable layout) {
+      var features = FilesystemOptimization.GetSupportedFeatures(layout);
+      var useTransparentCompression = features.HasFlag(FilesystemOptimizationFeatures.TransparentCompression);
+      var tryCompressionParameters = features.HasFlag(FilesystemOptimizationFeatures.CompressionParameterSearch);
+      if (useTransparentCompression || tryCompressionParameters) {
+        FilesystemOptimization.Optimize(layout, input, output, new FilesystemOptimizationOptions {
+          UseTransparentCompression = useTransparentCompression,
+          TryCompressionParameters = tryCompressionParameters,
+        });
+        return;
+      }
+    }
+
+    throw new NotSupportedException(
+      $"The default {nameof(ICompressionOptimizable)} implementation requires either "
+      + $"{nameof(IStreamFormatOperations)} or an explicitly registered filesystem compression profile.");
   }
 }
