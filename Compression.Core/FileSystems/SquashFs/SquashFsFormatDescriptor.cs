@@ -19,6 +19,7 @@ namespace FileSystem.SquashFs;
 ///   <item><description><c>https://en.wikipedia.org/wiki/SquashFS</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(SquashFsBlockMover))]
 public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, ICompressionOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the

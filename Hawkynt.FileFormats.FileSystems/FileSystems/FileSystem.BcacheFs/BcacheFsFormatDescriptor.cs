@@ -12,6 +12,7 @@ namespace FileSystem.BcacheFs;
 /// here: native b-trees, true in-place CRUD, allocation/accounting maintenance,
 /// in-place defragmentation, purge and unused-space wiping.
 /// </summary>
+[FilesystemBlockMover(typeof(BcacheFsBlockMover))]
 public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IArchiveWriteConstraints, IFormatOptionsSchema, ILayoutOptimizable,
