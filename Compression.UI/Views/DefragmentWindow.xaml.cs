@@ -1152,11 +1152,14 @@ public partial class DefragmentWindow : Window {
       try {
         SemanticPreservationManifest? beforeManifest = null;
         byte[]? beforeDecodedHash = null;
+        byte[]? beforeCanonicalHash = null;
         using (var source = File.OpenRead(path)) {
           if (ops != null)
             beforeManifest = SemanticPreservationManifest.Capture(source, ops);
           else if (label == "Compress" && streamOps != null)
             beforeDecodedHash = HashDecodedPayload(source, streamOps);
+          else if (label == "Canonicalize" && capability is IArchiveCanonicalizable canonicalizable)
+            beforeCanonicalHash = HashCanonicalForm(source, canonicalizable);
           else
             throw new NotSupportedException($"{label} has no semantic-preservation verifier for {this._formatDescriptor.Id}.");
 
@@ -1173,6 +1176,10 @@ public partial class DefragmentWindow : Window {
             var stagedHash = HashDecodedPayload(staged, streamOps);
             if (!beforeDecodedHash.AsSpan().SequenceEqual(stagedHash))
               throw new InvalidOperationException("Compression changed the decoded payload.");
+          } else if (beforeCanonicalHash != null && capability is IArchiveCanonicalizable canonicalizable) {
+            var stagedHash = HashCanonicalForm(staged, canonicalizable);
+            if (!beforeCanonicalHash.AsSpan().SequenceEqual(stagedHash))
+              throw new InvalidOperationException("Canonicalization changed the represented content.");
           }
         }
 
@@ -1208,6 +1215,15 @@ public partial class DefragmentWindow : Window {
     decoded.Position = 0;
     using var sha = System.Security.Cryptography.SHA256.Create();
     return sha.ComputeHash(decoded);
+  }
+
+  private static byte[] HashCanonicalForm(Stream input, IArchiveCanonicalizable canonicalizable) {
+    input.Position = 0;
+    using var canonical = RebuildVerb.CreateScratchStream();
+    canonicalizable.Canonicalize(input, canonical);
+    canonical.Position = 0;
+    using var sha = System.Security.Cryptography.SHA256.Create();
+    return sha.ComputeHash(canonical);
   }
 
   private void OnRun(object sender, RoutedEventArgs e) {
