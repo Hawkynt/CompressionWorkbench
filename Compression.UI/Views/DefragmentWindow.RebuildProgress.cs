@@ -29,7 +29,8 @@ public partial class DefragmentWindow {
     this._rebuildProgressHooked = true;
 
     // Replace only the main Run dispatch. Shrink/Purge/Wipe/Compact keep their
-    // existing handlers; rebuild-backed Defrag/Optimize now share this richer UI.
+    // existing handlers; separated maintenance verbs share this richer UI.
+    // The ambiguous Optimize route remains compatibility-only.
     RunBtn.Click -= OnRun;
     RunBtn.Click += OnRunWithBlockProgress;
     InsertMaintenanceCancelButton();
@@ -225,7 +226,7 @@ public partial class DefragmentWindow {
         return;
     }
 
-    if (this._isFileInternalMode) {
+    if (this._requestedVerb == MaintenanceVerb.Optimize && this._isFileInternalMode) {
       OnRunFileInternalOptimize();
       return;
     }
@@ -240,11 +241,14 @@ public partial class DefragmentWindow {
       && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
       && ops is IArchiveCreatable;
 
-    if (this._isArchiveMode || explicitlyOptimizingArchive) {
+    if (explicitlyOptimizingArchive) {
       RunArchiveOptimizeWithBlockProgress(ops);
       return;
     }
 
+    // A generic maintenance window may still preview archives, but it must not
+    // infer an optimization verb from "creatable". Only a real extent-defrag
+    // target can use the generic Run fallback.
     RunDefragWithBlockProgress();
   }
 
