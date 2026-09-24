@@ -36,7 +36,7 @@ namespace FileSystem.DriveSpace3;
 ///   <item><description><c>https://en.wikipedia.org/wiki/DriveSpace</c> — Wikipedia overview of the CVF family</description></item>
 /// </list>
 /// </summary>
-public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class DriveSpace3FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, ICompressionOptimizable {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
