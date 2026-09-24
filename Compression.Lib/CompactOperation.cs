@@ -35,7 +35,9 @@ public static class CompactOperation {
     var steps = new List<string>();
 
     if (options.Minimal) {
-      if (ops is IArchiveCreatable && ops is IFormatOptionsSchema schema
+      if (OptimizationCapabilities.CanChangeAllocationGeometry(descriptor)
+          && ops is IArchiveCreatable
+          && ops is IFormatOptionsSchema schema
           && SelectMinimalGeometry(schema) is { Count: > 0 } minimal) {
         TryMinimalRebuild(path, format, minimal, options.Password, log);
         steps.Add("minimal-geometry rebuild");
@@ -44,7 +46,8 @@ public static class CompactOperation {
       log($"compact: '{formatId}' exposes no minimal-geometry knobs — running standard compact instead.");
     }
 
-    if (ops is IArchiveDefragmentable defragmentable) {
+    if (OptimizationCapabilities.CanDefragmentExtents(descriptor)
+        && ops is IArchiveDefragmentable defragmentable) {
       try {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
         defragmentable.Defragment(stream, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
