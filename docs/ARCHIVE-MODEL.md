@@ -128,7 +128,7 @@ compressor or a physical defragmenter. Capability discovery is now effect-specif
 | **Repack** | Rebuilds the same logical entries without implying recompression. | `IArchiveRepackable` |
 | **Sort directory entries** | Changes directory-table ordering without moving payload extents merely for ordering. | `IFilesystemDirectoryOrderer` |
 | **Defragment extents** | Physically moves allocation extents to reduce fragmentation. | `IArchiveDefragmentable` + `IFilesystemBlockMover` |
-| **Change allocation geometry** | Changes cluster/block/inode/FAT/geometry choices while preserving logical contents. | `ILayoutOptimizable` (+ `IArchiveCreatable` and a non-empty `IFormatOptionsSchema` for the current UI) |
+| **Change allocation geometry** | Changes cluster/block/inode/FAT/geometry choices while preserving logical contents. | `ILayoutOptimizable` + `IArchiveCreatable` + at least one `IFormatOptionsSchema` option with `IsAllocationGeometry=true` |
 | **Shrink** | Keeps the selected parameter set and reduces the stored footprint / trailing free space where supported. | `IArchiveShrinkable` |
 | **Purge** | Erases all live data while leaving a valid empty container. | `IArchiveModifiable.Remove(all)` or an empty `IArchiveCreatable.Create` |
 | **Wipe** | Overwrites only unused/slack/deleted space. | `IWipeEmpty` |
@@ -137,9 +137,12 @@ compressor or a physical defragmenter. Capability discovery is now effect-specif
 
 These interfaces are intentionally independent. A descriptor may expose several,
 but no capability is inferred merely because another rewrite is possible. In
-particular, `ILayoutOptimizable` does **not** imply compression optimization, and
-`IArchiveDefragmentable` without an exposed `IFilesystemBlockMover` does not
-unlock the **Defragment extents** action.
+particular, `ILayoutOptimizable` does **not** imply compression optimization or
+even a user-selectable geometry change: it is also used as the verified rebuild
+transport by formats whose only writer knobs are metadata or compression.
+**Change allocation geometry** appears only for schema options explicitly tagged
+`IsAllocationGeometry=true`. Likewise, `IArchiveDefragmentable` without an
+exposed `IFilesystemBlockMover` does not unlock **Defragment extents**.
 
 **purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
 container); *wipe* removes only the **dead** data (you keep every live file, but
@@ -250,12 +253,14 @@ RAM. The streaming contracts:
   logical size (slack/padding/neighbours are unreachable). The default
   implementation buffers to memory and calls `Create`; FAT/ext/ZIP-store override
   it. Peak memory is the chunk buffer + the format's own metadata tables.
-- **Change allocation geometry / structural rebuild:** `ILayoutOptimizable` —
-  `AnalyzeLayout` reads only the superblock/BPB (never the whole image);
-  `ApplyMetadata` patches a handful of bytes in place (label/serial/geometry);
-  `RebuildStreaming(source, target, options)` does cluster/block-size/FAT-type
-  changes reading source sequentially and writing target sequentially, with peak
+- **Change allocation geometry / structural rebuild:** `ILayoutOptimizable` is
+  the rebuild transport, while `FormatOptionDescriptor.IsAllocationGeometry`
+  marks the options that belong to this UI action. `AnalyzeLayout` reads only
+  the superblock/BPB (never the whole image); `RebuildStreaming(source, target,
+  options)` performs tagged cluster/block/inode/FAT/media-geometry changes
+  while reading source sequentially and writing target sequentially, with peak
   memory bounded by `O(max(FAT table, directory tree))`, not image size.
+  Metadata-only writer knobs remain creation/edit concerns and are not shown here.
 - **Extract:** `IArchiveInMemoryExtract.ExtractEntry(input, name, output, password)`
   streams one entry straight to a `Stream` with no temp-dir round-trip (used by
   the recursive-descent driver for nested containers).
@@ -288,7 +293,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IArchiveRepackable` | **repack** |
 | `IFilesystemDirectoryOrderer` | **sort directory entries** |
 | `IFilesystemBlockMover` + `IArchiveDefragmentable` | **defragment extents** |
-| `ILayoutOptimizable`       | **change allocation geometry** (parameter retune, in-place or streaming) |
+| `ILayoutOptimizable` + tagged schema option | **change allocation geometry** (only `IsAllocationGeometry=true` options) |
 | `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
 | `IFormatOptionsSchema`     | per-format Method/Level/… choices in create/compress/geometry/shrink dialogs |
 | `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the Maintenance window |
