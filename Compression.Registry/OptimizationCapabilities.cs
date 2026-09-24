@@ -25,8 +25,20 @@ public static class OptimizationCapabilities {
   public static bool CanDefragmentExtents(IFormatDescriptor? descriptor)
     => descriptor is IArchiveDefragmentable && descriptor is IFilesystemBlockMover;
 
+  /// <summary>
+  /// Gets only the writer options whose effect is allocation geometry.
+  /// Creation metadata, compatibility constraints and compression parameters are
+  /// deliberately excluded even when the same descriptor exposes them.
+  /// </summary>
+  public static IReadOnlyList<FormatOptionDescriptor> GetAllocationGeometryOptions(IFormatDescriptor? descriptor) {
+    if (descriptor is not ILayoutOptimizable
+        || descriptor is not IArchiveCreatable
+        || descriptor is not IFormatOptionsSchema schema)
+      return [];
+
+    return schema.OptionsSchema.Where(static option => option.IsAllocationGeometry).ToArray();
+  }
+
   public static bool CanChangeAllocationGeometry(IFormatDescriptor? descriptor)
-    => descriptor is ILayoutOptimizable
-       && descriptor is IArchiveCreatable
-       && descriptor is IFormatOptionsSchema { OptionsSchema.Count: > 0 };
+    => GetAllocationGeometryOptions(descriptor).Count > 0;
 }
