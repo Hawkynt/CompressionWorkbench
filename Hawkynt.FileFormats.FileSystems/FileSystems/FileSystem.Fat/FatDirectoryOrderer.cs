@@ -52,14 +52,14 @@ public static class FatDirectoryOrderer {
     var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(bpb[14..]);
     var fatCount = bpb[16];
     var rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(bpb[17..]);
-    var totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(bpb[19..]);
+    var totalSectors = (int)BinaryPrimitives.ReadUInt16LittleEndian(bpb[19..]);
     if (totalSectors == 0)
       totalSectors = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bpb[32..]));
     var fat16 = BinaryPrimitives.ReadUInt16LittleEndian(bpb[22..]);
     var isFat32 = fat16 == 0;
     var fatSize = isFat32
       ? checked((int)BinaryPrimitives.ReadUInt32LittleEndian(bpb[36..]))
-      : fat16;
+      : (int)fat16;
     var rootDirSectors = (rootEntryCount * 32 + bytesPerSector - 1) / bytesPerSector;
     var firstDataSector = reservedSectors + fatCount * fatSize + rootDirSectors;
     var clusterCount = (totalSectors - firstDataSector) / sectorsPerCluster;
@@ -138,7 +138,7 @@ public static class FatDirectoryOrderer {
       var name = pendingLfn.Count == 0 ? ReadShortName(shortEntry) : ReadLongName(pendingLfn);
       var isPinned = volumeLabel || name is "." or "..";
       var isDirectory = (attr & 0x10) != 0 && !volumeLabel;
-      var startCluster = BinaryPrimitives.ReadUInt16LittleEndian(shortEntry.AsSpan(26));
+      var startCluster = (int)BinaryPrimitives.ReadUInt16LittleEndian(shortEntry.AsSpan(26));
       if (fatType == 32)
         startCluster |= BinaryPrimitives.ReadUInt16LittleEndian(shortEntry.AsSpan(20)) << 16;
 
