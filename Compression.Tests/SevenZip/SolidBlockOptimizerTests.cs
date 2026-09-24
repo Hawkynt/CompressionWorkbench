@@ -327,7 +327,7 @@ public class SolidBlockOptimizerTests {
   [Category("Regression")]
   public void Optimize_UnsupportedCompressionProfile_ReturnsOriginalByteForByte() {
     using var archive = new MemoryStream();
-    using (var writer = new SevenZipWriter(archive, SevenZipCodec.Bzip2, leaveOpen: true)) {
+    using (var writer = new SevenZipWriter(archive, SevenZipCodec.BZip2, leaveOpen: true)) {
       writer.AddEntry(new SevenZipEntry { Name = "b.txt" }, "bbbbbbbbbbbbbbbb"u8);
       writer.AddEntry(new SevenZipEntry { Name = "a.txt" }, "aaaaaaaaaaaaaaaa"u8);
       writer.Finish();
