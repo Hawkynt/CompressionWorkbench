@@ -5,6 +5,10 @@ using FileFormat.Zstd;
 using FileFormat.Zip;
 using FileSystem.ApplePascal;
 using FileSystem.Mfs;
+using FileSystem.Ntfs;
+using FileSystem.Ods1;
+using FileSystem.SquashFs;
+using FileSystem.Stacker;
 
 namespace Compression.Tests.Operations;
 
@@ -59,6 +63,45 @@ public sealed class OptimizationCapabilitySeparationTests {
       Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.True);
       Assert.That(OptimizationCapabilities.CanCompress(descriptor), Is.False);
       Assert.That(OptimizationCapabilities.CanCanonicalize(descriptor), Is.False);
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void SquashFs_CompressionBlockSize_IsNotAllocationGeometry() {
+    var descriptor = new SquashFsFormatDescriptor();
+
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanCompress(descriptor), Is.True);
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.False);
+      Assert.That(OptimizationCapabilities.GetAllocationGeometryOptions(descriptor), Is.Empty);
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void Ntfs_GeometryOptions_ExcludeCompressionAndMetadata() {
+    var descriptor = new NtfsFormatDescriptor();
+    var keys = OptimizationCapabilities.GetAllocationGeometryOptions(descriptor)
+      .Select(static option => option.Key)
+      .ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.True);
+      Assert.That(keys, Does.Contain("ImageSize"));
+      Assert.That(keys, Does.Contain("ClusterSize"));
+      Assert.That(keys, Does.Contain("MftRecordSize"));
+      Assert.That(keys, Does.Not.Contain("VolumeLabel"));
+      Assert.That(keys, Does.Not.Contain("Compression"));
+      Assert.That(keys, Does.Not.Contain("Generate8Dot3"));
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void RebuildTransportAlone_DoesNotImplyAllocationGeometry() {
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(new Ods1FormatDescriptor()), Is.False,
+        "a volume-label-only schema is metadata, not allocation geometry");
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(new StackerFormatDescriptor()), Is.False,
+        "compatibility and compression choices are not allocation geometry");
     });
   }
 
