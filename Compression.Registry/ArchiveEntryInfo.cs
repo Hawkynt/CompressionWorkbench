@@ -36,5 +36,10 @@ public sealed record ArchiveEntryInfo(
   string? Kind = null,
   bool IsSymlink = false,
   string? LinkTarget = null,
-  long? TargetSize = null
+  long? TargetSize = null,
+  DateTime? CreationTime = null,
+  uint? Attributes = null,
+  string? HardLinkTarget = null,
+  IReadOnlyList<ArchiveSparseExtent>? SparseExtents = null,
+  IReadOnlyDictionary<string, string>? SemanticFlags = null
 );
