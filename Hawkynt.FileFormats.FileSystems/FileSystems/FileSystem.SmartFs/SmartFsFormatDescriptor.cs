@@ -37,8 +37,9 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// <summary>The format's one real geometry knob.</summary>
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("SectorSize", "Logical sector size", FormatOptionKind.Enum, "1024",
-      AllowedValues: SmartFsLayout.SectorSizes.Select(static s => s.ToString(CultureInfo.InvariantCulture)).ToArray(, IsAllocationGeometry: true),
-      Description: "SmartFS logical sector size in bytes. NuttX stores a three-bit size code and permits powers of two from 256 through 32768; smaller sectors reduce small-file slack while larger sectors reduce mapping overhead."),
+      AllowedValues: SmartFsLayout.SectorSizes.Select(static s => s.ToString(CultureInfo.InvariantCulture)).ToArray(),
+      Description: "SmartFS logical sector size in bytes. NuttX stores a three-bit size code and permits powers of two from 256 through 32768; smaller sectors reduce small-file slack while larger sectors reduce mapping overhead.",
+      IsAllocationGeometry: true),
   ];
 
   /// <summary>Where the volume keeps its bytes.</summary>
