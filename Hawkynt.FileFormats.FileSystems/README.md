@@ -56,8 +56,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Disk-image and firmware containers
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [Apple IPSW](https://en.wikipedia.org/wiki/IPSW) | `Ipsw` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests | ZIP-based firmware archive | [IPSW](https://en.wikipedia.org/wiki/IPSW) |
 | [BIN/CUE](https://en.wikipedia.org/wiki/Cue_sheet_(computing)) | `BinCue` | R/W | — | — | — | — | — | — | — | — | — | — | own reader + struct-parity tests | Sector-image editor | [CUE sheet](https://wiki.hydrogenaud.io/index.php?title=Cue_sheet) |
 | [CDI](https://en.wikipedia.org/wiki/DiscJuggler) | `Cdi` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests | ISO 9660 edits rebuild; low-level existing-sector rewrite remains available | [DiscJuggler](https://en.wikipedia.org/wiki/DiscJuggler) |
@@ -83,8 +83,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Microsoft / DOS
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [DoubleSpace CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DoubleSpace` | R/W | ✅ | ✅ | — | — | — | ✅ | — | ✅ | ✅ | — | MS-DOS 6.22 `DRVSPACE` driver under QEMU mounts, reads and writes; real driver CVFs read byte-exact | MSDBL6.0 CVF; stored clusters | [DoubleSpace](https://en.wikipedia.org/wiki/DriveSpace) |
 | [DriveSpace 3 CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DriveSpace3` | R/W | ✅ | ✅ | — | — | — | ✅ | — | ✅ | ✅ | — | `dmsdos` mounts the genuine `GenuineDvr3Writer` output and reads byte-exact | Win95 DVR3 CVF; a Win95 guest oracle and the HiPack codec are still open | [DriveSpace 3 notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.DriveSpace3/FORMAT-NOTES.md) |
 | [DriveSpace CVF](https://en.wikipedia.org/wiki/DriveSpace) | `DriveSpace` | R/W | ✅ | ✅ | — | — | — | ✅ | — | ✅ | ✅ | — | MS-DOS 6.22 `DRVSPACE` mounts the DoubleSpace / DriveSpace CVFs; real driver CVFs read byte-exact | MSDSP6.0 CVF; stored clusters | [DriveSpace](https://en.wikipedia.org/wiki/DriveSpace) |
@@ -101,8 +101,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Unix / Linux
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [AdvFS (Tru64 UNIX)](https://en.wikipedia.org/wiki/AdvFS) | `AdvFs` | R/W | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | own reader + struct-parity tests | Tru64 UNIX | [AdvFS](https://en.wikipedia.org/wiki/AdvFS) |
 | [BcacheFS](https://en.wikipedia.org/wiki/Bcachefs) | `BcacheFs` | R/W | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ | — | [`bcachefs fsck -n`](https://github.com/koverstreet/bcachefs-tools) + `show-super`; alloc / freespace / backpointer / accounting witness tests | True in-place edits for the single-device, regular-extent profile; other profiles are refused for mutation | [bcachefs](https://bcachefs.org/) |
 | [BFS](https://en.wikipedia.org/wiki/Be_File_System) | `Bfs` | R/W | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | own reader + struct-parity tests | BeFS; edits rebuild the volume | [Be File System](https://en.wikipedia.org/wiki/Be_File_System) |
@@ -140,8 +140,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Apple
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [APFS](https://en.wikipedia.org/wiki/Apple_File_System) | `Apfs` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | own reader + struct-parity tests | Single container / volume, unencrypted; edits rebuild the tree | [Apple File System Reference](https://developer.apple.com/support/downloads/Apple-File-System-Reference.pdf) |
 | [Apple DOS 3.3](https://en.wikipedia.org/wiki/Apple_DOS) | `AppleDos` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | own reader + struct-parity tests | DOS 3.3, catalog at T17 S15 | [Apple DOS](https://en.wikipedia.org/wiki/Apple_DOS) |
 | [Apple IIgs GS/OS (2IMG)](https://en.wikipedia.org/wiki/Apple_IIGS) | `GsOs` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests | 2IMG wrapper delegating to the inner ProDOS / HFS / DOS 3.3 reader | [2IMG](https://apple2.org.za/gswv/a2zine/Docs/DiskImage_2MG_Info.txt) |
@@ -153,15 +153,15 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Optical
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [ISO 9660](https://en.wikipedia.org/wiki/ISO_9660) | `Iso` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | host-kernel `iso9660` mount + [`isoinfo`](https://github.com/Distrotech/cdrkit) / [`xorriso`](https://www.gnu.org/software/xorriso) | ISO 9660 + Joliet; edits rebuild the image | [ECMA-119](https://ecma-international.org/publications-and-standards/standards/ecma-119/) |
 | [UDF](https://en.wikipedia.org/wiki/Universal_Disk_Format) | `Udf` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | host-kernel `udf` mount + [`udfinfo` / `mkudffs`](https://github.com/pali/udftools) round-trip | Edits rebuild the image | [OSTA UDF](https://osta.org/specs/) |
 
 ### Compressed, embedded and flash
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [CramFS](https://en.wikipedia.org/wiki/Cramfs) | `CramFs` | R/W | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — | [`mkfs.cramfs`](https://github.com/util-linux/util-linux) image read byte-exact | Edits rebuild the image | [cramfs](https://www.kernel.org/doc/html/latest/filesystems/cramfs.html) |
 | [EROFS](https://en.wikipedia.org/wiki/EROFS) | `Erofs` | R/W | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | [`mkfs.erofs`](https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git) image read byte-exact | Compact inodes, FLAT_PLAIN; edits rebuild the image | [EROFS](https://erofs.docs.kernel.org/) |
 | [JFFS2](https://en.wikipedia.org/wiki/JFFS2) | `Jffs2` | R/W | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ | — | [`mkfs.jffs2`](http://git.infradead.org/mtd-utils.git) image read byte-exact | Log-structured | [JFFS2](https://www.kernel.org/doc/html/latest/filesystems/jffs2.html) |
@@ -174,8 +174,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Amiga, Atari, Acorn and other home computers
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [Acorn ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) | `Adfs` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests; the `adfs` module is absent from the QEMU guest | Acorn ADFS | [ADFS](https://en.wikipedia.org/wiki/Advanced_Disc_Filing_System) |
 | [ADF](https://en.wikipedia.org/wiki/Amiga_Disk_File) | `Adf` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | Linux [`affs`](https://www.kernel.org/doc/html/latest/filesystems/affs.html) driver reads the written volume | OFS / FFS | [ADF (Clévy)](http://lclevy.free.fr/adflib/adf_info.html) |
 | [Amiga Professional FS](https://en.wikipedia.org/wiki/Professional_File_System) | `AmigaPfs` | R/W | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | own reader + struct-parity tests | — | [PFS3](https://github.com/tonioni/pfs3aio) |
@@ -204,8 +204,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Minicomputer and workstation
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [DEC RT-11 (RX01)](https://en.wikipedia.org/wiki/RT-11) | `Rt11` | R/W | ✅ | — | — | — | — | ✅ | ✅ | ✅ | ✅ | — | own reader + struct-parity tests | DEC RT-11 | [RT-11 documentation](https://bitsavers.org/pdf/dec/pdp11/rt11/) |
 | [HP LIF (Logical Interchange Format)](https://en.wikipedia.org/wiki/Logical_Interchange_Format) | `Lif` | R/W | ✅ | — | — | — | — | ✅ | ✅ | ✅ | ✅ | — | own reader + struct-parity tests | HP LIF, 256-byte sectors | [LIF](https://en.wikipedia.org/wiki/Logical_Interchange_Format) |
 | [Microware OS-9 RBF](https://en.wikipedia.org/wiki/OS-9) | `Os9Rbf` | R/W | ✅ | — | — | — | — | ✅ | — | ✅ | ✅ | — | own reader + struct-parity tests | Microware OS-9 RBF | [OS-9](https://en.wikipedia.org/wiki/OS-9) |
@@ -214,8 +214,8 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 
 ### Network, distributed and proprietary
 
-| Format | Id | State | Compact | Defrag | Wipe | Shrink | Layout | Purge | Proof | Notes | Reference |
-| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
+| Format | Id | State | Compact | Compress | Canonicalize | Repack | Sort directory entries | Defragment extents | Change allocation geometry | Wipe | Shrink | Purge | Proof | Notes | Reference |
+| --- | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | --- | --- | --- |
 | [BeeGFS](https://en.wikipedia.org/wiki/BeeGFS) | `BeeGfs` | N/A | — | — | — | — | — | — | — | — | — | — | V3/V6 decoder + RAID0 stripe arithmetic against documented layout, over real ext/XFS backing images and their native `user.fhgfs` xattrs — no BeeGFS-produced target set serves as an oracle | Read-only mounting of offline metadata/storage target sets through `FilesystemStreamSet`; V3 dentries + V6 inline/separate regular-file inodes; non-mirrored non-sparse RAID0. Nothing is created or modified: BeeGFS-level mutation would be a transaction across every target plus management state | [BeeGFS](https://www.beegfs.io/) |
 | [CephFS / RADOS pool export](https://en.wikipedia.org/wiki/Ceph_(software)) | `CephFs` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | detection of the on-disk signature | RADOS objects only | [Ceph](https://docs.ceph.com/) |
 | [Dell EMC Isilon OneFS](https://en.wikipedia.org/wiki/OneFS_distributed_file_system) | `OneFs` | R | — | — | — | — | — | — | — | — | — | — | Dell architecture/diagnostics; raw serialization not public | Isilon OneFS | [OneFS](https://www.dell.com/en-us/dt/storage/powerscale.htm) |
@@ -224,15 +224,15 @@ The `Id`, `State` and verb columns are read off the descriptors by `FilesystemRe
 | [IBM Storage Scale / GPFS](https://en.wikipedia.org/wiki/GPFS) | `Gpfs` | R | — | — | — | — | — | — | — | — | — | — | detection of the on-disk signature | IBM Spectrum Scale | [GPFS](https://www.ibm.com/docs/en/storage-scale) |
 | [JuiceFS](https://juicefs.com/) | `JuiceFs` | R | ✅ | — | — | — | — | — | — | — | ✅ | — | canonical `juicefs dump` JSON/protobuf framing + struct-parity tests | Portable metadata backups only; JSON shrink strips insignificant whitespace; file payloads remain in object storage | [JuiceFS metadata backup](https://juicefs.com/docs/community/metadata_dump_load/) |
 | [Lustre](https://en.wikipedia.org/wiki/Lustre_(file_system)) | `Lustre` | R | ✅ | — | — | — | — | — | — | ✅ | ✅ | — | own reader + struct-parity tests | ldiskfs MDT/OST backing store; conservative offline free-block wipe + trailing-block shrink; namespace edits remain R/O | [Lustre](https://www.lustre.org/) |
-| [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | ✅ | — | — | ✅ | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
-| [NetApp WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) | `Wafl` | R | — | — | — | — | — | — | detection of the on-disk signature | NetApp WAFL | [WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) |
-| [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | ✅ | ✅ moving | ✅ | — | — | — | own reader + struct-parity tests, against vectors built to the OES-derived on-disk notes | Native read covers validated nested names and ordinary contiguous extents; the writer still emits a private container, not a mountable NSS pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |
-| [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | ✅ | ✅ | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
-| [NWFS386 (Novell Traditional NetWare filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R/W | ✅ | ✅ rebuild | — | ✅ | ✅ | ✅ | own reader + struct-parity tests | Plain single-segment DOS namespace; rebuild edits preserve block size and volume name; compression/suballocation/alternate namespaces are read-only | [Traditional NetWare partitions](https://www.novell.com/developer/documentation/vfs/vfs__enu/data/afpro44.html) |
-| [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | ✅ | ✅ rebuild | — | — | — | ✅ | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
-| [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R/W | ✅ | ✅ rebuild | — | ✅ | — | ✅ | own reader + [`xfs_repair -n`](https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git) | CXFS is XFS on disk; authoring targets the pre-CRC XFS v4 (`crc=0`) profile with dir2 short-form directories, and edits rebuild the volume | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
-| [Tahoe-LAFS share / capability namespace](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R/W | ✅ | ✅ rebuild | ✅ | ✅ | — | ✅ | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
-| [TFS (unverified historical BBN Trans-FS label)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | none — explicit format selection only | No normative on-disk specification, reference implementation or genuine sample was located; the historical `TFS\x01` magic and `.tfs` extension are unsourced and no longer detect, so the image is exposed opaquely and only when the caller names the format; see the [format notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Tfs/FORMAT-NOTES.md) | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
+| [MooseFS](https://en.wikipedia.org/wiki/Moose_File_System) | `MooseFs` | R | — | — | — | — | — | — | — | — | — | ✅ | detection of the on-disk signature | Chunk-server objects only | [MooseFS](https://moosefs.com/) |
+| [NetApp WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) | `Wafl` | R | — | — | — | — | — | — | — | — | — | — | detection of the on-disk signature | NetApp WAFL | [WAFL](https://en.wikipedia.org/wiki/Write_Anywhere_File_Layout) |
+| [NSS (Novell Storage Services)](https://en.wikipedia.org/wiki/Novell_Storage_Services) | `Nss` | WORM | — | — | — | — | — | — | — | — | — | — | own reader + struct-parity tests, against vectors built to the OES-derived on-disk notes | Native read covers validated nested names and ordinary contiguous extents; the writer still emits a private container, not a mountable NSS pool | [NSS on-disk notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/NSS-ON-DISK.md) |
+| [NWFS (Novell NetWare 386 Traditional Filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs` | R/W | ✅ | — | — | — | — | — | ✅ | — | ✅ | — | detection of the on-disk signature | NetWare 286 / 3.x | [NWFS](https://en.wikipedia.org/wiki/NetWare_File_System) |
+| [NWFS386 (Novell Traditional NetWare filesystem)](https://en.wikipedia.org/wiki/NetWare_File_System) | `Nwfs386` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests | Plain single-segment DOS namespace; rebuild edits preserve block size and volume name; compression/suballocation/alternate namespaces are read-only | [Traditional NetWare partitions](https://www.novell.com/developer/documentation/vfs/vfs__enu/data/afpro44.html) |
+| [OrangeFS / PVFS2 DBPF](https://en.wikipedia.org/wiki/OrangeFS) | `OrangeFs` | R/W | — | — | — | — | — | — | — | — | — | — | own reader + struct-parity tests | One DBPF storage object, not a namespace; the opaque payload is what is edited | [OrangeFS](https://github.com/waltligon/orangefs) |
+| [SGI CXFS (Cluster XFS)](https://en.wikipedia.org/wiki/CXFS) | `Cxfs` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + [`xfs_repair -n`](https://git.kernel.org/pub/scm/fs/xfs/xfsprogs-dev.git) | CXFS is XFS on disk; authoring targets the pre-CRC XFS v4 (`crc=0`) profile with dir2 short-form directories, and edits rebuild the volume | [CXFS](https://en.wikipedia.org/wiki/CXFS) |
+| [Tahoe-LAFS share / capability namespace](https://en.wikipedia.org/wiki/Tahoe-LAFS) | `TahoeLafs` | R/W | ✅ | — | — | — | — | — | — | — | ✅ | — | own reader + struct-parity tests | Opaque share payload; mutable storage-container gaps can be wiped, packed and shrunk without changing share or lease bytes | [Tahoe-LAFS](https://tahoe-lafs.org/) |
+| [TFS (unverified historical BBN Trans-FS label)](https://en.wikipedia.org/wiki/BBN_Technologies) | `Tfs` | R | — | — | — | — | — | — | — | — | — | — | none — explicit format selection only | No normative on-disk specification, reference implementation or genuine sample was located; the historical `TFS\x01` magic and `.tfs` extension are unsourced and no longer detect, so the image is exposed opaquely and only when the caller names the format; see the [format notes](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/FileSystems/FileSystem.Tfs/FORMAT-NOTES.md) | [BBN](https://en.wikipedia.org/wiki/BBN_Technologies) |
 
 <!-- SUPPORT:END -->
 
