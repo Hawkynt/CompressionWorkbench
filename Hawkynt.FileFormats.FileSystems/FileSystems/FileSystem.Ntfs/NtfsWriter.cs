@@ -975,7 +975,8 @@ public sealed class NtfsWriter {
           residentData: residentBytes,
           nonResidentRuns: null,
           dataSize: residentBytes.Length,
-          sizeHintInFileName: residentBytes.Length);
+          sizeHintInFileName: residentBytes.Length,
+          modTime: node.ModTime);
       } else if (node.Compressed) {
         // LZNT1-compressed $DATA: sparse-run layout + the 0x0001 compressed flag.
         WriteMftRecord(
