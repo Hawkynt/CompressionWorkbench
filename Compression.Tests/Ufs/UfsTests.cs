@@ -23,6 +23,21 @@ public class UfsTests {
   }
 
   [Test, Category("HappyPath")]
+  public void Writer_PreservesExplicitLastModifiedToWholeSecond() {
+    var expected = new DateTime(2024, 5, 6, 7, 8, 9, DateTimeKind.Utc);
+    var w = new FileSystem.Ufs.UfsWriter();
+    w.AddFile("stamp.bin", "x"u8.ToArray(), expected);
+    using var ms = new MemoryStream();
+    w.WriteTo(ms);
+
+    ms.Position = 0;
+    var reader = new FileSystem.Ufs.UfsReader(ms);
+    var entry = reader.Entries.Single(e => e.Name == "stamp.bin");
+
+    Assert.That(entry.LastModified, Is.EqualTo(expected));
+  }
+
+  [Test, Category("HappyPath")]
   public void Read_MultipleFiles() {
     using var ms = new MemoryStream(BuildImage(("a.txt", "First"u8.ToArray()), ("b.txt", "Second"u8.ToArray())));
     var r = new FileSystem.Ufs.UfsReader(ms);
