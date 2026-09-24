@@ -674,6 +674,11 @@ public static class ArchiveOperations {
   public static (long OriginalSize, long OptimizedSize, int EntriesOptimized) Compress(
       string inputPath, string outputPath, string? password) {
     var format = FormatDetector.Detect(inputPath);
+    FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (!OptimizationCapabilities.CanCompress(descriptor))
+      throw new NotSupportedException($"{format} does not expose {nameof(ICompressionOptimizable)}.");
+
     var originalSize = new FileInfo(inputPath).Length;
     var entries = 0;
 
@@ -732,12 +737,9 @@ public static class ArchiveOperations {
       return (originalSize, new FileInfo(outputPath).Length, 1);
     }
 
-    // ── Explicit archive compression capability ─────────────────────
-    // Archive containers are not stream formats, so give descriptors that
-    // explicitly opt into compression optimization a chance before the legacy
-    // copy-through compatibility fallback.
-    FormatRegistration.EnsureInitialized();
-    var descriptor = FormatRegistry.GetById(format.ToString());
+    // ── Explicit archive/filesystem compression capability ──────────
+    // Non-stream containers dispatch through the descriptor contract after the
+    // fail-closed capability check above.
     if (descriptor is ICompressionOptimizable compressionOptimizable) {
       var optimizedEntries = 1;
       if (descriptor is IArchiveFormatOperations archiveOps) {
@@ -752,13 +754,8 @@ public static class ArchiveOperations {
       return (originalSize, new FileInfo(outputPath).Length, optimizedEntries);
     }
 
-    // ── Unsupported: fall back to copy ───────────────────────────────
-    // Use temp+rename so a crash mid-copy doesn't leave a truncated target.
-    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-      using var inFs = File.OpenRead(inputPath);
-      inFs.CopyTo(outFs);
-    });
-    return (originalSize, originalSize, 0);
+    throw new NotSupportedException(
+      $"{format} advertises compression optimization but has no executable compression path.");
   }
 
   /// <summary>
