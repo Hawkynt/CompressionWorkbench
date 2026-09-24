@@ -4,6 +4,11 @@ using FileFormat.MacBinary;
 using FileFormat.Zstd;
 using FileFormat.Zip;
 using FileSystem.ApplePascal;
+using FileSystem.Lif;
+using FileSystem.Jfs1;
+using FileSystem.ExFat;
+using FileSystem.CpcDsk;
+using FileSystem.Btrfs;
 using FileSystem.Mfs;
 using FileSystem.Ntfs;
 using FileSystem.Ods1;
@@ -102,6 +107,32 @@ public sealed class OptimizationCapabilitySeparationTests {
         "a volume-label-only schema is metadata, not allocation geometry");
       Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(new StackerFormatDescriptor()), Is.False,
         "compatibility and compression choices are not allocation geometry");
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void HandWrittenGeometrySchemas_ExposeOnlyGeometryOptions() {
+    static string[] Keys(IFormatDescriptor descriptor)
+      => OptimizationCapabilities.GetAllocationGeometryOptions(descriptor)
+        .Select(static option => option.Key)
+        .OrderBy(static key => key, StringComparer.Ordinal)
+        .ToArray();
+
+    Assert.Multiple(() => {
+      Assert.That(Keys(new Jfs1FormatDescriptor()),
+        Is.EquivalentTo(new[] { "AggregateBlockSize", "BlockSize" }),
+        "JFS1 volume label is metadata, not geometry");
+      Assert.That(Keys(new ExFatFormatDescriptor()),
+        Is.EquivalentTo(new[] { "ClusterSize", "ImageSize" }),
+        "exFAT volume label is metadata, not geometry");
+      Assert.That(Keys(new BtrfsFormatDescriptor()),
+        Is.EquivalentTo(new[] { "NodeSize", "SectorSize" }),
+        "Btrfs label/features are metadata/format choices, not allocation geometry");
+      Assert.That(Keys(new CpcDskFormatDescriptor()),
+        Is.EquivalentTo(new[] { "Sides", "Tracks" }));
+      Assert.That(Keys(new LifFormatDescriptor()),
+        Is.EquivalentTo(new[] { "DirectorySectors" }),
+        "LIF file type and volume label are not allocation geometry");
     });
   }
 
