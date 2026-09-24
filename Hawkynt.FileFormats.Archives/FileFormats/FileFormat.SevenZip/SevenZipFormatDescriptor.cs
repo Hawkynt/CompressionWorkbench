@@ -15,7 +15,7 @@ namespace FileFormat.SevenZip;
 ///   <item><description><c>https://en.wikipedia.org/wiki/7z</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable {
+public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IFormatOptionsSchema, ICompressionOptimizable, IArchiveRepackable, IArchiveSemanticMetadataProvider {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -214,8 +214,12 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public List<ArchiveEntryInfo> List(Stream stream, string? password) {
     var r = new SevenZipReader(stream, password: password);
-    return r.Entries.Select((e, i) => new ArchiveEntryInfo(i, e.Name, e.Size, e.CompressedSize,
-      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method, e.IsDirectory, false, e.LastWriteTime)).ToList();
+    return r.Entries.Select((e, i) => new ArchiveEntryInfo(
+      i, e.Name, e.Size, e.CompressedSize,
+      string.IsNullOrEmpty(e.Method) ? "7z" : e.Method,
+      e.IsDirectory, e.IsEncrypted, e.LastWriteTime,
+      CreationTime: e.CreationTime,
+      Attributes: e.Attributes)).ToList();
   }
 
   /// <summary>
@@ -485,15 +489,25 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
   }
 
   /// <inheritdoc />
-  public void OptimizeCompression(Stream input, Stream output)
-    => RebuildVerb.RebuildToStream(
-      input,
-      output,
-      this,
-      this,
-      new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-        ["Method"] = "lzma2",
-        ["Level"] = "9",
-      });
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    var result = SolidBlockOptimizer.Optimize(input);
+    output.Position = 0;
+    output.SetLength(0);
+    output.Write(result.Data);
+    output.Position = 0;
+  }
+
+  /// <inheritdoc />
+  public IReadOnlyDictionary<string, string> GetContainerSemanticFlags(Stream archive, string? password) {
+    ArgumentNullException.ThrowIfNull(archive);
+    archive.Position = 0;
+    using var reader = new SevenZipReader(archive, leaveOpen: true, password: password);
+    return new Dictionary<string, string>(StringComparer.Ordinal) {
+      ["7z.header-mode"] = reader.IsHeaderEncoded ? "encoded" : "plain",
+      ["7z.data-encryption"] = reader.HasEncryptedEntries ? "aes" : "none",
+    };
+  }
 
 }
