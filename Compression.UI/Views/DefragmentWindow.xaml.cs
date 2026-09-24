@@ -10,7 +10,7 @@ using Compression.UI.Controls;
 namespace Compression.UI.Views;
 
 /// <summary>
-/// The five canonical maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
+/// The six separated optimization/maintenance verbs from <c>docs/ARCHIVE-MODEL.md</c>.
 /// Used to pre-focus the matching action when the maintenance window is
 /// opened from a specific context-menu entry.
 /// </summary>
@@ -37,7 +37,7 @@ public enum MaintenanceVerb {
   Purge,
   /// <summary>Overwrite only unused space (free clusters, slack, deleted entries); size preserved.</summary>
   WipeEmpty,
-  /// <summary>Composite defrag → optimize → shrink: smallest valid container holding the same contents.</summary>
+  /// <summary>Composite defrag → compress → shrink: smallest valid container holding the same contents.</summary>
   Compact,
   /// <summary>
   /// Scatter every allocation block across the volume — fragmentation on
@@ -53,8 +53,8 @@ public enum MaintenanceVerb {
 /// the toolbar entry. Shows the detected format + capability, lets the user
 /// pick one of four layout strategies (mirroring the CLI's
 /// <c>cwb defragment --mode</c> options), and runs the descriptor's
-/// optimize / shrink / defragment / purge / wipe paths through the matching
-/// capability interface.
+/// compression / canonicalization / repack / directory-ordering / defragment /
+/// geometry / shrink / purge / wipe paths through their matching capabilities.
 /// </summary>
 public partial class DefragmentWindow : Window {
 
@@ -66,10 +66,9 @@ public partial class DefragmentWindow : Window {
   private string? _imagePath;
   private IArchiveDefragmentable? _defragmentable;
   private IArchiveFormatOperations? _archiveOps;
-  // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). Used by
-  // OnRunArchiveOptimize to special-case CVF formats through CvfOptimizer,
-  // which honours the per-cluster shrink-or-store fallback inside the writer
-  // instead of trying every method id at the container level.
+  // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). The legacy
+  // Optimize compatibility path still uses it for CVF-specific dispatch, while
+  // new UI actions dispatch through the explicit capability selected by the user.
   private string? _formatId;
   private bool _isArchiveMode;
   private bool _isFileInternalMode;
@@ -79,8 +78,9 @@ public partial class DefragmentWindow : Window {
   private LayoutTemplate? _selectedLayoutProfile;
 
   /// <summary>
-  /// Path of the image last successfully mutated by this window (defrag,
-  /// shrink, wipe-empty, or archive repack). Stays null while the window
+  /// Path of the image last successfully mutated by this window (for example
+  /// compression, canonicalization, repack, directory ordering, defrag, shrink,
+  /// or wipe-empty). Stays null while the window
   /// only previews. Hosts subscribe to <see cref="ArchiveMutated"/> to
   /// refresh their explorer/views when the mutation lands.
   /// </summary>
@@ -176,8 +176,10 @@ public partial class DefragmentWindow : Window {
   /// We deliberately do <em>not</em> auto-run: maintenance ops mutate the image
   /// in place, so the user confirms by clicking.
   /// </summary>
-  public DefragmentWindow(string preselectedImage, MaintenanceVerb verb) : this(preselectedImage) {
+  public DefragmentWindow(string preselectedImage, MaintenanceVerb verb) : this() {
     this._requestedVerb = verb;
+    if (!string.IsNullOrEmpty(preselectedImage) && File.Exists(preselectedImage))
+      LoadImage(preselectedImage);
     ApplyRequestedVerb();
   }
 
@@ -242,8 +244,12 @@ public partial class DefragmentWindow : Window {
     FormatLbl.Text = format.ToString();
     this._formatId = format.ToString();
 
-    var ops = FormatRegistry.GetArchiveOps(format.ToString());
-    this._defragmentable = ops as IArchiveDefragmentable;
+    var formatId = format.ToString();
+    var descriptor = FormatRegistry.GetById(formatId);
+    var ops = FormatRegistry.GetArchiveOps(formatId);
+    this._defragmentable = OptimizationCapabilities.CanDefragmentExtents(descriptor)
+      ? ops as IArchiveDefragmentable
+      : null;
 
     // Determine whether this is an archive with layout-map support.
     var isArchiveLayout = ops is IArchiveLayoutMap;
@@ -251,7 +257,6 @@ public partial class DefragmentWindow : Window {
 
     // File-internal layout (MP4 atoms, RIFF chunks, etc.)
     var isFileInternalLayout = ops is IFileInternalLayoutMap;
-    var isFileInternalOptimizable = ops is IFileInternalChunkMover;
 
     if (this._defragmentable != null) {
       // FS defrag path (existing)
@@ -268,30 +273,20 @@ public partial class DefragmentWindow : Window {
       this._isFileInternalMode = true;
       this._archiveOps = ops;
       this._chunkMover = ops as IFileInternalChunkMover;
-      if (isFileInternalOptimizable) {
-        SupportLbl.Text = "File-internal layout optimization (e.g. MP4 fast-start).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        RunBtn.IsEnabled = true;
-      } else {
-        SupportLbl.Text = "File-internal layout viewable but optimization not supported (read-only).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
-        RunBtn.IsEnabled = false;
-      }
-      RunBtn.Content = "Optimize";
+      SupportLbl.Text = "File-internal layout view. Choose an explicit Maintenance action supported by this format.";
+      SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      RunBtn.IsEnabled = false;
+      RunBtn.Content = "Run";
     } else if (isArchiveLayout || isArchiveCreatable) {
-      // Archive optimization path (new)
+      // Generic archive preview. Compression, canonicalization and repacking are
+      // intentionally not inferred from creatability; the caller must select an
+      // explicit capability-specific Maintenance action.
       this._isArchiveMode = true;
       this._archiveOps = ops;
-      if (isArchiveCreatable) {
-        SupportLbl.Text = "Archive optimization (extract + repack with optimal settings).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        RunBtn.IsEnabled = true;
-      } else {
-        SupportLbl.Text = "Archive layout viewable but format does not support creation (read-only).";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
-        RunBtn.IsEnabled = false;
-      }
-      RunBtn.Content = "Optimize";
+      SupportLbl.Text = "Archive layout view. Choose Compress, Canonicalize, or Repack when that capability is available.";
+      SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      RunBtn.IsEnabled = false;
+      RunBtn.Content = "Run";
     } else {
       SupportLbl.Text = "Not supported by this format.";
       SupportLbl.Foreground = System.Windows.Media.Brushes.OrangeRed;
@@ -326,7 +321,7 @@ public partial class DefragmentWindow : Window {
     if (PurgeBtn != null)
       PurgeBtn.IsEnabled = ops is IArchiveModifiable;
 
-    // Enable Compact (defrag + optimize + shrink) whenever at least one of its
+    // Enable Compact (defrag + compress + shrink) whenever at least one of its
     // constituent steps applies. The "Minimal geometry" checkbox unlocks the
     // smallest-geometry rebuild for formats whose creation exposes size knobs.
     if (CompactBtn != null)
@@ -347,7 +342,7 @@ public partial class DefragmentWindow : Window {
     SizeLbl.Text = $"{FormatSize(fi.Length)} ({fi.Length:N0} bytes)";
 
     // Pre-populate the block map with the current state so the user can see
-    // what they're about to defragment/optimize.
+    // what they're about to defragment/compress.
     PreviewBlockMap(path, ops);
 
     // Re-apply capability-specific enablement after every reload. The generic
