@@ -121,7 +121,7 @@ internal static class FatDirectoryOrderer {
       if ((attr & AttrDirectory) == 0 || isDot || isVolumeLabel)
         continue;
 
-      var cluster = BinaryPrimitives.ReadUInt16LittleEndian(shortSlot.AsSpan(26, 2));
+      int cluster = BinaryPrimitives.ReadUInt16LittleEndian(shortSlot.AsSpan(26, 2));
       if (fatType == 32)
         cluster |= BinaryPrimitives.ReadUInt16LittleEndian(shortSlot.AsSpan(20, 2)) << 16;
       if (cluster >= 2) {
@@ -271,7 +271,7 @@ internal static class FatDirectoryOrderer {
       var reservedSectors = BinaryPrimitives.ReadUInt16LittleEndian(boot[14..]);
       var fatCount = boot[16];
       var rootEntryCount = BinaryPrimitives.ReadUInt16LittleEndian(boot[17..]);
-      var totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(boot[19..]);
+      int totalSectors = BinaryPrimitives.ReadUInt16LittleEndian(boot[19..]);
       if (totalSectors == 0)
         totalSectors = BinaryPrimitives.ReadInt32LittleEndian(boot[32..]);
       var fat16Size = BinaryPrimitives.ReadUInt16LittleEndian(boot[22..]);
