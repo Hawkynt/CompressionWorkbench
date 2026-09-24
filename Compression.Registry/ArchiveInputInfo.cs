@@ -18,6 +18,12 @@ public sealed record ArchiveInputInfo(
   bool IsDirectory,
   byte[]? InMemoryContent = null
 ) {
+  /// <summary>
+  /// Logical modification timestamp to preserve when the target format can
+  /// represent one. Creation callers may leave this null for format defaults.
+  /// </summary>
+  public DateTime? LastModified { get; init; }
+
   /// <summary>Creates an in-memory input whose content comes from
   /// <paramref name="content"/> rather than a file on disk.</summary>
   public static ArchiveInputInfo InMemory(string archiveName, byte[] content)
