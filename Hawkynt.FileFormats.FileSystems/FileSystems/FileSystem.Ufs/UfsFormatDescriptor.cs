@@ -220,10 +220,10 @@ public sealed class UfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // Only the length is needed to lay the volume out; reading a large input
       // into a byte[] would cap the volume at what an array can hold.
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(info.ArchiveName, bytes);
+        w.AddFile(info.ArchiveName, bytes, info.LastModified);
       else
         w.AddStreamingFile(info.ArchiveName, new FileInfo(info.FullPath).Length,
-                           () => File.OpenRead(info.FullPath));
+                           () => File.OpenRead(info.FullPath), info.LastModified);
     }
     if (output.CanSeek) w.BuildToStreaming(output);
     else w.WriteTo(output);
