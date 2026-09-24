@@ -34,7 +34,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     new FormatOptionDescriptor(
       Key: "SectorSize", DisplayName: "Sector size", Kind: FormatOptionKind.Integer, Default: "4096",
       AllowedValues: ["4096"],
-      Description: "Sector size — Linux mkfs.btrfs only supports 4096 today.", IsAllocationGeometry: true),
+      Description: "Sector size — Linux mkfs.btrfs only supports 4096 today."),
     new FormatOptionDescriptor(
       Key: "Label", DisplayName: "Volume label", Kind: FormatOptionKind.String, Default: "",
       Description: "Optional volume label."),
