@@ -335,7 +335,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       encryptHeaders: options.EncryptFilenames);
 
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory)
+        w.AddDirectory(new SevenZipEntry {
+          Name = i.ArchiveName,
+          LastWriteTime = i.LastModified,
+          CreationTime = i.CreationTime,
+          Attributes = i.Attributes,
+        });
 
     var fileEntryIndex = 0;
     var blockDescs = new List<SevenZipWriter.BlockDescriptor>();
@@ -343,7 +349,13 @@ public sealed class SevenZipFormatDescriptor : IFormatDescriptor, IArchiveFormat
       var indices = new int[block.Files.Count];
       for (var j = 0; j < block.Files.Count; j++) {
         var (input, data) = block.Files[j];
-        w.AddEntry(new SevenZipEntry { Name = input.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(new SevenZipEntry {
+          Name = input.ArchiveName,
+          Size = data.Length,
+          LastWriteTime = input.LastModified,
+          CreationTime = input.CreationTime,
+          Attributes = input.Attributes,
+        }, data);
         indices[j] = fileEntryIndex++;
       }
       if (needsMultiCodec) {
