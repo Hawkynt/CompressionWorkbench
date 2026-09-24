@@ -42,7 +42,7 @@
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Format:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="0" Grid.Column="1" x:Name="FormatLbl" Text="—" />
-        <TextBlock Grid.Row="1" Grid.Column="0" Text="Defrag support:" FontWeight="SemiBold" />
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Maintenance:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="1" Grid.Column="1" x:Name="SupportLbl" Text="—" />
         <TextBlock Grid.Row="2" Grid.Column="0" Text="Image size:" FontWeight="SemiBold" />
         <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SizeLbl" Text="—" />
