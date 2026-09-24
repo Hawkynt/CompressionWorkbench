@@ -116,16 +116,25 @@ public sealed class SevenZipWriter : IDisposable {
   /// Adds a directory entry.
   /// </summary>
   /// <param name="name">The directory name.</param>
-  public void AddDirectory(string name) {
+  public void AddDirectory(string name)
+    => this.AddDirectory(new SevenZipEntry { Name = name });
+
+  /// <summary>
+  /// Adds a directory entry while preserving its available metadata.
+  /// </summary>
+  public void AddDirectory(SevenZipEntry entry) {
+    ArgumentNullException.ThrowIfNull(entry);
     if (this._finished)
       throw new InvalidOperationException("Cannot add entries after Finish() has been called.");
 
-    var entry = new SevenZipEntry {
-      Name = name,
+    this._entries.Add((new SevenZipEntry {
+      Name = entry.Name,
       IsDirectory = true,
       Size = 0,
-    };
-    this._entries.Add((entry, []));
+      LastWriteTime = entry.LastWriteTime,
+      CreationTime = entry.CreationTime,
+      Attributes = entry.Attributes,
+    }, []));
   }
 
   /// <summary>
