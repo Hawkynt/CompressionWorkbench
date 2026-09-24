@@ -6,7 +6,7 @@ namespace FileFormat.Freeze;
 /// <summary>
 /// Describes interoperable Freeze 1.x and 2.x streams.
 /// </summary>
-public sealed class FreezeFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class FreezeFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
