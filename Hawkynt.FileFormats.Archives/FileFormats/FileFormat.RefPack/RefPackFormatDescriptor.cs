@@ -6,7 +6,7 @@ namespace FileFormat.RefPack;
 /// <summary>
 /// Describes ref pack format.
 /// </summary>
-public sealed class RefPackFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class RefPackFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
