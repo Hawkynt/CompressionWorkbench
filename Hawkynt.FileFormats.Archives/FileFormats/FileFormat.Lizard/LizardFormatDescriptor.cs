@@ -7,7 +7,7 @@ namespace FileFormat.Lizard;
 /// <summary>
 /// Describes the Lizard (formerly LZ5) stream format.
 /// </summary>
-public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class LizardFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   private const int DefaultLevel = 17;
   private const int OptimalLevel = 49;
   private const int DefaultBlockSize = 4 * 1024 * 1024;
