@@ -29,8 +29,9 @@ public sealed class CapabilityDocumentationTests {
     var problems = new List<string>();
 
     foreach (var id in FormatRegistry.FilesystemFormatIds) {
+      var descriptor = FormatRegistry.GetById(id)!;
       var ops = FormatRegistry.GetArchiveOps(id);
-      var expected = ExpectedRow(ops);
+      var expected = ExpectedRow(descriptor, ops);
       if (!documented.Remove(id, out var actual)) {
         problems.Add($"missing row: {RenderRow(id, expected)}");
         continue;
@@ -75,13 +76,17 @@ public sealed class CapabilityDocumentationTests {
       "Write-capability prose contradicts executable descriptor state:\n" + string.Join("\n", contradictions));
   }
 
-  private static Dictionary<string, bool> ExpectedRow(IArchiveFormatOperations? ops)
+  private static Dictionary<string, bool> ExpectedRow(IFormatDescriptor descriptor, IArchiveFormatOperations? ops)
     => new(StringComparer.OrdinalIgnoreCase) {
-      ["Compact"] = FilesystemSupportMatrix.Compacts(ops),
-      ["Defrag"] = FilesystemSupportMatrix.Defrags(ops),
+      ["Compact"] = FilesystemSupportMatrix.Compacts(descriptor, ops),
+      ["Compress"] = OptimizationCapabilities.CanCompress(descriptor),
+      ["Canonicalize"] = OptimizationCapabilities.CanCanonicalize(descriptor),
+      ["Repack"] = OptimizationCapabilities.CanRepack(descriptor),
+      ["Sort directory entries"] = OptimizationCapabilities.CanSortDirectoryEntries(descriptor),
+      ["Defragment extents"] = FilesystemSupportMatrix.Defrags(descriptor),
+      ["Change allocation geometry"] = FilesystemSupportMatrix.RelaysOut(descriptor),
       ["Wipe"] = FilesystemSupportMatrix.Wipes(ops),
       ["Shrink"] = FilesystemSupportMatrix.Shrinks(ops),
-      ["Layout"] = FilesystemSupportMatrix.RelaysOut(ops),
       ["Purge"] = FilesystemSupportMatrix.Purges(ops),
     };
 
@@ -93,7 +98,18 @@ public sealed class CapabilityDocumentationTests {
   private static Dictionary<string, Dictionary<string, bool>> ParseFilesystemMatrix(string section) {
     var lines = section.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
     var result = new Dictionary<string, Dictionary<string, bool>>(StringComparer.OrdinalIgnoreCase);
-    var verbs = new[] { "Compact", "Defrag", "Wipe", "Shrink", "Layout", "Purge" };
+    var verbs = new[] {
+      "Compact",
+      "Compress",
+      "Canonicalize",
+      "Repack",
+      "Sort directory entries",
+      "Defragment extents",
+      "Change allocation geometry",
+      "Wipe",
+      "Shrink",
+      "Purge",
+    };
     List<string>? columns = null;
 
     foreach (var line in lines) {
@@ -134,7 +150,17 @@ public sealed class CapabilityDocumentationTests {
   private static string Render(bool value) => value ? "✅" : "—";
 
   private static string RenderRow(string id, IReadOnlyDictionary<string, bool> row)
-    => $"| `{id}` | {Render(row["Compact"])} | {Render(row["Defrag"])} | {Render(row["Wipe"])} | {Render(row["Shrink"])} | {Render(row["Layout"])} | {Render(row["Purge"])} |";
+    => $"| `{id}`"
+       + $" | {Render(row["Compact"])}"
+       + $" | {Render(row["Compress"])}"
+       + $" | {Render(row["Canonicalize"])}"
+       + $" | {Render(row["Repack"])}"
+       + $" | {Render(row["Sort directory entries"])}"
+       + $" | {Render(row["Defragment extents"])}"
+       + $" | {Render(row["Change allocation geometry"])}"
+       + $" | {Render(row["Wipe"])}"
+       + $" | {Render(row["Shrink"])}"
+       + $" | {Render(row["Purge"])} |";
 
   private static string Slice(string text, string startHeading, string endHeading) {
     var start = text.IndexOf(startHeading, StringComparison.Ordinal);
