@@ -9,7 +9,15 @@ public interface ICompressionOptimizable {
   void OptimizeCompression(Stream input, Stream output) {
     if (this is not IStreamFormatOperations stream)
       throw new NotSupportedException("Compression optimization requires stream-format operations.");
-    stream.CompressOptimal(input, output);
+
+    using var decoded = RebuildVerb.CreateScratchStream();
+    input.Position = 0;
+    stream.Decompress(input, decoded);
+    decoded.Position = 0;
+    output.Position = 0;
+    output.SetLength(0);
+    stream.CompressOptimal(decoded, output);
+    output.Flush();
   }
 }
 
