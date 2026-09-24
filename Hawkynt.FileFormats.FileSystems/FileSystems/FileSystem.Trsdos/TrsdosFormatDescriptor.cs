@@ -194,9 +194,9 @@ public sealed class TrsdosFormatDescriptor :
     var diskName = options?.GetOption("DiskName", "WORM") ?? "WORM";
     var date = options?.GetOption("Date", "01/01/26") ?? "01/01/26";
 
-    // Auto: pick smallest geometry that fits via TrsdosOptimizer.
+    // Auto: select the smallest creation geometry that fits via TrsdosGeometrySelector.
     var fileSizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-    var auto = TrsdosOptimizer.Find(fileSizes);
+    var auto = TrsdosGeometrySelector.Find(fileSizes);
 
     var tracks = tracksStr == "Auto" || !int.TryParse(tracksStr, out var t) ? auto.Tracks : t;
     var spt = density switch {
