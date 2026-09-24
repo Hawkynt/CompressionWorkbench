@@ -39,6 +39,7 @@ namespace FileSystem.Ocfs2;
 ///   <item><description><c>https://en.wikipedia.org/wiki/OCFS2</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Ocfs2BlockMover))]
 public sealed class Ocfs2FormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty,

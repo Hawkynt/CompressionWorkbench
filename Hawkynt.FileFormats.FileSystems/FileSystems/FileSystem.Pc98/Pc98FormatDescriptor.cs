@@ -28,6 +28,7 @@ namespace FileSystem.Pc98;
 ///   <item><description><c>https://en.wikipedia.org/wiki/PC-9800_series</c> — Wikipedia article on the platform</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Pc98BlockMover))]
 public sealed class Pc98FormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
