@@ -27,6 +27,7 @@ namespace FileSystem.Cromemco;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Cromemco</c> — Wikipedia overview of the machines</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(CromemcoBlockMover))]
 public sealed class CromemcoFormatDescriptor :
   IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
   IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {

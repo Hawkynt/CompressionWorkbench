@@ -19,6 +19,7 @@ namespace FileSystem.DragonFs;
 ///   <item><description><c>https://libdragon.dev</c> — official Libdragon documentation site</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(DragonFsBlockMover))]
 public sealed class DragonFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// Gets the id.
