@@ -119,8 +119,8 @@ public class OneFsDetectionTests {
       Assert.That(analysis.Notes, Has.Some.Contains("4096 blocks"));
       Assert.That(image.Position, Is.EqualTo(73),
         "Geometry analysis is documentary and must not scan the opaque image.");
-      Assert.That(FilesystemSupportMatrix.RelaysOut(descriptor), Is.False,
-        "Analysis-only ILayoutOptimizable must not advertise a working Layout rebuild.");
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.False,
+        "Analysis-only ILayoutOptimizable must not advertise a geometry-change action.");
     });
 
     using var target = new MemoryStream();
