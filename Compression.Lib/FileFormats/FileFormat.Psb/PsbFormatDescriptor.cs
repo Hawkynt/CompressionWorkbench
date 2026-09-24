@@ -91,78 +91,108 @@ public sealed class PsbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  private sealed record EntryLayout(string Name, string Kind, int Offset, int Length, byte[]? Generated = null) {
+    public int Size => this.Generated?.Length ?? this.Length;
+  }
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
+    return BuildLayout(blob)
+      .Select(e => (e.Name, e.Kind, e.Generated ?? blob.AsSpan(e.Offset, e.Length).ToArray()))
+      .ToList();
+  }
 
-    var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.psb", "Container", blob),
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) =>
+    BuildLayout(archive).Select((e, i) => new ArchiveEntryInfo(
+      Index: i, Name: e.Name,
+      OriginalSize: e.Size, CompressedSize: e.Size,
+      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Kind: e.Kind)).ToList();
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    foreach (var entry in BuildLayout(archive)) {
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files))
+        continue;
+      if (entry.Generated is { } generated)
+        WriteFile(outputDir, entry.Name, generated);
+      else {
+        using var output = CreateEntryFile(outputDir, entry.Name);
+        output.Write(archive.Slice(entry.Offset, entry.Length));
+      }
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
+    var entries = new List<EntryLayout> {
+      new("FULL.psb", "Container", 0, blob.Length),
     };
 
     if (blob.Length < 26) return entries;
     if (blob[0] != '8' || blob[1] != 'B' || blob[2] != 'P' || blob[3] != 'S') return entries;
 
     try {
-      var version = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(4));
-      // Only PSB (version 2); version 1 is handled by PsdFormatDescriptor.
+      var version = BinaryPrimitives.ReadUInt16BigEndian(blob[4..]);
       if (version != 2) return entries;
 
-      var channels = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(12));
-      var height = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(14));
-      var width = BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(18));
-      var depth = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(22));
-      var colorMode = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(24));
+      var channels = BinaryPrimitives.ReadUInt16BigEndian(blob[12..]);
+      var height = BinaryPrimitives.ReadUInt32BigEndian(blob[14..]);
+      var width = BinaryPrimitives.ReadUInt32BigEndian(blob[18..]);
+      var depth = BinaryPrimitives.ReadUInt16BigEndian(blob[22..]);
+      var colorMode = BinaryPrimitives.ReadUInt16BigEndian(blob[24..]);
 
       var pos = 26;
       if (pos + 4 > blob.Length) { EmitMetadata(entries, width, height, channels, depth, colorMode); return entries; }
-      var colorModeLen = (int)BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(pos));
+      var colorModeLen = (int)BinaryPrimitives.ReadUInt32BigEndian(blob[pos..]);
+      if (colorModeLen < 0 || colorModeLen > blob.Length - pos - 4) {
+        EmitMetadata(entries, width, height, channels, depth, colorMode);
+        return entries;
+      }
       pos += 4 + colorModeLen;
 
-      // Image Resources section — same layout as PSD (uint32 length prefix, 8BIM blocks).
       if (pos + 4 > blob.Length) { EmitMetadata(entries, width, height, channels, depth, colorMode); return entries; }
-      var resourcesLen = (int)BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(pos));
+      var resourcesLen = (int)BinaryPrimitives.ReadUInt32BigEndian(blob[pos..]);
       pos += 4;
-      var resourcesEnd = Math.Min(pos + resourcesLen, blob.Length);
+      if (resourcesLen < 0) { EmitMetadata(entries, width, height, channels, depth, colorMode); return entries; }
+      var resourcesEnd = Math.Min((long)pos + resourcesLen, blob.Length);
 
-      while (pos + 12 <= resourcesEnd) {
+      while ((long)pos + 12 <= resourcesEnd) {
         if (blob[pos] != '8' || blob[pos + 1] != 'B' || blob[pos + 2] != 'I' || blob[pos + 3] != 'M') break;
-        var resId = BinaryPrimitives.ReadUInt16BigEndian(blob.AsSpan(pos + 4));
+        var resId = BinaryPrimitives.ReadUInt16BigEndian(blob[(pos + 4)..]);
         var nameLen = blob[pos + 6];
         var namePad = (nameLen + 1) % 2 == 0 ? 0 : 1;
         var dataStart = pos + 6 + 1 + nameLen + namePad;
-        if (dataStart + 4 > resourcesEnd) break;
-        var dataSize = (int)BinaryPrimitives.ReadUInt32BigEndian(blob.AsSpan(dataStart));
-        if (dataStart + 4 + dataSize > resourcesEnd) break;
+        if ((long)dataStart + 4 > resourcesEnd) break;
+        var dataSize = (int)BinaryPrimitives.ReadUInt32BigEndian(blob[dataStart..]);
+        if (dataSize < 0 || (long)dataStart + 4 + dataSize > resourcesEnd) break;
 
-        var data = blob.AsSpan(dataStart + 4, dataSize).ToArray();
-        if (resId == 0x040C && data.Length > 28) {
-          entries.Add(("thumbnail.jpg", "Tag", data[28..]));
-        } else {
-          var niceName = SanitizeName(blob, pos + 7, nameLen);
-          entries.Add(($"image_resources/{resId:X4}_{niceName}.bin", "Tag", data));
-        }
+        var dataOffset = dataStart + 4;
+        if (resId == 0x040C && dataSize > 28)
+          entries.Add(new EntryLayout("thumbnail.jpg", "Tag", dataOffset + 28, dataSize - 28));
+        else
+          entries.Add(new EntryLayout(
+            $"image_resources/{resId:X4}_{SanitizeName(blob, pos + 7, nameLen)}.bin",
+            "Tag", dataOffset, dataSize));
 
         pos = dataStart + 4 + dataSize + (dataSize % 2);
       }
-      pos = resourcesEnd;
+      pos = checked((int)resourcesEnd);
 
-      // Layer & mask info: PSB uses a 64-bit length.
       if (pos + 8 <= blob.Length) {
-        var layerLen = (long)BinaryPrimitives.ReadUInt64BigEndian(blob.AsSpan(pos));
+        var layerLen = BinaryPrimitives.ReadUInt64BigEndian(blob[pos..]);
         pos += 8;
-        var layerEnd = Math.Min(pos + layerLen, blob.Length);
-        if (layerEnd > pos) {
-          var len = (int)(layerEnd - pos);
-          entries.Add(("layer_and_mask.bin", "Tag", blob.AsSpan(pos, len).ToArray()));
-          pos = (int)layerEnd;
+        var available = blob.Length - pos;
+        var layerSize = (int)Math.Min(layerLen, (ulong)available);
+        if (layerSize > 0) {
+          entries.Add(new EntryLayout("layer_and_mask.bin", "Tag", pos, layerSize));
+          pos += layerSize;
         }
       }
 
-      // Image data section: everything remaining to EOF.
-      if (pos < blob.Length) {
-        entries.Add(("image_data.bin", "Tag", blob.AsSpan(pos, blob.Length - pos).ToArray()));
-      }
+      if (pos < blob.Length)
+        entries.Add(new EntryLayout("image_data.bin", "Tag", pos, blob.Length - pos));
 
       EmitMetadata(entries, width, height, channels, depth, colorMode);
     } catch {
@@ -173,7 +203,7 @@ public sealed class PsbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   }
 
   private static void EmitMetadata(
-    List<(string Name, string Kind, byte[] Data)> entries,
+    List<EntryLayout> entries,
     uint width, uint height, ushort channels, ushort depth, ushort colorMode) {
     var ini = new StringBuilder();
     ini.AppendLine("; Photoshop Large Document (PSB) metadata");
@@ -187,10 +217,10 @@ public sealed class PsbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       4 => "CMYK", 7 => "Multichannel", 8 => "Duotone", 9 => "Lab",
       _ => colorMode.ToString(CultureInfo.InvariantCulture),
     });
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(ini.ToString())));
+    entries.Insert(1, new EntryLayout("metadata.ini", "Tag", 0, 0, Encoding.UTF8.GetBytes(ini.ToString())));
   }
 
-  private static string SanitizeName(byte[] blob, int offset, byte len) {
+  private static string SanitizeName(ReadOnlySpan<byte> blob, int offset, byte len) {
     if (len == 0) return "unnamed";
     var sb = new StringBuilder(len);
     for (var i = 0; i < len && offset + i < blob.Length; ++i) {
