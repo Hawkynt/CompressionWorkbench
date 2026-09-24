@@ -39,7 +39,8 @@ public sealed class SquashFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "BlockSize", displayName: "Data block size",
       min: 4096, max: 1048576, defaultLabel: "128 KB",
-      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files."),
+      description: "Compressed data block size. SquashFS allows powers of two from 4 KB to 1 MB; larger blocks compress better but waste more on small files.",
+      isAllocationGeometry: false),
   ];
 
   /// <summary>
