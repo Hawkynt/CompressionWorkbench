@@ -43,6 +43,7 @@ namespace FileSystem.VxFs;
 /// volume rather than the bytes that changed; the result is the same shape the
 /// driver already mounts.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(VxFsBlockMover))]
 public sealed class VxFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, ISyntheticEntryNames {
 
   /// <inheritdoc />

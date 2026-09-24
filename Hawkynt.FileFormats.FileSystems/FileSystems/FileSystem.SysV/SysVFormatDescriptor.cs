@@ -45,6 +45,7 @@ namespace FileSystem.SysV;
 /// WSL2 kernel ships without it).
 /// </para>
 /// </remarks>
+[FilesystemBlockMover(typeof(SysVBlockMover))]
 public sealed class SysVFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
   /// <summary>
   /// s5fs geometry (1024-byte blocks, 64-byte inodes, single-group layout) is

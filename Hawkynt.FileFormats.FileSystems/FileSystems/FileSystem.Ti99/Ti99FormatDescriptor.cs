@@ -27,6 +27,7 @@ namespace FileSystem.Ti99;
 ///   <item><description>TIFiles wrapper format description (TI-99/4A community documentation, e.g. Ninerpedia)</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(Ti99BlockMover))]
 public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
