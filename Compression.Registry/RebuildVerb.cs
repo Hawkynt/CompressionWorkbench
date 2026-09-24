@@ -35,6 +35,9 @@ public static class RebuildVerb {
     cancellationToken.ThrowIfCancellationRequested();
     input.Position = 0;
     var sourceEntries = ops.List(input, null);
+    input.Position = 0;
+    var sourceManifest = ArchiveSemanticManifest.Capture(
+      input, ops, cancellationToken: cancellationToken, excludedNames: syntheticNames);
     var sourceNames = LiveNameList(sourceEntries);
     var sourceFileCount = sourceNames.Count;
     var sourceLength = Math.Max(1L, input.Length);
@@ -160,6 +163,11 @@ public static class RebuildVerb {
       if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
         throw new InvalidOperationException(
           $"Rebuild changed the entry set ({sourceFileCount} → {rebuiltNames.Count}); refusing a non-identity-preserving rebuild.");
+
+      output.Position = 0;
+      var rebuiltManifest = ArchiveSemanticManifest.Capture(
+        output, ops, cancellationToken: cancellationToken, excludedNames: syntheticNames);
+      sourceManifest.RequireEquivalentTo(rebuiltManifest);
 
       cancellationToken.ThrowIfCancellationRequested();
       var finalLength = Math.Max(1L, output.Length);
