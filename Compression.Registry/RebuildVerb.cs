@@ -33,14 +33,26 @@ public static class RebuildVerb {
       throw new ArgumentException("Rebuild output must be writable and seekable.", nameof(output));
 
     cancellationToken.ThrowIfCancellationRequested();
+
+    IReadOnlySet<string>? effectiveSyntheticNames = syntheticNames;
+    if (ops is ISyntheticEntryNames declaredSynthetic) {
+      if (effectiveSyntheticNames is null) {
+        effectiveSyntheticNames = declaredSynthetic.SyntheticEntryNames;
+      } else {
+        var merged = new HashSet<string>(effectiveSyntheticNames, StringComparer.OrdinalIgnoreCase);
+        merged.UnionWith(declaredSynthetic.SyntheticEntryNames);
+        effectiveSyntheticNames = merged;
+      }
+    }
+
     input.Position = 0;
     var sourceEntries = ops.List(input, null);
     input.Position = 0;
     var sourceManifest = ArchiveSemanticManifest.Capture(
-      input, ops, cancellationToken: cancellationToken, excludedNames: syntheticNames);
+      input, ops, cancellationToken: cancellationToken, excludedNames: effectiveSyntheticNames);
     var sourceNames = LiveNameList(sourceEntries);
     var sourceByName = sourceEntries
-      .Where(e => syntheticNames is null || !syntheticNames.Contains(e.Name))
+      .Where(e => effectiveSyntheticNames is null || !effectiveSyntheticNames.Contains(e.Name))
       .GroupBy(static e => SemanticKey(e.Name), StringComparer.Ordinal)
       .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.Ordinal);
     var sourceFileCount = sourceNames.Count;
@@ -70,7 +82,7 @@ public static class RebuildVerb {
           Directory.CreateDirectory(target);
           continue;
         }
-        if (syntheticNames != null && syntheticNames.Contains(entry.Name))
+        if (effectiveSyntheticNames != null && effectiveSyntheticNames.Contains(entry.Name))
           continue;
 
         ++liveIndex;
@@ -118,12 +130,13 @@ public static class RebuildVerb {
       var inputs = new List<ArchiveInputInfo>();
       foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        sourceByName.TryGetValue(SemanticKey(rel), out var source);
+        if (!sourceByName.TryGetValue(SemanticKey(rel), out var source) || !source.IsDirectory)
+          continue;
         inputs.Add(new ArchiveInputInfo(
           "", rel + "/", true,
-          LastModified: source?.LastModified,
-          CreationTime: source?.CreationTime,
-          Attributes: source?.Attributes));
+          LastModified: source.LastModified,
+          CreationTime: source.CreationTime,
+          Attributes: source.Attributes));
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
@@ -180,7 +193,7 @@ public static class RebuildVerb {
 
       output.Position = 0;
       var rebuiltManifest = ArchiveSemanticManifest.Capture(
-        output, ops, cancellationToken: cancellationToken, excludedNames: syntheticNames);
+        output, ops, cancellationToken: cancellationToken, excludedNames: effectiveSyntheticNames);
       sourceManifest.RequireEquivalentTo(rebuiltManifest);
 
       cancellationToken.ThrowIfCancellationRequested();
