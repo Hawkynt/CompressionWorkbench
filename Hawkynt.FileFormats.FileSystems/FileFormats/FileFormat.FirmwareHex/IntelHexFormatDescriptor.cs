@@ -130,11 +130,36 @@ public sealed class IntelHexFormatDescriptor : IFormatDescriptor, IArchiveFormat
     archive.Position = 0;
   }
 
-  // IArchiveModifiable and IArchiveDefragmentable intentionally use their shared
-  // verified staged-rebuild implementations. Rebuilding is the native edit model
-  // for a line-oriented HEX file: there are no allocation structures to patch in
-  // place, and the rendered metadata now preserves sparse address runs and the
-  // distinction between type-03 CS:IP and type-05 linear start records.
+  private static readonly IReadOnlySet<string> SemanticOnlyEntries =
+    new HashSet<string>(StringComparer.OrdinalIgnoreCase) { FirmwareHexWriter.MetadataName };
+
+  /// <summary>
+  /// Canonically rebuilds the record stream while preserving the sparse address map.
+  /// <c>metadata.ini</c> is fed back into the writer because it carries that map, but
+  /// its rendered counters are representation details and are therefore excluded
+  /// from semantic equality.
+  /// </summary>
+  public void Defragment(Stream archive)
+    => RebuildVerb.RebuildInPlace(
+      archive, this, this, semanticExcludedNames: SemanticOnlyEntries);
+
+  /// <inheritdoc />
+  public void Defragment(Stream archive, DefragOptions options) {
+    ArgumentNullException.ThrowIfNull(options);
+    if (options.Mode != DefragMode.ConsolidateAtStart)
+      throw new NotSupportedException(
+        $"Intel HEX canonical rebuild supports only {DefragMode.ConsolidateAtStart}.");
+
+    RebuildVerb.RebuildInPlace(
+      archive, this, this,
+      onProgress: options.OnProgress,
+      cancellationToken: options.CancellationToken,
+      semanticExcludedNames: SemanticOnlyEntries);
+  }
+
+  // IArchiveModifiable uses the shared verified staged-rebuild implementation.
+  // Rebuilding is the native edit model for a line-oriented HEX file: there are
+  // no allocation structures to patch in place.
 
   private static List<(string Name, byte[] Data, string Method)> BuildEntries(Stream stream) {
     using var reader = new StreamReader(stream, Encoding.ASCII, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
