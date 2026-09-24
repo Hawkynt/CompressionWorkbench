@@ -115,7 +115,7 @@ public sealed class CromemcoFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "128",
       AllowedValues: ["128"],
-      Description: "Cromemco RDOS uses 128-byte sectors (CP/M convention).", IsAllocationGeometry: true),
+      Description: "Cromemco RDOS uses 128-byte sectors (CP/M convention)."),
   ];
 
   // ── IArchiveFormatOperations ────────────────────────────────────────────
