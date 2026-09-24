@@ -41,7 +41,9 @@ public sealed class Ext1Writer {
   private readonly List<FileEntry> _files = [];
 
   /// <summary>Adds a file to be packed into the next <see cref="Build"/> call.</summary>
-  public void AddFile(string name, byte[] data, DateTime? lastModified = null) {
+  public void AddFile(string name, byte[] data) => this.AddFile(name, data, null);
+
+  internal void AddFile(string name, byte[] data, DateTime? lastModified) {
     ArgumentNullException.ThrowIfNull(data);
     this._files.Add(new FileEntry(name, data.LongLength, data, null, lastModified));
   }
@@ -52,7 +54,10 @@ public sealed class Ext1Writer {
   /// it before a byte is read, so a file larger than a byte[] can carry is placed
   /// like any other.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream)
+    => this.AddStreamingFile(name, size, openStream, null);
+
+  internal void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     ArgumentOutOfRangeException.ThrowIfNegative(size);
