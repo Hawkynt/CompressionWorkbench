@@ -37,7 +37,7 @@ public sealed class LifFormatDescriptor :
       Default: "1",
       Description: "Number of 256-byte sectors reserved for the directory. Each sector " +
         "holds 8 entries (one is the terminator). Default 1 → max 7 files; raise " +
-        "to fit more."),
+        "to fit more.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "DefaultFileType",
       DisplayName: "Default file type",
