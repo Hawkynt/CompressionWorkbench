@@ -35,14 +35,15 @@ public sealed class Ext1Writer {
   private const int InodeSize = 128;
 
   /// <summary>A file's payload: held inline, or opened on demand when it is too large to hold.</summary>
-  private readonly record struct FileEntry(string Name, long Size, byte[]? Data, Func<Stream>? Opener);
+  private readonly record struct FileEntry(
+    string Name, long Size, byte[]? Data, Func<Stream>? Opener, DateTime? LastModified);
 
   private readonly List<FileEntry> _files = [];
 
   /// <summary>Adds a file to be packed into the next <see cref="Build"/> call.</summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(data);
-    this._files.Add(new FileEntry(name, data.LongLength, data, null));
+    this._files.Add(new FileEntry(name, data.LongLength, data, null, lastModified));
   }
 
   /// <summary>
@@ -51,11 +52,11 @@ public sealed class Ext1Writer {
   /// it before a byte is read, so a file larger than a byte[] can carry is placed
   /// like any other.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     ArgumentOutOfRangeException.ThrowIfNegative(size);
-    this._files.Add(new FileEntry(name, size, null, openStream));
+    this._files.Add(new FileEntry(name, size, null, openStream, lastModified));
   }
 
   /// <summary>
@@ -87,6 +88,17 @@ public sealed class Ext1Writer {
     WriteEntryData(output, dataWrites, blockSize, basePosition);
     output.Position = basePosition + image.TotalBytes;
     output.Flush();
+  }
+
+  private static uint ToUnixSeconds(DateTime? value, uint fallback) {
+    if (value is null) return fallback;
+    try {
+      var utc = value.Value.Kind == DateTimeKind.Utc ? value.Value : value.Value.ToUniversalTime();
+      var seconds = new DateTimeOffset(utc).ToUnixTimeSeconds();
+      return seconds is > 0 and <= uint.MaxValue ? (uint)seconds : fallback;
+    } catch (ArgumentOutOfRangeException) {
+      return fallback;
+    }
   }
 
   /// <summary>
@@ -321,9 +333,10 @@ public sealed class Ext1Writer {
       var ino = img.At(fileInodeOffset, InodeSize);
       BinaryPrimitives.WriteUInt16LittleEndian(ino, 0x8000 | 0x01A4);            // i_mode: regular, 0644
       BinaryPrimitives.WriteUInt32LittleEndian(ino[4..], (uint)entry.Size);      // i_size
+      var mtime = ToUnixSeconds(entry.LastModified, now);
       BinaryPrimitives.WriteUInt32LittleEndian(ino[8..], now);                   // i_atime
       BinaryPrimitives.WriteUInt32LittleEndian(ino[12..], now);                  // i_ctime
-      BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], now);                  // i_mtime
+      BinaryPrimitives.WriteUInt32LittleEndian(ino[16..], mtime);                // i_mtime
       BinaryPrimitives.WriteUInt16LittleEndian(ino[26..], 1);                    // i_links_count
       allocated += WriteInodeBlockMap(img, fileInodeOffset, fileBlocks, blockSize, AllocBlock);
       BinaryPrimitives.WriteUInt32LittleEndian(img.At(fileInodeOffset + 28, 4),
