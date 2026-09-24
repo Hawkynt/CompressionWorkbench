@@ -997,8 +997,7 @@ Reorders carried RealAudio audio packets into the codec's coded-frame byte order
 Implements `IEquatable<AdxInfo>`.
 
 | Member | Signature | Summary |
-| --- | --- | --- |
-| `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset, int? LoopStartSample = null, int? LoopEndSample = null)` |  |
+| --- | --- | --- || `AdxInfo` | `AdxInfo(byte EncodingType, int BlockSize, int BitDepth, int Channels, int SampleRate, int TotalSamples, int HighpassFrequency, int Version, byte Flags, int DataOffset, int? LoopStartSample = null, int? LoopEndSample = null)` |  |
 | `BitDepth` | `int BitDepth { get; init; }` |  |
 | `BlockSize` | `int BlockSize { get; init; }` |  |
 | `Channels` | `int Channels { get; init; }` |  |
@@ -1998,7 +1997,6 @@ Implements `IEquatable<Mp3FrameHeader>`.
 | `Parse` | `static Mp3FrameHeader Parse(ReadOnlySpan<byte> header4)` | Parses a 4-byte MP3 frame header. Throws `InvalidDataException` if the syncword is absent or reserved bit patterns are present. |
 
 #### `Mp3StreamInfo`
-
 Stream-level metadata extracted from an MP3 stream's first valid frame header (and Xing/Info VBR header, if present). `DurationSamples` is estimated from frame count when a VBR header is found, otherwise from byte size / average bitrate; pass -1 when unknown. `Bitrate` is in bit/s, as in every other codec's stream info, not the kbit/s the frame header table holds.
 
 Implements `IEquatable<Mp3StreamInfo>`.
@@ -2998,7 +2996,6 @@ Parses a ProTracker / SoundTracker MOD into the shared `TrackerSong` model and r
 #### `S3mModule`
 
 Parses a Scream Tracker 3 (S3M) module into the shared `TrackerSong` model and renders it. Handles the packed pattern stream, PCM (type 1) instruments with their C2SPD, the channel-settings table (muted/disabled channels), default 0x3/0xC panning and the optional 32-byte pan section.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `DecodeSamples` | `static IReadOnlyList<ValueTuple<short[], int>?> DecodeSamples(byte[] blob)` | Decoded mono samples (1-based instrument index → 16-bit PCM and C2SPD), or null. |
@@ -3816,7 +3813,7 @@ The memory and I/O abstraction the `Cpu` core talks to. Every memory fetch, read
 
 ### Namespace `Compression.Registry`
 
-[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveShrinker`](#archiveshrinker) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
+[`AlgorithmFamily`](#algorithmfamily) · [`ApeTagReader`](#apetagreader) · [`ApeTagReader.ApeTag`](#apetagreaderapetag) · [`ArchiveEntryInfo`](#archiveentryinfo) · [`ArchiveFormatOperationsExtensions`](#archiveformatoperationsextensions) · [`ArchiveInputInfo`](#archiveinputinfo) · [`ArchiveMutationOptions`](#archivemutationoptions) · [`ArchiveSemanticManifest`](#archivesemanticmanifest) · [`ArchiveSemanticManifest.Entry`](#archivesemanticmanifestentry) · [`ArchiveShrinker`](#archiveshrinker) · [`ArchiveSparseExtent`](#archivesparseextent) · [`AudioEncodedStream`](#audioencodedstream) · [`AudioPacket`](#audiopacket) · [`AudioPcmBuffer`](#audiopcmbuffer) · [`AudioPcmEncoding`](#audiopcmencoding) · [`AudioPcmFormat`](#audiopcmformat) · [`AudioPseudoArchive`](#audiopseudoarchive) · [`AudioPseudoArchive.Entry`](#audiopseudoarchiveentry) · [`AudioStreamFormat`](#audiostreamformat) · [`BlockDeviceGeometry`](#blockdevicegeometry) · [`BlockDeviceStream`](#blockdevicestream) · [`BuildingBlockRegistry`](#buildingblockregistry) · [`CompoundTarDescriptor`](#compoundtardescriptor) · [`DefragBlockClass`](#defragblockclass) · [`DefragBlockInfo`](#defragblockinfo) · [`DefragBlockKind`](#defragblockkind) · [`DefragContentGuard`](#defragcontentguard) · [`DefragMode`](#defragmode) · [`DefragOptions`](#defragoptions) · [`DefragProgressEvent`](#defragprogressevent) · [`DefragRebuilder`](#defragrebuilder) · [`EntropyDetector`](#entropydetector) · [`FatDirStamp`](#fatdirstamp) · [`FilesystemAllocationMapCompleter`](#filesystemallocationmapcompleter) · [`FilesystemCompressionParameter`](#filesystemcompressionparameter) · [`FilesystemCompressionProfile`](#filesystemcompressionprofile) · [`FilesystemDirectoryEntry`](#filesystemdirectoryentry) · [`FilesystemDriverBindingKind`](#filesystemdriverbindingkind) · [`FilesystemDriverCapabilities`](#filesystemdrivercapabilities) · [`FilesystemDriverCoverage`](#filesystemdrivercoverage) · [`FilesystemDriverDerivation`](#filesystemdriverderivation) · [`FilesystemDriverProfile`](#filesystemdriverprofile) · [`FilesystemDriverReadinessLayer`](#filesystemdriverreadinesslayer) · [`FilesystemDriverReadinessReport`](#filesystemdriverreadinessreport) · [`FilesystemDriverTarget`](#filesystemdrivertarget) · [`FilesystemMetadataPatch`](#filesystemmetadatapatch) · [`FilesystemMutationModel`](#filesystemmutationmodel) · [`FilesystemNodeId`](#filesystemnodeid) · [`FilesystemNodeInfo`](#filesystemnodeinfo) · [`FilesystemNodeKind`](#filesystemnodekind) · [`FilesystemOpenOptions`](#filesystemopenoptions) · [`FilesystemOptimization`](#filesystemoptimization) · [`FilesystemOptimizationAdapters`](#filesystemoptimizationadapters) · [`FilesystemOptimizationAdapters.HardLinkDeduplicator`](#filesystemoptimizationadaptershardlinkdeduplicator) · [`FilesystemOptimizationAdapters.SymbolicLinkDeduplicator`](#filesystemoptimizationadapterssymboliclinkdeduplicator) · [`FilesystemOptimizationExtensions`](#filesystemoptimizationextensions) · [`FilesystemOptimizationFeatures`](#filesystemoptimizationfeatures) · [`FilesystemOptimizationOptions`](#filesystemoptimizationoptions) · [`FilesystemSchemaPresets`](#filesystemschemapresets) · [`FilesystemSnapshotDirectoryEntry`](#filesystemsnapshotdirectoryentry) · [`FilesystemSnapshotNode`](#filesystemsnapshotnode) · [`FilesystemSourceRole`](#filesystemsourcerole) · [`FilesystemStreamSet`](#filesystemstreamset) · [`FilesystemStreamSource`](#filesystemstreamsource) · [`FormatCapabilities`](#formatcapabilities) · [`FormatCategory`](#formatcategory) · [`FormatCreateOptions`](#formatcreateoptions) · [`FormatDetectionSignature`](#formatdetectionsignature) · [`FormatHeaderMatch`](#formatheadermatch) · [`FormatHealth`](#formathealth) · [`FormatHelpers`](#formathelpers) · [`FormatMethodInfo`](#formatmethodinfo) · [`FormatOptionDescriptor`](#formatoptiondescriptor) · [`FormatOptionKeys`](#formatoptionkeys) · [`FormatOptionKind`](#formatoptionkind) · [`FormatRegistry`](#formatregistry) · [`HardLinkDeduplicationSemantics`](#hardlinkdeduplicationsemantics) · [`IArchiveCanonicalizable`](#iarchivecanonicalizable) · [`IArchiveCreatable`](#iarchivecreatable) · [`IArchiveDefragmentable`](#iarchivedefragmentable) · [`IArchiveFormatOperations`](#iarchiveformatoperations) · [`IArchiveInMemoryExtract`](#iarchiveinmemoryextract) · [`IArchiveLayoutMap`](#iarchivelayoutmap) · [`IArchiveModifiable`](#iarchivemodifiable) · [`IArchivePurgeable`](#iarchivepurgeable) · [`IArchiveRepackable`](#iarchiverepackable) · [`IArchiveSemanticMetadataProvider`](#iarchivesemanticmetadataprovider) · [`IArchiveShrinkable`](#iarchiveshrinkable) · [`IArchiveWriteConstraints`](#iarchivewriteconstraints) · [`IAsyncArchiveOperations`](#iasyncarchiveoperations) · [`IAudioContainerFormat`](#iaudiocontainerformat) · [`IAudioDemuxSource`](#iaudiodemuxsource) · [`IAudioMuxTarget`](#iaudiomuxtarget) · [`IAudioPcmSource`](#iaudiopcmsource) · [`IAudioPcmTarget`](#iaudiopcmtarget) · [`IBlockDeviceFilesystemDriverProvider`](#iblockdevicefilesystemdriverprovider) · [`IBlockDeviceProvider`](#iblockdeviceprovider) · [`IBuildingBlock`](#ibuildingblock) · [`ICompressionOptimizable`](#icompressionoptimizable) · [`IContainerRemuxable`](#icontainerremuxable) · [`IFileInternalChunkMover`](#ifileinternalchunkmover) · [`IFileInternalLayoutMap`](#ifileinternallayoutmap) · [`IFilesystemBlockMover`](#ifilesystemblockmover) · [`IFilesystemDirectoryOrderer`](#ifilesystemdirectoryorderer) · [`IFilesystemDriverAdapter`](#ifilesystemdriveradapter) · [`IFilesystemDriverProvider`](#ifilesystemdriverprovider) · [`IFilesystemDriverReadinessProvider`](#ifilesystemdriverreadinessprovider) · [`IFilesystemExtendedAttributeReader`](#ifilesystemextendedattributereader) · [`IFilesystemExtentMap`](#ifilesystemextentmap) · [`IFilesystemFileHandle`](#ifilesystemfilehandle) · [`IFilesystemMetadataMover`](#ifilesystemmetadatamover) · [`IFilesystemPlaceable`](#ifilesystemplaceable) · [`IFilesystemScrambleable`](#ifilesystemscrambleable) · [`IFilesystemSession`](#ifilesystemsession) · [`IFilesystemTransaction`](#ifilesystemtransaction) · [`IFormatDescriptor`](#iformatdescriptor) · [`IFormatDetectionSource`](#iformatdetectionsource) · [`IFormatOptionsSchema`](#iformatoptionsschema) · [`IFormatValidator`](#iformatvalidator) · [`ILayoutOptimizable`](#ilayoutoptimizable) · [`IMultiStreamFilesystemDriverProvider`](#imultistreamfilesystemdriverprovider) · [`IMultiStreamFilesystemDriverReadinessProvider`](#imultistreamfilesystemdriverreadinessprovider) · [`IPartitionEditable`](#ipartitioneditable) · [`IRandomAccessBlockDevice`](#irandomaccessblockdevice) · [`IRandomAccessBlockDeviceProvider`](#irandomaccessblockdeviceprovider) · [`IRawTrackDevice`](#irawtrackdevice) · [`IRawTrackDeviceProvider`](#irawtrackdeviceprovider) · [`IStreamFormatOperations`](#istreamformatoperations) · [`ISymbolicLinkDeduplicationLayout`](#isymboliclinkdeduplicationlayout) · [`ISyntheticEntryNames`](#isyntheticentrynames) · [`IWipeEmpty`](#iwipeempty) · [`InnerFsDetector`](#innerfsdetector) · [`IssueSeverity`](#issueseverity) · [`LayoutAnalysis`](#layoutanalysis) · [`LayoutPatch`](#layoutpatch) · [`LayoutProfile`](#layoutprofile) · [`LayoutRebuildOptions`](#layoutrebuildoptions) · [`LayoutReclaim`](#layoutreclaim) · [`MagicSignature`](#magicsignature) · [`MediaProfile`](#mediaprofile) · [`MediaProfileLookup`](#mediaprofilelookup) · [`MetadataPlacementProfile`](#metadataplacementprofile) · [`MetadataPlacementRule`](#metadataplacementrule) · [`MetadataZone`](#metadatazone) · [`MethodNameParser`](#methodnameparser) · [`ModifyRebuilder`](#modifyrebuilder) · [`MutableRebuildFilesystemSession`](#mutablerebuildfilesystemsession) · [`MutableRebuildFilesystemSession.RebuildImage`](#mutablerebuildfilesystemsessionrebuildimage) · [`MutableRebuildFilesystemSession.ValidateImage`](#mutablerebuildfilesystemsessionvalidateimage) · [`OptimizationCapabilities`](#optimizationcapabilities) · [`PartitionBlockDevice`](#partitionblockdevice) · [`PlacementOptions`](#placementoptions) · [`PlacementZone`](#placementzone) · [`RawDiskShrinkRebuilder`](#rawdiskshrinkrebuilder) · [`RawTrackInfo`](#rawtrackinfo) · [`ReadOnlyFilesystemSnapshotSession`](#readonlyfilesystemsnapshotsession) · [`RebuildFilesystemEntry`](#rebuildfilesystementry) · [`RebuildVerb`](#rebuildverb) · [`ScrambleOptions`](#scrambleoptions) · [`SpoolingReadOnlyFileHandle`](#spoolingreadonlyfilehandle) · [`StreamBlockDevice`](#streamblockdevice) · [`SymlinkResolver`](#symlinkresolver) · [`UnusedSpaceWiper`](#unusedspacewiper) · [`ValidationIssue`](#validationissue) · [`ValidationLevel`](#validationlevel) · [`ValidationResult`](#validationresult) · [`WholeImageRebuildCommitter`](#wholeimagerebuildcommitter)
 
 #### `AlgorithmFamily`
 
@@ -3871,8 +3868,11 @@ Implements `IEquatable<ArchiveEntryInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ArchiveEntryInfo` | `ArchiveEntryInfo(int Index, string Name, long OriginalSize, long CompressedSize, string Method, bool IsDirectory, bool IsEncrypted, DateTime? LastModified, string Kind = null, bool IsSymlink = false, string LinkTarget = null, long? TargetSize = null)` | Normalized archive entry metadata returned by format descriptors. |
+| `ArchiveEntryInfo` | `ArchiveEntryInfo(int Index, string Name, long OriginalSize, long CompressedSize, string Method, bool IsDirectory, bool IsEncrypted, DateTime? LastModified, string Kind = null, bool IsSymlink = false, string LinkTarget = null, long? TargetSize = null, DateTime? CreationTime = null, uint? Attributes = null, string HardLinkTarget = null, IReadOnlyList<ArchiveSparseExtent> SparseExtents = null, IReadOnlyDictionary<string, string> SemanticFlags = null)` | Normalized archive entry metadata returned by format descriptors. |
+| `Attributes` | `uint? Attributes { get; init; }` |  |
 | `CompressedSize` | `long CompressedSize { get; init; }` | The entry's stored/compressed size, or -1 when unknown. |
+| `CreationTime` | `DateTime? CreationTime { get; init; }` |  |
+| `HardLinkTarget` | `string HardLinkTarget { get; init; }` |  |
 | `Index` | `int Index { get; init; }` | Zero-based position of the entry in the listing. |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | True when the entry is a directory. |
 | `IsEncrypted` | `bool IsEncrypted { get; init; }` | True when the entry's data is encrypted. |
@@ -3883,6 +3883,8 @@ Implements `IEquatable<ArchiveEntryInfo>`.
 | `Method` | `string Method { get; init; }` | The compression/storage method label. |
 | `Name` | `string Name { get; init; }` | Full slash-separated path of the entry within the archive. |
 | `OriginalSize` | `long OriginalSize { get; init; }` | The entry's own uncompressed on-disk size. For a symbolic link this is the byte length of the stored target path (the on-disk truth), NOT the size of whatever the link points at — see `TargetSize` for the resolved target size. |
+| `SemanticFlags` | `IReadOnlyDictionary<string, string> SemanticFlags { get; init; }` |  |
+| `SparseExtents` | `IReadOnlyList<ArchiveSparseExtent> SparseExtents { get; init; }` |  |
 | `TargetSize` | `long? TargetSize { get; init; }` | The size of the file the link ultimately resolves to, when it points at a regular file within the same filesystem listing; null when unresolved (absolute target, target outside the listing, a directory target, or a dangling/cyclic link). Filled by `SymlinkResolver`. |
 
 #### `ArchiveFormatOperationsExtensions`
@@ -3911,11 +3913,14 @@ Implements `IEquatable<ArchiveInputInfo>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `ArchiveInputInfo` | `ArchiveInputInfo(string FullPath, string ArchiveName, bool IsDirectory, byte[] InMemoryContent = null)` | Describes a single input file/directory for archive creation. |
+| `ArchiveInputInfo` | `ArchiveInputInfo(string FullPath, string ArchiveName, bool IsDirectory, byte[] InMemoryContent = null, DateTime? LastModified = null, DateTime? CreationTime = null, uint? Attributes = null)` | Describes a single input file/directory for archive creation. |
 | `ArchiveName` | `string ArchiveName { get; init; }` |  |
+| `Attributes` | `uint? Attributes { get; init; }` |  |
+| `CreationTime` | `DateTime? CreationTime { get; init; }` |  |
 | `FullPath` | `string FullPath { get; init; }` |  |
 | `InMemoryContent` | `byte[] InMemoryContent { get; init; }` |  |
 | `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
 | `FromFile` | `static ArchiveInputInfo FromFile(FileInfo file, string archiveName = null)` | Creates an on-disk input from a `FileInfo`. Content is read lazily from the file via `ReadContent`; the archive name defaults to the file's leaf name. |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, ReadOnlySpan<byte> content)` | Creates an in-memory input from a byte span (copied into the input, so the caller's buffer may be reused/stack-allocated). |
 | `InMemory` | `static ArchiveInputInfo InMemory(string archiveName, Stream content)` | Creates an in-memory input by reading `content` fully into memory. Reads from the stream's current position to its end. |
@@ -3931,6 +3936,41 @@ Per-operation options for mutating an existing archive or filesystem image.
 | `ArchiveMutationOptions` | `ArchiveMutationOptions()` |  |
 | `Password` | `string Password { get; init; }` | Password or passphrase required to unlock the existing container. |
 
+#### `ArchiveSemanticManifest`
+
+Semantic snapshot used to prove that a maintenance rebuild preserved the logical archive rather than merely producing another listable container.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ContainerFlags` | `IReadOnlyDictionary<string, string> ContainerFlags { get; }` | Container-level semantic flags supplied by the descriptor. |
+| `Entries` | `IReadOnlyList<Entry> Entries { get; }` | Semantic entries sorted by exact archive path. |
+| `Capture` | `static ArchiveSemanticManifest Capture(Stream archive, IArchiveFormatOperations ops, string password = null, CancellationToken cancellationToken = null, IReadOnlySet<string> excludedNames = null)` | Captures the complete semantic surface exposed by `ops`. Duplicate file paths are refused because the generic name-based entry-open API cannot prove which duplicate occurrence it hashed. |
+| `RequireEquivalentTo` | `void RequireEquivalentTo(ArchiveSemanticManifest other)` | Throws when `other` differs in any exposed semantic field. Compression sizes/method names and physical entry order are deliberately absent: maintenance verbs are allowed to change representation, not meaning. |
+
+#### `ArchiveSemanticManifest.Entry`
+
+A normalized entry plus the SHA-256 of its logical file bytes.
+
+Implements `IEquatable<Entry>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Entry` | `Entry(string Name, bool IsDirectory, long Length, string Sha256, bool IsEncrypted, DateTime? LastModified, DateTime? CreationTime, uint? Attributes, bool IsSymlink, string LinkTarget, long? TargetSize, string HardLinkTarget, IReadOnlyList<ArchiveSparseExtent> SparseExtents, IReadOnlyDictionary<string, string> SemanticFlags)` | A normalized entry plus the SHA-256 of its logical file bytes. |
+| `Attributes` | `uint? Attributes { get; init; }` |  |
+| `CreationTime` | `DateTime? CreationTime { get; init; }` |  |
+| `HardLinkTarget` | `string HardLinkTarget { get; init; }` |  |
+| `IsDirectory` | `bool IsDirectory { get; init; }` |  |
+| `IsEncrypted` | `bool IsEncrypted { get; init; }` |  |
+| `IsSymlink` | `bool IsSymlink { get; init; }` |  |
+| `LastModified` | `DateTime? LastModified { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+| `LinkTarget` | `string LinkTarget { get; init; }` |  |
+| `Name` | `string Name { get; init; }` |  |
+| `SemanticFlags` | `IReadOnlyDictionary<string, string> SemanticFlags { get; init; }` |  |
+| `Sha256` | `string Sha256 { get; init; }` |  |
+| `SparseExtents` | `IReadOnlyList<ArchiveSparseExtent> SparseExtents { get; init; }` |  |
+| `TargetSize` | `long? TargetSize { get; init; }` |  |
+
 #### `ArchiveShrinker`
 
 Generic shrink driver for any archive whose descriptor implements `IArchiveCreatable`. Lists the archive's entries, extracts them to memory, and re-creates a fresh archive into the output stream using the smallest canonical size that fits (from `CanonicalSizes`). Works as the default `Shrink` implementation for most R/W filesystems: the "rebuild via WORM" pattern implicitly defragments as a side effect. Format-specific shrinkers can override for efficiency.
@@ -3940,8 +3980,20 @@ Generic shrink driver for any archive whose descriptor implements `IArchiveCreat
 | `ChooseTargetSize` | `static long ChooseTargetSize(IReadOnlyList<long> canonicalSizes, long payloadBytes)` | Smallest size in `canonicalSizes` that is >= `payloadBytes`. If no size is large enough, returns the largest available. |
 | `ShrinkViaRebuild` | `static void ShrinkViaRebuild(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyList<long> canonicalSizes)` | Rebuilds `input` into `output`, choosing the smallest size from `canonicalSizes` that still holds the payload. |
 
-#### `AudioEncodedStream`
+#### `ArchiveSparseExtent`
 
+A logical extent in an archive entry. `IsHole` distinguishes sparse holes from stored data ranges without imposing a filesystem-specific allocation-unit model.
+
+Implements `IEquatable<ArchiveSparseExtent>`.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `ArchiveSparseExtent` | `ArchiveSparseExtent(long Offset, long Length, bool IsHole)` | A logical extent in an archive entry. `IsHole` distinguishes sparse holes from stored data ranges without imposing a filesystem-specific allocation-unit model. |
+| `IsHole` | `bool IsHole { get; init; }` |  |
+| `Length` | `long Length { get; init; }` |  |
+| `Offset` | `long Offset { get; init; }` |  |
+
+#### `AudioEncodedStream`
 Container-neutral encoded audio stream.
 
 Implements `IEquatable<AudioEncodedStream>`.
@@ -4590,7 +4642,7 @@ Reusable `FormatOptionDescriptor` building blocks shared by every filesystem tha
 | `FormatSize` | `static string FormatSize(long bytes)` | Formats a byte count as "512 B", "4 KB", "1 MB" (powers of two only). |
 | `ImageSize` | `static FormatOptionDescriptor ImageSize(IReadOnlyList<string> sizes, string description = null)` | Standard "Auto (fit to files) + fixed sizes" image-size dropdown. Pass the medium-specific size labels that the descriptor's parser understands. |
 | `ParseSize` | `static int ParseSize(string label)` | Parses a size label produced by `FormatSize` back into bytes; "Auto"/unknown → 0. |
-| `PowerOfTwoSize` | `static FormatOptionDescriptor PowerOfTwoSize(string key, string displayName, int min, int max, string defaultLabel, string description)` | Generic power-of-two size dropdown for any byte-valued knob (inode size, MFT record, …). |
+| `PowerOfTwoSize` | `static FormatOptionDescriptor PowerOfTwoSize(string key, string displayName, int min, int max, string defaultLabel, string description, bool isAllocationGeometry = true)` | Generic power-of-two size dropdown for any byte-valued knob (inode size, MFT record, …). |
 | `VolumeLabel` | `static FormatOptionDescriptor VolumeLabel(int maxChars = 11)` | Standard volume-label text field. |
 
 #### `FilesystemSnapshotDirectoryEntry`
@@ -4810,12 +4862,13 @@ Implements `IEquatable<FormatOptionDescriptor>`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `FormatOptionDescriptor` | `FormatOptionDescriptor(string Key, string DisplayName, FormatOptionKind Kind, string Default, IReadOnlyList<string> AllowedValues = null, string Description = null, string DependsOn = null, bool IsOptimizationAxis = true)` | Describes one tunable knob. The dialog / CLI uses `DisplayName` for the label, `Description` as hover-tip help, `Default` as the initial value, and `AllowedValues` to constrain the input where applicable. |
+| `FormatOptionDescriptor` | `FormatOptionDescriptor(string Key, string DisplayName, FormatOptionKind Kind, string Default, IReadOnlyList<string> AllowedValues = null, string Description = null, string DependsOn = null, bool IsOptimizationAxis = true, bool IsAllocationGeometry = false)` | Describes one tunable knob. The dialog / CLI uses `DisplayName` for the label, `Description` as hover-tip help, `Default` as the initial value, and `AllowedValues` to constrain the input where applicable. |
 | `AllowedValues` | `IReadOnlyList<string> AllowedValues { get; init; }` | For `Enum`: mandatory list of allowed values. For `Integer`: optional preset list (renders as dropdown rather than text box). For other kinds: null. |
 | `Default` | `string Default { get; init; }` | Initial value, in canonical string form (e.g. "0" for "auto", "Auto" for an enum). |
 | `DependsOn` | `string DependsOn { get; init; }` | Optional gate: only show this knob if another knob's current value matches one of these. Format: `"OtherKey=value1\|value2"`. Used for cascading options (e.g. "Journal" only visible when "Version" is ext3/ext4). |
 | `Description` | `string Description { get; init; }` | Hover-tip help. |
 | `DisplayName` | `string DisplayName { get; init; }` | UI label. |
+| `IsAllocationGeometry` | `bool IsAllocationGeometry { get; init; }` | Whether this option changes allocation geometry rather than payload encoding, metadata, compatibility, or another creation concern. Only options marked here are surfaced by the `Change allocation geometry` maintenance action. |
 | `IsOptimizationAxis` | `bool IsOptimizationAxis { get; init; }` | Whether the generic compression optimizer may vary this option. Set to `false` for caller constraints such as `TargetCompatibility`. |
 | `Key` | `string Key { get; init; }` | Stable machine-readable key; used as the `FormatSpecific` dictionary key. Convention: PascalCase. |
 | `Kind` | `FormatOptionKind Kind { get; init; }` | How to render + parse. |
@@ -4878,6 +4931,14 @@ Describes what a hard-link-style deduplication transform actually means for a wr
 | `Native` | `1` | The filesystem natively represents several names for one file/inode. |
 | `ReadOnlySharedData` | `2` | Several read-only directory entries deliberately reference the same physical data. This is not a native hard link and writers/removers must preserve the shared allocation until the last directory entry stops referencing it. |
 
+#### `IArchiveCanonicalizable`
+
+Opt-in capability for rewriting a container into its canonical representation without treating the rewrite as compression optimization or physical defragmentation.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Canonicalize` | `void Canonicalize(Stream input, Stream output)` | Writes a canonical representation of `input` to `output`, preserving all logical live content. |
+
 #### `IArchiveCreatable`
 
 Opt-in capability: the descriptor can produce a fresh archive from a list of inputs (WORM). Descriptors that do not implement this interface cannot be created from scratch.
@@ -4932,8 +4993,7 @@ Opt-in capability: the descriptor can enumerate the real byte-level layout of an
 
 Implements `IWipeEmpty`.
 
-| Member | Signature | Summary |
-| --- | --- | --- |
+| Member | Signature | Summary || --- | --- | --- |
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` | Enumerates the actual byte layout of `archive`. Coverage may be sparse only where omitted bytes are proven unused; callers fill those gaps with `Free`. The stream's position may be modified during enumeration but the caller owns the lifetime — implementations must not dispose `archive`. |
 
 #### `IArchiveModifiable`
@@ -4957,6 +5017,22 @@ Opt-in capability: all user/live entries can be removed from an existing contain
 | --- | --- | --- |
 | `CanPurgeToEmpty` | `bool CanPurgeToEmpty { get; }` | False when the format has no empty instance for a purge to leave behind: the container mandates at least one member, so removing every entry cannot end in a valid container. Individual entries still come and go through `IArchiveModifiable` — it is only the empty end state that does not exist — so a caller offering the verb should not offer it for these, and `Purge` says so rather than leaving a container its own reader rejects. |
 | `Purge` | `void Purge(Stream archive)` | Removes every live non-directory entry from `archive`. Default implementation: descriptors that also implement `IArchiveFormatOperations` and `IArchiveModifiable` get a transactional staged purge through `PurgeViaModifier`. Native implementations may override this when they can empty the container more efficiently. |
+
+#### `IArchiveRepackable`
+
+Opt-in capability for rebuilding a container from the same logical entries. Repacking may change physical placement, headers and packing boundaries, but is not by itself compression optimization.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `Repack` | `void Repack(Stream input, Stream output)` | Rebuilds `input` into `output` while preserving the logical entry set and contents. |
+
+#### `IArchiveSemanticMetadataProvider`
+
+Optional capability for container-level properties that a rebuild must preserve but that do not belong to one logical entry.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `GetContainerSemanticFlags` | `IReadOnlyDictionary<string, string> GetContainerSemanticFlags(Stream archive, string password)` | Returns stable semantic flags for `archive` such as encryption/header modes or other container settings that must survive a maintenance rebuild unchanged unless the operation explicitly changes them. |
 
 #### `IArchiveShrinkable`
 
@@ -5060,6 +5136,14 @@ A raw compression/decompression building block (algorithm primitive) that can be
 | `Compress` | `byte[] Compress(ReadOnlySpan<byte> data)` | Compress raw data and return the compressed bytes. |
 | `Decompress` | `byte[] Decompress(ReadOnlySpan<byte> data)` | Decompress previously compressed data and return the original bytes. |
 
+#### `ICompressionOptimizable`
+
+Opt-in capability for changing only the compression representation of live payloads while preserving their logical content and container format.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` | Re-encodes `input` into `output` using the format's best supported compression choices. |
+
 #### `IContainerRemuxable`
 
 Opt-in capability for rebuilding an existing container while preserving already encoded payloads.
@@ -5071,6 +5155,8 @@ Opt-in capability for rebuilding an existing container while preserving already 
 #### `IFileInternalChunkMover`
 
 Moves chunks within a single file and patches internal offset pointers so the file remains valid. Examples: moving MP4 moov atom before mdat, relocating JPEG EXIF to the front, compacting ID3v2 padding.
+
+Implements `IArchiveCanonicalizable`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -5099,6 +5185,14 @@ Opt-in capability for filesystems that support true in-place defragmentation via
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)` | Patches filesystem metadata after a raw extent move. Walks the allocation structures (FAT chain, directory entries, bitmaps, etc.) to update every reference from the old cluster range to the new one. |
 | `UpdateAllocationAfterMove` | `void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length, bool releaseOldSpace)` | Repoints a run the way `UpdateAllocationAfterMove` does, but says whether the space it came from should be released. |
 | `UpdateAllocationScattered` | `void UpdateAllocationScattered(Stream image, string fileName, IReadOnlyList<long> oldBlockOffsets, IReadOnlyList<long> newBlockOffsets, IReadOnlySet<long> blocksLiveElsewhere)` | Rewrites `fileName`'s allocation so that it occupies `newBlockOffsets` in that order, having previously occupied `oldBlockOffsets`. Both lists are one entry per allocation block, in the file's own order. |
+
+#### `IFilesystemDirectoryOrderer`
+
+Opt-in capability for changing the physical order of filesystem directory entries without moving file payload extents merely for that purpose.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `SortDirectoryEntries` | `void SortDirectoryEntries(Stream image)` | Reorders directory entries in `image` according to the format's canonical or locality-oriented order. |
 
 #### `IFilesystemDriverAdapter`
 
@@ -5603,6 +5697,20 @@ Implements `IDisposable`, `IFilesystemSession`.
 | --- | --- | --- |
 | `ValidateImage` | `void MutableRebuildFilesystemSession.ValidateImage(Stream candidate, IReadOnlyList<RebuildFilesystemEntry> entries)` |  |
 
+#### `OptimizationCapabilities`
+
+Central capability discovery for operations that used to be presented under the ambiguous "Optimize" label.
+
+| Member | Signature | Summary |
+| --- | --- | --- |
+| `CanCanonicalize` | `static bool CanCanonicalize(IFormatDescriptor descriptor)` |  |
+| `CanChangeAllocationGeometry` | `static bool CanChangeAllocationGeometry(IFormatDescriptor descriptor)` |  |
+| `CanCompress` | `static bool CanCompress(IFormatDescriptor descriptor)` |  |
+| `CanDefragmentExtents` | `static bool CanDefragmentExtents(IFormatDescriptor descriptor)` |  |
+| `CanRepack` | `static bool CanRepack(IFormatDescriptor descriptor)` |  |
+| `CanSortDirectoryEntries` | `static bool CanSortDirectoryEntries(IFormatDescriptor descriptor)` |  |
+| `GetAllocationGeometryOptions` | `static IReadOnlyList<FormatOptionDescriptor> GetAllocationGeometryOptions(IFormatDescriptor descriptor)` | Gets only the writer options whose effect is allocation geometry. Creation metadata, compatibility constraints and compression parameters are deliberately excluded even when the same descriptor exposes them. |
+
 #### `PartitionBlockDevice`
 
 Bounded view of a contiguous range of another random-access block device. The wrapper never changes the parent's geometry and never copies partition contents; block requests are translated by adding the constructor's `firstBlock`.
@@ -5719,7 +5827,7 @@ Generic, round-trip-verified extract → re-create engine shared by maintenance 
 | `EditViaRebuild` | `static void EditViaRebuild(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, Action<string> mutate)` | Rebuild-based edit used by the generic modifier. Mutation and validation happen off to the side; the original is overwritten only after a valid staged result exists. |
 | `PurgeViaModifier` | `static void PurgeViaModifier(Stream archive, IArchiveFormatOperations ops, IArchiveModifiable modifier)` | Transactional purge for a mutable container. The modifier operates on a staged copy and the caller's stream is replaced only after the result lists successfully with every original live entry gone. |
 | `RebuildInPlace` | `static void RebuildInPlace(Stream archive, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Rebuilds into a scratch file, verifies it, and only then replaces the caller-supplied stream. Cancellation is honoured until commit starts; once commit begins it runs to completion so a cancellation cannot leave the original half-overwritten. |
-| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
+| `RebuildToStream` | `static int RebuildToStream(Stream input, Stream output, IArchiveFormatOperations ops, IArchiveCreatable creator, IReadOnlyDictionary<string, string> formatSpecific = null, IReadOnlySet<string> syntheticNames = null, Action<DefragProgressEvent> onProgress = null, CancellationToken cancellationToken = null, FormatCreateOptions createOptions = null)` | Extracts every live entry, re-creates the container in `output`, verifies the exact live-name multiset, and reports block-map/read/write-head progress suitable for the maintenance UI. |
 
 #### `ScrambleOptions`
 
@@ -5885,7 +5993,6 @@ Genuine Stacker 4 (SD-4, cluster header `0x0081`) per-cluster codec, byte-compat
 #### `DefragSortField`
 
 File-metadata fields the layout-template sorter can order files by. Mirrors the fields available on `IFilterFileContext`.
-
 | Value | Numeric | Summary |
 | --- | --- | --- |
 | `Name` | `0` | File name (final path segment), ordinal compare. |
@@ -6885,7 +6992,6 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 ### Namespace `FileFormat.Ac3`
 
 [`Ac3FormatDescriptor`](#ac3formatdescriptor) · [`Ac3SyncFrame`](#ac3syncframe)
-
 #### `Ac3FormatDescriptor`
 
 AC-3 / E-AC-3 (Dolby Digital / Dolby Digital Plus) elementary streams. Besides the pseudo-archive view, the descriptor can encode AC-3 and E-AC-3 from canonical PCM, create an elementary stream from extracted mono WAV channels, and expose complete syncframes as encoded packets for byte-preserving demux/mux/remux.
@@ -7884,8 +7990,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `AfioFormatDescriptor` | `AfioFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
+| `AfioFormatDescriptor` | `AfioFormatDescriptor()` |  || `Capabilities` | `FormatCapabilities Capabilities { get; }` | Gets the capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Gets the category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | Gets the compound extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Gets the default extension. |
@@ -8884,8 +8989,7 @@ A single decoded INFO/INDEX record from the AOMEI payload. Carries the raw 12-by
 | `AomeiInfoRecord` | `AomeiInfoRecord(BrStandardHeader header, bool crcValid, byte[] body, long fileOffset)` | Initializes a new instance of `AomeiInfoRecord`. |
 | `Body` | `byte[] Body { get; }` | Body bytes excluding the 12-byte header. May be empty for header-only records (none observed, but the layout permits it). |
 | `CrcValid` | `bool CrcValid { get; }` | True when the recomputed CRC matched the stored value. |
-| `FileOffset` | `long FileOffset { get; }` | Byte offset of the record relative to the start of the file (i.e. relative to the BIFH magic at file offset 0). |
-| `Header` | `BrStandardHeader Header { get; }` | Twelve-byte tagged header (Size / Type / Crc32). |
+| `FileOffset` | `long FileOffset { get; }` | Byte offset of the record relative to the start of the file (i.e. relative to the BIFH magic at file offset 0). || `Header` | `BrStandardHeader Header { get; }` | Twelve-byte tagged header (Size / Type / Crc32). |
 | `IsIndex` | `bool IsIndex { get; }` | True when the record's type tag is one of the recovered `INDEX_TYPE_*` values (root / volume / datablock / dirtree / dataarea). The body of an index record holds a `BR_IMAGE_INDEX` header (EntryCount / EntrySize) followed by a packed entry array — see `BrImageIndex`. |
 | `TypeName` | `string TypeName { get; }` | Symbolic name for the record's `Type` tag, or `UNKNOWN_0xNNNN` for codes not in the recovered enumeration. Both INFO_TYPE_* (0x1xx) and INDEX_TYPE_* (0x2xx / 0x3xx) tags are surfaced — INDEX_TYPE_* indicates a sub-index record whose body holds a packed array of `BR_IMAGE_INDEX_ENTRY_*` entries rather than a single typed value. |
 | `BuildBackupType` | `static byte[] BuildBackupType(uint kind)` | Builds an `InfoTypeBackupType` record (0x14 bytes total). |
@@ -9081,7 +9185,7 @@ Twelve-byte tagged-record header that prefixes every INFO/INDEX record in the AO
 
 Describes ap lib format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -9884,7 +9988,6 @@ Implements `IDisposable`.
 ### Namespace `FileFormat.Arj`
 
 [`ArjConstants`](#arjconstants) · [`ArjEntry`](#arjentry) · [`ArjFormatDescriptor`](#arjformatdescriptor) · [`ArjLayoutMap`](#arjlayoutmap) · [`ArjModifier`](#arjmodifier) · [`ArjReader`](#arjreader) · [`ArjWriter`](#arjwriter)
-
 #### `ArjConstants`
 
 Constants for the ARJ archive format.
@@ -10536,7 +10639,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 Exposes an AVI file as an archive: `FULL.avi`, one entry per demuxed stream (video blob with codec-FourCC extension, audio blob as either a synthesised WAV for PCM or raw bytes for compressed codecs), and `metadata.ini` with FourCC/dimensions/duration info. Creation remuxes an existing AVI or rebuilds an AVI 1.0 file from the extracted metadata plus elementary video frames and PCM audio.
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10573,7 +10676,7 @@ Walks an AVI (RIFF) file's top-level chunk structure and emits `DefragBlockInfo`
 
 AVI optimizer that moves the idx1 (index) chunk before the movi (data) list, enabling faster seeking. Patches idx1 offsets to account for the positional change. Analogous to MP4 fast-start (moov before mdat).
 
-Implements `IFileInternalChunkMover`.
+Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -10884,7 +10987,6 @@ Implements `IDisposable`.
 ### Namespace `FileFormat.Ay`
 
 [`AyFormatDescriptor`](#ayformatdescriptor) · [`AyPlayer`](#ayplayer)
-
 #### `AyFormatDescriptor`
 
 Surfaces a ZX Spectrum / Amstrad CPC AY music file (`.ay`) as a metadata-rich pseudo-archive. An AY file carries Z80 memory blocks that an AY-3-8910/12 player drives; there is no audio to decode, so each song's loaded memory blocks are surfaced verbatim as Kind `Stream` blobs. The header (magic `ZXAYEMUL`) is big-endian and pointer-chased: every 16-bit pointer is a signed self-relative offset measured from the byte position of the pointer field itself. Strings are NUL-terminated at the pointed location. The header points to an author string, a misc string and a song table; each song entry points to a song-name string and a song-data structure; the song-data structure points to a memory-block list whose entries are (u16 address, u16 length, u16 self-relative data offset), terminated by a zero address.Every pointer dereference is bounds-checked against the file; an out-of-range pointer is skipped rather than throwing, so a truncated or corrupt file degrades gracefully to whatever could be parsed (down to FULL-only). Per song, memory blocks are surfaced as `songs/NN_<name>.bin`.
@@ -11014,7 +11116,7 @@ Bob Jenkins' lookup3 hash, byte-stream variant. Bethesda hashes BA2 directory an
 
 Describes balz format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11053,7 +11155,7 @@ BALZ: ROLZ compressor by Ilya Muravyov. Format: 4-byte big-endian uncompressed s
 
 Describes bcm format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11680,7 +11782,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 Describes the BriefLZ `blzpack` stream format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11725,7 +11827,7 @@ Reads and writes the `blzpack` container used by the BriefLZ reference distribut
 
 Describes brotli format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -11884,7 +11986,6 @@ Writes a big-endian Wii `.brstm` (RSTM) carrying DSP-ADPCM, laid out per the pub
 ### Namespace `FileFormat.Bsa`
 
 [`BsaEntry`](#bsaentry) · [`BsaFormatDescriptor`](#bsaformatdescriptor) · [`BsaReader`](#bsareader) · [`BsaReader.BsaFormat`](#bsareaderbsaformat) · [`BsaWriter`](#bsawriter)
-
 #### `BsaEntry`
 
 Entry in a BSA/BA2 archive.
@@ -11972,7 +12073,7 @@ Implements `IDisposable`.
 
 Describes bsc format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12457,7 +12558,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 Describes cmix format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12610,7 +12711,7 @@ Implements `IDisposable`.
 
 Describes compress format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12841,7 +12942,7 @@ Constants for the CP/M Crunch compression format.
 
 Describes crunch format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12884,7 +12985,6 @@ Inherits `CompressionStream`. Implements `IAsyncDisposable`, `IDisposable`.
 #### `CrxFormatDescriptor`
 
 Chrome extension package (CRX3) — "Cr24" magic + version + protobuf SignedData header followed by the ZIP payload. The envelope is the only thing that separates a CRX from the rest of the ZIP-container family, and it is expressed as the two hooks the base descriptor provides: `PrepareRead` validates and skips it on the way in, `WriteContainerPrefix` emits it on the way out. References: `https://chromium.googlesource.com/chromium/src/+/main/components/crx_file/` — Chromium crx_file component — `crx3.proto` defines the header`https://developer.chrome.com/docs/extensions` — Chrome extensions documentation portal
-
 Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
@@ -12905,7 +13005,7 @@ Inherits `ZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchi
 
 Describes csc format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13128,7 +13228,7 @@ Writes Debian package (.deb) files.
 
 Describes density format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -13884,8 +13984,7 @@ Reverse-engineered on-disk structure pin for the EaseUS Todo Backup (`.pbd`) con
 | `RindBlockMagic` | `static readonly byte[] RindBlockMagic` | Reverse-index record magic — checked by `CImgFile::ReadRind` at binary offset 0x000D0AC3. |
 | `TrailerBlockSize` | `const int TrailerBlockSize` | Fixed trailer block size as enforced by `CImgFile::CheckHeader`'s `SetFilePointerEx(EOF-0xC0); ReadFile(buf, 0xC0)`. |
 | `TrailerMagicFieldOffset` | `const int TrailerMagicFieldOffset` | Offset (within the trailer block) of the trailer's second "IMGF" magic — checked by `CImgFile::CheckHeader` at binary offset 0x000CE2DA. |
-| `TrailerSizeFieldExpectedValue` | `const uint TrailerSizeFieldExpectedValue` | U32 trailer-size value written by `TBImageExplorer.exe` at binary offset 0x000CE991. |
-| `TrailerSizeFieldOffset` | `const int TrailerSizeFieldOffset` | Offset (within the trailer block) of the trailer's `0xC0` size word — writer pins this at binary offset 0x000CE991. |
+| `TrailerSizeFieldExpectedValue` | `const uint TrailerSizeFieldExpectedValue` | U32 trailer-size value written by `TBImageExplorer.exe` at binary offset 0x000CE991. || `TrailerSizeFieldOffset` | `const int TrailerSizeFieldOffset` | Offset (within the trailer block) of the trailer's `0xC0` size word — writer pins this at binary offset 0x000CE991. |
 | `TrailerVersionFieldExpectedValue` | `const uint TrailerVersionFieldExpectedValue` | U32 trailer-version value written by `TBImageExplorer.exe` at binary offset 0x000CE981. |
 | `TrailerVersionFieldOffset` | `const int TrailerVersionFieldOffset` | Offset (within the trailer block) of the trailer's `0x00010001` version word — writer pins this at binary offset 0x000CE981. |
 | `VolmBlockMagic` | `static readonly byte[] VolmBlockMagic` | Per-partition / volume record magic — verified by `CImgFile::LoadVolm` at binary offsets 0x000CFE01, 0x000D06E2, 0x000D5D15. |
@@ -14058,7 +14157,7 @@ A file entry parsed from an EGG (ALZip) archive.
 
 EGG (ALZip) archive — ESTsoft's native container for newer ALZip versions, with Unicode filenames, per-file algorithm selection, solid/split modes, and optional encryption. The native implementation reads Store/Deflate and creates non-solid, single-volume Store/Deflate archives; unsupported methods are listed honestly and rejected on extraction rather than returning incorrect data. References: `https://github.com/alkegi/docs/blob/master/egg.md` — CC0 EGG Archive Format Specification`http://justsolve.archiveteam.org/wiki/EGG_(ALZip)` — ArchiveTeam format summary and historical references`EGG Format Specification, Version 1.0` (ESTsoft Corp.) — original published layout
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveRepackable`, `ICompressionOptimizable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -14080,6 +14179,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single entry as a bounded read-only stream. The reader materialises the entry's decoded bytes; the result is wrapped in a bounded stream sized to its logical length. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
 
 #### `EggReader`
 
@@ -14883,7 +14983,6 @@ Inherits `MinorExecutablePackerHandlerBase`. Implements `IExecutablePackerHandle
 | `Unpack` | `override UnpackResult Unpack(PackedExecutable packed, UnpackOptions options)` | Performs the unpack operation. |
 
 #### `KkrunchyFormatDescriptor`
-
 Pseudo-archive descriptor for kkrunchy-packed Win32 executables. kkrunchy (ryg / Farbrausch, ~2003) is the 64K Windows executable compressor used by .kkrieger, fr-08, and most early-2000s Farbrausch 64K intros. Its unpacker stub embeds the literal string `"kkrunchy"` somewhere in the packed file. References: `https://github.com/farbrausch/fr_public` — Farbrausch public source release — includes kkrunchyFabian "ryg" Giesen's kkrunchy write-ups — compressor internals from the author
 
 Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
@@ -15883,8 +15982,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. || `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 
@@ -16458,7 +16556,7 @@ Implements `IEquatable<FreezeCompressionOptions>`.
 
 Describes interoperable Freeze 1.x and 2.x streams.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -16884,7 +16982,6 @@ Parses a GNU gettext .mo binary catalog per https://www.gnu.org/software/gettext
 #### `MoWriter`
 
 WORM writer for GNU gettext .mo binary catalogs (little-endian, revision 0). Layout follows https://www.gnu.org/software/gettext/manual/html_node/MO-Files.html: 28-byte header, then two parallel descriptor tables (orig + translation), then the two NUL-terminated string pools.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MoWriter` | `MoWriter()` |  |
@@ -17456,7 +17553,7 @@ Constants defined by RFC 1952 (GZIP file format).
 
 Describes gzip format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -17883,8 +17980,7 @@ Implements `IDisposable`.
 | `HogReader` | `HogReader(Stream stream, bool leaveOpen = false)` | Initializes a new `HogReader` from a stream. |
 | `Entries` | `IReadOnlyList<HogEntry> Entries { get; }` | Gets all file entries in the HOG archive. |
 | `Magic` | `static ReadOnlySpan<byte> Magic { get; }` | The HOG magic bytes at offset 0. |
-| `Dispose` | `void Dispose()` |  |
-| `Extract` | `byte[] Extract(HogEntry entry)` | Extracts the data for a given entry. |
+| `Dispose` | `void Dispose()` |  || `Extract` | `byte[] Extract(HogEntry entry)` | Extracts the data for a given entry. |
 
 #### `HogWriter`
 
@@ -18074,7 +18170,7 @@ Writes a big-endian GameCube `.hps` (HAL HALPST) carrying DSP-ADPCM, laid out pe
 
 Describes ice packer format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -18660,7 +18756,7 @@ Constants for the Microsoft KWAJ compressed file format, produced by COMPRESS.EX
 
 Describes kwaj format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -18883,7 +18979,6 @@ Implements `IDisposable`.
 | `Finish` | `void Finish()` | Flushes the RMAP index and all resource records to the underlying stream. |
 
 ### Namespace `FileFormat.LhF`
-
 [`LhFEntry`](#lhfentry) · [`LhFFormatDescriptor`](#lhfformatdescriptor) · [`LhFModifier`](#lhfmodifier) · [`LhFReader`](#lhfreader) · [`LhFWriter`](#lhfwriter)
 
 #### `LhFEntry`
@@ -19000,7 +19095,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 Describes the Lizard (formerly LZ5) stream format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19175,7 +19270,7 @@ Writes a Long Range Zip (lrzip) container with the LZMA subtype. Other methods a
 
 Describes lz 4 format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19225,7 +19320,7 @@ Writes data in the LZ4 frame format (specification v1.6.1+).
 
 Describes LZG format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19418,7 +19513,7 @@ Walks an LHA/LZH archive and emits the byte-level layout: each entry's variable-
 
 Describes lzham format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19476,7 +19571,7 @@ Constants for the Lzip (.lz) file format.
 
 Describes lzip format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19534,7 +19629,7 @@ Constants for the LZOP file format.
 
 Describes lzop format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19580,7 +19675,7 @@ Writes data to the LZOP file format.
 
 Describes lzs format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19781,7 +19876,7 @@ Implements `IEquatable<VariantStream>`.
 
 Describes mac binary format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `IArchiveCanonicalizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -19798,6 +19893,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Canonicalize` | `void Canonicalize(Stream input, Stream output)` |  |
 | `Compress` | `void Compress(Stream input, Stream output)` | Encodes the supplied input. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
@@ -19883,7 +19979,6 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 #### `MacSndReader`
 
 Parser for the classic Mac OS `'snd '` sampled-sound resource carried as a data fork. All fields are big-endian. Two resource formats exist: Format 1 — `u16 format(1)`, `u16 nDataFormats`, then per data format a `u16 id` + `u32 initOption`, then `u16 nCommands` and that many 8-byte commands (`u16 cmd | u16 param1 | u32 param2`). The sampled data is reached through a `bufferCmd` (0x8051) or `soundCmd` (0x8050) whose `param2` is the offset (from the start of the resource) of a `SoundHeader`.Format 2 — `u16 format(2)`, `u16 refCount`, then `u16 nCommands` and the commands, same as format 1 from there on. The `SoundHeader` (big-endian) is: `u32 samplePtr | u32 length | u32 sampleRate(16.16 fixed) | u32 loopStart | u32 loopEnd | u8 encode | u8 baseFrequency` followed by the data. The `encode` byte selects the variant: `0x00` standard 8-bit unsigned PCM, `0xFF` extended (numChannels/numFrames/sampleSize), `0xFE` compressed (a `compressionID` selecting MACE 3:1 / 6:1).
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `MacSndReader` | `MacSndReader()` |  |
@@ -20378,7 +20473,7 @@ Implements `IEquatable<Element>`.
 
 MKV/WebM optimizer that moves the Cues element (seek index) to the front of the Segment, before the first Cluster. This enables fast seeking without downloading the entire file, analogous to MP4 fast-start (moov before mdat).
 
-Implements `IFileInternalChunkMover`.
+Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20457,7 +20552,7 @@ Implements `IEquatable<Track>`.
 
 Surfaces a Matroska/WebM file as an archive: one entry per demuxed track, plus attachments, plus chapters XML when present. Single-audio-track files also participate in the packet-preserving audio remux graph.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCanonicalizable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioDemuxSource`, `IAudioMuxTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20725,7 +20820,7 @@ Compression modes available to the managed MCM stream writer.
 
 Describes mcm format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -20882,8 +20977,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
 | `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
-| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
-| `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
+| `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. || `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Defragment` | `void Defragment(Stream archive)` | Performs the defragment operation. |
 | `Defragment` | `void Defragment(Stream archive, DefragOptions options)` | Performs the defragment operation. |
@@ -21163,7 +21257,7 @@ Emits an ID3v2.4 tag. Supports text frames (TIT2, TPE1, TALB, TDRC, TCON, TRCK, 
 
 Surfaces an MP3 file as an archive whose layout is shaped for human/tool use: one `FULL.mp3`, one `metadata.ini` carrying all text/URL/comment fields as `key=value`, one `cover.<ext>` per APIC picture, and `lyrics.txt` for USLT. When both ID3v1 and ID3v2 are present the archive surfaces `id3v1/metadata.ini` + `id3v2/metadata.ini` so callers can see which fields come from which tag version. When the MPEG audio decodes (Layer III via `Codec.Mp3`), the archive also surfaces one mono `<CHANNEL>.wav` per channel; the `FULL.mp3` entry always carries the original frames unchanged. Inputs the decoder can't handle (e.g. Layer I/II) fall back to `FULL.mp3` + metadata only.
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21283,7 +21377,7 @@ Implements `IEquatable<Track>`.
 
 MP4 fast-start optimizer. Moves the `moov` atom before `mdat` so browsers and players can begin playback immediately without downloading the entire file. Patches `stco` and `co64` chunk-offset tables inside `moov` to account for the position shift.
 
-Implements `IFileInternalChunkMover`.
+Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21311,7 +21405,7 @@ Implements `IEquatable<AtomInfo>`.
 
 MP4/MOV demux surface plus an audio-only M4A write path. The writer accepts AAC-LC access units, MPEG-1/2 Layer II/III frames, or canonical PCM16 that can be encoded to AAC-LC.
 
-Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioMuxTarget`, `IAudioPcmTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCanonicalizable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContainerFormat`, `IAudioMuxTarget`, `IAudioPcmTarget`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -21883,7 +21977,6 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` |  |
 
 #### `MtreeReader`
-
 Reads BSD mtree(5) manifests, including `/set`/`/unset`, full-path entries, classic relative-directory traversal, and octal pathname escapes.
 
 | Member | Signature | Summary |
@@ -22883,7 +22976,6 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 [`OdpFormatDescriptor`](#odpformatdescriptor)
 
 #### `OdpFormatDescriptor`
-
 OpenDocument presentation (.odp) — an OASIS ODF ZIP package. References: OASIS OpenDocument Format v1.3 (also ISO/IEC 26300) — the ODF package and XML specification`https://en.wikipedia.org/wiki/OpenDocument` — Wikipedia`https://www.libreoffice.org` — LibreOffice — principal implementation
 
 Inherits `ModifiableZipContainerFormatDescriptor`. Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IWipeEmpty`.
@@ -23628,7 +23720,7 @@ The parsed contents of a single Pack200 (JSR-200) segment: the archive header fi
 
 Describes pack bits format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -23883,7 +23975,6 @@ Implements `IDisposable`.
 | `Extract` | `byte[] Extract(PackItEntry entry)` | Extracts the data fork of the specified entry. |
 
 #### `PackItWriter`
-
 Creates a PackIt (.pit) classic Macintosh archive.
 
 Implements `IDisposable`.
@@ -24063,7 +24154,7 @@ Implements `IDisposable`.
 
 Describes paq 8 format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -24882,8 +24973,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IFormatDescri
 
 | Member | Signature | Summary |
 | --- | --- | --- |
-| `PlyFormatDescriptor` | `PlyFormatDescriptor()` |  |
-| `Capabilities` | `FormatCapabilities Capabilities { get; }` | Read-only archive capabilities. |
+| `PlyFormatDescriptor` | `PlyFormatDescriptor()` |  || `Capabilities` | `FormatCapabilities Capabilities { get; }` | Read-only archive capabilities. |
 | `Category` | `FormatCategory Category { get; }` | Archive category. |
 | `CompoundExtensions` | `IReadOnlyList<string> CompoundExtensions { get; }` | No compound extensions. |
 | `DefaultExtension` | `string DefaultExtension { get; }` | Default extension. |
@@ -24919,7 +25009,7 @@ Historical PowerPacker efficiency presets. The four values are the number of bit
 
 Describes power packer format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -24965,7 +25055,7 @@ Compressor and decompressor for the Amiga PowerPacker (PP20) crunched file forma
 
 Describes ppmd format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25475,7 +25565,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IArchiveInMemoryExt
 
 Describes quick lz format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25769,7 +25859,7 @@ Implements `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IAudioContain
 
 Describes ref pack format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -25882,8 +25972,7 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Description` | `string Description { get; }` | Gets the description. |
 | `DisplayName` | `string DisplayName { get; }` | Gets the display name. |
 | `Extensions` | `IReadOnlyList<string> Extensions { get; }` | Gets the extensions. |
-| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. |
-| `Id` | `string Id { get; }` | Gets the id. |
+| `Family` | `AlgorithmFamily Family { get; }` | Gets the family. || `Id` | `string Id { get; }` | Gets the id. |
 | `MagicSignatures` | `IReadOnlyList<MagicSignature> MagicSignatures { get; }` | Gets the magic signatures. |
 | `Methods` | `IReadOnlyList<FormatMethodInfo> Methods { get; }` | Gets the methods. |
 | `TarCompressionFormatId` | `string TarCompressionFormatId { get; }` | Gets the tar compression format id. |
@@ -26088,7 +26177,7 @@ Implements `IEquatable<RncCompressionOptions>`.
 
 Describes the RNC ProPack stream format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -26357,7 +26446,7 @@ Implements `IBuildingBlock`.
 
 Describes rzip format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -26720,6 +26809,7 @@ Represents a single entry (file or directory) in a 7z archive.
 | `Crc` | `uint? Crc { get; set; }` | Gets or sets the CRC-32 of the uncompressed data. |
 | `CreationTime` | `DateTime? CreationTime { get; set; }` | Gets or sets the creation time in UTC. |
 | `IsDirectory` | `bool IsDirectory { get; set; }` | Gets or sets whether this entry is a directory. |
+| `IsEncrypted` | `bool IsEncrypted { get; set; }` | Gets whether the entry's packed stream is protected by 7z AES. |
 | `LastWriteTime` | `DateTime? LastWriteTime { get; set; }` | Gets or sets the last write time in UTC. |
 | `Method` | `string Method { get; set; }` | Gets or sets the compression method name. |
 | `Name` | `string Name { get; set; }` | Gets or sets the file name (including path within the archive). |
@@ -26746,7 +26836,7 @@ Specifies an optional pre-filter applied before compression when writing a 7z ar
 
 7-Zip (.7z) archive — LZMA/LZMA2-based container with solid compression and encrypted-header support. References: `https://www.7-zip.org/7z.html` — official 7z format page (Igor Pavlov)`7zFormat.txt` in the 7-Zip / LZMA SDK sources — the structural reference`https://en.wikipedia.org/wiki/7z` — Wikipedia overview
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveRepackable`, `IArchiveSemanticMetadataProvider`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IFormatValidator`, `IWipeEmpty`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -26771,8 +26861,10 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `EnumerateLayout` | `IEnumerable<DefragBlockInfo> EnumerateLayout(Stream archive)` |  |
 | `ExtractEntryToMemory` | `byte[] ExtractEntryToMemory(Stream archive, string entryName, string password)` | Native in-memory single-entry extraction. Routed through the bounded `OpenEntry` so the per-entry isolation contract holds uniformly across descriptors. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
+| `GetContainerSemanticFlags` | `IReadOnlyDictionary<string, string> GetContainerSemanticFlags(Stream archive, string password)` |  |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
 | `OpenEntry` | `Stream OpenEntry(Stream archive, string entryName, string password)` | Opens a single 7z entry as a read-only `Stream` bounded to its uncompressed size. 7z is solid-block: the underlying reader must decompress the whole containing folder to extract any one entry — the existing in-memory path is preserved — but the returned view is a `BoundedEntryStream` sized to the single entry's logical bytes, so neighbouring entries within the same solid block are physically unreachable through it. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes complete solid folders and empty-stream entries directly. The remover validates the layout and serializes the replacement next-header/signature before compacting packed streams, so unsupported profiles can fall back before mutation without cloning the whole archive. Cost is metadata plus bytes that physically follow removed packed streams. |
 | `ValidateHeader` | `ValidationResult ValidateHeader(ReadOnlySpan<byte> header, long fileSize)` | Validates the supplied data. |
 | `ValidateIntegrity` | `ValidationResult ValidateIntegrity(Stream stream)` | Validates the supplied data. |
@@ -26812,7 +26904,10 @@ Implements `IDisposable`.
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `SevenZipReader` | `SevenZipReader(Stream stream, bool leaveOpen = false, string password = null)` | Initializes a new `SevenZipReader` from a seekable stream. |
+| `CanSafelyRegroupDefaultLzma2` | `bool CanSafelyRegroupDefaultLzma2 { get; }` | Gets whether the archive can be rebuilt by `SolidBlockOptimizer` without changing codec, dictionary, filter, encryption, or header mode. |
 | `Entries` | `IReadOnlyList<SevenZipEntry> Entries { get; }` | Gets the entries in the 7z archive. |
+| `HasEncryptedEntries` | `bool HasEncryptedEntries { get; }` | Gets whether any file stream uses 7z AES. |
+| `IsHeaderEncoded` | `bool IsHeaderEncoded { get; }` | Gets whether the archive uses an encoded next header. |
 | `Dispose` | `void Dispose()` |  |
 | `Extract` | `byte[] Extract(int entryIndex)` | Extracts the decompressed data for an entry by index. |
 | `Extract` | `void Extract(int entryIndex, Stream output)` | Extracts the decompressed data for an entry into a stream. |
@@ -26827,6 +26922,7 @@ Implements `IDisposable`.
 | --- | --- | --- |
 | `SevenZipWriter` | `SevenZipWriter(Stream stream, SevenZipCodec codec, bool leaveOpen = false, int dictionarySize = 8388608, int ppmdOrder = 6, int ppmdMemorySize = 16777216, SevenZipFilter filter = 0, int deltaDistance = 1, string password = null, bool encryptHeaders = false)` | Initializes a new `SevenZipWriter` with an explicit codec. |
 | `SevenZipWriter` | `SevenZipWriter(Stream stream, bool leaveOpen = false, int dictionarySize = 8388608)` | Initializes a new `SevenZipWriter`. |
+| `AddDirectory` | `void AddDirectory(SevenZipEntry entry)` | Adds a directory entry while preserving its available metadata. |
 | `AddDirectory` | `void AddDirectory(string name)` | Adds a directory entry. |
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, ReadOnlySpan<byte> data)` | Adds a file entry from a byte span. |
 | `AddEntry` | `void AddEntry(SevenZipEntry entry, Stream data)` | Adds a file entry from a stream. |
@@ -26875,7 +26971,6 @@ Implements `IEquatable<DetailedProgress>`.
 #### `SolidBlockOptimizer.OptimizeResult`
 
 Result of an optimization trial run.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `OptimizeResult` | `OptimizeResult()` |  |
@@ -27477,7 +27572,7 @@ WORM writer that produces a Snap package by wrapping a fresh SquashFS v4 image h
 
 Describes snappy format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -27876,7 +27971,6 @@ Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 | `Create` | `void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options)` | Performs the create operation. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
-
 #### `SplitFileReader`
 
 Reads and joins split file parts (.001, .002, ...) into a single logical file.
@@ -27933,7 +28027,7 @@ Implements `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 Describes squeeze format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28608,7 +28702,7 @@ Builds a Nintendo DS `.swav` sample from mono PCM16. Only the lossless PCM16 wav
 
 Describes swf format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28672,13 +28766,13 @@ Implements `IArchiveFormatOperations`, `IArchiveLayoutMap`, `IFormatDescriptor`,
 
 ### Namespace `FileFormat.Szdd`
 
-[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzCompressOptimizer`](#szcompressoptimizer) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
+[`SzCompressFormatDescriptor`](#szcompressformatdescriptor) · [`SzOptimizer`](#szoptimizer) · [`SzddFormatDescriptor`](#szddformatdescriptor) · [`SzddStream`](#szddstream)
 
 #### `SzCompressFormatDescriptor`
 
 The older "SZ " Microsoft COMPRESS variant (pre-SZDD; QBasic-era `COMPRESS.EXE`). Magic `53 5A 20 88 F0 27 33 D1`, a 12-byte header (8-byte magic + little-endian u32 uncompressed length) and a 4096-byte-ring LZSS body. Neither the legacy SZDD reader nor 7-Zip handles this variant; here it is fully read + write (`Compress` emits the "SZ " header, `Decompress` auto-detects either variant).
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28701,15 +28795,6 @@ Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations
 | `Compress` | `void Compress(Stream input, Stream output, FormatCreateOptions options)` | Encodes the supplied input using the requested parse strategy. |
 | `Decompress` | `void Decompress(Stream input, Stream output)` | Decodes the supplied input. |
 
-#### `SzCompressOptimizer`
-
-Size optimizer for the older Microsoft `"SZ "` COMPRESS stream used by the QBasic-era tooling. The emitted stream remains the original 12-byte header plus SZDD-compatible LZSS body; only the token parse is improved.
-
-| Member | Signature | Summary |
-| --- | --- | --- |
-| `Compress` | `static byte[] Compress(ReadOnlySpan<byte> input)` | Compresses `input` as an optimized legacy `"SZ "` stream and returns the complete encoded file. |
-| `Compress` | `static void Compress(Stream input, Stream output)` | Compresses `input` as an optimized legacy `"SZ "` stream and writes it to `output`. |
-
 #### `SzOptimizer`
 
 Size optimizer for the legacy `"SZ "` Microsoft COMPRESS stream.
@@ -28723,7 +28808,7 @@ Size optimizer for the legacy `"SZ "` Microsoft COMPRESS stream.
 
 Describes szdd format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -28885,7 +28970,6 @@ Implements `IDisposable`.
 ### Namespace `FileFormat.Tds`
 
 [`TdsFormatDescriptor`](#tdsformatdescriptor)
-
 #### `TdsFormatDescriptor`
 
 Autodesk 3D Studio `.3ds` — binary chunk-based 3D scene container. Every chunk starts with a 2-byte chunk ID (little-endian) followed by a 4-byte chunk size (little-endian, inclusive of the 6-byte header). Nested chunks share the same header format. Primary chunk at offset 0 has ID `0x4D4D` ("MM"); common nested chunks include `0x3D3D` (EDIT3DS), `0x4000` (OBJ_TRIMESH), `0x4100` (TRI_MESH), `0x4110` (TRI_VERTEXPOINT), `0x4120` (TRI_FACEL), `0x4130` (TRI_MATERIAL). References: `http://paulbourke.net/dataformats/3ds/` — Paul Bourke's 3DS chunk cataloguelib3ds — open 3DS parser, de-facto structural reference`https://en.wikipedia.org/wiki/.3ds` — Wikipedia overview
@@ -29486,7 +29570,7 @@ Writes a minimal UMX (Unreal Package) file with a valid header. File data is emb
 
 Unity Asset Bundle (`.unity3d` / `.assets` / `.bundle`) — the UnityFS container that ships serialized Unity assets bundled for runtime loading. Each bundled asset is listed as a Node entry (path from the internal directory). Storage blocks can be stored, LZMA, or LZ4/LZ4HC-compressed; all four are supported for reading and fresh UnityFS creation. References: `https://docs.unity3d.com/Manual/AssetBundlesIntro.html` — official Unity AssetBundle documentation`https://github.com/K0lb3/UnityPy` — UnityPy — open UnityFS parser/writer interoperability reference`https://github.com/Perfare/AssetStudio` — AssetStudio — widely used bundle inspector
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
+Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveModifiable`, `IArchivePurgeable`, `IArchiveRepackable`, `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -29509,6 +29593,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 | `Defragment` | `void Defragment(Stream archive)` | Rebuilds a UnityFS archive with compact contiguous blocks. Legacy UnityWeb/UnityRaw/ UnityArchive containers are rejected because their distinct layout cannot be recreated. |
 | `Extract` | `void Extract(Stream stream, string outputDir, string password, string[] files)` | Decodes the supplied input. |
 | `List` | `List<ArchiveEntryInfo> List(Stream stream, string password)` | Lists the entries in the supplied container. |
+| `OptimizeCompression` | `void OptimizeCompression(Stream input, Stream output)` |  |
 | `Remove` | `void Remove(Stream archive, string[] entryNames)` | Removes zero-length nodes by metadata rewrite alone and non-empty nodes when they occupy whole trailing storage blocks unused by survivors. Other removals retain the verified rebuild fallback. |
 
 #### `UnityBundleReader`
@@ -29884,7 +29969,6 @@ Specifies packer header layout values.
 | `ModernPe` | `1` | Specifies the modern pe option. |
 
 #### `UpxReader.PeSection`
-
 Represents a pe section.
 
 Implements `IEquatable<PeSection>`.
@@ -30883,7 +30967,6 @@ Implements `IDisposable`.
 ### Namespace `FileFormat.Wad2`
 
 [`Wad2Entry`](#wad2entry) · [`Wad2FormatDescriptor`](#wad2formatdescriptor) · [`Wad2Modifier`](#wad2modifier) · [`Wad2Reader`](#wad2reader) · [`Wad2Writer`](#wad2writer)
-
 #### `Wad2Entry`
 
 Represents a single entry in a WAD2/WAD3 texture archive.
@@ -31071,7 +31154,7 @@ Shared helper for PCM-container writers (WAV / CAF / W64 / RF64): collects per-c
 
 Exposes a WAV/RIFF file as an archive of `FULL.wav` plus one mono WAV per channel plus any ancillary RIFF metadata chunks (INFO/LIST/bext).
 
-Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
+Implements `IArchiveCanonicalizable`, `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperations`, `IArchiveInMemoryExtract`, `IArchiveWriteConstraints`, `IFileInternalChunkMover`, `IFileInternalLayoutMap`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -31113,7 +31196,7 @@ Walks a WAV (RIFF/WAVE) file's chunk structure and emits `DefragBlockInfo` tiles
 
 WAV optimizer that ensures the data chunk comes immediately after fmt (data-first layout for streaming). Metadata chunks (LIST, bext, iXML, etc.) are moved after the data chunk.
 
-Implements `IFileInternalChunkMover`.
+Implements `IArchiveCanonicalizable`, `IFileInternalChunkMover`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -31883,8 +31966,7 @@ Represents a single file entry in a XAR archive.
 | `FileName` | `string FileName { get; init; }` | File name (path within archive). |
 | `IsDirectory` | `bool IsDirectory { get; init; }` | Whether this entry is a directory. |
 | `LastModified` | `DateTime? LastModified { get; init; }` | Last modification date. |
-| `Method` | `string Method { get; init; }` | Compression method name (e.g., "zlib", "bzip2", "none"). |
-| `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
+| `Method` | `string Method { get; init; }` | Compression method name (e.g., "zlib", "bzip2", "none"). || `OriginalSize` | `long OriginalSize { get; init; }` | Uncompressed size in bytes. |
 
 #### `XarFormatDescriptor`
 
@@ -32312,7 +32394,7 @@ Implements `IFormatDescriptor`, `IStreamFormatOperations`.
 
 Describes yaz 0 format.
 
-Implements `IFormatDescriptor`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -32670,7 +32752,7 @@ Implements `IArchiveCreatable`, `IArchiveDefragmentable`, `IArchiveFormatOperati
 
 Describes zling format.
 
-Implements `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
+Implements `ICompressionOptimizable`, `IFormatDescriptor`, `IFormatOptionsSchema`, `IStreamFormatOperations`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -32884,7 +32966,6 @@ Component type identifiers for the ZPAQL context-mixing prediction model.
 | `Mix` | `6` | N-input adaptive mixer. |
 | `Isse` | `7` | Indirect secondary symbol estimation. |
 | `Sse` | `8` | Direct secondary symbol estimation. |
-
 #### `ZpaqBuildingBlock`
 
 Exposes the ZPAQ context-mixing codec — the compression stage that the ZPAQ journaling archiver wraps — as a benchmarkable building block. Prepends a 4-byte LE uncompressed size header for round-trip support.
@@ -33883,7 +33964,6 @@ Specifies residue limit type values.
 Represents a residue template.
 
 Implements `IResidueTemplate`.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `ResidueTemplate` | `ResidueTemplate(ResidueType residueType, ResidueLimitType limitType, int grouping, ResidueEntry residue, IStaticCodeBook bookAux, IStaticCodeBook booxAuxManaged, IStaticBookBlock booksBase, IStaticBookBlock booksBaseManaged)` | Initializes a new instance of `ResidueTemplate`. |
@@ -34883,8 +34963,7 @@ Represents a page 3 0.
 
 Implements `IStaticCodeBook`.
 
-| Member | Signature | Summary |
-| --- | --- | --- |
+| Member | Signature | Summary || --- | --- | --- |
 | `Page3_0` | `Page3_0()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
@@ -35884,7 +35963,6 @@ Implements `IStaticCodeBook`.
 | `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Chapter2Short`
-
 Represents a chapter 2 short.
 
 Implements `IStaticCodeBook`.
@@ -36883,8 +36961,7 @@ Implements `IStaticCodeBook`.
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
-| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
-| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
+| `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. || `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
@@ -37883,8 +37960,7 @@ Implements `IStaticCodeBook`.
 | --- | --- | --- |
 | `Page8_1` | `Page8_1()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
-| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
-| `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
+| `LengthList` | `byte[] LengthList { get; }` | Gets the length list. || `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
 | `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
@@ -38884,7 +38960,6 @@ Implements `IStaticCodeBook`.
 Represents a chapter 9 long.
 
 Implements `IStaticCodeBook`.
-
 | Member | Signature | Summary |
 | --- | --- | --- |
 | `Chapter9Long` | `Chapter9Long()` |  |
@@ -39884,7 +39959,6 @@ Implements `IStaticCodeBook`.
 #### `Page7_1`
 
 Represents a page 7 1.
-
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
@@ -40883,8 +40957,7 @@ Represents a page 4 0.
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
-| --- | --- | --- |
-| `Page4_0` | `Page4_0()` |  |
+| --- | --- | --- || `Page4_0` | `Page4_0()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
@@ -41883,7 +41956,6 @@ Implements `IStaticCodeBook`.
 | `Quant` | `int Quant { get; }` | Gets the quant. |
 
 #### `Page7_1`
-
 Represents a page 7 1.
 
 Implements `IStaticCodeBook`.
@@ -42883,7 +42955,6 @@ Implements `IStaticCodeBook`.
 | `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
-
 ### Namespace `OggVorbisEncoder.Setup.Templates.BookBlocks.Stereo44.Uncoupled.ChapterNeg1`
 
 [`ChapterNeg1Long`](#chapterneg1long) · [`ChapterNeg1Short`](#chapterneg1short) · [`Page1_0`](#page1_0) · [`Page2_0`](#page2_0) · [`Page3_0`](#page3_0) · [`Page4_0`](#page4_0) · [`Page5_0`](#page5_0) · [`Page6_0`](#page6_0) · [`Page6_1`](#page6_1) · [`Page7_0`](#page7_0) · [`Page7_1`](#page7_1) · [`Page7_2`](#page7_2)
@@ -43883,8 +43954,7 @@ Represents a page 5 0.
 Implements `IStaticCodeBook`.
 
 | Member | Signature | Summary |
-| --- | --- | --- |
-| `Page5_0` | `Page5_0()` |  |
+| --- | --- | --- || `Page5_0` | `Page5_0()` |  |
 | `Dimensions` | `int Dimensions { get; }` | Gets the dimensions. |
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
@@ -44883,8 +44953,7 @@ Implements `IStaticCodeBook`.
 | `LengthList` | `byte[] LengthList { get; }` | Gets the length list. |
 | `MapType` | `CodeBookMapType MapType { get; }` | Gets the map type. |
 | `QuantDelta` | `int QuantDelta { get; }` | Gets the quant delta. |
-| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. |
-| `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
+| `QuantList` | `int[] QuantList { get; }` | Gets the quant list. || `QuantMin` | `int QuantMin { get; }` | Gets the quant min. |
 | `QuantSequenceP` | `int QuantSequenceP { get; }` | Gets the quant sequence p. |
 | `Quant` | `int Quant { get; }` | Gets the quant. |
 
