@@ -32,7 +32,7 @@ public sealed class ProDosFormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       Kind: FormatOptionKind.Enum,
       Default: "Auto (fit to files)",
       AllowedValues: ["Auto (fit to files)", "140 KB (5.25\")", "800 KB (3.5\")"],
-      Description: "ProDOS volume size. Auto uses 140 KB and promotes to 800 KB when the files don't fit."),
+      Description: "ProDOS volume size. Auto uses 140 KB and promotes to 800 KB when the files don't fit.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeLabel",
       DisplayName: "Volume name",
