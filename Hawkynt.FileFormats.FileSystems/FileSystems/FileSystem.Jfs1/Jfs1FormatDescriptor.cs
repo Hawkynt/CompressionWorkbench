@@ -28,6 +28,7 @@ namespace FileSystem.Jfs1;
 /// <para><b>Hierarchy</b>: real — directories nest via writer-emitted dirent
 /// chains (4-byte LE inode + 1-byte nlen + name) anchored from inode 2.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Jfs1BlockMover))]
 public sealed class Jfs1FormatDescriptor :
     IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable,
     IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
