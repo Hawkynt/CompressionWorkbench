@@ -309,9 +309,9 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // handed over as a stream factory rather than read into a byte[].
       var name = Path.GetFileName(info.ArchiveName);
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
+        w.AddFile(name, bytes, info.LastModified);
       else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath), info.LastModified);
     }
     var blockSize = options.GetOptionInt("BlockSize", 1024);
     // Sized to the payload rather than to the canonical 4 MiB footprint, which
