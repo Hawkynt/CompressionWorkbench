@@ -2667,9 +2667,8 @@ var root = new RootCommand("""
     cwb shrink disk.img                      Defrag + truncate trailing free space
     cwb shrink disk.vhd --compact            Also compact container (VHD sparse)
     cwb wipe-empty disk.img                  Zero all unused space in image
-    cwb compact disk.img                     Defrag + optimize + shrink (smallest valid)
-    cwb compact disk.img --minimal           Bare-minimum geometry (tiny, non-standard)
-    cwb reconfigure disk.img --set ClusterSize="2 KB"   Change geometry, keep data
+    cwb compact disk.img                     Defragment extents + compress + shrink
+    cwb reconfigure disk.img --set ClusterSize="2 KB"   Change allocation geometry, keep data
     cwb dedup disk.img --dry-run             Find duplicate files in image
     cwb sparsify disk.vhd                    Remove zero-filled blocks
     cwb densify disk.qcow2                   Pre-allocate all blocks
