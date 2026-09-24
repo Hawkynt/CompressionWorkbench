@@ -4,7 +4,7 @@ using F = Compression.Lib.FormatDetector.Format;
 namespace Compression.Lib;
 
 /// <summary>
-/// Composite maintenance verb: defragment, optimize and shrink. Every stage is
+/// Composite maintenance verb: defragment, compress and shrink. Every stage is
 /// optional and selected from the descriptor's real capabilities.
 /// </summary>
 public static class CompactOperation {
