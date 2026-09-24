@@ -15,7 +15,15 @@ namespace Compression.UI.Views;
 /// opened from a specific context-menu entry.
 /// </summary>
 public enum MaintenanceVerb {
-  /// <summary>Find + apply the best layout / re-encode payload (size preserved where possible).</summary>
+  /// <summary>Re-encode payload bytes with a stronger compression strategy.</summary>
+  Compress,
+  /// <summary>Normalize non-semantic representation details.</summary>
+  Canonicalize,
+  /// <summary>Rebuild a container while preserving its complete logical entry model.</summary>
+  Repack,
+  /// <summary>Sort directory records by name without moving file allocation.</summary>
+  SortDirectory,
+  /// <summary>Legacy/file-internal optimization surface.</summary>
   Optimize,
   /// <summary>Keep the parameter set; minimise stored footprint.</summary>
   Shrink,
@@ -178,6 +186,10 @@ public partial class DefragmentWindow : Window {
   private void ApplyRequestedVerb() {
     if (this._requestedVerb is not { } verb) return;
     Title = verb switch {
+      MaintenanceVerb.Compress => "Compress",
+      MaintenanceVerb.Canonicalize => "Canonicalize",
+      MaintenanceVerb.Repack => "Repack",
+      MaintenanceVerb.SortDirectory => "Sort directory entries",
       MaintenanceVerb.Optimize => "Optimize",
       MaintenanceVerb.Shrink => "Shrink",
       MaintenanceVerb.Defragment => "Defragment",
@@ -187,6 +199,23 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.Scramble => "Scramble",
       _ => "Maintenance",
     };
+    RunBtn.Content = verb switch {
+      MaintenanceVerb.Compress => "Compress",
+      MaintenanceVerb.Canonicalize => "Canonicalize",
+      MaintenanceVerb.Repack => "Repack",
+      MaintenanceVerb.SortDirectory => "Sort directory entries",
+      _ => RunBtn.Content,
+    };
+    if (this._archiveOps != null) {
+      RunBtn.IsEnabled = verb switch {
+        MaintenanceVerb.Compress => this._archiveOps is ICompressionOptimizable,
+        MaintenanceVerb.Canonicalize => this._archiveOps is IArchiveCanonicalizable,
+        MaintenanceVerb.Repack => this._archiveOps is IArchiveRepackable,
+        MaintenanceVerb.SortDirectory => this._archiveOps is IFilesystemDirectoryOrderer,
+        _ => RunBtn.IsEnabled,
+      };
+    }
+
     var target = verb switch {
       MaintenanceVerb.Shrink => ShrinkBtn,
       MaintenanceVerb.Purge => PurgeBtn,
@@ -227,6 +256,7 @@ public partial class DefragmentWindow : Window {
     this._formatId = format.ToString();
 
     var ops = FormatRegistry.GetArchiveOps(format.ToString());
+    this._archiveOps = ops;
     this._defragmentable = ops as IArchiveDefragmentable;
 
     // Determine whether this is an archive with layout-map support.
@@ -291,7 +321,7 @@ public partial class DefragmentWindow : Window {
     if (ArchiveRepackGroup != null)
       ArchiveRepackGroup.Visibility = (this._isArchiveMode || this._isFileInternalMode) ? Visibility.Visible : Visibility.Collapsed;
     if (SmartSolidRepackCheck != null)
-      SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
+      SmartSolidRepackCheck.Visibility = Visibility.Collapsed;
     if (MetadataPlacementPanel != null)
       MetadataPlacementPanel.Visibility = this._isFileInternalMode ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1060,8 +1090,116 @@ public partial class DefragmentWindow : Window {
     };
   }
 
+  private void RunDirectorySort() {
+    if (this._imagePath == null || this._archiveOps is not IFilesystemDirectoryOrderer orderer) return;
+    var path = this._imagePath;
+    var ops = this._archiveOps;
+    RunBtn.IsEnabled = false;
+    Task.Run(() => {
+      Exception? error = null;
+      var temp = AtomicFileWriter.MakeTempPath(path);
+      try {
+        File.Copy(path, temp, overwrite: true);
+        using var beforeStream = File.OpenRead(path);
+        var before = SemanticPreservationManifest.Capture(beforeStream, ops);
+        using (var staged = File.Open(temp, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+          orderer.SortDirectoryEntries(staged);
+        using var afterStream = File.OpenRead(temp);
+        before.VerifyEquivalent(SemanticPreservationManifest.Capture(afterStream, ops));
+        AtomicFileWriter.ReplaceTarget(temp, path);
+      } catch (Exception ex) {
+        error = ex;
+        AtomicFileWriter.TryDelete(temp);
+      }
+      Dispatcher.Invoke(() => {
+        RunBtn.IsEnabled = true;
+        if (error != null)
+          Append($"Sort directory entries FAILED: {error.GetType().Name}: {error.Message}");
+        else {
+          Append("Directory entries sorted; file allocation and payload semantics verified unchanged.");
+          NotifyMutated(path);
+        }
+      });
+    });
+  }
+
+  private void RunMaintenanceTransform(
+      string label,
+      Action<object, Stream, Stream> transform,
+      bool onlyIfSmaller = false) {
+    if (this._imagePath == null || this._archiveOps == null) return;
+    object? capability = label switch {
+      "Repack" when this._archiveOps is IArchiveRepackable x => x,
+      "Compress" when this._archiveOps is ICompressionOptimizable x => x,
+      "Canonicalize" when this._archiveOps is IArchiveCanonicalizable x => x,
+      _ => null,
+    };
+    if (capability == null) return;
+
+    var path = this._imagePath;
+    var ops = this._archiveOps;
+    RunBtn.IsEnabled = false;
+    Task.Run(() => {
+      Exception? error = null;
+      var temp = AtomicFileWriter.MakeTempPath(path);
+      var originalSize = new FileInfo(path).Length;
+      var committed = false;
+      try {
+        SemanticPreservationManifest? before = null;
+        using (var source = File.OpenRead(path)) {
+          before = SemanticPreservationManifest.Capture(source, ops);
+          source.Position = 0;
+          using var target = File.Create(temp);
+          transform(capability, source, target);
+          target.Flush(flushToDisk: true);
+        }
+        using (var staged = File.OpenRead(temp))
+          before.VerifyEquivalent(SemanticPreservationManifest.Capture(staged, ops));
+        var newSize = new FileInfo(temp).Length;
+        if (!onlyIfSmaller || newSize < originalSize) {
+          AtomicFileWriter.ReplaceTarget(temp, path);
+          committed = true;
+        } else {
+          AtomicFileWriter.TryDelete(temp);
+        }
+      } catch (Exception ex) {
+        error = ex;
+        AtomicFileWriter.TryDelete(temp);
+      }
+      Dispatcher.Invoke(() => {
+        RunBtn.IsEnabled = true;
+        if (error != null)
+          Append($"{label} FAILED: {error.GetType().Name}: {error.Message}");
+        else if (!committed)
+          Append($"{label}: original retained because no smaller semantically identical result was produced.");
+        else {
+          Append($"{label}: staged result verified semantically identical and committed.");
+          NotifyMutated(path);
+        }
+      });
+    });
+  }
+
   private void OnRun(object sender, RoutedEventArgs e) {
     if (this._imagePath == null) return;
+
+    switch (this._requestedVerb) {
+      case MaintenanceVerb.SortDirectory:
+        RunDirectorySort();
+        return;
+      case MaintenanceVerb.Repack:
+        RunMaintenanceTransform("Repack", (capability, input, output) =>
+          ((IArchiveRepackable)capability).Repack(input, output));
+        return;
+      case MaintenanceVerb.Compress:
+        RunMaintenanceTransform("Compress", (capability, input, output) =>
+          ((ICompressionOptimizable)capability).OptimizeCompression(input, output), onlyIfSmaller: true);
+        return;
+      case MaintenanceVerb.Canonicalize:
+        RunMaintenanceTransform("Canonicalize", (capability, input, output) =>
+          ((IArchiveCanonicalizable)capability).Canonicalize(input, output));
+        return;
+    }
 
     if (this._isFileInternalMode) {
       OnRunFileInternalOptimize();

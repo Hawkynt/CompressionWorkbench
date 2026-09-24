@@ -82,6 +82,10 @@ internal sealed class MainViewModel : ViewModelBase {
   // resolves its target via ResolveMaintenanceTarget — so the verbs work on a
   // standalone archive file, the currently-open archive, OR an archive entry
   // nested inside the open archive (materialised + written back via Replace).
+  public ICommand CompressEntryCommand { get; }
+  public ICommand CanonicalizeEntryCommand { get; }
+  public ICommand RepackEntryCommand { get; }
+  public ICommand SortDirectoryEntryCommand { get; }
   public ICommand OptimizeEntryCommand { get; }
   public ICommand ShrinkEntryCommand { get; }
   public ICommand DefragmentEntryCommand { get; }
@@ -142,6 +146,10 @@ internal sealed class MainViewModel : ViewModelBase {
     AnalyzeFileCommand = new RelayCommand(_ => ShowAnalyzeFile());
     BenchmarkCommand = new RelayCommand(_ => ShowBenchmark());
     FileAssociationsCommand = new RelayCommand(_ => ShowFileAssociations());
+    CompressEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Compress), _ => CanMaintain(Views.MaintenanceVerb.Compress));
+    CanonicalizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Canonicalize), _ => CanMaintain(Views.MaintenanceVerb.Canonicalize));
+    RepackEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Repack), _ => CanMaintain(Views.MaintenanceVerb.Repack));
+    SortDirectoryEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.SortDirectory), _ => CanMaintain(Views.MaintenanceVerb.SortDirectory));
     OptimizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Optimize), _ => CanMaintain(Views.MaintenanceVerb.Optimize));
     ShrinkEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Shrink), _ => CanMaintain(Views.MaintenanceVerb.Shrink));
     DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
@@ -349,6 +357,10 @@ internal sealed class MainViewModel : ViewModelBase {
     var ops = FormatRegistry.GetArchiveOps(formatId);
     if (ops == null) return false;
     return verb switch {
+      Views.MaintenanceVerb.Compress => ops is ICompressionOptimizable,
+      Views.MaintenanceVerb.Canonicalize => ops is IArchiveCanonicalizable,
+      Views.MaintenanceVerb.Repack => ops is IArchiveRepackable,
+      Views.MaintenanceVerb.SortDirectory => ops is IFilesystemDirectoryOrderer,
       Views.MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
       Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
       Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,

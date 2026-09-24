@@ -272,10 +272,6 @@ public partial class DefragmentWindow {
 
   private void RunArchiveOptimizeWithBlockProgress(IArchiveFormatOperations? ops) {
     if (this._imagePath == null || ops == null) return;
-    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
-      RunSmartSevenZipWithBlockProgress(ops);
-      return;
-    }
 
     var path = this._imagePath;
     var formatId = this._formatId;

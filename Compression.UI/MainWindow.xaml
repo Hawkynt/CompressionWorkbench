@@ -85,7 +85,7 @@
           <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <Separator />
-        <MenuItem Header="_Maintenance (Optimize / Shrink / Defragment / Purge / Wipe)..." Click="OnDefragment"
+        <MenuItem Header="_Maintenance (Compress / Repack / Sort / Defragment / Purge / Wipe)..." Click="OnDefragment"
                   ToolTip="Open the maintenance window for a filesystem image or archive.">
           <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
@@ -225,15 +225,21 @@
             <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
             <MenuItem Header="_Compact (defrag + optimize + shrink)..." Command="{Binding CompactEntryCommand}"
                       ToolTip="One pass to the smallest valid container holding the same contents. Tick 'Minimal geometry' in the window for the bare-minimum (non-standard) rebuild." />
-            <MenuItem Header="_Reconfigure (geometry/options)..." Command="{Binding ReconfigureEntryCommand}"
-                      ToolTip="Change an existing image's geometry/options after creation (e.g. FAT cluster size or root entries, NTFS MFT record size). Contents preserved byte-for-byte." />
+            <MenuItem Header="_Change allocation geometry..." Command="{Binding ReconfigureEntryCommand}"
+                      ToolTip="Rebuild with explicitly selected filesystem geometry/options. This is not compression or defragmentation." />
             <Separator />
-            <MenuItem Header="_Optimize..." Command="{Binding OptimizeEntryCommand}"
-                      ToolTip="Find + apply the best layout / re-encode payload. Size preserved where possible." />
+            <MenuItem Header="_Compress..." Command="{Binding CompressEntryCommand}"
+                      ToolTip="Re-encode the payload with stronger compression while preserving decoded content." />
+            <MenuItem Header="_Canonicalize..." Command="{Binding CanonicalizeEntryCommand}"
+                      ToolTip="Normalize non-semantic representation details without changing logical contents." />
+            <MenuItem Header="_Repack..." Command="{Binding RepackEntryCommand}"
+                      ToolTip="Rebuild the container and commit only after semantic-preservation verification." />
+            <MenuItem Header="Sort _directory entries..." Command="{Binding SortDirectoryEntryCommand}"
+                      ToolTip="Sort directory records by name without moving file contents or allocation chains." />
             <MenuItem Header="_Shrink..." Command="{Binding ShrinkEntryCommand}"
                       ToolTip="Keep the parameter set; minimise the stored footprint." />
-            <MenuItem Header="_Defragment..." Command="{Binding DefragmentEntryCommand}"
-                      ToolTip="Re-order entries/extents so files are contiguous. Size preserved.">
+            <MenuItem Header="_Defragment extents..." Command="{Binding DefragmentEntryCommand}"
+                      ToolTip="Move physical file extents/clusters to reduce fragmentation. Directory-name sorting is separate.">
               <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
             </MenuItem>
             <Separator />
