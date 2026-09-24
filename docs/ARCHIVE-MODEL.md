@@ -160,24 +160,12 @@ small as possible while keeping the contents" in a single action:
 Contents are preserved byte-for-byte. The default compact yields the smallest
 **standard, still-valid** container.
 
-**`--minimal` (opt-in).** Replaces the trio with a single **minimal-geometry
-rebuild**: the contents are extracted and the container is re-created at the
-smallest geometry the format allows — auto-fit image size, smallest allocation
-unit, and a root directory / metadata area sized to exactly the entries present.
-This is driven generically: `CompactOperation` selects the minimal value for each
-geometry knob the descriptor's `IFormatOptionsSchema` declares (image size →
-auto-fit, cluster/block → smallest, root/inode count → smallest) and sets a
-universal `MinimalGeometry=true` create flag that writers honour by dropping
-their free-space headroom. A 1.44 MB FAT floppy holding a few KB collapses to a
-few KB — but the result is **no longer a standard, mountable floppy** (the FAT
-table and root directory are crippled to the minimum). The rebuild only swaps in
-the new image when it both round-trips (lists every entry) and is actually
-smaller; otherwise the original is left untouched.
-
-Compact is surfaced as `cwb compact <file> [--minimal]` and as the explorer's
-**Maintenance → Compact** entry (with a *Minimal geometry* checkbox). It is not a
-new interface — it composes existing maintenance capabilities. Allocation-geometry
-changes remain explicit and are not silently folded into compact.
+Compact is surfaced as `cwb compact <file>` and as the explorer's
+**Maintenance → Compact** entry. It is not a new interface — it composes
+**Defragment extents**, **Compress**, and **Shrink** where those capabilities
+exist. Allocation-geometry changes remain exclusively behind
+**Change allocation geometry** / `cwb reconfigure`; compact never selects a
+different cluster, block, inode, FAT, media, or image geometry implicitly.
 
 ### Naming note
 
