@@ -164,6 +164,13 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void FilesystemCoverage_UsesExplicitComposedBlockMover() {
+    FormatRegistration.EnsureInitialized();
+
+    Assert.That(FormatRegistry.GetFilesystemDriverCoverage("Fatx").HasBlockMover, Is.True);
+  }
+
+  [Test, Category("Architecture")]
   public void BlockMover_IsRequiredForExtentDefragmentation() {
     var fatx = new FatxFormatDescriptor();
 
