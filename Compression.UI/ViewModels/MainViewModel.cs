@@ -325,7 +325,7 @@ internal sealed class MainViewModel : ViewModelBase {
         var probeName = IsBrowsingOsFolder ? e.Path : e.Name;
         if (!string.IsNullOrEmpty(probeName)) {
           var f = FormatDetector.DetectByExtension(probeName);
-          if (f != FormatDetector.Format.Unknown && !FormatDetector.IsStreamFormat(f)) {
+          if (f != FormatDetector.Format.Unknown) {
             // OS-browser candidate must actually exist on disk.
             if (!IsBrowsingOsFolder || File.Exists(e.Path)) {
               formatId = f.ToString();
@@ -354,20 +354,20 @@ internal sealed class MainViewModel : ViewModelBase {
   /// </summary>
   private bool CanMaintain(Views.MaintenanceVerb verb) {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    if (ops == null) return false;
+    var descriptor = FormatRegistry.GetById(formatId);
+    if (descriptor == null) return false;
     return verb switch {
-      Views.MaintenanceVerb.Compress => ops is ICompressionOptimizable,
-      Views.MaintenanceVerb.Canonicalize => ops is IArchiveCanonicalizable,
-      Views.MaintenanceVerb.Repack => ops is IArchiveRepackable,
-      Views.MaintenanceVerb.SortDirectory => ops is IFilesystemDirectoryOrderer,
-      Views.MaintenanceVerb.Optimize => ops is IArchiveCreatable or IFileInternalChunkMover,
-      Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      Views.MaintenanceVerb.Defragment => ops is IArchiveDefragmentable,
-      Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
-      Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
-      Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
-      Views.MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
+      Views.MaintenanceVerb.Compress => descriptor is ICompressionOptimizable,
+      Views.MaintenanceVerb.Canonicalize => descriptor is IArchiveCanonicalizable,
+      Views.MaintenanceVerb.Repack => descriptor is IArchiveRepackable,
+      Views.MaintenanceVerb.SortDirectory => descriptor is IFilesystemDirectoryOrderer,
+      Views.MaintenanceVerb.Optimize => descriptor is IArchiveCreatable or IFileInternalChunkMover,
+      Views.MaintenanceVerb.Shrink => descriptor is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
+      Views.MaintenanceVerb.Defragment => descriptor is IArchiveDefragmentable,
+      Views.MaintenanceVerb.Purge => descriptor is IArchiveModifiable,
+      Views.MaintenanceVerb.WipeEmpty => descriptor is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
+      Views.MaintenanceVerb.Compact => descriptor is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
+      Views.MaintenanceVerb.Scramble => descriptor is IFilesystemScrambleable,
       _ => false,
     };
   }
