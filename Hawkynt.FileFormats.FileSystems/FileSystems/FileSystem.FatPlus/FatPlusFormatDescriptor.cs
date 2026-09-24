@@ -174,9 +174,9 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     // writer places file data by seek. Reading each input into a byte[] first
     // capped the volume at what an array can hold.
     var streaming = TotalInputBytes(inputs) > StreamingCreateThreshold;
-    foreach (var (name, size, open) in AsStreamingInputs(inputs))
-      if (streaming) w.AddStreamingFile(name, size, open);
-      else using (var src = open()) { using var ms = new MemoryStream(); src.CopyTo(ms); w.AddFile(name, ms.ToArray()); }
+    foreach (var (name, size, open, lastModified) in AsStreamingInputs(inputs))
+      if (streaming) w.AddStreamingFile(name, size, open, lastModified);
+      else using (var src = open()) { using var ms = new MemoryStream(); src.CopyTo(ms); w.AddFile(name, ms.ToArray(), modTime: lastModified); }
 
     var specific = options.FormatSpecific;
     var totalSectors = ParseImageSizeSectors(specific?.GetValueOrDefault("ImageSize"));
@@ -405,9 +405,9 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   /// volume out; reading each input into a byte[] first caps the volume at what
   /// an array can hold even though the writer places file data by seek.
   /// </summary>
-  private static List<(string Name, long Size, Func<Stream> Open)> AsStreamingInputs(
+  private static List<(string Name, long Size, Func<Stream> Open, DateTime? LastModified)> AsStreamingInputs(
       IReadOnlyList<ArchiveInputInfo> inputs) {
-    var result = new List<(string, long, Func<Stream>)>();
+    var result = new List<(string, long, Func<Stream>, DateTime?)>();
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var info = i;
@@ -416,7 +416,8 @@ public sealed class FatPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       result.Add((Path.GetFileName(info.ArchiveName), size,
         () => info.InMemoryContent is { } bytes
           ? new MemoryStream(bytes, writable: false)
-          : File.OpenRead(info.FullPath)));
+          : File.OpenRead(info.FullPath),
+        info.LastModified));
     }
     return result;
   }
