@@ -1807,21 +1807,21 @@ compactCmd.SetAction((ParseResult ctx) => {
 
 var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image or archive to reconfigure" };
 var reconfigureSetOpt = new Option<string[]>("--set") {
-  Description = "Geometry/option to change as KEY=VALUE (repeatable). Keys/values match the format's options "
-    + "schema, e.g. --set ClusterSize=\"2 KB\" --set MftRecordSize=\"2 KB\". Bare KEY = true. "
-    + "Later --set for the same KEY overrides earlier ones."
+  Description = "Allocation-geometry option to change as KEY=VALUE (repeatable), e.g. "
+    + "--set ClusterSize=\"2 KB\" --set MftRecordSize=\"2 KB\". Bare KEY = true. "
+    + "Non-geometry creation/compression/metadata options are rejected."
 };
 
 var reconfigureCmd = new Command("reconfigure", """
-  Change an existing container's geometry/options after creation — without losing data.
+  Change an existing container's allocation geometry after creation — without losing data.
 
-  Extracts the contents and re-creates the container with the supplied options
-  (e.g. FAT cluster size or root entries, NTFS MFT record size, image size).
+  Extracts the contents and re-creates the container with explicitly classified
+  geometry options (e.g. FAT cluster size or root entries, NTFS MFT record size, image size).
   The rebuild is verified to list back the exact same files before the original
   is replaced; on any failure the original is left untouched.
 
-  Options are forwarded verbatim to the writer; unknown keys are ignored. Run
-  'cwb create --help' or the format's docs for the available knobs.
+  Compression, metadata and compatibility options are intentionally rejected here;
+  use the operation that owns those concerns instead.
 
   Examples:
     cwb reconfigure disk.img --set ClusterSize="2 KB"
