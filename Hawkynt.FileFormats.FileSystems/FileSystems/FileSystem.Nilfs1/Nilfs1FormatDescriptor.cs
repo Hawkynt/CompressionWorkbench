@@ -114,7 +114,7 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       DisplayName: "Segment size",
       Kind: FormatOptionKind.String,
       Default: "0",
-      Description: "Segment size in bytes (0 = 8 × block size, the v1 default)."),
+      Description: "Segment size in bytes (0 = 8 × block size, the v1 default).", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeLabel",
       DisplayName: "Volume label",
