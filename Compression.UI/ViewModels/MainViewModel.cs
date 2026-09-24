@@ -365,7 +365,9 @@ internal sealed class MainViewModel : ViewModelBase {
       Views.MaintenanceVerb.Shrink => ops is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
       Views.MaintenanceVerb.Purge => ops is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => ops is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
-      Views.MaintenanceVerb.Compact => ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
+      Views.MaintenanceVerb.Compact => OptimizationCapabilities.CanDefragmentExtents(descriptor)
+        || OptimizationCapabilities.CanCompress(descriptor)
+        || ops is IArchiveShrinkable,
       Views.MaintenanceVerb.Scramble => ops is IFilesystemScrambleable,
       _ => false,
     };
