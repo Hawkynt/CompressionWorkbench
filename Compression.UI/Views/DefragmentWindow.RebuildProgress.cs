@@ -53,6 +53,17 @@ public partial class DefragmentWindow {
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
         if (LayoutStatusLbl != null)
           LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
+      } else if (ops is IFileInternalChunkMover chunkMover) {
+        this._isFileInternalMode = true;
+        this._archiveOps = ops;
+        this._chunkMover = chunkMover;
+        FsModesGroup.Visibility = Visibility.Collapsed;
+        ArchiveRepackGroup.Visibility = Visibility.Visible;
+        MetadataPlacementPanel.Visibility = Visibility.Visible;
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = true;
+        SupportLbl.Text = "Legacy file-internal layout optimization.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
       }
     }
   }
