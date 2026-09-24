@@ -154,9 +154,9 @@ public sealed class CromemcoFormatDescriptor :
     var density = options?.GetOption("Density", "Auto") ?? "Auto";
     var tracksStr = options?.GetOption("Tracks", "Auto") ?? "Auto";
 
-    // Auto picks the smallest geometry that fits via CromemcoOptimizer.
+    // Auto selects the smallest creation geometry that fits via CromemcoGeometrySelector.
     var fileSizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-    var auto = CromemcoOptimizer.Find(fileSizes);
+    var auto = CromemcoGeometrySelector.Find(fileSizes);
 
     var tracks = tracksStr == "Auto" || !int.TryParse(tracksStr, out var t) ? auto.Tracks : t;
     var spt = density switch {
