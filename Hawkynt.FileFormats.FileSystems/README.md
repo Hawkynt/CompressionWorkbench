@@ -39,14 +39,16 @@ The package bundles every `FileSystem.*` assembly and the disk-image `FileFormat
 | **WORM** | Read plus create a fresh image; no supported edit of an existing image. |
 | **R/W** | Read plus add / replace / remove / purge on an existing image. The edit may update blocks in place or lay the volume out again — the **Notes** column says when it is the latter. |
 
-The six verb columns are the maintenance operations the CLI and the UI gate on, defined once in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md):
+The maintenance columns are the same effect-specific capabilities the CLI and UI gate on, defined once in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md):
 
-- **Defrag** lays a volume out again, and says how: *moving* relocates only the runs that are out of place through a block mover of the format's own, *rebuild* writes the volume out afresh.
-- **Wipe** zeroes what no file holds — free space, cluster-tip slack, deleted directory entries — without touching a live byte.
-- **Shrink** reduces a volume to what it needs, keeping its geometry. It is absent wherever the geometry is fixed: for most read-only filesystems and for optical images there is no smaller canonical size to step to, so nothing could be reclaimed.
-- **Layout** re-lays a volume at a chosen cluster or block geometry. This needs a creator to write the new volume with, so a format that can only analyse its geometry is marked absent here however thoroughly it reads it.
-- **Purge** erases every live entry and leaves a valid empty image.
-- **Compact** is the composite the UI offers as one click: defrag, then layout, then shrink, so it is available wherever any of those three is.
+- **Compress** re-encodes live payloads through `ICompressionOptimizable`.
+- **Canonicalize** rewrites canonical representation details through `IArchiveCanonicalizable`.
+- **Repack** rebuilds the same logical entries without implying recompression.
+- **Sort directory entries** changes directory-table order only.
+- **Defragment extents** physically moves allocations. The descriptor either implements `IFilesystemBlockMover` directly or explicitly names a composed mover with `FilesystemBlockMoverAttribute`; merely having a `*BlockMover` class does not count.
+- **Change allocation geometry** exposes only writer options tagged `IsAllocationGeometry=true`.
+- **Wipe**, **Shrink**, and **Purge** retain their literal meanings.
+- **Compact** composes only Defragment extents + Compress + Shrink; allocation geometry is never changed implicitly.
 
 **Proof** is how the format is held against something outside this repository, and every tool it names links to that tool's own source, so the thing doing the checking can be reached from here. "own reader + struct-parity tests" means nothing outside this repository currently checks the format — either no such tool exists, or none is wired into the suite — so the on-disk structures are checked field by field instead. That cell is the honest gap, and it is deliberately preferred over naming a tool nobody runs: a cell that cites a checker which never executes stops anyone from going looking for one.
 
