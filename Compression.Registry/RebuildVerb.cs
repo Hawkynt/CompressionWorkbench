@@ -109,14 +109,25 @@ public static class RebuildVerb {
 
       cancellationToken.ThrowIfCancellationRequested();
 
+      var sourceMetadata = sourceEntries
+        .Where(entry => syntheticNames == null || !syntheticNames.Contains(entry.Name))
+        .GroupBy(entry => entry.Name.TrimEnd('/'), StringComparer.Ordinal)
+        .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+
       var inputs = new List<ArchiveInputInfo>();
       foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo("", rel + "/", true));
+        sourceMetadata.TryGetValue(rel.TrimEnd('/'), out var metadata);
+        inputs.Add(new ArchiveInputInfo("", rel + "/", true) {
+          LastModified = metadata?.LastModified,
+        });
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo(file, rel, false));
+        sourceMetadata.TryGetValue(rel, out var metadata);
+        inputs.Add(new ArchiveInputInfo(file, rel, false) {
+          LastModified = metadata?.LastModified,
+        });
       }
 
       var visualSize = Math.Max(sourceLength, totalLogical);
