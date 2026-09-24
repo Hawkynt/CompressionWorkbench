@@ -9,7 +9,7 @@ namespace FileSystem.Htfs;
 /// <summary>
 /// SCO HTFS (High Throughput File System) — S5-derived FS introduced in SCO
 /// OpenServer 5. Now exposes a WORM writer + reader with real nested
-/// subdirectories, defrag/purge/conversion, fileset optimizer, and an options
+/// subdirectories, defrag/purge/conversion, creation/layout geometry selection, and an options
 /// schema (BlockSize / InodeCount / VolumeLabel).
 ///
 /// References:
@@ -139,7 +139,7 @@ public sealed class HtfsFormatDescriptor :
   public void Create(Stream output, IReadOnlyList<ArchiveInputInfo> inputs, FormatCreateOptions options) {
     var w = new HtfsWriter();
     w.SetVolumeLabel(options.GetOption("VolumeLabel", "WORM"));
-    // NOTE: the block-size auto-optimiser is intentionally NOT wired here. The
+    // NOTE: automatic block-size selection is intentionally NOT wired here. The
     // HTFS reader's block-size detection only recovers 512-byte images, so a
     // non-512 default would not round-trip — see HtfsReader.DetectBlockSize. The
     // BlockSize knob therefore stays an explicit, caller-pinned choice only.
