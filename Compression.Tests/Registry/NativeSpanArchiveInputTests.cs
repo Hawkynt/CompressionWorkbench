@@ -86,6 +86,43 @@ public sealed class NativeSpanArchiveInputTests {
 
   [Test]
   [Category("Spec")]
+  public void SourceRangeFormats_ExtractSpan_LargePayloads_DoNotCopyWholeArchive() {
+    foreach (var testCase in new[] {
+      BuildPsdCase(LargePayloadSize),
+      BuildPsbCase(LargePayloadSize),
+      BuildJp2Case(LargePayloadSize),
+    }) {
+      var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-range-{Guid.NewGuid():N}");
+      try {
+        var warmDirectory = Path.Combine(directory, "warm");
+        var warmCase = testCase.Name switch {
+          "PSD" => BuildPsdCase(257),
+          "PSB" => BuildPsbCase(257),
+          _ => BuildJp2Case(257),
+        };
+        warmCase.Operations.ExtractSpan(
+          warmCase.Image, warmDirectory, null, [warmCase.PayloadEntry]);
+        Directory.Delete(warmDirectory, recursive: true);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        testCase.Operations.ExtractSpan(
+          testCase.Image, directory, null, [testCase.PayloadEntry]);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.That(allocated, Is.LessThan(AllocationLimit),
+          $"{testCase.Name} span extraction allocated {allocated:N0} bytes for a " +
+          $"{testCase.Image.Length:N0}-byte image.");
+        Assert.That(File.ReadAllBytes(Path.Combine(directory, testCase.PayloadEntry)),
+          Is.EqualTo(testCase.ExpectedPayload).AsCollection, testCase.Name);
+      } finally {
+        if (Directory.Exists(directory))
+          Directory.Delete(directory, recursive: true);
+      }
+    }
+  }
+
+  [Test]
+  [Category("Spec")]
   public void Ffu_ExtractSpan_FullImage_DoesNotCopyWholeArchive() {
     var testCase = BuildFfuCase(LargePayloadSize);
     var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-ffu-{Guid.NewGuid():N}");
