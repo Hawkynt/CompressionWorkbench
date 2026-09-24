@@ -101,7 +101,8 @@ public sealed class ApplePascalFormatDescriptor : IFormatDescriptor, IArchiveFor
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "280", "560", "1024", "1600", "2048"],
-      Description: "Total volume size in 512-byte blocks. Pascal convention: multiples of 8 (8-block allocation tiles). 280 = 140 KB SS floppy, 560 = 280 KB DS floppy."),
+      Description: "Total volume size in 512-byte blocks. Pascal convention: multiples of 8 (8-block allocation tiles). 280 = 140 KB SS floppy, 560 = 280 KB DS floppy.",
+      IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "VolumeName",
       DisplayName: "Volume name",
