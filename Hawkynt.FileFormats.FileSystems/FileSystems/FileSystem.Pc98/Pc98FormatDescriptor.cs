@@ -108,7 +108,7 @@ public sealed class Pc98FormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "512",
       AllowedValues: ["256", "512", "1024"],
-      Description: "Bytes per sector. 512 is the safest choice for round-tripping with the reader."),
+      Description: "Bytes per sector. 512 is the safest choice for round-tripping with the reader.", IsAllocationGeometry: true),
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "SectorsPerCluster",
       displayName: "Sectors per cluster",
