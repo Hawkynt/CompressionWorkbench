@@ -37,7 +37,7 @@ public sealed class Rt11FormatDescriptor :
       Kind: FormatOptionKind.Integer,
       Default: "1",
       Description: "Number of 1024-byte directory segments. Each segment holds 71 entries + " +
-        "terminator. Range 1..31; raise to fit more files."),
+        "terminator. Range 1..31; raise to fit more files.", IsAllocationGeometry: true),
   ];
 
   /// <summary>
