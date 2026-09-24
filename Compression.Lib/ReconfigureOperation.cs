@@ -39,9 +39,9 @@ public static class ReconfigureOperation {
   /// Live contents are preserved byte-for-byte; only geometry / layout changes.
   /// </summary>
   /// <param name="path">Path to the existing container.</param>
-  /// <param name="newOptions">Format-specific knobs to apply (keys/values match
-  /// the format's <see cref="IFormatOptionsSchema"/>). Forwarded verbatim to the
-  /// writer; unknown keys are ignored by the writer.</param>
+  /// <param name="newOptions">Allocation-geometry knobs to apply. Every key must
+  /// match an option explicitly marked <see cref="FormatOptionDescriptor.IsAllocationGeometry"/>
+  /// in the format's <see cref="IFormatOptionsSchema"/>.</param>
   /// <param name="password">Password for an encrypted source/target (optional).</param>
   /// <exception cref="FileNotFoundException">The container does not exist.</exception>
   /// <exception cref="NotSupportedException">The detected format cannot be re-created.</exception>
@@ -57,7 +57,25 @@ public static class ReconfigureOperation {
     var originalSize = new FileInfo(path).Length;
     var format = FormatDetector.Detect(path);
     var formatId = format.ToString();
+    var descriptor = FormatRegistry.GetById(formatId);
     var ops = FormatRegistry.GetArchiveOps(formatId);
+    var geometryOptions = OptimizationCapabilities.GetAllocationGeometryOptions(descriptor);
+
+    if (geometryOptions.Count == 0)
+      throw new NotSupportedException(
+        $"Format {formatId} does not expose allocation-geometry changes.");
+
+    var allowedKeys = geometryOptions
+      .Select(static option => option.Key)
+      .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var invalidKeys = newOptions.Keys
+      .Where(key => !allowedKeys.Contains(key))
+      .OrderBy(static key => key, StringComparer.OrdinalIgnoreCase)
+      .ToArray();
+    if (invalidKeys.Length > 0)
+      throw new ArgumentException(
+        $"The following options are not allocation geometry for {formatId}: {string.Join(", ", invalidKeys)}.",
+        nameof(newOptions));
 
     if (ops is not IArchiveCreatable)
       throw new NotSupportedException(
