@@ -62,6 +62,7 @@ public partial class DefragmentWindow : Window {
   private string? _imagePath;
   private IArchiveDefragmentable? _defragmentable;
   private IArchiveFormatOperations? _archiveOps;
+  private IFormatDescriptor? _formatDescriptor;
   // Detected format id (e.g. "Zip", "DoubleSpace", "DriveSpace3"). Used by
   // OnRunArchiveOptimize to special-case CVF formats through CvfOptimizer,
   // which honours the per-cluster shrink-or-store fallback inside the writer
@@ -206,12 +207,12 @@ public partial class DefragmentWindow : Window {
       MaintenanceVerb.SortDirectory => "Sort directory entries",
       _ => RunBtn.Content,
     };
-    if (this._archiveOps != null) {
+    if (this._formatDescriptor != null) {
       RunBtn.IsEnabled = verb switch {
-        MaintenanceVerb.Compress => this._archiveOps is ICompressionOptimizable,
-        MaintenanceVerb.Canonicalize => this._archiveOps is IArchiveCanonicalizable,
-        MaintenanceVerb.Repack => this._archiveOps is IArchiveRepackable,
-        MaintenanceVerb.SortDirectory => this._archiveOps is IFilesystemDirectoryOrderer,
+        MaintenanceVerb.Compress => this._formatDescriptor is ICompressionOptimizable,
+        MaintenanceVerb.Canonicalize => this._formatDescriptor is IArchiveCanonicalizable,
+        MaintenanceVerb.Repack => this._formatDescriptor is IArchiveRepackable,
+        MaintenanceVerb.SortDirectory => this._formatDescriptor is IFilesystemDirectoryOrderer,
         _ => RunBtn.IsEnabled,
       };
     }
@@ -245,6 +246,7 @@ public partial class DefragmentWindow : Window {
     this._isFileInternalMode = false;
     this._isSevenZipFormat = false;
     this._archiveOps = null;
+    this._formatDescriptor = null;
     this._chunkMover = null;
     this._formatId = null;
     ImagePathBox.Text = path;
@@ -255,9 +257,11 @@ public partial class DefragmentWindow : Window {
     FormatLbl.Text = format.ToString();
     this._formatId = format.ToString();
 
+    var descriptor = FormatRegistry.GetById(format.ToString());
     var ops = FormatRegistry.GetArchiveOps(format.ToString());
+    this._formatDescriptor = descriptor;
     this._archiveOps = ops;
-    this._defragmentable = ops as IArchiveDefragmentable;
+    this._defragmentable = descriptor as IArchiveDefragmentable;
 
     // Determine whether this is an archive with layout-map support.
     var isArchiveLayout = ops is IArchiveLayoutMap;
@@ -1127,17 +1131,18 @@ public partial class DefragmentWindow : Window {
       string label,
       Action<object, Stream, Stream> transform,
       bool onlyIfSmaller = false) {
-    if (this._imagePath == null || this._archiveOps == null) return;
+    if (this._imagePath == null || this._formatDescriptor == null) return;
     object? capability = label switch {
-      "Repack" when this._archiveOps is IArchiveRepackable x => x,
-      "Compress" when this._archiveOps is ICompressionOptimizable x => x,
-      "Canonicalize" when this._archiveOps is IArchiveCanonicalizable x => x,
+      "Repack" when this._formatDescriptor is IArchiveRepackable x => x,
+      "Compress" when this._formatDescriptor is ICompressionOptimizable x => x,
+      "Canonicalize" when this._formatDescriptor is IArchiveCanonicalizable x => x,
       _ => null,
     };
     if (capability == null) return;
 
     var path = this._imagePath;
     var ops = this._archiveOps;
+    var streamOps = this._formatDescriptor as IStreamFormatOperations;
     RunBtn.IsEnabled = false;
     Task.Run(() => {
       Exception? error = null;
@@ -1145,16 +1150,32 @@ public partial class DefragmentWindow : Window {
       var originalSize = new FileInfo(path).Length;
       var committed = false;
       try {
-        SemanticPreservationManifest? before = null;
+        SemanticPreservationManifest? beforeManifest = null;
+        byte[]? beforeDecodedHash = null;
         using (var source = File.OpenRead(path)) {
-          before = SemanticPreservationManifest.Capture(source, ops);
+          if (ops != null)
+            beforeManifest = SemanticPreservationManifest.Capture(source, ops);
+          else if (label == "Compress" && streamOps != null)
+            beforeDecodedHash = HashDecodedPayload(source, streamOps);
+          else
+            throw new NotSupportedException($"{label} has no semantic-preservation verifier for {this._formatDescriptor.Id}.");
+
           source.Position = 0;
           using var target = File.Create(temp);
           transform(capability, source, target);
           target.Flush(flushToDisk: true);
         }
-        using (var staged = File.OpenRead(temp))
-          before.VerifyEquivalent(SemanticPreservationManifest.Capture(staged, ops));
+
+        using (var staged = File.OpenRead(temp)) {
+          if (beforeManifest != null)
+            beforeManifest.VerifyEquivalent(SemanticPreservationManifest.Capture(staged, ops!));
+          else if (beforeDecodedHash != null && streamOps != null) {
+            var stagedHash = HashDecodedPayload(staged, streamOps);
+            if (!beforeDecodedHash.AsSpan().SequenceEqual(stagedHash))
+              throw new InvalidOperationException("Compression changed the decoded payload.");
+          }
+        }
+
         var newSize = new FileInfo(temp).Length;
         if (!onlyIfSmaller || newSize < originalSize) {
           AtomicFileWriter.ReplaceTarget(temp, path);
@@ -1178,6 +1199,15 @@ public partial class DefragmentWindow : Window {
         }
       });
     });
+  }
+
+  private static byte[] HashDecodedPayload(Stream encoded, IStreamFormatOperations operations) {
+    encoded.Position = 0;
+    using var decoded = RebuildVerb.CreateScratchStream();
+    operations.Decompress(encoded, decoded);
+    decoded.Position = 0;
+    using var sha = System.Security.Cryptography.SHA256.Create();
+    return sha.ComputeHash(decoded);
   }
 
   private void OnRun(object sender, RoutedEventArgs e) {
