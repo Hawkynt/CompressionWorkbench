@@ -109,7 +109,7 @@ public sealed class Human68kFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "512",
       AllowedValues: ["256", "512", "1024"],
-      Description: "Bytes per sector. 512 is the default and safest choice for round-tripping with the reader."),
+      Description: "Bytes per sector. 512 is the default and safest choice for round-tripping with the reader.", IsAllocationGeometry: true),
     FilesystemSchemaPresets.PowerOfTwoSize(
       key: "SectorsPerCluster",
       displayName: "Sectors per cluster",
@@ -121,7 +121,7 @@ public sealed class Human68kFormatDescriptor :
       DisplayName: "Total sectors",
       Kind: FormatOptionKind.Integer,
       Default: "0",
-      Description: "Total sector count. 0 = auto (sized to fit the file set + minimum metadata)."),
+      Description: "Total sector count. 0 = auto (sized to fit the file set + minimum metadata).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(maxChars: 11),
   ];
 
