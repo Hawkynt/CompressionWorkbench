@@ -92,10 +92,10 @@ public sealed class Jfs1FormatDescriptor :
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "4096",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "JFS1 block size in bytes (IBM OS/2 spec allows 1024/2048/4096)."),
+      Description: "JFS1 block size in bytes (IBM OS/2 spec allows 1024/2048/4096).", IsAllocationGeometry: true),
     new("AggregateBlockSize", "Aggregate block size", FormatOptionKind.Enum, "4096",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "Aggregate block size for the dmap chain (usually equals BlockSize)."),
+      Description: "Aggregate block size for the dmap chain (usually equals BlockSize).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
