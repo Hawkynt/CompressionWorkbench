@@ -34,7 +34,8 @@ public static class FilesystemSchemaPresets {
       Default: "Auto",
       AllowedValues: values,
       Description: description ??
-        "Allocation unit size. Auto picks the size that minimises slack + table overhead.");
+        "Allocation unit size. Auto picks the size that minimises slack + table overhead.",
+      IsAllocationGeometry: true);
   }
 
   /// <summary>
@@ -53,7 +54,8 @@ public static class FilesystemSchemaPresets {
       Default: "Auto (fit to files)",
       AllowedValues: values,
       Description: description ??
-        "Total image capacity. Auto sizes the image to exactly hold the files (recommended).");
+        "Total image capacity. Auto sizes the image to exactly hold the files (recommended).",
+      IsAllocationGeometry: true);
   }
 
   /// <summary>Standard volume-label text field.</summary>
@@ -66,13 +68,15 @@ public static class FilesystemSchemaPresets {
 
   /// <summary>Generic power-of-two size dropdown for any byte-valued knob (inode size, MFT record, …).</summary>
   public static FormatOptionDescriptor PowerOfTwoSize(
-      string key, string displayName, int min, int max, string defaultLabel, string description) {
+      string key, string displayName, int min, int max, string defaultLabel, string description,
+      bool isAllocationGeometry = true) {
     var values = new List<string> { "Auto" };
     for (var s = min; s <= max; s *= 2)
       values.Add(FormatSize(s));
     return new FormatOptionDescriptor(
       Key: key, DisplayName: displayName, Kind: FormatOptionKind.Enum,
-      Default: defaultLabel, AllowedValues: values, Description: description);
+      Default: defaultLabel, AllowedValues: values, Description: description,
+      IsAllocationGeometry: isAllocationGeometry);
   }
 
   /// <summary>Parses a size label produced by <see cref="FormatSize"/> back into bytes; "Auto"/unknown → 0.</summary>
