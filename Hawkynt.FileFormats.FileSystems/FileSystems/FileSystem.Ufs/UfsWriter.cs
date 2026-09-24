@@ -51,7 +51,7 @@ public sealed class UfsWriter {
 
   internal static readonly int FsMagicOffset = SuperblockSize - 4; // 1372
 
-  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener)> _files = [];
+  private readonly List<(string Name, byte[] Data, long? StreamingSize, Func<Stream>? StreamOpener, DateTime? LastModified)> _files = [];
   private readonly byte[] _volumeUuid = Guid.NewGuid().ToByteArray(bigEndian: true);
 
   /// <summary>Optional volume label, written to the superblock's <c>fs_volname</c>
@@ -70,10 +70,10 @@ public sealed class UfsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-  public void AddFile(string name, byte[] data) {
+  public void AddFile(string name, byte[] data, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
-    _files.Add((name, data, null, null));
+    _files.Add((name, data, null, null, lastModified));
   }
 
   /// <summary>
@@ -82,11 +82,11 @@ public sealed class UfsWriter {
   /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
   /// Never buffered as <c>byte[]</c>.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
-    _files.Add((name, System.Array.Empty<byte>(), size, openStream));
+    _files.Add((name, System.Array.Empty<byte>(), size, openStream, lastModified));
   }
 
   // ── derived geometry for a chosen total size ─────────────────────────────
@@ -135,6 +135,7 @@ public sealed class UfsWriter {
     public byte[] Data = [];
     public long? StreamingSize;
     public Func<Stream>? StreamOpener;
+    public DateTime? LastModified;
     public int Inode;
     public TreeNode? Parent;
     public readonly Dictionary<string, TreeNode> Children = new(StringComparer.Ordinal);
@@ -147,7 +148,7 @@ public sealed class UfsWriter {
 
   private TreeNode BuildTree() {
     var root = new TreeNode { IsDirectory = true, Name = "" };
-    foreach (var (rawName, data, streamingSize, streamOpener) in _files) {
+    foreach (var (rawName, data, streamingSize, streamOpener, lastModified) in _files) {
       var parts = rawName.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
       if (parts.Length == 0) continue;
       var cursor = root;
@@ -155,7 +156,12 @@ public sealed class UfsWriter {
         var part = parts[i];
         var isLeaf = i == parts.Length - 1;
         if (cursor.Children.TryGetValue(part, out var existing)) {
-          if (isLeaf && !existing.IsDirectory) { existing.Data = data; existing.StreamingSize = streamingSize; existing.StreamOpener = streamOpener; }
+          if (isLeaf && !existing.IsDirectory) {
+            existing.Data = data;
+            existing.StreamingSize = streamingSize;
+            existing.StreamOpener = streamOpener;
+            existing.LastModified = lastModified;
+          }
           cursor = existing;
           continue;
         }
@@ -163,6 +169,7 @@ public sealed class UfsWriter {
           Name = part, IsDirectory = !isLeaf, Data = isLeaf ? data : [], Parent = cursor,
           StreamingSize = isLeaf ? streamingSize : null,
           StreamOpener = isLeaf ? streamOpener : null,
+          LastModified = isLeaf ? lastModified : null,
         };
         cursor.Children[part] = node;
         cursor.Order.Add(node);
@@ -374,7 +381,7 @@ public sealed class UfsWriter {
       WriteUfs1Inode(disk, inodeTableOffset + file.Inode * InodeSize,
         mode: 0x81A4, nlink: 1, size: (ulong)file.EffectiveLength,
         blocksUsed512: (uint)((long)fragsUsed * FragSize / 512),
-        directBlocks: directBlocks, indirectBlocks: indirectFrag);
+        directBlocks: directBlocks, indirectBlocks: indirectFrag, lastModified: file.LastModified);
     }
 
     // The highest data frag consumed in cg0 (relative to image start).
@@ -999,11 +1006,23 @@ public sealed class UfsWriter {
     return total;
   }
 
+  private static uint ToUnixSeconds(DateTime? value, uint fallback) {
+    if (value is null) return fallback;
+    try {
+      var utc = value.Value.Kind == DateTimeKind.Utc ? value.Value : value.Value.ToUniversalTime();
+      var seconds = new DateTimeOffset(utc).ToUnixTimeSeconds();
+      return seconds is > 0 and <= uint.MaxValue ? (uint)seconds : fallback;
+    } catch (ArgumentOutOfRangeException) {
+      return fallback;
+    }
+  }
+
   // ── ufs1_dinode (128 bytes) ───────────────────────────────────────────────
   private static void WriteUfs1Inode(
     SparseBlockImage disk, long inodeByteOffset,
     uint mode, ushort nlink, ulong size, uint blocksUsed512,
-    ReadOnlySpan<int> directBlocks, int[]? indirectBlocks = null, uint dirDepth = 0
+    ReadOnlySpan<int> directBlocks, int[]? indirectBlocks = null, uint dirDepth = 0,
+    DateTime? lastModified = null
   ) {
     var diBuffer = new byte[InodeSize];
     var di = diBuffer.AsSpan();
@@ -1013,8 +1032,9 @@ public sealed class UfsWriter {
     BinaryPrimitives.WriteUInt32LittleEndian(di[4..], dirDepth);           // di_dirdepth (UFS dir depth from root)
     BinaryPrimitives.WriteUInt64LittleEndian(di[8..], size);               // di_size
     var now = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    var mtime = ToUnixSeconds(lastModified, now);
     BinaryPrimitives.WriteUInt32LittleEndian(di[16..], now);               // di_atime
-    BinaryPrimitives.WriteUInt32LittleEndian(di[24..], now);               // di_mtime
+    BinaryPrimitives.WriteUInt32LittleEndian(di[24..], mtime);             // di_mtime
     BinaryPrimitives.WriteUInt32LittleEndian(di[32..], now);               // di_ctime
     for (var i = 0; i < MaxDirectBlocks && i < directBlocks.Length; i++)
       BinaryPrimitives.WriteInt32LittleEndian(di[(40 + i * 4)..], directBlocks[i]);
