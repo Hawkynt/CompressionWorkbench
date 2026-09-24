@@ -1,4 +1,5 @@
 #pragma warning disable CS1591
+using Compression.Lib;
 using Compression.Registry;
 using FileSystem.CramFs;
 using FileSystem.SquashFs;
