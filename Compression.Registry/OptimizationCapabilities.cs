@@ -5,8 +5,6 @@ namespace Compression.Registry;
 /// the ambiguous "Optimize" label.
 /// </summary>
 public static class OptimizationCapabilities {
-  private static readonly object BlockMoverCacheGate = new();
-  private static readonly Dictionary<Type, Type?> BlockMoverTypeCache = [];
   public static bool CanCompress(IFormatDescriptor? descriptor) {
     if (descriptor is ICompressionOptimizable)
       return true;
@@ -25,11 +23,10 @@ public static class OptimizationCapabilities {
     => descriptor is IFilesystemDirectoryOrderer;
 
   /// <summary>
-  /// Resolves the explicit physical-move capability for a format. Most mature
-  /// descriptors expose <see cref="IFilesystemBlockMover"/> directly; older
-  /// format implementations keep the mover as a separate concrete helper in
-  /// the same namespace. A namespace must contain exactly one concrete mover
-  /// for that helper to count, so ambiguous conventions fail closed.
+  /// Resolves the explicit physical-move capability for a format. A descriptor
+  /// either implements <see cref="IFilesystemBlockMover"/> itself or names the
+  /// concrete composed mover with <see cref="FilesystemBlockMoverAttribute"/>.
+  /// No class-name or namespace convention is treated as a capability.
   /// </summary>
   public static Type? GetFilesystemBlockMoverType(IFormatDescriptor? descriptor) {
     if (descriptor is null)
@@ -37,20 +34,20 @@ public static class OptimizationCapabilities {
     if (descriptor is IFilesystemBlockMover)
       return descriptor.GetType();
 
-    var descriptorType = descriptor.GetType();
-    lock (BlockMoverCacheGate) {
-      if (BlockMoverTypeCache.TryGetValue(descriptorType, out var cached))
-        return cached;
+    var attribute = Attribute.GetCustomAttribute(
+      descriptor.GetType(), typeof(FilesystemBlockMoverAttribute), inherit: false)
+      as FilesystemBlockMoverAttribute;
+    if (attribute is null)
+      return null;
 
-      var candidates = descriptorType.Assembly.GetTypes()
-        .Where(type => type is { IsClass: true, IsAbstract: false }
-                       && type.Namespace == descriptorType.Namespace
-                       && typeof(IFilesystemBlockMover).IsAssignableFrom(type))
-        .ToArray();
-      var result = candidates.Length == 1 ? candidates[0] : null;
-      BlockMoverTypeCache[descriptorType] = result;
-      return result;
-    }
+    var moverType = attribute.MoverType;
+    if (!moverType.IsClass
+        || moverType.IsAbstract
+        || !typeof(IFilesystemBlockMover).IsAssignableFrom(moverType))
+      throw new InvalidOperationException(
+        $"{descriptor.Id} declares invalid filesystem block mover type '{moverType.FullName}'.");
+
+    return moverType;
   }
 
   public static bool HasFilesystemBlockMover(IFormatDescriptor? descriptor)
