@@ -70,7 +70,9 @@ public sealed class UfsWriter {
   /// <summary>
   /// Performs the add file operation.
   /// </summary>
-  public void AddFile(string name, byte[] data, DateTime? lastModified = null) {
+  public void AddFile(string name, byte[] data) => this.AddFile(name, data, null);
+
+  internal void AddFile(string name, byte[] data, DateTime? lastModified) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(data);
     _files.Add((name, data, null, null, lastModified));
@@ -82,7 +84,10 @@ public sealed class UfsWriter {
   /// <paramref name="openStream"/> in pass 2 of <see cref="BuildToStreaming"/>.
   /// Never buffered as <c>byte[]</c>.
   /// </summary>
-  public void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified = null) {
+  public void AddStreamingFile(string name, long size, Func<Stream> openStream)
+    => this.AddStreamingFile(name, size, openStream, null);
+
+  internal void AddStreamingFile(string name, long size, Func<Stream> openStream, DateTime? lastModified) {
     ArgumentNullException.ThrowIfNull(name);
     ArgumentNullException.ThrowIfNull(openStream);
     if (size < 0) throw new ArgumentOutOfRangeException(nameof(size), "size must be >= 0.");
