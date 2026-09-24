@@ -45,6 +45,7 @@ namespace FileSystem.Hammer2;
 /// checks again, from the block holding the blockref outwards, and stamping the
 /// headers once the pass is over.</para>
 /// </remarks>
+[FilesystemBlockMover(typeof(Hammer2BlockMover))]
 public sealed class Hammer2FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IArchiveCreatable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap {
 
   /// <summary>

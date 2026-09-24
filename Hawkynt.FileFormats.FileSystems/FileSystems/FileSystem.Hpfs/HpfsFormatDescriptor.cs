@@ -26,6 +26,7 @@ namespace FileSystem.Hpfs;
 /// throw <see cref="NotSupportedException"/> / <see cref="InvalidOperationException"/>
 /// respectively; callers can fall back to a rebuild path in those cases.
 /// </remarks>
+[FilesystemBlockMover(typeof(HpfsBlockMover))]
 public sealed class HpfsFormatDescriptor
     : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable,
       IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, ILayoutOptimizable {
