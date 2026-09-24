@@ -39,6 +39,10 @@ public static class RebuildVerb {
     var sourceManifest = ArchiveSemanticManifest.Capture(
       input, ops, cancellationToken: cancellationToken, excludedNames: syntheticNames);
     var sourceNames = LiveNameList(sourceEntries);
+    var sourceByName = sourceEntries
+      .Where(e => syntheticNames is null || !syntheticNames.Contains(e.Name))
+      .GroupBy(static e => SemanticKey(e.Name), StringComparer.Ordinal)
+      .ToDictionary(static g => g.Key, static g => g.First(), StringComparer.Ordinal);
     var sourceFileCount = sourceNames.Count;
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
@@ -114,11 +118,21 @@ public static class RebuildVerb {
       var inputs = new List<ArchiveInputInfo>();
       foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo("", rel + "/", true));
+        sourceByName.TryGetValue(SemanticKey(rel), out var source);
+        inputs.Add(new ArchiveInputInfo(
+          "", rel + "/", true,
+          LastModified: source?.LastModified,
+          CreationTime: source?.CreationTime,
+          Attributes: source?.Attributes));
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
         var rel = Path.GetRelativePath(tmpDir, file).Replace('\\', '/');
-        inputs.Add(new ArchiveInputInfo(file, rel, false));
+        sourceByName.TryGetValue(SemanticKey(rel), out var source);
+        inputs.Add(new ArchiveInputInfo(
+          file, rel, false,
+          LastModified: source?.LastModified,
+          CreationTime: source?.CreationTime,
+          Attributes: source?.Attributes));
       }
 
       var visualSize = Math.Max(sourceLength, totalLogical);
@@ -401,6 +415,9 @@ public static class RebuildVerb {
     }
     return result;
   }
+
+  private static string SemanticKey(string name)
+    => name.Replace('\\', '/').TrimEnd('/');
 
   private static List<string> LiveNameList(IEnumerable<ArchiveEntryInfo> entries)
     => entries.Where(e => !e.IsDirectory).Select(e => e.Name)
