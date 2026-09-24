@@ -7,6 +7,7 @@ using FileSystem.ApplePascal;
 using FileSystem.Lif;
 using FileSystem.Jfs1;
 using FileSystem.ExFat;
+using FileSystem.Fatx;
 using FileSystem.CpcDsk;
 using FileSystem.Btrfs;
 using FileSystem.Mfs;
@@ -164,10 +165,17 @@ public sealed class OptimizationCapabilitySeparationTests {
 
   [Test, Category("Architecture")]
   public void BlockMover_IsRequiredForExtentDefragmentation() {
+    var fatx = new FatxFormatDescriptor();
+
     Assert.Multiple(() => {
       Assert.That(OptimizationCapabilities.CanDefragmentExtents(new MfsFormatDescriptor()), Is.True);
       Assert.That(OptimizationCapabilities.CanDefragmentExtents(new ApplePascalFormatDescriptor()), Is.True,
         "Apple Pascal exposes its real extent mover separately from directory ordering");
+      Assert.That(OptimizationCapabilities.CanDefragmentExtents(fatx), Is.True,
+        "A real same-format mover used by the descriptor must remain an explicit physical-defrag capability");
+      Assert.That(OptimizationCapabilities.GetFilesystemBlockMoverType(fatx), Is.EqualTo(typeof(FatxBlockMover)));
+      Assert.That(OptimizationCapabilities.CanDefragmentExtents(new StackerFormatDescriptor()), Is.False,
+        "Rebuild-only defragmentation must not masquerade as physical extent movement");
     });
   }
 }
