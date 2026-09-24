@@ -141,8 +141,10 @@ particular, `ILayoutOptimizable` does **not** imply compression optimization or
 even a user-selectable geometry change: it is also used as the verified rebuild
 transport by formats whose only writer knobs are metadata or compression.
 **Change allocation geometry** appears only for schema options explicitly tagged
-`IsAllocationGeometry=true`. Likewise, `IArchiveDefragmentable` without an
-exposed `IFilesystemBlockMover` does not unlock **Defragment extents**.
+`IsAllocationGeometry=true`. Likewise, `IArchiveDefragmentable` without an explicitly exposed
+`IFilesystemBlockMover` does not unlock **Defragment extents**. A mover may be
+descriptor-native or composed through `FilesystemBlockMoverAttribute`; class-name
+or namespace conventions are never treated as capabilities.
 
 **purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
 container); *wipe* removes only the **dead** data (you keep every live file, but
@@ -221,8 +223,9 @@ dispose the stream.
 (hot/normal/frozen by mtime) for tile colouring and placement.
 
 **True in-place defrag** (move extents without a full rebuild) additionally
-implements **`IFilesystemBlockMover`**: `MoveExtent` does the raw byte copy and
-`UpdateAllocationAfterMove` patches the allocation metadata (FAT chain, dir
+exposes **`IFilesystemBlockMover`**: either the descriptor implements it directly
+or it explicitly declares a composed mover via `FilesystemBlockMoverAttribute`.
+`MoveExtent` does the raw byte copy and `UpdateAllocationAfterMove` patches the allocation metadata (FAT chain, dir
 start-cluster, bitmap bits) so the file stays reachable. Without it, defrag falls
 back to a rebuild.
 
