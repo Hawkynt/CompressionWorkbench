@@ -213,11 +213,13 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
   public void UpdateAllocationAfterMove(Stream image, string fileName, long oldOffset, long newOffset, long length)
     => new RomFsBlockMover().UpdateAllocationAfterMove(image, fileName, oldOffset, newOffset, length);
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new RomFsReader(stream);
-    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+    return reader.Entries.Select(e => new DefragContentGuard.DefragContentEntry(
+      e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+      Length: e.Size)).ToList();
   }
 
   /// <summary>Plans a record-level layout and moves the records into it.</summary>
@@ -282,7 +284,7 @@ public sealed class RomFsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

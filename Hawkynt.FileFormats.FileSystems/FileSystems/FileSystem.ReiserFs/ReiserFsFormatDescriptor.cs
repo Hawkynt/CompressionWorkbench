@@ -257,7 +257,7 @@ public sealed class ReiserFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
       // can refuse partway — a file small enough to live entirely in a DIRECT
       // item has no run of its own — and a rebuild is the honest answer then.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadEntries(stream),
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

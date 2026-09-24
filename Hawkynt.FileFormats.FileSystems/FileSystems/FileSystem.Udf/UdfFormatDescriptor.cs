@@ -332,16 +332,21 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   /// </summary>
   private const long MaxBufferedImageBytes = 256L * 1024 * 1024;
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadEntriesForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new UdfReader(stream, leaveOpen: true);
-    var contents = new List<byte[]>();
+    var contents = new List<DefragContentGuard.DefragContentEntry>();
     foreach (var entry in reader.Entries) {
-      if (entry.IsDirectory) continue;
-      using var buffer = new MemoryStream();
-      reader.ExtractTo(entry, buffer);
-      contents.Add(buffer.ToArray());
+      var data = Array.Empty<byte>();
+      if (!entry.IsDirectory) {
+        using var buffer = new MemoryStream();
+        reader.ExtractTo(entry, buffer);
+        data = buffer.ToArray();
+      }
+      contents.Add(new DefragContentGuard.DefragContentEntry(
+        entry.Name, entry.IsDirectory, data, Length: entry.Size,
+        Modified: entry.LastModified is { } t ? new DateTimeOffset(t) : null));
     }
 
     return contents;
@@ -403,7 +408,7 @@ public sealed class UdfFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadEntriesForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

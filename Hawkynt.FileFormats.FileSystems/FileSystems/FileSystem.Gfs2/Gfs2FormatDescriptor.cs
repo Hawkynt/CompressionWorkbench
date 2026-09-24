@@ -357,7 +357,7 @@ public sealed class Gfs2FormatDescriptor
       // can refuse partway — a file stuffed into its own dinode has no run of
       // its own — and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadEntries(stream),
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

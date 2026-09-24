@@ -337,7 +337,7 @@ public sealed class Jffs2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+        readEntries: stream => ReadFileEntries(stream),
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

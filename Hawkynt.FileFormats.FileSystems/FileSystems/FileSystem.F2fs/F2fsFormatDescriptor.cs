@@ -291,11 +291,14 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   /// </summary>
   private const long PlannerImageCap = 256L * 1024 * 1024;
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new F2fsReader(stream, leaveOpen: true);
-    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+    return reader.Entries.Select(e => new DefragContentGuard.DefragContentEntry(
+      e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+      Length: e.Size, Modified: e.LastModified is { } t ? new DateTimeOffset(t) : null,
+      LinkIdentity: e.NodeId.ToString(System.Globalization.CultureInfo.InvariantCulture))).ToList();
   }
 
   /// <summary>Plans a layout inside the data region and moves the blocks into it.</summary>
@@ -362,7 +365,7 @@ public sealed class F2fsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

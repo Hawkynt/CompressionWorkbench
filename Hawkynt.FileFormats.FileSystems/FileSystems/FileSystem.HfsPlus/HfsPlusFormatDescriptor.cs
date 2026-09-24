@@ -359,11 +359,18 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       "complete", 1, -1, -1, archive.Length, postExtents, "Defragmentation complete"));
   }
 
-  /// <summary>Every file's bytes, for the guard to compare across the pass.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, for the guard to compare across the pass.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     var reader = new HfsPlusReader(stream, leaveOpen: true);
-    return reader.Entries.Where(e => !e.IsDirectory).Select(reader.Extract).ToList();
+    return reader.Entries.Select(e => new DefragContentGuard.DefragContentEntry(
+      e.FullPath,
+      e.IsDirectory,
+      e.IsDirectory || e.IsSymlink ? Array.Empty<byte>() : reader.Extract(e),
+      Length: e.Size,
+      Modified: e.LastModified is { } t ? new DateTimeOffset(t) : null,
+      LinkIdentity: e.Cnid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+      SymbolicLinkTarget: e.LinkTarget)).ToList();
   }
 
   /// <summary>
@@ -400,7 +407,7 @@ public sealed class HfsPlusFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: stream => ReadPayloadsForGuard(stream),
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;

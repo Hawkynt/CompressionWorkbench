@@ -38,8 +38,7 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("SectorSize", "Logical sector size", FormatOptionKind.Enum, "1024",
       AllowedValues: SmartFsLayout.SectorSizes.Select(static s => s.ToString(CultureInfo.InvariantCulture)).ToArray(),
-      Description: "SmartFS logical sector size in bytes. NuttX stores a three-bit size code and permits powers of two from 256 through 32768; smaller sectors reduce small-file slack while larger sectors reduce mapping overhead.",
-      IsAllocationGeometry: true),
+      Description: "SmartFS logical sector size in bytes. NuttX stores a three-bit size code and permits powers of two from 256 through 32768; smaller sectors reduce small-file slack while larger sectors reduce mapping overhead."),
   ];
 
   /// <summary>Where the volume keeps its bytes.</summary>
@@ -293,7 +292,7 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
     if (archive.CanSeek && archive.Length <= MaxBufferedImageBytes) {
       var planned = false;
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
@@ -306,12 +305,14 @@ public sealed class SmartFsFormatDescriptor : IFormatDescriptor, IArchiveFormatO
       buildImage: files => BuildImage(files, sectorSize));
   }
 
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new SmartFsReader(stream);
     return reader.Entries
-      .Where(e => !e.IsDirectory && !IsSynthetic(e.Name))
-      .Select(reader.Extract)
+      .Where(e => !IsSynthetic(e.Name))
+      .Select(e => new DefragContentGuard.DefragContentEntry(
+        e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+        Length: e.Size))
       .ToList();
   }
 

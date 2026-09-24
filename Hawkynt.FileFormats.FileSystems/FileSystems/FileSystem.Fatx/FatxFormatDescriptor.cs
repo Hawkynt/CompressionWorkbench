@@ -30,7 +30,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("SectorsPerCluster", "Sectors per cluster", FormatOptionKind.Enum, "0",
       AllowedValues: ["0", "4", "8", "16", "32", "64", "128"],
-      Description: "FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default).", IsAllocationGeometry: true),
+      Description: "FATX cluster size in 512-byte sectors (0 = auto-optimise for least slack; 32 = 16 KiB Xbox default)."),
     new("VolumeId", "Volume ID", FormatOptionKind.String, "",
       Description: "32-bit volume identifier (hex or decimal). Blank picks one, the way formatting does."),
   ];
@@ -435,7 +435,7 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     // a rebuild is the honest answer when it does, rather than the exception
     // this used to hand the caller.
     DefragContentGuard.RunOrRebuild(archive,
-      readContents: stream => ReadFileEntries(stream).Select(e => e.Data).ToList(),
+      readEntries: stream => ReadFileEntries(stream),
       inPlace: () => this.DefragmentWithPlanner(archive, options),
       rebuild: () => DefragRebuilder.Rebuild(archive, options,
         readEntries: stream => ReadFileEntries(stream),

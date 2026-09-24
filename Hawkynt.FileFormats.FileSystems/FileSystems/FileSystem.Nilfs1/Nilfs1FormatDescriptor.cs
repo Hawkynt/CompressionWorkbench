@@ -114,7 +114,7 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       DisplayName: "Segment size",
       Kind: FormatOptionKind.String,
       Default: "0",
-      Description: "Segment size in bytes (0 = 8 × block size, the v1 default).", IsAllocationGeometry: true),
+      Description: "Segment size in bytes (0 = 8 × block size, the v1 default)."),
     new FormatOptionDescriptor(
       Key: "VolumeLabel",
       DisplayName: "Volume label",
@@ -236,8 +236,8 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
   /// </summary>
   private const long PlannerImageCap = 256L * 1024 * 1024;
 
-  /// <summary>Every file's bytes, as the guard compares them before and after.</summary>
-  private static IReadOnlyList<byte[]> ReadPayloadsForGuard(Stream stream) {
+  /// <summary>Every entry's semantic identity, as the guard compares it before and after.</summary>
+  private static IReadOnlyList<DefragContentGuard.DefragContentEntry> ReadEntriesForGuard(Stream stream) {
     stream.Position = 0;
     using var reader = new Nilfs1Reader(stream);
 
@@ -246,7 +246,9 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
     // changed, so it always differs.
     return reader.Entries
       .Where(e => !SyntheticEntries.Contains(e.Name))
-      .Select(reader.Extract)
+      .Select(e => new DefragContentGuard.DefragContentEntry(
+        e.Name, e.IsDirectory, e.IsDirectory ? Array.Empty<byte>() : reader.Extract(e),
+        Length: e.Size))
       .ToList();
   }
 
@@ -309,7 +311,7 @@ public sealed class Nilfs1FormatDescriptor : IFormatDescriptor, IArchiveFormatOp
       // The in-place pass is kept only if every payload still reads back: it
       // can refuse partway, and a rebuild is the honest answer when it does.
       DefragContentGuard.RunOrRebuild(archive,
-        readContents: ReadPayloadsForGuard,
+        readEntries: ReadEntriesForGuard,
         inPlace: () => { DefragmentWithPlanner(archive, options); planned = true; },
         rebuild: () => planned = false);
       if (planned) return;
