@@ -321,13 +321,12 @@ public partial class DefragmentWindow : Window {
     if (PurgeBtn != null)
       PurgeBtn.IsEnabled = ops is IArchiveModifiable;
 
-    // Enable Compact (defrag + compress + shrink) whenever at least one of its
-    // constituent steps applies. The "Minimal geometry" checkbox unlocks the
-    // smallest-geometry rebuild for formats whose creation exposes size knobs.
+    // Compact composes only the non-geometry maintenance stages. Allocation
+    // geometry is deliberately exposed through its own command.
     if (CompactBtn != null)
-      CompactBtn.IsEnabled = ops is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable;
-    if (MinimalGeometryCheck != null)
-      MinimalGeometryCheck.IsEnabled = ops is IArchiveCreatable and IFormatOptionsSchema;
+      CompactBtn.IsEnabled = OptimizationCapabilities.CanDefragmentExtents(descriptor)
+        || OptimizationCapabilities.CanCompress(descriptor)
+        || ops is IArchiveShrinkable;
 
     // Scramble is only offered by descriptors that can scatter a volume in
     // place. There is no fallback to fall back to: a rebuild would pack the
@@ -1782,27 +1781,16 @@ public partial class DefragmentWindow : Window {
   }
 
   /// <summary>
-  /// Runs the composite <c>compact</c> verb (defrag → optimize → shrink) via
-  /// <see cref="Compression.Lib.CompactOperation"/>. When "Minimal geometry" is
-  /// ticked, the trio is replaced by a minimal-geometry rebuild — smaller, but
-  /// the result may no longer be a standard/mountable image.
+  /// Runs the composite <c>compact</c> verb (defrag → compress → shrink) via
+  /// <see cref="Compression.Lib.CompactOperation"/>. Allocation geometry is a
+  /// separate explicit maintenance action and is never changed here.
   /// </summary>
   private void OnCompact(object sender, RoutedEventArgs e) {
     if (this._imagePath == null) return;
     var path = this._imagePath;
-    var minimal = MinimalGeometryCheck?.IsChecked == true;
     var formatStr = FormatLbl.Text;
 
-    if (minimal) {
-      var confirm = MessageBox.Show(this,
-        "Minimal geometry rebuilds the container at the smallest size the format allows "
-        + "(e.g. a 1.44 MB FAT floppy collapses to a few KB).\n\n"
-        + "Contents are preserved, but the result may no longer be a standard, mountable image. Continue?",
-        "Compact — minimal geometry", MessageBoxButton.YesNo, MessageBoxImage.Warning);
-      if (confirm != MessageBoxResult.Yes) return;
-    }
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Compacting {Path.GetFileName(path)}{(minimal ? " (minimal geometry)" : "")} ===");
+    Append($"=== {DateTime.Now:HH:mm:ss}  Compacting {Path.GetFileName(path)} ===");
     CompactBtn.IsEnabled = false;
     RunBtn.IsEnabled = false;
     ShrinkBtn.IsEnabled = false;
@@ -1817,7 +1805,6 @@ public partial class DefragmentWindow : Window {
       try {
         result = Compression.Lib.CompactOperation.Compact(path,
           new Compression.Lib.CompactOperation.CompactOptions {
-            Minimal = minimal,
             Log = line => Dispatcher.BeginInvoke(() => Append("  " + line)),
           });
       } catch (Exception ex) {
