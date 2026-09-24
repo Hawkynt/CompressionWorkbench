@@ -73,7 +73,6 @@ public partial class DefragmentWindow : Window {
   private string? _formatId;
   private bool _isArchiveMode;
   private bool _isFileInternalMode;
-  private bool _isSevenZipFormat;
   private IFileInternalChunkMover? _chunkMover;
   private int _fileRowCount;
   private string _filesSortDescription = "listing order";
@@ -232,7 +231,6 @@ public partial class DefragmentWindow : Window {
     this._imagePath = path;
     this._isArchiveMode = false;
     this._isFileInternalMode = false;
-    this._isSevenZipFormat = false;
     this._archiveOps = null;
     this._chunkMover = null;
     this._formatId = null;
@@ -283,7 +281,6 @@ public partial class DefragmentWindow : Window {
     } else if (isArchiveLayout || isArchiveCreatable) {
       // Archive optimization path (new)
       this._isArchiveMode = true;
-      this._isSevenZipFormat = format.ToString() == "SevenZip";
       this._archiveOps = ops;
       if (isArchiveCreatable) {
         SupportLbl.Text = "Archive optimization (extract + repack with optimal settings).";
@@ -308,8 +305,6 @@ public partial class DefragmentWindow : Window {
       FsModesGroup.Visibility = showFsModes ? Visibility.Visible : Visibility.Collapsed;
     if (ArchiveRepackGroup != null)
       ArchiveRepackGroup.Visibility = (this._isArchiveMode || this._isFileInternalMode) ? Visibility.Visible : Visibility.Collapsed;
-    if (SmartSolidRepackCheck != null)
-      SmartSolidRepackCheck.Visibility = this._isSevenZipFormat ? Visibility.Visible : Visibility.Collapsed;
     if (MetadataPlacementPanel != null)
       MetadataPlacementPanel.Visibility = this._isFileInternalMode ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1195,11 +1190,6 @@ public partial class DefragmentWindow : Window {
   /// Refreshes the block chart after completion to show the new layout.
   /// </summary>
   private void OnRunArchiveOptimize() {
-    if (this._isSevenZipFormat && SmartSolidRepackCheck?.IsChecked == true) {
-      OnRunSmartSolidRepack();
-      return;
-    }
-
     var path = this._imagePath!;
     var ops = this._archiveOps;
     var formatId = this._formatId;
@@ -1320,82 +1310,6 @@ public partial class DefragmentWindow : Window {
           NotifyMutated(path);
         }
         Append("");
-        PreviewBlockMap(path, ops, wasMutated: err == null);
-      });
-    });
-  }
-
-  /// <summary>
-  /// Runs the 7z smart solid-block optimizer: tries multiple file grouping
-  /// strategies and picks the one that produces the smallest archive.
-  /// Shows per-strategy progress in the output log.
-  /// </summary>
-  private void OnRunSmartSolidRepack() {
-    var path = this._imagePath!;
-    var ops = this._archiveOps;
-
-    Append($"=== {DateTime.Now:HH:mm:ss}  Smart solid-block repack: {Path.GetFileName(path)} ===");
-
-    RunBtn.IsEnabled = false;
-    Progress.IsIndeterminate = false;
-    Progress.Value = 0;
-
-    Task.Run(() => {
-      var sw = Stopwatch.StartNew();
-      Exception? err = null;
-      var origSize = new FileInfo(path).Length;
-      FileFormat.SevenZip.SolidBlockOptimizer.OptimizeResult? optimizeResult = null;
-
-      try {
-        using var fs = File.OpenRead(path);
-        optimizeResult = FileFormat.SevenZip.SolidBlockOptimizer.Optimize(fs, maxTrials: 5,
-          onProgress: (index, total, name) => {
-            Dispatcher.BeginInvoke(() => {
-              Progress.Value = (double)index / total * 100;
-              Append($"  Trying strategy {index + 1}/{total}: {name}...");
-            });
-          });
-      } catch (Exception ex) {
-        err = ex;
-      }
-      sw.Stop();
-
-      Dispatcher.Invoke(() => {
-        Progress.Value = 100;
-        RunBtn.IsEnabled = true;
-        BlockMap.ReadHead = -1;
-        BlockMap.WriteHead = -1;
-
-        if (err != null) {
-          Append($"FAILED ({sw.ElapsedMilliseconds} ms): {err.GetType().Name}: {err.Message}");
-        } else if (optimizeResult != null) {
-          // Report all trial results
-          foreach (var trial in optimizeResult.Trials)
-            Append($"    {trial.StrategyName}: {FormatSize(trial.OutputSize)} ({trial.Elapsed.TotalMilliseconds:F0} ms)");
-
-          var newSize = (long)optimizeResult.Data.Length;
-          var delta = newSize - origSize;
-          var pct = origSize > 0 ? (double)delta / origSize * 100 : 0;
-          Append($"  Winner: {optimizeResult.WinningStrategy}");
-          Append($"OK ({sw.ElapsedMilliseconds} ms)");
-          Append($"Archive size: {origSize:N0} -> {newSize:N0} bytes ({delta:+#,#;-#,#;0}, {pct:+0.0;-0.0;0.0}%)");
-
-          // Write the winning archive if it's smaller. Use atomic rename so
-          // a crash mid-write can't corrupt the source archive.
-          if (newSize < origSize) {
-            try {
-              Compression.Lib.AtomicFileWriter.WriteAllBytesAtomic(path, optimizeResult.Data);
-              Append("Optimized archive written.");
-            } catch (Exception writeEx) {
-              Append($"WARNING: Could not write optimized archive: {writeEx.Message}");
-            }
-          } else {
-            Append("No strategy improved on the original size; archive unchanged.");
-          }
-        }
-        Append("");
-
-        // Refresh the block chart to show the new layout.
         PreviewBlockMap(path, ops, wasMutated: err == null);
       });
     });
