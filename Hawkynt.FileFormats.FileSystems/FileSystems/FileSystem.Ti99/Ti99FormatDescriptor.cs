@@ -105,7 +105,7 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Default: "40",
       AllowedValues: ["35", "40", "80"],
       Description: "35 or 40 for standard floppies, 80 for high-density.",
-      DependsOn: "Mode=SectorDump"),
+      DependsOn: "Mode=SectorDump", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Sectors",
       DisplayName: "Sectors per track",
@@ -113,7 +113,7 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Default: "9",
       AllowedValues: ["8", "9", "18"],
       Description: "9 = SD, 18 = DD (256-byte sectors).",
-      DependsOn: "Mode=SectorDump"),
+      DependsOn: "Mode=SectorDump", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Sides",
       DisplayName: "Sides",
@@ -121,7 +121,7 @@ public sealed class Ti99FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       Default: "2",
       AllowedValues: ["1", "2"],
       Description: "1 = single-sided, 2 = double-sided.",
-      DependsOn: "Mode=SectorDump"),
+      DependsOn: "Mode=SectorDump", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "DiskName",
       DisplayName: "Disk name",
