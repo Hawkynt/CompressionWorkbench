@@ -34,9 +34,22 @@ public class FilesystemReadmeIsCurrentTests {
       return;
     }
 
-    Assert.That(section, Is.EqualTo(expected),
-      $"The support matrix in {FilesystemSupportMatrix.ReadmePath} no longer matches the descriptors. " +
-      "Re-run with CWB_WRITE_DOCS=1 to bring it up to date.");
+    if (!string.Equals(section, expected, StringComparison.Ordinal)) {
+      var actualLines = section.Split('\n');
+      var expectedLines = expected.Split('\n');
+      var differingRows = actualLines
+        .Zip(expectedLines, (actual, wanted) => (actual, wanted))
+        .Where(static pair => !string.Equals(pair.actual, pair.wanted, StringComparison.Ordinal))
+        .Where(static pair => pair.actual.StartsWith("| ", StringComparison.Ordinal)
+                              || pair.wanted.StartsWith("| ", StringComparison.Ordinal))
+        .Select(static pair => $"actual:   {pair.actual}\nexpected: {pair.wanted}")
+        .ToArray();
+
+      Assert.Fail(
+        $"The support matrix in {FilesystemSupportMatrix.ReadmePath} no longer matches the descriptors. "
+        + "Re-run with CWB_WRITE_DOCS=1 to bring it up to date.\n"
+        + string.Join("\n---\n", differingRows));
+    }
   }
 
   [Test]
