@@ -22,7 +22,8 @@ public static class RebuildVerb {
       IReadOnlySet<string>? syntheticNames = null,
       Action<DefragProgressEvent>? onProgress = null,
       CancellationToken cancellationToken = default,
-      FormatCreateOptions? createOptions = null) {
+      FormatCreateOptions? createOptions = null,
+      IReadOnlySet<string>? semanticExcludedNames = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(ops);
@@ -45,11 +46,20 @@ public static class RebuildVerb {
       }
     }
 
+    IReadOnlySet<string>? manifestExcludedNames = effectiveSyntheticNames;
+    if (semanticExcludedNames is { Count: > 0 }) {
+      var merged = manifestExcludedNames is null
+        ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        : new HashSet<string>(manifestExcludedNames, StringComparer.OrdinalIgnoreCase);
+      merged.UnionWith(semanticExcludedNames);
+      manifestExcludedNames = merged;
+    }
+
     input.Position = 0;
     var sourceEntries = ops.List(input, null);
     input.Position = 0;
     var sourceManifest = ArchiveSemanticManifest.Capture(
-      input, ops, cancellationToken: cancellationToken, excludedNames: effectiveSyntheticNames);
+      input, ops, cancellationToken: cancellationToken, excludedNames: manifestExcludedNames);
     var sourceNames = LiveNameList(sourceEntries);
     var sourceByName = sourceEntries
       .Where(e => effectiveSyntheticNames is null || !effectiveSyntheticNames.Contains(e.Name))
@@ -58,7 +68,7 @@ public static class RebuildVerb {
     var sourceFileCount = sourceNames.Count;
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
-      .Where(e => !e.IsDirectory && (syntheticNames == null || !syntheticNames.Contains(e.Name)))
+      .Where(e => !e.IsDirectory && (effectiveSyntheticNames == null || !effectiveSyntheticNames.Contains(e.Name)))
       .ToArray();
     var totalLogical = Math.Max(1L, liveEntries.Sum(e => Math.Max(0L, e.OriginalSize)));
     var sourceLayout = BuildSourceLayout(input, ops, sourceEntries);
@@ -193,7 +203,7 @@ public static class RebuildVerb {
 
       output.Position = 0;
       var rebuiltManifest = ArchiveSemanticManifest.Capture(
-        output, ops, cancellationToken: cancellationToken, excludedNames: effectiveSyntheticNames);
+        output, ops, cancellationToken: cancellationToken, excludedNames: manifestExcludedNames);
       sourceManifest.RequireEquivalentTo(rebuiltManifest);
 
       cancellationToken.ThrowIfCancellationRequested();
@@ -221,11 +231,13 @@ public static class RebuildVerb {
       IArchiveCreatable creator,
       IReadOnlyDictionary<string, string>? formatSpecific = null,
       Action<DefragProgressEvent>? onProgress = null,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      IReadOnlySet<string>? semanticExcludedNames = null) {
     ArgumentNullException.ThrowIfNull(archive);
     using var rebuilt = CreateScratchStream();
     RebuildToStream(archive, rebuilt, ops, creator, formatSpecific,
-      onProgress: onProgress, cancellationToken: cancellationToken);
+      onProgress: onProgress, cancellationToken: cancellationToken,
+      semanticExcludedNames: semanticExcludedNames);
 
     // Point of no return. Do not inspect cancellation again after announcing
     // commit; callers disable Cancel for this phase.
