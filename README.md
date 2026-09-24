@@ -427,8 +427,9 @@ than by hard-coded format pairs.
 
 ### 🧹 Maintenance
 
-Archives, filesystems and disk-image containers can expose maintenance verbs such as defragment,
-shrink, wipe, layout/optimize or reorder. Those are capabilities, not promises made for every format.
+Archives, filesystems and disk-image containers expose maintenance by effect: compression,
+canonicalization, repacking, directory ordering, physical extent defragmentation, allocation-geometry
+changes, shrink and wipe. Those are independent capabilities, not one generic "Optimize" promise.
 The authoritative per-format cells are in the [archive](Hawkynt.FileFormats.Archives/README.md) and
 [filesystem](Hawkynt.FileFormats.FileSystems/README.md) matrices; the common mechanisms are described
 in [docs/MAINTENANCE-MECHANISMS.md](docs/MAINTENANCE-MECHANISMS.md).
