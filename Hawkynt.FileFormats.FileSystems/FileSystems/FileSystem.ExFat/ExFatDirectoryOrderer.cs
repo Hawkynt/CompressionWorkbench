@@ -184,10 +184,10 @@ public static class ExFatDirectoryOrderer {
       var count = dataLength == 0 ? 0 : checked((int)((dataLength + layout.ClusterSize - 1) / layout.ClusterSize));
       var result = new List<uint>(count);
       for (var i = 0; i < count; ++i) {
-        var cluster = firstCluster + (uint)i;
-        if (cluster > layout.ClusterCount + 1)
+        var candidate = firstCluster + (uint)i;
+        if (candidate > layout.ClusterCount + 1)
           throw new InvalidDataException("exFAT contiguous directory allocation exceeds the cluster heap.");
-        result.Add(cluster);
+        result.Add(candidate);
       }
       return result;
     }
