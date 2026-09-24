@@ -30,6 +30,34 @@ public class FilesystemCompressionCapabilityTests {
       + string.Join(", ", offenders));
   }
 
+  [Test, Category("Architecture")]
+  public void RegisteredCompressionParameters_DoNotOverlapAllocationGeometry() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .OfType<ILayoutOptimizable>()
+      .SelectMany(layout => {
+        if (!FilesystemOptimizationAdapters.TryGetCompressionProfile(layout, out var profile)
+            || layout is not IFormatOptionsSchema schema)
+          return [];
+
+        var geometryKeys = schema.OptionsSchema
+          .Where(static option => option.IsAllocationGeometry)
+          .Select(static option => option.Key)
+          .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return profile.Parameters
+          .Where(parameter => geometryKeys.Contains(parameter.Key))
+          .Select(parameter => $"{((IFormatDescriptor)layout).Id}:{parameter.Key}");
+      })
+      .OrderBy(static item => item, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "Compression search axes must not also be allocation-geometry axes: "
+      + string.Join(", ", offenders));
+  }
+
   [Test]
   public void AlwaysCompressedWriters_AcceptTransparentCompressionOption() {
     var cramfs = FilesystemOptimization.GetSupportedFeatures(new CramFsFormatDescriptor());
