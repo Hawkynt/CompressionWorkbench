@@ -160,7 +160,7 @@ public static class FormatRegistry {
       HasArchiveProjection: descriptor is IArchiveFormatOperations,
       HasArchiveMutation: descriptor is IArchiveModifiable,
       HasExtentMap: descriptor is IFilesystemExtentMap,
-      HasBlockMover: descriptor is IFilesystemBlockMover,
+      HasBlockMover: OptimizationCapabilities.HasFilesystemBlockMover(descriptor),
       HasBlockDeviceProvider: descriptor is IRandomAccessBlockDeviceProvider,
       HasMultiStreamProvider:
         descriptor is IMultiStreamFilesystemDriverProvider || sidecar is IMultiStreamFilesystemDriverProvider,
