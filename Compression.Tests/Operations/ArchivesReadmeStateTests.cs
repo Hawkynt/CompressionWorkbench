@@ -13,7 +13,16 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public sealed class ArchivesReadmeStateTests {
 
-  private static readonly string[] MaintenanceTokens = ["defrag", "shrink", "wipe", "optimize", "reorder"];
+  private static readonly string[] MaintenanceTokens = [
+    "compress",
+    "canonicalize",
+    "repack",
+    "sort directory entries",
+    "defragment extents",
+    "change allocation geometry",
+    "shrink",
+    "wipe",
+  ];
 
   [Test, Category("HappyPath")]
   public void EverySupportMatrixCellMatchesTheLiveDescriptor() {
@@ -49,7 +58,7 @@ public sealed class ArchivesReadmeStateTests {
       Check("Test", caps.HasFlag(FormatCapabilities.CanTest));
       Check("Compress", caps.HasFlag(FormatCapabilities.CanCreate));
       Check("Decompress", caps.HasFlag(FormatCapabilities.CanExtract));
-      Check("Optimize", caps.HasFlag(FormatCapabilities.SupportsOptimize));
+      Check("Optimize compression", OptimizationCapabilities.CanCompress(descriptor));
       Check("Demux", caps.HasFlag(FormatCapabilities.CanExtract));
       Check("Mux", caps.HasFlag(FormatCapabilities.CanCreate));
       Check("Remux", caps.HasFlag(FormatCapabilities.CanRemux));
@@ -57,11 +66,14 @@ public sealed class ArchivesReadmeStateTests {
       var maintenance = columns.IndexOf("Maintenance");
       if (maintenance >= 0) {
         var expected = new List<string>();
-        if (ops is IArchiveDefragmentable) expected.Add("defrag");
+        if (OptimizationCapabilities.CanCompress(descriptor)) expected.Add("compress");
+        if (OptimizationCapabilities.CanCanonicalize(descriptor)) expected.Add("canonicalize");
+        if (OptimizationCapabilities.CanRepack(descriptor)) expected.Add("repack");
+        if (OptimizationCapabilities.CanSortDirectoryEntries(descriptor)) expected.Add("sort directory entries");
+        if (OptimizationCapabilities.CanDefragmentExtents(descriptor)) expected.Add("defragment extents");
+        if (OptimizationCapabilities.CanChangeAllocationGeometry(descriptor)) expected.Add("change allocation geometry");
         if (ops is IArchiveShrinkable) expected.Add("shrink");
         if (ops is IWipeEmpty or IArchiveLayoutMap) expected.Add("wipe");
-        if (ops is ILayoutOptimizable || caps.HasFlag(FormatCapabilities.SupportsOptimize)) expected.Add("optimize");
-        if (ops is IFileInternalChunkMover) expected.Add("reorder");
         var documented = cells[maintenance] == "—" ? [] : cells[maintenance].Split('·', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         foreach (var token in documented)
           if (!MaintenanceTokens.Contains(token)) problems.Add($"{id}.Maintenance: unknown verb '{token}'");
