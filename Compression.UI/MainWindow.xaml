@@ -85,8 +85,8 @@
           <MenuItem.Icon><Image Source="{StaticResource AnalyzeIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <Separator />
-        <MenuItem Header="_Maintenance (Optimize / Shrink / Defragment / Purge / Wipe)..." Click="OnDefragment"
-                  ToolTip="Open the maintenance window for a filesystem image or archive.">
+        <MenuItem Header="_Maintenance..." Click="OnDefragment"
+                  ToolTip="Open maintenance tools. Compression, canonicalization, repacking, directory ordering, extent defragmentation, and allocation geometry are separate operations.">
           <MenuItem.Icon><Image Source="{StaticResource DefragmentIcon}" Width="16" Height="16" /></MenuItem.Icon>
         </MenuItem>
         <MenuItem Header="Convert _Archive..." Click="OnConvertArchive">
