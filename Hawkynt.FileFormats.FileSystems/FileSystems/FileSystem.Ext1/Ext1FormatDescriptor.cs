@@ -38,7 +38,8 @@ public sealed class Ext1FormatDescriptor : IFormatDescriptor, IArchiveFormatOper
     new FormatOptionDescriptor(
       Key: "BlockSize", DisplayName: "Block Size (bytes)", Kind: FormatOptionKind.Integer, Default: "1024",
       AllowedValues: ["1024", "2048", "4096"],
-      Description: "ext1 block size (s_log_block_size). The 4 MiB image footprint is constant; larger blocks mean fewer total blocks."),
+      Description: "ext1 block size (s_log_block_size). The 4 MiB image footprint is constant; larger blocks mean fewer total blocks.",
+      IsAllocationGeometry: true),
   ];
 
   /// <summary>
