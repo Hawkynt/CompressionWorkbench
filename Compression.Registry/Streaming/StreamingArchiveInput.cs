@@ -36,4 +36,10 @@ public sealed record StreamingArchiveInput(
   long Size,
   bool IsDirectory,
   Func<Stream> OpenStream
-);
+) {
+  /// <summary>
+  /// Logical modification timestamp to preserve when the target format can
+  /// represent one. Null lets the target writer use its normal default.
+  /// </summary>
+  public DateTime? LastModified { get; init; }
+}
