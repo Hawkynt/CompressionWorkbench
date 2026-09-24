@@ -1749,45 +1749,36 @@ wipeCmd.SetAction((ParseResult ctx) => {
 // ── compact ───────────────────────────────────────────────────────────────
 
 var compactImageArg = new Argument<string>("file") { Description = "Filesystem image or archive to compact" };
-var compactMinimalOpt = new Option<bool>("--minimal") {
-  Description = "Rebuild at the smallest geometry the format allows (auto-fit size, smallest cluster, "
-    + "minimal root directory). Produces the smallest possible file but may no longer be a standard "
-    + "mountable image — e.g. a 1.44 MB FAT floppy collapses to a few KB."
-};
 var compactCmd = new Command("compact", """
   Make the container as small as possible while keeping its contents identical.
 
-  Standard (default): defragment → optimize → shrink, in place.
-    - defragment  consolidate live data so it is contiguous
-    - optimize    re-encode the payload with the best methods (where re-encodable)
-    - shrink      truncate the freed tail / step down to the smallest canonical size
+  Runs the independent size-reduction capabilities that the format actually exposes:
+    - defragment extents  consolidate live data through a real block mover
+    - compress            re-encode live payloads with better compression choices
+    - shrink              truncate freed tail space / step down to the smallest canonical size
 
-  --minimal: replace the trio with a single minimal-geometry rebuild — re-create
-  the container at the smallest geometry the format allows. Smaller than the
-  standard pass, but the result may no longer be a standard/mountable image.
+  Allocation geometry is deliberately not changed by compact. Use
+  'cwb reconfigure --set KEY=VALUE' for explicit geometry changes.
 
   Examples:
-    cwb compact disk.img             Smallest STANDARD image holding the data
-    cwb compact disk.img --minimal   Bare-minimum geometry (tiny, non-standard)
-    cwb compact bundle.zip           Defrag + re-encode + trim a ZIP
+    cwb compact disk.img
+    cwb compact bundle.zip
 
   Contents are always preserved byte-for-byte.
-  """) { compactImageArg, compactMinimalOpt };
+  """) { compactImageArg };
 compactCmd.SetAction((ParseResult ctx) => {
   var imageArg = ctx.GetValue(compactImageArg)!;
-  var minimal = ctx.GetValue(compactMinimalOpt);
 
   if (!File.Exists(imageArg)) { Console.Error.WriteLine($"File not found: {imageArg}"); return 1; }
 
   FormatRegistration.EnsureInitialized();
   var formatId = FormatDetector.Detect(imageArg).ToString();
-  Console.WriteLine($"Compacting {Path.GetFileName(imageArg)} ({formatId}){(minimal ? " — minimal geometry" : "")}...");
+  Console.WriteLine($"Compacting {Path.GetFileName(imageArg)} ({formatId})...");
   var sw = Stopwatch.StartNew();
 
   try {
     var result = Compression.Lib.CompactOperation.Compact(imageArg,
       new Compression.Lib.CompactOperation.CompactOptions {
-        Minimal = minimal,
         Log = line => Console.WriteLine("  " + line),
       });
     sw.Stop();
