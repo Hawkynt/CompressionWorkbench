@@ -16,7 +16,10 @@ public sealed record ArchiveInputInfo(
   string FullPath,
   string ArchiveName,
   bool IsDirectory,
-  byte[]? InMemoryContent = null
+  byte[]? InMemoryContent = null,
+  DateTime? LastModified = null,
+  DateTime? CreationTime = null,
+  uint? Attributes = null
 ) {
   /// <summary>Creates an in-memory input whose content comes from
   /// <paramref name="content"/> rather than a file on disk.</summary>
