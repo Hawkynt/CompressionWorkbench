@@ -185,8 +185,9 @@ optional because purge can be realised through existing mutation/create contract
 
 ## 4. Declaring tunable options — `IFormatOptionsSchema`
 
-For *optimize* and *shrink* (and creation) to expose method/level/parameter
-choices in the Convert dialog and the CLI's `--opt key=value`, the descriptor
+For *compress*, *change allocation geometry*, *shrink* (and creation) to expose
+method/level/parameter choices in the Convert dialog and the CLI's
+`--opt key=value`, the descriptor
 implements **`IFormatOptionsSchema`**, returning a list of
 `FormatOptionDescriptor`:
 
@@ -249,7 +250,7 @@ RAM. The streaming contracts:
   logical size (slack/padding/neighbours are unreachable). The default
   implementation buffers to memory and calls `Create`; FAT/ext/ZIP-store override
   it. Peak memory is the chunk buffer + the format's own metadata tables.
-- **Optimize / structural rebuild:** `ILayoutOptimizable` —
+- **Change allocation geometry / structural rebuild:** `ILayoutOptimizable` —
   `AnalyzeLayout` reads only the superblock/BPB (never the whole image);
   `ApplyMetadata` patches a handful of bytes in place (label/serial/geometry);
   `RebuildStreaming(source, target, options)` does cluster/block-size/FAT-type
@@ -289,7 +290,7 @@ buffer), but is bounded by RAM; override them to handle multi-GB/TB images.
 | `IFilesystemBlockMover` + `IArchiveDefragmentable` | **defragment extents** |
 | `ILayoutOptimizable`       | **change allocation geometry** (parameter retune, in-place or streaming) |
 | `IWipeEmpty`               | **wipe** (zero unused/slack/deleted) |
-| `IFormatOptionsSchema`     | per-format Method/Level/… choices in the create + optimize/shrink dialogs |
+| `IFormatOptionsSchema`     | per-format Method/Level/… choices in create/compress/geometry/shrink dialogs |
 | `IFilesystemExtentMap` / `IArchiveLayoutMap` | the block-map preview in the Maintenance window |
 | `IStreamFormatOperations`  | single-stream (de)compression with level/dictionary options |
 
