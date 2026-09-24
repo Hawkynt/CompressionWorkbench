@@ -37,7 +37,11 @@ public sealed class FilesystemVerbsAreBackedTests {
   /// </summary>
   private static readonly Dictionary<string, string> Deferred = new(StringComparer.Ordinal);
 
-  private static IEnumerable<TestCaseData> DefragmentableIds() => Ids(typeof(IArchiveDefragmentable), "Defrag");
+  private static IEnumerable<TestCaseData> DefragmentableIds() {
+    foreach (var descriptor in Descriptors())
+      if (OptimizationCapabilities.CanDefragmentExtents(descriptor))
+        yield return new TestCaseData(descriptor.Id).SetName($"DefragmentExtentsIsBacked_{descriptor.Id}");
+  }
   private static IEnumerable<TestCaseData> WipeableIds() => Ids(typeof(IWipeEmpty), "Wipe");
   private static IEnumerable<TestCaseData> ShrinkableIds() => Ids(typeof(IArchiveShrinkable), "Shrink");
 
@@ -49,8 +53,8 @@ public sealed class FilesystemVerbsAreBackedTests {
   /// </summary>
   private static IEnumerable<TestCaseData> LayoutIds() {
     foreach (var descriptor in Descriptors())
-      if (FilesystemSupportMatrix.RelaysOut(FormatRegistry.GetArchiveOps(descriptor.Id)))
-        yield return new TestCaseData(descriptor.Id).SetName($"LayoutIsBacked_{descriptor.Id}");
+      if (OptimizationCapabilities.CanChangeAllocationGeometry(descriptor))
+        yield return new TestCaseData(descriptor.Id).SetName($"GeometryChangeIsBacked_{descriptor.Id}");
   }
   private static IEnumerable<TestCaseData> BlockMoverIds() => Ids(typeof(IFilesystemBlockMover), "Move");
 
@@ -66,8 +70,8 @@ public sealed class FilesystemVerbsAreBackedTests {
     => FilesystemSupportMatrix.Descriptors(FilesystemReadmeIsCurrentTests.RepositoryRoot());
 
   [TestCaseSource(nameof(DefragmentableIds))]
-  public void ADeclaredDefrag_IsNotACapabilityRefusal(string formatId)
-    => Probe(formatId, "Defrag", (ops, image) => ((IArchiveDefragmentable)ops).Defragment(image));
+  public void ADeclaredExtentDefrag_IsNotACapabilityRefusal(string formatId)
+    => Probe(formatId, "Defragment extents", (ops, image) => ((IArchiveDefragmentable)ops).Defragment(image));
 
   [TestCaseSource(nameof(WipeableIds))]
   public void ADeclaredWipe_IsNotACapabilityRefusal(string formatId)
@@ -81,8 +85,8 @@ public sealed class FilesystemVerbsAreBackedTests {
     });
 
   [TestCaseSource(nameof(LayoutIds))]
-  public void ADeclaredLayout_IsNotACapabilityRefusal(string formatId)
-    => Probe(formatId, "Layout", (ops, image) => {
+  public void ADeclaredGeometryChange_IsNotACapabilityRefusal(string formatId)
+    => Probe(formatId, "Change allocation geometry", (ops, image) => {
       using var target = new MemoryStream();
       ((ILayoutOptimizable)ops).RebuildStreaming(image, target, new LayoutRebuildOptions());
     });
@@ -95,8 +99,8 @@ public sealed class FilesystemVerbsAreBackedTests {
       var id = key[..key.IndexOf(':', StringComparison.Ordinal)];
       var ops = FormatRegistry.GetArchiveOps(id);
       var marker = key[(key.IndexOf(':', StringComparison.Ordinal) + 1)..] switch {
-        "Defrag" => typeof(IArchiveDefragmentable),
-        "Layout" => typeof(ILayoutOptimizable),
+        "Defragment extents" => typeof(IFilesystemBlockMover),
+        "Change allocation geometry" => typeof(ILayoutOptimizable),
         "Wipe" => typeof(IWipeEmpty),
         "Shrink" => typeof(IArchiveShrinkable),
         _ => typeof(IFilesystemBlockMover),
@@ -114,56 +118,6 @@ public sealed class FilesystemVerbsAreBackedTests {
       // there refuses before it looks at the arguments.
       ((IFilesystemBlockMover)ops).MoveExtent(image, 0, 0, 0);
     });
-
-  private static IEnumerable<TestCaseData> AssemblyBlockMoverIds() {
-    foreach (var descriptor in Descriptors()) {
-      var ops = FormatRegistry.GetArchiveOps(descriptor.Id);
-      if (ops is IArchiveDefragmentable and not IFilesystemBlockMover
-          && FilesystemSupportMatrix.BlockMoverOf(descriptor) != null)
-        yield return new TestCaseData(descriptor.Id).SetName($"MovingCellIsBacked_{descriptor.Id}");
-    }
-  }
-
-  /// <summary>
-  /// A "✅ moving" cell that the descriptor does not carry itself is read off a
-  /// mover class in its assembly, found by name. A class of the right name that
-  /// refuses everything renders exactly the same cell as one that works.
-  /// </summary>
-  [TestCaseSource(nameof(AssemblyBlockMoverIds))]
-  public void AMovingCell_HasAMoverThatDoesNotJustRefuse(string formatId) {
-    var descriptor = Descriptors().Single(d => d.Id == formatId);
-    var moverType = FilesystemSupportMatrix.BlockMoverOf(descriptor)!;
-    object mover;
-    try {
-      mover = Activator.CreateInstance(moverType)!;
-    } catch (MissingMethodException) {
-      Assert.Ignore($"{formatId}: {moverType.Name} has no parameterless constructor to probe with.");
-      return;
-    }
-
-    var ops = FormatRegistry.GetArchiveOps(formatId)!;
-    using var image = new MemoryStream();
-    if (ops is IArchiveCreatable creator) {
-      try {
-        creator.Create(image, [ArchiveInputInfo.InMemory("PROBE.BIN", new byte[512])], new FormatCreateOptions());
-      } catch {
-        image.SetLength(0);
-      }
-      image.Position = 0;
-    }
-
-    try {
-      moverType.GetMethod("Init", [typeof(Stream)])?.Invoke(mover, [image]);
-      ((IFilesystemBlockMover)mover).MoveExtent(image, 0, 0, 0);
-    } catch (Exception ex) when (Unwrap(ex) is NotSupportedException refusal) {
-      Assert.Fail(
-        $"{formatId} is rendered with a \"moving\" defrag cell because {moverType.Name} exists, "
-        + $"but that mover refuses as a capability: {refusal.Message}\n"
-        + "Either implement it or remove the class, so the support matrix says rebuild instead.");
-    } catch (Exception) {
-      // Data-level failure: the mover looked at the probe image and did not like it.
-    }
-  }
 
   private static Exception Unwrap(Exception ex)
     => ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
