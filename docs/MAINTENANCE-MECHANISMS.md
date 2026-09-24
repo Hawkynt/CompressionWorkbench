@@ -192,10 +192,12 @@ there is no coverage matrix on this page.
 
 - **Filesystems and disk-image containers** — the support matrix in
   [`Hawkynt.FileFormats.FileSystems/README.md`](../Hawkynt.FileFormats.FileSystems/README.md).
-  Its Compact, Defrag, Wipe, Shrink, Layout and Purge columns are rendered from
-  the descriptors by `Compression.Tests/Documentation/FilesystemSupportMatrix.cs`
-  and re-derived on every build, so a cell that stops matching the code fails
-  rather than misleading a reader.
+  Its Compact, Compress, Canonicalize, Repack, Sort directory entries,
+  Defragment extents, Change allocation geometry, Wipe, Shrink and Purge columns
+  are rendered from the descriptors by
+  `Compression.Tests/Documentation/FilesystemSupportMatrix.cs` and re-derived
+  on every build, so a cell that stops matching the code fails rather than
+  misleading a reader.
 - **Archives** — the *Maintenance* column of
   [`Hawkynt.FileFormats.Archives/README.md`](../Hawkynt.FileFormats.Archives/README.md).
 - **Whatever is loaded right now** — `cwb formats`, which answers from the live
