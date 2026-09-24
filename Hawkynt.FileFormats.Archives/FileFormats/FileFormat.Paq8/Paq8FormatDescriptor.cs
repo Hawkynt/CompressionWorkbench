@@ -6,7 +6,7 @@ namespace FileFormat.Paq8;
 /// <summary>
 /// Describes paq 8 format.
 /// </summary>
-public sealed class Paq8FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class Paq8FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   /// <summary>
   /// Gets the id.
   /// </summary>
