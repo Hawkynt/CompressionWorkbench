@@ -101,21 +101,21 @@ public sealed class CromemcoFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "Single", "Double"],
-      Description: "Single density = 18 sectors/track. Double density = 26 sectors/track (System Three)."),
+      Description: "Single density = 18 sectors/track. Double density = 26 sectors/track (System Three).", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Tracks",
       DisplayName: "Tracks",
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "35", "77"],
-      Description: "35 tracks = original Cromemco Z2 floppy. 77 tracks = System Three drives."),
+      Description: "35 tracks = original Cromemco Z2 floppy. 77 tracks = System Three drives.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "SectorSize",
       DisplayName: "Sector size",
       Kind: FormatOptionKind.Enum,
       Default: "128",
       AllowedValues: ["128"],
-      Description: "Cromemco RDOS uses 128-byte sectors (CP/M convention)."),
+      Description: "Cromemco RDOS uses 128-byte sectors (CP/M convention).", IsAllocationGeometry: true),
   ];
 
   // ── IArchiveFormatOperations ────────────────────────────────────────────
