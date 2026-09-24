@@ -6,7 +6,7 @@ namespace FileFormat.IcePacker;
 /// <summary>
 /// Describes ice packer format.
 /// </summary>
-public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, IFormatOptionsSchema {
+public sealed class IcePackerFormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable, IFormatOptionsSchema {
   private static readonly IReadOnlyDictionary<string, int> SearchDepthByLevel =
     new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
       ["Fast"] = 16,
