@@ -328,9 +328,6 @@
         <Button Content="Close" Width="80" Padding="4" Click="OnClose" IsCancel="True" />
       </StackPanel>
       <StackPanel Orientation="Horizontal" Margin="0,4,8,0" FlowDirection="LeftToRight">
-        <CheckBox x:Name="MinimalGeometryCheck" Content="Minimal geometry" VerticalAlignment="Center"
-                  Margin="0,0,8,0" IsEnabled="False"
-                  ToolTip="Compact rebuilds at the smallest geometry the format allows (e.g. a 1.44 MB FAT floppy → a few KB). Contents preserved, but the result may not be a standard mountable image." />
         <Button x:Name="CompactBtn" Content="Compact" Width="100" Padding="4" Margin="0,0,8,0"
                 Click="OnCompact" IsEnabled="False"
                 ToolTip="Defragment + compress + shrink in one pass. Allocation-geometry changes remain a separate explicit operation." />
