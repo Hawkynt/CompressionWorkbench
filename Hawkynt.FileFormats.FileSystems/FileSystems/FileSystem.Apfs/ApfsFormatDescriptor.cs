@@ -188,9 +188,9 @@ public sealed class ApfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       // a stream factory rather than read into a byte[].
       var name = Path.GetFileName(info.ArchiveName);
       if (info.InMemoryContent is { } bytes)
-        w.AddFile(name, bytes);
+        w.AddFile(name, bytes, info.LastModified);
       else
-        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath));
+        w.AddStreamingFile(name, new FileInfo(info.FullPath).Length, () => File.OpenRead(info.FullPath), info.LastModified);
     }
     // BuildTo keeps free space sparse and streams file data into place, so the
     // volume is not bounded by what a byte[] can hold.
