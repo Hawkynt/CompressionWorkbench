@@ -7,6 +7,28 @@ namespace Compression.Tests.Operations;
 
 [TestFixture]
 public class FilesystemCompressionCapabilityTests {
+  [Test, Category("Architecture")]
+  public void RegisteredFilesystemCompressionWriters_ExposeCompressionCapability() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .OfType<ILayoutOptimizable>()
+      .Where(layout => {
+        var features = FilesystemOptimization.GetSupportedFeatures(layout);
+        return features.HasFlag(FilesystemOptimizationFeatures.TransparentCompression)
+               || features.HasFlag(FilesystemOptimizationFeatures.CompressionParameterSearch);
+      })
+      .Where(layout => layout is not ICompressionOptimizable)
+      .Cast<IFormatDescriptor>()
+      .Select(descriptor => descriptor.Id)
+      .OrderBy(id => id, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "Filesystem writers with registered compression backends must expose ICompressionOptimizable: "
+      + string.Join(", ", offenders));
+  }
+
   [Test]
   public void AlwaysCompressedWriters_AcceptTransparentCompressionOption() {
     var cramfs = FilesystemOptimization.GetSupportedFeatures(new CramFsFormatDescriptor());
