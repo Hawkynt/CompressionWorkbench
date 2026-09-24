@@ -10,7 +10,7 @@ namespace FileSystem.Jfs1;
 /// OS/2 original IBM JFS1 format descriptor — distinct from
 /// <c>FileSystem.Jfs</c> which targets the Linux JFS2 derivative. WORM
 /// writer + reader with real nested subdirectories, defrag/purge/conversion,
-/// fileset optimizer, and an options schema (BlockSize / AggregateBlockSize /
+/// creation/layout geometry selection, and an options schema (BlockSize / AggregateBlockSize /
 /// VolumeLabel).
 ///
 /// References:
