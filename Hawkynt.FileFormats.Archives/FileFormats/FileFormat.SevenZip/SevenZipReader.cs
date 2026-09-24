@@ -40,6 +40,12 @@ public sealed class SevenZipReader : IDisposable {
   /// </summary>
   public bool CanSafelyRegroupDefaultLzma2 { get; private set; }
 
+  /// <summary>Gets whether the archive uses an encoded next header.</summary>
+  public bool IsHeaderEncoded { get; private set; }
+
+  /// <summary>Gets whether any file stream uses 7z AES.</summary>
+  public bool HasEncryptedEntries => this._entries.Any(static e => e.IsEncrypted);
+
   /// <summary>
   /// Initializes a new <see cref="SevenZipReader"/> from a seekable stream.
   /// </summary>
@@ -74,6 +80,8 @@ public sealed class SevenZipReader : IDisposable {
     (this._packInfo, this._folders, this._subStreams, this._fileInfos) =
       SevenZipHeaderCodec.ReadHeader(headerStream, password, archiveStream: this._stream);
 
+    this.IsHeaderEncoded = nextHeaderData.Length > 0
+      && nextHeaderData[0] == SevenZipConstants.IdEncodedHeader;
     this.CanSafelyRegroupDefaultLzma2 =
       nextHeaderData.Length > 0
       && nextHeaderData[0] == SevenZipConstants.IdHeader
