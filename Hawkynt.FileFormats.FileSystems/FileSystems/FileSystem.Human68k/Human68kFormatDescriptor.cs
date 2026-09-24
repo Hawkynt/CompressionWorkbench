@@ -195,7 +195,7 @@ public sealed class Human68kFormatDescriptor :
 
     var spcStr = options?.GetOption("SectorsPerCluster", "Auto") ?? "Auto";
     var fileSizes = inputs.Where(i => !i.IsDirectory).Select(i => (long)i.ReadContent().Length).ToList();
-    var auto = Human68kOptimizer.Find(fileSizes);
+    var auto = Human68kGeometrySelector.Find(fileSizes);
     var spc = spcStr is "Auto" or "0" ? auto.SectorsPerCluster : FilesystemSchemaPresets.ParseSize(spcStr) / 512;
     if (spc <= 0) spc = auto.SectorsPerCluster;
     w.SetSectorsPerCluster(spc);
@@ -251,7 +251,7 @@ public sealed class Human68kFormatDescriptor :
 
     var w = new Human68kWriter();
     var sizes = keep.Select(k => (long)k.Data.Length).ToList();
-    var layout = Human68kOptimizer.Find(sizes);
+    var layout = Human68kGeometrySelector.Find(sizes);
     w.SetSectorsPerCluster(layout.SectorsPerCluster);
     foreach (var (n, d) in keep) w.AddFile(n, d);
     var img = w.Build();
@@ -307,7 +307,7 @@ public sealed class Human68kFormatDescriptor :
       buildImage: files => {
         var w = new Human68kWriter();
         var sizes = files.Select(f => (long)f.Data.Length).ToList();
-        var layout = Human68kOptimizer.Find(sizes);
+        var layout = Human68kGeometrySelector.Find(sizes);
         w.SetSectorsPerCluster(layout.SectorsPerCluster);
         foreach (var (n, d) in files) w.AddFile(n, d);
         return w.Build();
