@@ -296,14 +296,14 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       w.Bzip2BlockSize = ZipOptionsResolver.ResolveBzip2BlockSize(options.DictSize);
 
     foreach (var i in inputs) {
-      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName); continue; }
+      if (i.IsDirectory) { w.AddDirectory(i.ArchiveName, i.LastModified); continue; }
       // ReadContent() transparently handles both on-disk inputs and the
       // in-memory variant fed by the small-image ConvertArchive pipeline.
       var data = i.ReadContent();
       var entryMethod = options.IncompressiblePaths != null && options.IncompressiblePaths.Contains(i.FullPath)
         ? ZipCompressionMethod.Store
         : zipMethod;
-      w.AddEntry(i.ArchiveName, data, entryMethod);
+      w.AddEntry(i.ArchiveName, data, entryMethod, i.LastModified);
     }
     w.Finish();
   }
