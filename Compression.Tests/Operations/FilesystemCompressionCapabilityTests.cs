@@ -39,6 +39,8 @@ public class FilesystemCompressionCapabilityTests {
       Assert.That(squashfs.HasFlag(FilesystemOptimizationFeatures.TransparentCompression), Is.True);
       Assert.That(squashfs.HasFlag(FilesystemOptimizationFeatures.CompressionParameterSearch), Is.True,
         "SquashFS publishes multiple data block sizes that affect its compressed representation");
+      Assert.That(OptimizationCapabilities.CanCompress(new CramFsFormatDescriptor()), Is.True);
+      Assert.That(OptimizationCapabilities.CanCompress(new SquashFsFormatDescriptor()), Is.True);
     });
   }
 }
