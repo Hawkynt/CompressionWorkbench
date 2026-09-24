@@ -77,7 +77,7 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand AnalyzeFileCommand { get; }
   public ICommand BenchmarkCommand { get; }
   public ICommand FileAssociationsCommand { get; }
-  // The five canonical maintenance verbs (docs/ARCHIVE-MODEL.md). Each is gated
+  // The six separated optimization/maintenance verbs (docs/ARCHIVE-MODEL.md). Each is gated
   // by the target descriptor implementing the matching capability interface and
   // resolves its target via ResolveMaintenanceTarget — so the verbs work on a
   // standalone archive file, the currently-open archive, OR an archive entry
