@@ -444,10 +444,9 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// True when the resolved maintenance target's descriptor can be re-created
-  /// (<see cref="IArchiveCreatable"/>) and publishes a tunable options schema
-  /// (<see cref="IFormatOptionsSchema"/>) with at least one knob — the
-  /// preconditions for offering an after-creation geometry/options change.
+  /// True when the resolved maintenance target exposes at least one option
+  /// explicitly classified as allocation geometry. Compression, metadata and
+  /// compatibility knobs do not make this action appear.
   /// </summary>
   private bool CanReconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
@@ -456,10 +455,10 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// Opens the format's schema-driven options dialog pre-populated with the
-  /// current format's knobs and, on OK, re-creates the container in place with
-  /// the chosen geometry/options via
+  /// Opens a schema-driven dialog containing only allocation-geometry knobs and,
+  /// on OK, re-creates the container in place via
   /// <see cref="ReconfigureOperation.Reconfigure(string, IReadOnlyDictionary{string, string}, string?)"/>.
+  /// Compression, metadata and compatibility options are deliberately absent.
   /// Contents are preserved byte-for-byte; on any failure the original is left
   /// untouched. For a nested archive entry inside the open archive, the result
   /// is written back into the host when the host is <see cref="IArchiveModifiable"/>.
@@ -467,6 +466,13 @@ internal sealed class MainViewModel : ViewModelBase {
   private void Reconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out var entry)) return;
     if (!Enum.TryParse<FormatDetector.Format>(formatId, out var format)) return;
+
+    var descriptor = FormatRegistry.GetById(formatId);
+    var geometryOptions = OptimizationCapabilities.GetAllocationGeometryOptions(descriptor);
+    if (geometryOptions.Count == 0) {
+      StatusText = $"'{format}' exposes no allocation-geometry options.";
+      return;
+    }
 
     string targetPath;
     Action? cleanup = null;
@@ -509,16 +515,18 @@ internal sealed class MainViewModel : ViewModelBase {
       targetPath = ArchivePath;
     }
 
-    var optsDlg = new CreateOptionsWindow(format) { Owner = Application.Current.MainWindow };
-    optsDlg.Title = "Change allocation geometry";
-    var ok = optsDlg.ShowDialog() == true;
-    if (!ok) { cleanup?.Invoke(); return; }
+    var optsDlg = new Views.TargetOptionsDialog(geometryOptions, descriptor?.DisplayName ?? format.ToString()) {
+      Owner = Application.Current.MainWindow,
+      Title = "Change allocation geometry",
+    };
+    if (optsDlg.ShowDialog() != true) {
+      cleanup?.Invoke();
+      return;
+    }
 
-    var newOptions = optsDlg.Options.FormatSpecificOptions.Count > 0
-      ? optsDlg.Options.FormatSpecificOptions.ToDictionary(o => o.Key, o => o.CurrentValue)
-      : new Dictionary<string, string>();
+    var newOptions = optsDlg.Result;
     if (newOptions.Count == 0) {
-      StatusText = $"'{format}' exposes no reconfigurable options.";
+      StatusText = $"'{format}' exposes no selected allocation-geometry options.";
       cleanup?.Invoke();
       return;
     }
