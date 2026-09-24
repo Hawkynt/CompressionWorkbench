@@ -44,6 +44,7 @@ namespace FileSystem.TFat;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Transaction-Safe_FAT_File_System</c> — Wikipedia article</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(FileSystem.Fat.FatBlockMover))]
 public sealed class TFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
 
   // ── IFormatOptionsSchema ────────────────────────────────────────────────

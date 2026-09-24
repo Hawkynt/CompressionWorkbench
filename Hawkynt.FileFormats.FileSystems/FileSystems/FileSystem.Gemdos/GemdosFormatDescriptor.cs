@@ -34,6 +34,7 @@ namespace FileSystem.Gemdos;
 ///   <item><description><c>https://en.wikipedia.org/wiki/GEMDOS</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
+[FilesystemBlockMover(typeof(FileSystem.Fat.FatBlockMover))]
 public sealed class GemdosFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations,
     IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
 
