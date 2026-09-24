@@ -102,14 +102,14 @@ public sealed class TrsdosFormatDescriptor :
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "Single", "Double"],
-      Description: "Single density = 10 sectors/track. Double density = 18 sectors/track."),
+      Description: "Single density = 10 sectors/track. Double density = 18 sectors/track.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "Tracks",
       DisplayName: "Tracks",
       Kind: FormatOptionKind.Enum,
       Default: "Auto",
       AllowedValues: ["Auto", "35", "40", "80"],
-      Description: "35 = Model I 5.25\" SD. 40 = Model III/4 DD. 80 = Model 4 high-density."),
+      Description: "35 = Model I 5.25\" SD. 40 = Model III/4 DD. 80 = Model 4 high-density.", IsAllocationGeometry: true),
     new FormatOptionDescriptor(
       Key: "DiskName",
       DisplayName: "Disk name",
