@@ -34,13 +34,22 @@ public static class RebuildVerb {
     cancellationToken.ThrowIfCancellationRequested();
     input.Position = 0;
     var sourceEntries = ops.List(input, null);
-    var sourceNames = LiveNameList(sourceEntries);
+
+    var effectiveSyntheticNames = StructuralFloor(ops);
+    if (syntheticNames != null)
+      effectiveSyntheticNames.UnionWith(syntheticNames);
+
+    var sourceNames = sourceEntries
+      .Where(entry => !entry.IsDirectory && !effectiveSyntheticNames.Contains(entry.Name))
+      .Select(entry => entry.Name)
+      .OrderBy(name => name, StringComparer.Ordinal)
+      .ToList();
     var sourceFileCount = sourceNames.Count;
     input.Position = 0;
-    var sourceManifest = SemanticPreservationManifest.Capture(input, ops, ignoredNames: syntheticNames);
+    var sourceManifest = SemanticPreservationManifest.Capture(input, ops, ignoredNames: effectiveSyntheticNames);
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
-      .Where(e => !e.IsDirectory && (syntheticNames == null || !syntheticNames.Contains(e.Name)))
+      .Where(e => !e.IsDirectory && !effectiveSyntheticNames.Contains(e.Name))
       .ToArray();
     var totalLogical = Math.Max(1L, liveEntries.Sum(e => Math.Max(0L, e.OriginalSize)));
     var sourceLayout = BuildSourceLayout(input, ops, sourceEntries);
@@ -64,7 +73,7 @@ public static class RebuildVerb {
           Directory.CreateDirectory(target);
           continue;
         }
-        if (syntheticNames != null && syntheticNames.Contains(entry.Name))
+        if (effectiveSyntheticNames.Contains(entry.Name))
           continue;
 
         ++liveIndex;
@@ -110,16 +119,16 @@ public static class RebuildVerb {
       cancellationToken.ThrowIfCancellationRequested();
 
       var sourceMetadata = sourceEntries
-        .Where(entry => syntheticNames == null || !syntheticNames.Contains(entry.Name))
+        .Where(entry => !effectiveSyntheticNames.Contains(entry.Name))
         .GroupBy(entry => entry.Name.TrimEnd('/'), StringComparer.Ordinal)
         .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
       var inputs = new List<ArchiveInputInfo>();
-      foreach (var dir in Directory.GetDirectories(tmpDir, "*", SearchOption.AllDirectories)) {
-        var rel = Path.GetRelativePath(tmpDir, dir).Replace('\\', '/');
-        sourceMetadata.TryGetValue(rel.TrimEnd('/'), out var metadata);
-        inputs.Add(new ArchiveInputInfo("", rel + "/", true) {
-          LastModified = metadata?.LastModified,
+      foreach (var directory in sourceEntries.Where(entry => entry.IsDirectory && !effectiveSyntheticNames.Contains(entry.Name))) {
+        var name = directory.Name.Replace('\\', '/');
+        if (!name.EndsWith('/')) name += "/";
+        inputs.Add(new ArchiveInputInfo("", name, true) {
+          LastModified = directory.LastModified,
         });
       }
       foreach (var file in Directory.GetFiles(tmpDir, "*", SearchOption.AllDirectories)) {
@@ -163,7 +172,7 @@ public static class RebuildVerb {
 
       output.Position = 0;
       try {
-        var rebuiltManifest = SemanticPreservationManifest.Capture(output, ops, ignoredNames: syntheticNames);
+        var rebuiltManifest = SemanticPreservationManifest.Capture(output, ops, ignoredNames: effectiveSyntheticNames);
         sourceManifest.VerifyEquivalent(rebuiltManifest);
       } catch (Exception ex) when (ex is not OperationCanceledException) {
         throw new InvalidOperationException(
