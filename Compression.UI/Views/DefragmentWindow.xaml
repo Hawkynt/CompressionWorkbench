@@ -141,9 +141,6 @@
       <StackPanel Margin="6">
         <TextBlock TextWrapping="Wrap" Foreground="DimGray"
                    Text="Archive rewrite: the selected capability decides whether payloads are recompressed or merely repacked. Allocation geometry remains a separate operation." />
-        <CheckBox x:Name="SmartSolidRepackCheck" Margin="0,6,0,0" Visibility="Collapsed"
-                  Content="Smart solid-block repack (7z only)"
-                  ToolTip="Tries 5 different file grouping strategies and picks the one that produces the smallest archive. More thorough but slower than a plain repack." />
         <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="MetadataPlacementPanel" Visibility="Collapsed">
           <TextBlock Text="Metadata placement:" VerticalAlignment="Center" Margin="0,0,8,0" />
           <ComboBox x:Name="MetadataPlacementCombo" Width="180"
