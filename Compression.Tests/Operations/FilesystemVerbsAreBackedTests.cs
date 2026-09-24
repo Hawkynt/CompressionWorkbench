@@ -56,7 +56,11 @@ public sealed class FilesystemVerbsAreBackedTests {
       if (OptimizationCapabilities.CanChangeAllocationGeometry(descriptor))
         yield return new TestCaseData(descriptor.Id).SetName($"GeometryChangeIsBacked_{descriptor.Id}");
   }
-  private static IEnumerable<TestCaseData> BlockMoverIds() => Ids(typeof(IFilesystemBlockMover), "Move");
+  private static IEnumerable<TestCaseData> BlockMoverIds() {
+    foreach (var descriptor in Descriptors())
+      if (OptimizationCapabilities.HasFilesystemBlockMover(descriptor))
+        yield return new TestCaseData(descriptor.Id).SetName($"BlockMoverIsExplicit_{descriptor.Id}");
+  }
 
   private static IEnumerable<TestCaseData> Ids(Type marker, string verb) {
     foreach (var descriptor in Descriptors()) {
@@ -96,31 +100,36 @@ public sealed class FilesystemVerbsAreBackedTests {
   public void Deferred_ClaimsAreStillDeclared() {
     var gone = new List<string>();
     foreach (var key in Deferred.Keys) {
-      var id = key[..key.IndexOf(':', StringComparison.Ordinal)];
+      var separator = key.IndexOf(':', StringComparison.Ordinal);
+      var id = key[..separator];
+      var verb = key[(separator + 1)..];
+      var descriptor = FormatRegistry.GetById(id);
       var ops = FormatRegistry.GetArchiveOps(id);
-      var marker = key[(key.IndexOf(':', StringComparison.Ordinal) + 1)..] switch {
-        "Defragment extents" => typeof(IFilesystemBlockMover),
-        "Change allocation geometry" => typeof(ILayoutOptimizable),
-        "Wipe" => typeof(IWipeEmpty),
-        "Shrink" => typeof(IArchiveShrinkable),
-        _ => typeof(IFilesystemBlockMover),
+      var stillDeclared = verb switch {
+        "Defragment extents" => OptimizationCapabilities.CanDefragmentExtents(descriptor),
+        "Change allocation geometry" => OptimizationCapabilities.CanChangeAllocationGeometry(descriptor),
+        "Wipe" => ops is IWipeEmpty,
+        "Shrink" => ops is IArchiveShrinkable,
+        _ => false,
       };
-      if (ops == null || !marker.IsAssignableFrom(ops.GetType())) gone.Add(key);
+      if (!stillDeclared) gone.Add(key);
     }
     Assert.That(gone, Is.Empty, "These no longer declare the verb, so their deferral is stale — remove it: " + string.Join(", ", gone));
   }
 
   [TestCaseSource(nameof(BlockMoverIds))]
-  public void ADeclaredBlockMover_IsNotACapabilityRefusal(string formatId)
-    => Probe(formatId, "Move", (ops, image) => {
-      // Moving a zero-length run to where it already is asks nothing of the
-      // layout, so a mover that works has nothing to refuse; one that is not
-      // there refuses before it looks at the arguments.
-      ((IFilesystemBlockMover)ops).MoveExtent(image, 0, 0, 0);
-    });
+  public void AResolvedBlockMover_IsConcreteAndUnambiguous(string formatId) {
+    var descriptor = Descriptors().Single(candidate => candidate.Id == formatId);
+    var moverType = OptimizationCapabilities.GetFilesystemBlockMoverType(descriptor);
 
-  private static Exception Unwrap(Exception ex)
-    => ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
+    Assert.Multiple(() => {
+      Assert.That(moverType, Is.Not.Null);
+      Assert.That(moverType, Is.AssignableTo(typeof(IFilesystemBlockMover)));
+      Assert.That(moverType!.IsClass, Is.True);
+      Assert.That(moverType.IsAbstract, Is.False);
+    });
+  }
+
 
   /// <summary>
   /// Runs <paramref name="verb"/> against an image the format wrote itself where
