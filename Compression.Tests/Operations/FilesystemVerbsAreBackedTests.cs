@@ -124,7 +124,7 @@ public sealed class FilesystemVerbsAreBackedTests {
 
     Assert.Multiple(() => {
       Assert.That(moverType, Is.Not.Null);
-      Assert.That(moverType, Is.AssignableTo(typeof(IFilesystemBlockMover)));
+      Assert.That(typeof(IFilesystemBlockMover).IsAssignableFrom(moverType!), Is.True);
       Assert.That(moverType!.IsClass, Is.True);
       Assert.That(moverType.IsAbstract, Is.False);
     });
