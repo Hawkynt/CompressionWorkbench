@@ -14,7 +14,7 @@ namespace FileSystem.ExFat;
 ///   <item><description><c>https://en.wikipedia.org/wiki/ExFAT</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable {
+public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveModifiable, IArchiveDefragmentable, IFilesystemExtentMap, IFilesystemBlockMover, IWipeEmpty, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemDirectoryOrderer {
 
   // The optimization adapters are keyed on this descriptor's runtime type, so the
   // registration has to have run before any instance can be looked up. Doing it from
@@ -524,5 +524,9 @@ public sealed class ExFatFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     var end = message.IndexOf('\n');
     return end < 0 ? message : message[..end].TrimEnd('\r');
   }
+
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image) => ExFatDirectoryOrderer.Sort(image);
 
 }

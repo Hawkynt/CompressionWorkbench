@@ -6,7 +6,7 @@ namespace FileFormat.Yaz0;
 /// <summary>
 /// Describes yaz 0 format.
 /// </summary>
-public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOperations {
+public sealed class Yaz0FormatDescriptor : IFormatDescriptor, IStreamFormatOperations, ICompressionOptimizable {
   /// <summary>
   /// Gets the id.
   /// </summary>

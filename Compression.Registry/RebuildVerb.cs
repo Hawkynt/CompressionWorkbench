@@ -36,6 +36,8 @@ public static class RebuildVerb {
     var sourceEntries = ops.List(input, null);
     var sourceNames = LiveNameList(sourceEntries);
     var sourceFileCount = sourceNames.Count;
+    input.Position = 0;
+    var sourceManifest = SemanticPreservationManifest.Capture(input, ops, ignoredNames: syntheticNames);
     var sourceLength = Math.Max(1L, input.Length);
     var liveEntries = sourceEntries
       .Where(e => !e.IsDirectory && (syntheticNames == null || !syntheticNames.Contains(e.Name)))
@@ -149,16 +151,13 @@ public static class RebuildVerb {
         "Verifying rebuilt container before commit"));
 
       output.Position = 0;
-      List<string> rebuiltNames;
       try {
-        rebuiltNames = LiveNameList(ops.List(output, null));
-      } catch (Exception ex) {
+        var rebuiltManifest = SemanticPreservationManifest.Capture(output, ops, ignoredNames: syntheticNames);
+        sourceManifest.VerifyEquivalent(rebuiltManifest);
+      } catch (Exception ex) when (ex is not OperationCanceledException) {
         throw new InvalidOperationException(
-          $"Rebuilt image could not be listed back ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
+          $"Rebuilt image failed semantic-preservation verification ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
       }
-      if (!rebuiltNames.SequenceEqual(sourceNames, StringComparer.Ordinal))
-        throw new InvalidOperationException(
-          $"Rebuild changed the entry set ({sourceFileCount} → {rebuiltNames.Count}); refusing a non-identity-preserving rebuild.");
 
       cancellationToken.ThrowIfCancellationRequested();
       var finalLength = Math.Max(1L, output.Length);
