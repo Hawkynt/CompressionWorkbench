@@ -30,7 +30,7 @@ public sealed class BtrfsFormatDescriptor : IFormatDescriptor, IArchiveFormatOpe
     new FormatOptionDescriptor(
       Key: "NodeSize", DisplayName: "B-tree node size", Kind: FormatOptionKind.Integer, Default: "16384",
       AllowedValues: ["4096", "8192", "16384", "32768", "65536"],
-      Description: "B-tree node size in bytes. 16KB is the modern default.", IsAllocationGeometry: true),
+      Description: "B-tree node size in bytes. 16KB is the modern default."),
     new FormatOptionDescriptor(
       Key: "SectorSize", DisplayName: "Sector size", Kind: FormatOptionKind.Integer, Default: "4096",
       AllowedValues: ["4096"],
