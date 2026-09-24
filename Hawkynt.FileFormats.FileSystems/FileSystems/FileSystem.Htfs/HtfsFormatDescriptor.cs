@@ -90,9 +90,9 @@ public sealed class HtfsFormatDescriptor :
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema { get; } = [
     new("BlockSize", "Block size", FormatOptionKind.Enum, "512",
       AllowedValues: ["512", "1024", "2048"],
-      Description: "Block size in bytes (S5-style HTFS supports 512/1024/2048)."),
+      Description: "Block size in bytes (S5-style HTFS supports 512/1024/2048).", IsAllocationGeometry: true),
     new("InodeCount", "Inode count", FormatOptionKind.Integer, "64",
-      Description: "Reserved inode slots in the inode array (default 64; cap 256)."),
+      Description: "Reserved inode slots in the inode array (default 64; cap 256).", IsAllocationGeometry: true),
     FilesystemSchemaPresets.VolumeLabel(16),
   ];
 
