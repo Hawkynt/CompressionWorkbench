@@ -125,14 +125,21 @@ public sealed class OptimizationCapabilitySeparationTests {
       Assert.That(Keys(new ExFatFormatDescriptor()),
         Is.EquivalentTo(new[] { "ClusterSize", "ImageSize" }),
         "exFAT volume label is metadata, not geometry");
-      Assert.That(Keys(new BtrfsFormatDescriptor()),
-        Is.EquivalentTo(new[] { "NodeSize", "SectorSize" }),
-        "Btrfs label/features are metadata/format choices, not allocation geometry");
       Assert.That(Keys(new CpcDskFormatDescriptor()),
         Is.EquivalentTo(new[] { "Sides", "Tracks" }));
       Assert.That(Keys(new LifFormatDescriptor()),
         Is.EquivalentTo(new[] { "DirectorySectors" }),
         "LIF file type and volume label are not allocation geometry");
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void Btrfs_IgnoredWriterKnobs_DoNotAdvertiseGeometryChange() {
+    var descriptor = new BtrfsFormatDescriptor();
+
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.False);
+      Assert.That(OptimizationCapabilities.GetAllocationGeometryOptions(descriptor), Is.Empty);
     });
   }
 
