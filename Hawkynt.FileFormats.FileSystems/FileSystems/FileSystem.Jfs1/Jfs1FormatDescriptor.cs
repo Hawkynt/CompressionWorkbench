@@ -10,7 +10,7 @@ namespace FileSystem.Jfs1;
 /// OS/2 original IBM JFS1 format descriptor — distinct from
 /// <c>FileSystem.Jfs</c> which targets the Linux JFS2 derivative. WORM
 /// writer + reader with real nested subdirectories, defrag/purge/conversion,
-/// fileset optimizer, and an options schema (BlockSize / AggregateBlockSize /
+/// shared layout geometry selection, and an options schema (BlockSize / AggregateBlockSize /
 /// VolumeLabel).
 ///
 /// References:
@@ -161,7 +161,7 @@ public sealed class Jfs1FormatDescriptor :
     // Block size: a pinned value wins verbatim; when unset, the shared layout
     // optimiser picks the legal 1024/2048/4096 size that minimises slack +
     // metadata overhead instead of defaulting to 4096. Routed through the shared
-    // adapter (rather than the bespoke Jfs1Optimizer) to prove consolidation; the
+    // adapter; the obsolete test-only Jfs1Optimizer has been removed; the
     // aggregate block size tracks the data block size.
     var bs = options.HasOption("BlockSize")
       ? options.GetOptionInt("BlockSize", 4096)

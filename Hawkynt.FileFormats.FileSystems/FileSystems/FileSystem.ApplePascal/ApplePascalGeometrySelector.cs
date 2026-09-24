@@ -7,7 +7,7 @@ namespace FileSystem.ApplePascal;
 /// is always 512 (spec-mandated for Apple Pascal volumes); only the volume
 /// total varies.
 /// </summary>
-public static class ApplePascalOptimizer {
+public static class ApplePascalGeometrySelector {
 
   /// <summary>
   /// Represents an apple pascal geometry.
