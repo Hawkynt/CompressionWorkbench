@@ -46,7 +46,8 @@ public sealed class ArchiveSemanticManifest {
       Stream archive,
       IArchiveFormatOperations ops,
       string? password = null,
-      CancellationToken cancellationToken = default) {
+      CancellationToken cancellationToken = default,
+      IReadOnlySet<string>? excludedNames = null) {
     ArgumentNullException.ThrowIfNull(archive);
     ArgumentNullException.ThrowIfNull(ops);
     if (!archive.CanRead || !archive.CanSeek)
@@ -54,7 +55,9 @@ public sealed class ArchiveSemanticManifest {
 
     cancellationToken.ThrowIfCancellationRequested();
     archive.Position = 0;
-    var listed = ops.List(archive, password);
+    var listed = ops.List(archive, password)
+      .Where(e => excludedNames is null || !excludedNames.Contains(e.Name))
+      .ToList();
     var duplicate = listed
       .Where(static e => !e.IsDirectory)
       .GroupBy(static e => e.Name, StringComparer.Ordinal)
