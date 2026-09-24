@@ -45,7 +45,7 @@ Every State, Test, Maintenance, Compress/Decompress and Demux/Mux/Remux cell is 
 
 ### 🧵 Compression streams and encodings
 
-| Format | Id | Extensions | Compress | Decompress | Optimize | Notes | Reference |
+| Format | Id | Extensions | Compress | Decompress | Optimize compression | Notes | Reference |
 | --- | --- | --- | :---: | :---: | :---: | --- | --- |
 | aPLib | `ApLib` | `.aplib` | ✅ | ✅ | ✅ | Standard 24-byte AP32 wrapper around a bare aPLib stream; older self-framed streams still read | [ibsensoftware.com](https://ibsensoftware.com/products_aPLib.html) |
 | BALZ | `Balz` | `.balz` | ✅ | ✅ | ✅ | Flexible look-ahead parser; optimal mode keeps the greedy stream when it is smaller | [sourceforge.net](https://sourceforge.net/projects/balz/) |
@@ -538,7 +538,7 @@ A descriptor advertises what it can do twice, and the two must agree: a `FormatC
 
 `CanModify` is withheld from create-only formats whose checksum chain an append would break (WIM, split WIM) and from writers that reject an arbitrary edited member set (Wrapster, OVA), even though the rebuild machinery could run; `WriteCapabilityHonestyTests` enforces that every `CanModify` claimant implements `IArchiveModifiable`, and `ArchiveModifyRoundTripTests` proves the edit round-trips.
 
-The full model — tiers, archive vs. pseudo-archive, the five maintenance verbs and the composite `compact`, the block-map display contract and the streaming paths — is specified in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md). How the verbs are provided without bespoke per-format code, and the rule that decides when `CanModify` may be advertised, are in [`docs/MAINTENANCE-MECHANISMS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the filesystem descriptors is the support matrix of [`Hawkynt.FileFormats.FileSystems/README.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/README.md); for the archive descriptors it is the Maintenance column above.
+The full model — tiers, archive vs. pseudo-archive, the separated maintenance capabilities and the composite `compact`, the block-map display contract and the streaming paths — is specified in [`docs/ARCHIVE-MODEL.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/ARCHIVE-MODEL.md). How the verbs are provided without bespoke per-format code, and the rule that decides when `CanModify` may be advertised, are in [`docs/MAINTENANCE-MECHANISMS.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/docs/MAINTENANCE-MECHANISMS.md). Per-verb coverage of the filesystem descriptors is the support matrix of [`Hawkynt.FileFormats.FileSystems/README.md`](https://github.com/Hawkynt/CompressionWorkbench/blob/main/Hawkynt.FileFormats.FileSystems/README.md); for the archive descriptors it is the Maintenance column above.
 
 ### On-disk derivations
 
