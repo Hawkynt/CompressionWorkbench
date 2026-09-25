@@ -357,11 +357,7 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   };
 
   private static bool EntryCarriesPayload(TarEntry entry)
-    => entry.Size > 0
-       && entry.TypeFlag is TarConstants.TypeRegular
-         or TarConstants.TypeRegularAlt
-         or TarConstants.TypeGnuMultiVolume
-         or TarConstants.TypeGnuSparse;
+    => entry.Size > 0;
 
   private static string TarKind(byte typeFlag) => typeFlag switch {
     TarConstants.TypeRegular or TarConstants.TypeRegularAlt => "file",
