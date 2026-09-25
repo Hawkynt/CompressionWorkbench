@@ -27,7 +27,8 @@ jobs:
     # The workflow commits refreshed images back to the branch. The actor guard
     # is a second loop breaker in addition to the [skip ci] commit marker.
     if: github.actor != 'github-actions[bot]'
-    runs-on: windows-latest
+    # Linux, because the shell is a GTK app there and this is the build the pictures should show.
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -39,38 +40,34 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
+      - name: Install capture tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb x11-utils imagemagick libgtk-3-0
+
       - name: Build screenshot host
-        # Documentation capture needs the normal build output, not the Release
-        # single-file packaging target which rewrites/removes that output tree.
-        run: dotnet build Compression.UI/Compression.UI.csproj --configuration Release --nologo -p:EnableSingleFileBundle=false
+        run: dotnet build Compression.NativeUI/Compression.NativeUI.csproj --configuration Release --nologo
 
       - name: Capture deterministic UI screenshots
-        shell: pwsh
         run: |
-          Remove-Item docs/screenshots -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force docs/screenshots | Out-Null
+          set -euo pipefail
+          rm -rf docs/screenshots
+          mkdir -p docs/screenshots
 
-          dotnet run --project Compression.UI/Compression.UI.csproj --configuration Release --no-build -p:EnableSingleFileBundle=false -- --screenshots docs/screenshots
-          if ($LASTEXITCODE -ne 0) {
-            $diagnostic = "docs/screenshots/screenshot-error.txt"
-            if (Test-Path $diagnostic) {
-              Write-Host "--- screenshot diagnostic ---"
-              Get-Content $diagnostic
-              Write-Host "--- end diagnostic ---"
-            }
-            throw "Compression.UI screenshot mode exited with $LASTEXITCODE"
-          }
+          export APP_BINARY="$PWD/Compression.NativeUI/bin/Release/net10.0/Compression.NativeUI.dll"
+          chmod +x .github/workflows/scripts/capture-screenshot.sh
 
-          $expected = @(
-            "archive-browser.png",
-            "analysis.png",
-            "maintenance.png"
-          )
-          foreach ($name in $expected) {
-            $path = Join-Path "docs/screenshots" $name
-            if (!(Test-Path $path)) { throw "Missing screenshot: $path" }
-            if ((Get-Item $path).Length -lt 1024) { throw "Screenshot is suspiciously small: $path" }
-          }
+          for target in archive-browser analysis maintenance; do
+            .github/workflows/scripts/capture-screenshot.sh "$target" "docs/screenshots/$target.png"
+          done
+
+          for name in archive-browser analysis maintenance; do
+            path="docs/screenshots/$name.png"
+            test -f "$path" || { echo "::error::Missing screenshot: $path"; exit 1; }
+            size=$(stat -c%s "$path")
+            test "$size" -ge 1024 || { echo "::error::Screenshot is suspiciously small: $path ($size bytes)"; exit 1; }
+          done
 
       - name: Update README screenshot section
         run: python .github/workflows/scripts/update-readme-screenshots.py

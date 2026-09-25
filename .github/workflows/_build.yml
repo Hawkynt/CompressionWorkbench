@@ -4,9 +4,8 @@ name: Build artifacts
 # (workflow_run on CI success). Everything runs on windows-latest because:
 #   * SFX stubs must be embedded into Compression.Lib before the final Lib
 #     build, and staging is cleaner on one host.
-#   * Compression.UI requires Windows at publish time anyway.
-#   * Linux CLI and the Linux NativeUI can still be published from a Windows host
-#     via --runtime linux-x64.
+#   * The Linux CLI and the Linux UI publish from a Windows host via --runtime linux-x64,
+#     so one runner covers every target.
 #
 # Inputs:
 #   version       full X.Y.Z.BUILD baked into artifact names
@@ -16,8 +15,8 @@ name: Build artifacts
 # Produces one artifact `CompressionWorkbench-<version>` containing four zips:
 #   * CompressionWorkbench-CLI-win-x64-<version>.zip
 #   * CompressionWorkbench-CLI-linux-x64-<version>.zip
-#   * CompressionWorkbench-UI-win-x64-<version>.zip       (WPF, full workstation)
-#   * CompressionWorkbench-UI-linux-x64-<version>.zip     (NativeUI/GTK, mounting only)
+#   * CompressionWorkbench-UI-win-x64-<version>.zip
+#   * CompressionWorkbench-UI-linux-x64-<version>.zip
 on:
   workflow_call:
     inputs:
@@ -207,14 +206,14 @@ jobs:
       - name: Publish CLI (linux-x64)
         run: dotnet publish Compression.CLI/Compression.CLI.csproj -r linux-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
 
+      # Compression.NativeUI is the one frontend: a NativeForms shell over the Win32 and GTK
+      # backends. It targets plain net10.0, so the Linux binary publishes from this Windows host
+      # like the Linux CLI does. PublishSingleFile lives on the command line rather than in the
+      # csproj because it needs a RuntimeIdentifier, and the project must stay RID-agnostic for
+      # `dotnet run` on either OS.
       - name: Publish UI (win-x64)
-        run: dotnet publish Compression.UI/Compression.UI.csproj -r win-x64 -c Release --self-contained --nologo -p:EnableSingleFileBundle=false -p:Version=${{ inputs.version }}
+        run: dotnet publish Compression.NativeUI/Compression.NativeUI.csproj -r win-x64 -c Release --self-contained --nologo -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ inputs.version }}
 
-      # Compression.NativeUI is the cross-platform NativeForms frontend (Win32 + GTK
-      # backends). It targets plain net10.0, so the Linux binary publishes from this
-      # Windows host like the Linux CLI does. PublishSingleFile lives on the command
-      # line rather than in the csproj because it needs a RuntimeIdentifier, and the
-      # project must stay RID-agnostic for `dotnet run` on either OS.
       - name: Publish UI (linux-x64)
         run: dotnet publish Compression.NativeUI/Compression.NativeUI.csproj -r linux-x64 -c Release --self-contained --nologo -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ inputs.version }}
 
@@ -236,12 +235,12 @@ jobs:
         shell: pwsh
         run: |
           $v = "${{ inputs.version }}"
-          $pubDir = "Compression.UI/bin/Release/net10.0-windows/win-x64/publish"
+          $pubDir = "Compression.NativeUI/bin/Release/net10.0/win-x64/publish"
           $shellBuildDir = "Compression.Shell/bin/Release/net10.0-windows"
           $stageDir = "stage-ui"
           New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
 
-          Copy-Item "$pubDir/Compression.UI.exe" $stageDir -Force
+          Copy-Item "$pubDir/Compression.NativeUI.exe" $stageDir -Force
 
           # COM host shim must live beside the exe for Explorer shell-extension registration.
           $comhost = "$shellBuildDir/Compression.Shell.comhost.dll"

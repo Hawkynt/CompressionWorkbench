@@ -62,8 +62,9 @@ as complete. It means:
   "unsupported".
 - **Benchmarking and optimization at the primitive level.** Compare algorithms and parameter sets on
   the actual data rather than conflating the compressor with its container overhead.
-- **One engine, many surfaces.** Library APIs, `cwb`, WPF UI, shell integration, SFX and mounting
-  helpers share the same registries and operations instead of becoming separate implementations.
+- **One engine, many surfaces.** Library APIs, `cwb`, the desktop shell, shell integration, SFX and
+  mounting helpers share the same registries and operations instead of becoming separate
+  implementations.
 
 The destination is deliberately larger than the current implementation. The package support tables
 below-linked are the source of truth for what is implemented **today**; this section explains what the
@@ -77,7 +78,7 @@ project is trying to become.
 - Lossless optimization per format, searching the encoder's own parameter space
 - Binary analysis and forensics — entropy, structure, embedded-object discovery
 - A compression core in pure C#, with the classic algorithms implemented rather than bound to
-- A WPF workbench over the same libraries the CLI uses
+- A desktop workbench over the same libraries the CLI uses, on Windows and Linux alike
 - Published as NuGet packages, each with a generated API reference
 
 ## 📦 Installation
@@ -115,7 +116,7 @@ application.
 <!-- branch-screenshots:start -->
 ## 🖼️ Screenshots
 
-These screenshots are generated from the current branch by the real WPF application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
+These screenshots are generated from the current branch by the real application on every non-main push. They are committed back to the branch so the README shows the UI that branch actually builds, rather than a manually curated image from some older revision.
 
 | Archive browser | Binary analysis | Maintenance |
 | :--: | :--: | :--: |
@@ -165,7 +166,7 @@ CompressionWorkbench has several layers, but they have different jobs:
 | **Domain format/codec** | Understands the native semantics of one format | ZIP members, JPEG pixels, H.264 pictures, FLAC samples, ext4 files |
 | **Addressable-entry projection** | Optionally exposes independently useful children through a common list/extract surface | archive members, image pages/frames, media tracks, resources, font members |
 | **Workbench orchestration** | Detects formats, chooses operations, converts, recurses, optimizes, analyzes and combines handlers | `Compression.Lib`, `Compression.Analysis` |
-| **User surface** | Presents those capabilities to people or applications | `cwb`, WPF UI, .NET APIs, shell integration, SFX/mounting helpers |
+| **User surface** | Presents those capabilities to people or applications | `cwb`, the desktop shell, .NET APIs, shell integration, SFX/mounting helpers |
 
 ### 📂 Pseudo-archives are a projection, not a competing taxonomy
 
@@ -314,7 +315,7 @@ stdout, pipe stdin or set a timeout. `cwb tool init` pre-populates templates for
 The analysis surfaces are intentionally useful even when no high-level format reader succeeds. They
 work from the bytes outward instead of stopping at "unsupported".
 
-### 🖥️ Compression.UI — browser, analyser and heatmap
+### 🖥️ Compression.NativeUI — browser, analyser and heatmap
 
 The archive browser is the conventional half: file list with name, size, compressed size, ratio,
 method and modified columns; open / extract / create / test flows; text and hex preview; properties
@@ -486,7 +487,7 @@ Compression.Lib -------> common detection / operations / conversion
       |
       +--> Compression.Analysis
       +--> Compression.CLI
-      +--> Compression.UI
+      +--> Compression.NativeUI
       +--> Compression.Shell / Compression.Sfx.* / Compression.Mounting.*
       |
       +--> Hawkynt.FileFormats.Audio
@@ -509,15 +510,16 @@ dotnet build CompressionWorkbench.slnx
 dotnet test
 ```
 
-Two frontends ship. `Compression.UI` is the WPF workstation and targets Windows; on Linux,
-`run-wine.sh` builds and launches the self-contained Windows UI under Wine.
-`Compression.NativeUI` is the cross-platform NativeForms frontend (Win32 and GTK backends) and
-releases as a native `linux-x64` binary — today it covers the mounting workflow only, so it is a
-companion to the WPF UI rather than a replacement.
+One frontend ships. `Compression.NativeUI` is a NativeForms shell over the Win32 and GTK backends,
+so the same code is the Windows workstation and the Linux one, and both are released as native
+`win-x64` and `linux-x64` binaries.
 
 ```bash
 dotnet run --project Compression.NativeUI/Compression.NativeUI.csproj
 ```
+
+The GTK backend needs GTK 3 present (`libgtk-3-0` on Debian and Ubuntu). Mounting additionally needs
+Dokan on Windows or FUSE on Linux; the shell lists only the backend it can actually find.
 
 ---
 
