@@ -209,6 +209,22 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void NonStreamDescriptors_DoNotUseLegacyOptimizeCapabilityFlag() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .Where(static descriptor => descriptor is not IStreamFormatOperations)
+      .Where(static descriptor => descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize))
+      .Select(static descriptor => descriptor.Id)
+      .OrderBy(static id => id, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "Non-stream formats must expose compression through ICompressionOptimizable, not FormatCapabilities.SupportsOptimize: "
+      + string.Join(", ", offenders));
+  }
+
+  [Test, Category("Architecture")]
   public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
     FormatRegistration.EnsureInitialized();
 
