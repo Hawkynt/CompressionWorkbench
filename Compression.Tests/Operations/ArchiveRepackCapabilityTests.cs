@@ -33,6 +33,39 @@ public class ArchiveRepackCapabilityTests {
   }
 
   [Test, Category("RoundTrip")]
+  public void TarGz_Repack_PreservesLogicalTarModel() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById("TarGz");
+    Assert.That(descriptor, Is.InstanceOf<IArchiveRepackable>());
+    Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+    Assert.That(descriptor, Is.InstanceOf<IArchiveFormatOperations>());
+
+    var operations = (IArchiveFormatOperations)descriptor!;
+    var creator = (IArchiveCreatable)descriptor;
+    var repackable = (IArchiveRepackable)descriptor;
+    var timestamp = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Utc);
+    ArchiveInputInfo[] inputs = [
+      new("", "empty/", true) { LastModified = timestamp },
+      ArchiveInputInfo.InMemory("alpha.txt", "alpha payload"u8.ToArray()) with { LastModified = timestamp },
+    ];
+
+    using var source = new MemoryStream();
+    creator.Create(source, inputs, new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string> { ["BlockingFactor"] = "1" },
+    });
+    source.Position = 0;
+    var before = SemanticPreservationManifest.Capture(source, operations);
+
+    source.Position = 0;
+    using var repacked = new MemoryStream();
+    repackable.Repack(source, repacked);
+
+    repacked.Position = 0;
+    var after = SemanticPreservationManifest.Capture(repacked, operations);
+    before.VerifyEquivalent(after);
+  }
+
+  [Test, Category("RoundTrip")]
   public void Tar_Repack_PreservesEmptyDirectoriesPayloadsAndTimestamps() {
     var descriptor = new TarFormatDescriptor();
     var timestamp = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Utc);
