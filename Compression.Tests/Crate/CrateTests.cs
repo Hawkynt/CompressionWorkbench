@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using Compression.Registry;
 using FileFormat.Crate;
 using FileFormat.Tar;
 
@@ -41,6 +42,14 @@ public class CrateTests {
     return ms.ToArray();
   }
 
+  private static byte[] InflateGzip(byte[] data) {
+    using var input = new MemoryStream(data);
+    using var gzip = new GZipStream(input, CompressionMode.Decompress);
+    using var output = new MemoryStream();
+    gzip.CopyTo(output);
+    return output.ToArray();
+  }
+
   private static byte[] BuildTar(IEnumerable<(string Name, byte[] Data)> files) {
     using var ms = new MemoryStream();
     using var writer = new TarWriter(ms, leaveOpen: true);
@@ -58,6 +67,26 @@ public class CrateTests {
     Assert.That(d.Extensions, Contains.Item(".crate"));
     Assert.That(d.MagicSignatures, Is.Empty);
     Assert.That(d.TarCompressionFormatId, Is.EqualTo("Gzip"));
+  }
+
+  [Test, Category("HappyPath"), Category("RoundTrip")]
+  public void CompressionOptimization_RecompressesOnlyOuterGzip() {
+    var original = BuildCrate();
+    var descriptor = new CrateFormatDescriptor();
+
+    Assert.That(OptimizationCapabilities.CanCompress(descriptor), Is.True);
+
+    using var input = new MemoryStream(original);
+    using var output = new MemoryStream();
+    ((ICompressionOptimizable)descriptor).OptimizeCompression(input, output);
+
+    var optimized = output.ToArray();
+    Assert.Multiple(() => {
+      Assert.That(InflateGzip(optimized), Is.EqualTo(InflateGzip(original)),
+        "compression optimization must leave the inner TAR byte-for-byte unchanged");
+      Assert.That(optimized.Length, Is.LessThanOrEqualTo(original.Length),
+        "maximum gzip compression must not grow the Fastest-compressed fixture");
+    });
   }
 
   [Test, Category("HappyPath")]
