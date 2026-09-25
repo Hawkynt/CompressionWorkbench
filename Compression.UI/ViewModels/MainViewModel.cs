@@ -360,7 +360,8 @@ internal sealed class MainViewModel : ViewModelBase {
       Views.MaintenanceVerb.Repack => descriptor is IArchiveRepackable,
       Views.MaintenanceVerb.SortDirectory => descriptor is IFilesystemDirectoryOrderer,
       Views.MaintenanceVerb.Shrink => descriptor is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
-      Views.MaintenanceVerb.Defragment => descriptor is IArchiveDefragmentable,
+      Views.MaintenanceVerb.Defragment =>
+        descriptor is IArchiveDefragmentable && descriptor is IFilesystemExtentMap,
       Views.MaintenanceVerb.Purge => descriptor is IArchiveModifiable,
       Views.MaintenanceVerb.WipeEmpty => descriptor is IWipeEmpty or IFilesystemExtentMap or IArchiveLayoutMap,
       Views.MaintenanceVerb.Compact => descriptor is IArchiveDefragmentable or IArchiveShrinkable or IArchiveCreatable,
