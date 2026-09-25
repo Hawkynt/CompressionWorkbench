@@ -713,18 +713,19 @@ var repackInputArg = new Argument<FileInfo>("input") { Description = "Archive to
 var repackOutputArg = new Argument<FileInfo>("output") { Description = "Repacked output in the same format" };
 var repackCmd = new Command("repack",
   "Rebuild the same logical entries without implying recompression or canonicalization") {
-  repackInputArg, repackOutputArg
+  repackInputArg, repackOutputArg, passwordOpt
 };
 repackCmd.SetAction((ParseResult ctx) => {
   var input = ctx.GetValue(repackInputArg)!;
   var output = ctx.GetValue(repackOutputArg)!;
+  var password = ctx.GetValue(passwordOpt);
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
   try {
     var format = FormatDetector.Detect(input.FullName);
     Console.Write($"Repacking {input.Name} ({format})...");
     var sw = Stopwatch.StartNew();
-    var (originalSize, repackedSize, count) = ArchiveOperations.Repack(input.FullName, output.FullName);
+    var (originalSize, repackedSize, count) = ArchiveOperations.Repack(input.FullName, output.FullName, password);
     sw.Stop();
     Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
     Console.WriteLine($"  {FormatSize(originalSize)} -> {FormatSize(repackedSize)} ({count} entr{(count == 1 ? "y" : "ies")})");
