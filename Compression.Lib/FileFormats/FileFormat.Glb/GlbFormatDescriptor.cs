@@ -101,76 +101,253 @@ public sealed class GlbFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  private readonly record struct SourceRange(int Offset, int Length);
+  private readonly record struct BufferViewLayout(int Offset, int Length);
+  private readonly record struct ImageLayout(int? BufferView, string MimeType, string? Name);
+  private sealed record JsonLayout(
+    IReadOnlyList<BufferViewLayout> BufferViews,
+    IReadOnlyList<ImageLayout> Images);
+  private sealed record EntryLayout(string Name, string Kind, SourceRange Range);
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
+    return BuildLayout(blob)
+      .Select(entry => (
+        entry.Name,
+        entry.Kind,
+        blob.AsSpan(entry.Range.Offset, entry.Range.Length).ToArray()))
+      .ToList();
+  }
 
-    var entries = new List<(string Name, string Kind, byte[] Data)> {
-      ("FULL.glb", "Container", blob),
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) =>
+    BuildLayout(archive).Select((entry, index) => new ArchiveEntryInfo(
+      Index: index, Name: entry.Name,
+      OriginalSize: entry.Range.Length, CompressedSize: entry.Range.Length,
+      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Kind: entry.Kind)).ToList();
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    foreach (var entry in BuildLayout(archive)) {
+      if (files is { Length: > 0 } && !FormatHelpers.MatchesFilter(entry.Name, files))
+        continue;
+
+      using var output = FormatHelpers.CreateEntryFile(outputDir, entry.Name);
+      output.Write(archive.Slice(entry.Range.Offset, entry.Range.Length));
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
+    var entries = new List<EntryLayout> {
+      new("FULL.glb", "Container", new SourceRange(0, blob.Length)),
     };
     if (blob.Length < 12) return entries;
     if (blob[0] != 'g' || blob[1] != 'l' || blob[2] != 'T' || blob[3] != 'F') return entries;
 
-    // GLB header: magic (4) + version (4 LE) + total length (4 LE).
-    var totalLen = BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(8));
-    var end = Math.Min((int)totalLen, blob.Length);
+    var totalLength = BinaryPrimitives.ReadUInt32LittleEndian(blob[8..]);
+    var end = (int)Math.Min((ulong)totalLength, (ulong)blob.Length);
 
-    byte[]? json = null;
-    byte[]? bin = null;
+    SourceRange? json = null;
+    SourceRange? bin = null;
     var pos = 12;
     while (pos + 8 <= end) {
-      var chunkLen = (int)BinaryPrimitives.ReadUInt32LittleEndian(blob.AsSpan(pos));
-      var type = Encoding.ASCII.GetString(blob.AsSpan(pos + 4, 4));
-      var body = blob.AsSpan(pos + 8, Math.Min(chunkLen, end - pos - 8)).ToArray();
-      // JSON padding byte is 0x20; BIN padding is 0x00 — trim trailing padding for the surfaced bytes.
-      if (type == "JSON") json = TrimPadding(body, 0x20);
-      else if (type[0] == 'B' && type[1] == 'I' && type[2] == 'N') bin = TrimPadding(body, 0x00);
-      pos += 8 + chunkLen;
+      var declaredLength = BinaryPrimitives.ReadUInt32LittleEndian(blob[pos..]);
+      var bodyOffset = pos + 8;
+      var available = Math.Min((long)declaredLength, end - (long)bodyOffset);
+      if (available < 0)
+        break;
+
+      var bodyLength = checked((int)available);
+      if (blob[pos + 4] == 'J' && blob[pos + 5] == 'S'
+          && blob[pos + 6] == 'O' && blob[pos + 7] == 'N')
+        json = TrimPadding(blob, bodyOffset, bodyLength, 0x20);
+      else if (blob[pos + 4] == 'B' && blob[pos + 5] == 'I' && blob[pos + 6] == 'N')
+        bin = TrimPadding(blob, bodyOffset, bodyLength, 0x00);
+
+      var next = (long)bodyOffset + declaredLength;
+      if (next > int.MaxValue)
+        break;
+      pos = (int)next;
     }
 
-    if (json != null) entries.Add(("scene.gltf", "Track", json));
-    if (bin != null) entries.Add(("binary.bin", "Track", bin));
+    if (json is { } jsonRange)
+      entries.Add(new EntryLayout("scene.gltf", "Track", jsonRange));
+    if (bin is { } binRange)
+      entries.Add(new EntryLayout("binary.bin", "Track", binRange));
 
-    // Best-effort: parse JSON, emit bufferViews-backed images as extractable files.
-    if (json != null && bin != null) {
-      try {
-        using var doc = JsonDocument.Parse(json);
-        if (doc.RootElement.TryGetProperty("images", out var images) &&
-            doc.RootElement.TryGetProperty("bufferViews", out var bvs)) {
-          var bvList = bvs.EnumerateArray().ToArray();
-          var imgIdx = 0;
-          foreach (var img in images.EnumerateArray()) {
-            if (!img.TryGetProperty("bufferView", out var bvRef)) { ++imgIdx; continue; }
-            var bvi = bvRef.GetInt32();
-            if (bvi < 0 || bvi >= bvList.Length) { ++imgIdx; continue; }
-            var bv = bvList[bvi];
-            var bvOff = bv.TryGetProperty("byteOffset", out var oEl) ? oEl.GetInt32() : 0;
-            var bvLen = bv.GetProperty("byteLength").GetInt32();
-            if (bvOff + bvLen > bin.Length) { ++imgIdx; continue; }
-            var mime = img.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "" : "";
-            var ext = mime switch {
-              "image/png" => ".png",
-              "image/jpeg" => ".jpg",
-              "image/webp" => ".webp",
-              _ => ".bin",
-            };
-            var name = img.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } s
-              ? Sanitize(s) : $"image_{imgIdx:D3}";
-            entries.Add(($"images/{name}{ext}", "Track", bin.AsSpan(bvOff, bvLen).ToArray()));
-            ++imgIdx;
-          }
+    if (json is not { } sourceJson || bin is not { } sourceBin)
+      return entries;
+
+    try {
+      var layout = ParseJsonLayout(blob.Slice(sourceJson.Offset, sourceJson.Length));
+      var imageIndex = 0;
+      foreach (var image in layout.Images) {
+        if (image.BufferView is not { } bufferViewIndex
+            || bufferViewIndex < 0
+            || bufferViewIndex >= layout.BufferViews.Count) {
+          ++imageIndex;
+          continue;
         }
-      } catch { /* best effort — malformed JSON means we just skip the image walk */ }
+
+        var bufferView = layout.BufferViews[bufferViewIndex];
+        if (bufferView.Offset < 0 || bufferView.Length < 0
+            || bufferView.Offset > sourceBin.Length - bufferView.Length) {
+          ++imageIndex;
+          continue;
+        }
+
+        var extension = image.MimeType switch {
+          "image/png" => ".png",
+          "image/jpeg" => ".jpg",
+          "image/webp" => ".webp",
+          _ => ".bin",
+        };
+        var name = image.Name is { Length: > 0 } value
+          ? Sanitize(value)
+          : $"image_{imageIndex:D3}";
+
+        entries.Add(new EntryLayout(
+          $"images/{name}{extension}",
+          "Track",
+          new SourceRange(sourceBin.Offset + bufferView.Offset, bufferView.Length)));
+        ++imageIndex;
+      }
+    } catch {
+      // Best effort: malformed JSON leaves the raw JSON/BIN entries available.
     }
 
     return entries;
   }
 
-  private static byte[] TrimPadding(byte[] body, byte pad) {
-    var end = body.Length;
-    while (end > 0 && body[end - 1] == pad) --end;
-    return body.AsSpan(0, end).ToArray();
+  private static SourceRange TrimPadding(
+      ReadOnlySpan<byte> source, int offset, int length, byte padding) {
+    var end = offset + length;
+    while (end > offset && source[end - 1] == padding)
+      --end;
+    return new SourceRange(offset, end - offset);
+  }
+
+  private static JsonLayout ParseJsonLayout(ReadOnlySpan<byte> json) {
+    var bufferViews = new List<BufferViewLayout>();
+    var images = new List<ImageLayout>();
+    var reader = new Utf8JsonReader(json);
+
+    if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+      throw new JsonException("glTF JSON root must be an object.");
+
+    while (reader.Read()) {
+      if (reader.TokenType == JsonTokenType.EndObject)
+        break;
+      if (reader.TokenType != JsonTokenType.PropertyName)
+        throw new JsonException("Expected a top-level glTF property.");
+
+      var isBufferViews = reader.ValueTextEquals("bufferViews"u8);
+      var isImages = reader.ValueTextEquals("images"u8);
+      if (!reader.Read())
+        throw new JsonException("Missing glTF property value.");
+
+      if (isBufferViews)
+        ReadBufferViews(ref reader, bufferViews);
+      else if (isImages)
+        ReadImages(ref reader, images);
+      else
+        SkipValue(ref reader);
+    }
+
+    return new JsonLayout(bufferViews, images);
+  }
+
+  private static void ReadBufferViews(
+      ref Utf8JsonReader reader, List<BufferViewLayout> bufferViews) {
+    if (reader.TokenType != JsonTokenType.StartArray) {
+      SkipValue(ref reader);
+      return;
+    }
+
+    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray) {
+      if (reader.TokenType != JsonTokenType.StartObject) {
+        SkipValue(ref reader);
+        continue;
+      }
+
+      var offset = 0;
+      int? length = null;
+      while (reader.Read() && reader.TokenType != JsonTokenType.EndObject) {
+        if (reader.TokenType != JsonTokenType.PropertyName)
+          throw new JsonException("Expected bufferView property.");
+
+        var isOffset = reader.ValueTextEquals("byteOffset"u8);
+        var isLength = reader.ValueTextEquals("byteLength"u8);
+        if (!reader.Read())
+          throw new JsonException("Missing bufferView property value.");
+
+        if (isOffset && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedOffset))
+          offset = parsedOffset;
+        else if (isLength && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedLength))
+          length = parsedLength;
+        else
+          SkipValue(ref reader);
+      }
+
+      bufferViews.Add(new BufferViewLayout(offset, length ?? -1));
+    }
+  }
+
+  private static void ReadImages(ref Utf8JsonReader reader, List<ImageLayout> images) {
+    if (reader.TokenType != JsonTokenType.StartArray) {
+      SkipValue(ref reader);
+      return;
+    }
+
+    while (reader.Read() && reader.TokenType != JsonTokenType.EndArray) {
+      if (reader.TokenType != JsonTokenType.StartObject) {
+        SkipValue(ref reader);
+        continue;
+      }
+
+      int? bufferView = null;
+      var mimeType = "";
+      string? name = null;
+      while (reader.Read() && reader.TokenType != JsonTokenType.EndObject) {
+        if (reader.TokenType != JsonTokenType.PropertyName)
+          throw new JsonException("Expected image property.");
+
+        var isBufferView = reader.ValueTextEquals("bufferView"u8);
+        var isMimeType = reader.ValueTextEquals("mimeType"u8);
+        var isName = reader.ValueTextEquals("name"u8);
+        if (!reader.Read())
+          throw new JsonException("Missing image property value.");
+
+        if (isBufferView && reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var parsedBufferView))
+          bufferView = parsedBufferView;
+        else if (isMimeType && reader.TokenType == JsonTokenType.String)
+          mimeType = reader.GetString() ?? "";
+        else if (isName && reader.TokenType == JsonTokenType.String)
+          name = reader.GetString();
+        else
+          SkipValue(ref reader);
+      }
+
+      images.Add(new ImageLayout(bufferView, mimeType, name));
+    }
+  }
+
+  private static void SkipValue(ref Utf8JsonReader reader) {
+    if (reader.TokenType is not JsonTokenType.StartObject and not JsonTokenType.StartArray)
+      return;
+
+    var depth = 1;
+    while (depth > 0 && reader.Read()) {
+      if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+        ++depth;
+      else if (reader.TokenType is JsonTokenType.EndObject or JsonTokenType.EndArray)
+        --depth;
+    }
+
+    if (depth != 0)
+      throw new JsonException("Incomplete JSON value.");
   }
 
   private static string Sanitize(string s) {
