@@ -676,86 +676,21 @@ public static class ArchiveOperations {
     var format = FormatDetector.Detect(inputPath);
     FormatRegistration.EnsureInitialized();
     var descriptor = FormatRegistry.GetById(format.ToString());
-    if (!OptimizationCapabilities.CanCompress(descriptor))
+    if (descriptor is not ICompressionOptimizable compression)
       throw new NotSupportedException($"{format} does not expose {nameof(ICompressionOptimizable)}.");
 
     var originalSize = new FileInfo(inputPath).Length;
-    var entries = 0;
-
-    // ── ZIP: re-encode each Deflate entry with Zopfli ────────────────
-    if (format == F.Zip) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => entries = OptimizeZip(inputPath, outFs, password));
-      return (originalSize, new FileInfo(outputPath).Length, entries);
+    var entries = 1;
+    if (descriptor is IArchiveFormatOperations archiveOps) {
+      using var listStream = File.OpenRead(inputPath);
+      entries = archiveOps.List(listStream, password).Count(static entry => !entry.IsDirectory);
     }
 
-    // ── Gzip: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Gzip) {
-      var data = DecompressFile(inputPath, F.Gzip);
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var gs = new FileFormat.Gzip.GzipStream(outFs,
-          Compression.Core.Streams.CompressionStreamMode.Compress,
-          Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-          leaveOpen: true);
-        gs.Write(data);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Zlib: re-encode Deflate with Maximum level ───────────────────
-    if (format == F.Zlib) {
-      var data = File.ReadAllBytes(inputPath);
-      var decompressed = FileFormat.Zlib.ZlibStream.Decompress(data.AsSpan());
-      var recompressed = FileFormat.Zlib.ZlibStream.Compress(decompressed.AsSpan(),
-        Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
-      AtomicFileWriter.WriteAllBytesAtomic(outputPath, recompressed);
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Compound tar: re-encode outer compression with best level ────
-    var comp = FormatDetector.GetTarCompression(format);
-    if (comp.HasValue) {
-      // Decompress to raw tar, recompress with best settings
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var rawTar = new MemoryStream();
-        DecompressStreamPair(inFs, rawTar, comp.Value);
-        rawTar.Position = 0;
-        CompressStreamPairOptimal(rawTar, outFs, comp.Value);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Other stream formats: decompress + recompress with best ──────
-    if (FormatDetector.IsStreamFormat(format)) {
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        using var raw = new MemoryStream();
-        DecompressStreamPair(inFs, raw, format);
-        raw.Position = 0;
-        CompressStreamPairOptimal(raw, outFs, format);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, 1);
-    }
-
-    // ── Explicit archive/filesystem compression capability ──────────
-    // Non-stream containers dispatch through the descriptor contract after the
-    // fail-closed capability check above.
-    if (descriptor is ICompressionOptimizable compressionOptimizable) {
-      var optimizedEntries = 1;
-      if (descriptor is IArchiveFormatOperations archiveOps) {
-        using var listStream = File.OpenRead(inputPath);
-        optimizedEntries = archiveOps.List(listStream, password).Count(entry => !entry.IsDirectory);
-      }
-
-      AtomicFileWriter.WriteAtomic(outputPath, outFs => {
-        using var inFs = File.OpenRead(inputPath);
-        compressionOptimizable.OptimizeCompression(inFs, outFs);
-      });
-      return (originalSize, new FileInfo(outputPath).Length, optimizedEntries);
-    }
-
-    throw new NotSupportedException(
-      $"{format} advertises compression optimization but has no executable compression path.");
+    AtomicFileWriter.WriteAtomic(outputPath, outFs => {
+      using var inFs = File.OpenRead(inputPath);
+      compression.OptimizeCompression(inFs, outFs, password);
+    });
+    return (originalSize, new FileInfo(outputPath).Length, entries);
   }
 
   /// <summary>
@@ -824,31 +759,6 @@ public static class ArchiveOperations {
       repackable.Repack(inFs, outFs);
     });
     return (originalSize, new FileInfo(outputPath).Length, entries);
-  }
-
-  private static int OptimizeZip(string inputPath, Stream outFs, string? password) {
-    using var inFs = File.OpenRead(inputPath);
-    var r = new FileFormat.Zip.ZipReader(inFs, leaveOpen: true, password: password);
-    var w = new FileFormat.Zip.ZipWriter(outFs, leaveOpen: true,
-      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum,
-      password: password);
-
-    var optimized = 0;
-    foreach (var entry in r.Entries) {
-      if (entry.IsDirectory) {
-        w.AddDirectory(entry.FileName, entry.LastModified);
-        continue;
-      }
-
-      // For Deflate entries: decompress and re-encode with Zopfli (Maximum)
-      // For other methods: decompress and re-encode with Deflate Maximum
-      var data = r.ExtractEntry(entry);
-      w.AddEntry(entry.FileName, data, FileFormat.Zip.ZipCompressionMethod.Deflate, entry.LastModified);
-      ++optimized;
-    }
-
-    w.Finish();
-    return optimized;
   }
 
   // ── Stream compression dispatch (registry-only) ─────────────────
