@@ -39,6 +39,21 @@ public class CompressionOptimizationCapabilityTests {
   }
 
   [Test, Category("Negative")]
+  public void Zip_OptimizeCompression_RejectsSameInputAndOutputStream() {
+    var descriptor = new ZipFormatDescriptor();
+    using var archive = new MemoryStream();
+    descriptor.Create(
+      archive,
+      [ArchiveInputInfo.InMemory("payload.txt", "payload"u8.ToArray())],
+      new FormatCreateOptions());
+    archive.Position = 0;
+
+    Assert.That(
+      () => ((ICompressionOptimizable)descriptor).OptimizeCompression(archive, archive),
+      Throws.TypeOf<ArgumentException>());
+  }
+
+  [Test, Category("Negative")]
   public void Zip_OptimizeCompression_RejectsEncryptedArchiveWithoutPassword() {
     var descriptor = new ZipFormatDescriptor();
     using var source = new MemoryStream();
