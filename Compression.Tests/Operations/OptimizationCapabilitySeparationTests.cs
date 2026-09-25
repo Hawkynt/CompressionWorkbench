@@ -224,6 +224,64 @@ public sealed class OptimizationCapabilitySeparationTests {
       + string.Join(", ", offenders));
   }
 
+  [Test, Category("RoundTrip")]
+  public void CompoundTar_Compress_RoundTripsThroughExplicitCapability() {
+    var directory = Path.Combine(Path.GetTempPath(), "cwb_targz_opt_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(directory);
+    try {
+      var payloadPath = Path.Combine(directory, "payload.txt");
+      var inputPath = Path.Combine(directory, "input.tar.gz");
+      var outputPath = Path.Combine(directory, "output.tar.gz");
+      var extractDir = Path.Combine(directory, "out");
+      var payload = new string('A', 8192) + " compound tar sentinel";
+      File.WriteAllText(payloadPath, payload);
+
+      ArchiveOperations.Create(
+        inputPath,
+        [new ArchiveInput(payloadPath, "payload.txt")],
+        new CompressionOptions(),
+        FormatDetector.Format.TarGz);
+
+      var result = ArchiveOperations.Compress(inputPath, outputPath, password: null);
+      ArchiveOperations.Extract(outputPath, extractDir, password: null, files: null);
+
+      Assert.Multiple(() => {
+        Assert.That(result.EntriesOptimized, Is.EqualTo(1));
+        Assert.That(File.ReadAllText(Path.Combine(extractDir, "payload.txt")), Is.EqualTo(payload));
+      });
+    } finally {
+      if (Directory.Exists(directory))
+        Directory.Delete(directory, recursive: true);
+    }
+  }
+
+  [Test, Category("Architecture")]
+  public void LegacyOptimize_RejectsAmbiguousZipRewrite() {
+    var directory = Path.Combine(Path.GetTempPath(), "cwb_legacy_opt_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(directory);
+    try {
+      var payloadPath = Path.Combine(directory, "payload.txt");
+      var inputPath = Path.Combine(directory, "input.zip");
+      var outputPath = Path.Combine(directory, "output.zip");
+      File.WriteAllText(payloadPath, "ambiguous optimize sentinel");
+
+      ArchiveOperations.Create(
+        inputPath,
+        [new ArchiveInput(payloadPath, "payload.txt")],
+        new CompressionOptions(),
+        FormatDetector.Format.Zip);
+
+      var ex = Assert.Throws<NotSupportedException>(
+        () => ArchiveOperations.Optimize(inputPath, outputPath, password: null));
+
+      Assert.That(ex!.Message, Does.Contain("ambiguous"));
+      Assert.That(File.Exists(outputPath), Is.False);
+    } finally {
+      if (Directory.Exists(directory))
+        Directory.Delete(directory, recursive: true);
+    }
+  }
+
   [Test, Category("Architecture")]
   public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
     FormatRegistration.EnsureInitialized();
