@@ -6362,7 +6362,7 @@ Implements `IEquatable<StreamingArchiveInput>`.
 
 Pseudo-archive descriptor for Windows animated cursor (`.ani`) files. Each ANI frame is a complete CUR file; the descriptor unpacks each frame and then further unpacks each CUR's sub-images using the CWB ICO/CUR reader, so every extracted sub-image keeps its native on-disk encoding (PNG or DIB) and is named with a matching `.png` / `.bmp` extension. References: `https://en.wikipedia.org/wiki/ANI_(file_format)` — RIFF 'ACON' animated-cursor structureMicrosoft Windows multimedia SDK — RIFF container and 'anih' header documentation
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `ICompressionOptimizable`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
@@ -12942,7 +12942,7 @@ Implements `IDisposable`.
 
 Descriptor for a Rust crate package (`.crate`) — a gzipped TAR containing a single `name-version/` top-level directory with a `Cargo.toml` and the crate's source files. References: `https://doc.rust-lang.org/cargo/reference/registries.html#publish` — registry publish API, defining what a `.crate` upload contains`https://doc.rust-lang.org/cargo/` — The Cargo Book (the `cargo package` command produces these archives)
 
-Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `IFormatDescriptor`.
+Implements `IArchiveCreatable`, `IArchiveFormatOperations`, `ICompressionOptimizable`, `IFormatDescriptor`.
 
 | Member | Signature | Summary |
 | --- | --- | --- |
