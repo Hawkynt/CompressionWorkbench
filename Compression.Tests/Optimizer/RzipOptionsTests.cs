@@ -86,7 +86,8 @@ public class RzipOptionsTests {
   public void Descriptor_AdvertisesSearchableOptimizerAxes() {
     var descriptor = new RzipFormatDescriptor();
 
-    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+    Assert.That(descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+    Assert.That(descriptor, Is.Not.InstanceOf<ICompressionOptimizable>());
     Assert.That(descriptor.Methods.Single().SupportsOptimize, Is.True);
     Assert.That(descriptor.OptionsSchema.Select(option => option.Key),
       Is.EquivalentTo(new[] { "MinMatch", "CandidateSearchLimit" }));
