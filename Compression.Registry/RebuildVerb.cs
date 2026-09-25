@@ -23,7 +23,8 @@ public static class RebuildVerb {
       Action<DefragProgressEvent>? onProgress = null,
       CancellationToken cancellationToken = default,
       FormatCreateOptions? createOptions = null,
-      IReadOnlySet<string>? semanticExcludedNames = null) {
+      IReadOnlySet<string>? semanticExcludedNames = null,
+      string? password = null) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
     ArgumentNullException.ThrowIfNull(ops);
@@ -56,10 +57,10 @@ public static class RebuildVerb {
     }
 
     input.Position = 0;
-    var sourceEntries = ops.List(input, null);
+    var sourceEntries = ops.List(input, password);
     input.Position = 0;
     var sourceManifest = ArchiveSemanticManifest.Capture(
-      input, ops, cancellationToken: cancellationToken, excludedNames: manifestExcludedNames);
+      input, ops, password, cancellationToken, manifestExcludedNames);
     var sourceNames = LiveNameList(sourceEntries);
     var sourceByName = sourceEntries
       .Where(e => effectiveSyntheticNames is null || !effectiveSyntheticNames.Contains(e.Name))
@@ -107,7 +108,7 @@ public static class RebuildVerb {
           $"Reading {liveIndex:N0}/{liveEntries.Length:N0}: {entry.Name}"));
 
         input.Position = 0;
-        using var src = ops.OpenEntry(input, entry.Name, null);
+        using var src = ops.OpenEntry(input, entry.Name, password);
         using var dst = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024,
           FileOptions.SequentialScan);
         var buffer = new byte[64 * 1024];
@@ -192,7 +193,7 @@ public static class RebuildVerb {
       output.Position = 0;
       List<string> rebuiltNames;
       try {
-        rebuiltNames = LiveNameList(ops.List(output, null));
+        rebuiltNames = LiveNameList(ops.List(output, password));
       } catch (Exception ex) {
         throw new InvalidOperationException(
           $"Rebuilt image could not be listed back ({ex.GetType().Name}: {ex.Message}); refusing a lossy rebuild.", ex);
@@ -203,7 +204,7 @@ public static class RebuildVerb {
 
       output.Position = 0;
       var rebuiltManifest = ArchiveSemanticManifest.Capture(
-        output, ops, cancellationToken: cancellationToken, excludedNames: manifestExcludedNames);
+        output, ops, password, cancellationToken, manifestExcludedNames);
       sourceManifest.RequireEquivalentTo(rebuiltManifest);
 
       cancellationToken.ThrowIfCancellationRequested();
