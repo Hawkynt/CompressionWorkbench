@@ -33,6 +33,153 @@ public class ArchiveRepackCapabilityTests {
   }
 
   [Test, Category("RoundTrip")]
+  public void Tar_Repack_PreservesLinksOwnershipModesAndPayloads() {
+    var descriptor = new TarFormatDescriptor();
+    var timestamp = DateTimeOffset.FromUnixTimeSeconds(1_714_973_290);
+
+    using var source = new MemoryStream();
+    using (var writer = new TarWriter(source, leaveOpen: true, format: TarHeaderFormat.Pax, blockingFactor: 1)) {
+      writer.AddEntry(new TarEntry {
+        Name = "data/",
+        TypeFlag = TarConstants.TypeDirectory,
+        Mode = 0x1ED,
+        Uid = 1001,
+        Gid = 1002,
+        UserName = "alice",
+        GroupName = "staff",
+        ModifiedTime = timestamp,
+      }, []);
+
+      writer.AddEntry(new TarEntry {
+        Name = "data/payload.txt",
+        TypeFlag = TarConstants.TypeRegular,
+        Mode = 0x1A4,
+        Uid = 1001,
+        Gid = 1002,
+        UserName = "alice",
+        GroupName = "staff",
+        ModifiedTime = timestamp,
+      }, "payload"u8.ToArray());
+
+      writer.AddEntry(new TarEntry {
+        Name = "latest",
+        TypeFlag = TarConstants.TypeSymLink,
+        LinkName = "data/payload.txt",
+        Mode = 0x1FF,
+        Uid = 1001,
+        Gid = 1002,
+        UserName = "alice",
+        GroupName = "staff",
+        ModifiedTime = timestamp,
+      }, []);
+
+      writer.AddEntry(new TarEntry {
+        Name = "payload-hardlink",
+        TypeFlag = TarConstants.TypeHardLink,
+        LinkName = "data/payload.txt",
+        Mode = 0x1A4,
+        Uid = 1001,
+        Gid = 1002,
+        UserName = "alice",
+        GroupName = "staff",
+        ModifiedTime = timestamp,
+      }, []);
+
+      writer.Finish();
+    }
+
+    source.Position = 0;
+    var before = SemanticPreservationManifest.Capture(source, descriptor);
+    source.Position = 0;
+
+    using var repacked = new MemoryStream();
+    ((IArchiveRepackable)descriptor).Repack(source, repacked);
+
+    repacked.Position = 0;
+    var after = SemanticPreservationManifest.Capture(repacked, descriptor);
+    before.VerifyEquivalent(after);
+
+    repacked.Position = 0;
+    using var reader = new TarReader(repacked);
+    var entries = new List<TarEntry>();
+    while (reader.GetNextEntry() is { } entry) {
+      entries.Add(entry);
+      reader.Skip();
+    }
+
+    Assert.Multiple(() => {
+      var file = entries.Single(entry => entry.Name == "data/payload.txt");
+      Assert.That(file.Mode, Is.EqualTo(0x1A4));
+      Assert.That(file.Uid, Is.EqualTo(1001));
+      Assert.That(file.Gid, Is.EqualTo(1002));
+      Assert.That(file.UserName, Is.EqualTo("alice"));
+      Assert.That(file.GroupName, Is.EqualTo("staff"));
+
+      var symlink = entries.Single(entry => entry.Name == "latest");
+      Assert.That(symlink.TypeFlag, Is.EqualTo(TarConstants.TypeSymLink));
+      Assert.That(symlink.LinkName, Is.EqualTo("data/payload.txt"));
+
+      var hardlink = entries.Single(entry => entry.Name == "payload-hardlink");
+      Assert.That(hardlink.TypeFlag, Is.EqualTo(TarConstants.TypeHardLink));
+      Assert.That(hardlink.LinkName, Is.EqualTo("data/payload.txt"));
+    });
+  }
+
+  [Test, Category("RoundTrip")]
+  public void TarGz_Repack_PreservesRichTarMetadata() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById("TarGz")!;
+    var creator = (IArchiveCreatable)descriptor;
+    var repackable = (IArchiveRepackable)descriptor;
+    var operations = (IArchiveFormatOperations)descriptor;
+
+    // Build the rich TAR first, then wrap it with gzip so the source carries
+    // metadata that ArchiveInputInfo alone cannot represent.
+    var tar = new TarFormatDescriptor();
+    using var rawTar = new MemoryStream();
+    using (var writer = new TarWriter(rawTar, leaveOpen: true, format: TarHeaderFormat.Pax, blockingFactor: 1)) {
+      writer.AddEntry(new TarEntry {
+        Name = "payload.txt",
+        TypeFlag = TarConstants.TypeRegular,
+        Mode = 0x1A0,
+        Uid = 42,
+        Gid = 43,
+        UserName = "user",
+        GroupName = "group",
+        ModifiedTime = DateTimeOffset.FromUnixTimeSeconds(1_714_973_290),
+      }, "payload"u8.ToArray());
+      writer.AddEntry(new TarEntry {
+        Name = "link",
+        TypeFlag = TarConstants.TypeSymLink,
+        LinkName = "payload.txt",
+        Mode = 0x1FF,
+        Uid = 42,
+        Gid = 43,
+        UserName = "user",
+        GroupName = "group",
+        ModifiedTime = DateTimeOffset.FromUnixTimeSeconds(1_714_973_290),
+      }, []);
+      writer.Finish();
+    }
+
+    var gzip = FormatRegistry.GetStreamOps("Gzip")!;
+    rawTar.Position = 0;
+    using var source = new MemoryStream();
+    gzip.Compress(rawTar, source);
+
+    source.Position = 0;
+    var before = SemanticPreservationManifest.Capture(source, operations);
+    source.Position = 0;
+
+    using var repacked = new MemoryStream();
+    repackable.Repack(source, repacked);
+
+    repacked.Position = 0;
+    var after = SemanticPreservationManifest.Capture(repacked, operations);
+    before.VerifyEquivalent(after);
+  }
+
+  [Test, Category("RoundTrip")]
   public void TarGz_Repack_PreservesLogicalTarModel() {
     Compression.Lib.FormatRegistration.EnsureInitialized();
     var descriptor = FormatRegistry.GetById("TarGz");
