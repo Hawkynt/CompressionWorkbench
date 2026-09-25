@@ -1,5 +1,14 @@
 namespace Compression.Registry;
 
+public enum LegacyOptimizeEffect {
+  None,
+  Compress,
+  Canonicalize,
+  Repack,
+  Ambiguous,
+}
+
+
 /// <summary>
 /// Central capability discovery for operations that used to be presented under
 /// the ambiguous "Optimize" label.
@@ -15,17 +24,30 @@ public static class OptimizationCapabilities {
     => descriptor is IArchiveRepackable;
 
   /// <summary>
-  /// Legacy compatibility gate for the former umbrella <c>Optimize</c> verb.
-  /// It is usable only when exactly one rewrite effect applies; overlapping
-  /// capabilities are intentionally ambiguous and must be selected explicitly.
+  /// Resolves the former umbrella <c>Optimize</c> verb to exactly one explicit
+  /// rewrite effect. Overlapping capabilities are intentionally ambiguous.
   /// </summary>
-  public static bool CanLegacyOptimizeUnambiguously(IFormatDescriptor? descriptor) {
-    var effects = 0;
-    if (CanCompress(descriptor)) ++effects;
-    if (CanCanonicalize(descriptor)) ++effects;
-    if (CanRepack(descriptor)) ++effects;
-    return effects == 1;
+  public static LegacyOptimizeEffect ResolveLegacyOptimizeEffect(IFormatDescriptor? descriptor) {
+    var compress = CanCompress(descriptor);
+    var canonicalize = CanCanonicalize(descriptor);
+    var repack = CanRepack(descriptor);
+    var effects = (compress ? 1 : 0) + (canonicalize ? 1 : 0) + (repack ? 1 : 0);
+    if (effects == 0)
+      return LegacyOptimizeEffect.None;
+    if (effects > 1)
+      return LegacyOptimizeEffect.Ambiguous;
+    if (compress)
+      return LegacyOptimizeEffect.Compress;
+    if (canonicalize)
+      return LegacyOptimizeEffect.Canonicalize;
+    return LegacyOptimizeEffect.Repack;
   }
+
+  public static bool CanLegacyOptimizeUnambiguously(IFormatDescriptor? descriptor)
+    => ResolveLegacyOptimizeEffect(descriptor) is
+      LegacyOptimizeEffect.Compress or
+      LegacyOptimizeEffect.Canonicalize or
+      LegacyOptimizeEffect.Repack;
 
   public static bool CanSortDirectoryEntries(IFormatDescriptor? descriptor)
     => descriptor is IFilesystemDirectoryOrderer;
