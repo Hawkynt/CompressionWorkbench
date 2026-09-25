@@ -23,8 +23,7 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   /// Gets the capabilities.
   /// </summary>
   public FormatCapabilities Capabilities =>
-    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.CanExtract | FormatCapabilities.CanCreate | FormatCapabilities.CanTest;
   /// <summary>
   /// Gets the default extension.
   /// </summary>
@@ -44,7 +43,7 @@ public sealed class MacBinaryFormatDescriptor : IFormatDescriptor, IStreamFormat
   /// <summary>
   /// Gets the methods.
   /// </summary>
-  public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary", SupportsOptimize: true)];
+  public IReadOnlyList<FormatMethodInfo> Methods => [new("macbinary", "MacBinary")];
   /// <summary>
   /// Gets the tar compression format id.
   /// </summary>
