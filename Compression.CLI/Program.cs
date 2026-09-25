@@ -1501,9 +1501,9 @@ var defragCmd = new Command("defragment", """
     cwb defragment *.img --mode pack-start --stride 2
     cwb defragment images/ --mode pack-end --recursive
 
-  Only descriptors that implement IArchiveDefragmentable accept this command.
-  Currently: FAT12 / FAT16 / FAT32 (all four modes), other R/W filesystems
-  (pack-start only via the default-impl fallback).
+  Only filesystem descriptors that implement both IArchiveDefragmentable and
+  IFilesystemExtentMap accept this command. Archive rebuilds belong to repack,
+  not defragmentation.
   """) {
   defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt, defragStrideOpt, defragBatchOpt, defragRecursiveOpt
 };
@@ -1540,13 +1540,13 @@ defragCmd.SetAction((ParseResult ctx) => {
     try {
       var format = FormatDetector.Detect(file);
       var ops = FormatRegistry.GetById(format.ToString());
-      if (ops is not IArchiveDefragmentable defragmentable) {
+      if (ops is not IArchiveDefragmentable defragmentable || ops is not IFilesystemExtentMap) {
         if (files.Count > 1) {
-          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not support defragmentation.");
+          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not expose filesystem extent defragmentation.");
           totalFail++;
           continue;
         }
-        Console.Error.WriteLine($"{format} does not support defragmentation.");
+        Console.Error.WriteLine($"{format} does not expose filesystem extent defragmentation.");
         return 1;
       }
 
@@ -1770,7 +1770,7 @@ shrinkCmd.SetAction((ParseResult ctx) => {
       } else {
         sw.Stop();
         Console.WriteLine(" skipped");
-        Console.Error.WriteLine($"  VHD descriptor does not support defragmentation.");
+        Console.Error.WriteLine($"  VHD descriptor does not expose filesystem extent defragmentation.");
         return 1;
       }
     } else {
