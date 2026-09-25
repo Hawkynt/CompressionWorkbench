@@ -19,7 +19,7 @@ namespace FileSystem.Fatx;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system</c> — Wikipedia's FAT reference, which covers the FATX variant</description></item>
 /// </list>
 /// </summary>
-public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IWipeEmpty {
+public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveShrinkable, IArchiveDefragmentable, IFilesystemScrambleable, IFilesystemPlaceable, IArchiveModifiable, IFormatOptionsSchema, ILayoutOptimizable, IFilesystemExtentMap, IFilesystemDirectoryOrderer, IWipeEmpty {
 
   /// <summary>
   /// Creation knobs surfaced by the Convert dialog / CLI. <c>SectorsPerCluster</c>
@@ -413,6 +413,10 @@ public sealed class FatxFormatDescriptor : IFormatDescriptor, IArchiveFormatOper
       wipeClusterTips: false, fileSizeLookup: fileSizeLookup);
   }
 
+
+  /// <inheritdoc />
+  public void SortDirectoryEntries(Stream image)
+    => FatxDirectoryOrderer.Sort(image);
 
   // ── IArchiveDefragmentable ─────────────────────────────────────────────
 
