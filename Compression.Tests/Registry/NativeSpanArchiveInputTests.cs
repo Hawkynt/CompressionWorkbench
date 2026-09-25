@@ -9,6 +9,9 @@ using FileFormat.Mz;
 using FileFormat.Numpy;
 using FileFormat.Pcap;
 using FileFormat.Pcapng;
+using FileFormat.Jp2;
+using FileFormat.Psb;
+using FileFormat.Psd;
 using FileFormat.Sup;
 using FileFormat.UefiFv;
 using FileFormat.UImage;
@@ -83,6 +86,43 @@ public sealed class NativeSpanArchiveInputTests {
 
   [Test]
   [Category("Spec")]
+  public void SourceRangeFormats_ExtractSpan_LargePayloads_DoNotCopyWholeArchive() {
+    foreach (var testCase in new[] {
+      BuildPsdCase(LargePayloadSize),
+      BuildPsbCase(LargePayloadSize),
+      BuildJp2Case(LargePayloadSize),
+    }) {
+      var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-range-{Guid.NewGuid():N}");
+      try {
+        var warmDirectory = Path.Combine(directory, "warm");
+        var warmCase = testCase.Name switch {
+          "PSD" => BuildPsdCase(257),
+          "PSB" => BuildPsbCase(257),
+          _ => BuildJp2Case(257),
+        };
+        warmCase.Operations.ExtractSpan(
+          warmCase.Image, warmDirectory, null, [warmCase.PayloadEntry]);
+        Directory.Delete(warmDirectory, recursive: true);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        testCase.Operations.ExtractSpan(
+          testCase.Image, directory, null, [testCase.PayloadEntry]);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.That(allocated, Is.LessThan(AllocationLimit),
+          $"{testCase.Name} span extraction allocated {allocated:N0} bytes for a " +
+          $"{testCase.Image.Length:N0}-byte image.");
+        Assert.That(File.ReadAllBytes(Path.Combine(directory, testCase.PayloadEntry)),
+          Is.EqualTo(testCase.ExpectedPayload).AsCollection, testCase.Name);
+      } finally {
+        if (Directory.Exists(directory))
+          Directory.Delete(directory, recursive: true);
+      }
+    }
+  }
+
+  [Test]
+  [Category("Spec")]
   public void Ffu_ExtractSpan_FullImage_DoesNotCopyWholeArchive() {
     var testCase = BuildFfuCase(LargePayloadSize);
     var directory = Path.Combine(Path.GetTempPath(), $"cwb-span-ffu-{Guid.NewGuid():N}");
@@ -144,6 +184,9 @@ public sealed class NativeSpanArchiveInputTests {
     BuildAppleSingleCase(payloadSize),
     BuildPcapCase(payloadSize),
     BuildPcapngCase(payloadSize),
+    BuildPsdCase(payloadSize),
+    BuildPsbCase(payloadSize),
+    BuildJp2Case(payloadSize),
     BuildMzCase(payloadSize),
     BuildUImageCase(payloadSize),
     BuildUefiFvCase(payloadSize),
@@ -321,6 +364,81 @@ public sealed class NativeSpanArchiveInputTests {
 
     return new SpanCase(
       "PCAPNG", new PcapngFormatDescriptor(), output.ToArray(), "packet_0000.bin", payload);
+  }
+
+  private static SpanCase BuildPsdCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA1);
+    var paddedPayloadLength = payload.Length + (payload.Length & 1);
+    var resourceLength = 12 + paddedPayloadLength;
+    var image = new byte[26 + 4 + 4 + resourceLength];
+
+    "8BPS"u8.CopyTo(image);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(4, 2), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(12, 2), 3);
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(14, 4), 1);
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(18, 4), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(22, 2), 8);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(24, 2), 3);
+
+    var pos = 26;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(pos, 4), 0);
+    pos += 4;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(pos, 4), (uint)resourceLength);
+    pos += 4;
+
+    "8BIM"u8.CopyTo(image.AsSpan(pos, 4));
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(pos + 4, 2), 0x0404);
+    image[pos + 6] = 0;
+    image[pos + 7] = 0;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(pos + 8, 4), (uint)payload.Length);
+    payload.CopyTo(image.AsSpan(pos + 12));
+
+    return new SpanCase(
+      "PSD", new PsdFormatDescriptor(), image, "resources/0404_unnamed.bin", payload);
+  }
+
+  private static SpanCase BuildPsbCase(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA2);
+    var image = new byte[26 + 4 + 4 + 8 + payload.Length];
+
+    "8BPS"u8.CopyTo(image);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(4, 2), 2);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(12, 2), 3);
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(14, 4), 1);
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(18, 4), 1);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(22, 2), 8);
+    BinaryPrimitives.WriteUInt16BigEndian(image.AsSpan(24, 2), 3);
+
+    var pos = 26;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(pos, 4), 0);
+    pos += 4;
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(pos, 4), 0);
+    pos += 4;
+    BinaryPrimitives.WriteUInt64BigEndian(image.AsSpan(pos, 8), 0);
+    pos += 8;
+    payload.CopyTo(image.AsSpan(pos));
+
+    return new SpanCase(
+      "PSB", new PsbFormatDescriptor(), image, "image_data.bin", payload);
+  }
+
+  private static SpanCase BuildJp2Case(int payloadSize) {
+    var payload = Pattern(payloadSize, 0xA3);
+    var image = new byte[12 + 8 + payload.Length];
+
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(0, 4), 12);
+    "jP  "u8.CopyTo(image.AsSpan(4, 4));
+    image[8] = 0x0D;
+    image[9] = 0x0A;
+    image[10] = 0x87;
+    image[11] = 0x0A;
+
+    BinaryPrimitives.WriteUInt32BigEndian(image.AsSpan(12, 4), checked((uint)(8 + payload.Length)));
+    "jp2c"u8.CopyTo(image.AsSpan(16, 4));
+    payload.CopyTo(image.AsSpan(20));
+
+    return new SpanCase(
+      "JP2", new Jp2FormatDescriptor(), image, "codestream.j2c", payload);
   }
 
   private static SpanCase BuildMzCase(int payloadSize) {

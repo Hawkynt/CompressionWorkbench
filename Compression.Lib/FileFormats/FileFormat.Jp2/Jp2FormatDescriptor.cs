@@ -110,11 +110,41 @@ public sealed class Jp2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     throw new FileNotFoundException($"Entry not found: {entryName}");
   }
 
+  private sealed record EntryLayout(string Name, string Kind, int Offset, int Length, byte[]? Generated = null) {
+    public int Size => this.Generated?.Length ?? this.Length;
+  }
+
   private static IReadOnlyList<(string Name, string Kind, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
+    return BuildLayout(blob)
+      .Select(e => (e.Name, e.Kind, e.Generated ?? blob.AsSpan(e.Offset, e.Length).ToArray()))
+      .ToList();
+  }
 
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) =>
+    BuildLayout(archive).Select((e, i) => new ArchiveEntryInfo(
+      Index: i, Name: e.Name,
+      OriginalSize: e.Size, CompressedSize: e.Size,
+      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null,
+      Kind: e.Kind)).ToList();
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    foreach (var entry in BuildLayout(archive)) {
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files))
+        continue;
+      if (entry.Generated is { } generated)
+        WriteFile(outputDir, entry.Name, generated);
+      else {
+        using var output = CreateEntryFile(outputDir, entry.Name);
+        output.Write(archive.Slice(entry.Offset, entry.Length));
+      }
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
     var isCodestream = blob.Length >= 4
       && blob[0] == 0xFF && blob[1] == 0x4F
       && blob[2] == 0xFF && blob[3] == 0x51;
@@ -122,23 +152,28 @@ public sealed class Jp2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       && blob[0] == 0x00 && blob[1] == 0x00 && blob[2] == 0x00 && blob[3] == 0x0C
       && blob[4] == 0x6A && blob[5] == 0x50 && blob[6] == 0x20 && blob[7] == 0x20;
 
-    var entries = new List<(string Name, string Kind, byte[] Data)>();
-    entries.Add(($"FULL{(isCodestream ? ".j2c" : ".jp2")}", "Track", blob));
+    var entries = new List<EntryLayout> {
+      new($"FULL{(isCodestream ? ".j2c" : ".jp2")}", "Track", 0, blob.Length),
+    };
 
-    byte[] codestream;
     var meta = new StringBuilder();
     meta.AppendLine("; JPEG 2000 container metadata");
+
+    var codestreamOffset = 0;
+    var codestreamLength = 0;
     if (isCodestream) {
       meta.AppendLine("form=codestream");
-      codestream = blob;
-      AppendSizFromCodestream(codestream, meta);
+      codestreamLength = blob.Length;
+      AppendSizFromCodestream(blob, meta);
     } else if (isBoxForm) {
       meta.AppendLine("form=box");
       var boxes = new BoxParser().Parse(blob);
-      // ihdr inside jp2h.
+
       var ihdr = BoxParser.Find(boxes, "ihdr");
-      if (ihdr != null && ihdr.BodyLength >= 14) {
-        var body = blob.AsSpan((int)ihdr.BodyOffset, (int)ihdr.BodyLength);
+      if (ihdr != null && ihdr.BodyLength >= 14
+          && ihdr.BodyOffset >= 0 && ihdr.BodyLength <= int.MaxValue
+          && ihdr.BodyOffset + ihdr.BodyLength <= blob.Length) {
+        var body = blob.Slice((int)ihdr.BodyOffset, (int)ihdr.BodyLength);
         var height = BinaryPrimitives.ReadUInt32BigEndian(body);
         var width = BinaryPrimitives.ReadUInt32BigEndian(body[4..]);
         var nc = BinaryPrimitives.ReadUInt16BigEndian(body[8..]);
@@ -149,41 +184,44 @@ public sealed class Jp2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         meta.Append("bit_depth=").AppendLine(((bpc & 0x7F) + 1).ToString(CultureInfo.InvariantCulture));
       }
 
-      // Pull the jp2c codestream.
       var jp2c = BoxParser.Find(boxes, "jp2c");
-      if (jp2c != null && jp2c.BodyLength > 0) {
-        codestream = blob.AsSpan((int)jp2c.BodyOffset, (int)jp2c.BodyLength).ToArray();
-        entries.Add(("codestream.j2c", "Track", codestream));
-        if (ihdr == null) AppendSizFromCodestream(codestream, meta);
-      } else {
-        codestream = [];
+      if (jp2c != null && jp2c.BodyLength > 0
+          && jp2c.BodyOffset >= 0 && jp2c.BodyLength <= int.MaxValue
+          && jp2c.BodyOffset + jp2c.BodyLength <= blob.Length) {
+        codestreamOffset = (int)jp2c.BodyOffset;
+        codestreamLength = (int)jp2c.BodyLength;
+        entries.Add(new EntryLayout("codestream.j2c", "Track", codestreamOffset, codestreamLength));
+        if (ihdr == null)
+          AppendSizFromCodestream(blob.Slice(codestreamOffset, codestreamLength), meta);
       }
 
-      // XML and UUID metadata boxes.
       var xmlIdx = 0;
       foreach (var xml in BoxParser.FindAll(boxes, "xml ")) {
-        var xmlData = blob.AsSpan((int)xml.BodyOffset, (int)xml.BodyLength).ToArray();
-        entries.Add(($"metadata/xml_{xmlIdx:D2}.xml", "Tag", xmlData));
-        xmlIdx++;
+        if (xml.BodyLength < 0 || xml.BodyLength > int.MaxValue || xml.BodyOffset < 0
+            || xml.BodyOffset + xml.BodyLength > blob.Length)
+          continue;
+        entries.Add(new EntryLayout(
+          $"metadata/xml_{xmlIdx:D2}.xml", "Tag", (int)xml.BodyOffset, (int)xml.BodyLength));
+        ++xmlIdx;
       }
+
       var uuidIdx = 0;
       foreach (var uuid in BoxParser.FindAll(boxes, "uuid")) {
-        var uuidData = blob.AsSpan((int)uuid.BodyOffset, (int)uuid.BodyLength).ToArray();
-        entries.Add(($"metadata/uuid_{uuidIdx:D2}.bin", "Tag", uuidData));
-        uuidIdx++;
+        if (uuid.BodyLength < 0 || uuid.BodyLength > int.MaxValue || uuid.BodyOffset < 0
+            || uuid.BodyOffset + uuid.BodyLength > blob.Length)
+          continue;
+        entries.Add(new EntryLayout(
+          $"metadata/uuid_{uuidIdx:D2}.bin", "Tag", (int)uuid.BodyOffset, (int)uuid.BodyLength));
+        ++uuidIdx;
       }
     } else {
-      // Unknown form — just surface the raw blob, no further parsing.
       meta.AppendLine("form=unknown");
-      codestream = [];
     }
 
-    // Insert metadata.ini at position 1 after FULL.
-    entries.Insert(1, ("metadata.ini", "Tag", Encoding.UTF8.GetBytes(meta.ToString())));
+    entries.Insert(1, new EntryLayout("metadata.ini", "Tag", 0, 0, Encoding.UTF8.GetBytes(meta.ToString())));
 
-    // Split codestream into tiles at SOT (FF 90) markers up to EOC (FF D9) or next SOT.
-    if (codestream.Length > 0)
-      SplitTiles(codestream, entries);
+    if (codestreamLength > 0)
+      SplitTiles(blob.Slice(codestreamOffset, codestreamLength), codestreamOffset, entries);
 
     return entries;
   }
@@ -219,25 +257,27 @@ public sealed class Jp2FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     meta.Append("bit_depth=").AppendLine(maxBitDepth.ToString(CultureInfo.InvariantCulture));
   }
 
-  private static void SplitTiles(byte[] codestream, List<(string Name, string Kind, byte[] Data)> entries) {
-    // Find all SOT (FF 90) positions and the EOC (FF D9).
+  private static void SplitTiles(
+      ReadOnlySpan<byte> codestream, int sourceOffset, List<EntryLayout> entries) {
     var sots = new List<int>();
     var eoc = codestream.Length;
-    for (var i = 0; i + 1 < codestream.Length; i++) {
+    for (var i = 0; i + 1 < codestream.Length; ++i) {
       if (codestream[i] != 0xFF) continue;
-      var m = codestream[i + 1];
-      if (m == 0x90) sots.Add(i);
-      else if (m == 0xD9) { eoc = i; break; }
+      var marker = codestream[i + 1];
+      if (marker == 0x90)
+        sots.Add(i);
+      else if (marker == 0xD9) {
+        eoc = i;
+        break;
+      }
     }
-    for (var t = 0; t < sots.Count; t++) {
-      var start = sots[t];
-      var end = (t + 1 < sots.Count) ? sots[t + 1] : eoc;
+
+    for (var tileIndex = 0; tileIndex < sots.Count; ++tileIndex) {
+      var start = sots[tileIndex];
+      var end = tileIndex + 1 < sots.Count ? sots[tileIndex + 1] : eoc;
       if (end <= start) continue;
-      var len = end - start;
-      if (len <= 0 || start + len > codestream.Length) continue;
-      var tile = new byte[len];
-      Array.Copy(codestream, start, tile, 0, len);
-      entries.Add(($"images/tile_{t:D2}.j2c", "Track", tile));
+      entries.Add(new EntryLayout(
+        $"images/tile_{tileIndex:D2}.j2c", "Track", sourceOffset + start, end - start));
     }
   }
 }
