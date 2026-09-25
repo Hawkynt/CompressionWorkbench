@@ -76,6 +76,24 @@ public class ZipStreamingWriteTests {
   }
 
   [Test]
+  public void Store_PreservesFileAndDirectoryTimestamps() {
+    var timestamp = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Local);
+    var bytes = CreateFromStreams(
+      StoreOptions,
+      Dir("subdir/") with { LastModified = timestamp },
+      File("subdir/file.txt", Pattern(64)) with { LastModified = timestamp });
+
+    var d = new ZipFormatDescriptor();
+    using var ms = new MemoryStream(bytes);
+    var entries = d.List(ms, null);
+
+    Assert.Multiple(() => {
+      Assert.That(entries.Single(entry => entry.IsDirectory).LastModified, Is.EqualTo(timestamp));
+      Assert.That(entries.Single(entry => !entry.IsDirectory).LastModified, Is.EqualTo(timestamp));
+    });
+  }
+
+  [Test]
   public void Store_StreamingOutput_EqualsClassicCreate() {
     var a = Pattern(777, 1);
     var b = Pattern(3 * 1024 * 1024, 2);
