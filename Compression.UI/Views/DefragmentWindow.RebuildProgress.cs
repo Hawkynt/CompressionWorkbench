@@ -38,22 +38,14 @@ public partial class DefragmentWindow {
     RefreshExplicitCapabilityPresentation();
 
     // Legacy compatibility for callers that still request the old umbrella verb.
+    // It is deliberately fail-closed: only a descriptor with exactly one of
+    // Compress / Canonicalize / Repack may pass through this route.
     if (this._requestedVerb == MaintenanceVerb.Optimize && this._formatId is { Length: > 0 } id) {
       var descriptor = FormatRegistry.GetById(id);
       var ops = FormatRegistry.GetArchiveOps(id);
-      if (descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-          && ops is IArchiveCreatable) {
-        this._isArchiveMode = true;
-        this._archiveOps = ops;
-        FsModesGroup.Visibility = Visibility.Collapsed;
-        ArchiveRepackGroup.Visibility = Visibility.Visible;
-        RunBtn.Content = "Optimize";
-        RunBtn.IsEnabled = true;
-        SupportLbl.Text = "Archive re-layout/repack with live staged-target visualization.";
-        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
-        if (LayoutStatusLbl != null)
-          LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
-      } else if (ops is IFileInternalChunkMover chunkMover) {
+      var supported = OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor);
+
+      if (supported && ops is IFileInternalChunkMover chunkMover) {
         this._isFileInternalMode = true;
         this._archiveOps = ops;
         this._chunkMover = chunkMover;
@@ -62,8 +54,24 @@ public partial class DefragmentWindow {
         MetadataPlacementPanel.Visibility = Visibility.Visible;
         RunBtn.Content = "Optimize";
         RunBtn.IsEnabled = true;
-        SupportLbl.Text = "Legacy file-internal layout optimization.";
+        SupportLbl.Text = "Legacy compatibility: routes to this format's single canonicalization capability.";
         SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+      } else if (supported && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar) {
+        this._isArchiveMode = true;
+        this._archiveOps = ops;
+        FsModesGroup.Visibility = Visibility.Collapsed;
+        ArchiveRepackGroup.Visibility = Visibility.Visible;
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = true;
+        SupportLbl.Text = "Legacy compatibility: routes to this format's single explicit rewrite capability.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkGreen;
+        if (LayoutStatusLbl != null)
+          LayoutStatusLbl.Text = "Source + staged-target address spaces share the chart for progress; offsets are projected, not physical equivalence.";
+      } else {
+        RunBtn.Content = "Optimize";
+        RunBtn.IsEnabled = false;
+        SupportLbl.Text = "Legacy Optimize is unavailable: choose Compress, Canonicalize, or Repack explicitly.";
+        SupportLbl.Foreground = System.Windows.Media.Brushes.DarkOrange;
       }
     }
   }
@@ -250,7 +258,7 @@ public partial class DefragmentWindow {
       : null;
     var explicitlyOptimizingArchive = this._requestedVerb == MaintenanceVerb.Optimize
       && descriptor?.Category is FormatCategory.Archive or FormatCategory.CompoundTar
-      && ops is IArchiveCreatable;
+      && OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor);
 
     if (explicitlyOptimizingArchive) {
       RunArchiveOptimizeWithBlockProgress(ops);

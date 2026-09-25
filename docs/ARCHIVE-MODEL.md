@@ -146,6 +146,14 @@ transport by formats whose only writer knobs are metadata or compression.
 descriptor-native or composed through `FilesystemBlockMoverAttribute`; class-name
 or namespace conventions are never treated as capabilities.
 
+The CLI follows the same taxonomy: `cwb compress`, `cwb canonicalize`,
+`cwb repack`, `cwb sort-directory`, `cwb defragment`, and
+`cwb reconfigure`. The historical `cwb optimize` spelling is only a
+compatibility alias for **Compress**. The legacy library-level
+`ArchiveOperations.Optimize` is fail-closed and is usable only when exactly one
+of **Compress / Canonicalize / Repack** applies; overlapping rewrite
+capabilities must be selected explicitly.
+
 **purge vs. wipe:** *purge* removes the **live** data (you end up with an empty
 container); *wipe* removes only the **dead** data (you keep every live file, but
 no recoverable remnants survive in the gaps).

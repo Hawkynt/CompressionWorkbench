@@ -598,53 +598,127 @@ formatsCmd.SetAction((ParseResult _) => {
   return 0;
 });
 
-// ── optimize ─────────────────────────────────────────────────────────
+// ── separated rewrite capabilities ───────────────────────────────────
 
-var optimizeInputArg = new Argument<FileInfo>("input") { Description = "Archive to optimize" };
-var optimizeOutputArg = new Argument<FileInfo?>("output") {
-  Description = "Optimized output (same format); optional with --search-blocks",
-  Arity = ArgumentArity.ZeroOrOne,
+var compressInputArg = new Argument<FileInfo>("input") { Description = "Archive or stream to recompress" };
+var compressOutputArg = new Argument<FileInfo>("output") { Description = "Recompressed output in the same format" };
+var compressCmd = new Command("compress", "Re-encode live payloads using the format's explicit compression optimizer") {
+  compressInputArg, compressOutputArg, passwordOpt
 };
-var searchBlocksOpt = new Option<bool>("--search-blocks", "--best") {
-  Description = "Instead of same-format re-encode, find the best building block for this data",
-};
-var applyOpt = new Option<FileInfo?>("--apply") {
-  Description = "With --search-blocks: write the winning block's compressed output to this path",
-};
-
-var optimizeCmd = new Command("optimize", "Re-encode with optimal compression (Zopfli for Deflate, Best for LZMA)") {
-  optimizeInputArg, optimizeOutputArg, passwordOpt, searchBlocksOpt, applyOpt
-};
-optimizeCmd.Aliases.Add("opt");
-optimizeCmd.SetAction((ParseResult ctx) => {
-  var input = ctx.GetValue(optimizeInputArg)!;
-  var output = ctx.GetValue(optimizeOutputArg);
+// Compatibility aliases: the old CLI optimize command was documented as compression.
+compressCmd.Aliases.Add("optimize");
+compressCmd.Aliases.Add("opt");
+compressCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(compressInputArg)!;
+  var output = ctx.GetValue(compressOutputArg)!;
   var password = ctx.GetValue(passwordOpt);
 
   if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
-  // --search-blocks / --best: cross-block auto-selection on the raw bytes.
-  if (ctx.GetValue(searchBlocksOpt)) {
-    var apply = ctx.GetValue(applyOpt);
-    return RunBestFit(input, apply);
-  }
+  try {
+    var format = FormatDetector.Detect(input.FullName);
+    Console.Write($"Compressing {input.Name} ({format})...");
+    var sw = Stopwatch.StartNew();
+    var (originalSize, compressedSize, count) =
+      ArchiveOperations.Compress(input.FullName, output.FullName, password);
+    sw.Stop();
 
-  if (output is null) {
-    Console.Error.WriteLine("An output path is required (or use --search-blocks to report the best building block).");
+    var saving = originalSize > 0 ? (1.0 - (double)compressedSize / originalSize) * 100 : 0;
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  Original:   {FormatSize(originalSize)}");
+    Console.WriteLine($"  Compressed: {FormatSize(compressedSize)} ({saving:F1}% smaller, {count} entries)");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
     return 1;
   }
+});
 
-  var format = FormatDetector.Detect(input.FullName);
-  Console.Write($"Optimizing {input.Name} ({format})...");
-  var sw = Stopwatch.StartNew();
-  var (origSize, optSize, count) = ArchiveOperations.Optimize(input.FullName, output.FullName, password);
-  sw.Stop();
+var canonicalizeInputArg = new Argument<FileInfo>("input") { Description = "Container to canonicalize" };
+var canonicalizeOutputArg = new Argument<FileInfo>("output") { Description = "Canonicalized output in the same format" };
+var canonicalizeCmd = new Command("canonicalize",
+  "Rewrite the format's canonical representation without implying recompression or extent movement") {
+  canonicalizeInputArg, canonicalizeOutputArg
+};
+canonicalizeCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(canonicalizeInputArg)!;
+  var output = ctx.GetValue(canonicalizeOutputArg)!;
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
 
-  var saving = origSize > 0 ? (1.0 - (double)optSize / origSize) * 100 : 0;
-  Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
-  Console.WriteLine($"  Original:  {FormatSize(origSize)}");
-  Console.WriteLine($"  Optimized: {FormatSize(optSize)} ({saving:F1}% smaller, {count} entries)");
-  return 0;
+  try {
+    var format = FormatDetector.Detect(input.FullName);
+    Console.Write($"Canonicalizing {input.Name} ({format})...");
+    var sw = Stopwatch.StartNew();
+    var (originalSize, canonicalSize, count) =
+      ArchiveOperations.Canonicalize(input.FullName, output.FullName);
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  {FormatSize(originalSize)} -> {FormatSize(canonicalSize)} ({count} entr{(count == 1 ? "y" : "ies")})");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
+});
+
+var repackInputArg = new Argument<FileInfo>("input") { Description = "Archive to repack" };
+var repackOutputArg = new Argument<FileInfo>("output") { Description = "Repacked output in the same format" };
+var repackCmd = new Command("repack",
+  "Rebuild the same logical entries without implying recompression or canonicalization") {
+  repackInputArg, repackOutputArg
+};
+repackCmd.SetAction((ParseResult ctx) => {
+  var input = ctx.GetValue(repackInputArg)!;
+  var output = ctx.GetValue(repackOutputArg)!;
+  if (!input.Exists) { Console.Error.WriteLine($"File not found: {input.FullName}"); return 1; }
+
+  try {
+    var format = FormatDetector.Detect(input.FullName);
+    Console.Write($"Repacking {input.Name} ({format})...");
+    var sw = Stopwatch.StartNew();
+    var (originalSize, repackedSize, count) = ArchiveOperations.Repack(input.FullName, output.FullName);
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    Console.WriteLine($"  {FormatSize(originalSize)} -> {FormatSize(repackedSize)} ({count} entr{(count == 1 ? "y" : "ies")})");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
+});
+
+var sortDirectoryImageArg = new Argument<FileInfo>("image") { Description = "Filesystem image whose directory entries should be reordered in place" };
+var sortDirectoryCmd = new Command("sort-directory",
+  "Sort filesystem directory entries without moving payload extents merely for ordering") {
+  sortDirectoryImageArg
+};
+sortDirectoryCmd.Aliases.Add("sort-dir");
+sortDirectoryCmd.SetAction((ParseResult ctx) => {
+  var image = ctx.GetValue(sortDirectoryImageArg)!;
+  if (!image.Exists) { Console.Error.WriteLine($"File not found: {image.FullName}"); return 1; }
+
+  try {
+    FormatRegistration.EnsureInitialized();
+    var format = FormatDetector.Detect(image.FullName);
+    var descriptor = FormatRegistry.GetById(format.ToString());
+    if (!OptimizationCapabilities.CanSortDirectoryEntries(descriptor)
+        || descriptor is not IFilesystemDirectoryOrderer orderer) {
+      Console.Error.WriteLine($"{format} does not expose directory-entry ordering.");
+      return 1;
+    }
+
+    Console.Write($"Sorting directory entries in {image.Name} ({format})...");
+    var sw = Stopwatch.StartNew();
+    using var stream = File.Open(image.FullName, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+    orderer.SortDirectoryEntries(stream);
+    stream.Flush(flushToDisk: true);
+    sw.Stop();
+    Console.WriteLine($" done ({sw.ElapsedMilliseconds}ms)");
+    return 0;
+  } catch (Exception ex) {
+    Console.Error.WriteLine($"FAILED: {ex.GetType().Name}: {ex.Message}");
+    return 1;
+  }
 });
 
 // ── bestfit ──────────────────────────────────────────────────────────
@@ -1355,14 +1429,15 @@ var defragCmd = new Command("defragment", """
     cwb defragment *.img --mode pack-start --stride 2
     cwb defragment images/ --mode pack-end --recursive
 
-  Only descriptors that implement IArchiveDefragmentable accept this command.
-  Currently: FAT12 / FAT16 / FAT32 (all four modes), other R/W filesystems
-  (pack-start only via the default-impl fallback).
+  Only descriptors that expose a real IFilesystemBlockMover together with
+  IArchiveDefragmentable accept this command. Rebuild-only relayout does not
+  qualify as physical extent defragmentation.
   """) {
   defragImageArg, defragModeOpt, defragHoleSizeOpt, defragHoleAtOpt, defragStrideOpt, defragBatchOpt, defragRecursiveOpt
 };
-// Canonical short verb name from the taxonomy in docs/ARCHIVE-MODEL.md.
+// Canonical aliases from the taxonomy in docs/ARCHIVE-MODEL.md.
 defragCmd.Aliases.Add("defrag");
+defragCmd.Aliases.Add("defragment-extents");
 defragCmd.SetAction((ParseResult ctx) => {
   var imageArg = ctx.GetValue(defragImageArg)!;
   var modeStr = ctx.GetValue(defragModeOpt) ?? "pack-start";
@@ -1393,14 +1468,15 @@ defragCmd.SetAction((ParseResult ctx) => {
   foreach (var file in files) {
     try {
       var format = FormatDetector.Detect(file);
-      var ops = FormatRegistry.GetById(format.ToString());
-      if (ops is not IArchiveDefragmentable defragmentable) {
+      var descriptor = FormatRegistry.GetById(format.ToString());
+      if (!OptimizationCapabilities.CanDefragmentExtents(descriptor)
+          || descriptor is not IArchiveDefragmentable defragmentable) {
         if (files.Count > 1) {
-          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not support defragmentation.");
+          Console.Error.WriteLine($"  SKIP {Path.GetFileName(file)}: {format} does not expose physical extent defragmentation.");
           totalFail++;
           continue;
         }
-        Console.Error.WriteLine($"{format} does not support defragmentation.");
+        Console.Error.WriteLine($"{format} does not expose physical extent defragmentation.");
         return 1;
       }
 
@@ -2661,7 +2737,11 @@ var root = new RootCommand("""
     cwb convert in.zip out.7z -m lzma         Convert ZIP → 7z with LZMA
     cwb create app.7z files --sfx             Create self-extracting 7z
     cwb test archive.zip                      Verify integrity
-    cwb defragment disk.img --mode pack-end   Repack files at end of image
+    cwb compress archive.zip out.zip           Recompress live payloads only
+    cwb canonicalize file.bin canonical.bin    Canonical representation only
+    cwb repack archive.7z repacked.7z          Rebuild entries without recompression promise
+    cwb sort-directory disk.img                Reorder directory entries only
+    cwb defragment disk.img --mode pack-end   Move physical extents at end of image
     cwb scramble disk.img --seed 7 --yes     Fragment on purpose (testing tool)
     cwb place disk.img KERNEL.SYS --at 32768 Put one file at one offset
     cwb shrink disk.img                      Defrag + truncate trailing free space
@@ -2679,7 +2759,7 @@ var root = new RootCommand("""
   Format is auto-detected from extension. Run 'cwb formats' for full format list,
   or 'cwb create --help' for compression options and examples.
   """) {
-  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, optimizeCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
+  listCmd, extractCmd, createCmd, testCmd, addCmd, removeCmd, replaceCmd, infoCmd, inspectCmd, convertCmd, compressCmd, canonicalizeCmd, repackCmd, sortDirectoryCmd, bestfitCmd, benchCmd, formatsCmd, analyzeCmd, autoExtractCmd, batchCmd, suggestCmd, toolCmd, reverseCmd, carveCmd, visualizeCmd, defragCmd, scrambleCmd, placeCmd, shrinkCmd, wipeCmd, compactCmd, reconfigureCmd, deployCmd, convertClustersCmd, resizeCmd2, convertArchiveCmd, convertFsCmd, dedupCmd, sparsifyCmd, densifyCmd, partitionCmd
 };
 
 return root.Parse(args).Invoke();

@@ -19,6 +19,19 @@ public static class OptimizationCapabilities {
   public static bool CanRepack(IFormatDescriptor? descriptor)
     => descriptor is IArchiveRepackable;
 
+  /// <summary>
+  /// Legacy compatibility gate for the former umbrella <c>Optimize</c> verb.
+  /// It is usable only when exactly one rewrite effect applies; overlapping
+  /// capabilities are intentionally ambiguous and must be selected explicitly.
+  /// </summary>
+  public static bool CanLegacyOptimizeUnambiguously(IFormatDescriptor? descriptor) {
+    var effects = 0;
+    if (CanCompress(descriptor)) ++effects;
+    if (CanCanonicalize(descriptor)) ++effects;
+    if (CanRepack(descriptor)) ++effects;
+    return effects == 1;
+  }
+
   public static bool CanSortDirectoryEntries(IFormatDescriptor? descriptor)
     => descriptor is IFilesystemDirectoryOrderer;
 

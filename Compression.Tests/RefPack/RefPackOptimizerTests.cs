@@ -137,7 +137,7 @@ public sealed class RefPackOptimizerTests {
       var outputPath = Path.Combine(directory, "optimized.qfs");
       File.WriteAllBytes(inputPath, weak);
 
-      var (originalSize, optimizedSize, entriesOptimized) = ArchiveOperations.Optimize(inputPath, outputPath, password: null);
+      var (originalSize, optimizedSize, entriesOptimized) = ArchiveOperations.Compress(inputPath, outputPath, password: null);
       var optimized = File.ReadAllBytes(outputPath);
 
       Assert.Multiple(() => {

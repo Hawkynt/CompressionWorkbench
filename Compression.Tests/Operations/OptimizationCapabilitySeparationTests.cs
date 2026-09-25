@@ -3,6 +3,7 @@ using Compression.Registry;
 using FileFormat.MacBinary;
 using FileFormat.Zstd;
 using FileFormat.Zip;
+using FileFormat.Ewf;
 using FileSystem.ApplePascal;
 using FileSystem.Lif;
 using FileSystem.Jfs1;
@@ -141,6 +142,20 @@ public sealed class OptimizationCapabilitySeparationTests {
     Assert.Multiple(() => {
       Assert.That(OptimizationCapabilities.CanChangeAllocationGeometry(descriptor), Is.False);
       Assert.That(OptimizationCapabilities.GetAllocationGeometryOptions(descriptor), Is.Empty);
+    });
+  }
+
+  [Test, Category("Architecture")]
+  public void LegacyOptimize_IsAvailableOnlyForOneExplicitRewriteEffect() {
+    Assert.Multiple(() => {
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new MacBinaryFormatDescriptor()), Is.True,
+        "MacBinary maps legacy Optimize to canonicalization only");
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZstdFormatDescriptor()), Is.True,
+        "Zstd maps legacy Optimize to compression only");
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZipFormatDescriptor()), Is.False,
+        "ZIP exposes both compression and repack, so generic Optimize is ambiguous");
+      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new EwfFormatDescriptor()), Is.False,
+        "EWF exposes compression and canonicalization, so generic Optimize is ambiguous");
     });
   }
 

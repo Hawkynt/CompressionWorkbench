@@ -769,9 +769,22 @@ public static class ArchiveOperations {
     var format = FormatDetector.Detect(inputPath);
     var descriptor = FormatRegistry.GetById(format.ToString());
 
-    if (descriptor is IArchiveCanonicalizable)
-      return Canonicalize(inputPath, outputPath);
+    var canCompress = OptimizationCapabilities.CanCompress(descriptor);
+    var canCanonicalize = OptimizationCapabilities.CanCanonicalize(descriptor);
+    var canRepack = OptimizationCapabilities.CanRepack(descriptor);
+    var effectCount = (canCompress ? 1 : 0) + (canCanonicalize ? 1 : 0) + (canRepack ? 1 : 0);
 
+    if (effectCount != 1)
+      throw new NotSupportedException(
+        effectCount == 0
+          ? $"{format} exposes no legacy Optimize-compatible rewrite. Use the explicit maintenance capabilities."
+          : $"{format} exposes multiple rewrite effects; legacy Optimize is ambiguous. "
+            + "Call Compress, Canonicalize, or Repack explicitly.");
+
+    if (canCanonicalize)
+      return Canonicalize(inputPath, outputPath);
+    if (canRepack)
+      return Repack(inputPath, outputPath);
     return Compress(inputPath, outputPath, password);
   }
 
