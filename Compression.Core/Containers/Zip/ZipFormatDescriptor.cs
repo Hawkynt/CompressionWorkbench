@@ -87,6 +87,8 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public void OptimizeCompression(Stream input, Stream output) {
     ArgumentNullException.ThrowIfNull(input);
     ArgumentNullException.ThrowIfNull(output);
+    if (ReferenceEquals(input, output))
+      throw new ArgumentException("ZIP compression optimization requires distinct input and output streams.", nameof(output));
     if (!input.CanRead || !input.CanSeek)
       throw new ArgumentException("ZIP compression optimization requires a readable, seekable input.", nameof(input));
     if (!output.CanWrite || !output.CanSeek)
