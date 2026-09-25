@@ -15,7 +15,7 @@ namespace FileFormat.Zip;
 ///   <item><description>Info-ZIP zip/unzip — long-standing open reference implementations</description></item>
 /// </list>
 /// </summary>
-public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IFormatOptionsSchema {
+public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IFormatValidator, IArchiveModifiable, IArchiveCreatable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, ICompressionOptimizable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -78,6 +78,46 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  /// <summary>
+  /// Re-encodes every ZIP payload with the strongest Deflate encoder while
+  /// preserving entry names, empty directories, timestamps, and decoded bytes.
+  /// Encrypted archives are rejected because this capability has no password
+  /// parameter and must never silently strip encryption.
+  /// </summary>
+  public void OptimizeCompression(Stream input, Stream output) {
+    ArgumentNullException.ThrowIfNull(input);
+    ArgumentNullException.ThrowIfNull(output);
+    if (!input.CanRead || !input.CanSeek)
+      throw new ArgumentException("ZIP compression optimization requires a readable, seekable input.", nameof(input));
+    if (!output.CanWrite || !output.CanSeek)
+      throw new ArgumentException("ZIP compression optimization requires a writable, seekable output.", nameof(output));
+
+    input.Position = 0;
+    var reader = new ZipReader(input, leaveOpen: true);
+    if (reader.Entries.Any(entry => entry.IsEncrypted))
+      throw new NotSupportedException("Encrypted ZIP compression optimization requires an explicit password-aware path.");
+
+    output.Position = 0;
+    output.SetLength(0);
+    using var writer = new ZipWriter(
+      output,
+      leaveOpen: true,
+      compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Maximum);
+
+    foreach (var entry in reader.Entries) {
+      if (entry.IsDirectory) {
+        writer.AddDirectory(entry.FileName, entry.LastModified);
+        continue;
+      }
+
+      var data = reader.ExtractEntry(entry);
+      writer.AddEntry(entry.FileName, data, ZipCompressionMethod.Deflate, entry.LastModified);
+    }
+
+    writer.Finish();
+    output.Flush();
+  }
+
   /// <summary>Rebuild-based defrag: extracts every entry then re-creates the archive in listing order.</summary>
   public void Defragment(Stream archive)
     => this.Defragment(archive, new DefragOptions { Mode = DefragMode.ConsolidateAtStart });
@@ -117,7 +157,8 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
+    FormatCapabilities.SupportsOptimize;
 
   /// <summary>
   /// Adds (or replaces by name) files inside an existing ZIP archive. Uses
