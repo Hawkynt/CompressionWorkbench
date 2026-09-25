@@ -131,7 +131,8 @@ public class UnityBundleTests {
     Assert.Multiple(() => {
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanCreate), Is.True);
       Assert.That(d.Capabilities.HasFlag(FormatCapabilities.CanModify), Is.True);
-      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.True);
+      Assert.That(d.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize), Is.False);
+      Assert.That(d, Is.Not.InstanceOf<ICompressionOptimizable>());
       Assert.That(d, Is.InstanceOf<IArchiveModifiable>());
       Assert.That(d, Is.InstanceOf<IArchiveDefragmentable>());
       Assert.That(d, Is.InstanceOf<IFormatOptionsSchema>());
