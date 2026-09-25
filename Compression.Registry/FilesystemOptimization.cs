@@ -103,6 +103,20 @@ public static class FilesystemOptimization {
       : HardLinkDeduplicationSemantics.None;
   }
 
+  /// <summary>
+  /// Returns the explicitly registered compression parameters for the descriptor's writer.
+  /// This reports writer-backed compression axes only; allocation geometry is deliberately
+  /// a separate concern.
+  /// </summary>
+  public static IReadOnlyList<FilesystemCompressionParameter> GetCompressionParameters(object descriptor) {
+    ArgumentNullException.ThrowIfNull(descriptor);
+    if (descriptor is not ILayoutOptimizable layout
+        || !FilesystemOptimizationAdapters.TryGetCompressionProfile(layout, out var profile))
+      return [];
+
+    return profile.Parameters;
+  }
+
   /// <summary>Returns only transforms the current repository writer can actually perform.</summary>
   public static FilesystemOptimizationFeatures GetSupportedFeatures(object descriptor) {
     ArgumentNullException.ThrowIfNull(descriptor);
