@@ -1,11 +1,36 @@
 using Compression.Registry;
 using FileFormat.Zip;
 using FileFormat.SevenZip;
+using FileFormat.Cb7;
 
 namespace Compression.Tests.Operations;
 
 [TestFixture]
 public class ArchiveRepackCapabilityTests {
+  [Test, Category("RoundTrip")]
+  public void Cb7_Repack_PreservesEmptyDirectoriesPayloadsAndTimestamps() {
+    var descriptor = new Cb7FormatDescriptor();
+    var timestamp = new DateTime(2024, 7, 8, 9, 10, 12, DateTimeKind.Utc);
+    ArchiveInputInfo[] inputs = [
+      new("", "empty/", true) { LastModified = timestamp },
+      ArchiveInputInfo.InMemory("001.png", "page-one"u8.ToArray()) with { LastModified = timestamp },
+      ArchiveInputInfo.InMemory("chapter/002.png", "page-two"u8.ToArray()) with { LastModified = timestamp },
+    ];
+
+    using var source = new MemoryStream();
+    descriptor.Create(source, inputs, new FormatCreateOptions());
+    source.Position = 0;
+    var before = SemanticPreservationManifest.Capture(source, descriptor);
+
+    source.Position = 0;
+    using var repacked = new MemoryStream();
+    ((IArchiveRepackable)descriptor).Repack(source, repacked);
+
+    repacked.Position = 0;
+    var after = SemanticPreservationManifest.Capture(repacked, descriptor);
+    before.VerifyEquivalent(after);
+  }
+
   [Test, Category("RoundTrip")]
   public void SevenZip_Repack_PreservesEmptyDirectoriesPayloadsAndTimestamps() {
     var descriptor = new SevenZipFormatDescriptor();
