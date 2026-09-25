@@ -85,9 +85,13 @@ public static class ReconfigureOperation {
         rebuiltManifest = SemanticPreservationManifest.Capture(rebuilt, ops, password);
       sourceManifest.VerifyEquivalent(rebuiltManifest);
 
+      int fileCount;
+      using (var rebuilt = File.OpenRead(tempOut))
+        fileCount = ops.List(rebuilt, password).Count(entry => !entry.IsDirectory);
+
       var newSize = new FileInfo(tempOut).Length;
       AtomicFileWriter.ReplaceTarget(tempOut, path);
-      return new ReconfigureResult(originalSize, newSize, newOptions, rebuiltManifest.EntryCount);
+      return new ReconfigureResult(originalSize, newSize, newOptions, fileCount);
     } finally {
       AtomicFileWriter.TryDelete(tempOut);
     }
