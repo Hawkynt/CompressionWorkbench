@@ -190,6 +190,25 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void CompoundTarCompression_IsAnExplicitDescriptorCapability() {
+    FormatRegistration.EnsureInitialized();
+
+    var compound = FormatRegistry.All
+      .Where(static descriptor => descriptor.Category == FormatCategory.CompoundTar)
+      .ToArray();
+
+    Assert.That(compound, Is.Not.Empty);
+    Assert.Multiple(() => {
+      foreach (var descriptor in compound) {
+        Assert.That(descriptor, Is.InstanceOf<ICompressionOptimizable>(),
+          $"{descriptor.Id} must expose compression on the compound descriptor itself");
+        Assert.That(OptimizationCapabilities.CanCompress(descriptor), Is.True,
+          $"{descriptor.Id} compression discovery must not depend on outer-codec inference");
+      }
+    });
+  }
+
+  [Test, Category("Architecture")]
   public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
     FormatRegistration.EnsureInitialized();
 
