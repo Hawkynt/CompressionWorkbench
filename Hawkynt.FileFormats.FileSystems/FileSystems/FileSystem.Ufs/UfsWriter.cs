@@ -211,7 +211,7 @@ public sealed class UfsWriter {
 
   /// <summary>
   /// Two-pass streaming Build: pass 1 derives image geometry from the declared
-  /// sizes of <see cref="AddStreamingFile"/> entries and emits the full disk
+  /// sizes of <see cref="AddStreamingFile(string,long,Func{Stream})"/> entries and emits the full disk
   /// image (superblock, cylinder groups, inodes, directories) with the streaming
   /// files' data fragments left zero; pass 2 seeks to each file's first data
   /// fragment and streams its bytes from the factory in 64 KB chunks. The output
