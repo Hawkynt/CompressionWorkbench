@@ -136,11 +136,11 @@
     </GroupBox>
 
     <!-- Archive repack note (visible only when an archive is loaded) -->
-    <GroupBox Grid.Row="2" Header="Archive optimization" Margin="0,0,0,8"
+    <GroupBox Grid.Row="2" Header="Repack / internal relayout" Margin="0,0,0,8"
               x:Name="ArchiveRepackGroup" Visibility="Collapsed">
       <StackPanel Margin="6">
         <TextBlock TextWrapping="Wrap" Foreground="DimGray"
-                   Text="Archive repack: entries will be extracted and re-created with optimal compression settings. The layout strategy modes above do not apply to archive formats." />
+                   Text="Archive repack rebuilds the container through its declared repack capability. Compression, directory sorting, extent defragmentation, and allocation geometry are separate operations." />
         <CheckBox x:Name="SmartSolidRepackCheck" Margin="0,6,0,0" Visibility="Collapsed"
                   Content="Smart solid-block repack (7z only)"
                   ToolTip="Tries 5 different file grouping strategies and picks the one that produces the smallest archive. More thorough but slower than a plain repack." />
