@@ -37,8 +37,7 @@ public class FilesystemCompressionCapabilityTests {
     var offenders = FormatRegistry.All
       .OfType<ILayoutOptimizable>()
       .SelectMany(layout => {
-        if (!FilesystemOptimizationAdapters.TryGetCompressionProfile(layout, out var profile)
-            || layout is not IFormatOptionsSchema schema)
+        if (layout is not IFormatOptionsSchema schema)
           return [];
 
         var geometryKeys = schema.OptionsSchema
@@ -46,7 +45,7 @@ public class FilesystemCompressionCapabilityTests {
           .Select(static option => option.Key)
           .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return profile.Parameters
+        return FilesystemOptimization.GetCompressionParameters(layout)
           .Where(parameter => geometryKeys.Contains(parameter.Key))
           .Select(parameter => $"{((IFormatDescriptor)layout).Id}:{parameter.Key}");
       })
