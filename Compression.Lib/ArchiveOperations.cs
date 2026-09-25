@@ -707,7 +707,7 @@ public static class ArchiveOperations {
     return OptimizationCapabilities.ResolveLegacyOptimizeEffect(descriptor) switch {
       LegacyOptimizeEffect.Compress => Compress(inputPath, outputPath, password),
       LegacyOptimizeEffect.Canonicalize => Canonicalize(inputPath, outputPath),
-      LegacyOptimizeEffect.Repack => Repack(inputPath, outputPath),
+      LegacyOptimizeEffect.Repack => Repack(inputPath, outputPath, password),
       LegacyOptimizeEffect.None => throw new NotSupportedException(
         $"{format} exposes no legacy Optimize-compatible rewrite. Use the explicit maintenance capabilities."),
       LegacyOptimizeEffect.Ambiguous => throw new NotSupportedException(
@@ -736,7 +736,15 @@ public static class ArchiveOperations {
 
   /// <summary>Rebuilds an archive without implying compression optimization.</summary>
   public static (long OriginalSize, long RepackedSize, int EntriesRepacked) Repack(
-      string inputPath, string outputPath) {
+      string inputPath, string outputPath)
+    => Repack(inputPath, outputPath, password: null);
+
+  /// <summary>
+  /// Password-aware repack. The supplied password is used for both source access
+  /// and the rebuilt target unless the descriptor overrides that behavior.
+  /// </summary>
+  public static (long OriginalSize, long RepackedSize, int EntriesRepacked) Repack(
+      string inputPath, string outputPath, string? password) {
     FormatRegistration.EnsureInitialized();
     var format = FormatDetector.Detect(inputPath);
     var descriptor = FormatRegistry.GetById(format.ToString());
@@ -748,9 +756,9 @@ public static class ArchiveOperations {
     var entries = 0;
     AtomicFileWriter.WriteAtomic(outputPath, outFs => {
       using var inFs = File.OpenRead(inputPath);
-      entries = ops.List(inFs, null).Count(e => !e.IsDirectory);
+      entries = ops.List(inFs, password).Count(static e => !e.IsDirectory);
       inFs.Position = 0;
-      repackable.Repack(inFs, outFs);
+      repackable.Repack(inFs, outFs, password);
     });
     return (originalSize, new FileInfo(outputPath).Length, entries);
   }
