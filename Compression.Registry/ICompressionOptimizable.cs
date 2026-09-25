@@ -24,8 +24,12 @@ public interface ICompressionOptimizable {
 
   void OptimizeCompression(Stream input, Stream output) {
     if (this is IStreamFormatOperations streamOperations) {
-      using var raw = new MemoryStream();
+      // Optimal recompression needs the full logical stream twice (decode, then
+      // encode), but it must not imply whole-payload RAM buffering. A scratch
+      // file keeps peak memory bounded for multi-GB/TB stream inputs.
+      using var raw = RebuildVerb.CreateScratchStream();
       streamOperations.Decompress(input, raw);
+      raw.Flush();
       raw.Position = 0;
       streamOperations.CompressOptimal(raw, output);
       return;
