@@ -1075,7 +1075,7 @@ public partial class DefragmentWindow : Window {
     if (this._imagePath == null) return;
 
     if (this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+      OnRunFileInternalCanonicalize();
       return;
     }
 
@@ -1314,7 +1314,7 @@ public partial class DefragmentWindow : Window {
   /// <see cref="IFileInternalChunkMover.Optimize"/> to rearrange internal
   /// chunks (e.g. MP4 fast-start). Refreshes the block chart after completion.
   /// </summary>
-  private void OnRunFileInternalOptimize() {
+  private void OnRunFileInternalCanonicalize() {
     var path = this._imagePath!;
     var chunkMover = this._chunkMover;
     var ops = this._archiveOps;
@@ -1336,7 +1336,7 @@ public partial class DefragmentWindow : Window {
 
       try {
         using var stream = File.Open(path, FileMode.Open, FileAccess.ReadWrite);
-        chunkMover.Optimize(stream, placementProfile);
+        chunkMover.CanonicalizeInPlace(stream, placementProfile);
       } catch (Exception ex) {
         err = ex;
       }
