@@ -1930,10 +1930,11 @@ var compactMinimalOpt = new Option<bool>("--minimal") {
 var compactCmd = new Command("compact", """
   Make the container as small as possible while keeping its contents identical.
 
-  Standard (default): defragment → optimize → shrink, in place.
-    - defragment  consolidate live data so it is contiguous
-    - optimize    re-encode the payload with the best methods (where re-encodable)
-    - shrink      truncate the freed tail / step down to the smallest canonical size
+  Standard (default): run only the explicitly declared size-reduction stages:
+    - defragment  consolidate filesystem extents when a real extent map exists
+    - compress    re-encode the same decoded payload with stronger compression
+    - repack      rebuild a container with semantic-preservation verification
+    - shrink      truncate/step down the outer container where supported
 
   --minimal: replace the trio with a single minimal-geometry rebuild — re-create
   the container at the smallest geometry the format allows. Smaller than the
@@ -1942,7 +1943,7 @@ var compactCmd = new Command("compact", """
   Examples:
     cwb compact disk.img             Smallest STANDARD image holding the data
     cwb compact disk.img --minimal   Bare-minimum geometry (tiny, non-standard)
-    cwb compact bundle.zip           Defrag + re-encode + trim a ZIP
+    cwb compact bundle.zip           Repack + shrink a ZIP when supported
 
   Contents are always preserved byte-for-byte.
   """) { compactImageArg, compactMinimalOpt };
@@ -1976,33 +1977,32 @@ compactCmd.SetAction((ParseResult ctx) => {
   }
 });
 
-// ── reconfigure ─────────────────────────────────────────────────────────────
+// ── allocation geometry ─────────────────────────────────────────────────────
 
-var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image or archive to reconfigure" };
+var reconfigureFileArg = new Argument<string>("file") { Description = "Filesystem image whose allocation geometry should change" };
 var reconfigureSetOpt = new Option<string[]>("--set") {
   Description = "Geometry/option to change as KEY=VALUE (repeatable). Keys/values match the format's options "
     + "schema, e.g. --set ClusterSize=\"2 KB\" --set MftRecordSize=\"2 KB\". Bare KEY = true. "
     + "Later --set for the same KEY overrides earlier ones."
 };
 
-var reconfigureCmd = new Command("reconfigure", """
-  Change an existing container's geometry/options after creation — without losing data.
+var reconfigureCmd = new Command("geometry", """
+  Change allocation geometry after creation without conflating it with compression,
+  repacking, directory sorting, or extent defragmentation.
 
-  Extracts the contents and re-creates the container with the supplied options
-  (e.g. FAT cluster size or root entries, NTFS MFT record size, image size).
-  The rebuild is verified to list back the exact same files before the original
-  is replaced; on any failure the original is left untouched.
-
-  Options are forwarded verbatim to the writer; unknown keys are ignored. Run
-  'cwb create --help' or the format's docs for the available knobs.
+  Only descriptors implementing ILayoutOptimizable accept this command. Requested
+  parameters are applied through RebuildStreaming, then the complete logical model
+  is verified before the staged image replaces the original.
 
   Examples:
-    cwb reconfigure disk.img --set ClusterSize="2 KB"
-    cwb reconfigure disk.img --set ClusterSize="4 KB" --set RootEntries=512
-    cwb reconfigure disk.ntfs --set MftRecordSize="2 KB" --set ClusterSize="8 KB"
+    cwb geometry disk.img --set ClusterSize="2 KB"
+    cwb geometry disk.img --set ClusterSize="4 KB" --set RootEntries=512
+    cwb geometry disk.ntfs --set MftRecordSize="2 KB" --set ClusterSize="8 KB"
 
-  Contents are always preserved byte-for-byte.
+  The legacy 'reconfigure' spelling remains as an alias.
   """) { reconfigureFileArg, reconfigureSetOpt };
+reconfigureCmd.Aliases.Add("reconfigure");
+reconfigureCmd.Aliases.Add("change-allocation-geometry");
 reconfigureCmd.SetAction((ParseResult ctx) => {
   var fileArg = ctx.GetValue(reconfigureFileArg)!;
   var setPairs = ctx.GetValue(reconfigureSetOpt) ?? [];
@@ -2030,7 +2030,7 @@ reconfigureCmd.SetAction((ParseResult ctx) => {
 
   FormatRegistration.EnsureInitialized();
   var formatId = FormatDetector.Detect(fileArg).ToString();
-  Console.WriteLine($"Reconfiguring {Path.GetFileName(fileArg)} ({formatId})...");
+  Console.WriteLine($"Changing allocation geometry for {Path.GetFileName(fileArg)} ({formatId})...");
   var sw = Stopwatch.StartNew();
 
   try {
