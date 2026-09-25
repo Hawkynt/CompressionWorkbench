@@ -65,6 +65,7 @@ internal sealed class AnalysisWindow : Form {
   private readonly Panel _entropyPanel = new();
   private readonly CheckBox _cusum = new() { Text = "CUSUM Boundary Detection" };
   private readonly EntropyBarControl _entropyBar = new();
+  private readonly EntropyLegendControl _entropyLegend = new();
   private readonly DataGridView _entropyGrid = new() { ReadOnly = true, ShowGridLines = true };
   private readonly Panel _trialPanel = new();
   private readonly DataGridView _trialGrid = new() { ReadOnly = true, ShowGridLines = true };
@@ -263,7 +264,10 @@ internal sealed class AnalysisWindow : Form {
     this._entropyGrid.RowBackColorSelector = static o => o is RegionProfile r ? EntropyPalette.ToRowTint(r.Entropy) : null;
     this._entropyGrid.CellDoubleClick += (_, _) => this.PreviewEntropyRegion();
 
-    this._entropyPanel.Controls.AddRange(this._cusum, this._entropyBar, this._entropyGrid);
+    this._toolTips.SetToolTip(this._entropyLegend,
+      "What the bar's colours mean. Each swatch is the ramp sampled at the entropy its label describes.");
+
+    this._entropyPanel.Controls.AddRange(this._cusum, this._entropyLegend, this._entropyBar, this._entropyGrid);
     this._entropyBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
     this._entropyGrid.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
   }
@@ -328,6 +332,12 @@ internal sealed class AnalysisWindow : Form {
       panel.Bounds = new(Margin, y, width, contentHeight);
 
     this._cusum.Bounds = new(4, 4, 220, 20);
+
+    // The legend takes what is left of the row, up to what it needs; below that it clips, which
+    // still reads as a colour key.
+    var legendLeft = this._cusum.Bounds.Right + 12;
+    this._entropyLegend.Bounds = new(
+      legendLeft, 4, Math.Max(0, Math.Min(this._entropyLegend.PreferredWidth, width - legendLeft - 4)), 20);
     this._entropyBar.Bounds = new(4, 28, Math.Max(50, width - 8), EntropyBarHeight);
     this._entropyGrid.Bounds = new(0, 28 + EntropyBarHeight + 4, width, Math.Max(40, contentHeight - EntropyBarHeight - 36));
 
