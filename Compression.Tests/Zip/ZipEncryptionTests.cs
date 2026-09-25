@@ -103,6 +103,40 @@ public class ZipEncryptionTests {
     }
   }
 
+  [Category("HappyPath")]
+  [Category("RoundTrip")]
+  [Test]
+  public void ArchiveOperationsRepack_PreservesPasswordProtectedZip() {
+    var directory = Path.Combine(Path.GetTempPath(), "cwb_zip_repack_" + Guid.NewGuid().ToString("N")[..8]);
+    Directory.CreateDirectory(directory);
+    try {
+      var inputPath = Path.Combine(directory, "input.zip");
+      var outputPath = Path.Combine(directory, "output.zip");
+      var data = Encoding.UTF8.GetBytes(new string('R', 4096) + " encrypted repack sentinel");
+      const string password = "repack-roundtrip";
+
+      using (var file = File.Create(inputPath))
+      using (var writer = new ZipWriter(file, leaveOpen: true, password: password))
+        writer.AddEntry("payload.txt", data, ZipCompressionMethod.Deflate);
+
+      var result = ArchiveOperations.Repack(inputPath, outputPath, password);
+
+      Assert.Multiple(() => {
+        Assert.That(result.EntriesRepacked, Is.EqualTo(1));
+        Assert.That(File.Exists(outputPath), Is.True);
+      });
+
+      using var repacked = File.OpenRead(outputPath);
+      using var reader = new ZipReader(repacked, password: password);
+      Assert.That(reader.Entries, Has.Count.EqualTo(1));
+      Assert.That(reader.Entries[0].IsEncrypted, Is.True);
+      Assert.That(reader.ExtractEntry(reader.Entries[0]), Is.EqualTo(data));
+    } finally {
+      if (Directory.Exists(directory))
+        Directory.Delete(directory, recursive: true);
+    }
+  }
+
   [Category("Exception")]
   [Test]
   public void Aes256_WrongPassword_Throws() {
