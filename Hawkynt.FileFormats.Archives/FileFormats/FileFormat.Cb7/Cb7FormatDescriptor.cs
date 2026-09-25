@@ -15,7 +15,7 @@ namespace FileFormat.Cb7;
 ///   <item><description><c>https://py7zr.readthedocs.io/en/latest/archive_format.html</c> — a community 7z structural reference</description></item>
 /// </list>
 /// </summary>
-public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty {
+public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveRepackable {
 
   /// <summary>
   /// Adds new pages directly through the 7z changed-byte append path. The
@@ -217,11 +217,15 @@ public sealed class Cb7FormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var password = !string.IsNullOrEmpty(options.Password) ? options.Password : null;
     var w = new SevenZipWriter(output, SevenZipCodec.Lzma2, password: password);
     foreach (var i in inputs)
-      if (i.IsDirectory) w.AddDirectory(i.ArchiveName);
+      if (i.IsDirectory) w.AddDirectory(i.ArchiveName, i.LastModified);
     foreach (var i in inputs) {
       if (i.IsDirectory) continue;
       var data = i.ReadContent();
-      w.AddEntry(new SevenZipEntry { Name = i.ArchiveName, Size = data.Length }, data);
+      w.AddEntry(new SevenZipEntry {
+        Name = i.ArchiveName,
+        Size = data.Length,
+        LastWriteTime = i.LastModified,
+      }, data);
     }
     w.Finish();
   }
