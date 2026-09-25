@@ -86,7 +86,6 @@ internal sealed class MainViewModel : ViewModelBase {
   public ICommand CanonicalizeEntryCommand { get; }
   public ICommand RepackEntryCommand { get; }
   public ICommand SortDirectoryEntryCommand { get; }
-  public ICommand OptimizeEntryCommand { get; }
   public ICommand ShrinkEntryCommand { get; }
   public ICommand DefragmentEntryCommand { get; }
   public ICommand PurgeEntryCommand { get; }
@@ -150,7 +149,6 @@ internal sealed class MainViewModel : ViewModelBase {
     CanonicalizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Canonicalize), _ => CanMaintain(Views.MaintenanceVerb.Canonicalize));
     RepackEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Repack), _ => CanMaintain(Views.MaintenanceVerb.Repack));
     SortDirectoryEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.SortDirectory), _ => CanMaintain(Views.MaintenanceVerb.SortDirectory));
-    OptimizeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Optimize), _ => CanMaintain(Views.MaintenanceVerb.Optimize));
     ShrinkEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Shrink), _ => CanMaintain(Views.MaintenanceVerb.Shrink));
     DefragmentEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Defragment), _ => CanMaintain(Views.MaintenanceVerb.Defragment));
     PurgeEntryCommand = new RelayCommand(_ => OpenMaintenance(Views.MaintenanceVerb.Purge), _ => CanMaintain(Views.MaintenanceVerb.Purge));
@@ -361,7 +359,6 @@ internal sealed class MainViewModel : ViewModelBase {
       Views.MaintenanceVerb.Canonicalize => descriptor is IArchiveCanonicalizable,
       Views.MaintenanceVerb.Repack => descriptor is IArchiveRepackable,
       Views.MaintenanceVerb.SortDirectory => descriptor is IFilesystemDirectoryOrderer,
-      Views.MaintenanceVerb.Optimize => descriptor is IArchiveCreatable or IFileInternalChunkMover,
       Views.MaintenanceVerb.Shrink => descriptor is IArchiveShrinkable || formatId is "Fat" or "Ext" or "Ext1" or "Vhd",
       Views.MaintenanceVerb.Defragment => descriptor is IArchiveDefragmentable,
       Views.MaintenanceVerb.Purge => descriptor is IArchiveModifiable,
