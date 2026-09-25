@@ -49,6 +49,12 @@ public enum FormatCapabilities {
   /// of <see cref="CanCreate"/> and <see cref="CanModify"/> and is backed by <see cref="IContainerRemuxable"/>.
   /// </summary>
   CanRemux = 1 << 7,
+  /// <summary>
+  /// Legacy stream-compression hint retained for compatibility with existing
+  /// method-selection surfaces. Maintenance discovery must use
+  /// <see cref="ICompressionOptimizable"/> instead. Non-stream containers and
+  /// filesystems must not set this flag.
+  /// </summary>
   SupportsOptimize = 1 << 8,
   CanCompoundWithTar = 1 << 9,
   /// <summary>R/W: can add/replace/remove entries in an existing archive/image. The implementation may edit in place or relayout/rebuild. Implies <see cref="CanCreate"/> for normal writable formats.</summary>

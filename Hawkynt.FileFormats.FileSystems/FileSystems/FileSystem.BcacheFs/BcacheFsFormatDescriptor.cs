@@ -45,7 +45,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract |
     FormatCapabilities.CanCreate | FormatCapabilities.CanModify |
-    FormatCapabilities.CanTest | FormatCapabilities.SupportsOptimize |
+    FormatCapabilities.CanTest |
     FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
   /// <summary>
   /// Gets the default extension.
@@ -82,7 +82,7 @@ public sealed class BcacheFsFormatDescriptor : IFormatDescriptor, IArchiveFormat
   /// </summary>
   public string Description =>
     "BcacheFS Linux filesystem image — native b-tree R/W with true in-place add/replace/remove, "
-    + "purge, defragment, optimize/layout maintenance and free-space/slack wiping.";
+    + "purge, extent defragmentation, allocation-geometry maintenance and free-space/slack wiping.";
 
   /// <summary>
   /// Gets the max total archive size.

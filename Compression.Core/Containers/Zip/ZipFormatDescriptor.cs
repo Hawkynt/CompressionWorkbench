@@ -117,8 +117,7 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
   public FormatCapabilities Capabilities =>
     FormatCapabilities.CanList | FormatCapabilities.CanExtract | FormatCapabilities.CanCreate |
     FormatCapabilities.CanModify | FormatCapabilities.CanTest | FormatCapabilities.SupportsPassword |
-    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories |
-    FormatCapabilities.SupportsOptimize;
+    FormatCapabilities.SupportsMultipleEntries | FormatCapabilities.SupportsDirectories;
 
   /// <summary>
   /// Adds (or replaces by name) files inside an existing ZIP archive. Uses

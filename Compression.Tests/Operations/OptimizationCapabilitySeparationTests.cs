@@ -145,6 +145,24 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
+  public void LegacyDescriptorOptimizeFlag_IsStreamCompressionOnly() {
+    FormatRegistration.EnsureInitialized();
+
+    var offenders = FormatRegistry.All
+      .Where(descriptor => descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize))
+      .Where(descriptor => descriptor is not IStreamFormatOperations
+                           || descriptor is not ICompressionOptimizable)
+      .Select(descriptor => descriptor.Id)
+      .OrderBy(id => id, StringComparer.Ordinal)
+      .ToArray();
+
+    Assert.That(offenders, Is.Empty,
+      "Descriptor-wide SupportsOptimize is legacy stream-compression metadata only; "
+      + "non-stream maintenance must use the explicit capability interfaces: "
+      + string.Join(", ", offenders));
+  }
+
+  [Test, Category("Architecture")]
   public void LegacyStreamOptimizeClaims_HaveExplicitCompressionCapability() {
     FormatRegistration.EnsureInitialized();
 
