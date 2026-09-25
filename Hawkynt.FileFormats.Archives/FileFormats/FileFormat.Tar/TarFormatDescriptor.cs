@@ -15,7 +15,7 @@ namespace FileFormat.Tar;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tar_(computing)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IFormatOptionsSchema {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -329,12 +329,21 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new TarWriter(output, leaveOpen: false, format: headerFormat, blockingFactor: blockingFactor);
     foreach (var i in inputs) {
       if (i.IsDirectory) {
-        w.AddEntry(new TarEntry { Name = i.ArchiveName, Size = 0, TypeFlag = (byte)'5' }, []);
+        w.AddEntry(new TarEntry {
+          Name = i.ArchiveName,
+          Size = 0,
+          TypeFlag = (byte)'5',
+          ModifiedTime = ToTarTime(i.LastModified),
+        }, []);
       } else {
         // ReadContent() transparently handles both on-disk inputs and the
         // in-memory variant fed by the small-image ConvertArchive pipeline.
         var data = i.ReadContent();
-        w.AddEntry(new TarEntry { Name = i.ArchiveName, Size = data.Length }, data);
+        w.AddEntry(new TarEntry {
+          Name = i.ArchiveName,
+          Size = data.Length,
+          ModifiedTime = ToTarTime(i.LastModified),
+        }, data);
       }
     }
     w.Finish();
@@ -362,14 +371,25 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new TarWriter(target, leaveOpen: false, format: headerFormat, blockingFactor: blockingFactor);
     foreach (var input in inputs) {
       if (input.IsDirectory) {
-        w.AddEntry(new TarEntry { Name = input.Name, Size = 0, TypeFlag = (byte)'5' }, []);
+        w.AddEntry(new TarEntry {
+          Name = input.Name,
+          Size = 0,
+          TypeFlag = (byte)'5',
+          ModifiedTime = ToTarTime(input.LastModified),
+        }, []);
       } else {
         using var src = input.OpenStream();
-        w.AddStreamingEntry(new TarEntry { Name = input.Name }, input.Size, src);
+        w.AddStreamingEntry(new TarEntry {
+          Name = input.Name,
+          ModifiedTime = ToTarTime(input.LastModified),
+        }, input.Size, src);
       }
     }
     w.Finish();
   }
+
+  private static DateTimeOffset ToTarTime(DateTime? value)
+    => value is { } modified ? new DateTimeOffset(modified) : DateTimeOffset.UnixEpoch;
 
   // ── IFormatValidator ─────────────────────────────────────────────
 
