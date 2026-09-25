@@ -15,7 +15,7 @@ namespace FileFormat.Tar;
 ///   <item><description><c>https://en.wikipedia.org/wiki/Tar_(computing)</c> — Wikipedia overview</description></item>
 /// </list>
 /// </summary>
-public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IArchiveSemanticMetadataProvider, IFormatOptionsSchema {
+public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOperations, IArchiveCreatable, IFormatValidator, IArchiveModifiable, IArchiveDefragmentable, IArchiveLayoutMap, IWipeEmpty, IArchiveShrinkable, IArchiveRepackable, IArchiveCanonicalizable, IArchiveSemanticMetadataProvider, IFormatOptionsSchema {
 
   /// <inheritdoc />
   public IReadOnlyList<FormatOptionDescriptor> OptionsSchema => [
@@ -274,6 +274,10 @@ public sealed class TarFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
     return entries;
   }
+
+  /// <inheritdoc />
+  public void Canonicalize(Stream input, Stream output)
+    => this.Repack(input, output);
 
   /// <inheritdoc />
   public void Repack(Stream input, Stream output) {
