@@ -1239,7 +1239,7 @@ public partial class DefragmentWindow : Window {
     }
 
     if (this._isFileInternalMode) {
-      OnRunFileInternalOptimize();
+      OnRunFileInternalRelayout();
       return;
     }
 
@@ -1347,7 +1347,7 @@ public partial class DefragmentWindow : Window {
   /// <see cref="IFileInternalChunkMover.Optimize"/> to rearrange internal
   /// chunks (e.g. MP4 fast-start). Refreshes the block chart after completion.
   /// </summary>
-  private void OnRunFileInternalOptimize() {
+  private void OnRunFileInternalRelayout() {
     var path = this._imagePath!;
     var chunkMover = this._chunkMover;
     var ops = this._archiveOps;
