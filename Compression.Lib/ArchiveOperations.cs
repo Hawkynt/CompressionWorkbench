@@ -728,7 +728,7 @@ public static class ArchiveOperations {
       string inputPath, string outputPath, string? password)
     => OptimizeCompression(inputPath, outputPath, password);
 
-  private static byte[] HashDecodedPayload(Stream encoded, IStreamFormatOperations operations) {
+  private static byte[] HashDecodedPayload(Stream encoded, Compression.Registry.IStreamFormatOperations operations) {
     encoded.Position = 0;
     using var decoded = RebuildVerb.CreateScratchStream();
     operations.Decompress(encoded, decoded);
