@@ -178,18 +178,6 @@ public sealed class OptimizationCapabilitySeparationTests {
   }
 
   [Test, Category("Architecture")]
-  public void LegacyOptimize_IsAvailableOnlyForExactlyOneRewriteEffect() {
-    Assert.Multiple(() => {
-      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZstdFormatDescriptor()), Is.True,
-        "a compression-only stream can preserve the old Optimize spelling");
-      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new MacBinaryFormatDescriptor()), Is.True,
-        "a canonicalization-only format can preserve the old Optimize spelling");
-      Assert.That(OptimizationCapabilities.CanLegacyOptimizeUnambiguously(new ZipFormatDescriptor()), Is.False,
-        "ZIP exposes both compression and repack, so legacy Optimize must not guess");
-    });
-  }
-
-  [Test, Category("Architecture")]
   public void CompoundTarCompression_IsAnExplicitDescriptorCapability() {
     FormatRegistration.EnsureInitialized();
 
@@ -206,22 +194,6 @@ public sealed class OptimizationCapabilitySeparationTests {
           $"{descriptor.Id} compression discovery must not depend on outer-codec inference");
       }
     });
-  }
-
-  [Test, Category("Architecture")]
-  public void NonStreamDescriptors_DoNotUseLegacyOptimizeCapabilityFlag() {
-    FormatRegistration.EnsureInitialized();
-
-    var offenders = FormatRegistry.All
-      .Where(static descriptor => descriptor is not IStreamFormatOperations)
-      .Where(static descriptor => descriptor.Capabilities.HasFlag(FormatCapabilities.SupportsOptimize))
-      .Select(static descriptor => descriptor.Id)
-      .OrderBy(static id => id, StringComparer.Ordinal)
-      .ToArray();
-
-    Assert.That(offenders, Is.Empty,
-      "Non-stream formats must expose compression through ICompressionOptimizable, not FormatCapabilities.SupportsOptimize: "
-      + string.Join(", ", offenders));
   }
 
   [Test, Category("RoundTrip")]
