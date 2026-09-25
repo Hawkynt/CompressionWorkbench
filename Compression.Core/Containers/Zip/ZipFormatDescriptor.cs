@@ -402,14 +402,14 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
         using var mixed = new ZipWriter(target, leaveOpen: true,
           compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
         foreach (var input in materialised) {
-          if (input.IsDirectory) { mixed.AddDirectory(input.Name); continue; }
+          if (input.IsDirectory) { mixed.AddDirectory(input.Name, input.LastModified); continue; }
           using var src = input.OpenStream();
           if (input.Size > Array.MaxLength) {
-            mixed.AddStreamingStoredEntry(input.Name, input.Size, src);
+            mixed.AddStreamingStoredEntry(input.Name, input.Size, src, input.LastModified);
           } else {
             using var ms = new MemoryStream();
             src.CopyTo(ms);
-            mixed.AddEntry(input.Name, ms.ToArray(), zipMethod);
+            mixed.AddEntry(input.Name, ms.ToArray(), zipMethod, input.LastModified);
           }
         }
         mixed.Finish();
@@ -423,13 +423,17 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
       var buffered = new List<ArchiveInputInfo>();
       foreach (var input in materialised) {
         if (input.IsDirectory) {
-          buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true));
+          buffered.Add(new ArchiveInputInfo(input.Name, input.Name, IsDirectory: true) {
+            LastModified = input.LastModified,
+          });
           continue;
         }
         using var src = input.OpenStream();
         using var ms = new MemoryStream();
         src.CopyTo(ms);
-        buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()));
+        buffered.Add(ArchiveInputInfo.InMemory(input.Name, ms.ToArray()) with {
+          LastModified = input.LastModified,
+        });
       }
       this.Create(target, buffered, options);
       return;
@@ -438,9 +442,9 @@ public sealed class ZipFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     var w = new ZipWriter(target, leaveOpen: true,
       compressionLevel: Compression.Core.Deflate.DeflateCompressionLevel.Default);
     foreach (var input in inputs) {
-      if (input.IsDirectory) { w.AddDirectory(input.Name); continue; }
+      if (input.IsDirectory) { w.AddDirectory(input.Name, input.LastModified); continue; }
       using var src = input.OpenStream();
-      w.AddStreamingStoredEntry(input.Name, input.Size, src);
+      w.AddStreamingStoredEntry(input.Name, input.Size, src, input.LastModified);
     }
     w.Finish();
   }
