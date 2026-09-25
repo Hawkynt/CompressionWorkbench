@@ -7,6 +7,42 @@ namespace Compression.Tests.Operations;
 [TestFixture]
 public class CompressionOptimizationCapabilityTests {
   [Test, Category("RoundTrip")]
+  public void TarGz_OptimizeCompression_LeavesDecodedTarByteIdentical() {
+    Compression.Lib.FormatRegistration.EnsureInitialized();
+    var descriptor = FormatRegistry.GetById("TarGz");
+    Assert.That(descriptor, Is.InstanceOf<ICompressionOptimizable>());
+    Assert.That(descriptor, Is.InstanceOf<IArchiveCreatable>());
+
+    var creator = (IArchiveCreatable)descriptor!;
+    var compression = (ICompressionOptimizable)descriptor;
+    ArchiveInputInfo[] inputs = [
+      new("", "empty/", true) { LastModified = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Utc) },
+      ArchiveInputInfo.InMemory("payload.txt", Enumerable.Repeat((byte)'A', 8192).ToArray()),
+    ];
+
+    using var source = new MemoryStream();
+    creator.Create(source, inputs, new FormatCreateOptions {
+      FormatSpecific = new Dictionary<string, string> { ["BlockingFactor"] = "1" },
+    });
+
+    var gzip = FormatRegistry.GetStreamOps("Gzip")!;
+    source.Position = 0;
+    using var beforeTar = new MemoryStream();
+    gzip.Decompress(source, beforeTar);
+
+    source.Position = 0;
+    using var optimized = new MemoryStream();
+    compression.OptimizeCompression(source, optimized);
+
+    optimized.Position = 0;
+    using var afterTar = new MemoryStream();
+    gzip.Decompress(optimized, afterTar);
+
+    Assert.That(afterTar.ToArray(), Is.EqualTo(beforeTar.ToArray()),
+      "Compress on a compound TAR must only re-encode the outer stream; the TAR representation itself must not be rebuilt.");
+  }
+
+  [Test, Category("RoundTrip")]
   public void Zip_OptimizeCompression_PreservesLogicalEntriesAndTimestamps() {
     var descriptor = new ZipFormatDescriptor();
     var timestamp = new DateTime(2024, 5, 6, 7, 8, 10, DateTimeKind.Local);
