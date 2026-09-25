@@ -658,14 +658,16 @@ optimizeCmd.SetAction((ParseResult ctx) => {
     var format = FormatDetector.Detect(input.FullName);
     FormatRegistration.EnsureInitialized();
     var descriptor = FormatRegistry.GetById(format.ToString());
-    if (!OptimizationCapabilities.CanLegacyOptimizeUnambiguously(descriptor)) {
+    var legacyEffect = OptimizationCapabilities.ResolveLegacyOptimizeEffect(descriptor);
+    if (legacyEffect is LegacyOptimizeEffect.None or LegacyOptimizeEffect.Ambiguous) {
       Console.Error.WriteLine(
-        $"{format}: legacy Optimize is unavailable or ambiguous. "
-        + "Choose compress, canonicalize, or repack explicitly.");
+        legacyEffect == LegacyOptimizeEffect.None
+          ? $"{format}: legacy Optimize is unavailable. Choose an explicit maintenance command."
+          : $"{format}: legacy Optimize is ambiguous. Choose compress, canonicalize, or repack explicitly.");
       return 1;
     }
 
-    Console.Write($"Optimizing {input.Name} ({format}) through its single explicit rewrite capability...");
+    Console.Write($"Optimizing {input.Name} ({format}) through {legacyEffect}...");
     var sw = Stopwatch.StartNew();
     var (originalSize, rewrittenSize, count) =
       ArchiveOperations.Optimize(input.FullName, output.FullName, password);
