@@ -114,83 +114,191 @@ public sealed class JxlFormatDescriptor : IFormatDescriptor, IArchiveFormatOpera
     }
   }
 
+  private readonly record struct SourceRange(int Offset, int Length);
+
+  private sealed record EntryLayout(
+      string Name,
+      IReadOnlyList<SourceRange> Ranges,
+      byte[]? Generated = null) {
+
+    public int Size {
+      get {
+        if (this.Generated is { } generated)
+          return generated.Length;
+
+        var total = 0;
+        foreach (var range in this.Ranges)
+          total = checked(total + range.Length);
+        return total;
+      }
+    }
+  }
+
   private static List<(string Name, byte[] Data)> BuildEntries(Stream stream) {
     using var ms = new MemoryStream();
     stream.CopyTo(ms);
     var blob = ms.ToArray();
 
+    return BuildLayout(blob)
+      .Select(entry => (entry.Name, Materialize(blob, entry)))
+      .ToList();
+  }
+
+  List<ArchiveEntryInfo> IArchiveFormatOperations.ListSpan(ReadOnlySpan<byte> archive, string? password) {
+    List<EntryLayout> entries;
+    try {
+      entries = BuildLayout(archive);
+    } catch {
+      return [];
+    }
+
+    return entries.Select((entry, index) => new ArchiveEntryInfo(
+      Index: index, Name: entry.Name,
+      OriginalSize: entry.Size, CompressedSize: entry.Size,
+      Method: "stored", IsDirectory: false, IsEncrypted: false, LastModified: null
+    )).ToList();
+  }
+
+  void IArchiveFormatOperations.ExtractSpan(
+      ReadOnlySpan<byte> archive, string outputDir, string? password, string[]? files) {
+    List<EntryLayout> entries;
+    try {
+      entries = BuildLayout(archive);
+    } catch {
+      return;
+    }
+
+    foreach (var entry in entries) {
+      if (files is { Length: > 0 } && !MatchesFilter(entry.Name, files))
+        continue;
+
+      if (entry.Generated is { } generated) {
+        WriteFile(outputDir, entry.Name, generated);
+        continue;
+      }
+
+      using var output = CreateEntryFile(outputDir, entry.Name);
+      foreach (var range in entry.Ranges)
+        output.Write(archive.Slice(range.Offset, range.Length));
+    }
+  }
+
+  private static List<EntryLayout> BuildLayout(ReadOnlySpan<byte> blob) {
     var isNaked = blob.Length >= 2 && blob[0] == 0xFF && blob[1] == 0x0A;
     var isBox = blob.Length >= 12
       && blob[0] == 0x00 && blob[1] == 0x00 && blob[2] == 0x00 && blob[3] == 0x0C
       && blob[4] == 0x4A && blob[5] == 0x58 && blob[6] == 0x4C && blob[7] == 0x20
       && blob[8] == 0x0D && blob[9] == 0x0A && blob[10] == 0x87 && blob[11] == 0x0A;
 
-    var entries = new List<(string Name, byte[] Data)> {
-      ("FULL.jxl", blob),
+    var entries = new List<EntryLayout> {
+      new("FULL.jxl", [new SourceRange(0, blob.Length)]),
     };
 
     var meta = new StringBuilder();
     meta.AppendLine("; JPEG XL container metadata");
 
-    byte[] codestream = [];
-    byte[]? exif = null, xmp = null, jumb = null;
-    int? level = null;
+    var codestreamRanges = new List<SourceRange>();
+    SourceRange? exif = null;
+    SourceRange? xmp = null;
+    SourceRange? jumb = null;
 
     if (isNaked) {
       meta.AppendLine("form=naked");
-      codestream = blob;
+      codestreamRanges.Add(new SourceRange(0, blob.Length));
     } else if (isBox) {
       meta.AppendLine("form=box");
       var boxes = new BoxParser().Parse(blob);
 
-      // jxll: single int8 level (usually 5 or 10).
       var jxll = BoxParser.Find(boxes, "jxll");
-      if (jxll != null && jxll.BodyLength >= 1) {
-        level = blob[(int)jxll.BodyOffset];
-        meta.Append("level=").AppendLine(level.Value.ToString(CultureInfo.InvariantCulture));
+      if (jxll != null && jxll.BodyLength >= 1 && IsValidRange(blob, jxll.BodyOffset, 1)) {
+        var level = blob[(int)jxll.BodyOffset];
+        meta.Append("level=").AppendLine(level.ToString(CultureInfo.InvariantCulture));
       }
 
-      // Concatenate codestream: prefer single jxlc, else ordered jxlp parts.
       var jxlc = BoxParser.Find(boxes, "jxlc");
-      if (jxlc != null && jxlc.BodyLength > 0) {
-        codestream = blob.AsSpan((int)jxlc.BodyOffset, (int)jxlc.BodyLength).ToArray();
+      if (jxlc != null && jxlc.BodyLength > 0 && TryRange(blob, jxlc.BodyOffset, jxlc.BodyLength, out var jxlcRange)) {
+        codestreamRanges.Add(jxlcRange);
       } else {
-        using var csMs = new MemoryStream();
         foreach (var part in BoxParser.FindAll(boxes, "jxlp")) {
-          // Each jxlp body starts with a 4-byte partial index; skip it to get raw codestream bytes.
-          if (part.BodyLength <= 4) continue;
-          csMs.Write(blob, (int)(part.BodyOffset + 4), (int)(part.BodyLength - 4));
+          if (part.BodyLength <= 4)
+            continue;
+          if (TryRange(blob, part.BodyOffset + 4, part.BodyLength - 4, out var partRange))
+            codestreamRanges.Add(partRange);
         }
-        codestream = csMs.ToArray();
       }
 
       var exifBox = BoxParser.Find(boxes, "Exif");
-      if (exifBox != null && exifBox.BodyLength > 0)
-        exif = blob.AsSpan((int)exifBox.BodyOffset, (int)exifBox.BodyLength).ToArray();
+      if (exifBox != null && exifBox.BodyLength > 0
+          && TryRange(blob, exifBox.BodyOffset, exifBox.BodyLength, out var exifRange))
+        exif = exifRange;
+
       var xmpBox = BoxParser.Find(boxes, "xml ");
-      if (xmpBox != null && xmpBox.BodyLength > 0)
-        xmp = blob.AsSpan((int)xmpBox.BodyOffset, (int)xmpBox.BodyLength).ToArray();
+      if (xmpBox != null && xmpBox.BodyLength > 0
+          && TryRange(blob, xmpBox.BodyOffset, xmpBox.BodyLength, out var xmpRange))
+        xmp = xmpRange;
+
       var jumbBox = BoxParser.Find(boxes, "jumb");
-      if (jumbBox != null && jumbBox.BodyLength > 0)
-        jumb = blob.AsSpan((int)jumbBox.BodyOffset, (int)jumbBox.BodyLength).ToArray();
+      if (jumbBox != null && jumbBox.BodyLength > 0
+          && TryRange(blob, jumbBox.BodyOffset, jumbBox.BodyLength, out var jumbRange))
+        jumb = jumbRange;
     } else {
       meta.AppendLine("form=unknown");
     }
 
-    meta.Append("has_exif=").AppendLine(exif != null ? "true" : "false");
-    meta.Append("has_xmp=").AppendLine(xmp != null ? "true" : "false");
-    meta.Append("has_jumb=").AppendLine(jumb != null ? "true" : "false");
-    meta.Append("codestream_size=").AppendLine(codestream.Length.ToString(CultureInfo.InvariantCulture));
+    var codestreamSize = 0;
+    foreach (var range in codestreamRanges)
+      codestreamSize = checked(codestreamSize + range.Length);
 
-    entries.Add(("metadata.ini", Encoding.UTF8.GetBytes(meta.ToString())));
+    meta.Append("has_exif=").AppendLine(exif.HasValue ? "true" : "false");
+    meta.Append("has_xmp=").AppendLine(xmp.HasValue ? "true" : "false");
+    meta.Append("has_jumb=").AppendLine(jumb.HasValue ? "true" : "false");
+    meta.Append("codestream_size=").AppendLine(codestreamSize.ToString(CultureInfo.InvariantCulture));
 
-    if (codestream.Length > 0)
-      entries.Add(("codestream.jxl", codestream));
+    entries.Add(new EntryLayout("metadata.ini", [], Encoding.UTF8.GetBytes(meta.ToString())));
 
-    if (exif != null) entries.Add(("metadata/exif.bin", exif));
-    if (xmp != null) entries.Add(("metadata/xmp.xml", xmp));
-    if (jumb != null) entries.Add(("metadata/jumb.bin", jumb));
+    if (codestreamRanges.Count > 0)
+      entries.Add(new EntryLayout("codestream.jxl", codestreamRanges));
+
+    if (exif is { } exifRangeValue)
+      entries.Add(new EntryLayout("metadata/exif.bin", [exifRangeValue]));
+    if (xmp is { } xmpRangeValue)
+      entries.Add(new EntryLayout("metadata/xmp.xml", [xmpRangeValue]));
+    if (jumb is { } jumbRangeValue)
+      entries.Add(new EntryLayout("metadata/jumb.bin", [jumbRangeValue]));
 
     return entries;
   }
+
+  private static byte[] Materialize(ReadOnlySpan<byte> blob, EntryLayout entry) {
+    if (entry.Generated is { } generated)
+      return generated;
+
+    if (entry.Ranges.Count == 1) {
+      var range = entry.Ranges[0];
+      return blob.Slice(range.Offset, range.Length).ToArray();
+    }
+
+    var result = new byte[entry.Size];
+    var destinationOffset = 0;
+    foreach (var range in entry.Ranges) {
+      blob.Slice(range.Offset, range.Length).CopyTo(result.AsSpan(destinationOffset));
+      destinationOffset += range.Length;
+    }
+    return result;
+  }
+
+  private static bool IsValidRange(ReadOnlySpan<byte> blob, long offset, long length) =>
+    offset >= 0 && length >= 0 && offset <= blob.Length && length <= blob.Length - offset;
+
+  private static bool TryRange(
+      ReadOnlySpan<byte> blob, long offset, long length, out SourceRange range) {
+    if (!IsValidRange(blob, offset, length)) {
+      range = default;
+      return false;
+    }
+
+    range = new SourceRange((int)offset, (int)length);
+    return true;
+  }
+
 }
