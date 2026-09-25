@@ -440,16 +440,16 @@ internal sealed class MainViewModel : ViewModelBase {
   }
 
   /// <summary>
-  /// True when the resolved maintenance target's descriptor can be re-created
-  /// (<see cref="IArchiveCreatable"/>) and publishes a tunable options schema
-  /// (<see cref="IFormatOptionsSchema"/>) with at least one knob — the
-  /// preconditions for offering an after-creation geometry/options change.
+  /// True when the resolved maintenance target explicitly implements
+  /// <see cref="ILayoutOptimizable"/> and publishes a tunable
+  /// <see cref="IFormatOptionsSchema"/> with at least one knob. Creation support
+  /// alone does not imply that after-creation geometry changes are safe.
   /// </summary>
   private bool CanReconfigure() {
     if (!TryResolveMaintenanceTarget(out var formatId, out _)) return false;
-    var ops = FormatRegistry.GetArchiveOps(formatId);
-    return ops is IArchiveCreatable
-        && ops is IFormatOptionsSchema schema
+    var descriptor = FormatRegistry.GetById(formatId);
+    return descriptor is ILayoutOptimizable
+        && descriptor is IFormatOptionsSchema schema
         && schema.OptionsSchema.Count > 0;
   }
 
